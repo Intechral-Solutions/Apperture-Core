@@ -1,18 +1,31 @@
 using Apperture.Bootstrap;
+using Apperture.Connectors.CampusNexus;
+using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
-using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
+using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Proof.CampusNexus.StudentReview;
+using Proof.CampusNexus.StudentReview.Persistence;
+using Sample.ApiPolling;
+using Sample.ApiPolling.Persistence;
+using Sample.FileImport;
 using Sample.HelloWorld;
 using Unisa.CampusNexus.PaymentPlans;
 
@@ -32,6 +45,8 @@ try
     startupLogger.LogInformation("Worker runtime bootstrap starting.");
 
     var builder = Host.CreateApplicationBuilder(args);
+
+    builder.AddServiceDefaults();
 
 // In dev we pass bootstrap credentials via environment variables.
 // Explicitly register the env-var provider so BootstrapConnectionProfile can see SqlServer:* values.
@@ -67,6 +82,7 @@ try
     builder.Services.AddApperturePersistence(
         sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);
     builder.Services.AddAppertureSqlSecrets();
+    builder.Services.AddOperationItemizationPersistence();
     builder.Services.AddSingleton<IEnvironmentContext, RuntimeEnvironmentContext>();
     builder.Services.AddScoped<IAuditService, SqlAuditService>();
     builder.Services.AddScoped<IModuleRegistryService, SqlModuleRegistryService>();
@@ -75,11 +91,15 @@ builder.Services.AddWorkerHostIntegrationRepository();
     builder.Services.AddConnectorRepositories();
     builder.Services.AddConnectorResolution();
     builder.Services.AddSchedulePersistence();
+    builder.Services.AddSingleton<IModuleSlotRegistry, InMemoryModuleSlotRegistry>();
+    builder.Services.AddHostedService<IntegrationConfigurationSlotRegistrationHostedService>();
+    builder.Services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
+    builder.Services.AddAdvisoryConnectionVerificationReadinessPolicy();
+    builder.Services.AddIntegrationDispatchReadiness();
     builder.Services.Configure<ScheduleDispatchOptions>(builder.Configuration.GetSection(ScheduleDispatchOptions.SectionName));
-    builder.Services.PostConfigure<ScheduleDispatchOptions>(opts =>
-    {
-        opts.RuntimePlaneId ??= builder.Configuration["APERTURE_RUNTIME_ID"] ?? builder.Configuration["RuntimeHostIdentity:RuntimeId"] ?? "local";
-    });
+    // SWM-1: schedule plane is independent of APERTURE_RUNTIME_ID (host/claim identity).
+    // Default plane "local" matches SchedulesController / IntegrationSchedulesController assignment defaults.
+    builder.Services.PostConfigure<ScheduleDispatchOptions>(ScheduleDispatchOptionsDefaults.ApplyPlaneDefaults);
     builder.Services.AddSingleton<ISchedulerHostIdentity>(sp =>
     {
         var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;
@@ -91,19 +111,49 @@ builder.Services.AddWorkerHostIntegrationRepository();
         var opts = sp.GetRequiredService<IOptions<ScheduleDispatchOptions>>().Value;
         return new DefaultSchedulerClaimOptions(opts.ClaimLeaseMinutes);
     });
+    builder.Services.AddSqlWorkflowDispatchServices();
     builder.Services.AddRuntimeSchedulerDispatch();
     builder.Services.AddPlatformSqlConnector();
+    builder.Services.AddAppertureCampusNexusConnector();
+    builder.Services.AddAppertureSftpConnector();
+    builder.Services.AddUnisaCampusNexusPaymentPlansPersistenceAdapters();
     builder.Services.AddUnisaCampusNexusPaymentPlansIntegration(registerCapabilitySlotBootstrap: false);
+    builder.Services.AddProofStudentReviewPersistenceAdapter();
+    builder.Services.AddProofCampusNexusStudentReviewIntegration(registerCapabilitySlotBootstrap: false);
 
 // Known modules (explicit host-controlled DI list; may include multiple modules for dev/testing and constrained composition).
 // Intended deployment model remains one primary module per process (ADR-0001).
+    builder.Services.AddSampleFileImport();
+    builder.Services.AddSampleApiPollingPersistence(
+        sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString,
+        applyMigrationsOnStartup: false);
+    builder.Services.AddSampleApiPolling();
     builder.Services.AddSingleton<HelloWorldModule>();
     builder.Services.AddSingleton(sp => new UnisaCampusNexusPaymentPlansModule(sp.GetRequiredService<IServiceScopeFactory>()));
+    builder.Services.AddSingleton(sp => new ProofCampusNexusStudentReviewModule(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILoggerFactory>()));
     builder.Services.AddSingleton<IEnumerable<IModule>>(sp => new IModule[]
     {
         sp.GetRequiredService<HelloWorldModule>(),
-        sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>()
+        sp.GetRequiredService<FileImportModule>(),
+        sp.GetRequiredService<ApiPollingModule>(),
+        sp.GetRequiredService<UnisaCampusNexusPaymentPlansModule>(),
+        sp.GetRequiredService<ProofCampusNexusStudentReviewModule>()
     });
+    builder.Services.AddIntegrationConfigurationBinding<HelloWorldModule>();
+    builder.Services.AddIntegrationConfigurationBinding<FileImportModule>();
+    builder.Services.AddIntegrationConfigurationBinding<ApiPollingModule>();
+    builder.Services.AddIntegrationConfigurationBinding<UnisaCampusNexusPaymentPlansModule>();
+    builder.Services.AddIntegrationConfigurationBinding<ProofCampusNexusStudentReviewModule>();
+
+    builder.Services.AddAppertureIntegrationRuntimeSettings();
+    builder.Services.AddAppertureIntegrationRuntimeAccessors();
+
+    builder.Services.AddRuntimePlatformEvents(builder.Configuration);
+    builder.Services.AddSingleton<IPlatformSettingDefinitionRegistry, PlatformSettingDefinitionRegistry>();
+    builder.Services.AddScoped<IPlatformSettingValueRepository, SqlPlatformSettingValueRepository>();
+    builder.Services.AddScoped<IPlatformSettingsResolver, RuntimePlatformSettingsResolver>();
 
     builder.Services.AddSingleton<IWorkflowDefinitionResolver, WorkflowDefinitionResolver>();
     builder.Services.AddSingleton<IOperationRegistryService, OperationRegistryService>();
@@ -126,13 +176,30 @@ builder.Services.AddWorkerHostIntegrationRepository();
         WorkerHostStartupValidation.ValidateHandlerOwnership(registry, modules);
         return registry;
     });
-    builder.Services.AddScoped<IWorkflowExecutor, DefaultWorkflowExecutor>();
+    // Explicit factory: never allow the 2-arg DefaultWorkflowExecutor ctor that wires NullModulePlatformEventEmitter.
+    builder.Services.AddScoped<IWorkflowExecutor>(sp => new DefaultWorkflowExecutor(
+        sp.GetRequiredService<IRuntimeSlotResolver>(),
+        sp.GetRequiredService<IStepHandlerRegistry>(),
+        sp.GetRequiredService<IModulePlatformEventEmitter>(),
+        sp.GetRequiredService<IModuleOperationalLogger>(),
+        sp.GetRequiredService<IModuleTelemetry>(),
+        sp.GetRequiredService<ILoggerFactory>(),
+        sp.GetService<Apperture.Core.Application.OperationItems.IOperationItemStore>(),
+        sp.GetRequiredService<IIntegrationExecutionScopeAccessor>()));
 
     builder.Services.AddHostedService<StartRequestWorker>();
     builder.Services.AddHostedService<ScheduleDispatchBackgroundService>();
     builder.Services.AddHostedService<ModuleCompositionBootstrapHostedService>();
 
     var host = builder.Build();
+
+    using (var validateScope = host.Services.CreateScope())
+    {
+        var platformEvents = validateScope.ServiceProvider.GetRequiredService<IOptions<PlatformEventsOptions>>().Value;
+        var emitter = validateScope.ServiceProvider.GetRequiredService<IModulePlatformEventEmitter>();
+        WorkerHostStartupValidation.ValidatePlatformEventPipeline(emitter, platformEvents.Enabled, startupLogger);
+    }
+
     startupLogger.LogInformation("Worker runtime launch succeeded; entering run loop.");
     host.Run();
 }

@@ -17,7 +17,11 @@ public sealed class ShellHostNavigation
         _configuration = configuration;
     }
 
-    /// <summary>Absolute base URL (normalized with trailing slash).</summary>
+    /// <summary>Absolute URL of the host sign-out endpoint (cookie + optional Entra end-session).</summary>
+    public string GetSignOutUrl(NavigationManager navigationManager) =>
+        new Uri(GetManagementHostBase(navigationManager), "signout").ToString();
+
+    /// <summary>Absolute base URL of the management host (normalized with trailing slash).</summary>
     public Uri GetManagementHostBase(NavigationManager navigationManager)
     {
         var configured = _options.Value.ManagementHostUrl;

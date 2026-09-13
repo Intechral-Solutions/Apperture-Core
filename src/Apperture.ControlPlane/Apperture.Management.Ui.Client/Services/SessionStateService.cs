@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using Apperture.Management.Client;
+using Apperture.Management.Ui.Shared.Auth;
 
 namespace Apperture.Management.Ui.Client.Services;
 
@@ -21,16 +22,32 @@ public sealed class SessionStateService
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        State = SessionLoadState.Loading;
-        Notify();
+        // Soft refresh when already signed in: skip Loading notify so AuthRouteGate does not unmount
+        // the Router/MainLayout mid-flight (Symbol()/parentNode while menus or pages load).
+        var softRefresh = State is SessionLoadState.Authenticated or SessionLoadState.ForbiddenUnlinked;
+        if (!softRefresh)
+        {
+            State = SessionLoadState.Loading;
+            Notify();
+        }
+
+        var previousState = State;
+        var previousUserId = User?.UserId;
+        var previousError = ErrorMessage;
+
         try
         {
-            var me = await _client.GetMeAsync(cancellationToken).ConfigureAwait(false);
+            // Stay on the Blazor sync context: Notify() and AuthRouteGate UpdateBlocking must not
+            // race the renderer (ConfigureAwait(false) → parentNode / orphaned components).
+            var me = await _client.GetMeAsync(cancellationToken);
             if (me is null)
             {
                 User = null;
-                State = SessionLoadState.Unauthenticated;
                 ErrorMessage = null;
+                var access = await _client.GetAccessRequestSessionAsync(cancellationToken);
+                State = access is null
+                    ? SessionLoadState.Unauthenticated
+                    : SessionLoadState.AccessRequestSession;
             }
             else
             {
@@ -56,6 +73,15 @@ public sealed class SessionStateService
             User = null;
             State = SessionLoadState.Error;
             ErrorMessage = ex.Message;
+        }
+
+        // Soft refresh with identical outcomes must not re-SHC the shell (MainLayout/NavRail).
+        if (softRefresh
+            && previousState == State
+            && previousUserId == User?.UserId
+            && previousError == ErrorMessage)
+        {
+            return;
         }
 
         Notify();

@@ -5,9 +5,14 @@ using Apperture.Core.Domain.Integration;
 namespace Apperture.ConnectorResolution;
 
 /// <summary>
-/// Runtime slot resolver: resolves via binding and connection lookup. When <see cref="IntegrationId"/> is provided,
-/// uses integration-scoped bindings; otherwise uses legacy (moduleId, slotName) lookup.
+/// Runtime slot resolver: resolves via binding and connection lookup.
 /// </summary>
+/// <remarks>
+/// When an integration id is supplied, resolution is Integration-scoped. When it is absent, resolution
+/// falls back strictly to bindings that no Integration owns — it can never select an Integration-scoped
+/// binding, because without the Integration identity there is nothing to disambiguate which one is
+/// correct.
+/// </remarks>
 public sealed class SlotBoundResolver : IRuntimeSlotResolver
 {
     private readonly IBindingRepository _bindingRepository;
@@ -46,7 +51,8 @@ public sealed class SlotBoundResolver : IRuntimeSlotResolver
         }
         else
         {
-            binding = await _bindingRepository.GetBySlotAsync(moduleId, slotName, cancellationToken);
+            // No Integration identity: only a binding that no Integration owns may be resolved.
+            binding = await _bindingRepository.GetUnownedBySlotAsync(moduleId, slotName, cancellationToken);
         }
 
         if (binding is null || binding.State != BindingState.Active)

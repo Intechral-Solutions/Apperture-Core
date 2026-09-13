@@ -1,0 +1,60 @@
+@page "/account/verify-email"
+@layout AuthLayout
+@using System.Net.Http
+@inject IManagementClient Client
+@inject NavigationManager Nav
+
+<div class="mx-auto max-w-md ui-section-panel p-6">
+    <PageHeader Title="Verify contact email"
+                Subtitle="Confirm this address as your Apperture contact destination." />
+
+    @if (_busy)
+    {
+        <p class="mt-4 text-sm text-muted" role="status">Verifying…</p>
+    }
+    else if (_error is not null)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+        <p class="mt-4 text-sm text-muted">
+            <a class="underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+            ·
+            <a class="underline hover:text-heading" href="/login">Sign in</a>
+        </p>
+    }
+    else
+    {
+        <PageMessage Kind="PageMessageKind.Info" Message="Contact email verified." />
+        <p class="mt-4 text-sm text-muted">
+            <a class="underline hover:text-heading" href="/login">Continue to sign in</a>
+        </p>
+    }
+</div>
+
+@code {
+    private bool _busy = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var token = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query).Get("token");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _error = "This verification link is invalid or has expired.";
+            _busy = false;
+            return;
+        }
+
+        try
+        {
+            await Client.VerifyContactEmailAsync(new VerifyContactEmailRequest(token));
+        }
+        catch (HttpRequestException)
+        {
+            _error = "This verification link is invalid or has expired.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

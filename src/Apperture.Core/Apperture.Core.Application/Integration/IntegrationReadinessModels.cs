@@ -4,6 +4,11 @@ namespace Apperture.Core.Application.Integration;
 public static class IntegrationReadinessIssueCodes
 {
     public const string IntegrationNotActive = "integration_not_active";
+    public const string ModuleNotInstalled = "module_not_installed";
+    public const string MissingSetting = "missing_setting";
+    public const string InvalidSetting = "invalid_setting";
+    public const string MissingSecret = "missing_secret";
+    public const string InvalidSecretReference = "invalid_secret_reference";
     public const string MissingSlotBinding = "missing_slot_binding";
     public const string DuplicateActiveBindingForSlot = "duplicate_active_binding_for_slot";
     public const string InactiveBinding = "inactive_binding";
@@ -16,6 +21,8 @@ public static class IntegrationReadinessIssueCodes
     public const string ConnectionVerificationFailed = "connection_verification_failed";
     public const string ConnectionVerificationUnverified = "connection_unverified";
     public const string ConnectionVerificationUnavailable = "connection_verification_unavailable";
+    public const string OptionalDependencyUnavailable = "optional_dependency_unavailable";
+    public const string ModuleCheckFailed = "module_check_failed";
 }
 
 /// <summary>Evidence-based readiness projection for an integration.</summary>

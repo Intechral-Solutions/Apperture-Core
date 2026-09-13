@@ -10,63 +10,90 @@
 @inject AuthSignInOptionsService SignInOptions
 @inject IToastService Toasts
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Entra registrations"
-                Subtitle="Store tenant metadata and choose which registration supplies authority and client ID for sign-in. Client secret stays in deployment configuration for this version. Restart the management host after changing the active registration so OIDC picks up authority and client ID changes." />
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication"
+                Title="Entra tenant setup"
+                Subtitle="Register authority, client id, the confidential client secret, and an optional Conditional Access authentication-context identifier for strong-authentication step-up. Restart the management host after changing the active registration so OIDC picks up authority, client id, secret, and authentication context." />
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission to view Entra registrations.</p>
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission to view Entra registrations." />
+        </div>
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <div class="mt-4">
+            <LoadingState />
+        </div>
     }
     else if (_items is null)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Could not load registrations." />
+        <div class="mt-4">
+            <ErrorState Message="Could not load registrations." />
+        </div>
     }
     else
     {
-        <div class="mt-6 space-y-6 text-sm">
+        <div class="space-y-4 text-sm">
             @if (_overview is not null)
             {
                 <PageMessage Kind="@(_overview.RuntimeMayRequireRestartToApplyChanges ? PageMessageKind.Warning : PageMessageKind.Info)"
                              Message="@_overview.RuntimeApplicationStatus" />
             }
 
-            <div class="overflow-x-auto rounded border border-default">
-                <table class="min-w-full text-left text-xs">
-                    <thead class="bg-surface-muted text-heading">
+            <p class="text-xs text-muted max-w-3xl">
+                <a class="underline" href="/config/auth">← Back to authentication overview</a>
+                · OID = last OpenID discovery validation. Dir = last Microsoft Graph browse. These do not create platform users.
+            </p>
+
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-xs">
+                    <thead>
                         <tr>
-                            <th class="p-2">Name</th>
+                            <th class="p-2">Name / authority</th>
                             <th class="p-2">Active</th>
-                            <th class="p-2">Enabled</th>
-                            <th class="p-2">Secret (deployment)</th>
+                            <th class="p-2">OID</th>
+                            <th class="p-2">Dir</th>
+                            <th class="p-2">Requests</th>
+                            <th class="p-2">Secret</th>
                             <th class="p-2"></th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var r in _items)
                         {
-                            <tr class="border-t border-default">
+                            <tr>
                                 <td class="p-2">
                                     <div class="font-medium text-heading">@r.DisplayName</div>
                                     <div class="text-muted break-all">@r.Authority</div>
-                                    <div class="text-muted">Client ID: @r.ClientId</div>
+                                    <div class="text-muted">Client: @r.ClientId</div>
+                                    @if (!string.IsNullOrEmpty(r.AzureTenantId))
+                                    {
+                                        <div class="text-muted">Azure tenant id: @r.AzureTenantId</div>
+                                    }
                                 </td>
                                 <td class="p-2">@(r.IsActive ? "Yes" : "—")</td>
-                                <td class="p-2">@(r.Enabled ? "Yes" : "No")</td>
-                                <td class="p-2">@(r.DeploymentSecretConfigured ? "configured" : "missing")</td>
-                                <td class="p-2 space-x-2 whitespace-nowrap">
+                                <td class="p-2" title="@r.LastOpenIdValidationSummary">@ShortStatus(r.OpenIdConfigurationStatus ?? "")</td>
+                                <td class="p-2" title="@r.LastDirectoryDiscoverySummary">@ShortStatus(r.DirectoryDiscoveryStatus ?? "")</td>
+                                <td class="p-2">@RequestPolicyLabel(r)</td>
+                                <td class="p-2">@(r.ClientSecretConfigured || r.DeploymentSecretConfigured ? "ok" : "missing")</td>
+                                <td class="p-2 space-y-1 whitespace-nowrap text-right">
+                                    <div class="space-x-2">
+                                        <a class="underline" href="/config/auth/entra/@r.Id/users">Users</a>
+                                        <a class="underline" href="/config/auth/entra/@r.Id/groups">Groups</a>
+                                    </div>
                                     @if (_canManage)
                                     {
-                                        if (!r.IsActive && r.Enabled)
-                                        {
-                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
-                                        }
-                                        <button type="button" class="underline text-red-600 disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                        <div class="space-x-2">
+                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ValidateOpenIdAsync(r.Id)">Validate OIDC</button>
+                                            <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => BeginEdit(r)">Edit</button>
+                                            @if (!r.IsActive && r.Enabled)
+                                            {
+                                                <button type="button" class="underline disabled:opacity-50" disabled="@_busy" @onclick="() => ActivateAsync(r.Id)">Activate</button>
+                                            }
+                                            <button type="button" class="underline text-error disabled:opacity-50" disabled="@_busy" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                        </div>
                                     }
                                 </td>
                             </tr>
@@ -75,23 +102,108 @@
                 </table>
             </div>
 
-            @if (_canManage)
+            @if (_editing is not null)
             {
-                <section class="max-w-xl rounded border border-default bg-surface p-4 space-y-3">
-                    <h2 class="font-medium text-heading">Add registration</h2>
-                    <label class="block text-xs">Display name<input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newDisplay" /></label>
-                    <label class="block text-xs">Authority (https) <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newAuthority" /></label>
-                    <label class="block text-xs">Client ID <input class="mt-1 w-full rounded border border-default px-2 py-1" @bind="_newClientId" /></label>
+                <ManagementSection Title="Edit registration" Layer="@ManagementSection.UiLayer.Detail">
+                    <div class="max-w-xl space-y-3">
+                    <label class="block text-xs">Display name<input class="ui-input mt-1" @bind="_editingDisplay" /></label>
+                    <label class="block text-xs">Authority (https)<input class="ui-input mt-1" @bind="_editingAuthority" /></label>
+                    <label class="block text-xs">Client ID<input class="ui-input mt-1" @bind="_editingClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional, for Graph and issuer checks)<input class="ui-input mt-1" @bind="_editingAzureTenantId" /></label>
+                    <label class="block text-xs">Authentication context id (optional, c1–c25)
+                        <input class="ui-input mt-1 font-mono" @bind="_editingAuthenticationContextId" placeholder="c1" />
+                    </label>
+                    <p class="text-xs text-muted">
+                        Optional until strong administrative recovery is configured. Microsoft Entra Conditional
+                        Access must be configured in the directory. Apperture trusts that the configured context
+                        was satisfied; it does not claim a particular MFA method occurred. Restart the host after
+                        changing the active registration.
+                    </p>
+                    <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
+                    <p class="text-xs text-muted">
+                        Register these URLs on the Entra app, on the management host (not the UI origin):
+                        the sign-in callback (default <code class="ui-inline-code">/signin-oidc</code>),
+                        the sign-out callback <code class="ui-inline-code">/signout-callback-oidc</code> as a Redirect URI,
+                        and <code class="ui-inline-code">/signout-oidc</code> as Front-channel logout URL.
+                        To skip the Microsoft account picker on sign-out, add the <code class="ui-inline-code">login_hint</code>
+                        optional claim to the ID token (Token configuration → optional claims). Sign-out still
+                        returns to Apperture without that claim.
+                    </p>
+                    <label class="block text-xs">Client secret
+                        <input class="ui-input mt-1"
+                               type="password"
+                               autocomplete="new-password"
+                               placeholder="@(_editingSecretConfigured ? "Enter new value to replace" : "Enter secret value")"
+                               @bind="_editingClientSecret" />
+                    </label>
+                    <p class="text-xs text-muted">The current secret is never shown. Leave blank to keep the stored secret.</p>
                     <label class="flex items-center gap-2 text-xs">
-                        <input type="checkbox" @bind="_newUsesDeploymentSecret" disabled="true" />
-                        Use deployment client secret (required in v1)
+                        <input type="checkbox" @bind="_editingEnabled" />
+                        Enabled
+                    </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_editingAllowMemberRequests" />
+                        <span>Allow directory members to request Apperture access after Microsoft sign-in. Off by default.</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_editingAllowGuestRequests" />
+                        <span>Allow guest identities to request access. Off by default. Member/Guest comes from the directory, not the email domain.</span>
                     </label>
                     @if (!string.IsNullOrEmpty(_formError))
                     {
                         <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
                     }
-                    <button type="button" class="rounded bg-surface-muted px-3 py-2 text-sm font-medium disabled:opacity-50" disabled="@_busy" @onclick="CreateAsync">Create</button>
-                </section>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SaveEditAsync">Save</button>
+                        <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                    </div>
+                    </div>
+                </ManagementSection>
+            }
+
+            @if (_canManage)
+            {
+                <ManagementSection Title="Add registration" Layer="@ManagementSection.UiLayer.Detail">
+                    <div class="max-w-xl space-y-3">
+                    <label class="block text-xs">Display name<input class="ui-input mt-1" @bind="_newDisplay" /></label>
+                    <label class="block text-xs">Authority (https) <input class="ui-input mt-1" @bind="_newAuthority" /></label>
+                    <label class="block text-xs">Client ID <input class="ui-input mt-1" @bind="_newClientId" /></label>
+                    <label class="block text-xs">Azure tenant id (optional)<input class="ui-input mt-1" @bind="_newAzureTenantId" /></label>
+                    <label class="block text-xs">Authentication context id (optional, c1–c25)
+                        <input class="ui-input mt-1 font-mono" @bind="_newAuthenticationContextId" placeholder="c1" />
+                    </label>
+                    <p class="text-xs text-muted">
+                        Optional until strong administrative recovery is configured. Your tenant administrator
+                        must attach a Conditional Access policy to this authentication context in Microsoft Entra.
+                    </p>
+                    <p class="text-xs text-muted">
+                        On the Entra app, register the host sign-in and sign-out callback paths. To skip the
+                        Microsoft account picker on sign-out, add the <code class="ui-inline-code">login_hint</code>
+                        optional claim to the ID token.
+                    </p>
+                    <label class="block text-xs">Client secret
+                        <input class="ui-input mt-1"
+                               type="password"
+                               autocomplete="new-password"
+                               placeholder="Enter secret value"
+                               @bind="_newClientSecret" />
+                    </label>
+                    <p class="text-xs text-muted">Stored in the platform secret store. Deployment <span class="font-mono">Entra:ClientSecret</span> is used only when no stored secret exists.</p>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_newAllowMemberRequests" />
+                        <span>Allow directory members to request Apperture access after Microsoft sign-in. Off by default.</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-xs">
+                        <input type="checkbox" @bind="_newAllowGuestRequests" />
+                        <span>Allow guest identities to request access. Off by default.</span>
+                    </label>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <PageMessage Kind="PageMessageKind.Error" Message="@_formError" />
+                    }
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="CreateAsync">Create</button>
+                    </div>
+                </ManagementSection>
             }
         </div>
     }
@@ -107,8 +219,40 @@
     private string _newDisplay = "";
     private string _newAuthority = "";
     private string _newClientId = "";
-    private bool _newUsesDeploymentSecret = true;
+    private string? _newAzureTenantId;
+    private string? _newAuthenticationContextId;
+    private string _newClientSecret = "";
     private string? _formError;
+
+    private string? _editing;
+    private string _editingDisplay = "";
+    private string _editingAuthority = "";
+    private string _editingClientId = "";
+    private string? _editingAzureTenantId;
+    private string? _editingAuthenticationContextId;
+    private string? _editingCallbackPath;
+    private string _editingClientSecret = "";
+    private bool _editingSecretConfigured;
+    private bool _editingEnabled;
+    private bool _editingAllowMemberRequests;
+    private bool _editingAllowGuestRequests;
+    private bool _newAllowMemberRequests;
+    private bool _newAllowGuestRequests;
+    private string? _editingRowVersion;
+
+    private static string ShortStatus(string? s) =>
+        string.IsNullOrEmpty(s) ? "—" : (s.Length > 12 ? s[..12] + "…" : s);
+
+    private static string RequestPolicyLabel(EntraTenantListItemDto r)
+    {
+        if (r.AllowMemberAccessRequests && r.AllowGuestAccessRequests)
+            return "Members and guests";
+        if (r.AllowMemberAccessRequests)
+            return "Members";
+        if (r.AllowGuestAccessRequests)
+            return "Guests";
+        return "Off";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -131,6 +275,70 @@
         _overview = await Client.GetConfigAuthOverviewAsync();
     }
 
+    private void BeginEdit(EntraTenantListItemDto r)
+    {
+        _formError = null;
+        _editing = r.Id;
+        _editingDisplay = r.DisplayName;
+        _editingAuthority = r.Authority;
+        _editingClientId = r.ClientId;
+        _editingAzureTenantId = r.AzureTenantId;
+        _editingAuthenticationContextId = r.AuthenticationContextId;
+        _editingCallbackPath = r.CallbackPath;
+        _editingClientSecret = "";
+        _editingSecretConfigured = r.ClientSecretConfigured || r.DeploymentSecretConfigured;
+        _editingEnabled = r.Enabled;
+        _editingAllowMemberRequests = r.AllowMemberAccessRequests;
+        _editingAllowGuestRequests = r.AllowGuestAccessRequests;
+        _editingRowVersion = r.RowVersionBase64;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _editingClientSecret = "";
+        _formError = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editing is null || string.IsNullOrWhiteSpace(_editingRowVersion))
+            return;
+        _formError = null;
+        _busy = true;
+        try
+        {
+            await Client.PatchEntraTenantAsync(
+                _editing,
+                new UpdateEntraTenantRequest(
+                    _editingDisplay,
+                    _editingAuthority,
+                    _editingClientId,
+                    UsesDeploymentSecret: true,
+                    string.IsNullOrWhiteSpace(_editingCallbackPath) ? null : _editingCallbackPath.Trim(),
+                    _editingEnabled,
+                    _editingRowVersion,
+                    string.IsNullOrWhiteSpace(_editingAzureTenantId) ? null : _editingAzureTenantId.Trim(),
+                    ClientSecret: string.IsNullOrWhiteSpace(_editingClientSecret) ? null : _editingClientSecret,
+                    AuthenticationContextId: string.IsNullOrWhiteSpace(_editingAuthenticationContextId) ? null : _editingAuthenticationContextId.Trim(),
+                    AllowMemberAccessRequests: _editingAllowMemberRequests,
+                    AllowGuestAccessRequests: _editingAllowGuestRequests));
+            _editing = null;
+            _editingClientSecret = "";
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Registration updated.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _formError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
     private async Task CreateAsync()
     {
         _formError = null;
@@ -143,10 +351,20 @@
                 _newClientId,
                 UsesDeploymentSecret: true,
                 CallbackPath: null,
-                Enabled: true));
+                Enabled: true,
+                AzureTenantId: string.IsNullOrWhiteSpace(_newAzureTenantId) ? null : _newAzureTenantId.Trim(),
+                ClientSecret: string.IsNullOrWhiteSpace(_newClientSecret) ? null : _newClientSecret,
+                AuthenticationContextId: string.IsNullOrWhiteSpace(_newAuthenticationContextId) ? null : _newAuthenticationContextId.Trim(),
+                AllowMemberAccessRequests: _newAllowMemberRequests,
+                AllowGuestAccessRequests: _newAllowGuestRequests));
             _newDisplay = "";
             _newAuthority = "";
             _newClientId = "";
+            _newAzureTenantId = null;
+            _newAuthenticationContextId = null;
+            _newClientSecret = "";
+            _newAllowMemberRequests = false;
+            _newAllowGuestRequests = false;
             await ReloadAsync();
             await SignInOptions.RefreshAsync();
             Toasts.Show(ToastSeverity.Success, $"Created registration {created.DisplayName}.");
@@ -154,6 +372,35 @@
         catch (HttpRequestException ex)
         {
             _formError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ValidateOpenIdAsync(string id)
+    {
+        _busy = true;
+        try
+        {
+            var result = await Client.ValidateEntraTenantOpenIdAsync(id);
+            if (result is null)
+            {
+                Toasts.Show(ToastSeverity.Error, "Validation failed or access denied.");
+                return;
+            }
+
+            await ReloadAsync();
+            await SignInOptions.RefreshAsync();
+            var v = result.Validation;
+            Toasts.Show(
+                v.Success ? ToastSeverity.Success : ToastSeverity.Warning,
+                v.Summary);
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

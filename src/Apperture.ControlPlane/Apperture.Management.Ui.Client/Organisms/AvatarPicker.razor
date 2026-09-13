@@ -1,0 +1,276 @@
+@*
+    Avatar management: the curated illustrations plus optional photo upload.
+    The illustration choices are a real radio group, so arrow keys move between them and each option
+    carries a visible text label rather than relying on the picture alone.
+*@
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Atoms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@inject IManagementClient Client
+@inject AccountAvatarService Avatars
+@inject IToastService Toasts
+
+<section class="ui-settings-card" aria-labelledby="avatar-heading">
+    <div class="ui-settings-card__header">
+        <h2 id="avatar-heading" class="ui-settings-card__title">Profile photo</h2>
+        <p class="ui-settings-card__help">
+            Your photo appears in the header and on your account page. It is visible to signed-in users of
+            this instance only.
+        </p>
+    </div>
+    <div class="ui-settings-card__body pt-4">
+        <div class="flex flex-wrap items-center gap-4">
+            <AccountAvatar DisplayName="@DisplayName" SizeClass="h-20 w-20" />
+            <div class="text-sm">
+                <p class="font-medium text-heading">@CurrentSelectionLabel</p>
+                @if (IsCustom)
+                {
+                    <button type="button"
+                            class="mt-1 text-sm text-muted underline hover:text-heading disabled:opacity-50"
+                            disabled="@_busy"
+                            @onclick="() => _confirmRemoveOpen = true">
+                        Remove photo
+                    </button>
+                }
+            </div>
+        </div>
+
+        <fieldset class="mt-7">
+            <legend class="text-sm font-medium text-heading">Choose an illustration</legend>
+            <p class="mt-1 text-sm text-muted">
+                Three default illustrations. Your choice is presentation only — it tells the
+                platform nothing about you.
+            </p>
+
+            @if (_options.Count == 0)
+            {
+                <p class="mt-3 text-sm text-muted">Illustration choices are unavailable right now.</p>
+            }
+            else
+            {
+                <div class="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-labelledby="avatar-heading">
+                    @foreach (var option in _options)
+                    {
+                        var selected = IsSelectedOption(option.Id);
+                        var inputId = $"avatar-option-{option.Id}";
+                        <div>
+                            <input type="radio"
+                                   class="peer sr-only"
+                                   name="avatar-option"
+                                   id="@inputId"
+                                   value="@option.Id"
+                                   checked="@selected"
+                                   disabled="@_busy"
+                                   @onchange="() => SelectOptionAsync(option.Id)" />
+                            <label for="@inputId"
+                                   class="@OptionLabelClass(selected)">
+                                <BuiltInAvatarGlyph OptionId="@option.Id" CssClass="h-12 w-12 rounded-full" />
+                                <span class="text-xs font-medium">@option.DisplayName</span>
+                                @if (selected)
+                                {
+                                    <span class="text-[11px] text-muted">Selected</span>
+                                }
+                                else if (option.IsDefault)
+                                {
+                                    <span class="text-[11px] text-muted">Default</span>
+                                }
+                            </label>
+                        </div>
+                    }
+                </div>
+            }
+        </fieldset>
+
+        <div class="mt-7 border-t border-default pt-5">
+            <label class="text-sm font-medium text-heading" for="avatar-upload">Upload a photo</label>
+            <p id="avatar-upload-help" class="mt-1 text-sm text-muted">
+                JPEG, PNG, or WebP, up to @MaxUploadMegabytes MB. The image is cropped to a square, resized,
+                and stripped of camera metadata before it is stored. The file you choose is not kept.
+            </p>
+            <InputFile id="avatar-upload"
+                       class="mt-2 block w-full max-w-md text-sm text-body"
+                       accept="@AcceptAttribute"
+                       aria-describedby="avatar-upload-help"
+                       disabled="@_busy"
+                       OnChange="UploadAsync" />
+
+            @if (_uploadError is not null)
+            {
+                <p id="avatar-upload-error" class="mt-2 text-sm text-message-error" role="alert">@_uploadError</p>
+            }
+            @if (_busy)
+            {
+                <p class="mt-2 text-sm text-muted" role="status">Processing image…</p>
+            }
+        </div>
+
+        <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-4">
+            <TechnicalDetail Label="Avatar source" Value="@(Avatars.Avatar?.Kind ?? "unknown")" />
+            <TechnicalDetail Label="Avatar version" Value="@(Avatars.Avatar?.Version ?? "—")" />
+            <TechnicalDetail Label="Stored sizes" Value="@StoredSizesLabel" />
+        </TechnicalDetails>
+    </div>
+</section>
+
+<ConfirmActionDialog IsOpen="_confirmRemoveOpen"
+                     Title="Remove custom profile photo?"
+                     ConfirmLabel="Remove photo"
+                     CancelLabel="Keep photo"
+                     Emphasis="ConfirmActionEmphasis.Destructive"
+                     IsBusy="_busy"
+                     OnConfirm="RemovePhotoAsync"
+                     OnCancel="() => _confirmRemoveOpen = false">
+    Your stored photo will be deleted and your avatar returns to the default illustration. You can
+    upload a new photo at any time.
+</ConfirmActionDialog>
+
+@code {
+    /// <summary>Used only for the initials fallback while the avatar loads.</summary>
+    [Parameter] public string? DisplayName { get; set; }
+
+    /// <summary>Raised after a successful change so the page can refresh dependent state.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private const int MaxUploadMegabytes = 4;
+    private const long MaxUploadBytes = MaxUploadMegabytes * 1024L * 1024L;
+    private const string AcceptAttribute = "image/jpeg,image/png,image/webp";
+
+    private List<AvatarOptionDto> _options = [];
+    private bool _busy;
+    private bool _confirmRemoveOpen;
+    private string? _uploadError;
+
+    private bool IsCustom => Avatars.Avatar?.IsCustom ?? false;
+
+    private static string StoredSizesLabel => "64, 128, 256 px (PNG)";
+
+    private string CurrentSelectionLabel
+    {
+        get
+        {
+            if (IsCustom)
+                return "Using your uploaded photo";
+
+            var optionId = Avatars.Avatar?.BuiltInOptionId;
+            var match = _options.FirstOrDefault(o => string.Equals(o.Id, optionId, StringComparison.Ordinal));
+            return match is null ? "Using the default illustration" : $"Using {match.DisplayName}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _options = (await Client.GetAvatarOptionsAsync()).ToList();
+        }
+        catch (HttpRequestException)
+        {
+            _options = [];
+        }
+    }
+
+    private bool IsSelectedOption(string optionId) =>
+        !IsCustom && string.Equals(Avatars.Avatar?.BuiltInOptionId, optionId, StringComparison.Ordinal);
+
+    // Selection is shown with a ring, a border, a background change, and the word "Selected", so it
+    // does not depend on colour perception alone.
+    private static string OptionLabelClass(bool selected) =>
+        "flex w-24 cursor-pointer flex-col items-center gap-1 rounded-lg border p-2 text-center peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 "
+        + (selected
+            ? "border-accent bg-accent-wash text-heading"
+            : "border-default text-muted hover:bg-hover-overlay hover:text-heading");
+
+    private async Task SelectOptionAsync(string optionId)
+    {
+        if (_busy)
+            return;
+
+        _busy = true;
+        _uploadError = null;
+        try
+        {
+            var avatar = await Client.SelectAvatarAsync(optionId);
+            await Avatars.ApplyAsync(avatar);
+            Toasts.Show(ToastSeverity.Success, "Avatar updated.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Could not update avatar");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        _uploadError = null;
+
+        // Client-side checks are convenience only; the server re-validates and re-decodes everything.
+        if (file.Size > MaxUploadBytes)
+        {
+            _uploadError = $"That file is {FormatSize(file.Size)}. Choose an image of {MaxUploadMegabytes} MB or less.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxUploadBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+
+            var avatar = await Client.UploadAvatarAsync(
+                buffer.ToArray(),
+                file.Name,
+                string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+
+            await Avatars.ApplyAsync(avatar);
+            Toasts.Show(ToastSeverity.Success, "Profile photo updated.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _uploadError = ex.Message;
+        }
+        catch (IOException)
+        {
+            _uploadError = $"That file could not be read. Choose an image of {MaxUploadMegabytes} MB or less.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RemovePhotoAsync()
+    {
+        _busy = true;
+        try
+        {
+            var avatar = await Client.ResetAvatarAsync();
+            await Avatars.ApplyAsync(avatar);
+            _confirmRemoveOpen = false;
+            Toasts.Show(ToastSeverity.Success, "Profile photo removed.");
+            await OnChanged.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1024 * 1024
+            ? $"{bytes / (1024d * 1024d):0.#} MB"
+            : $"{bytes / 1024d:0.#} KB";
+}

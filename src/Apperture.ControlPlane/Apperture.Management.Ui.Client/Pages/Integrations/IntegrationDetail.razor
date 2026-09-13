@@ -1,636 +1,379 @@
 @page "/integrations/{IntegrationId}"
+@using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Services.Wizard
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
-@inject IJSRuntime JSRuntime
+@inject ShellOrientationService ShellOrientation
 @inject IToastService Toasts
+@implements IDisposable
 
-<div class="p-4">
-    <PageHeader Title="Integration" Subtitle="@(_integration?.DisplayName ?? IntegrationId)">
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
+                Subtitle="@SummarySubtitle">
         <Toolbar>
-            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
-            <button type="button"
-                    class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                    disabled="@_loading"
-                    @onclick="LoadAsync">
-                Refresh
-            </button>
+            <a href="@($"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}")" class="ui-toolbar-btn">Execute</a>
+            <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="RefreshAsync">Refresh</button>
             @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
             {
                 @if (string.Equals(_integration.State, "Active", StringComparison.OrdinalIgnoreCase))
                 {
-                    <button type="button"
-                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50"
-                            disabled="@_loading"
-                            @onclick="DeactivateIntegrationAsync">
-                        Deactivate
-                    </button>
+                    <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="DeactivateIntegrationAsync">Deactivate</button>
                 }
                 else
                 {
-                    <button type="button"
-                            class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                            disabled="@_loading"
-                            @onclick="ActivateIntegrationAsync">
-                        Activate
-                    </button>
+                    <button type="button" class="btn btn-primary text-sm" disabled="@_loading" @onclick="ActivateIntegrationAsync">Activate</button>
                 }
-            }
-            @if (_capabilities?.CanManageIntegrations == true && _integration is not null)
-            {
-                <button type="button"
-                        class="rounded bg-destructive px-3 py-2 text-sm text-destructive-fg hover:bg-destructive/90 disabled:opacity-50"
-                        disabled="@_deleting"
-                        @onclick="ConfirmDeleteAsync">
-                    Delete
-                </button>
+                <button type="button" id="integration-delete-trigger" class="ui-toolbar-btn ui-toolbar-btn--danger" disabled="@_deleting" @onclick="() => _confirmDeleteOpen = true">Delete</button>
             }
         </Toolbar>
     </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@(_capabilities?.CanViewNotificationDefinitions == true)" />
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState />
     }
     else if (_capabilities?.CanViewIntegrations != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to view integration details." />
+        <ForbiddenState Message="You do not have permission to view integration details." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading integration…" />
     }
     else if (_integration is null)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading integration…" />
+        <EmptyState Title="Integration not found" Message="The requested integration could not be loaded." />
     }
     else
     {
-        <div class="mt-4 space-y-4">
-            @if (_wizardMode)
-            {
+        <IntegrationSummaryBand Integration="@_integration"
+                                Readiness="@_readiness"
+                                IntegrationId="@IntegrationId"
+                                ScheduleCount="@(_schedules?.Count ?? 0)"
+                                EnabledScheduleCount="@EnabledScheduleCount"
+                                BindingCount="@(_bindings?.Count ?? 0)"
+                                RecentOutcomeSummary="@RecentOutcomeSummary"
+                                NextScheduleSummary="@NextScheduleSummary"
+                                ConnectionsSummary="@ConnectionsSummary" />
+
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <ActionFeedback Kind="@_actionFeedbackKind" Message="@_actionMessage" />
+        }
+
+        @if (_readiness is not null)
+        {
+            var pill = IntegrationConfigurationOperatorUiHelpers.BuildOverallReadinessPill(_readiness);
+            <ManagementSection Title="Readiness"
+                               Layer="ManagementSection.UiLayer.Summary"
+                               Help="Full requirement/binding detail and remediation actions live on Connections.">
+                <div class="flex flex-wrap items-center gap-2">
+                    <StatusPill Label="@pill.Label" Semantic="@pill.Semantic" />
+                    @if (_readiness.BlockingIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{_readiness.BlockingIssueCount} blocking")" Semantic="@ManagementAttentionSemantic.Critical" />
+                    }
+                    @if (_readiness.AdvisoryIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{_readiness.AdvisoryIssueCount} advisory")" Semantic="@ManagementAttentionSemantic.Warning" />
+                    }
+                    <DrillInLink Href="@IntegrationUiRoutes.Connections(IntegrationId)">View connections &amp; fix issues</DrillInLink>
+                </div>
+            </ManagementSection>
+        }
+
+        @if (ProblematicActivity.Count > 0)
+        {
+            <ManagementSection Title="Needs attention"
+                               Layer="ManagementSection.UiLayer.Summary"
+                               Help="Failed runs or denied outcomes from recent activity.">
+                <div class="space-y-2">
+                    @foreach (var item in ProblematicActivity.Take(5))
+                    {
+                        <div class="ui-detail-block flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-sm font-semibold">@item.Summary</div>
+                                <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                                    <StatusPill Label="@(item.StatusOrOutcome ?? item.TypeLabel)"
+                                                Semantic="@EntityRecentActivityComposer.MapStatusSemantic(item.StatusOrOutcome)" />
+                                    <span>@item.SourceKind · <TimestampDisplay Value="@item.TimestampUtc" /></span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(item.DrillInHref))
+                            {
+                                <DrillInLink Href="@item.DrillInHref">@item.DrillInLabel</DrillInLink>
+                            }
+                        </div>
+                    }
+                </div>
+            </ManagementSection>
+        }
+
+        <ManagementSection Title="Recent activity" Layer="ManagementSection.UiLayer.Detail" Help="@RecentActivityHelp">
+            <EntityRecentActivityPanel Items="@_recentActivity"
+                                       Loading="@_activityLoading"
+                                       Error="@_activityError"
+                                       EmptyMessage="No runs or notifications for this integration in the last 7 days. Activity appears after workflows execute or notifications are delivered.">
+                <FooterLinks>
+                    <DrillInLink Href="@IntegrationUiRoutes.Runs(IntegrationId)">View runs for integration</DrillInLink>
+                    @if (_capabilities?.CanViewAudit == true && !string.IsNullOrWhiteSpace(_integration.ModuleId))
+                    {
+                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForModule(_integration.ModuleId)">View audit for module</DrillInLink>
+                    }
+                </FooterLinks>
+            </EntityRecentActivityPanel>
+        </ManagementSection>
+
+        @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
+        {
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Message="Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated." />
+        }
+
+        @if (_wizardMode)
+        {
+            <ManagementSection Title="Setup wizard"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Guided sequence: bind slots, resolve readiness, attach schedules, launch procedures.">
                 <WizardFlowPanel Title="Integration setup wizard"
-                                 Description="Follow the guided sequence: bind required slots, resolve readiness blockers, attach schedules, then launch procedures."
+                                 Description="Follow the guided sequence: bind required slots, resolve readiness blockers, attach schedules, then launch procedures below."
                                  Steps="@_wizard.Steps"
                                  StepStates="@_wizardStepMap"
                                  CurrentStepId="@_wizard.CurrentStepId"
                                  OnSelect="OnWizardStepSelectedAsync" />
-            }
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Details</h2>
-                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Display Name</div>
-                        <div class="text-sm text-body">@_integration.DisplayName</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Module definition</div>
-                        <div class="text-sm font-mono text-body">@_integration.ModuleId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Scope key</div>
-                        <div class="text-sm text-body">@(_integration.ScopeKey ?? "—")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">State</div>
-                        <div class="text-sm text-body">@_integration.State</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Created</div>
-                        <div class="text-sm text-body">@_integration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Updated</div>
-                        <div class="text-sm text-body">@_integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</div>
-                    </div>
-                </div>
-            </div>
-
-            @if (string.Equals(_integration.State, "Inactive", StringComparison.OrdinalIgnoreCase))
-            {
-                <div class="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-                    Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated.
-                </div>
-            }
-
-            @if (_wizardMode && _capabilities?.CanManageIntegrations == true)
-            {
-                <div class="rounded border border-default bg-surface p-3">
+                <div class="ui-detail-block mt-3">
                     <div class="text-sm font-semibold text-heading">Next action</div>
                     <div class="mt-1 text-xs text-muted">@CurrentWizardGuidance()</div>
                     <div class="mt-2 flex gap-2">
-                        <button type="button"
-                                class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
-                                @onclick="WizardPreviousAsync">
-                            Previous step
-                        </button>
-                        <button type="button"
-                                class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                disabled="@(!WizardCanAdvance())"
-                                @onclick="WizardAdvanceAsync">
-                            Next step
-                        </button>
+                        @if (string.Equals(_wizard.CurrentStepId, WizardStepBindings, StringComparison.Ordinal))
+                        {
+                            <a class="btn btn-primary text-xs" href="@($"{IntegrationUiRoutes.Connections(IntegrationId)}?wizard=1")">Open Connections</a>
+                        }
+                        else if (string.Equals(_wizard.CurrentStepId, WizardStepSchedules, StringComparison.Ordinal))
+                        {
+                            <a class="btn btn-secondary text-xs" href="@($"{IntegrationUiRoutes.Schedules(IntegrationId)}?wizard=1")">Open Schedules</a>
+                        }
+                        <button type="button" class="btn btn-secondary text-xs" @onclick="WizardPreviousAsync">Previous step</button>
+                        <button type="button" class="btn btn-secondary text-xs" disabled="@(!WizardCanAdvance())" @onclick="WizardAdvanceAsync">Next step</button>
                     </div>
                 </div>
-            }
+            </ManagementSection>
+        }
 
-            @if (_readiness is not null)
+        <ManagementSection Title="Procedures"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Module-declared operator actions (ADR-0029). Availability and launchability come from the server; blocked reasons explain what must change.">
+            @if (_procedureLoading)
             {
-                <div class="rounded border border-default bg-surface p-3">
-                    <h2 class="text-sm font-semibold text-heading mb-2">Readiness</h2>
-                    <div class="text-xs text-muted mb-2">Derived from declared module slots, integration bindings, connections, and schedules.</div>
-                    <div class="mb-2">
-                        @if (_readiness.IsRunnable)
-                        {
-                            <span class="rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">Runnable</span>
-                        }
-                        else
-                        {
-                            <span class="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">Not runnable</span>
-                        }
-                    </div>
-                    <div class="mb-2 text-xs text-muted">
-                        Blocking: @_readiness.BlockingIssueCount · Advisory: @_readiness.AdvisoryIssueCount
-                    </div>
-                    @if (_readiness.Issues.Length > 0)
+                <LoadingState Message="Loading procedures…" />
+            }
+            else if (!string.IsNullOrEmpty(_procedureError))
+            {
+                <ErrorState Title="Procedure error" Message="@_procedureError" />
+            }
+            else if (_procedureList is null)
+            {
+                <EmptyState Message="No procedure data." />
+            }
+            else if (_procedureList.Procedures.Count == 0)
+            {
+                <EmptyState Title="No procedures"
+                            Message="This module declares no operator procedures. Workflows and operations may still be available from Execute." />
+            }
+            else
+            {
+                @if (!_procedureList.IntegrationReady)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Message="Integration is not runnable; procedures are listed but launch is blocked until readiness passes." />
+                }
+                <div class="flex flex-wrap gap-2 mb-3">
+                    @foreach (var p in _procedureList.Procedures)
                     {
-                        <ul class="space-y-2 text-sm text-body">
-                            @foreach (var issue in _readiness.Issues)
+                        <button type="button"
+                                class="btn text-xs @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "btn-primary" : "btn-secondary")"
+                                title="@(p.Launchable ? "Runnable" : ProcedureLaunchOperatorUiHelpers.DescribeLaunchAvailability(_procedureList.IntegrationReady, p.Launchable, p.BlockedReasonCodes, _readiness?.AdvisoryIssueCount ?? 0))"
+                                @onclick="() => SelectProcedureAsync(p.Id)">
+                            @p.DisplayName
+                            @if (p.Launchable)
                             {
-                                <li class="rounded border border-default bg-surface-muted/30 p-2">
-                                    <div>
-                                        <span class="font-mono text-xs text-muted">@issue.Code</span>
-                                        <span class="ml-1 text-xs text-muted">[@issue.Severity]</span>
-                                        <span class="ml-1">@issue.Message</span>
-                                    </div>
-                                    <div class="mt-1 text-xs text-muted">@ReadinessRemediationCue(issue)</div>
-                                    @if (_capabilities?.CanManageIntegrations == true)
-                                    {
-                                        <div class="mt-2">
-                                            <button type="button"
-                                                    class="rounded bg-surface-muted px-2 py-0.5 text-xs text-body hover:bg-surface"
-                                                    @onclick="() => RemediateReadinessIssueAsync(issue)">
-                                                Fix now
-                                            </button>
-                                        </div>
-                                    }
-                                </li>
+                                <span class="ml-1 text-xs text-muted">· ready</span>
                             }
-                        </ul>
-                    }
-                    else
-                    {
-                        <div class="text-sm text-muted">No blocking issues detected.</div>
+                            else
+                            {
+                                <span class="ml-1 text-warning" title="@ProcedureLaunchOperatorUiHelpers.DescribeLaunchAvailability(_procedureList.IntegrationReady, p.Launchable, p.BlockedReasonCodes, _readiness?.AdvisoryIssueCount ?? 0)">●</span>
+                            }
+                        </button>
                     }
                 </div>
-            }
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Procedures</h2>
-                <div class="text-xs text-muted mb-2">Module-declared operator actions (ADR-0029). Availability and launchability come from the server; blocked reasons explain what must change.</div>
-                @if (_procedureLoading)
+                @if (_selectedProcedureDetail is not null)
                 {
-                    <div class="text-sm text-muted">Loading procedures…</div>
-                }
-                else if (!string.IsNullOrEmpty(_procedureError))
-                {
-                    <div class="text-sm text-body">@_procedureError</div>
-                }
-                else if (_procedureList is null)
-                {
-                    <div class="text-sm text-muted">No procedure data.</div>
-                }
-                else if (_procedureList.Procedures.Count == 0)
-                {
-                    <div class="text-sm text-muted">This module declares no procedures.</div>
-                }
-                else
-                {
-                    @if (!_procedureList.IntegrationReady)
-                    {
-                        <div class="mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">
-                            Integration is not runnable; procedures are listed but launch is blocked until readiness passes.
-                        </div>
-                    }
-                    <div class="flex flex-wrap gap-2 mb-3">
-                        @foreach (var p in _procedureList.Procedures)
+                    <div class="ui-detail-block">
+                        <div class="text-sm font-semibold text-heading">@_selectedProcedureDetail.DisplayName</div>
+                        @if (!string.IsNullOrEmpty(_selectedProcedureDetail.Description))
                         {
-                            <button type="button"
-                                    class="rounded px-2 py-1 text-xs font-mono @(string.Equals(_selectedProcedureId, p.Id, StringComparison.Ordinal) ? "bg-body text-surface" : "bg-surface-muted text-body hover:bg-surface")"
-                                    @onclick="() => SelectProcedureAsync(p.Id)">
-                                @p.DisplayName
-                                @if (!p.Launchable)
-                                {
-                                    <span class="ml-1 text-amber-600 dark:text-amber-300" title="Blocked">●</span>
-                                }
-                            </button>
+                            <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
                         }
-                    </div>
-                    @if (_selectedProcedureDetail is not null)
-                    {
-                        <div class="rounded border border-default bg-surface-muted/30 p-3">
-                            <div class="text-sm font-semibold text-heading">@_selectedProcedureDetail.DisplayName</div>
-                            @if (!string.IsNullOrEmpty(_selectedProcedureDetail.Description))
-                            {
-                                <div class="text-xs text-muted mt-1">@_selectedProcedureDetail.Description</div>
-                            }
-                            <div class="text-xs text-muted mt-1 font-mono">@_selectedProcedureDetail.Id · @_selectedProcedureDetail.LaunchKind → @_selectedProcedureDetail.TargetDefinitionId</div>
-                            @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
-                            {
-                                <ul class="mt-2 list-disc pl-5 text-xs text-amber-800 dark:text-amber-200">
-                                    @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
-                                    {
-                                        <li><span class="font-mono">@blockedCode</span> — @DescribeBlockedReason(blockedCode)</li>
-                                    }
-                                </ul>
-                            }
-                            <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields" Values="@_procedureParamValues" />
+                        <TechnicalDetails Class="mt-1" Dense="true">
+                            <TechnicalDetail Label="Procedure ID" Value="@_selectedProcedureDetail.Id" />
+                            <TechnicalDetail Label="Launch kind" Value="@_selectedProcedureDetail.LaunchKind" />
+                            <TechnicalDetail Label="Target definition ID" Value="@_selectedProcedureDetail.TargetDefinitionId" />
+                        </TechnicalDetails>
+                        @if (!_selectedProcedureDetail.Launchable && _selectedProcedureDetail.BlockedReasonCodes.Count > 0)
+                        {
+                            <ul class="mt-2 list-disc pl-5 text-xs text-body">
+                                @foreach (var blockedCode in _selectedProcedureDetail.BlockedReasonCodes)
+                                {
+                                    <li>@ProcedureLaunchOperatorUiHelpers.DescribeBlockedReason(blockedCode)</li>
+                                }
+                            </ul>
+                        }
+                        <ProcedureParameterForm Fields="@_selectedProcedureDetail.ParameterFields"
+                                                  Values="@_procedureParamValues"
+                                                  OnChanged="RefreshProcedureValidation" />
+                        @{
+                            var launchDisabledReason = ProcedureLaunchOperatorUiHelpers.BuildLaunchDisabledReason(
+                                _procedureLaunching,
+                                _selectedProcedureDetail.Launchable,
+                                _procedureList.IntegrationReady,
+                                _selectedProcedureDetail.BlockedReasonCodes,
+                                _procedureValidationErrors);
+                        }
+                        @if (_procedureValidationErrors.Count > 0)
+                        {
+                            <PageMessage Kind="PageMessageKind.Warning" Message="@_procedureValidationErrors[0]" />
+                        }
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
                             <button type="button"
-                                    class="mt-3 rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                    disabled="@(_procedureLaunching || !_selectedProcedureDetail.Launchable)"
+                                    class="btn btn-primary text-sm"
+                                    disabled="@(_procedureLaunching || launchDisabledReason is not null)"
+                                    title="@launchDisabledReason"
                                     @onclick="LaunchSelectedProcedureAsync">
                                 Launch
                             </button>
+                            <DrillInLink Href="@ProcedureLaunchOperatorUiHelpers.BuildExecuteHref(IntegrationId, "procedure", _selectedProcedureDetail.Id)">
+                                Open launch page
+                            </DrillInLink>
                         </div>
-                    }
-                }
-            </div>
-
-            @if (_requiredSlots is { Length: > 0 })
-            {
-                <div class="rounded border border-default bg-surface p-3">
-                    <h2 class="text-sm font-semibold text-heading mb-2">Required slots</h2>
-                    <div class="text-xs text-muted mb-2">Declared by the module for this integration.</div>
-                    <ul class="space-y-1 text-sm">
-                        @foreach (var slot in _requiredSlots)
+                        @if (!string.IsNullOrWhiteSpace(launchDisabledReason))
                         {
-                            var bound = _bindings?.Any(b => string.Equals(b.SlotName, slot.SlotName, StringComparison.Ordinal) && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase)) == true;
-                            <li class="flex justify-between gap-2">
-                                <span class="font-mono">@slot.SlotName</span>
-                                <span class="text-muted text-xs">@slot.ContractType</span>
-                                <span class="text-xs @(bound ? "text-emerald-600 dark:text-emerald-400" : "text-amber-700 dark:text-amber-300")">@(bound ? "Bound" : "Unbound")</span>
-                            </li>
-                        }
-                    </ul>
-                </div>
-            }
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Module instance settings</h2>
-                <div class="text-xs text-muted mb-2">Key-value pairs. Module-specific schema support is deferred.</div>
-                @if (_integration.Settings is { Count: > 0 })
-                {
-                    <div class="space-y-2">
-                        @foreach (var kv in _integration.Settings)
-                        {
-                            <div class="flex items-center gap-2 text-sm">
-                                <span class="font-mono text-body">@kv.Key</span>
-                                <span class="text-muted">=</span>
-                                <span class="text-body">@kv.Value</span>
-                            </div>
+                            <div class="mt-1 text-xs text-muted">@launchDisabledReason</div>
                         }
                     </div>
                 }
-                else
-                {
-                    <div class="text-sm text-muted">No settings configured.</div>
-                }
-                @if (_capabilities?.CanManageIntegrations == true)
-                {
-                    @if (_editingSettings)
-                    {
-                        <div class="mt-3 space-y-2">
-                            @for (var i = 0; i < _settingsEditList.Count; i++)
-                            {
-                                var idx = i;
-                                var item = _settingsEditList[idx];
-                                <div class="flex gap-2 items-center">
-                                    <input class="rounded border border-default bg-surface px-2 py-1 text-sm font-mono flex-1 min-w-0" value="@item.Key" @oninput="e => UpdateSettingKey(idx, e.Value?.ToString())" placeholder="Key" />
-                                    <input class="rounded border border-default bg-surface px-2 py-1 text-sm flex-1 min-w-0" value="@item.Value" @oninput="e => UpdateSettingValue(idx, e.Value?.ToString())" placeholder="Value" />
-                                    <button type="button" class="rounded bg-destructive/20 px-2 py-1 text-xs text-destructive-fg hover:bg-destructive/30" @onclick="() => RemoveSettingEditAt(idx)">Remove</button>
-                                </div>
-                            }
-                            <div class="flex gap-2">
-                                <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="AddSettingRow">Add row</button>
-                                <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50" @onclick="SaveSettingsAsync" disabled="@_settingsSaving">Save</button>
-                                <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelSettingsEdit">Cancel</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartSettingsEdit">Edit settings</button>
-                    }
-                }
-            </div>
+            }
+        </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Connection bindings</h2>
-                <div class="text-xs text-muted mb-2">Bindings belong to this Integration. Managed from this page.</div>
-                @if (_bindings is { Count: > 0 })
-                {
-                    <ul class="space-y-1">
-                        @foreach (var b in _bindings)
-                        {
-                            <li class="flex items-center justify-between gap-2">
-                                <div>
-                                    <a href="@("/connections/" + Uri.EscapeDataString(b.ConnectionId ?? ""))" class="underline text-sm hover:text-heading">@b.SlotName</a>
-                                    <span class="text-muted text-xs ml-1">@b.ContractType</span>
-                                    @if (!string.IsNullOrEmpty(b.ConnectionId))
-                                    {
-                                        <span class="text-muted text-xs">→ @b.ConnectionId</span>
-                                        @if (_bindingVerificationByConnectionId.TryGetValue(b.ConnectionId, out var verificationState))
-                                        {
-                                            <span class="text-muted text-xs">· Verify: @verificationState</span>
-                                        }
-                                    }
-                                </div>
-                                @if (_capabilities?.CanManageIntegrations == true)
-                                {
-                                    <button type="button" class="rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive-fg hover:bg-destructive/30" @onclick="() => RemoveBindingAsync(b)">Remove</button>
-                                }
-                            </li>
-                        }
+        <ManagementAdvancedSection Title="Identity and diagnostics"
+                                   Subtitle="Raw identifiers and troubleshooting links."
+                                   InitiallyOpen="false">
+            <div class="space-y-4">
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Identity</h3>
+                    <div class="grid grid-cols-1 gap-2 md:grid-cols-2 text-sm">
+                        <div>
+                            <div class="text-xs text-muted">Integration id</div>
+                            <div class="font-mono text-body break-all">@_integration.Id</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Module definition</div>
+                            <div class="font-mono text-body">@_integration.ModuleId</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Scope key</div>
+                            <div class="text-body">@(_integration.ScopeKey ?? "—")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Created</div>
+                            <div class="text-body">@_integration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-muted">Updated</div>
+                            <div class="text-body">@_integration.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Related diagnostics</h3>
+                    <ul class="space-y-1 text-sm">
+                        <li>
+                            <DrillInLink Href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)">Schedule diagnostics</DrillInLink>
+                            <span class="text-xs text-muted ml-1">— expected-run and evaluation troubleshooting</span>
+                        </li>
                     </ul>
-                }
-                else
-                {
-                    <div class="text-sm text-muted">No bindings.</div>
-                }
-                @if (_capabilities?.CanManageIntegrations == true)
-                {
-                    @if (_addingBinding)
-                    {
-                        <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
-                            @if (!string.IsNullOrEmpty(_bindingError))
-                            {
-                                <div class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">@_bindingError</div>
-                            }
-                            <div>
-                                <label class="block text-xs text-muted">Slot</label>
-                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_bindingSlot" @bind:after="OnBindingSlotChanged">
-                                    <option value="">Select…</option>
-                                    @if (_moduleSlots is not null)
-                                    {
-                                        @foreach (var s in _moduleSlots)
-                                        {
-                                            <option value="@s.SlotName">@s.SlotName (@s.ContractType)</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Connection</label>
-                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_bindingConnectionId">
-                                    <option value="">Select…</option>
-                                    @if (_eligibleConnections is not null)
-                                    {
-                                        @foreach (var c in _eligibleConnections)
-                                        {
-                                            <option value="@c.Id">@c.Name</option>
-                                        }
-                                    }
-                                </select>
-                                @if (!string.IsNullOrEmpty(_bindingSlot) && (_eligibleConnections?.Count ?? 0) == 0)
-                                {
-                                    <div class="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                                        No compatible connection currently exists for this slot. Create one in flow, then bind it immediately.
-                                    </div>
-                                }
-                            </div>
-                            @if (_addingConnectionInFlow)
-                            {
-                                <div class="rounded border border-default bg-surface p-3 space-y-3">
-                                    <div class="text-xs font-semibold text-heading">Create connection in flow</div>
-                                    @if (!string.IsNullOrEmpty(_inFlowCreateError))
-                                    {
-                                        <div class="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-900 dark:text-amber-100">@_inFlowCreateError</div>
-                                    }
-                                    <div>
-                                        <label class="block text-xs text-muted">Connector definition</label>
-                                        <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_inFlowConnectorDefinitionId" @bind:after="OnInFlowConnectorDefinitionChangedAsync">
-                                            <option value="">Select…</option>
-                                            @foreach (var def in _connectorDefinitions)
-                                            {
-                                                <option value="@def.Id">@def.Name (@def.Id)</option>
-                                            }
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-muted">Connection name</label>
-                                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm"
-                                               @bind="_inFlowConnectionName"
-                                               placeholder="e.g. Campus Nexus Production" />
-                                    </div>
-                                    @if (SelectedInFlowConnectorDefinition is not null)
-                                    {
-                                        @foreach (var field in SelectedInFlowConnectorDefinition.Fields)
-                                        {
-                                            <div>
-                                                <label class="block text-xs text-muted">
-                                                    @field.DisplayName
-                                                    @if (field.IsRequired)
-                                                    {
-                                                        <span class="ml-1 text-amber-700 dark:text-amber-300">(required)</span>
-                                                    }
-                                                    @if (field.IsSecret)
-                                                    {
-                                                        <span class="ml-1 text-muted">(secret ref)</span>
-                                                    }
-                                                </label>
-                                                <input type="@(field.IsSecret ? "password" : "text")"
-                                                       class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm"
-                                                       value="@GetInFlowFieldValue(field)"
-                                                       @oninput="e => OnInFlowFieldChanged(field, e.Value?.ToString())"
-                                                       placeholder="@field.Key" />
-                                                @if (!string.IsNullOrWhiteSpace(field.Description))
-                                                {
-                                                    <div class="mt-1 text-xs text-muted">@field.Description</div>
-                                                }
-                                            </div>
-                                        }
-                                    }
-                                    <div class="flex gap-2">
-                                        <button type="button"
-                                                class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
-                                                disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName))"
-                                                @onclick="CreateConnectionInFlowAsync">
-                                            Create connection
-                                        </button>
-                                        <button type="button"
-                                                class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
-                                                @onclick="CancelInFlowConnectionCreate">
-                                            Cancel create
-                                        </button>
-                                    </div>
-                                </div>
-                            }
-                            <div class="flex gap-2">
-                                <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateBindingAsync" disabled="@(_bindingSaving || string.IsNullOrEmpty(_bindingSlot) || string.IsNullOrEmpty(_bindingConnectionId))">Add</button>
-                                <button type="button"
-                                        class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface"
-                                        @onclick="StartInFlowConnectionCreateAsync"
-                                        disabled="@_inFlowCreateSaving">
-                                    Create connection
-                                </button>
-                                <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddBinding">Cancel</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddBinding">Add binding</button>
-                    }
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 id="schedules" class="text-sm font-semibold text-heading mb-2">Schedules</h2>
-                <div class="text-xs text-muted mb-2">Schedules associated with this Integration.</div>
-                @if (_schedules is { Count: > 0 })
-                {
-                    <ul class="space-y-1">
-                        @foreach (var s in _schedules)
-                        {
-                            <li class="flex items-center justify-between gap-2">
-                                <a href="@("/schedules/" + Uri.EscapeDataString(s.Id))" class="underline text-sm hover:text-heading">@s.Name</a>
-                                <span class="text-muted text-xs">@s.RecurrenceExpression · @(s.Enabled ? "Enabled" : "Disabled")</span>
-                            </li>
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <div class="text-sm text-muted">No schedules.</div>
-                }
-                @if (_capabilities?.CanManageIntegrations == true)
-                {
-                    @if (_addingSchedule)
-                    {
-                        <div class="mt-3 rounded border border-default bg-surface-muted p-3 space-y-3">
-                            <div>
-                                <label class="block text-xs text-muted">Name</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Cron expression</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm font-mono" @bind="_scheduleCron" placeholder="0 0 * * *" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Time zone</label>
-                                <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleTimeZone" placeholder="UTC" />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-muted">Workflow</label>
-                                <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-1 text-sm" @bind="_scheduleWorkflowId">
-                                    <option value="">Select…</option>
-                                    @if (_workflows is not null)
-                                    {
-                                        @foreach (var w in _workflows)
-                                        {
-                                            <option value="@w.Id">@w.Name</option>
-                                        }
-                                    }
-                                </select>
-                            </div>
-                            <div class="flex gap-2">
-                                <button type="button" class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90" @onclick="CreateScheduleAsync" disabled="@(_scheduleSaving || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId))">Create</button>
-                                <button type="button" class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="CancelAddSchedule">Cancel</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <button type="button" class="mt-2 rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface" @onclick="StartAddSchedule">Add schedule</button>
-                    }
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Runtime and lineage</h2>
-                <div class="text-xs text-muted space-y-2">
-                    <p>Workflow runs started with an integration id (manual start, schedules, or retry) store <span class="font-mono">IntegrationId</span> on the run and instance. The worker resolves slots using that id when present.</p>
-                    <p>Configure <span class="font-mono">Apperture:IntegrationExecution:DefaultIntegrationId</span> or environment <span class="font-mono">APERTURE_INTEGRATION_ID</span> only when a single integration is deployed per worker and persisted starts omit integration id.</p>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-heading mb-2">Runtime and lineage</h3>
+                    <div class="text-xs text-muted space-y-2">
+                        <p>Workflow runs started with an integration id (manual start, schedules, or retry) store <span class="font-mono">IntegrationId</span> on the run and instance. The worker resolves slots using that id when present.</p>
+                        <p>Configure <span class="font-mono">Apperture:IntegrationExecution:DefaultIntegrationId</span> or environment <span class="font-mono">APERTURE_INTEGRATION_ID</span> only when a single integration is deployed per worker and persisted starts omit integration id.</p>
+                    </div>
                 </div>
             </div>
-        </div>
+        </ManagementAdvancedSection>
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmDeleteOpen"
+                     Title="Delete integration?"
+                     ConfirmLabel="Delete integration"
+                     Emphasis="ConfirmActionEmphasis.Destructive"
+                     OnConfirm="DeleteIntegrationAsync"
+                     OnConfirmed="() => _confirmDeleteOpen = false"
+                     OnCancel="() => _confirmDeleteOpen = false">
+    <ChildContent>
+        Deleting <strong>@(_integration?.DisplayName ?? "this integration")</strong> permanently removes its configuration. This cannot be undone.
+    </ChildContent>
+    <Details>
+        Bindings, schedules, and settings that belong to this integration are removed with it.
+    </Details>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string IntegrationId { get; set; } = "";
+
+    private bool _confirmDeleteOpen;
 
     private const string WizardStepBindings = "bindings";
     private const string WizardStepReadiness = "readiness";
     private const string WizardStepSchedules = "schedules";
     private const string WizardStepProcedures = "procedures";
-    private static readonly string[] BindingIssueCodes =
-    [
-        "missing_slot_binding",
-        "inactive_binding",
-        "duplicate_active_binding_for_slot",
-        "binding_contract_mismatch",
-        "binding_missing_connection_or_capability",
-        "binding_not_eligible"
-    ];
 
     private readonly WizardFlowController _wizard = new(
         [
-            new WizardStepDefinition(WizardStepBindings, "Bind required slots", "Connect required slots to eligible connections."),
+            new WizardStepDefinition(WizardStepBindings, "Bind required slots", "Connect required slots to eligible connections (Connections tab)."),
             new WizardStepDefinition(WizardStepReadiness, "Resolve readiness", "Fix blockers until the integration is runnable."),
-            new WizardStepDefinition(WizardStepSchedules, "Attach schedules", "Optional recurring workflow triggers owned by this integration."),
-            new WizardStepDefinition(WizardStepProcedures, "Launch procedures", "Module-declared downstream operator actions.")
+            new WizardStepDefinition(WizardStepSchedules, "Attach schedules", "Optional recurring workflow triggers (Schedules tab)."),
+            new WizardStepDefinition(WizardStepProcedures, "Launch procedures", "Module-declared downstream operator actions, below.")
         ]);
     private readonly Dictionary<string, WizardStepState> _wizardStepMap = new(StringComparer.Ordinal);
     private bool _wizardMode;
-    private readonly Dictionary<string, string> _bindingVerificationByConnectionId = new(StringComparer.Ordinal);
 
     private IntegrationDto? _integration;
-    private IReadOnlyList<IntegrationBindingDto>? _bindings;
+    private IReadOnlyList<IntegrationBindingSummaryDto>? _bindings;
     private IReadOnlyList<ScheduleDto>? _schedules;
     private IntegrationReadinessDto? _readiness;
     private IntegrationModuleSlotSummaryDto[]? _requiredSlots;
-    private IReadOnlyList<ModuleSlotDto>? _moduleSlots;
-    private IReadOnlyList<EligibleConnectionDto>? _eligibleConnections;
-    private IReadOnlyList<WorkflowDto>? _workflows;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private bool _loading;
     private bool _deleting;
     private string? _error;
-
-    private bool _editingSettings;
-    private List<(string Key, string Value)> _settingsEditList = new();
-    private bool _settingsSaving;
-
-    private bool _addingBinding;
-    private string _bindingSlot = "";
-    private string _bindingConnectionId = "";
-    private bool _bindingSaving;
-    private string? _bindingError;
-    private bool _addingConnectionInFlow;
-    private bool _inFlowCreateSaving;
-    private string _inFlowConnectorDefinitionId = "";
-    private string _inFlowConnectionName = "";
-    private string? _inFlowCreateError;
-    private IReadOnlyList<ConnectorDefinitionCatalogDto> _connectorDefinitions = Array.Empty<ConnectorDefinitionCatalogDto>();
-    private readonly Dictionary<string, string> _inFlowConfigValues = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _inFlowSecretValues = new(StringComparer.Ordinal);
-
-    private bool _addingSchedule;
-    private string _scheduleName = "";
-    private string _scheduleCron = "0 0 * * *";
-    private string _scheduleTimeZone = "UTC";
-    private string _scheduleWorkflowId = "";
-    private bool _scheduleSaving;
+    private string? _actionMessage;
+    private PageMessageKind _actionFeedbackKind = PageMessageKind.Info;
 
     private bool _procedureLoading;
     private string? _procedureError;
@@ -639,6 +382,54 @@
     private IntegrationProcedureDetailDto? _selectedProcedureDetail;
     private readonly Dictionary<string, object?> _procedureParamValues = new(StringComparer.Ordinal);
     private bool _procedureLaunching;
+    private readonly List<string> _procedureValidationErrors = [];
+
+    private IReadOnlyList<EntityRecentActivityItem>? _recentActivity;
+    private bool _activityLoading;
+    private string? _activityError;
+
+    private string RecentActivityHelp =>
+        _integration is null
+            ? "Recent runs (integrationId), module-scoped audit (not integration-scoped), and notification instances from existing APIs."
+            : $"Runs filtered by this integration. Audit filtered by module {_integration.ModuleId} only — the audit API has no integrationId filter, so audit rows may include other integrations using the same module. Notifications are integration-scoped. Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
+
+    private string SummarySubtitle
+    {
+        get
+        {
+            if (_integration is null)
+                return "Integration overview";
+            var parts = new List<string> { _integration.State };
+            if (_readiness is not null)
+            {
+                parts.Add(_readiness.IsRunnable ? "Runnable" : "Not runnable");
+                if (_readiness.BlockingIssueCount > 0)
+                    parts.Add($"{_readiness.BlockingIssueCount} blocking issue(s)");
+            }
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private int EnabledScheduleCount => _schedules?.Count(s => s.Enabled) ?? 0;
+
+    private IReadOnlyList<EntityRecentActivityItem> ProblematicActivity =>
+        IntegrationOperatorUiHelpers.GetProblematicActivities(_recentActivity);
+
+    private string? RecentOutcomeSummary => IntegrationOperatorUiHelpers.BuildRecentOutcomeSummary(_recentActivity);
+    private string? NextScheduleSummary => IntegrationOperatorUiHelpers.BuildNextScheduleSummary(_schedules);
+
+    private string ConnectionsSummary =>
+        IntegrationOperatorUiHelpers.BuildConnectionsSummary(_bindings?.Count ?? 0, UnboundRequiredSlotCount, 0);
+
+    private int UnboundRequiredSlotCount =>
+        _requiredSlots?.Count(s =>
+            _bindings?.Any(b => string.Equals(b.SlotName, s.SlotName, StringComparison.Ordinal)
+                && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase)) != true) ?? 0;
+
+    private string? _dataLoadKey;
+    private string? _inFlightLoadKey;
+    private readonly NavigationLoadGuard _loadGuard = new();
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -651,8 +442,7 @@
                 parts => Uri.UnescapeDataString(parts[0]),
                 parts => parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "",
                 StringComparer.OrdinalIgnoreCase);
-        _wizardMode = queryValues.TryGetValue("wizard", out var wizardVal)
-            && string.Equals(wizardVal, "1", StringComparison.Ordinal);
+        _wizardMode = queryValues.TryGetValue("wizard", out var wizardVal) && string.Equals(wizardVal, "1", StringComparison.Ordinal);
         if (_wizardMode && queryValues.TryGetValue("step", out var stepVal))
             _wizard.NavigateTo(stepVal);
 
@@ -662,23 +452,92 @@
         }
         catch
         {
-            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
         RecomputeWizardStates();
-
-        if (_capabilities?.CanViewIntegrations == true)
-            await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    protected override async Task OnParametersSetAsync()
     {
-        if (_capabilities?.CanViewIntegrations != true || string.IsNullOrEmpty(IntegrationId)) return;
-        _loading = true;
-        _error = null;
+        await base.OnParametersSetAsync();
+        await TryLoadForRouteAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+
+    private int BeginLoad(out CancellationToken cancellationToken)
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        cancellationToken = _loadCts.Token;
+        return _loadGuard.Begin();
+    }
+
+    private async Task TryLoadForRouteAsync()
+    {
+        if (!_capabilitiesLoaded || string.IsNullOrWhiteSpace(IntegrationId))
+            return;
+
+        var key = IntegrationId;
+        if (string.Equals(key, _dataLoadKey, StringComparison.Ordinal) || string.Equals(key, _inFlightLoadKey, StringComparison.Ordinal))
+            return;
+
+        _inFlightLoadKey = key;
         try
         {
-            var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+            var generation = BeginLoad(out var cancellationToken);
+            if (_capabilities?.CanViewIntegrations == true)
+                await LoadAsync(generation, key, cancellationToken);
+        }
+        finally
+        {
+            if (string.Equals(_inFlightLoadKey, key, StringComparison.Ordinal))
+                _inFlightLoadKey = null;
+        }
+    }
+
+    private Task RefreshAsync()
+    {
+        _dataLoadKey = null;
+        return TryLoadForRouteAsync();
+    }
+
+    private Task ReloadAfterActionAsync()
+    {
+        var generation = BeginLoad(out var cancellationToken);
+        return LoadAsync(generation, IntegrationId, cancellationToken, preserveActionFeedback: true);
+    }
+
+    private void SetActionFeedback(string message, PageMessageKind kind = PageMessageKind.Info)
+    {
+        _actionMessage = message;
+        _actionFeedbackKind = kind;
+    }
+
+    private async Task LoadAsync(int generation, string integrationId, CancellationToken cancellationToken, bool preserveActionFeedback = false)
+    {
+        if (_capabilities?.CanViewIntegrations != true || string.IsNullOrWhiteSpace(integrationId))
+            return;
+
+        _loading = true;
+        _error = null;
+        if (!preserveActionFeedback)
+            _actionMessage = null;
+        try
+        {
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
+            var detail = await Client.GetIntegrationOperatorDetailAsync(integrationId, cancellationToken);
+            if (!_loadGuard.IsCurrent(generation))
+                return;
+
             if (detail is null)
             {
                 _integration = null;
@@ -691,46 +550,22 @@
                 _selectedProcedureId = null;
                 _selectedProcedureDetail = null;
                 _procedureParamValues.Clear();
-                _bindingVerificationByConnectionId.Clear();
+                _recentActivity = null;
+                _activityError = null;
             }
             else
             {
-                _integration = new IntegrationDto(
-                    detail.Id,
-                    detail.DisplayName,
-                    detail.ModuleId,
-                    detail.ScopeKey,
-                    detail.State,
-                    detail.Settings,
-                    detail.CreatedAt,
-                    detail.UpdatedAt);
+                _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt);
                 _readiness = detail.Readiness;
                 _requiredSlots = detail.RequiredSlots;
-                _bindings = detail.Bindings.Select(b => new IntegrationBindingDto(
-                    b.Id,
-                    IntegrationId,
-                    detail.ModuleId,
-                    b.SlotName,
-                    b.ContractType,
-                    b.ConnectionId,
-                    b.CapabilityId,
-                    b.State)).ToList();
-                _bindingVerificationByConnectionId.Clear();
-                foreach (var b in detail.Bindings)
+                _bindings = detail.Bindings;
+                _schedules = detail.Schedules.Select(s => new ScheduleDto(s.Id, s.Name, s.RecurrenceExpression, "UTC", s.Enabled, 0, null, 1, s.IntegrationId)).ToList();
+                try
                 {
-                    if (!string.IsNullOrWhiteSpace(b.ConnectionId) && !string.IsNullOrWhiteSpace(b.ConnectionVerificationStatus))
-                        _bindingVerificationByConnectionId[b.ConnectionId] = b.ConnectionVerificationStatus;
+                    if (_loadGuard.IsCurrent(generation))
+                        _schedules = await Client.GetIntegrationSchedulesAsync(integrationId, cancellationToken);
                 }
-                _schedules = detail.Schedules.Select(s => new ScheduleDto(
-                    s.Id,
-                    s.Name,
-                    s.RecurrenceExpression,
-                    "UTC",
-                    s.Enabled,
-                    0,
-                    null,
-                    1,
-                    s.IntegrationId)).ToList();
+                catch (HttpRequestException) { /* keep the operator-detail fallback already assigned above */ }
 
                 _procedureError = null;
                 _procedureList = null;
@@ -740,44 +575,149 @@
                 _procedureLoading = true;
                 try
                 {
-                    _procedureList = await Client.GetIntegrationProceduresAsync(IntegrationId);
+                    if (_loadGuard.IsCurrent(generation))
+                        _procedureList = await Client.GetIntegrationProceduresAsync(integrationId, cancellationToken);
                 }
                 catch (HttpRequestException ex)
                 {
-                    _procedureError = ex.Message;
+                    if (_loadGuard.IsCurrent(generation))
+                        _procedureError = ex.Message;
                 }
+                catch (OperationCanceledException) { }
                 finally
                 {
-                    _procedureLoading = false;
+                    if (_loadGuard.IsCurrent(generation))
+                        _procedureLoading = false;
                 }
+
+                if (_loadGuard.IsCurrent(generation))
+                    await LoadRecentActivityAsync(generation, integrationId, detail.ModuleId, cancellationToken);
             }
         }
+        catch (OperationCanceledException) { }
         catch (HttpRequestException ex)
         {
-            _error = ex.Message;
+            if (_loadGuard.IsCurrent(generation))
+                _error = ex.Message;
         }
         finally
         {
-            _loading = false;
-            RecomputeWizardStates();
+            if (_loadGuard.IsCurrent(generation))
+            {
+                _loading = false;
+                _dataLoadKey = integrationId;
+                RecomputeWizardStates();
+                PublishShellTitle();
+            }
+        }
+    }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(Nav, EntityShellTitles.Detail(_integration?.DisplayName, "Integration"), SummarySubtitle);
+
+    private async Task LoadRecentActivityAsync(int generation, string integrationId, string moduleId, CancellationToken cancellationToken)
+    {
+        if (!_loadGuard.IsCurrent(generation))
+            return;
+
+        _activityLoading = true;
+        _activityError = null;
+        _recentActivity = null;
+        try
+        {
+            var fromUtc = EntityRecentActivityComposer.DefaultFromUtc();
+            var take = EntityRecentActivityComposer.PerSourceTake;
+            var rows = new List<EntityRecentActivityItem>();
+
+            try
+            {
+                var runs = await Client.GetRunsAsync(new RunQueryFilter(IntegrationId: integrationId, CreatedFrom: fromUtc, Take: take), cancellationToken);
+                if (_loadGuard.IsCurrent(generation))
+                    rows.AddRange(runs.Select(EntityRecentActivityComposer.FromRun));
+            }
+            catch (OperationCanceledException) { return; }
+            catch (HttpRequestException ex)
+            {
+                if (_loadGuard.IsCurrent(generation))
+                    _activityError = $"Runs: {ex.Message}";
+            }
+
+            if (_capabilities?.CanViewAudit == true && !string.IsNullOrWhiteSpace(moduleId))
+            {
+                try
+                {
+                    var auditPage = await Client.GetAuditTimelineAsync(fromUtc: fromUtc, moduleId: moduleId.Trim(), pageSize: take, cancellationToken: cancellationToken);
+                    if (_loadGuard.IsCurrent(generation))
+                        rows.AddRange(auditPage.Items.Select(e => EntityRecentActivityComposer.FromAudit(e, moduleId)));
+                }
+                catch (OperationCanceledException) { return; }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden) { }
+                catch (HttpRequestException ex) when (_loadGuard.IsCurrent(generation) && _activityError is null)
+                {
+                    _activityError = $"Audit: {ex.Message}";
+                }
+                catch (HttpRequestException ex) when (_loadGuard.IsCurrent(generation))
+                {
+                    _activityError = $"{_activityError} Audit: {ex.Message}";
+                }
+            }
+
+            if (_capabilities?.CanViewNotificationDefinitions == true)
+            {
+                try
+                {
+                    var instances = await Client.ListNotificationInstancesAsync(integrationId: integrationId, take: take, cancellationToken: cancellationToken);
+                    if (_loadGuard.IsCurrent(generation))
+                        rows.AddRange(instances.Select(EntityRecentActivityComposer.FromNotification));
+                }
+                catch (OperationCanceledException) { return; }
+                catch (HttpRequestException ex) when (_loadGuard.IsCurrent(generation) && _activityError is null)
+                {
+                    _activityError = $"Notifications: {ex.Message}";
+                }
+                catch (HttpRequestException ex) when (_loadGuard.IsCurrent(generation))
+                {
+                    _activityError = $"{_activityError} Notifications: {ex.Message}";
+                }
+            }
+
+            if (_loadGuard.IsCurrent(generation))
+                _recentActivity = EntityRecentActivityComposer.MergeAndTake(rows);
+        }
+        finally
+        {
+            if (_loadGuard.IsCurrent(generation))
+                _activityLoading = false;
         }
     }
 
     private async Task SelectProcedureAsync(string procedureId)
     {
+        var integrationId = IntegrationId;
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return;
+
         _selectedProcedureId = procedureId;
         _selectedProcedureDetail = null;
         _procedureParamValues.Clear();
         _procedureError = null;
         try
         {
-            _selectedProcedureDetail = await Client.GetIntegrationProcedureAsync(IntegrationId, procedureId);
+            var detail = await Client.GetIntegrationProcedureAsync(integrationId, procedureId);
+            if (!string.Equals(IntegrationId, integrationId, StringComparison.Ordinal))
+                return;
+
+            _selectedProcedureDetail = detail;
             if (_selectedProcedureDetail is not null)
+            {
                 ProcedureParameterForm.SeedValues(_selectedProcedureDetail.ParameterFields, _procedureParamValues);
+                RefreshProcedureValidation();
+            }
         }
         catch (HttpRequestException ex)
         {
-            _procedureError = ex.Message;
+            if (string.Equals(IntegrationId, integrationId, StringComparison.Ordinal))
+                _procedureError = ex.Message;
         }
     }
 
@@ -785,30 +725,31 @@
     {
         if (string.IsNullOrEmpty(_selectedProcedureId) || _selectedProcedureDetail is null)
             return;
+
+        RefreshProcedureValidation();
+        if (_procedureValidationErrors.Count > 0)
+            return;
+
         _procedureLaunching = true;
         _procedureError = null;
         try
         {
-            var outcome = await Client.LaunchIntegrationProcedureAsync(
-                IntegrationId,
-                _selectedProcedureId,
-                _procedureParamValues,
-                null,
-                null);
+            var outcome = await Client.LaunchIntegrationProcedureAsync(IntegrationId, _selectedProcedureId, _procedureParamValues, null, null);
             if (!outcome.Succeeded || outcome.Result is null)
             {
-                var detail = string.IsNullOrEmpty(outcome.ErrorMessage)
-                    ? $"HTTP {outcome.StatusCode}"
-                    : $"{outcome.ErrorCode ?? "error"}: {outcome.ErrorMessage}";
-                Toasts.Show(ToastSeverity.Error, $"Launch failed ({detail}).");
+                var launchMsg = ProcedureLaunchOperatorUiHelpers.FormatLaunchError(outcome.ErrorCode, outcome.ErrorMessage);
+                SetActionFeedback(launchMsg, PageMessageKind.Error);
+                Toasts.Show(ToastSeverity.Error, launchMsg);
                 return;
             }
 
-            Toasts.Show(ToastSeverity.Success, "Run requested.");
-            Nav.NavigateTo($"/runs/{outcome.Result.RunId}");
+            var successMsg = ProcedureLaunchOperatorUiHelpers.FormatLaunchSuccessMessage(outcome.Result.RunId, outcome.Result.Status);
+            Toasts.Show(ToastSeverity.Success, successMsg);
+            Nav.NavigateTo(ProcedureLaunchOperatorUiHelpers.GetRunDetailHref(outcome.Result.RunId));
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
@@ -817,98 +758,30 @@
         }
     }
 
-    private static string DescribeBlockedReason(string code) =>
-        code switch
-        {
-            "integration_not_ready" => "Resolve readiness issues for this integration.",
-            "integration_inactive" => "Activate the integration to allow launches.",
-            "integration_hard_blocked" => "Resolve blocking readiness issues before launch.",
-            "target_not_executable" => "Workflow or operation target is missing or not registered for this module.",
-            "insufficient_procedure_permission" => "Your role does not satisfy this procedure's required permissions.",
-            "insufficient_workflow_permission" => "You cannot start this workflow (e.g. missing workflow.execute for the module).",
-            "insufficient_operation_permission" => "You cannot start this operation (e.g. missing operation.execute).",
-            _ => "See platform documentation or contact an administrator."
-        };
-
-    private void StartSettingsEdit()
+    private void RefreshProcedureValidation()
     {
-        _settingsEditList = _integration?.Settings?.Count > 0
-            ? _integration.Settings.Select(kv => (kv.Key, kv.Value ?? "")).ToList()
-            : new List<(string Key, string Value)>();
-        _editingSettings = true;
-    }
-
-    private void CancelSettingsEdit()
-    {
-        _editingSettings = false;
-        _settingsEditList.Clear();
-    }
-
-    private void AddSettingRow()
-    {
-        _settingsEditList.Add(("", ""));
-        StateHasChanged();
-    }
-
-    private void RemoveSettingEditAt(int index)
-    {
-        if (index >= 0 && index < _settingsEditList.Count)
-            _settingsEditList.RemoveAt(index);
-        StateHasChanged();
-    }
-
-    private void UpdateSettingKey(int index, string? value)
-    {
-        if (index >= 0 && index < _settingsEditList.Count)
-            _settingsEditList[index] = (value ?? "", _settingsEditList[index].Value);
-    }
-
-    private void UpdateSettingValue(int index, string? value)
-    {
-        if (index >= 0 && index < _settingsEditList.Count)
-            _settingsEditList[index] = (_settingsEditList[index].Key, value ?? "");
-    }
-
-    private async Task SaveSettingsAsync()
-    {
-        if (_integration is null || _capabilities?.CanManageIntegrations != true) return;
-        var cleaned = _settingsEditList
-            .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-            .ToDictionary(kv => kv.Key.Trim(), kv => kv.Value ?? "");
-        _settingsSaving = true;
-        _error = null;
-        try
-        {
-            _integration = await Client.UpdateIntegrationAsync(IntegrationId, new UpdateIntegrationRequest(Settings: cleaned));
-            Toasts.Show(ToastSeverity.Success, "Settings saved.");
-            _editingSettings = false;
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
-        finally
-        {
-            _settingsSaving = false;
-        }
+        _procedureValidationErrors.Clear();
+        if (_selectedProcedureDetail is null)
+            return;
+        _procedureValidationErrors.AddRange(
+            ProcedureLaunchOperatorUiHelpers.ValidateProcedureParameters(_selectedProcedureDetail.ParameterFields, _procedureParamValues));
     }
 
     private async Task SetStateAsync(string state)
     {
         if (_integration is null || _capabilities?.CanManageIntegrations != true)
             return;
-
         try
         {
-            _integration = await Client.UpdateIntegrationAsync(
-                IntegrationId,
-                new UpdateIntegrationRequest(State: state));
-            Toasts.Show(ToastSeverity.Success, $"Integration state set to {state}.");
-            await LoadAsync();
+            _integration = await Client.UpdateIntegrationAsync(IntegrationId, new UpdateIntegrationRequest(State: state));
+            var stateMsg = $"Integration state set to {state}.";
+            SetActionFeedback(stateMsg);
+            Toasts.Show(ToastSeverity.Success, stateMsg);
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -920,11 +793,13 @@
         try
         {
             _integration = await Client.ActivateIntegrationAsync(IntegrationId);
+            SetActionFeedback("Integration activated.");
             Toasts.Show(ToastSeverity.Success, "Integration activated.");
-            await LoadAsync();
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
@@ -936,280 +811,42 @@
         try
         {
             _integration = await Client.DeactivateIntegrationAsync(IntegrationId);
+            SetActionFeedback("Integration deactivated.");
             Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
-            await LoadAsync();
+            await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
         {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
     }
 
-    private async Task StartAddBinding()
+    private void RecomputeWizardStates()
     {
-        _addingBinding = true;
-        _bindingSlot = "";
-        _bindingConnectionId = "";
-        _bindingError = null;
-        _addingConnectionInFlow = false;
-        _inFlowCreateError = null;
-        try
+        var states = new[]
         {
-            _moduleSlots = await Client.GetIntegrationModuleSlotsAsync(IntegrationId);
-            _eligibleConnections = null;
-        }
-        catch (HttpRequestException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
+            new WizardStepState(WizardStepBindings,
+                string.Equals(_wizard.CurrentStepId, WizardStepBindings, StringComparison.Ordinal) ? WizardStepStatus.Current
+                    : (HasAllRequiredSlotsBound() ? WizardStepStatus.Complete : WizardStepStatus.Pending)),
+            new WizardStepState(WizardStepReadiness,
+                string.Equals(_wizard.CurrentStepId, WizardStepReadiness, StringComparison.Ordinal) ? WizardStepStatus.Current
+                    : ((_readiness?.IsRunnable ?? false) ? WizardStepStatus.Complete : WizardStepStatus.Blocked),
+                _readiness is null || _readiness.IsRunnable ? null : "Resolve readiness issues to continue."),
+            new WizardStepState(WizardStepSchedules,
+                string.Equals(_wizard.CurrentStepId, WizardStepSchedules, StringComparison.Ordinal) ? WizardStepStatus.Current
+                    : ((_schedules?.Count ?? 0) > 0 ? WizardStepStatus.Complete : WizardStepStatus.Pending)),
+            new WizardStepState(WizardStepProcedures,
+                string.Equals(_wizard.CurrentStepId, WizardStepProcedures, StringComparison.Ordinal) ? WizardStepStatus.Current
+                    : ((_procedureList?.Procedures.Count ?? 0) > 0 ? WizardStepStatus.Pending : WizardStepStatus.Blocked),
+                (_procedureList?.Procedures.Count ?? 0) > 0 ? null : "No procedures are currently available.")
+        };
+
+        _wizard.SetStates(states);
+        _wizardStepMap.Clear();
+        foreach (var state in states)
+            _wizardStepMap[state.StepId] = state;
     }
-
-    private void CancelAddBinding()
-    {
-        _addingBinding = false;
-        _moduleSlots = null;
-        _eligibleConnections = null;
-        _bindingError = null;
-        _addingConnectionInFlow = false;
-        _inFlowCreateError = null;
-        _inFlowCreateSaving = false;
-    }
-
-    private async Task OnBindingSlotChanged()
-    {
-        _bindingConnectionId = "";
-        _bindingError = null;
-        _addingConnectionInFlow = false;
-        _inFlowCreateError = null;
-        if (string.IsNullOrEmpty(_bindingSlot)) { _eligibleConnections = null; return; }
-        var slot = _moduleSlots?.FirstOrDefault(s => s.SlotName == _bindingSlot);
-        if (slot is null) { _eligibleConnections = null; return; }
-        try
-        {
-            _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType);
-        }
-        catch (HttpRequestException ex)
-        {
-            _eligibleConnections = null;
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
-    }
-
-    private async Task CreateBindingAsync()
-    {
-        if (_integration is null || !_capabilities?.CanManageIntegrations == true || string.IsNullOrEmpty(_bindingSlot) || string.IsNullOrEmpty(_bindingConnectionId)) return;
-        _bindingSaving = true;
-        _error = null;
-        _bindingError = null;
-        try
-        {
-            await Client.CreateIntegrationBindingAsync(IntegrationId, new CreateIntegrationBindingRequest(_bindingSlot, _moduleSlots?.First(s => s.SlotName == _bindingSlot).ContractType ?? "", _bindingConnectionId));
-            Toasts.Show(ToastSeverity.Success, "Binding added.");
-            _addingBinding = false;
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            _bindingError = ex.StatusCode switch
-            {
-                System.Net.HttpStatusCode.Forbidden => "You do not have permission to create bindings (403).",
-                System.Net.HttpStatusCode.Conflict => "Binding failed due to eligibility/readiness conflict. Refresh and retry.",
-                _ => ex.Message
-            };
-            Toasts.Show(ToastSeverity.Error, _bindingError);
-        }
-        finally
-        {
-            _bindingSaving = false;
-        }
-    }
-
-    private ConnectorDefinitionCatalogDto? SelectedInFlowConnectorDefinition =>
-        _connectorDefinitions.FirstOrDefault(d => string.Equals(d.Id, _inFlowConnectorDefinitionId, StringComparison.Ordinal));
-
-    private async Task StartInFlowConnectionCreateAsync()
-    {
-        _addingConnectionInFlow = true;
-        _inFlowCreateError = null;
-        if (_connectorDefinitions.Count == 0)
-        {
-            try
-            {
-                _connectorDefinitions = await Client.GetConnectorDefinitionsAsync();
-            }
-            catch (HttpRequestException ex)
-            {
-                _inFlowCreateError = ex.Message;
-                return;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId))
-            _inFlowConnectorDefinitionId = _connectorDefinitions.FirstOrDefault()?.Id ?? "";
-
-        await OnInFlowConnectorDefinitionChangedAsync();
-    }
-
-    private async Task OnInFlowConnectorDefinitionChangedAsync()
-    {
-        _inFlowConfigValues.Clear();
-        _inFlowSecretValues.Clear();
-        if (SelectedInFlowConnectorDefinition is null)
-            return;
-
-        foreach (var field in SelectedInFlowConnectorDefinition.Fields)
-        {
-            if (field.IsSecret)
-                _inFlowSecretValues[field.Key] = "";
-            else
-                _inFlowConfigValues[field.Key] = "";
-        }
-
-        await Task.CompletedTask;
-    }
-
-    private void CancelInFlowConnectionCreate()
-    {
-        _addingConnectionInFlow = false;
-        _inFlowCreateError = null;
-        _inFlowCreateSaving = false;
-    }
-
-    private string GetInFlowFieldValue(ConnectionFieldCatalogDto field) =>
-        field.IsSecret
-            ? (_inFlowSecretValues.TryGetValue(field.Key, out var secret) ? secret : "")
-            : (_inFlowConfigValues.TryGetValue(field.Key, out var cfg) ? cfg : "");
-
-    private void OnInFlowFieldChanged(ConnectionFieldCatalogDto field, string? value)
-    {
-        if (field.IsSecret)
-            _inFlowSecretValues[field.Key] = value ?? "";
-        else
-            _inFlowConfigValues[field.Key] = value ?? "";
-    }
-
-    private async Task CreateConnectionInFlowAsync()
-    {
-        if (SelectedInFlowConnectorDefinition is null)
-            return;
-
-        _inFlowCreateError = null;
-        var missing = SelectedInFlowConnectorDefinition.Fields
-            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValue(f)))
-            .Select(f => f.DisplayName)
-            .ToArray();
-        if (missing.Length > 0)
-        {
-            _inFlowCreateError = $"Missing required fields: {string.Join(", ", missing)}.";
-            return;
-        }
-
-        _inFlowCreateSaving = true;
-        try
-        {
-            var created = await Client.CreateConnectionAsync(
-                new CreateConnectionRequest(
-                    _inFlowConnectorDefinitionId,
-                    _inFlowConnectionName.Trim(),
-                    _inFlowConfigValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value),
-                    _inFlowSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value)));
-
-            var slot = _moduleSlots?.FirstOrDefault(s => string.Equals(s.SlotName, _bindingSlot, StringComparison.Ordinal));
-            if (slot is not null)
-                _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType);
-
-            var nowEligible = _eligibleConnections?.FirstOrDefault(c => string.Equals(c.Id, created.Id, StringComparison.Ordinal));
-            if (nowEligible is not null)
-            {
-                _bindingConnectionId = nowEligible.Id;
-                _addingConnectionInFlow = false;
-                Toasts.Show(ToastSeverity.Success, "Connection created and selected for binding.");
-            }
-            else
-            {
-                _inFlowCreateError = "Connection was created, but it is not eligible for this slot. Select a compatible connector/contract and try again.";
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            if (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                _inFlowCreateError = "You do not have permission to create connections (403).";
-            else
-                _inFlowCreateError = ex.Message;
-        }
-        finally
-        {
-            _inFlowCreateSaving = false;
-        }
-    }
-
-    private async Task RemoveBindingAsync(IntegrationBindingDto b)
-    {
-        if (_capabilities?.CanManageIntegrations != true) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Remove binding for slot {b.SlotName}?")) return;
-        try
-        {
-            await Client.DeleteIntegrationBindingAsync(IntegrationId, b.Id);
-            Toasts.Show(ToastSeverity.Success, "Binding removed.");
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
-    }
-
-    private async Task StartAddSchedule()
-    {
-        _addingSchedule = true;
-        _scheduleName = "";
-        _scheduleCron = "0 0 * * *";
-        _scheduleTimeZone = "UTC";
-        _scheduleWorkflowId = "";
-        if (_integration is not null)
-            _workflows = await Client.GetWorkflowsAsync(_integration.ModuleId);
-    }
-
-    private void CancelAddSchedule()
-    {
-        _addingSchedule = false;
-    }
-
-    private async Task CreateScheduleAsync()
-    {
-        if (_integration is null || !_capabilities?.CanManageIntegrations == true || string.IsNullOrWhiteSpace(_scheduleName) || string.IsNullOrWhiteSpace(_scheduleCron) || string.IsNullOrWhiteSpace(_scheduleWorkflowId)) return;
-        _scheduleSaving = true;
-        _error = null;
-        try
-        {
-            var targetConfig = System.Text.Json.JsonSerializer.Serialize(new { workflowDefinitionId = _scheduleWorkflowId });
-            await Client.CreateIntegrationScheduleAsync(IntegrationId, new CreateIntegrationScheduleRequest(
-                _scheduleName.Trim(),
-                _scheduleCron.Trim(),
-                string.IsNullOrWhiteSpace(_scheduleTimeZone) ? "UTC" : _scheduleTimeZone.Trim(),
-                true,
-                0,
-                targetConfig));
-            Toasts.Show(ToastSeverity.Success, "Schedule created.");
-            _addingSchedule = false;
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, ex.Message);
-        }
-        catch (ScheduleValidationException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, string.Join(" ", ex.Errors));
-        }
-        finally
-        {
-            _scheduleSaving = false;
-        }
-    }
-
-    private static bool IsBindingIssue(IntegrationReadinessIssueDto issue) =>
-        BindingIssueCodes.Contains(issue.Code, StringComparer.Ordinal);
 
     private bool HasAllRequiredSlotsBound()
     {
@@ -1219,48 +856,12 @@
             return false;
         foreach (var slot in _requiredSlots)
         {
-            var bound = _bindings.Any(b =>
-                string.Equals(b.SlotName, slot.SlotName, StringComparison.Ordinal)
+            var bound = _bindings.Any(b => string.Equals(b.SlotName, slot.SlotName, StringComparison.Ordinal)
                 && string.Equals(b.State, "Active", StringComparison.OrdinalIgnoreCase));
             if (!bound)
                 return false;
         }
-
         return true;
-    }
-
-    private void RecomputeWizardStates()
-    {
-        var states = new[]
-        {
-            new WizardStepState(
-                WizardStepBindings,
-                string.Equals(_wizard.CurrentStepId, WizardStepBindings, StringComparison.Ordinal)
-                    ? WizardStepStatus.Current
-                    : (HasAllRequiredSlotsBound() ? WizardStepStatus.Complete : WizardStepStatus.Pending)),
-            new WizardStepState(
-                WizardStepReadiness,
-                string.Equals(_wizard.CurrentStepId, WizardStepReadiness, StringComparison.Ordinal)
-                    ? WizardStepStatus.Current
-                    : ((_readiness?.IsRunnable ?? false) ? WizardStepStatus.Complete : WizardStepStatus.Blocked),
-                _readiness is null || _readiness.IsRunnable ? null : "Resolve readiness issues to continue."),
-            new WizardStepState(
-                WizardStepSchedules,
-                string.Equals(_wizard.CurrentStepId, WizardStepSchedules, StringComparison.Ordinal)
-                    ? WizardStepStatus.Current
-                    : ((_schedules?.Count ?? 0) > 0 ? WizardStepStatus.Complete : WizardStepStatus.Pending)),
-            new WizardStepState(
-                WizardStepProcedures,
-                string.Equals(_wizard.CurrentStepId, WizardStepProcedures, StringComparison.Ordinal)
-                    ? WizardStepStatus.Current
-                    : ((_procedureList?.Procedures.Count ?? 0) > 0 ? WizardStepStatus.Pending : WizardStepStatus.Blocked),
-                (_procedureList?.Procedures.Count ?? 0) > 0 ? null : "No procedures are currently available.")
-        };
-
-        _wizard.SetStates(states);
-        _wizardStepMap.Clear();
-        foreach (var state in states)
-            _wizardStepMap[state.StepId] = state;
     }
 
     private Task OnWizardStepSelectedAsync(string stepId)
@@ -1301,98 +902,24 @@
     {
         WizardStepBindings => HasAllRequiredSlotsBound()
             ? "All required slots are currently bound. Continue to readiness."
-            : "Add or update bindings for each required slot.",
+            : "Open Connections to bind each required slot.",
         WizardStepReadiness => _readiness?.IsRunnable == true
             ? "Integration is runnable. Continue to schedules and procedures."
-            : "Resolve each readiness blocker using the Fix now actions below.",
+            : "Open Connections to resolve each readiness blocker using its Fix now actions.",
         WizardStepSchedules => "Attach schedules if this integration should run automatically. This step is optional.",
-        WizardStepProcedures => "Procedures are the downstream operator action surface for this integration.",
+        WizardStepProcedures => "Procedures are the downstream operator action surface for this integration, below.",
         _ => "Follow the guided setup flow."
     };
 
-    private string ReadinessRemediationCue(IntegrationReadinessIssueDto issue) => issue.Code switch
-    {
-        "missing_slot_binding" => "Bind this slot to a compatible active connection.",
-        "inactive_binding" => "Replace or re-create the binding with an active connection.",
-        "duplicate_active_binding_for_slot" => "Remove duplicate active bindings so one active binding remains for the slot.",
-        "binding_contract_mismatch" => "Re-bind the slot with a connection matching the required contract.",
-        "binding_missing_connection_or_capability" => "Edit this binding so it references a valid connection/capability.",
-        "connection_missing" => "Update the binding to use an existing compatible connection.",
-        "connection_inactive" => "Activate the referenced connection or bind a different active connection.",
-        "binding_not_eligible" => "Bind to a connection eligible for this module slot and contract.",
-        "connection_unverified" => "Run test-connect for the bound connection to verify remote access.",
-        "connection_verification_failed" => "Fix credentials/endpoint/access, then run test-connect again.",
-        "connection_verification_unavailable" => "This connector does not support verification; validate externally before go-live.",
-        "integration_not_active" => "Set this integration state to Active.",
-        "schedule_ownership_mismatch" => "Recreate or fix schedule association under this integration.",
-        _ => "Review and apply the relevant configuration change."
-    };
-
-    private async Task RemediateReadinessIssueAsync(IntegrationReadinessIssueDto issue)
-    {
-        if (_capabilities?.CanManageIntegrations != true)
-            return;
-
-        if (string.Equals(issue.Code, "integration_not_active", StringComparison.Ordinal))
-        {
-            await SetStateAsync("Active");
-            return;
-        }
-
-        if (string.Equals(issue.Code, "connection_inactive", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(issue.ConnectionId))
-        {
-            Nav.NavigateTo("/connections/" + Uri.EscapeDataString(issue.ConnectionId));
-            return;
-        }
-
-        if ((string.Equals(issue.Code, "connection_unverified", StringComparison.Ordinal)
-                || string.Equals(issue.Code, "connection_verification_failed", StringComparison.Ordinal)
-                || string.Equals(issue.Code, "connection_verification_unavailable", StringComparison.Ordinal))
-            && !string.IsNullOrWhiteSpace(issue.ConnectionId))
-        {
-            Nav.NavigateTo("/connections/" + Uri.EscapeDataString(issue.ConnectionId));
-            return;
-        }
-
-        if (string.Equals(issue.Code, "schedule_ownership_mismatch", StringComparison.Ordinal))
-        {
-            await StartAddSchedule();
-            _wizard.NavigateTo(WizardStepSchedules);
-            RecomputeWizardStates();
-            return;
-        }
-
-        if (IsBindingIssue(issue)
-            || string.Equals(issue.Code, "connection_missing", StringComparison.Ordinal))
-        {
-            await StartAddBinding();
-            if (!string.IsNullOrWhiteSpace(issue.SlotName))
-            {
-                _bindingSlot = issue.SlotName;
-                await OnBindingSlotChanged();
-            }
-            _wizard.NavigateTo(WizardStepBindings);
-            RecomputeWizardStates();
-            return;
-        }
-    }
-
-    private async Task ConfirmDeleteAsync()
+    private async Task DeleteIntegrationAsync()
     {
         if (_integration is null || _capabilities?.CanManageIntegrations != true) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Delete integration \"{_integration.DisplayName}\"? This cannot be undone."))
-            return;
         _deleting = true;
-        _error = null;
         try
         {
             await Client.DeleteIntegrationAsync(IntegrationId);
             Toasts.Show(ToastSeverity.Success, "Integration deleted.");
             Nav.NavigateTo("/integrations");
-        }
-        catch (HttpRequestException ex)
-        {
-            Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
         {

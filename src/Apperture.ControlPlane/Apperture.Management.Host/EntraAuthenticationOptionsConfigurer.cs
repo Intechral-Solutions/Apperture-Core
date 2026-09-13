@@ -1,24 +1,20 @@
-using Apperture.ControlPlane.Security;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Host;
 
-/// <summary>Sets default challenge scheme from effective <see cref="EntraAuthOptions"/>.</summary>
+/// <summary>
+/// Cookie is the application session scheme. Interactive Microsoft navigation is started only by
+/// explicit <c>/signin</c>, <c>/signin/link</c>, and <c>/signin/step-up</c> challenges, not by
+/// API authorization failures.
+/// </summary>
 internal sealed class EntraAuthenticationOptionsConfigurer : IConfigureOptions<AuthenticationOptions>
 {
-    private readonly IOptions<EntraAuthOptions> _entra;
-
-    public EntraAuthenticationOptionsConfigurer(IOptions<EntraAuthOptions> entra) => _entra = entra;
-
     public void Configure(AuthenticationOptions options)
     {
         options.DefaultAuthenticateScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
         options.DefaultSignInScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
-        options.DefaultChallengeScheme = EntraRuntimeState.IsUsable(_entra.Value)
-            ? OpenIdConnectDefaults.AuthenticationScheme
-            : CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
+        options.DefaultForbidScheme = AuthenticationServiceCollectionExtensions.CookieScheme;
     }
 }

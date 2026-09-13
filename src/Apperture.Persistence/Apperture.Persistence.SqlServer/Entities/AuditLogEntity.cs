@@ -18,4 +18,12 @@ public sealed class AuditLogEntity
     public string? ScheduleId { get; set; }
     /// <summary>First-class run reference. Epic 37.</summary>
     public string? RunId { get; set; }
+
+    /// <summary>
+    /// CTX-2: ResourceContext of the resource this audit entry concerns, when the calling action
+    /// already has authoritative context available (e.g. from the Integration/Connection/Schedule/
+    /// Run in hand). Never resolved by a second lookup inside generic audit append. Null for
+    /// System/IAM/platform-settings audit and for pre-CTX-2 rows.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
 }

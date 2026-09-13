@@ -1,7 +1,9 @@
+using System.Linq;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
@@ -16,23 +18,35 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IConnectionRepository _connectionRepository;
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
     private readonly IConnectionVerificationService _connectionVerification;
+    private readonly ConnectionSecretMaterialProvisioner _secretProvisioner;
+    private readonly IResourceContextService _resourceContexts;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
         IConnectorDefinitionRegistry connectorRegistry,
-        IConnectionVerificationService connectionVerification)
+        IConnectionVerificationService connectionVerification,
+        ConnectionSecretMaterialProvisioner secretProvisioner,
+        IResourceContextService resourceContexts)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _connectorRegistry = connectorRegistry;
         _connectionVerification = connectionVerification;
+        _secretProvisioner = secretProvisioner;
+        _resourceContexts = resourceContexts;
     }
 
     /// <inheritdoc />
-    public async ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
+        ListConnectionsAsync(resourceContextId: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
@@ -48,7 +62,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             throw new UnauthorizedAccessException("Not authorized to list connections.");
 
         var scopeKey = ScopeKeyConstants.Instance;
-        return await _connectionRepository.GetVisibleAsync(scopeKey, cancellationToken);
+        return await _connectionRepository.GetVisibleAsync(scopeKey, resourceContextId, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -96,16 +110,52 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (def is null)
             throw new InvalidOperationException($"Connector definition {request.ConnectorDefinitionId.Value} not found.");
 
+        // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
+        // existing create clients stay compatible. A supplied context must exist and be Active.
+        // Ownership never affects secret provisioning below: secret refs are opaque and stay put.
+        var owningContext = await _resourceContexts
+            .ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken)
+            .ConfigureAwait(false);
+
         var id = new ConnectionId(Guid.NewGuid().ToString("N")[..24]);
+
+        var normalizedConfig = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
+        var normalizedSecretRefs = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretRefs, def);
+        IReadOnlyDictionary<string, string>? normalizedSecretValues = null;
+        if (request.SecretValues is { Count: > 0 })
+            normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
+
+        var mergedSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in normalizedSecretRefs)
+        {
+            ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+            mergedSecretRefs[kv.Key] = kv.Value;
+        }
+
+        if (normalizedSecretValues is { Count: > 0 })
+        {
+            var provisioned = await _secretProvisioner
+                .ProvisionForCreateAsync(id, def, normalizedSecretValues, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var kv in provisioned)
+                mergedSecretRefs[kv.Key] = kv.Value;
+        }
+
+        ApplyCampusNexusAuthModeDefault(def, normalizedConfig);
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, normalizedConfig, mergedSecretRefs);
+
         var connection = new Connection(
             id,
             request.ConnectorDefinitionId,
             request.Name,
-            request.Config,
-            request.SecretRefs,
+            normalizedConfig,
+            mergedSecretRefs,
             request.ScopeKey,
             request.OwnerId,
-            ConnectionState.Active);
+            ConnectionState.Active)
+        {
+            ResourceContextId = owningContext.Id
+        };
 
         await _connectionRepository.AddAsync(connection, cancellationToken);
         return connection;
@@ -132,11 +182,36 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to update this connection.");
 
+        var def = _connectorRegistry.Get(existing.ConnectorDefinitionId)
+            ?? throw new InvalidOperationException($"Connector definition {existing.ConnectorDefinitionId.Value} not found.");
+
+        var nextConfigDict = request.Config is null
+            ? new Dictionary<string, string>(existing.Config, StringComparer.Ordinal)
+            : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
+
+        var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var secretRefsSource = request.SecretRefs ?? existing.SecretRefs;
+        foreach (var kv in ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(secretRefsSource, def))
+            workingSecretRefs[kv.Key] = kv.Value;
+        foreach (var kv in workingSecretRefs)
+            ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+
+        if (request.SecretValues is { Count: > 0 })
+        {
+            var normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
+            await _secretProvisioner
+                .ApplySecretValuesForUpdateAsync(existing.Id, def, normalizedSecretValues, workingSecretRefs, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        ApplyCampusNexusAuthModeDefault(def, nextConfigDict);
+        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfigDict, workingSecretRefs);
+
         var updated = existing with
         {
             Name = request.Name ?? existing.Name,
-            Config = request.Config ?? existing.Config,
-            SecretRefs = request.SecretRefs ?? existing.SecretRefs
+            Config = nextConfigDict,
+            SecretRefs = workingSecretRefs
         };
 
         await _connectionRepository.UpdateAsync(updated, cancellationToken);
@@ -179,10 +254,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
 
         var identity = existing.GetIdentity();
+        // Diagnostic test-connect is available to anyone who can read the connection; it only updates verification metadata.
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
-                new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                new PermissionDescriptor(ActionConstants.ConnectionRead, GovernedResourceDescriptor.FromIdentity(identity)),
                 GovernedResourceDescriptor.FromIdentity(identity),
                 identity),
             cancellationToken);
@@ -198,5 +274,25 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         };
         await _connectionRepository.UpdateAsync(updated, cancellationToken);
         return updated;
+    }
+
+    /// <summary>
+    /// Operators often leave <c>AuthMode</c> blank when using an API key; runtime factory defaults to ApiKey semantics when mode is ApiKey.
+    /// </summary>
+    private static void ApplyCampusNexusAuthModeDefault(ConnectorDefinition def, Dictionary<string, string> config)
+    {
+        if (!string.Equals(def.Id.Value, WellKnownConnectorDefinitionIds.PlatformCampusNexus.Value, StringComparison.Ordinal))
+            return;
+        if (!config.TryGetValue("AuthMode", out var mode) || string.IsNullOrWhiteSpace(mode))
+            config["AuthMode"] = "ApiKey";
+    }
+
+    private static void ValidateIncomingSecretRef(ConnectorDefinition def, string key, string value)
+    {
+        var field = def.ConnectionFields.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (field is null || !field.IsSecret)
+            return;
+        if (!Guid.TryParse(value, out _))
+            throw new InvalidOperationException($"Secret reference for '{key}' must be a secret id (GUID). Use SecretValues to supply new secret material.");
     }
 }

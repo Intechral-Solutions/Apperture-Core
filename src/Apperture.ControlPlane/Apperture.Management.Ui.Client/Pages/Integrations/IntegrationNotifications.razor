@@ -1,0 +1,720 @@
+@page "/integrations/{IntegrationId}/notifications"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integrationName, "Integration")"
+                Subtitle="Notifications">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+        </ChildContent>
+        <Toolbar>
+            <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn text-sm">Schedule diagnostics</a>
+            <a href="@ConfigDiagnosticsHref" class="ui-toolbar-btn text-sm">Full diagnostics</a>
+            <button type="button" class="ui-toolbar-btn text-sm disabled:opacity-50" disabled="@_busy" @onclick="LoadAsync">Refresh</button>
+        </Toolbar>
+    </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="true" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4">
+            <ForbiddenState Message="Requires integration read and notification definition read." />
+        </div>
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else
+    {
+        <p class="mt-4 text-xs text-muted">Notification definitions, subscriptions, instances, and outbox diagnostics for this integration. Nothing on this page sends mail.</p>
+
+        <NotificationDefinitionPostCreatePrompt Visible="@_showPostCreatePrompt"
+                                                CanManageSubscriptions="@_canManageSubscriptions"
+                                                Disabled="@_busy"
+                                                ViewDefinitionHref="@PostCreateViewDefinitionHref"
+                                                OnAddSubscription="FocusSubscriptionsAsync"
+                                                OnPreviewRecipients="PreviewPostCreateRecipientsAsync"
+                                                OnDismiss="DismissPostCreatePromptAsync" />
+
+        <section class="ui-detail-block mt-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <h2 class="text-sm font-semibold text-heading">Notification definitions</h2>
+                @if (_canManageSubscriptions)
+                {
+                    <a class="ui-toolbar-btn text-xs hover:bg-surface"
+                       href="@($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications/definitions/new")">
+                        Create definition
+                    </a>
+                }
+            </div>
+            @if (_definitions.Count == 0)
+            {
+                <p class="text-xs text-muted">No definitions apply to this integration.</p>
+            }
+            else
+            {
+                <table class="min-w-full text-left text-xs">
+                    <thead class="text-muted">
+                        <tr>
+                            <th class="p-1">Name</th>
+                            <th class="p-1">Id</th>
+                            <th class="p-1">Origin</th>
+                            <th class="p-1">Event</th>
+                            <th class="p-1">Scope</th>
+                            <th class="p-1">Mutability</th>
+                            <th class="p-1">Enabled</th>
+                            <th class="p-1">Recent instances</th>
+                            <th class="p-1"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in _definitions)
+                        {
+                            <tr class="border-t border-default @(IsPostCreateDefinition(d.Summary.Id) ? "bg-message-warning ring-1 ring-inset ring-focus" : "")"
+                                id="@(IsPostCreateDefinition(d.Summary.Id) ? "created-definition-row" : null)">
+                                <td class="p-1 font-medium">@d.Summary.DisplayName</td>
+                                <td class="p-1 font-mono break-all">@d.Summary.Id</td>
+                                <td class="p-1">@d.Summary.Origin</td>
+                                <td class="p-1">@(d.Summary.PrimaryEventType ?? "—")</td>
+                                <td class="p-1">@d.Summary.Scope</td>
+                                <td class="p-1">@d.Mutability</td>
+                                <td class="p-1">
+                                    @if (_canManageSubscriptions)
+                                    {
+                                        <input type="checkbox" checked="@d.Summary.IsEnabled" disabled="@_busy" @onchange="e => ToggleDefinitionAsync(d.Summary.Id, e)" />
+                                    }
+                                    else
+                                    {
+                                        @(d.Summary.IsEnabled ? "Yes" : "No")
+                                    }
+                                </td>
+                                <td class="p-1">@d.RecentInstanceCount</td>
+                                <td class="p-1 space-x-2">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(d.Summary.Id)">Detail</a>
+                                    @if (_canManageSubscriptions && string.Equals(d.Mutability, "fullyEditable", StringComparison.Ordinal))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.DefinitionEdit(d.Summary.Id)">Edit</a>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="ui-detail-block mt-4">
+            <h2 class="text-sm font-semibold text-heading mb-2">Implicit recipients (attention routing compatibility)</h2>
+            <p class="text-xs text-muted mb-2">Attention routing recipients — not platform notification subscriptions.</p>
+            @if (_attentionRouting is null)
+            {
+                <p class="text-xs text-muted">No routing data.</p>
+            }
+            else
+            {
+                <dl class="grid grid-cols-1 gap-2 md:grid-cols-2 text-xs">
+                    <div>
+                        <dt class="text-muted">Primary (effective)</dt>
+                        <dd>@(_attentionRouting.PrimaryRecipients.Count > 0 ? string.Join(", ", _attentionRouting.PrimaryRecipients) : "—")</dd>
+                        <dd class="text-muted">@RecipientSourceLabel(_attentionRouting.PrimarySource)</dd>
+                    </div>
+                    <div>
+                        <dt class="text-muted">Escalation (effective)</dt>
+                        <dd>@(_attentionRouting.EscalationRecipients.Count > 0 ? string.Join(", ", _attentionRouting.EscalationRecipients) : "—")</dd>
+                        <dd class="text-muted">@RecipientSourceLabel(_attentionRouting.EscalationSource)</dd>
+                    </div>
+                </dl>
+            }
+        </section>
+
+        <section class="ui-detail-block mt-4" id="explicit-subscriptions">
+            <h2 class="text-sm font-semibold text-heading mb-2">Explicit subscriptions</h2>
+            @if (_canManageSubscriptions)
+            {
+                <div class="mb-3 flex flex-wrap items-end gap-2 text-xs border-b border-default pb-3">
+                    <label>
+                        Definition
+                        <select class="ui-input font-mono" @bind="_addDefinitionId">
+                            @foreach (var d in _definitions)
+                            {
+                                <option value="@d.Summary.Id">@d.Summary.DisplayName</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Kind
+                        <select class="ui-input" @bind="_addKind">
+                            <option value="principal">principal</option>
+                            <option value="operational_team">operational_team</option>
+                            <option value="managed_contact">managed_contact</option>
+                        </select>
+                    </label>
+                    <label class="min-w-[10rem] flex-1">
+                        Ref
+                        <select class="ui-input font-mono" @bind="_addRef">
+                            <option value="">— select —</option>
+                            @foreach (var opt in RecipientOptions)
+                            {
+                                <option value="@opt.Id">@opt.Label</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        Delivery mode
+                        <select class="ui-input" @bind="_addDeliveryMode">
+                            @foreach (var mode in NotificationDeliveryModeOptions.All)
+                            {
+                                <option value="@mode.Value">@mode.Label</option>
+                            }
+                        </select>
+                    </label>
+                    @if (_addKind == "managed_contact" && _canManageContacts)
+                    {
+                        <label class="flex items-center gap-1">
+                            <input type="checkbox" @bind="_createContactIfMissing" />
+                            Create contact if missing
+                        </label>
+                    }
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="AddSubscriptionAsync">Add</button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_addDefinitionId) && !HasExplicitSubscriptions(_addDefinitionId))
+            {
+                <div class="ui-detail-block text-xs">
+                    <p class="font-medium text-heading">No explicit subscriptions yet</p>
+                    <p class="mt-1 text-muted">@GetEmptySubscriptionsMessage(_addDefinitionId)</p>
+                </div>
+            }
+            @if (_explicitSubscriptions.Count == 0)
+            {
+                <p class="text-xs text-muted">No explicit subscriptions for this integration.</p>
+            }
+            else
+            {
+                <table class="min-w-full text-left text-xs">
+                    <thead class="text-muted">
+                        <tr>
+                            <th class="p-1">Definition</th>
+                            <th class="p-1">Kind</th>
+                            <th class="p-1">Ref</th>
+                            <th class="p-1">Mode</th>
+                            <th class="p-1">Enabled</th>
+                            <th class="p-1"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _explicitSubscriptions)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-1 font-mono break-all">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(s.NotificationDefinitionId)">@s.NotificationDefinitionId</a>
+                                </td>
+                                <td class="p-1">@s.RecipientKind</td>
+                                <td class="p-1 font-mono">@s.RecipientRef</td>
+                                <td class="p-1">
+                                    @if (_canManageSubscriptions)
+                                    {
+                                        <select class="ui-input ui-input--narrow" value="@s.DeliveryMode" disabled="@_busy" @onchange="e => PatchSubscriptionDeliveryModeAsync(s, e)">
+                                            @foreach (var mode in NotificationDeliveryModeOptions.All)
+                                            {
+                                                <option value="@mode.Value">@mode.Label</option>
+                                            }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        @s.DeliveryMode
+                                    }
+                                </td>
+                                <td class="p-1">
+                                    @if (_canManageSubscriptions)
+                                    {
+                                        <input type="checkbox" checked="@s.IsEnabled" disabled="@_busy" @onchange="e => PatchSubscriptionEnabledAsync(s, e)" />
+                                    }
+                                    else
+                                    {
+                                        @(s.IsEnabled ? "Yes" : "No")
+                                    }
+                                </td>
+                                <td class="p-1">
+                                    @if (_canManageSubscriptions)
+                                    {
+                                        <button type="button" class="underline text-muted" disabled="@_busy" @onclick="() => RemoveSubscriptionAsync(s)">Remove</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <div class="mt-4 border-t border-default pt-3">
+                <div class="text-xs font-semibold mb-2">Recipient resolution preview</div>
+                <p class="text-xs text-muted mb-2">Preview for <span class="font-mono">@GetDefinitionDisplayName(_previewDefinitionId)</span></p>
+                <div class="flex flex-wrap items-end gap-2 text-xs">
+                    <label>
+                        Definition
+                        <select class="ui-input font-mono" @bind="_previewDefinitionId">
+                            @foreach (var d in _definitions)
+                            {
+                                <option value="@d.Summary.Id">@d.Summary.DisplayName</option>
+                            }
+                        </select>
+                    </label>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="ResolveRecipientsAsync">Preview</button>
+                </div>
+                @if (_recipientPreviewRefreshedAt is not null)
+                {
+                    <p class="mt-2 text-xs text-muted">Last refreshed @_recipientPreviewRefreshedAt.Value.UtcDateTime.ToString("u") UTC.</p>
+                }
+                <NotificationRecipientResolutionDisplay Resolution="_resolution" />
+            </div>
+        </section>
+
+        <section class="ui-detail-block mt-4">
+            <h2 class="text-sm font-semibold text-heading mb-2">Recent platform instances</h2>
+            @if (_instances.Count == 0)
+            {
+                <p class="text-xs text-muted">None in window.</p>
+            }
+            else
+            {
+                <table class="min-w-full text-left text-xs">
+                    <thead class="text-muted">
+                        <tr>
+                            <th class="p-1">Created</th>
+                            <th class="p-1">Kind</th>
+                            <th class="p-1">Status</th>
+                            <th class="p-1">Suppression</th>
+                            <th class="p-1">Definition</th>
+                            <th class="p-1"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var i in _instances)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-1">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
+                                <td class="p-1">@i.NotificationKind</td>
+                                <td class="p-1">@i.Status</td>
+                                <td class="p-1">@(i.SuppressionReason ?? "—")</td>
+                                <td class="p-1 font-mono">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(i.NotificationDefinitionId)">@i.NotificationDefinitionId</a>
+                                </td>
+                                <td class="p-1"><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="ui-detail-block mt-4">
+            <h2 class="text-sm font-semibold text-heading mb-2">Recent delivery outbox</h2>
+            @if (_outboxRows.Count == 0)
+            {
+                <p class="text-xs text-muted">None in window.</p>
+            }
+            else
+            {
+                <table class="min-w-full text-left text-xs">
+                    <thead class="text-muted">
+                        <tr>
+                            <th class="p-1">Recipient</th>
+                            <th class="p-1">Kind</th>
+                            <th class="p-1">Status</th>
+                            <th class="p-1">Source</th>
+                            <th class="p-1">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in _outboxRows)
+                        {
+                            <tr class="border-t border-default">
+                                <td class="p-1">@o.RecipientEmail</td>
+                                <td class="p-1">@o.NotificationKind</td>
+                                <td class="p-1">@o.Status</td>
+                                <td class="p-1">@(o.RecipientSource ?? "—")</td>
+                                <td class="p-1 break-all">@(o.LastError ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const string BuiltInExpectedRunMissingDefinitionId = "platform.schedule.expected_run_missing";
+
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    [SupplyParameterFromQuery(Name = NotificationPostCreateNavigation.CreatedDefinitionIdQuery)]
+    public string? CreatedDefinitionIdQuery { get; set; }
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManageSubscriptions;
+    private bool _canManageContacts;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _integrationName;
+    private List<DefinitionRow> _definitions = [];
+    private List<NotificationSubscriptionDto> _explicitSubscriptions = [];
+    private List<NotificationInstanceDiagnosticDto> _instances = [];
+    private List<NotificationOutboxDiagnosticDto> _outboxRows = [];
+    private AttentionRoutingEffectiveDto? _attentionRouting;
+    private NotificationRecipientResolutionPreviewDto? _resolution;
+    private string _addDefinitionId = BuiltInExpectedRunMissingDefinitionId;
+    private string _previewDefinitionId = BuiltInExpectedRunMissingDefinitionId;
+    private string? _postCreateDefinitionId;
+    private bool _showPostCreatePrompt;
+    private string _addKind = "principal";
+    private string _addRef = "";
+    private string _addDeliveryMode = "immediate";
+    private bool _createContactIfMissing;
+    private DateTimeOffset? _recipientPreviewRefreshedAt;
+    private IReadOnlyList<UserListDto> _users = [];
+    private IReadOnlyList<OperationalTeamSummaryDto> _teams = [];
+    private IReadOnlyList<ManagedContactSummaryDto> _contacts = [];
+
+    private string ConfigDiagnosticsHref => NotificationUiRoutes.DiagnosticsForIntegration(IntegrationId);
+
+    private string PostCreateViewDefinitionHref =>
+        string.IsNullOrWhiteSpace(_postCreateDefinitionId)
+            ? "#"
+            : NotificationUiRoutes.DefinitionDetail(_postCreateDefinitionId);
+
+    private IEnumerable<(string Id, string Label)> RecipientOptions => _addKind switch
+    {
+        "operational_team" => _teams.Select(t => (t.Id, $"{t.Name} ({t.Id})")),
+        "managed_contact" => _contacts.Select(c => (c.Id, $"{c.DisplayName} ({c.Id})")),
+        _ => _users.Select(u => (u.UserId, $"{u.DisplayName} ({u.UserId})"))
+    };
+
+    private string? _dataLoadKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations && caps.CanViewNotificationDefinitions;
+        _canManageSubscriptions = caps.CanUpdateIntegrations && caps.CanManageNotificationDefinitions;
+        _canManageContacts = caps.CanManageManagedContacts;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+            _loading = false;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        if (!_capabilitiesLoaded || !_canView)
+            return;
+
+        var key = IntegrationId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _integrationName = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var integration = await Client.GetIntegrationAsync(IntegrationId);
+            _integrationName = integration?.DisplayName;
+
+            var scoped = await Client.ListNotificationDefinitionsAsync(integrationId: IntegrationId, take: 100);
+            var builtIn = await Client.GetNotificationDefinitionAsync(BuiltInExpectedRunMissingDefinitionId);
+            var merged = new Dictionary<string, NotificationDefinitionSummaryDto>(StringComparer.Ordinal);
+            foreach (var d in scoped)
+                merged[d.Id] = d;
+            if (builtIn is not null)
+            {
+                merged[builtIn.Id] = new NotificationDefinitionSummaryDto(
+                    builtIn.Id,
+                    builtIn.DisplayName,
+                    builtIn.Description,
+                    builtIn.SourceKind,
+                    builtIn.Origin,
+                    builtIn.Scope,
+                    builtIn.IntegrationId,
+                    builtIn.PrimaryEventType,
+                    builtIn.IsEnabled,
+                    builtIn.DefaultSeverity,
+                    builtIn.UpdatedAtUtc);
+            }
+
+            var diag = await Client.GetNotificationIntegrationDiagnosticsAsync(IntegrationId, take: 50);
+            _instances = diag.RecentInstances.ToList();
+            var listInstances = await Client.ListNotificationInstancesAsync(integrationId: IntegrationId, take: 100);
+            var instanceCounts = listInstances
+                .GroupBy(i => i.NotificationDefinitionId)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var mutabilityById = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (builtIn is not null)
+                mutabilityById[builtIn.Id] = builtIn.Mutability;
+            foreach (var d in scoped)
+            {
+                if (mutabilityById.ContainsKey(d.Id))
+                    continue;
+                var detail = await Client.GetNotificationDefinitionAsync(d.Id);
+                mutabilityById[d.Id] = detail?.Mutability ?? "—";
+            }
+
+            _definitions = merged.Values
+                .OrderBy(d => d.DisplayName)
+                .Select(d => new DefinitionRow(
+                    d,
+                    mutabilityById.GetValueOrDefault(d.Id, "—"),
+                    instanceCounts.GetValueOrDefault(d.Id)))
+                .ToList();
+
+            if (_definitions.Count > 0 && !_definitions.Any(x => x.Summary.Id == _addDefinitionId))
+                _addDefinitionId = _definitions[0].Summary.Id;
+
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            _attentionRouting = await Client.GetIntegrationAttentionRoutingAsync(IntegrationId);
+
+            _outboxRows = diag.RecentFailedDeliveries
+                .Concat(diag.RecentOutboxRows.Where(r => r.Status is "pending" or "delivering"))
+                .Take(50)
+                .ToList();
+
+            if (_canManageSubscriptions)
+            {
+                var userPage = await Client.GetUserPageAsync(0, 200);
+                _users = userPage.Items;
+                _teams = await Client.ListOperationalTeamsAsync(includeDisabled: false);
+                _contacts = await Client.ListManagedContactsAsync(null, 200) ?? [];
+            }
+
+            await ApplyPostCreateContextAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_integrationName, "Integration"),
+                "Notifications");
+        }
+    }
+
+    private async Task ApplyPostCreateContextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CreatedDefinitionIdQuery))
+            return;
+
+        var createdId = CreatedDefinitionIdQuery.Trim();
+        if (!_definitions.Any(d => string.Equals(d.Summary.Id, createdId, StringComparison.Ordinal)))
+            return;
+
+        _postCreateDefinitionId = createdId;
+        _addDefinitionId = createdId;
+        _previewDefinitionId = createdId;
+        _showPostCreatePrompt = true;
+        await ResolveRecipientsAsync();
+    }
+
+    private async Task ToggleDefinitionAsync(string definitionId, ChangeEventArgs e)
+    {
+        if (!_canManageSubscriptions) return;
+        _busy = true;
+        try
+        {
+            await Client.SetNotificationDefinitionEnabledAsync(definitionId, ParseCheckbox(e));
+            await LoadAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task AddSubscriptionAsync()
+    {
+        if (!_canManageSubscriptions || string.IsNullOrWhiteSpace(_addRef) || string.IsNullOrWhiteSpace(_addDefinitionId)) return;
+        _busy = true;
+        try
+        {
+            await Client.AddNotificationSubscriptionAsync(
+                _addDefinitionId,
+                new AddNotificationSubscriptionRequest(IntegrationId, _addKind, _addRef, null, _createContactIfMissing, _addDeliveryMode));
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            _addRef = "";
+            _previewDefinitionId = _addDefinitionId;
+            await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task PatchSubscriptionEnabledAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    {
+        if (!_canManageSubscriptions) return;
+        _busy = true;
+        try
+        {
+            await Client.PatchNotificationSubscriptionAsync(
+                s.NotificationDefinitionId,
+                s.Id,
+                new PatchNotificationSubscriptionRequest(ParseCheckbox(e), null));
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task PatchSubscriptionDeliveryModeAsync(NotificationSubscriptionDto s, ChangeEventArgs e)
+    {
+        if (!_canManageSubscriptions) return;
+        var mode = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(mode)) return;
+        _busy = true;
+        try
+        {
+            await Client.PatchNotificationSubscriptionAsync(
+                s.NotificationDefinitionId,
+                s.Id,
+                new PatchNotificationSubscriptionRequest(null, mode));
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveSubscriptionAsync(NotificationSubscriptionDto s)
+    {
+        if (!_canManageSubscriptions) return;
+        _busy = true;
+        try
+        {
+            await Client.RemoveNotificationSubscriptionAsync(s.NotificationDefinitionId, s.Id);
+            _explicitSubscriptions = (await Client.ListNotificationSubscriptionsByIntegrationAsync(IntegrationId)).ToList();
+            if (string.Equals(s.NotificationDefinitionId, _previewDefinitionId, StringComparison.Ordinal))
+                await ResolveRecipientsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task ResolveRecipientsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_previewDefinitionId)) return;
+        _busy = true;
+        try
+        {
+            _resolution = await Client.ResolveNotificationRecipientsAsync(
+                _previewDefinitionId,
+                new ResolveNotificationRecipientsRequest(IntegrationId));
+            _recipientPreviewRefreshedAt = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private string GetDefinitionDisplayName(string definitionId) =>
+        _definitions.FirstOrDefault(d => string.Equals(d.Summary.Id, definitionId, StringComparison.Ordinal))?.Summary.DisplayName
+        ?? definitionId;
+
+    private static bool ParseCheckbox(ChangeEventArgs e) =>
+        e.Value is bool b ? b : string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+
+    private static string RecipientSourceLabel(string? source) => NotificationRecipientSourceLabels.Label(source);
+
+    private bool IsPostCreateDefinition(string definitionId) =>
+        !string.IsNullOrWhiteSpace(_postCreateDefinitionId)
+        && string.Equals(_postCreateDefinitionId, definitionId, StringComparison.Ordinal);
+
+    private bool HasExplicitSubscriptions(string definitionId) =>
+        _explicitSubscriptions.Any(s => string.Equals(s.NotificationDefinitionId, definitionId, StringComparison.Ordinal));
+
+    private bool HasAttentionRoutingRecipients =>
+        _attentionRouting is not null
+        && (_attentionRouting.PrimaryRecipients.Count > 0 || _attentionRouting.EscalationRecipients.Count > 0);
+
+    private string GetEmptySubscriptionsMessage(string definitionId)
+    {
+        var row = _definitions.FirstOrDefault(d => string.Equals(d.Summary.Id, definitionId, StringComparison.Ordinal));
+        if (row is null)
+            return "Add explicit subscriptions so platform delivery can create outbox rows for this definition.";
+
+        if (string.Equals(definitionId, BuiltInExpectedRunMissingDefinitionId, StringComparison.Ordinal))
+        {
+            if (HasAttentionRoutingRecipients)
+                return "Attention routing may still supply implicit compatibility recipients for this integration. Add explicit subscriptions for platform delivery.";
+            return "Add explicit subscriptions for platform delivery of expected-run-missing notifications.";
+        }
+
+        if (string.Equals(row.Summary.Origin, "userCreated", StringComparison.OrdinalIgnoreCase))
+            return "No recipients are configured. Platform delivery will not create outbox rows until you add at least one explicit subscription.";
+
+        return "Add explicit subscriptions so platform delivery can create outbox rows for this definition.";
+    }
+
+    private Task FocusSubscriptionsAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_postCreateDefinitionId))
+            _addDefinitionId = _postCreateDefinitionId;
+        Nav.NavigateTo($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications#explicit-subscriptions", replace: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task PreviewPostCreateRecipientsAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_postCreateDefinitionId))
+            _previewDefinitionId = _postCreateDefinitionId;
+        await ResolveRecipientsAsync();
+    }
+
+    private Task DismissPostCreatePromptAsync()
+    {
+        _showPostCreatePrompt = false;
+        CreatedDefinitionIdQuery = null;
+        Nav.NavigateTo($"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications", replace: true);
+        return Task.CompletedTask;
+    }
+
+    private sealed record DefinitionRow(
+        NotificationDefinitionSummaryDto Summary,
+        string Mutability,
+        int RecentInstanceCount);
+}

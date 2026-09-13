@@ -155,21 +155,22 @@ public sealed class BootstrapCliServiceTests
     }
 
     [Fact]
-    public async Task SetPasswordAsync_never_passes_plaintext_to_output()
+    public async Task SetPasswordAsync_returnsDeferredMessage_withoutCallingCredentialManager()
     {
         const string secretPlaintext = "MySecretPassword123!";
         var credentialManager = new Mock<IBootstrapCredentialManager>();
-        credentialManager.Setup(x => x.UpdateAsync(It.IsAny<BootstrapUpdateRequest>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
 
         var service = CreateService(credentialManager: credentialManager.Object);
         var result = await service.SetPasswordAsync(secretPlaintext);
 
         result.Should().NotBeNull();
-        result.Success.Should().BeTrue();
-        result.Message.Should().Be("Credential updated.");
-        // Critical: output must never contain the plaintext
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("deferred");
+        result.Message.Should().Contain("Epic 108b");
         result.Message.Should().NotContain(secretPlaintext);
+        credentialManager.Verify(
+            x => x.UpdateAsync(It.IsAny<BootstrapUpdateRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

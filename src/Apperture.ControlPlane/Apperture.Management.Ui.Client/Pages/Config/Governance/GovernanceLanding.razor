@@ -1,21 +1,21 @@
 @page "/config/governance"
 @layout ConfigLayout
+@using Apperture.Management.Ui.Client.Organisms
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Governance</div>
-    <h1 class="text-xl font-semibold text-heading">Governance</h1>
-    <div class="mt-4 text-sm text-body">
-        <p>Manage platform roles, user role assignments, and the permission catalog.</p>
-        <ul class="mt-3 space-y-2">
-            <li>
-                <a href="/config/governance/catalog" class="underline hover:no-underline">Permission Catalog</a> — Browse available resources and permissions
-            </li>
-            <li>
-                <a href="/config/governance/roles" class="underline hover:no-underline">Roles</a> — View and edit role definitions and their permission grants
-            </li>
-            <li>
-                <a href="/config/governance/users" class="underline hover:no-underline">Users</a> — Inspect users and manage role assignments
-            </li>
-        </ul>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Governance"
+                Subtitle="Manage platform roles, user role assignments, and the permission catalog." />
+
+    <div class="ui-summary-card-grid">
+        <ManagementSummaryCard Title="Permission catalog"
+                               Description="Browse available resources and permissions."
+                               Href="/config/governance/catalog" />
+        <ManagementSummaryCard Title="Roles"
+                               Description="View and edit role definitions and their permission grants."
+                               Href="/config/governance/roles" />
+        <ManagementSummaryCard Title="Users"
+                               Description="Inspect users and manage role assignments."
+                               Href="/config/governance/users" />
     </div>
 </div>

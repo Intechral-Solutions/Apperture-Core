@@ -1,0 +1,187 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="14 Federated Instances (Projected)" id="14-federated-projected">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;14 — Federated External Instance Relationships (Projected)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;ADR-0005 Federated relationships · ADR-0006 Entra platform trust · ADR-0007 Auth separation · ADR-0008 Parent-child first · ADR-0009 Constrained mgmt API · ADR-0010 Signed notifications · ADR-0011 Delegated capabilities&lt;/font&gt;" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="200" y="15" width="1200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;font style=&quot;font-size: 10px;&quot;&gt;Projected target — all elements new / changed (#d5e8d4)&lt;/font&gt;" style="text;html=1;align=right;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="25" width="380" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="entra" value="Microsoft Entra ID&lt;br&gt;M2M platform trust (ADR-0006)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="680" y="90" width="240" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent" value="Parent Instance (Control Plane)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="460" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-admin" value="Parent operator / admin&lt;br&gt;Human auth (ADR-0007)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="20" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-registry" value="IExternalInstanceRegistry&lt;br&gt;ExternalInstance catalog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="220" y="45" width="220" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-rel" value="IInstanceRelationshipService&lt;br&gt;ParentChild on generalized model (ADR-0005, ADR-0008)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="20" y="120" width="420" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-gateway" value="IRemoteManagementGateway&lt;br&gt;Versioned API client + CompatibilityProfile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="20" y="195" width="420" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-cred" value="IRelationshipCredentialService&lt;br&gt;RemoteInstanceCredentialReference" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="20" y="270" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-recv" value="Parent notification receiver&lt;br&gt;Signature verify · idempotency · replay window" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="240" y="270" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="parent-reconcile" value="Event reconciliation API&lt;br&gt;Watermark query · missed-range replay (ADR-0010)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="parent">
+          <mxGeometry x="20" y="345" width="420" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="child" value="Child Instance (Control Plane)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="180" width="460" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-admin" value="Child admin approval&lt;br&gt;Bilateral trust + scope grant" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="child">
+          <mxGeometry x="20" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-handshake" value="IRelationshipHandshakeService&lt;br&gt;Pending → Active lifecycle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="child">
+          <mxGeometry x="220" y="45" width="220" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-mgmt-api" value="Child Management API boundary (ADR-0009)&lt;br&gt;Constrained · versioned · auditable · deny-by-default" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="child">
+          <mxGeometry x="20" y="120" width="420" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-authz" value="IRelationshipAuthorizationService&lt;br&gt;RemoteInstancePrincipal + GrantedCapability (ADR-0007, ADR-0011)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="child">
+          <mxGeometry x="20" y="200" width="420" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-apis" value="Discovery · Health · Inventory · Workflow ops · Delegated actions · Subscriptions · Audit views" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="child">
+          <mxGeometry x="20" y="275" width="420" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-outbox" value="IRelationshipEventOutbox&lt;br&gt;Durable publication (ADR-0010)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="child">
+          <mxGeometry x="20" y="340" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="child-publisher" value="IRelationshipEventPublisher&lt;br&gt;Signed HTTPS · retry · dead-letter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="child">
+          <mxGeometry x="240" y="340" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="trust" value="Trust handshake &amp;amp; relationship lifecycle" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="540" y="180" width="520" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="step1" value="1. Parent requests relationship&lt;br&gt;+ desired capabilities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="20" y="45" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="step2" value="2. Entra M2M token&lt;br&gt;issuer + audience validate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="185" y="45" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="step3" value="3. Child admin approves&lt;br&gt;scopes + capabilities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="350" y="45" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="step4" value="4. Compatibility negotiation&lt;br&gt;ProtocolVersion / ApiVersion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="20" y="110" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="step5" value="5. Active relationship&lt;br&gt;InstanceRelationship + audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="185" y="110" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="step6" value="6. Credential rotation&lt;br&gt;dual-key overlap window" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="trust">
+          <mxGeometry x="350" y="110" width="150" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="caps" value="Delegated capability tiers (ADR-0011) — deny by default" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="540" y="410" width="520" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-observe" value="&lt;b&gt;Observe&lt;/b&gt;&lt;br&gt;metadata · health · inventory · audit summary · failure events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="caps">
+          <mxGeometry x="20" y="45" width="220" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-operate" value="&lt;b&gt;Operate&lt;/b&gt;&lt;br&gt;workflow retry/ack · schedule pause/resume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="caps">
+          <mxGeometry x="260" y="45" width="240" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-delegated" value="&lt;b&gt;DelegatedAdmin&lt;/b&gt;&lt;br&gt;subscriptions · capabilities.manage · credentials.rotate · suspend/revoke" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="caps">
+          <mxGeometry x="20" y="115" width="220" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="cap-bootstrap" value="&lt;b&gt;BootstrapFullControl&lt;/b&gt;&lt;br&gt;Restricted bootstrap only — explicit bilateral approval" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="caps">
+          <mxGeometry x="260" y="115" width="240" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="scope-note" value="RelationshipScope: Global · Module · Resource · Operation&lt;br&gt;GrantedCapability + ScopeExpression + time-bound constraints" style="text;html=1;align=left;fontSize=10;" vertex="1" parent="caps">
+          <mxGeometry x="20" y="175" width="480" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="notify" value="Signed child → parent notifications (ADR-0010)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="1520" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-types" value="Event taxonomy&lt;br&gt;HealthStatusChanged · WorkflowRunFailed · SecurityIncidentDetected · RelationshipStateChanged …" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="20" y="45" width="280" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-outbox" value="Outbox (child)&lt;br&gt;at-least-once durable write" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="320" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-sign" value="Signed envelope&lt;br&gt;nonce · timestamp · CorrelationId · EventId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="520" y="45" width="200" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-idem" value="Idempotency key&lt;br&gt;dedupe on parent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="740" y="45" width="160" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-replay" value="Replay protection&lt;br&gt;replay cache · expiry window" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="920" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-retry" value="Retry + backoff&lt;br&gt;dead-letter · delivery ledger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="1120" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evt-parent" value="Parent ingest + reconcile&lt;br&gt;watermark query · missed-range replay" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="notify">
+          <mxGeometry x="1320" y="45" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="audit" value="RelationshipAuditRecord — append-only on both sides · shared CorrelationId" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="840" width="1520" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-parent-mgmt" edge="1" parent="1" source="parent-gateway" target="child-mgmt-api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="HTTPS — constrained mgmt API (ADR-0009)">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-parent-entra" edge="1" parent="1" source="parent-cred" target="entra" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="M2M token">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-child-entra" edge="1" parent="1" source="child-handshake" target="entra" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Validate token">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-mgmt-authz" edge="1" parent="1" source="child-mgmt-api" target="child-authz" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Every request">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-authz-caps" edge="1" parent="1" source="child-authz" target="cap-observe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Capability gate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-outbox-pub" edge="1" parent="1" source="child-outbox" target="child-publisher" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Dispatch">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-pub-parent" edge="1" parent="1" source="child-publisher" target="parent-recv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Signed HTTPS webhook">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-handshake" edge="1" parent="1" source="parent-rel" target="step1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="Handshake">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-step-flow" edge="1" parent="1" source="step1" target="step2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-step2-3" edge="1" parent="1" source="step2" target="step3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-step3-4" edge="1" parent="1" source="step3" target="step4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-step4-5" edge="1" parent="1" source="step4" target="step5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-notify-flow" edge="1" parent="1" source="evt-types" target="evt-outbox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-outbox-sign" edge="1" parent="1" source="evt-outbox" target="evt-sign" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-sign-idem" edge="1" parent="1" source="evt-sign" target="evt-idem" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-idem-replay" edge="1" parent="1" source="evt-idem" target="evt-replay" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-replay-retry" edge="1" parent="1" source="evt-replay" target="evt-retry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-retry-parent" edge="1" parent="1" source="evt-retry" target="evt-parent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

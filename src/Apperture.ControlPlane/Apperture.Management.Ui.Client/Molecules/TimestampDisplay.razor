@@ -1,0 +1,52 @@
+@inject IOperatorDisplayTimeZone DisplayTimeZone
+@implements IDisposable
+
+@if (ShowUtcDetail && _utcDetail is not null)
+{
+    <span class="@CssClass" title="@_utcDetail">@_primary</span>
+    <span class="text-xs text-muted ml-1">(@_utcDetail)</span>
+}
+else
+{
+    <span class="@CssClass" title="@(_utcDetail ?? _primary)">@_primary</span>
+}
+
+@code {
+    [Parameter] public DateTimeOffset? Value { get; set; }
+    [Parameter] public bool ShowUtcDetail { get; set; }
+    [Parameter] public string NullDisplay { get; set; } = "—";
+    [Parameter] public string? CssClass { get; set; }
+
+    private string _primary = "—";
+    private string? _utcDetail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        await DisplayTimeZone.EnsureResolvedAsync();
+        Recompute();
+    }
+
+    protected override void OnParametersSet() => Recompute();
+
+    private void OnDisplayZoneChanged()
+    {
+        Recompute();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void Recompute()
+    {
+        var result = OperatorTimestampFormat.Format(
+            Value,
+            DisplayTimeZone.TimeZoneId,
+            DisplayTimeZone.Source,
+            showUtcDetail: true,
+            nullDisplay: NullDisplay,
+            clockFormat: DisplayTimeZone.ClockFormat);
+        _primary = result.Primary;
+        _utcDetail = ShowUtcDetail ? result.UtcDetail : null;
+    }
+
+    public void Dispose() => DisplayTimeZone.Changed -= OnDisplayZoneChanged;
+}

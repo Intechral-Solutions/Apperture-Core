@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/src/Apperture.AppHost/">
+    <Project Path="src/Apperture.AppHost/Apperture.AppHost.csproj" />
+    <Project Path="src/Apperture.ServiceDefaults/Apperture.ServiceDefaults.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Apperture.Cli/">
     <Project Path="src/Apperture.Cli/Apperture.Cli.Bootstrap/Apperture.Cli.Bootstrap.csproj" />
@@ -18,8 +22,8 @@
     </Folder>
   </Folder>
   <Folder Name="/src/Apperture.Core/">
-    <Project Path="src/Apperture.Core/Apperture.Core.Domain/Apperture.Core.Domain.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Application/Apperture.Core.Application.csproj" />
+    <Project Path="src/Apperture.Core/Apperture.Core.Domain/Apperture.Core.Domain.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Security.Secrets/Apperture.Core.Security.Secrets.csproj" />
     <Project Path="src/Apperture.Core/Apperture.Core.Security.Trust/Apperture.Core.Security.Trust.csproj" />
   </Folder>
@@ -27,17 +31,29 @@
     <Project Path="src/Apperture.ControlPlane/Apperture.ControlPlane.Dashboard/Apperture.ControlPlane.Dashboard.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.ControlPlane.Security/Apperture.ControlPlane.Security.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj" />
-    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Client/Apperture.Management.Client.csproj" />
+    <Project Path="src/Apperture.ControlPlane/Apperture.Management.Host/Apperture.Management.Host.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Apperture.Management.Ui.Client.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Server/Apperture.Management.Ui.Server.csproj" />
     <Project Path="src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Apperture.Management.Ui.Shared.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Modules/">
+    <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview.Persistence/Proof.CampusNexus.StudentReview.Persistence.csproj" />
+    <Project Path="src/Apperture.Modules/Proof.CampusNexus.StudentReview/Proof.CampusNexus.StudentReview.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Contracts/Sample.ApiPolling.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Module/Sample.ApiPolling.Module.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.ApiPolling/Sample.ApiPolling.Persistence/Sample.ApiPolling.Persistence.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.FileImport/Sample.FileImport.Contracts/Sample.FileImport.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.FileImport/Sample.FileImport.Module/Sample.FileImport.Module.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Contracts/Sample.HelloWorld.Contracts.csproj" />
+    <Project Path="src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/Sample.HelloWorld.Module.csproj" />
+    <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans.Persistence/Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
     <Project Path="src/Apperture.Modules/Unisa.CampusNexus.PaymentPlans/Unisa.CampusNexus.PaymentPlans.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.ModuleSdk/">
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Abstractions/Apperture.ModuleSdk.Abstractions.csproj" />
+    <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Integration/Apperture.ModuleSdk.Integration.csproj" />
+    <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Integration.Testing/Apperture.ModuleSdk.Integration.Testing.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk.Testing/Apperture.ModuleSdk.Testing.csproj" />
     <Project Path="src/Apperture.ModuleSdk/Apperture.ModuleSdk/Apperture.ModuleSdk.csproj" />
   </Folder>
@@ -45,18 +61,31 @@
     <Project Path="src/Apperture.Persistence/Apperture.Persistence.SqlServer/Apperture.Persistence.SqlServer.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Connectors/">
+    <Project Path="src/Apperture.ConnectorResolution/Apperture.ConnectorResolution.csproj" />
     <Project Path="src/Apperture.Connectors/Apperture.Connectors.CampusNexus/Apperture.Connectors.CampusNexus.csproj" />
     <Project Path="src/Apperture.Connectors/Apperture.Connectors.Sftp/Apperture.Connectors.Sftp.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Bootstrap/">
     <Project Path="src/Apperture.Bootstrap/Apperture.Bootstrap/Apperture.Bootstrap.csproj" />
   </Folder>
+  <Folder Name="/src/Apperture.RuntimeHost/Apperture.RuntimeHost.Azure/">
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Azure/Apperture.RuntimeHost.Azure.Secrets/Apperture.RuntimeHost.Azure.Secrets.csproj" />
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Azure/Apperture.RuntimeHost.Azure.Shared/Apperture.RuntimeHost.Azure.Shared.csproj" />
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Azure/Apperture.RuntimeHost.Azure.Template/Apperture.RuntimeHost.Azure.Template.csproj" />
+  </Folder>
+  <Folder Name="/src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/">
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/Apperture.RuntimeHost.Windows.InstanceAgent/Apperture.RuntimeHost.Windows.InstanceAgent.csproj" />
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/Apperture.RuntimeHost.Windows.ModuleHost/Apperture.RuntimeHost.Windows.ModuleHost.csproj" />
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/Apperture.RuntimeHost.Windows.SchedulerHost/Apperture.RuntimeHost.Windows.SchedulerHost.csproj" />
+    <Project Path="src/Apperture.RuntimeHost/Apperture.RuntimeHost.Windows/Apperture.RuntimeHost.Windows.WorkerHost/Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
+  </Folder>
   <Folder Name="/src/Apperture.RuntimePlane/">
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Abstractions/Apperture.RuntimePlane.Abstractions.csproj" />
-    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Engine/Apperture.RuntimePlane.Engine.csproj" />
-    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Persistence.SqlServer/Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
+    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Dispatch.SqlServer/Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.DTFx/Apperture.RuntimePlane.DTFx.csproj" />
     <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.DurableFunctions/Apperture.RuntimePlane.DurableFunctions.csproj" />
+    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Engine/Apperture.RuntimePlane.Engine.csproj" />
+    <Project Path="src/Apperture.RuntimePlane/Apperture.RuntimePlane.Persistence.SqlServer/Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
   </Folder>
   <Folder Name="/src/Apperture.Shared/">
     <Project Path="src/Apperture.Shared/Apperture.Shared.Kernel/Apperture.Shared.Kernel.csproj" />
@@ -65,10 +94,10 @@
     <Project Path="src/Apperture.Shared/Apperture.Shared.Serialization/Apperture.Shared.Serialization.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Apperture.Management.Ui.Shared.Tests/Apperture.Management.Ui.Shared.Tests.csproj" />
     <Project Path="tests/Apperture.ArchTests/Apperture.ArchTests.csproj" />
     <Project Path="tests/Apperture.EndToEndTests/Apperture.EndToEndTests.csproj" />
     <Project Path="tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj" />
+    <Project Path="tests/Apperture.Management.Ui.Shared.Tests/Apperture.Management.Ui.Shared.Tests.csproj" />
     <Project Path="tests/Apperture.UnitTests/Apperture.UnitTests.csproj" />
   </Folder>
 </Solution>

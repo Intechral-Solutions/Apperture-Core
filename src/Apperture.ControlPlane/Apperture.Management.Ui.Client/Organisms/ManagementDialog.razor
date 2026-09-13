@@ -1,0 +1,250 @@
+@*
+    UIX-6 — accessible modal dialog foundation.
+    Owned by the rendering page (no global dialog service): explicit state, simple lifecycle.
+    Focus is contained while open, Escape closes, focus returns to the opener.
+*@
+@using Microsoft.AspNetCore.Components.Web
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+@if (IsOpen)
+{
+    <div class="ui-dialog-scrim" data-testid="dialog-scrim" @onclick="OnScrimClickAsync"></div>
+
+    <div class="ui-dialog-layer">
+        <div tabindex="0" class="ui-dialog__focus-sentinel" aria-hidden="true" @onfocus="() => WrapFocusAsync(last: true)"></div>
+
+        <div @ref="_panel"
+             id="@PanelElementId"
+             class="@PanelClass"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="@TitleElementId"
+             aria-busy="@(IsBusy ? "true" : "false")"
+             tabindex="-1"
+             data-testid="management-dialog"
+             @onkeydown="OnKeyDownAsync">
+
+            <div class="ui-dialog__header">
+                <h2 id="@TitleElementId" class="ui-dialog__title">@Title</h2>
+                <button type="button"
+                        class="ui-dialog__close"
+                        data-testid="dialog-close"
+                        aria-label="@CloseLabel"
+                        disabled="@IsBusy"
+                        @onclick="RequestCloseAsync">
+                    ×
+                </button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Description))
+            {
+                <p class="ui-dialog__description">@Description</p>
+            }
+
+            <div class="ui-dialog__body">
+                @ChildContent
+            </div>
+
+            @if (Footer is not null)
+            {
+                <div class="ui-dialog__footer">
+                    @Footer
+                </div>
+            }
+        </div>
+
+        <div tabindex="0" class="ui-dialog__focus-sentinel" aria-hidden="true" @onfocus="() => WrapFocusAsync(last: false)"></div>
+    </div>
+}
+
+@code {
+    private ElementReference _panel;
+    private bool _wasOpen;
+    private bool _pendingOpen;
+    private bool _pendingClose;
+    private string? _restoreFocusElementId;
+    private bool _disposed;
+
+    /// <summary>Stable per-instance element id so focus helpers can target this dialog.</summary>
+    private readonly string _instanceId = Guid.NewGuid().ToString("N")[..8];
+
+    [Parameter] public bool IsOpen { get; set; }
+
+    /// <summary>Accessible name. Required — dialogs without a name are not usable by screen readers.</summary>
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>Optional short supporting sentence rendered under the title.</summary>
+    [Parameter] public string? Description { get; set; }
+
+    /// <summary>Blocks Escape, scrim, and close while a consequential action is running.</summary>
+    [Parameter] public bool IsBusy { get; set; }
+
+    /// <summary>Width tier: <c>sm</c>, <c>md</c> (default) or <c>lg</c>.</summary>
+    [Parameter] public string Size { get; set; } = "md";
+
+    [Parameter] public string CloseLabel { get; set; } = "Close dialog";
+
+    /// <summary>Raised for Escape, the close button, and scrim dismissal.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private string PanelElementId => $"ui-dialog-{_instanceId}";
+
+    private string TitleElementId => $"ui-dialog-title-{_instanceId}";
+
+    private string PanelClass => Size switch
+    {
+        "sm" => "ui-dialog ui-dialog--sm",
+        "lg" => "ui-dialog ui-dialog--lg",
+        _ => "ui-dialog ui-dialog--md",
+    };
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen == _wasOpen)
+            return;
+
+        if (IsOpen)
+            _pendingOpen = true;
+        else
+            _pendingClose = true;
+
+        _wasOpen = IsOpen;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingOpen)
+        {
+            _pendingOpen = false;
+            _restoreFocusElementId = await TryCaptureFocusAsync();
+            await TrySetModalOpenAsync(true);
+            await TryFocusPanelAsync();
+        }
+
+        if (_pendingClose)
+        {
+            _pendingClose = false;
+            await TrySetModalOpenAsync(false);
+            await TryRestoreFocusAsync();
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Escape", StringComparison.Ordinal))
+            return;
+
+        await RequestCloseAsync();
+    }
+
+    private Task OnScrimClickAsync() => RequestCloseAsync();
+
+    private async Task RequestCloseAsync()
+    {
+        // A running consequential action owns the dialog until it completes or fails.
+        if (IsBusy || _disposed)
+            return;
+
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync();
+    }
+
+    private async Task WrapFocusAsync(bool last)
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            var moved = await Js.InvokeAsync<bool>("appertureShell.focusEdgeIn", PanelElementId, last);
+            if (!moved)
+                await TryFocusPanelAsync();
+        }
+        catch (JSException)
+        {
+            await TryFocusPanelAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // Renderer disposed mid-flight.
+        }
+        catch (TaskCanceledException)
+        {
+            // Circuit or component torn down.
+        }
+    }
+
+    private async Task<string?> TryCaptureFocusAsync()
+    {
+        try
+        {
+            return await Js.InvokeAsync<string?>("appertureShell.captureFocusedElementId");
+        }
+        catch (JSException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private async Task TryRestoreFocusAsync()
+    {
+        var id = _restoreFocusElementId;
+        _restoreFocusElementId = null;
+        if (string.IsNullOrWhiteSpace(id))
+            return;
+
+        try
+        {
+            await Js.InvokeAsync<bool>("appertureShell.focusElementById", id);
+        }
+        catch (JSException) { /* opener removed */ }
+        catch (InvalidOperationException) { /* renderer disposed */ }
+        catch (TaskCanceledException) { /* torn down */ }
+    }
+
+    private async Task TrySetModalOpenAsync(bool open)
+    {
+        try
+        {
+            await Js.InvokeAsync<int>("appertureShell.setModalOpen", open);
+        }
+        catch (JSException) { /* styling only */ }
+        catch (InvalidOperationException) { /* renderer disposed */ }
+        catch (TaskCanceledException) { /* torn down */ }
+    }
+
+    private async Task TryFocusPanelAsync()
+    {
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException) { /* element already gone */ }
+        catch (InvalidOperationException) { /* not rendered */ }
+        catch (TaskCanceledException) { /* torn down */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        if (_wasOpen)
+            await TrySetModalOpenAsync(false);
+    }
+}

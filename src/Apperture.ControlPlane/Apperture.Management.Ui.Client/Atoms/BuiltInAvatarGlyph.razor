@@ -1,0 +1,23 @@
+@*
+    Platform-owned avatar artwork. Files live at images/account/avatars/{option-id}.jpg.
+    Decorative: the accessible name comes from adjacent text, never from the illustration.
+*@
+@using Apperture.Core.Domain.Identity
+
+<img src="@ImageSrc"
+     alt=""
+     class="@($"{CssClass} object-cover bg-black")"
+     width="64"
+     height="64"
+     aria-hidden="@(string.IsNullOrWhiteSpace(Title) ? "true" : "false")"
+     title="@Title" />
+
+@code {
+    [Parameter] public string? OptionId { get; set; }
+
+    [Parameter] public string CssClass { get; set; } = "h-10 w-10 rounded-full";
+
+    [Parameter] public string? Title { get; set; }
+
+    private string ImageSrc => BuiltInAvatarCatalog.ImagePath(OptionId);
+}

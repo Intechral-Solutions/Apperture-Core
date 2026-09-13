@@ -14,4 +14,6 @@ public sealed record AttentionIncidentProjection(
     DateTimeOffset? LastExpectedFireAtUtc,
     DateTimeOffset? AcknowledgedAtUtc,
     string? AcknowledgedBy,
-    string? AcknowledgementNote);
+    string? AcknowledgementNote,
+    /// <summary>CTX-2: immutable ResourceContext snapshot taken when the incident opened.</summary>
+    string? ResourceContextId = null);

@@ -141,6 +141,8 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
             var externalId = request.TargetExternalId.Trim();
             if (source.Value == IdentitySource.Local)
                 externalId = LocalAuthHelpers.NormalizeUsername(externalId);
+            else if (source.Value == IdentitySource.Entra)
+                return null;
             var user = await userRepository.GetByIdentityLinkAsync(source.Value, externalId, cancellationToken).ConfigureAwait(false);
             return user;
         }

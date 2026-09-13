@@ -1,0 +1,212 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject NavigationManager Nav
+@inject SessionStateService Session
+@inject DomainMenuService DomainMenuService
+@inject TopBarMenuCoordinator Menus
+@implements IDisposable
+
+<div class="relative" @onclick:stopPropagation="true">
+    <button type="button"
+            class="relative flex items-center justify-center rounded p-2 text-body hover:bg-surface-muted"
+            aria-expanded="@IsOpen"
+            aria-haspopup="true"
+            aria-label="Notifications"
+            title="Notifications"
+            @onclick="ToggleAsync">
+        <span class="ui-notification-icon">
+            <svg class="h-6 w-6 shrink-0 text-heading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <NotificationUnreadBadge Count="@_unreadCount" />
+        </span>
+    </button>
+    @if (IsOpen)
+    {
+        <div class="ui-menu-panel ui-personal-notification-menu__panel"
+             role="menu"
+             aria-label="Notifications">
+            <div class="ui-personal-notification-menu__header">
+                <span class="font-semibold text-heading">Notifications</span>
+                @if (_unreadCount > 0)
+                {
+                    <span class="text-xs text-muted">@_unreadCount unread</span>
+                }
+            </div>
+            @if (_loading)
+            {
+                <p class="px-3 py-4 text-xs text-muted">Loading…</p>
+            }
+            else if (_items.Count == 0)
+            {
+                <p class="px-3 py-4 text-xs text-muted">No notifications yet.</p>
+            }
+            else
+            {
+                @foreach (var item in _items)
+                {
+                    <PersonalNotificationMenuItem Item="item" OnClick="() => OpenItemAsync(item)" />
+                }
+            }
+            <div class="ui-personal-notification-menu__footer">
+                @if (_unreadCount > 0)
+                {
+                    <button type="button"
+                            class="ui-menu-item"
+                            disabled="@_busy"
+                            @onclick="MarkAllReadAsync">
+                        Mark all as read
+                    </button>
+                }
+                <a href="@PersonalNotificationUiRoutes.Inbox()"
+                   class="ui-menu-item"
+                   @onclick="Close">
+                    View all notifications
+                </a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading;
+    private bool _busy;
+    private bool _countKickoffStarted;
+    private int _unreadCount;
+    private List<PersonalNotificationInboxItemDto> _items = [];
+
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Notifications);
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += OnSessionChanged;
+        Menus.Changed += OnMenusChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _countKickoffStarted)
+            return;
+
+        // UIX-2: do not await HTTP inside OnAfterRenderAsync during shell first paint.
+        _countKickoffStarted = true;
+        _ = RefreshCountAndRenderAsync();
+    }
+
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task RefreshCountAndRenderAsync()
+    {
+        await DomainMenuService.WhenFetchedAsync();
+
+        var previous = _unreadCount;
+        await RefreshCountAsync();
+        if (previous == _unreadCount)
+            return;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnSessionChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await RefreshCountAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ToggleAsync()
+    {
+        Menus.Toggle(TopBarMenuCoordinator.Ids.Notifications);
+        if (IsOpen)
+            await LoadMenuAsync();
+    }
+
+    private void Close() => Menus.Close(TopBarMenuCoordinator.Ids.Notifications);
+
+    private async Task LoadMenuAsync()
+    {
+        if (Session.State != SessionLoadState.Authenticated)
+            return;
+
+        _loading = true;
+        try
+        {
+            _items = (await Client.GetMyNotificationsAsync(readFilter: "all", take: 15)).ToList();
+            await Client.RecordMyNotificationsMenuViewedAsync(take: 15);
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync()).UnreadCount;
+        }
+        catch
+        {
+            _items = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RefreshCountAsync()
+    {
+        if (Session.State != SessionLoadState.Authenticated)
+        {
+            _unreadCount = 0;
+            return;
+        }
+
+        try
+        {
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync()).UnreadCount;
+        }
+        catch
+        {
+            _unreadCount = 0;
+        }
+    }
+
+    private async Task OpenItemAsync(PersonalNotificationInboxItemDto item)
+    {
+        _busy = true;
+        try
+        {
+            await Client.MarkMyNotificationReadAsync(item.Id);
+            Menus.Close(TopBarMenuCoordinator.Ids.Notifications);
+            await RefreshCountAsync();
+            var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, item.CanOpenAdminInstanceDetail);
+            Nav.NavigateTo(!string.IsNullOrWhiteSpace(target) ? target : PersonalNotificationUiRoutes.Inbox());
+        }
+        catch
+        {
+            // stay open
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Client.MarkAllMyNotificationsReadAsync();
+            await LoadMenuAsync();
+            await RefreshCountAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Menus.Changed -= OnMenusChanged;
+    }
+}

@@ -1,57 +1,53 @@
 @page "/runtimes/{RuntimeId}/controls/shutdown/requests"
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @inject IManagementClient Client
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Runtime Shutdown Requests</h1>
-            <div class="text-xs text-muted">
-                Runtime: <span class="font-mono">@RuntimeId</span>
-            </div>
-        </div>
-        <a class="underline text-sm" href="/control/center">Back</a>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Runtimes"
+                Title="Shutdown requests"
+                Subtitle="@($"Runtime {RuntimeId}")">
+        <Toolbar>
+            <a href="/control/center" class="ui-toolbar-btn">Back to Control Center</a>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_requests is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else
     {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-body">
+                <thead>
                     <tr>
-                        <th class="px-2 py-2">Id</th>
-                        <th class="px-2 py-2">Status</th>
-                        <th class="px-2 py-2">Requested</th>
-                        <th class="px-2 py-2">RequestedBy</th>
-                        <th class="px-2 py-2">Applied</th>
-                        <th class="px-2 py-2">AppliedBy</th>
-                        <th class="px-2 py-2">LastError</th>
+                        <th>Id</th>
+                        <th>Status</th>
+                        <th>Requested</th>
+                        <th>Requested by</th>
+                        <th>Applied</th>
+                        <th>Applied by</th>
+                        <th>Last error</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var r in _requests)
                     {
-                        <tr class="border-b border-default">
-                            <td class="px-2 py-2 font-mono text-xs">
+                        <tr>
+                            <td class="font-mono text-xs">
                                 <a class="underline" href="@($"/runtimes/{RuntimeId}/controls/shutdown/requests/{r.Id}")">@r.Id</a>
                             </td>
-                            <td class="px-2 py-2 font-semibold">@r.Status</td>
-                            <td class="px-2 py-2">@FmtWhen(r.RequestedAt)</td>
-                            <td class="px-2 py-2">@r.RequestedBy</td>
-                            <td class="px-2 py-2">@((r.AppliedAt is null) ? "" : FmtWhen(r.AppliedAt.Value))</td>
-                            <td class="px-2 py-2">@r.AppliedBy</td>
-                            <td class="px-2 py-2 text-xs break-all">@r.LastError</td>
+                            <td class="font-semibold">@r.Status</td>
+                            <td>@FmtWhen(r.RequestedAt)</td>
+                            <td>@r.RequestedBy</td>
+                            <td>@((r.AppliedAt is null) ? "" : FmtWhen(r.AppliedAt.Value))</td>
+                            <td>@r.AppliedBy</td>
+                            <td class="text-xs break-all">@r.LastError</td>
                         </tr>
                     }
                 </tbody>
@@ -93,4 +89,3 @@
 
     private static string FmtWhen(DateTimeOffset dt) => dt.ToLocalTime().ToString("u");
 }
-

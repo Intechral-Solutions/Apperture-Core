@@ -19,7 +19,14 @@
         'Set-AppertureBootstrapSqlIntegratedSecurityBinding',
         'Invoke-AppertureBootstrapSqlCredentialRotation',
         'Repair-AppertureBootstrap',
-        'Unlock-AppertureBootstrapRecovery'
+        'Unlock-AppertureBootstrapRecovery',
+        'Get-AppertureEmergencyAccess',
+        'New-AppertureEmergencyAdministrator',
+        'Set-AppertureEmergencyAdministrator',
+        'Set-AppertureEmergencyPassword',
+        'Register-AppertureEmergencyAuthenticator',
+        'New-AppertureEmergencyRecoveryCodes',
+        'Remove-AppertureEmergencyAdministrator'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

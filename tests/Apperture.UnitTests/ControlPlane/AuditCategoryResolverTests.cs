@@ -51,6 +51,8 @@ public sealed class AuditCategoryResolverTests
     [Theory]
     [InlineData("auth.local.login.success", AuditCategoryResolver.CategoryAuth)]
     [InlineData("user.created", AuditCategoryResolver.CategoryAuth)]
+    [InlineData("account.email.verified", AuditCategoryResolver.CategoryAuth)]
+    [InlineData("account.invitation.sent", AuditCategoryResolver.CategoryAuth)]
     public void Resolve_AuthActions_ReturnsAuth(string action, string expected)
     {
         AuditCategoryResolver.Resolve(action).Should().Be(expected);

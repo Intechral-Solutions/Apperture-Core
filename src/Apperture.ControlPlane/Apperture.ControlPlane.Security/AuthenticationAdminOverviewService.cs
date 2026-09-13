@@ -9,6 +9,14 @@ public interface IAuthenticationAdminOverviewService
     Task<AuthenticationAdminOverview> GetAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>Condensed provider readiness for admins (Epic 75).</summary>
+public sealed record AuthProviderAvailability(
+    bool EntraSignInReady,
+    bool LocalSignInAvailable,
+    string? ActiveEntraOpenIdConfigurationStatus,
+    string? ActiveEntraDirectoryDiscoveryStatus,
+    string? AdminDiagnosis);
+
 /// <summary>Effective auth overview for Config → Authentication (operators).</summary>
 public sealed record AuthenticationAdminOverview(
     bool LocalAuthEnabled,
@@ -28,7 +36,8 @@ public sealed record AuthenticationAdminOverview(
     bool EntraSignInEnabled,
     EffectiveAuthExperienceKind EffectiveExperience,
     string EffectiveExperienceDescription,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    AuthProviderAvailability AuthProviderAvailability);
 
 public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOverviewService
 {
@@ -66,7 +75,7 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         var effectiveValidation = legacyValidator.Validate(null, effectiveEntra);
         var entraConfigurationValid = !effectiveEntra.Enabled || !effectiveValidation.Failed;
         var entraMisconfiguredReason = effectiveEntra.Enabled && effectiveValidation.Failed
-            ? "Entra is enabled but authority, client ID, or deployment client secret is missing or invalid."
+            ? "Entra is enabled but authority, client ID, or client secret is missing or invalid."
             : null;
 
         var built = AuthSignInSnapshotBuilder.Build(local, effectiveEntra, policy);
@@ -88,10 +97,10 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
         if (!snap.LocalSignInEnabled && !snap.EntraSignInEnabled)
             warnings.Add("No viable sign-in method: enable local auth in deployment or fix Entra.");
 
-        var runtimeMayRequireRestart = active is { Enabled: true };
-        var runtimeApplicationStatus = runtimeMayRequireRestart
-            ? "Pending restart/reload confirmation: the active registration is persisted and used by API-derived state, but OpenID Connect handler behavior may lag until host restart."
-            : "No active Entra registration override is currently pending application.";
+        var runtimeMayRequireRestart = EntraRuntimeApplicationState.MayRequireRestartToApplyChanges(active, effectiveEntra);
+        var runtimeApplicationStatus = EntraRuntimeApplicationState.Describe(runtimeMayRequireRestart, active is { Enabled: true });
+
+        var availability = BuildAuthProviderAvailability(active, snap);
 
         return new AuthenticationAdminOverview(
             LocalAuthEnabled: snap.LocalSignInEnabled,
@@ -111,6 +120,33 @@ public sealed class AuthenticationAdminOverviewService : IAuthenticationAdminOve
             EntraSignInEnabled: snap.EntraSignInEnabled,
             EffectiveExperience: built.EffectiveExperience,
             EffectiveExperienceDescription: desc,
-            Warnings: warnings);
+            Warnings: warnings,
+            AuthProviderAvailability: availability);
+    }
+
+    private static AuthProviderAvailability BuildAuthProviderAvailability(
+        EntraInstanceRegistration? active,
+        AuthSignInOptionsSnapshot snap)
+    {
+        string? diagnosis = null;
+        if (active is not null && snap.EntraSignInEnabled && active.OpenIdConfigurationStatus != OpenIdConfigurationStatus.Valid)
+            diagnosis = "The active Entra registration’s last OpenID validation is not “Valid”. Run “Validate OpenID” from Entra setup or fix authority, client id, and client secret.";
+
+        if (active is not null &&
+            active.DirectoryDiscoveryStatus is not DirectoryDiscoveryStatus.NotAttempted
+                and not DirectoryDiscoveryStatus.Success
+                and not DirectoryDiscoveryStatus.Unknown)
+        {
+            var d =
+                "Last directory discovery did not succeed (permissions, throttling, or configuration). See the Entra registration’s directory fields or retry browse.";
+            diagnosis = diagnosis is null ? d : diagnosis + " " + d;
+        }
+
+        return new AuthProviderAvailability(
+            EntraSignInReady: snap.EntraSignInEnabled,
+            LocalSignInAvailable: snap.LocalSignInEnabled,
+            ActiveEntraOpenIdConfigurationStatus: active?.OpenIdConfigurationStatus.ToString(),
+            ActiveEntraDirectoryDiscoveryStatus: active?.DirectoryDiscoveryStatus.ToString(),
+            AdminDiagnosis: diagnosis);
     }
 }

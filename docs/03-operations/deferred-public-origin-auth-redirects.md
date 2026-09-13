@@ -1,0 +1,75 @@
+# Deferred: public origin, Entra redirects, and federated sign-out
+
+**Status:** Deferred until closer to launch. Local split-host (UI `:9001`, management host/API `:9000`) is enough for current development. Do not implement hostname handling until the surrounding hosting architecture is settled.
+
+Related: [S2D-iam2-strong-authentication.md](../02-decisions/S2D-iam2-strong-authentication.md), [management-platform-configuration.md](management-platform-configuration.md), deploy templates under [deploy/config/examples/](../../deploy/config/examples/).
+
+## What already works
+
+Sign-in and sign-out are path-based on the **management host**, not the UI origin:
+
+| Path | Role |
+|------|------|
+| `GET /signin` | Entra challenge |
+| `/signin-oidc` | Entra redirect URI (sign-in) |
+| `GET /signout` | Clear cookie; optional Entra end-session |
+| `/signout-callback-oidc` | Entra redirect URI (sign-out) |
+| `/signout-oidc` | Front-channel logout |
+
+The browser then returns to the UI login page via `ManagementUiRedirects` (`ShellUi:ManagementUiUrl`). In development that defaults to `http://localhost:9001`.
+
+Production is already documented as **same-origin**: UI + `/api` + `/signin` + `/signout` share one public origin (`ApiBaseUrl` = `/api`). Split ports are a **dev** concern.
+
+## Why this will break on real hostnames
+
+1. **`ShellUi:ManagementUiUrl` defaults to `http://localhost:9001`.** Unset in Azure or on a Windows service, post-login and post-logout bounce operators to localhost instead of the public UI.
+2. **No forwarded-headers middleware.** Behind App Service TLS or a reverse proxy in front of Kestrel, OIDC `redirect_uri` is built from the *incoming* request. Without `X-Forwarded-Proto` / `Host`, Microsoft sees `http://internal-name/signin-oidc` instead of `https://public-hostname/signin-oidc` and rejects it.
+3. **Azure and Windows appsettings examples** do not set public UI/host URLs or list the three Entra URLs.
+4. **CORS** on the host allows only `localhost:9001`. That is correct for same-origin production (CORS is unused) and will block a split-host production topology unless updated.
+
+`UseWindowsService()` is not wired. Public-origin handling must not depend on it so a later Kestrel Windows service still works.
+
+## Intended production topology (when we return)
+
+Keep **one public origin** for UI, API, and Entra callbacks (for example `https://management.contoso.com`). Register Entra URLs on that host, not on a separate UI origin.
+
+| Setting | Process | Meaning |
+|---------|---------|---------|
+| `ShellUi:ManagementUiUrl` | Management.Host | Public **UI** origin for post-login / post-logout redirects. Never default to localhost outside Development. |
+| `ShellUi:ManagementHostUrl` | Management.Host | Public **UI** origin for email deep links (already used). Same value as `ManagementUiUrl` in same-origin deploys. The names collide with the UI setting below. |
+| `ShellUi:ManagementHostUrl` | UI (WASM) | Public **API/host** origin for `/signin` and `/signout`. Empty when same-origin (page origin is the host). |
+
+Suggested behavior when this is implemented:
+
+- **Development:** keep the localhost:9001 default.
+- **Production:** require `ManagementUiUrl`, or derive from the current request (scheme / host / path base) so a custom Azure domain works without a second config key. Do not fall back to localhost.
+- **Forwarded headers:** enable behind Azure App Service and when a Windows reverse proxy is configured. Do not blindly trust `X-Forwarded-*` on a Kestrel port exposed to the internet.
+- **Cookies:** `SecurePolicy = Always` in Production. `SameSite=Lax` is enough for same-origin.
+- **Templates:** add the keys above to [appsettings.azure.json.example](../../deploy/config/examples/appsettings.azure.json.example) and [appsettings.windows.json.example](../../deploy/config/examples/appsettings.windows.json.example), plus Entra app registration URLs:
+
+  - `{public-host}/signin-oidc`
+  - `{public-host}/signout-callback-oidc`
+  - `{public-host}/signout-oidc` (front-channel logout)
+
+## Cover first (Azure + Windows/Kestrel)
+
+These are the first two deployment types to make work. Docker and IIS come later.
+
+**Azure (App Service or equivalent, real hostname / custom domain)**
+
+- Set public UI origin (or derive from forwarded request).
+- Trust App Service forwarded proto/host so Entra `redirect_uri` is `https://{hostname}/...`.
+- Same-origin UI: leave WASM `ShellUi:ManagementHostUrl` empty and `ApiBaseUrl` as `/api`.
+
+**Windows service + Kestrel**
+
+- Bind Kestrel internally; public hostname comes from DNS and/or a reverse proxy.
+- Same config keys as Azure. Enable forwarded headers only when a proxy is in front and is trusted.
+- Service installer / `UseWindowsService()` can wait; URL construction should already be host-agnostic.
+
+## Explicitly later
+
+- Docker and IIS (including `PathBase` / virtual directories and ANCM).
+- Split-host production (different UI and API registrable domains): CORS allowlist, `SameSite=None; Secure`.
+- Multi-instance Data Protection key ring (Azure scale-out); cookies will not decrypt across instances without it. Separate from redirect URLs, but required before a scaled App Service is a launch target.
+- Unifying the `ShellUi:ManagementHostUrl` naming collision (Host = UI origin for email vs UI = API origin for sign-in/out).

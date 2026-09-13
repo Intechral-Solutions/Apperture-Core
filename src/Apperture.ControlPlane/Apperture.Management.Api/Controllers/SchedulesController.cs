@@ -1,7 +1,10 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.RuntimeHealth;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,15 +16,29 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class SchedulesController : ControllerBase
 {
+    private const string LegacyScheduleWarningHeader =
+        "299 - \"Legacy schedules without IntegrationId detected; migrate schedules to integration-owned records.\"";
     private readonly IScheduleGovernanceService _scheduleGovernance;
     private readonly IScheduleManagementService _scheduleManagement;
     private readonly IScheduleValidationService _scheduleValidation;
+    private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
+    private readonly ISchedulerStatusQueryService _schedulerStatus;
+    private readonly IResourceContextService _resourceContexts;
 
-    public SchedulesController(IScheduleGovernanceService scheduleGovernance, IScheduleManagementService scheduleManagement, IScheduleValidationService scheduleValidation)
+    public SchedulesController(
+        IScheduleGovernanceService scheduleGovernance,
+        IScheduleManagementService scheduleManagement,
+        IScheduleValidationService scheduleValidation,
+        IScheduleCreateTimeZoneDefaults createTimeZoneDefaults,
+        ISchedulerStatusQueryService schedulerStatus,
+        IResourceContextService resourceContexts)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
         _scheduleValidation = scheduleValidation;
+        _createTimeZoneDefaults = createTimeZoneDefaults;
+        _schedulerStatus = schedulerStatus;
+        _resourceContexts = resourceContexts;
     }
 
     [HttpGet("capabilities")]
@@ -36,14 +53,34 @@ public sealed class SchedulesController : ControllerBase
         return Ok(new ScheduleCapabilitiesDto(true));
     }
 
+    /// <param name="contextId">
+    /// Optional owning ResourceContext filter. Omitted (the default) returns the same global set this
+    /// endpoint has always returned. An unknown ResourceContext is rejected with 400.
+    /// </param>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<ScheduleDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<ScheduleDto>>> List(CancellationToken cancellationToken = default)
+    public async Task<ActionResult<IReadOnlyList<ScheduleDto>>> List(
+        [FromQuery] string? contextId,
+        CancellationToken cancellationToken = default)
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
             return Forbid();
-        var definitions = await _scheduleManagement.ListDefinitionsAsync(cancellationToken);
-        return Ok(definitions.Select(ToDto).ToList());
+
+        ResourceContextId? contextFilter = null;
+        if (!string.IsNullOrWhiteSpace(contextId))
+        {
+            contextFilter = new ResourceContextId(contextId);
+            if (await _resourceContexts.GetAsync(contextFilter, cancellationToken) is null)
+                return BadRequest(new { errors = new[] { $"ResourceContext '{contextId}' not found." } });
+        }
+
+        var definitions = await _scheduleManagement.ListDefinitionsAsync(contextFilter, cancellationToken);
+        if (definitions.Any(d => d.IntegrationId is null))
+            TryAppendWarningHeader(LegacyScheduleWarningHeader);
+
+        var asOf = DateTimeOffset.UtcNow;
+        var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
+        return Ok(definitions.Select(d => ToDto(d, asOf, workerStatus)).ToList());
     }
 
     [HttpGet("{id}")]
@@ -57,7 +94,14 @@ public sealed class SchedulesController : ControllerBase
         var detail = await _scheduleManagement.GetScheduleWithExecutionStateAsync(new ScheduleId(id), planeId, cancellationToken);
         if (detail is null)
             return NotFound();
-        return Ok(ToDetailDto(detail));
+        if (detail.Definition.IntegrationId is null)
+            TryAppendWarningHeader(LegacyScheduleWarningHeader);
+
+        var workerStatus = await TryGetWorkerRuntimeStatusAsync(cancellationToken);
+        var owningContext = detail.Definition.ResourceContextId is { } ownerId
+            ? await _resourceContexts.GetAsync(ownerId, cancellationToken)
+            : null;
+        return Ok(ToDetailDto(detail, planeId.Value, DateTimeOffset.UtcNow, workerStatus, owningContext));
     }
 
     [HttpPost]
@@ -78,10 +122,11 @@ public sealed class SchedulesController : ControllerBase
             });
         }
 
+        var timeZone = await _createTimeZoneDefaults.ResolveCreateTimeZoneIdAsync(body.TimeZone, cancellationToken);
         var validation = _scheduleValidation.ValidateCreate(
             body.Name,
             body.RecurrenceExpression,
-            body.TimeZone,
+            timeZone,
             body.Enabled,
             body.TargetJobType,
             body.TargetJobConfiguration);
@@ -95,16 +140,33 @@ public sealed class SchedulesController : ControllerBase
             new ScheduleId(id),
             body.Name,
             body.RecurrenceExpression,
-            body.TimeZone ?? "UTC",
+            timeZone,
             body.Enabled,
             target,
             body.ExecutionPolicyRef,
             Version: 1,
-            integrationId);
-        await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+            integrationId)
+        {
+            ResourceContextId = string.IsNullOrWhiteSpace(body.ResourceContextId)
+                ? null
+                : new ResourceContextId(body.ResourceContextId)
+        };
+
+        ScheduleDefinition created;
+        try
+        {
+            // The management service owns the authoritative ownership rule (inherit from the
+            // Integration; reject a mismatch). The controller only forwards the caller's request.
+            created = await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+
         var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
-        await _scheduleManagement.AssignToRuntimePlaneAsync(definition.Id, planeId, null, cancellationToken);
-        return CreatedAtAction(nameof(Get), new { id }, ToDto(definition));
+        await _scheduleManagement.AssignToRuntimePlaneAsync(created.Id, planeId, null, cancellationToken);
+        return CreatedAtAction(nameof(Get), new { id }, ToDto(created, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPatch("{id}")]
@@ -131,7 +193,7 @@ public sealed class SchedulesController : ControllerBase
             Enabled = body.Enabled ?? def.Enabled
         };
         await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
-        return Ok(ToDto(updated));
+        return Ok(ToDto(updated, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPost("{id}/enable")]
@@ -170,22 +232,66 @@ public sealed class SchedulesController : ControllerBase
         }
     }
 
-    private static ScheduleDto ToDto(ScheduleDefinition d) => new(
-        d.Id.Value,
-        d.Name,
-        d.RecurrenceExpression,
-        d.TimeZone,
-        d.Enabled,
-        (int)d.Target.JobType,
-        d.Target.JobConfiguration,
-        d.Version,
-        d.IntegrationId?.Value);
+    private async Task<string?> TryGetWorkerRuntimeStatusAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = await _schedulerStatus.GetStatusAsync(cancellationToken: cancellationToken);
+            return snapshot.WorkerRuntime.Status ?? snapshot.Status;
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
 
-    private static ScheduleDetailDto ToDetailDto(ScheduleWithExecutionState detail)
+    private static ScheduleDto ToDto(ScheduleDefinition d, DateTimeOffset asOfUtc, string? workerRuntimeStatus)
+    {
+        var clarity = ScheduleClarityProjector.Project(
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            d.IntegrationId?.Value,
+            asOfUtc,
+            workerRuntimeStatus: workerRuntimeStatus);
+
+        return new ScheduleDto(
+            d.Id.Value,
+            d.Name,
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            (int)d.Target.JobType,
+            d.Target.JobConfiguration,
+            d.Version,
+            d.IntegrationId?.Value,
+            clarity.NextFireUtc,
+            clarity.ScheduleTimeZoneId,
+            clarity.HealthStatus,
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList(),
+            d.ResourceContextId?.Value);
+    }
+
+    private static ScheduleDetailDto ToDetailDto(
+        ScheduleWithExecutionState detail,
+        string runtimePlaneId,
+        DateTimeOffset asOfUtc,
+        string? workerRuntimeStatus,
+        ResourceContext? owningResourceContext)
     {
         var d = detail.Definition;
         var state = detail.ExecutionState;
         var claim = detail.InProgressClaim;
+        var clarity = ScheduleClarityProjector.Project(
+            d.RecurrenceExpression,
+            d.TimeZone,
+            d.Enabled,
+            d.IntegrationId?.Value,
+            asOfUtc,
+            lastOutcome: state?.LastOutcome,
+            isClaimStale: claim?.IsStale,
+            workerRuntimeStatus: workerRuntimeStatus);
+
         return new ScheduleDetailDto(
             d.Id.Value,
             d.Name,
@@ -201,11 +307,30 @@ public sealed class SchedulesController : ControllerBase
             state?.LastSuccessfulDispatchUtc,
             claim?.ClaimedByHostId,
             claim?.ClaimedAtUtc,
-            claim?.IsStale);
+            claim?.IsStale,
+            d.IntegrationId?.Value,
+            runtimePlaneId,
+            clarity.NextFireUtc,
+            clarity.ScheduleTimeZoneId,
+            clarity.HealthStatus,
+            clarity.StatusReasons.Select(r => new ScheduleStatusReasonDto(r.Code, r.Message)).ToList(),
+            d.ResourceContextId?.Value,
+            owningResourceContext?.ToRef(),
+            claim?.ResourceContextId);
+    }
+
+    private void TryAppendWarningHeader(string value)
+    {
+        if (HttpContext?.Response?.Headers is null)
+            return;
+
+        HttpContext.Response.Headers.Append("Warning", value);
     }
 }
 
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
+
+public sealed record ScheduleStatusReasonDto(string Code, string Message);
 
 public sealed record ScheduleDto(
     string Id,
@@ -216,11 +341,19 @@ public sealed record ScheduleDto(
     int TargetJobType,
     string? TargetJobConfiguration,
     int Version,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// <see cref="ClaimedByHostId"/> / <see cref="ClaimedAtUtc"/> / <see cref="IsClaimStale"/>: active in-progress claim only; not historical.
+/// <see cref="ClaimResourceContextId"/>: CTX-2 historical snapshot from that same in-progress ScheduleRun — do not
+/// confuse with <see cref="ResourceContextId"/> above, which is the Schedule's current ownership (CTX-1).
+/// SWM-10: additive next-fire / readiness projection (compute-only).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -237,8 +370,27 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
-    bool? IsClaimStale = null);
+    bool? IsClaimStale = null,
+    string? IntegrationId = null,
+    string? RuntimePlaneId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null,
+    /// <summary>
+    /// CTX-2: historical ResourceContext snapshot from the active in-progress ScheduleRun this claim
+    /// belongs to. Distinct from <see cref="ResourceContextId"/> above, which is the Schedule's current
+    /// ownership (CTX-1). Null whenever no in-progress claim exists.
+    /// </summary>
+    string? ClaimResourceContextId = null);
 
+/// <param name="ResourceContextId">
+/// Optional owning ResourceContext. For an Integration-attached schedule it must equal the
+/// Integration's ResourceContext; omitted, the schedule inherits it. A standalone schedule defaults
+/// to the reserved Shared context.
+/// </param>
 public sealed record CreateScheduleRequestBody(
     string Name,
     string RecurrenceExpression,
@@ -248,7 +400,8 @@ public sealed record CreateScheduleRequestBody(
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local",
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Epic 38: Target kind and configuration are immutable after creation.
@@ -261,4 +414,3 @@ public sealed record UpdateScheduleRequestBody(
     bool? Enabled = null,
     int? TargetJobType = null,
     string? TargetJobConfiguration = null);
-

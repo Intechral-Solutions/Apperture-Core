@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.ResourceContexts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,33 +16,52 @@ public sealed class ConnectionsController : ControllerBase
     private readonly IBindingRepository _bindingRepository;
     private readonly IIntegrationRepository _integrationRepository;
     private readonly IConnectorDefinitionRegistry _connectorDefinitions;
+    private readonly IResourceContextService _resourceContexts;
 
     public ConnectionsController(
         IConnectionManagementService connectionService,
         IBindingRepository bindingRepository,
         IIntegrationRepository integrationRepository,
-        IConnectorDefinitionRegistry connectorDefinitions)
+        IConnectorDefinitionRegistry connectorDefinitions,
+        IResourceContextService resourceContexts)
     {
         _connectionService = connectionService;
         _bindingRepository = bindingRepository;
         _integrationRepository = integrationRepository;
         _connectorDefinitions = connectorDefinitions;
+        _resourceContexts = resourceContexts;
     }
 
     /// <summary>
     /// Lists connections visible to the current actor, including Used In projection.
     /// </summary>
+    /// <param name="contextId">
+    /// Optional owning ResourceContext filter. Omitted (the default) returns the same global set this
+    /// endpoint has always returned. An unknown ResourceContext is rejected with 400.
+    /// </param>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<ConnectionDto>>> List(CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<ConnectionDto>>> List(
+        [FromQuery] string? contextId,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var connections = await _connectionService.ListConnectionsAsync(cancellationToken);
+            ResourceContextId? contextFilter = null;
+            if (!string.IsNullOrWhiteSpace(contextId))
+            {
+                contextFilter = new ResourceContextId(contextId);
+                if (await _resourceContexts.GetAsync(contextFilter, cancellationToken) is null)
+                    return BadRequest(new { error = $"ResourceContext '{contextId}' not found." });
+            }
+
+            var connections = await _connectionService.ListConnectionsAsync(contextFilter, cancellationToken);
+            // One query for the small ResourceContext dimension, reused for every row (no N+1).
+            var contexts = await _resourceContexts.ListAsync(includeArchived: true, cancellationToken);
             var result = new List<ConnectionDto>();
             foreach (var c in connections)
             {
                 var bindings = await _bindingRepository.GetByConnectionIdAsync(c.Id, cancellationToken);
-                result.Add(await ToDtoAsync(c, bindings, cancellationToken));
+                result.Add(await ToDtoAsync(c, bindings, contexts, cancellationToken));
             }
             return Ok(result);
         }
@@ -85,7 +105,9 @@ public sealed class ConnectionsController : ControllerBase
                 body.Config ?? new Dictionary<string, string>(),
                 body.SecretRefs ?? new Dictionary<string, string>(),
                 body.ScopeKey,
-                body.OwnerId);
+                body.OwnerId,
+                body.SecretValues,
+                string.IsNullOrWhiteSpace(body.ResourceContextId) ? null : new ResourceContextId(body.ResourceContextId));
             var connection = await _connectionService.CreateConnectionAsync(request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
             return CreatedAtAction(nameof(Get), new { id = connection.Id.Value }, await ToDtoAsync(connection, bindings, cancellationToken));
@@ -108,7 +130,7 @@ public sealed class ConnectionsController : ControllerBase
     {
         try
         {
-            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs);
+            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs, body.SecretValues);
             var connection = await _connectionService.UpdateConnectionAsync(new ConnectionId(id), request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
             return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
@@ -171,6 +193,16 @@ public sealed class ConnectionsController : ControllerBase
         IReadOnlyList<Binding> bindings,
         CancellationToken cancellationToken)
     {
+        var contexts = await _resourceContexts.ListAsync(includeArchived: true, cancellationToken);
+        return await ToDtoAsync(c, bindings, contexts, cancellationToken);
+    }
+
+    private async Task<ConnectionDto> ToDtoAsync(
+        Core.Domain.Connector.Connection c,
+        IReadOnlyList<Binding> bindings,
+        IReadOnlyList<ResourceContext> resourceContexts,
+        CancellationToken cancellationToken)
+    {
         var usedIn = new List<ConnectionUsedInEntry>();
         foreach (var b in bindings)
         {
@@ -182,6 +214,7 @@ public sealed class ConnectionsController : ControllerBase
             }
             usedIn.Add(new ConnectionUsedInEntry(b.ModuleId, b.SlotName, b.ContractType, b.IntegrationId?.Value, integrationDisplayName));
         }
+        var owning = resourceContexts.FirstOrDefault(rc => string.Equals(rc.Id.Value, c.ResourceContextId.Value, StringComparison.Ordinal));
         return new ConnectionDto(
             c.Id.Value,
             c.ConnectorDefinitionId.Value,
@@ -195,7 +228,9 @@ public sealed class ConnectionsController : ControllerBase
             c.LastVerificationStatus.ToString(),
             c.LastVerificationAtUtc,
             c.LastVerificationSummary,
-            usedIn);
+            usedIn,
+            c.ResourceContextId.Value,
+            owning?.ToRef());
     }
 
     private bool IsVerificationSupported(ConnectorDefinitionId connectorDefinitionId)
@@ -228,17 +263,27 @@ public sealed record ConnectionDto(
     string LastVerificationStatus,
     DateTimeOffset? LastVerificationAtUtc,
     string? LastVerificationSummary,
-    IReadOnlyList<ConnectionUsedInEntry> UsedIn);
+    IReadOnlyList<ConnectionUsedInEntry> UsedIn,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null);
 
+/// <param name="ScopeKey">Authorization scope. Unrelated to <paramref name="ResourceContextId"/>.</param>
+/// <param name="ResourceContextId">
+/// Optional owning ResourceContext. Omitted means the reserved Shared context, so existing clients
+/// remain compatible. An unknown or archived context is rejected.
+/// </param>
 public sealed record CreateConnectionRequestBody(
     string ConnectorDefinitionId,
     string Name,
     IReadOnlyDictionary<string, string>? Config,
     IReadOnlyDictionary<string, string>? SecretRefs,
     string? ScopeKey,
-    string? OwnerId);
+    string? OwnerId,
+    IReadOnlyDictionary<string, string>? SecretValues = null,
+    string? ResourceContextId = null);
 
 public sealed record UpdateConnectionRequestBody(
     string? Name,
     IReadOnlyDictionary<string, string>? Config,
-    IReadOnlyDictionary<string, string>? SecretRefs);
+    IReadOnlyDictionary<string, string>? SecretRefs,
+    IReadOnlyDictionary<string, string>? SecretValues = null);

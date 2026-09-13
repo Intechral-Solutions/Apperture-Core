@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Domain.Scheduling;
 using Cronos;
 
@@ -122,13 +123,7 @@ public sealed class ScheduleValidationService : IScheduleValidationService
             return;
         }
 
-        try
-        {
-            _ = TimeZoneInfo.FindSystemTimeZoneById(timeZone);
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            errors.Add($"Unknown time zone: {timeZone}. Use IANA IDs (e.g. UTC, America/New_York).");
-        }
+        if (!ScheduleTimeZoneResolver.TryFind(timeZone, out _))
+            errors.Add($"Unknown time zone: {timeZone}. Use IANA IDs (e.g. UTC, America/Los_Angeles).");
     }
 }

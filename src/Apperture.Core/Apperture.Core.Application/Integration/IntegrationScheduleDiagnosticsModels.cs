@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Domain.Integration;
 
@@ -65,5 +66,6 @@ public sealed record IntegrationScheduleDiagnosticsProjection(
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticEntry> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentProjection> RecentAttentionIncidents,
-    IReadOnlyList<AttentionIncidentNotificationProjection> RecentAttentionIncidentNotifications,
-    AttentionRoutingDiagnosticsSummary AttentionRouting);
+    AttentionRoutingDiagnosticsSummary AttentionRouting,
+    IReadOnlyList<NotificationInstanceDiagnosticRow> RecentPlatformNotificationInstances,
+    IReadOnlyList<NotificationOutboxDiagnosticRow> RecentPlatformNotificationOutbox);

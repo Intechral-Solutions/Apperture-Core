@@ -49,6 +49,21 @@ public sealed class ProcedureRegistryService : IProcedureRegistryService
         return _byModule.TryGetValue(moduleId, out var list) ? list : Array.Empty<ProcedureDefinition>();
     }
 
+    public async ValueTask<ProcedureDefinition?> FindByTargetAsync(
+        string moduleId,
+        ProcedureLaunchKind launchKind,
+        string targetDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (!_byModule.TryGetValue(moduleId, out var list))
+            return null;
+
+        return list.FirstOrDefault(p =>
+            p.LaunchKind == launchKind
+            && string.Equals(p.TargetDefinitionId, targetDefinitionId, StringComparison.Ordinal));
+    }
+
     private async ValueTask EnsureInitializedAsync(CancellationToken cancellationToken)
     {
         var signature = await ComputeActivationSignatureAsync(cancellationToken).ConfigureAwait(false);

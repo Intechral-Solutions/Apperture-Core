@@ -1,0 +1,49 @@
+@*
+    Tab-style navigation across the four account sections. Uses real links so the sections are
+    bookmarkable and keyboard/screen-reader navigation behaves like normal navigation.
+*@
+@implements IDisposable
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+<nav class="ui-tabs" aria-label="Account sections">
+    @foreach (var accountSection in AccountUiRoutes.Sections)
+    {
+        var isCurrent = IsCurrent(accountSection);
+        <a href="@accountSection.Href"
+           aria-current="@(isCurrent ? "page" : null)"
+           title="@accountSection.Description"
+           data-state="@(isCurrent ? "active" : "inactive")"
+           class="ui-tabs__link">
+            @accountSection.Label
+        </a>
+    }
+</nav>
+
+@code {
+    private string _path = "";
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        _path = CurrentPath();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var next = CurrentPath();
+        if (string.Equals(next, _path, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _path = next;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string CurrentPath() => new Uri(Nav.Uri).AbsolutePath;
+
+    private bool IsCurrent(AccountSection section) =>
+        AccountUiRoutes.ResolveSection(_path) is { } current
+        && string.Equals(current.Href, section.Href, StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

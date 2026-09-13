@@ -17,7 +17,9 @@ public sealed class Epic41ConfigGovernanceUiTests
         menus.Should().ContainKey("Config");
         var config = menus["Config"];
         config.Items.Should().Contain(i => i.Text == "Governance");
-        config.Items.Should().Contain(i => i.Href == "/config");
+        var system = config.Items.First(i => i.Text == "System");
+        system.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        config.Items.Should().Contain(i => i.Href == "/config" && i.Text == "Overview");
     }
 
     [Fact]
@@ -29,11 +31,11 @@ public sealed class Epic41ConfigGovernanceUiTests
         governance.Should().NotBeNull();
         governance!.Children.Should().NotBeNull();
         var hrefs = governance.Children!.Select(c => c.Href).ToList();
-        hrefs.Should().Contain("/config/governance");
         hrefs.Should().Contain("/config/governance/catalog");
         hrefs.Should().Contain("/config/governance/roles");
         hrefs.Should().Contain("/config/governance/users");
-        governance.Children!.First(c => c.Href == "/config/governance").Text.Should().Be("Overview");
+        hrefs.Should().NotContain("/config/governance");
+        governance.Href.Should().Be("/config/governance");
     }
 
     [Fact]

@@ -1,0 +1,495 @@
+@page "/integrations/{IntegrationId}/settings"
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integrationName, "Integration")"
+                Subtitle="Configuration">
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+        </ChildContent>
+        <Toolbar>
+            <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn">Schedule diagnostics</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
+                    disabled="@_busy"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission to view integration settings." />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError" />
+    }
+    else if (_integrationMissing)
+    {
+        <EmptyState Title="Integration not found"
+                    Message="The requested integration could not be loaded." />
+    }
+    else if (_settingsLoading)
+    {
+        <LoadingState Message="Loading integration settings…" />
+    }
+    else if (_rows.Count == 0)
+    {
+        <EmptyState Title="No settings available"
+                    Message="No settings are available for this integration yet. Module-specific and integration-scoped settings will appear here when installed modules define them." />
+        <PageMessage Kind="PageMessageKind.Info"
+                     Class="mt-4 max-w-3xl"
+                     Title="What to expect"
+                     Message="Integration settings are stored per integration in the platform database. When definitions are registered, you can view and edit them here with the same typed editors used for instance platform settings." />
+    }
+    else
+    {
+        @if (_readiness is not null)
+        {
+            var readinessPill = IntegrationConfigurationOperatorUiHelpers.BuildOverallReadinessPill(_readiness);
+            <PageMessage Kind="@(readinessPill.Semantic == ManagementStatusSemantic.Success ? PageMessageKind.Info : PageMessageKind.Warning)"
+                         Class="mt-4 max-w-3xl"
+                         Title="Integration readiness"
+                         Message="@($"{readinessPill.Label}. Changes here affect whether schedules and procedures can run.")">
+                <ChildContent>
+                    <DrillInLink Href="@IntegrationConfigurationOperatorUiHelpers.BuildConfigurationOverviewHref(IntegrationId)">
+                        View configuration overview
+                    </DrillInLink>
+                </ChildContent>
+            </PageMessage>
+        }
+
+        <PageMessage Kind="PageMessageKind.Info"
+                     Class="mt-4 max-w-3xl"
+                     Title="How integration settings work"
+                     Message="Save creates an integration-scoped override in the database. Precedence is: integration override, then definition default. Reset removes the database override for this integration only. Values never write back to appsettings files." />
+
+        @if (!_canManage)
+        {
+            <p class="mt-3 text-xs text-muted max-w-3xl">You have read-only access. Users with integration update permission can save and reset overrides.</p>
+        }
+
+        <div class="mt-6">
+            <PlatformSettingsEditor Rows="_rows"
+                                    IntegrationId="@IntegrationId"
+                                    IntegrationScope="true"
+                                    ActiveCategory="@_activeCategory"
+                                    ActiveCategoryChanged="OnActiveCategoryChanged"
+                                    CanManage="_canManage"
+                                    SavingKey="_savingKey"
+                                    RequiredSettingKeys="@_requiredSettingKeys"
+                                    GetEditValue="GetEditValue"
+                                    GetEditValues="GetEditValues"
+                                    GetError="GetError"
+                                    EditValueChanged="OnEditValueChanged"
+                                    EditValuesChanged="OnEditValuesChanged"
+                                    OnSave="SaveAsync"
+                                    OnClear="RequestClearAsync"
+                                    OnReset="RequestResetAsync" />
+        </div>
+
+        <p class="mt-6 text-xs text-muted max-w-3xl">
+            Audit: set and reset actions appear in the <a class="underline" href="/control/audit">audit timeline</a> with action names <code class="ui-inline-code">integration.settings.set</code> and <code class="ui-inline-code">integration.settings.reset</code>.
+        </p>
+    }
+</div>
+
+<ConfirmActionDialog IsOpen="@(_pendingSettingAction is not null)"
+                     Title="@PendingSettingTitle"
+                     ConfirmLabel="@PendingSettingConfirmLabel"
+                     Emphasis="@PendingSettingEmphasis"
+                     OnConfirm="RunPendingSettingActionAsync"
+                     OnConfirmed="ClearPendingSettingAction"
+                     OnCancel="ClearPendingSettingAction">
+    <ChildContent>
+        @PendingSettingConsequence
+    </ChildContent>
+</ConfirmActionDialog>
+
+@code {
+  [Parameter] public string IntegrationId { get; set; } = "";
+
+  private enum PendingSettingActionKind { Clear, Reset }
+
+  private (PlatformSettingResolvedDto Row, PendingSettingActionKind Kind)? _pendingSettingAction;
+
+  private bool _capabilitiesLoaded;
+  private bool _canView;
+  private bool _canManage;
+  private bool _showNotificationsTab;
+  private bool _busy;
+  private bool _settingsLoading = true;
+  private bool _integrationMissing;
+  private string? _loadError;
+  private string? _integrationName;
+  private string? _savingKey;
+  private string _activeCategory = string.Empty;
+  private List<PlatformSettingResolvedDto> _rows = [];
+  private readonly HashSet<string> _requiredSettingKeys = new(StringComparer.Ordinal);
+  private IntegrationReadinessDto? _readiness;
+  private readonly Dictionary<string, string> _editValues = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, List<string>> _editArrayValues = new(StringComparer.Ordinal);
+  private readonly Dictionary<string, string?> _errors = new(StringComparer.Ordinal);
+
+  protected override async Task OnInitializedAsync()
+  {
+    var caps = await Capabilities.GetCapabilitiesAsync();
+    _canView = caps.CanViewIntegrations;
+    _canManage = caps.CanUpdateIntegrations;
+    _showNotificationsTab = caps.CanViewNotificationDefinitions;
+    _capabilitiesLoaded = true;
+
+    if (_canView)
+      await LoadAsync();
+    else
+      _settingsLoading = false;
+  }
+
+  private async Task LoadAsync()
+  {
+    _busy = true;
+    _loadError = null;
+    _integrationMissing = false;
+    _settingsLoading = true;
+
+    try
+    {
+      var integration = await Client.GetIntegrationAsync(IntegrationId);
+      if (integration is null)
+      {
+        _integrationMissing = true;
+        _integrationName = null;
+        _rows = [];
+        return;
+      }
+
+      _integrationName = integration.DisplayName;
+
+      try
+      {
+        var declarations = await Client.GetIntegrationConfigurationDeclarationsAsync(IntegrationId);
+        _requiredSettingKeys.Clear();
+        if (declarations?.Settings is not null)
+        {
+          foreach (var setting in declarations.Settings.Where(s => s.IsRequired))
+            _requiredSettingKeys.Add(setting.Key);
+        }
+      }
+      catch
+      {
+        _requiredSettingKeys.Clear();
+      }
+
+      try
+      {
+        var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+        _readiness = detail?.Readiness;
+      }
+      catch
+      {
+        _readiness = null;
+      }
+
+      var rows = await Client.ListIntegrationSettingsAsync(IntegrationId);
+      if (rows is null)
+      {
+        _loadError = "Could not load integration settings.";
+        _rows = [];
+        return;
+      }
+
+      _rows = rows
+          .OrderBy(x => PlatformSettingUiHelpers.GetCategoryOrder(x.Category))
+          .ThenBy(x => x.DisplayName, StringComparer.Ordinal)
+          .ToList();
+      _editValues.Clear();
+      _editArrayValues.Clear();
+      _errors.Clear();
+      foreach (var row in _rows)
+        SyncEditState(row);
+
+      EnsureActiveCategory();
+    }
+    catch (Exception ex)
+    {
+      _loadError = ex.Message;
+    }
+    finally
+    {
+      _settingsLoading = false;
+      _busy = false;
+    }
+  }
+
+  private string GetEditValue(string key) =>
+      _editValues.TryGetValue(key, out var value) ? value : string.Empty;
+
+  private IReadOnlyList<string> GetEditValues(PlatformSettingResolvedDto row) =>
+      _editArrayValues.TryGetValue(row.Key, out var values)
+          ? values
+          : row.CurrentValues?.ToList() ?? [];
+
+  private void EnsureActiveCategory()
+  {
+    var categories = PlatformSettingUiHelpers.GetOrderedCategories(_rows.Select(r => r.Category));
+    if (categories.Count == 0)
+    {
+      _activeCategory = string.Empty;
+      return;
+    }
+
+    if (!categories.Contains(_activeCategory, StringComparer.Ordinal))
+      _activeCategory = categories[0];
+  }
+
+  private Task OnActiveCategoryChanged(string category)
+  {
+    _activeCategory = category;
+    return Task.CompletedTask;
+  }
+
+  private Task OnEditValueChanged((string Key, string Value) change)
+  {
+    _editValues[change.Key] = change.Value ?? string.Empty;
+    _errors.Remove(change.Key);
+    return Task.CompletedTask;
+  }
+
+  private Task OnEditValuesChanged((string Key, IReadOnlyList<string> Values) change)
+  {
+    _editArrayValues[change.Key] = change.Values.ToList();
+    _errors.Remove(change.Key);
+    return Task.CompletedTask;
+  }
+
+  private string? GetError(string key) =>
+      _errors.TryGetValue(key, out var error) ? error : null;
+
+  private async Task SaveAsync(PlatformSettingResolvedDto row)
+  {
+    _errors.Remove(row.Key);
+    _savingKey = row.Key;
+    try
+    {
+      PlatformSettingResolvedDto updated;
+      if (PlatformSettingUiHelpers.IsSecret(row.InputKind, row.IsSensitive))
+      {
+        var secretValue = GetEditValue(row.Key);
+        if (string.IsNullOrWhiteSpace(secretValue))
+        {
+          _errors[row.Key] = "Enter a new value to replace the secret. Leaving the field blank keeps the current secret unchanged.";
+          return;
+        }
+
+        updated = await Client.SetIntegrationSettingAsync(
+            IntegrationId,
+            row.Key,
+            new UpdatePlatformSettingRequest(
+                RowVersionBase64: row.RowVersionBase64,
+                SecretOperation: PlatformSettingUiHelpers.SecretOperationReplace,
+                SecretValue: secretValue));
+      }
+      else if (PlatformSettingUiHelpers.IsMultiSelect(row.InputKind))
+      {
+        updated = await Client.SetIntegrationSettingAsync(
+            IntegrationId,
+            row.Key,
+            new UpdatePlatformSettingRequest(
+                Values: GetEditValues(row).ToList(),
+                RowVersionBase64: row.RowVersionBase64));
+      }
+      else
+      {
+        updated = await Client.SetIntegrationSettingAsync(
+            IntegrationId,
+            row.Key,
+            new UpdatePlatformSettingRequest(
+                Value: GetEditValue(row.Key),
+                RowVersionBase64: row.RowVersionBase64));
+      }
+
+      ReplaceRow(updated);
+      await RefreshReadinessAsync();
+      Toasts.Show(ToastSeverity.Success, $"Saved {row.DisplayName}.");
+    }
+    catch (HttpRequestException ex)
+    {
+      _errors[row.Key] = ex.Message;
+    }
+    finally
+    {
+      _savingKey = null;
+    }
+  }
+
+  // UIX-6 — consequential setting changes confirm through ConfirmActionDialog.
+  private Task RequestClearAsync(PlatformSettingResolvedDto row)
+  {
+    if (!row.HasPlatformOverride && !PlatformSettingUiHelpers.IsScopedOverride(row.Source))
+      return Task.CompletedTask;
+
+    _pendingSettingAction = (row, PendingSettingActionKind.Clear);
+    return Task.CompletedTask;
+  }
+
+  private Task RequestResetAsync(PlatformSettingResolvedDto row)
+  {
+    // Only a scoped override is consequential; otherwise reset proceeds directly.
+    if (!PlatformSettingUiHelpers.IsScopedOverride(row.Source))
+      return ResetAsync(row);
+
+    _pendingSettingAction = (row, PendingSettingActionKind.Reset);
+    return Task.CompletedTask;
+  }
+
+  private void ClearPendingSettingAction() => _pendingSettingAction = null;
+
+  private async Task RunPendingSettingActionAsync()
+  {
+    if (_pendingSettingAction is not { } pending)
+      return;
+
+    var succeeded = pending.Kind == PendingSettingActionKind.Clear
+        ? await ClearAsync(pending.Row)
+        : await ResetAsync(pending.Row);
+
+    // Keep the dialog open with the failure; the row also shows inline remediation.
+    if (!succeeded)
+      throw new InvalidOperationException(GetError(pending.Row.Key) ?? "The action could not be completed.");
+  }
+
+  private string PendingSettingTitle => _pendingSettingAction?.Kind == PendingSettingActionKind.Reset
+      ? "Reset setting?"
+      : "Clear setting?";
+
+  private string PendingSettingConfirmLabel => _pendingSettingAction?.Kind == PendingSettingActionKind.Reset
+      ? "Reset setting"
+      : "Clear setting";
+
+  private ConfirmActionEmphasis PendingSettingEmphasis =>
+      _pendingSettingAction is { Kind: PendingSettingActionKind.Clear, Row: var row }
+      && _requiredSettingKeys.Contains(row.Key)
+          ? ConfirmActionEmphasis.Destructive
+          : ConfirmActionEmphasis.Caution;
+
+  private string PendingSettingConsequence
+  {
+    get
+    {
+      if (_pendingSettingAction is not { } pending)
+        return "";
+
+      var name = pending.Row.DisplayName;
+      if (pending.Kind == PendingSettingActionKind.Reset)
+        return $"Resetting \"{name}\" removes the integration override and restores the definition default.";
+
+      return _requiredSettingKeys.Contains(pending.Row.Key)
+          ? $"\"{name}\" is required. Clearing it may block integration readiness, schedules, and procedure launches."
+          : $"Clearing \"{name}\" removes the integration override and disables the managed secret when owned by this setting.";
+    }
+  }
+
+  // UIX-6: returns false on failure so the confirmation dialog can stay open with the reason.
+  private async Task<bool> ClearAsync(PlatformSettingResolvedDto row)
+  {
+    _errors.Remove(row.Key);
+    _savingKey = row.Key;
+    try
+    {
+      var updated = await Client.SetIntegrationSettingAsync(
+          IntegrationId,
+          row.Key,
+          new UpdatePlatformSettingRequest(
+              RowVersionBase64: row.RowVersionBase64,
+              SecretOperation: PlatformSettingUiHelpers.SecretOperationClear));
+      ReplaceRow(updated);
+      await RefreshReadinessAsync();
+      Toasts.Show(ToastSeverity.Success, $"Cleared {row.DisplayName}.");
+      return true;
+    }
+    catch (HttpRequestException ex)
+    {
+      _errors[row.Key] = ex.Message;
+      return false;
+    }
+    finally
+    {
+      _savingKey = null;
+    }
+  }
+
+  private async Task<bool> ResetAsync(PlatformSettingResolvedDto row)
+  {
+    _errors.Remove(row.Key);
+    _savingKey = row.Key;
+    try
+    {
+      var updated = await Client.ResetIntegrationSettingAsync(IntegrationId, row.Key);
+      if (updated is null)
+      {
+        _errors[row.Key] = "Reset failed or setting was not found.";
+        return false;
+      }
+
+      ReplaceRow(updated);
+      await RefreshReadinessAsync();
+      Toasts.Show(ToastSeverity.Success, $"Reset {row.DisplayName} to definition default.");
+      return true;
+    }
+    catch (HttpRequestException ex)
+    {
+      _errors[row.Key] = ex.Message;
+      return false;
+    }
+    finally
+    {
+      _savingKey = null;
+    }
+  }
+
+  private async Task RefreshReadinessAsync()
+  {
+    try
+    {
+      var detail = await Client.GetIntegrationOperatorDetailAsync(IntegrationId);
+      _readiness = detail?.Readiness;
+    }
+    catch
+    {
+      _readiness = null;
+    }
+  }
+
+  private void ReplaceRow(PlatformSettingResolvedDto updated)
+  {
+    var index = _rows.FindIndex(x => string.Equals(x.Key, updated.Key, StringComparison.Ordinal));
+    if (index >= 0)
+      _rows[index] = updated;
+    SyncEditState(updated);
+    _errors.Remove(updated.Key);
+  }
+
+  private void SyncEditState(PlatformSettingResolvedDto row)
+  {
+    _editValues[row.Key] = PlatformSettingUiHelpers.IsSecret(row.InputKind, row.IsSensitive)
+        ? string.Empty
+        : row.CurrentValue;
+    _editArrayValues[row.Key] = row.CurrentValues?.ToList() ?? [];
+  }
+}

@@ -1,3 +1,4 @@
+using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Operations;
@@ -20,6 +21,7 @@ public sealed class RunQueryService : IRunQueryService
     private readonly IOperationRunReadAuthorizationService _operationAuthz;
     private readonly IWorkflowDefinitionResolver _workflowDefinitions;
     private readonly IRuntimeModuleCompositionQueryService _composition;
+    private readonly IOperationItemStore? _operationItems;
 
     public RunQueryService(
         AppertureDbContext db,
@@ -28,7 +30,8 @@ public sealed class RunQueryService : IRunQueryService
         IWorkflowRunReadAuthorizationService workflowAuthz,
         IOperationRunReadAuthorizationService operationAuthz,
         IWorkflowDefinitionResolver workflowDefinitions,
-        IRuntimeModuleCompositionQueryService composition)
+        IRuntimeModuleCompositionQueryService composition,
+        IOperationItemStore? operationItems = null)
     {
         _db = db;
         _operations = operations;
@@ -37,19 +40,35 @@ public sealed class RunQueryService : IRunQueryService
         _operationAuthz = operationAuthz;
         _workflowDefinitions = workflowDefinitions;
         _composition = composition;
+        _operationItems = operationItems;
     }
 
     public async ValueTask<IReadOnlyList<RunSummaryDto>> ListRunsAsync(RunQueryFilter? filter = null, CancellationToken cancellationToken = default)
     {
         var query = _db.OperationRuns.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(filter?.Status))
-            query = query.Where(r => r.Status == filter.Status);
+        {
+            if (string.Equals(filter.Status, "blocked", StringComparison.OrdinalIgnoreCase))
+            {
+                var blockedPrefix = RunFailureCapture.DeferredWorkBlockedPrefix;
+                query = query.Where(r =>
+                    r.Status == WorkflowLifecycleStatusNames.Failed
+                    && r.FailureSummary != null
+                    && r.FailureSummary.StartsWith(blockedPrefix));
+            }
+            else
+            {
+                query = query.Where(r => r.Status == filter.Status);
+            }
+        }
         if (!string.IsNullOrWhiteSpace(filter?.OperationDefinitionId))
             query = query.Where(r => r.DefinitionId == filter.OperationDefinitionId);
         if (!string.IsNullOrWhiteSpace(filter?.CorrelationKey))
             query = query.Where(r => r.CorrelationKey == filter.CorrelationKey);
         if (!string.IsNullOrWhiteSpace(filter?.IntegrationId))
             query = query.Where(r => r.IntegrationId == filter.IntegrationId);
+        if (!string.IsNullOrWhiteSpace(filter?.ResourceContextId))
+            query = query.Where(r => r.ResourceContextId == filter.ResourceContextId);
         if (filter?.CreatedFrom is not null)
             query = query.Where(r => r.CreatedAt >= filter.CreatedFrom.Value);
         if (filter?.CreatedTo is not null)
@@ -295,7 +314,8 @@ public sealed class RunQueryService : IRunQueryService
                     RunKindNames.Workflow,
                     r.IntegrationId,
                     r.ProcedureId,
-                    r.ExecutionOrigin);
+                    r.ExecutionOrigin,
+                    r.ResourceContextId);
             }
 
             if (string.Equals(filter?.ExecutionKind, RunKindNames.Workflow, StringComparison.OrdinalIgnoreCase))
@@ -321,7 +341,8 @@ public sealed class RunQueryService : IRunQueryService
                 RunKindNames.Operation,
                 r.IntegrationId,
                 r.ProcedureId,
-                r.ExecutionOrigin);
+                r.ExecutionOrigin,
+                r.ResourceContextId);
         }
         catch (UnauthorizedAccessException)
         {
@@ -434,7 +455,9 @@ public sealed class RunQueryService : IRunQueryService
                 RunKindNames.Workflow,
                 forensic,
                 r.IntegrationId,
-                r.ProcedureId);
+                r.ProcedureId,
+                await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false),
+                r.ResourceContextId);
         }
 
         var operationInstance = await _db.OperationInstances.AsNoTracking()
@@ -515,7 +538,32 @@ public sealed class RunQueryService : IRunQueryService
             RunKindNames.Operation,
             opForensic,
             r.IntegrationId,
-            r.ProcedureId);
+            r.ProcedureId,
+            await TryGetOperationItemizationSummaryAsync(r.Id, cancellationToken).ConfigureAwait(false),
+            r.ResourceContextId);
+    }
+
+    private async Task<RunOperationItemizationSummaryDto?> TryGetOperationItemizationSummaryAsync(
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        if (_operationItems is null)
+            return null;
+
+        try
+        {
+            var summary = await _operationItems.GetRunSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+            return new RunOperationItemizationSummaryDto(
+                summary.GroupCount,
+                summary.FailedItemCount,
+                summary.SkippedItemCount,
+                summary.HasOperationItems);
+        }
+        catch
+        {
+            // Run detail must not fail when itemization store is unavailable; summary is optional.
+            return null;
+        }
     }
 
     private async ValueTask<RunForensicContextDto> BuildForensicContextAsync(

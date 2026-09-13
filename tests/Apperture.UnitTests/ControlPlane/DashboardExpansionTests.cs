@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.RuntimeHealth;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
@@ -384,8 +385,67 @@ public sealed class DashboardExpansionTests
         var card = await sut.BuildAsync();
 
         card.Should().NotBeNull();
-        card!.NavigationHref.Should().Be("/control/blocked-work");
-        card.NavigationLabel.Should().Be("Open blocked work");
+        card!.NavigationHref.Should().Be("/runs?status=blocked");
+        card.NavigationLabel.Should().Be("Open blocked runs");
+    }
+
+    [Fact]
+    public void IntegrationFleetAttentionConvention_Blocking_IsCritical()
+    {
+        DashboardCardAttentionConvention.FromIntegrationFleetSignals(1, 0, 0, 0)
+            .Should().Be(DashboardCardAttention.Critical);
+        DashboardCardAttentionConvention.FromIntegrationFleetSignals(0, 2, 0, 1)
+            .Should().Be(DashboardCardAttention.Warning);
+    }
+
+    [Fact]
+    public async Task IntegrationsProvider_BuildsFleetSummaryAndDrillIn()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var readiness = new Apperture.Core.Application.Integration.IntegrationReadinessProjection(
+            "int-1",
+            "mod-1",
+            false,
+            1,
+            0,
+            []);
+        var attention = Apperture.Core.Application.Integration.IntegrationFleetAttention.Compute("Active", readiness);
+        var row = new Apperture.Core.Application.Integration.IntegrationFleetRowProjection(
+            "int-1",
+            "Test",
+            "mod-1",
+            null,
+            "Active",
+            now,
+            now,
+            readiness,
+            attention,
+            new Apperture.Core.Application.Integration.IntegrationFleetOperationalRunAttention(
+                0, null, null, null, null, null, false, false, false, now),
+            new Apperture.Core.Application.Integration.IntegrationFleetExpectedRunAttention(
+                false, false, null, null, null, null, "none", null, 0, true, false, null, null, null),
+            ["blocking"],
+            [],
+            false);
+
+        var readinessSvc = new Mock<IIntegrationReadinessService>();
+        readinessSvc.Setup(x => x.ListFleetAsync(It.IsAny<Apperture.Core.Application.Integration.IntegrationFleetQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Apperture.Core.Application.Integration.IntegrationFleetRowProjection> { row });
+
+        var principal = new Mock<IPrincipalContext>();
+        principal.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActor>());
+        var authz = new Mock<IAuthorizationEvaluationService>();
+        authz.Setup(x => x.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var sut = new IntegrationsDashboardCardProvider(readinessSvc.Object, principal.Object, authz.Object);
+        var card = await sut.BuildAsync();
+
+        card.Should().NotBeNull();
+        card!.Attention.Should().Be(DashboardCardAttention.Critical);
+        card.NavigationHref.Should().Be("/integrations/int-1");
+        card.NavigationLabel.Should().Be("Open integration");
     }
 
     [Fact]

@@ -16,4 +16,20 @@ public interface IEntraInstanceRegistrationRepository
 
     /// <summary>Marks the given row active and clears <see cref="EntraInstanceRegistration.IsActive"/> on all others.</summary>
     Task SetActiveAsync(string id, CancellationToken cancellationToken = default);
+
+    Task UpdateOpenIdValidationOutcomeAsync(
+        string id,
+        OpenIdConfigurationStatus status,
+        DateTimeOffset validatedUtc,
+        string? summary,
+        string? detail,
+        CancellationToken cancellationToken = default);
+
+    Task UpdateDirectoryDiscoveryOutcomeAsync(
+        string id,
+        DirectoryDiscoveryStatus status,
+        DateTimeOffset utc,
+        string? summary,
+        string? detail,
+        CancellationToken cancellationToken = default);
 }

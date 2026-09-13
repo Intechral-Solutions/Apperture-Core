@@ -56,6 +56,16 @@ public sealed class SqlRoleRepository : IRoleRepository
         await _db.UserRoles.CountAsync(ur => ur.RoleId == roleId.Value, cancellationToken);
 
     /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<UserId>> ListUserIdsWithRoleAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        var ids = await _db.UserRoles.AsNoTracking()
+            .Where(ur => ur.RoleId == roleId.Value)
+            .Select(ur => ur.UserId)
+            .ToListAsync(cancellationToken);
+        return ids.ConvertAll(id => new UserId(id));
+    }
+
+    /// <inheritdoc />
     public async ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
         var exists = await _db.UserRoles.AnyAsync(ur => ur.UserId == userId.Value && ur.RoleId == roleId.Value, cancellationToken);

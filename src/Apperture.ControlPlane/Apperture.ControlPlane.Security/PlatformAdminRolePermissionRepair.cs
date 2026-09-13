@@ -33,6 +33,21 @@ public static class PlatformAdminRolePermissionRepair
         new(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance))
     ];
 
+    /// <summary>Managed contacts and Entra import (Epic 76).</summary>
+    public static readonly PermissionDescriptor[] RequiredManagedContactPermissions =
+    [
+        new(ActionConstants.ManagedContactRead, new ResourceDescriptor(ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance)),
+        new(ActionConstants.ManagedContactManage, new ResourceDescriptor(ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance)),
+        new(ActionConstants.ManagedContactImport, new ResourceDescriptor(ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>Notification definitions (Epic 77).</summary>
+    public static readonly PermissionDescriptor[] RequiredNotificationDefinitionPermissions =
+    [
+        new(ActionConstants.NotificationDefinitionRead, new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance)),
+        new(ActionConstants.NotificationDefinitionManage, new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance))
+    ];
+
     /// <summary>
     /// Config — Authentication UI (sign-in chooser, Entra registrations, auth overview). Epic 41+ operator capabilities.
     /// </summary>
@@ -41,6 +56,13 @@ public static class PlatformAdminRolePermissionRepair
         new(ActionConstants.AuthUiPolicyManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
         new(ActionConstants.AuthConfigurationRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
         new(ActionConstants.AuthEntraManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>Platform settings registry (Epic 109).</summary>
+    public static readonly PermissionDescriptor[] RequiredPlatformSettingsPermissions =
+    [
+        new(ActionConstants.PlatformSettingsRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+        new(ActionConstants.PlatformSettingsManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
     ];
 
     /// <summary>
@@ -93,6 +115,9 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureSet(step, RequiredIntegrationPermissions);
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);
+        step = EnsureSet(step, RequiredManagedContactPermissions);
+        step = EnsureSet(step, RequiredNotificationDefinitionPermissions);
+        step = EnsureSet(step, RequiredPlatformSettingsPermissions);
         return step;
     }
 

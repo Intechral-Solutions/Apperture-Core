@@ -7,4 +7,4 @@
 | [02-decisions](02-decisions/) | Architecture decision records (ADRs) |
 | [03-operations](03-operations/) | Observability, runbooks, incident response, backups |
 | [04-api](04-api/) | API contracts, OpenAPI |
-| [05-modules](05-modules/) | Module authoring, manifest spec, module types |
+| [05-modules](05-modules/) | Module authoring guide, manifest spec, handler patterns (Epic 104) |

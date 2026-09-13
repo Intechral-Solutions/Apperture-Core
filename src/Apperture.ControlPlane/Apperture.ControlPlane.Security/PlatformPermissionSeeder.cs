@@ -85,6 +85,8 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.AuthUiPolicyManage, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.AuthConfigurationRead, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.AuthEntraManage, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
+        Register(registry, ActionConstants.PlatformSettingsRead, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
+        Register(registry, ActionConstants.PlatformSettingsManage, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
 
         // Administrative
         Register(registry, ActionConstants.ScheduleManage, ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
@@ -109,6 +111,15 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.UserManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.RoleAssign, ResourceTypeConstants.Role, ScopeKeyConstants.Instance, ResourceFamily.Core);
         Register(registry, ActionConstants.CredentialManage, ResourceTypeConstants.User, ScopeKeyConstants.Instance, ResourceFamily.Core);
+
+        // Managed contacts (Epic 76)
+        Register(registry, ActionConstants.ManagedContactRead, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.ManagedContactManage, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.ManagedContactImport, ResourceTypeConstants.ManagedContact, ScopeKeyConstants.Instance, ResourceFamily.Core);
+
+        // Notification definitions (Epic 77)
+        Register(registry, ActionConstants.NotificationDefinitionRead, ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance, ResourceFamily.Core);
+        Register(registry, ActionConstants.NotificationDefinitionManage, ResourceTypeConstants.NotificationDefinition, ScopeKeyConstants.Instance, ResourceFamily.Core);
     }
 
     private static void Register(

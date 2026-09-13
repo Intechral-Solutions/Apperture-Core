@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,9 +23,20 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         return e is null ? null : ToDefinition(e);
     }
 
-    public async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken ct = default)
+    public ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken ct = default) =>
+        ListDefinitionsAsync(resourceContextId: null, ct);
+
+    public async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken ct = default)
     {
-        var entities = await _db.ScheduleDefinitions.AsNoTracking().ToListAsync(ct);
+        var query = _db.ScheduleDefinitions.AsNoTracking().AsQueryable();
+
+        // Context filtering happens in SQL, never by loading the table and filtering afterwards.
+        if (resourceContextId is not null)
+            query = query.Where(e => e.ResourceContextId == resourceContextId.Value);
+
+        var entities = await query.ToListAsync(ct);
         return entities.Select(ToDefinition).ToList();
     }
 
@@ -55,6 +67,8 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.ExecutionPolicyRef = d.ExecutionPolicyRef;
         e.Version = d.Version;
         e.IntegrationId = d.IntegrationId?.Value;
+        // Ownership is established at create time. CTX-1 has no move operation, so UpdateDefinitionAsync
+        // deliberately does not rewrite ResourceContextId.
         if (d.Lifecycle is { } life)
         {
             e.LastScheduleEnabledAtUtc = life.LastScheduleEnabledAtUtc;
@@ -98,15 +112,28 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask<bool> RunExistsAsync(string scheduleId, DateTimeOffset fireTimeUtc, CancellationToken ct = default)
     {
-        var instant = fireTimeUtc.UtcDateTime;
+        // SWM-2: compare DateTimeOffset to DateTimeOffset. EF SQL Server cannot translate
+        // member access like FireTimeUtc.UtcDateTime inside the expression tree.
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         return await _db.ScheduleRuns.AsNoTracking()
-            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
+            .AnyAsync(x => x.ScheduleId == scheduleId && x.FireTimeUtc == instant, ct);
     }
 
-    public async ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default)
+    public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default) =>
+        TryClaimFireAsync(scheduleId, fireTimeUtc, assignmentId, hostId, resourceContextId: null, ct);
+
+    /// <inheritdoc cref="IScheduleRepository.TryClaimFireAsync(string, DateTimeOffset, string, string, string?, CancellationToken)" />
+    public async ValueTask<bool> TryClaimFireAsync(
+        string scheduleId,
+        DateTimeOffset fireTimeUtc,
+        string assignmentId,
+        string hostId,
+        string? resourceContextId,
+        CancellationToken ct = default)
     {
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         // InMemory does not reliably enforce unique indexes on DateTimeOffset; treat existing row as lost claim race.
-        if (await RunExistsAsync(scheduleId, fireTimeUtc, ct))
+        if (await RunExistsAsync(scheduleId, instant, ct))
             return false;
 
         try
@@ -115,12 +142,15 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             {
                 ScheduleId = scheduleId,
                 AssignmentId = assignmentId,
-                FireTimeUtc = fireTimeUtc,
+                FireTimeUtc = instant,
                 StartedAtUtc = DateTimeOffset.UtcNow,
                 Outcome = "InProgress",
                 OutcomeReason = null,
                 RunId = null,
-                ClaimedByHostId = hostId
+                ClaimedByHostId = hostId,
+                // CTX-2: snapshotted at claim time, not at successful dispatch. Retained even if
+                // dispatch subsequently fails — the fire still occurred in this ResourceContext.
+                ResourceContextId = resourceContextId
             });
             await _db.SaveChangesAsync(ct);
             return true;
@@ -133,18 +163,17 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
     {
-        var assignmentIds = await _db.ScheduleAssignments.AsNoTracking()
-            .Where(a => a.RuntimePlaneId == planeId.Value)
-            .Select(a => a.Id)
-            .ToListAsync(ct);
-
-        var runs = await _db.ScheduleRuns.AsNoTracking()
-            .Where(r =>
-                r.Outcome == "InProgress" &&
-                r.StartedAtUtc < staleCutoffUtc &&
-                assignmentIds.Contains(r.AssignmentId))
-            .Select(r => new ScheduleFireCandidate(r.ScheduleId, r.AssignmentId, r.FireTimeUtc))
-            .ToListAsync(ct);
+        // Join definitions so disabled schedules cannot be re-dispatched via stale recovery.
+        var runs = await (
+            from r in _db.ScheduleRuns.AsNoTracking()
+            join a in _db.ScheduleAssignments.AsNoTracking() on r.AssignmentId equals a.Id
+            join d in _db.ScheduleDefinitions.AsNoTracking() on r.ScheduleId equals d.Id
+            where a.RuntimePlaneId == planeId.Value
+                  && d.Enabled
+                  && r.Outcome == "InProgress"
+                  && r.StartedAtUtc < staleCutoffUtc
+            select new ScheduleFireCandidate(r.ScheduleId, r.AssignmentId, r.FireTimeUtc)
+        ).ToListAsync(ct);
 
         return runs;
     }
@@ -152,6 +181,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
     public async ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         var isInMemory = _db.Database.ProviderName?.Contains("InMemory", StringComparison.Ordinal) == true;
 
         // InMemory provider does not support ExecuteUpdateAsync.
@@ -160,7 +190,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             var rows = await _db.ScheduleRuns
                 .Where(r =>
                     r.ScheduleId == scheduleId &&
-                    r.FireTimeUtc == fireTimeUtc &&
+                    r.FireTimeUtc == instant &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc)
                 .ExecuteUpdateAsync(
@@ -175,21 +205,20 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         ScheduleRunEntity? run;
         if (isInMemory)
         {
-            var instant = fireTimeUtc.UtcDateTime;
             var candidates = await _db.ScheduleRuns
                 .Where(r =>
                     r.ScheduleId == scheduleId &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc)
                 .ToListAsync(ct);
-            run = candidates.FirstOrDefault(r => r.FireTimeUtc.UtcDateTime == instant);
+            run = candidates.FirstOrDefault(r => r.FireTimeUtc == instant);
         }
         else
         {
             run = await _db.ScheduleRuns.FirstOrDefaultAsync(
                 r =>
                     r.ScheduleId == scheduleId &&
-                    r.FireTimeUtc == fireTimeUtc &&
+                    r.FireTimeUtc == instant &&
                     r.Outcome == "InProgress" &&
                     r.StartedAtUtc < staleCutoffUtc,
                 ct);
@@ -204,7 +233,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
     }
 
     /// <inheritdoc cref="IScheduleRepository.GetInProgressRunClaimAsync"/>
-    public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
+    public async ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default)
     {
         var run = await _db.ScheduleRuns.AsNoTracking()
             .Where(r => r.AssignmentId == assignmentId && r.Outcome == "InProgress")
@@ -212,14 +241,15 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             .FirstOrDefaultAsync(ct);
         if (run is null)
             return null;
-        return (run.ClaimedByHostId ?? "", run.StartedAtUtc);
+        return (run.ClaimedByHostId ?? "", run.StartedAtUtc, run.ResourceContextId);
     }
 
     public async ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken ct = default)
     {
-        var instant = fireTimeUtc.UtcDateTime;
+        // SWM-2: same normalization as RunExistsAsync — no .UtcDateTime in the EF predicate.
+        var instant = NormalizeFireTimeUtc(fireTimeUtc);
         var run = await _db.ScheduleRuns.FirstOrDefaultAsync(
-            x => x.ScheduleId == scheduleId && x.FireTimeUtc.UtcDateTime == instant, ct);
+            x => x.ScheduleId == scheduleId && x.FireTimeUtc == instant, ct);
         if (run is null)
             return;
         run.CompletedAtUtc = DateTimeOffset.UtcNow;
@@ -228,6 +258,13 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         run.RunId = runId;
         await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// UTC instant with zero offset, matching <c>ScheduleDispatchRunner</c> fire normalization
+    /// and the unique index on <c>(ScheduleId, FireTimeUtc)</c>.
+    /// </summary>
+    private static DateTimeOffset NormalizeFireTimeUtc(DateTimeOffset fireTimeUtc) =>
+        new(fireTimeUtc.UtcDateTime, TimeSpan.Zero);
 
     public async ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default)
     {
@@ -291,7 +328,11 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             e.ExecutionPolicyRef,
             e.Version,
             e.IntegrationId is not null ? new IntegrationId(e.IntegrationId) : null,
-            life);
+            life)
+        {
+            ResourceContextId = new ResourceContextId(
+                string.IsNullOrWhiteSpace(e.ResourceContextId) ? ResourceContextIds.SharedValue : e.ResourceContextId)
+        };
     }
 
     private static ScheduleDefinitionEntity ToDefinitionEntity(ScheduleDefinition d)
@@ -300,6 +341,10 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         {
             Id = d.Id.Value,
             IntegrationId = d.IntegrationId?.Value,
+            // Safety net for direct-repository callers. The authoritative ownership resolution
+            // (standalone -> Shared; Integration-attached -> the Integration's context) lives in
+            // IScheduleManagementService.CreateScheduleAsync.
+            ResourceContextId = d.ResourceContextId?.Value ?? ResourceContextIds.SharedValue,
             Name = d.Name,
             RecurrenceExpression = d.RecurrenceExpression,
             TimeZone = d.TimeZone,

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Apperture.Core.Application;
+using Apperture.Core.Application.ControlFacade;
 using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Workflow;
@@ -8,6 +10,7 @@ using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -37,6 +40,7 @@ public sealed class WorkflowStartRequestProcessor
     private readonly string _workerId;
     private readonly WorkflowStartRequestLeaseOptions _leaseOptions;
     private readonly IntegrationExecutionOptions? _integrationExecution;
+    private readonly ExecutionLifecyclePlatformEventEmitter? _lifecycleEmitter;
 
     public WorkflowStartRequestProcessor(
         AppertureDbContext db,
@@ -47,7 +51,8 @@ public sealed class WorkflowStartRequestProcessor
         ILogger? logger = null,
         IModuleRegistryService? moduleRegistry = null,
         IAuditService? audit = null,
-        IOptions<IntegrationExecutionOptions>? integrationExecution = null)
+        IOptions<IntegrationExecutionOptions>? integrationExecution = null,
+        ExecutionLifecyclePlatformEventEmitter? lifecycleEmitter = null)
     {
         _db = db;
         _executor = executor;
@@ -58,6 +63,7 @@ public sealed class WorkflowStartRequestProcessor
         _moduleRegistry = moduleRegistry;
         _audit = audit;
         _integrationExecution = integrationExecution?.Value;
+        _lifecycleEmitter = lifecycleEmitter;
     }
 
     public async Task<bool> TryClaimAsync(string runId, CancellationToken cancellationToken = default)
@@ -176,9 +182,31 @@ WHERE RunId = {runId} AND (
             {
                 request.Status = WorkflowLifecycleStatusNames.Failed;
                 request.LastError = "Missing WorkflowInstance or OperationRun record for start request.";
+                if (run is not null)
+                {
+                    run.Status = WorkflowLifecycleStatusNames.Failed;
+                    run.CompletedAt = DateTimeOffset.UtcNow;
+                }
+
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                if (run is not null && instance is not null)
+                {
+                    await TryEmitExecutionLifecycleAsync(
+                        WorkflowLifecycleStatusNames.Failed,
+                        run,
+                        request.WorkflowDefinitionId,
+                        moduleId: null,
+                        request,
+                        instance,
+                        stepCount: null,
+                        failedStepName: null,
+                        failureException: null,
+                        cancellationToken);
+                }
+
                 return;
             }
 
@@ -254,7 +282,10 @@ WHERE RunId = {runId} AND (
                 // New run, resume, and stale reclaim all re-enter here; definition must be executable.
                 // Within this invocation, steps execute without re-resolution until terminal/park/lease loss.
                 var definition = await ResolveDefinitionOrThrowAsync(request.WorkflowDefinitionId, cancellationToken);
-                var parameters = DeserializeParameters(request.ParametersJson);
+                var parameters = MergeWorkflowStepParameters(
+                    DeserializeParameters(request.ParametersJson),
+                    run.Id,
+                    instance.Id);
 
                 var startIndex = 0;
                 if (!string.IsNullOrWhiteSpace(instance.CurrentStepName))
@@ -326,6 +357,7 @@ WHERE RunId = {runId} AND (
                         domainInstance,
                         parameters,
                         integrationScope,
+                        CreateWorkflowCorrelationScope(run, request, instance),
                         cancellationToken);
 
                     activeStep.Status = WorkflowLifecycleStatusNames.Completed;
@@ -383,10 +415,22 @@ WHERE RunId = {runId} AND (
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                await TryEmitExecutionLifecycleAsync(
+                    WorkflowLifecycleStatusNames.Completed,
+                    run,
+                    definition.Id.Value,
+                    definition.ModuleId,
+                    request,
+                    instance,
+                    definition.StepNames.Count,
+                    failedStepName: null,
+                    failureException: null,
+                    cancellationToken);
             }
             catch (Exception ex)
             {
-                await TryAuditDefinitionUnavailableAsync(ex, runId, cancellationToken).ConfigureAwait(false);
+                await TryAuditDefinitionUnavailableAsync(ex, runId, run.ResourceContextId, cancellationToken).ConfigureAwait(false);
                 _logger?.LogError(ex, "Start request execution failed. RunId={RunId}", runId);
                 LogExecutionContractSignalForFailure(runId, ex);
                 var failureCapture = RunFailureCapture.TryCapture(ex);
@@ -428,9 +472,74 @@ WHERE RunId = {runId} AND (
                 await _db.SaveChangesAsync(cancellationToken);
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
+
+                await TryEmitExecutionLifecycleAsync(
+                    WorkflowLifecycleStatusNames.Failed,
+                    run,
+                    instance.DefinitionId,
+                    moduleId: null,
+                    request,
+                    instance,
+                    stepCount: null,
+                    failedStepName: activeStep?.StepName,
+                    failureException: ex,
+                    cancellationToken);
             }
         });
     }
+
+    private async ValueTask TryEmitExecutionLifecycleAsync(
+        string terminalStatus,
+        OperationRunEntity run,
+        string definitionId,
+        string? moduleId,
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance,
+        int? stepCount,
+        string? failedStepName,
+        Exception? failureException,
+        CancellationToken cancellationToken)
+    {
+        if (_lifecycleEmitter is null)
+            return;
+
+        string? scheduleId = null;
+        if (ControlFacade.TryParseScheduleId(instance.CorrelationKey, out var parsedSchedule))
+            scheduleId = parsedSchedule;
+
+        var integrationId = request.IntegrationId ?? instance.IntegrationId ?? run.IntegrationId;
+
+        await _lifecycleEmitter.TryEmitTerminalAsync(
+            new ExecutionLifecycleTerminalContext(
+                RunId: run.Id,
+                TerminalStatus: terminalStatus,
+                ExecutionKind: "workflow",
+                DefinitionId: definitionId,
+                IntegrationId: integrationId,
+                ModuleId: moduleId,
+                ProcedureId: request.ProcedureId,
+                ScheduleId: scheduleId,
+                CorrelationId: request.CorrelationId,
+                CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id),
+                ResourceContextId: run.ResourceContextId,
+                StartedAtUtc: run.CreatedAt,
+                CompletedAtUtc: run.CompletedAt ?? DateTimeOffset.UtcNow,
+                StepCount: stepCount,
+                FailedStepName: failedStepName,
+                FailureSummary: run.FailureSummary,
+                FailureCode: ResolveFailureCode(failureException),
+                ExceptionType: failureException?.GetType().Name),
+            cancellationToken);
+    }
+
+    private static string? ResolveFailureCode(Exception? ex) =>
+        ex switch
+        {
+            null => null,
+            OperatorExecutionFailureException => "operator_execution_failure",
+            DefinitionNotExecutableException => "definition_not_executable",
+            _ => "unhandled_exception",
+        };
 
     private void LogExecutionContractSignalForSuccess(string runId, object? result)
     {
@@ -603,7 +712,8 @@ WHERE RunId = {runId} AND (
         });
     }
 
-    private async ValueTask TryAuditDefinitionUnavailableAsync(Exception ex, string runId, CancellationToken cancellationToken)
+    private async ValueTask TryAuditDefinitionUnavailableAsync(
+        Exception ex, string runId, string? resourceContextId, CancellationToken cancellationToken)
     {
         if (_audit is null || ex is not DefinitionNotExecutableException dne)
             return;
@@ -620,7 +730,8 @@ WHERE RunId = {runId} AND (
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
                     $"runId={runId};definitionId={dne.DefinitionId};kind={dne.Kind};message={dne.Message}",
-                    RunId: runId),
+                    RunId: runId,
+                    ResourceContextId: resourceContextId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -659,6 +770,24 @@ WHERE RunId = {runId} AND (
             $"Unknown workflow definition id '{workflowDefinitionId}'.");
     }
 
+    private static WorkflowStepExecutionScope CreateWorkflowCorrelationScope(
+        OperationRunEntity run,
+        WorkflowStartRequestEntity request,
+        WorkflowInstanceEntity instance)
+    {
+        string? scheduleId = null;
+        if (ControlFacade.TryParseScheduleId(instance.CorrelationKey, out var parsedSchedule))
+            scheduleId = parsedSchedule;
+
+        return new WorkflowStepExecutionScope(
+            RunId: run.Id,
+            ProcedureId: request.ProcedureId,
+            ScheduleId: scheduleId,
+            CorrelationId: request.CorrelationId,
+            CausationId: PlatformEventScopeCorrelation.CausationFromRunId(run.Id),
+            ResourceContextId: run.ResourceContextId);
+    }
+
     private static IReadOnlyDictionary<string, object?>? DeserializeParameters(string? parametersJson)
     {
         if (string.IsNullOrWhiteSpace(parametersJson))
@@ -670,6 +799,27 @@ WHERE RunId = {runId} AND (
             return null;
 
         return raw.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value);
+    }
+
+    /// <summary>
+    /// Merges user workflow parameters with stable execution keys for step handlers (run / instance correlation).
+    /// System keys overwrite user-supplied values with the same name to prevent spoofing.
+    /// </summary>
+    private static IReadOnlyDictionary<string, object?> MergeWorkflowStepParameters(
+        IReadOnlyDictionary<string, object?>? userParams,
+        string runId,
+        string workflowInstanceId)
+    {
+        var d = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (userParams is not null)
+        {
+            foreach (var kv in userParams)
+                d[kv.Key] = kv.Value;
+        }
+
+        d["__appertureRunId"] = runId;
+        d["__appertureWorkflowInstanceId"] = workflowInstanceId;
+        return d;
     }
 
     private static string Truncate(string? s, int maxLen)

@@ -15,6 +15,8 @@ public static class ResourceTypeConstants
 
     // Identity
     public const string User = "User";
+    /// <summary>Canonical person/contact record (Epic 76); distinct from login-capable User resource.</summary>
+    public const string ManagedContact = "ManagedContact";
     public const string Role = "Role";
     public const string ServiceAccount = "ServiceAccount";
 
@@ -48,4 +50,7 @@ public static class ResourceTypeConstants
     public const string OperationDefinition = "OperationDefinition";
     public const string OperationRun = "OperationRun";
     public const string WorkflowInstance = "WorkflowInstance";
+
+    /// <summary>Notification definition (rule + template). Epic 77.</summary>
+    public const string NotificationDefinition = "NotificationDefinition";
 }

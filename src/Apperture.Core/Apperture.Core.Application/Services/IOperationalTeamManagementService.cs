@@ -4,6 +4,7 @@ public static class OperationalTeamMemberKinds
 {
     public const string Principal = "Principal";
     public const string ExternalEmail = "ExternalEmail";
+    public const string ManagedContact = "ManagedContact";
 }
 
 public sealed record OperationalTeamListItem(
@@ -19,6 +20,7 @@ public sealed record OperationalTeamMemberItem(
     string MemberKind,
     string? PrincipalUserId,
     string? EmailAddress,
+    string? ManagedContactId,
     string? DisplayName,
     bool IsEnabled,
     DateTimeOffset CreatedAtUtc,
@@ -42,7 +44,8 @@ public sealed record OperationalTeamMemberUpsertItem(
     string? PrincipalUserId,
     string? EmailAddress,
     string? DisplayName,
-    bool IsEnabled);
+    bool IsEnabled,
+    string? ManagedContactId = null);
 
 public interface IOperationalTeamManagementService
 {

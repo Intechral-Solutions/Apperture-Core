@@ -13,7 +13,18 @@ public interface IIntegrationReadinessService
     /// Returns readiness after enforcing the same integration read authorization as <see cref="IIntegrationManagementService.GetIntegrationAsync"/>.
     /// </summary>
     /// <returns>null if the integration does not exist.</returns>
-    ValueTask<IntegrationReadinessProjection?> GetReadinessAsync(IntegrationId id, CancellationToken cancellationToken = default);
+    ValueTask<IntegrationReadinessProjection?> GetReadinessAsync(
+        IntegrationId id,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Readiness for a specific procedure (procedure requirement subset when declared).
+    /// </summary>
+    /// <returns>null if the integration does not exist.</returns>
+    ValueTask<IntegrationReadinessProjection?> GetProcedureReadinessAsync(
+        IntegrationId id,
+        string procedureId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Full operator view: integration metadata, readiness, required slots, bindings, and schedules.

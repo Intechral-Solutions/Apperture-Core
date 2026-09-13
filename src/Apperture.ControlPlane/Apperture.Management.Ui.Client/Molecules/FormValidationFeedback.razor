@@ -1,0 +1,13 @@
+@if (Visible)
+{
+    <div class="ui-form-validation-feedback" role="alert">
+        <PageMessage Kind="PageMessageKind.Error" Message="@Message" />
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+
+    [Parameter] public string Message { get; set; } =
+        "Some information needs your attention. Check the highlighted fields and try again.";
+}

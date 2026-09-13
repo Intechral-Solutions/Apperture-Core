@@ -3,14 +3,18 @@
 @using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <PageHeader Title="Role">
+    <PageHeader @key="@RoleId"
+                Title="@EntityShellTitles.Detail(_detail?.Name, "Role")">
         <ChildContent>
             <div class="mt-1 text-xs text-muted">
                 <a href="/config/governance/roles" class="hover:underline">Roles</a> / Role detail
@@ -18,17 +22,19 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@RoleId</div>
         </ChildContent>
         <Toolbar>
-            <a href="/config/governance/roles" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to roles</a>
+            <a href="/config/governance/roles" class="ui-toolbar-btn">Back to roles</a>
             @if (_capabilities?.CanAssignPermissions == true && _detail is not null && !_detail.IsSystemRole && !_editing)
             {
-                <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                <button type="button"
+                        class="ui-toolbar-btn"
                         title="Edit role permissions"
                         @onclick="StartEdit">
                     Edit permissions
                 </button>
             }
-            <a href="@Epic33UiDisplayHelpers.GetGovernanceAuditLink()" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">View governance audit history</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <a href="@Epic33UiDisplayHelpers.GetGovernanceAuditLink()" class="ui-toolbar-btn">View governance audit history</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
@@ -39,46 +45,49 @@
     @if (!_capabilitiesLoaded)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+            <LoadingState Message="Loading…" />
         </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this role." />
+            <ForbiddenState Message="You do not have permission to view this role." />
         </div>
     }
     else if (_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this role." />
+            <ForbiddenState Message="You do not have permission to view this role." />
         </div>
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <div class="mt-4">
+            <ErrorState Message="@_error" />
         </div>
     }
     else if (_detail is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <div class="mt-4">
+            <LoadingState Message="Loading…" />
+        </div>
     }
     else if (_editing)
     {
-        <div class="mt-4 rounded border border-default bg-surface p-3">
-            <h2 class="text-sm font-semibold text-heading mb-2">Edit permissions</h2>
-            <div class="rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-body mb-3">
+        <ManagementSection Title="Edit permissions" Layer="ManagementSection.UiLayer.Advanced">
+            <div class="rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body mb-3">
                 <strong>Saving replaces the role's entire permission set</strong> with the selections below. Permissions not selected will be revoked. Changes apply to the role as currently loaded.
             </div>
             @if (_catalog is null || !string.IsNullOrEmpty(_error))
             {
-                <div class="text-sm text-muted">@(string.IsNullOrEmpty(_error) ? "Loading catalog..." : _error)</div>
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <ErrorState Message="@_error" />
+                }
+                else
+                {
+                    <LoadingState Message="Loading catalog…" />
+                }
                 <div class="mt-2 text-xs text-muted">Save is disabled until the catalog loads. Use Cancel to exit edit mode.</div>
             }
             else
@@ -99,79 +108,70 @@
                     }
                 </div>
                 <div class="mt-3 flex gap-2">
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    <button type="button"
+                            class="btn btn-primary"
                             disabled="@(_loading || _catalog is null)"
                             title="@(_catalog is null ? "Catalog must load before saving" : "Save overwrites entire permission set")"
                             @onclick="SaveEditAsync">
                         Save
                     </button>
-                    <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                    <button type="button"
+                            class="btn btn-secondary"
                             disabled="@_loading"
                             @onclick="CancelEdit">
                         Cancel
                     </button>
                 </div>
             }
-        </div>
+        </ManagementSection>
     }
     else
     {
-        <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Details</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Name</div>
-                        <div class="text-sm text-body">@_detail.Name</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Description</div>
-                        <div class="text-sm text-body">@(_detail.Description ?? "-")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">System role</div>
-                        <div class="text-sm text-body">@(_detail.IsSystemRole ? "Yes" : "No")</div>
-                    </div>
-                </div>
+        <div class="grid gap-4">
+            <ManagementSection Title="Details" Layer="ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="Name" Value="@_detail.Name" />
+                    <MetadataItem Label="Description" Value="@(_detail.Description ?? "-")" />
+                    <MetadataItem Label="System role" Value="@(_detail.IsSystemRole ? "Yes" : "No")" />
+                </MetadataGrid>
                 @if (_detail.IsSystemRole)
                 {
-                    <div class="mt-3 rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-body">
+                    <div class="mt-3 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body">
                         System roles are not editable from this UI. Their permissions are managed by the platform.
                     </div>
                 }
-            </div>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Granted permissions</div>
+            <ManagementSection Title="Granted permissions" Layer="ManagementSection.UiLayer.Detail">
                 @if (_detail.Permissions.Count == 0)
                 {
-                    <div class="mt-2 text-xs text-muted">No permissions granted.</div>
+                    <div class="text-xs text-muted">No permissions granted.</div>
                 }
                 else
                 {
-                    <div class="mt-2 overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
                                 <tr>
-                                    <th class="px-2 py-2">Action</th>
-                                    <th class="px-2 py-2">Resource Type</th>
-                                    <th class="px-2 py-2">Scope Key</th>
+                                    <th>Action</th>
+                                    <th>Resource type</th>
+                                    <th>Scope key</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var p in _detail.Permissions)
                                 {
-                                    <tr class="border-b border-default hover:bg-surface-muted">
-                                        <td class="px-2 py-2 font-mono text-xs">@p.Action</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ResourceType ?? "-")</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ScopeKey ?? "-")</td>
+                                    <tr>
+                                        <td class="font-mono text-xs">@p.Action</td>
+                                        <td class="font-mono text-xs">@(p.ResourceType ?? "-")</td>
+                                        <td class="font-mono text-xs">@(p.ScopeKey ?? "-")</td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
                 }
-            </div>
+            </ManagementSection>
         </div>
     }
 </div>
@@ -205,6 +205,7 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _detail = null;
         await LoadAsync();
     }
 
@@ -233,8 +234,15 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
+
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_detail?.Name, "Role"),
+            subtitle: null);
 
     private async Task StartEdit()
     {

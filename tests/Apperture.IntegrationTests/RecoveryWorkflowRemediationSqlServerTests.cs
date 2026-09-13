@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.RuntimeHealth;
@@ -22,6 +23,7 @@ namespace Apperture.IntegrationTests;
 /// Requires SQL Server (e.g. Docker on port 1433). Epic 31 corrective pass.
 /// </summary>
 [Trait("Category", "SqlServer")]
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class RecoveryWorkflowRemediationSqlServerTests
 {
     private const string WorkflowId = "Sample.HelloWorld.HelloWorld";
@@ -35,7 +37,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
         if (connectionString is null)
         {
             throw new InvalidOperationException(
-                "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
+                SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
         var services = new ServiceCollection();
@@ -51,7 +53,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
             if (!await db.Database.CanConnectAsync())
             {
                 throw new InvalidOperationException(
-                    "SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
+                    SqlServerTestConfiguration.DescribeConnectionFailure());
             }
 
             await db.Database.MigrateAsync();
@@ -304,7 +306,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
         public ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken ct = default) => ValueTask.FromResult(false);
         public ValueTask<IReadOnlyList<ScheduleFireCandidate>> GetRecoverableStaleCandidatesAsync(RuntimePlaneId planeId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult<IReadOnlyList<ScheduleFireCandidate>>([]);
         public ValueTask<bool> TryRecoverStaleClaimAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, DateTimeOffset staleCutoffUtc, CancellationToken ct = default) => ValueTask.FromResult(false);
-        public ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<(string, DateTimeOffset)?>(null);
+        public ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<(string, DateTimeOffset, string?)?>(null);
         public ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? reason, string? runId, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<ScheduleState?>(null);

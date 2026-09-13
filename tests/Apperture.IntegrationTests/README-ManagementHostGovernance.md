@@ -4,12 +4,29 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 
 ## How SQL is discovered
 
+Resolution is centralized in [`SqlServerTestConfiguration.cs`](../SqlServerTestConfiguration.cs).
+
+**General SqlServer integration tests** (`AuditTimelineSqlServerTests`, `Epic73SqlSeamsIntegrationTests`, etc.):
+
+| Priority | Variable | Purpose |
+|----------|----------|---------|
+| 1 | `APPERTURE_TEST_SQL_CONNECTION_STRING` | Preferred explicit connection string (Aspire dynamic port, e.g. `127.0.0.1,58361`). Catalog is overridden to `Apperture_IntegrationTests` unless `MSSQL_TEST_DATABASE` is set (legacy path only). |
+| 2 | `ConnectionStrings__DefaultConnection` | Aspire-injected SQL when exported to the test process. Catalog overridden to test database. |
+| 3 | `MSSQL_SA_PASSWORD` + `MSSQL_TEST_SERVER` | Legacy; **defaults to `localhost,1433`**. Avoid when Aspire SQL uses a dynamic port. |
+
+**Management Host governance HTTP tests** use `GetGovernanceConnectionString()`:
+
+| Priority | Variable | Purpose |
+|----------|----------|---------|
+| 1 | `APPERTURE_TEST_SQL` | Full connection string (CI). |
+| 2–3 | Same as above | Catalog `Apperture_ManagementGovernanceTests` (fixture creates DB if missing). |
+
+Tests create uniquely named databases on the selected server. They do **not** reference a Docker container named `apperture-test-sql` (that name is not in source; ad-hoc `docker run --name apperture-test-sql` from docs is optional and separate from Aspire).
+
+### SFTP (Epic 59A)
+
 | Variable | Purpose |
 |----------|---------|
-| `APPERTURE_TEST_SQL` | Full connection string for **Management Host governance** tests (`ManagementHostGovernanceHttpTests`). Must include `Initial Catalog` (fixture creates the database on `master` if missing, then migrates). |
-| `MSSQL_SA_PASSWORD` | Required for other **SqlServer** integration tests (`SqlServerTestConfiguration`) using database `Apperture_IntegrationTests` by default. |
-| `MSSQL_TEST_SERVER` | Optional; default `localhost,1433`. |
-| `MSSQL_TEST_DATABASE` | Optional; default `Apperture_IntegrationTests`. |
 | `APPERTURE_TEST_SFTP_HOST` | Hostname/IP for controlled SFTP verification proof (Epic 59A). Default `127.0.0.1`. |
 | `APPERTURE_TEST_SFTP_PORT` | SFTP port for Epic 59A tests. Default `2222`. |
 | `APPERTURE_TEST_SFTP_USERNAME` | Username for known-good SFTP verification. Default `apperture`. |
@@ -17,20 +34,60 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 
 **CI:** [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) starts SQL Server and a controlled SFTP container, waits for ports (`1433`, `2222`), sets `APPERTURE_TEST_SQL` and `APPERTURE_TEST_SFTP_*` variables, then runs the full integration project. This includes Epic 59A SFTP verification proof tests.
 
+## Epic 73 / Epic 74 preflight — `Epic73SqlSeamsIntegrationTests`
+
+These tests provide **SQL-backed evidence** for the post–Epic 73 seams: platform EF migrations, UNISA module migrations (separate history table), connector `IConnectorClientFactoryContributor` registration end-to-end, and `IScheduleDispatchRunner` resolution against a migrated database (same worker dispatch stack as `WorkerHostStartupDiTests`, but on real SQL Server).
+
+**Requirements:** Configure SQL via `APPERTURE_TEST_SQL_CONNECTION_STRING`, `ConnectionStrings__DefaultConnection`, or legacy `MSSQL_SA_PASSWORD` (see precedence above).
+
+**Run only this suite (Aspire example):**
+
+```powershell
+$env:APPERTURE_TEST_SQL_CONNECTION_STRING = "Server=127.0.0.1,58361;User Id=sa;Password=<aspire-sa-password>;TrustServerCertificate=True;Initial Catalog=Apperture;"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Epic73SqlSeamsIntegrationTests"
+```
+
+**Legacy docker-compose on 1433:**
+
+```powershell
+$env:MSSQL_SA_PASSWORD = "YourStrong!Pass"
+$env:MSSQL_TEST_SERVER = "127.0.0.1,1433"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Epic73SqlSeamsIntegrationTests"
+```
+
+Greenfield migration ownership for hosts is documented in [Epic73 ADR — Greenfield database](../../docs/02-decisions/Epic73-execution-hot-path-and-host-roles.md#greenfield-database-who-runs-which-migration-operational).
+
 ## Running tests locally
 
-**Governance suite only:**
+**Governance suite only (Aspire):**
+
+```powershell
+$env:APPERTURE_TEST_SQL_CONNECTION_STRING = "Server=127.0.0.1,58361;User Id=sa;Password=<aspire-sa-password>;TrustServerCertificate=True;Initial Catalog=Apperture;"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~ManagementHostGovernanceHttpTests"
+```
+
+**Governance suite (CI / explicit full string):**
 
 ```powershell
 $env:APPERTURE_TEST_SQL = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;"
 dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~ManagementHostGovernanceHttpTests"
 ```
 
-**Full `Apperture.IntegrationTests` project** (governance + other SqlServer tests): set both `APPERTURE_TEST_SQL` and `MSSQL_SA_PASSWORD` (same server/password is fine). Example with Docker:
+**Full `Apperture.IntegrationTests` project** with Aspire SQL:
+
+```powershell
+$env:APPERTURE_TEST_SQL_CONNECTION_STRING = "Server=127.0.0.1,58361;User Id=sa;Password=<aspire-sa-password>;TrustServerCertificate=True;Initial Catalog=Apperture;"
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj
+```
+
+**Full project with dedicated Docker SQL on 1433** (optional; not required for Aspire dev):
 
 ```powershell
 docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourStrong!Pass" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
 # wait ~20s for SQL to accept connections
+# Then either:
+$env:APPERTURE_TEST_SQL_CONNECTION_STRING = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;Initial Catalog=Apperture;"
+# or legacy:
 $env:MSSQL_SA_PASSWORD = "YourStrong!Pass"
 $env:MSSQL_TEST_SERVER = "127.0.0.1,1433"
 $env:APPERTURE_TEST_SQL = "Server=127.0.0.1,1433;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;"

@@ -35,7 +35,36 @@ builder.Services.Configure<BootstrapPlatformAdminOptions>(
     builder.Configuration.GetSection(BootstrapPlatformAdminOptions.SectionName));
 ```
 
-`appsettings.Development.example.json` includes a sample `BootstrapPlatformAdmin` block (and `DevTestUser` for local **`tenny`**). **`appsettings.Development.json` is gitignored** — copy from the example; see `Apperture.Management.Host/README-Development.md`.
+`deploy/config/examples/appsettings.docker-dev.json.example` includes a sample `BootstrapPlatformAdmin` block (and `DevTestUser` for local **`tenny`**). **`appsettings.Development.json` is gitignored** — copy from that template; see [management-platform-configuration.md](../03-operations/management-platform-configuration.md) and `Apperture.Management.Host/README-Development.md`.
+
+## First-admin bootstrap API (Epic S2A)
+
+Anonymous endpoints on `POST /api/bootstrap/first-admin` and `GET /api/bootstrap/status`.
+
+### v1 initialization gate
+
+- **Initialized** when at least one platform user exists (`GetUserCountAsync() > 0`).
+- There is **no** durable initialization flag or migration in v1.
+- **Wiping or reseeding the user tables** (or restoring an empty database) reopens first-admin bootstrap.
+- A full first-run wizard is **deferred**; scripts and operators use the bootstrap API directly.
+
+### Expected behavior
+
+| State | `GET /api/bootstrap/status` | `POST /api/bootstrap/first-admin` |
+|-------|-----------------------------|-----------------------------------|
+| No users | `initialized: false`, `allowsFirstAdmin: true` | **201 Created** when request is valid |
+| At least one user | `initialized: true`, `allowsFirstAdmin: false` | **409 Conflict**, code `bootstrap.already_initialized` |
+
+Audit events (platform audit):
+
+- `bootstrap.first_admin.created`
+- `bootstrap.first_admin.rejected_already_initialized`
+- `bootstrap.first_admin.rejected_invalid_request`
+
+### Related bootstrap surfaces (not the same API)
+
+- **`BootstrapPlatformAdmin`** — config-driven principal assignment on host startup (see above).
+- **`DevTestUser`** — Development-only convenience user.
 
 ## Related
 

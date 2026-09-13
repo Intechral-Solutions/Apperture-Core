@@ -1,0 +1,269 @@
+@page "/config/notifications/diagnostics"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="Notification diagnostics"
+                Subtitle="Delivery health and admin pipeline verification tools." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4">
+            <ForbiddenState Message="Requires integration read and notification definition read." />
+        </div>
+    }
+    else
+    {
+        @if (_canManage)
+        {
+            <section class="ui-detail-block text-xs">
+                <h2 class="text-sm font-semibold text-heading mb-2">Pipeline verification (admin)</h2>
+                <p class="text-muted mb-3">
+                    Diagnostics-only actions. SMTP test does not require a notification definition.
+                    Platform pipeline test uses a synthetic expected-run-missing event — start with dry-run.
+                </p>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="ui-detail-block">
+                        <div class="font-semibold text-heading mb-2">SMTP test email</div>
+                        <label class="block mb-2">
+                            Recipient
+                            <input class="ui-input font-mono"
+                                   @bind="_smtpTestRecipient" placeholder="you@example.com" />
+                        </label>
+                        <button type="button"
+                                class="btn btn-secondary"
+                                disabled="@_busy"
+                                @onclick="RunSmtpTestAsync">
+                            Send SMTP test
+                        </button>
+                        @if (_smtpTestResult is not null)
+                        {
+                            <p class="mt-2 @( _smtpTestResult.Succeeded ? "text-success" : "text-error")">
+                                @(_smtpTestResult.Succeeded ? "Sent." : $"Failed: {_smtpTestResult.FailureSummary}")
+                            </p>
+                        }
+                    </div>
+
+                    <div class="ui-detail-block">
+                        <div class="font-semibold text-heading mb-2">Platform pipeline test</div>
+                        <label class="block mb-2">
+                            Integration id *
+                            <input class="ui-input font-mono"
+                                   @bind="_pipelineTestIntegrationId" />
+                        </label>
+                        <label class="inline-flex items-center gap-2 mr-4 mb-2">
+                            <input type="checkbox" @bind="_pipelineTestDryRun" />
+                            Dry-run (no persist/SMTP)
+                        </label>
+                        <label class="inline-flex items-center gap-2 mb-2">
+                            <input type="checkbox" @bind="_pipelineTestDispatch" disabled="@_pipelineTestDryRun" />
+                            Dispatch immediately (live only)
+                        </label>
+                        <button type="button"
+                                class="btn btn-secondary"
+                                disabled="@_busy"
+                                @onclick="RunPipelineTestAsync">
+                            Run pipeline test
+                        </button>
+                    </div>
+                </div>
+
+                @if (_pipelineTestResult is not null)
+                {
+                    <div class="ui-detail-block">
+                        <div class="font-semibold mb-1">
+                            Pipeline test @(_pipelineTestResult.DryRun ? "(dry-run)" : "(live)")
+                            · instance @(_pipelineTestResult.NotificationInstanceId ?? "—")
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_pipelineTestResult.SuppressionReason))
+                        {
+                            <p class="text-warning">Suppressed: @_pipelineTestResult.SuppressionReason</p>
+                        }
+                        <ul class="mt-1 space-y-1">
+                            @foreach (var stage in _pipelineTestResult.Stages)
+                            {
+                                <li>
+                                    <span class="font-mono">@stage.Stage</span>
+                                    <span class="text-muted">(@stage.Status)</span>
+                                    @if (!string.IsNullOrWhiteSpace(stage.Detail))
+                                    {
+                                        <span> — @stage.Detail</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        @if (_pipelineTestResult.DeliverableRecipients.Count > 0 || _pipelineTestResult.SkippedRecipients.Count > 0)
+                        {
+                            <p class="mt-2 text-muted">
+                                Deliverable: @_pipelineTestResult.DeliverableRecipients.Count ·
+                                Skipped: @_pipelineTestResult.SkippedRecipients.Count
+                            </p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_pipelineTestResult.DispatchNote))
+                        {
+                            <p class="mt-1 text-muted">@_pipelineTestResult.DispatchNote</p>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="ui-detail-block text-xs">
+            <h2 class="text-sm font-semibold text-heading mb-2">Instance notification health</h2>
+            <p class="text-muted mb-3">Read-only health and flag guidance. Per-integration diagnostics are on the integration notifications page.</p>
+            <p class="text-muted mb-3">To edit notification/platform flags, use <a href="/config/platform-settings" class="underline">Platform settings</a>.</p>
+            @if (_health is not null)
+            {
+                <dl class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div><dt class="text-muted">Failed deliveries</dt><dd class="font-semibold">@_health.RecentFailedDeliveryCount</dd></div>
+                    <div><dt class="text-muted">Suppressed instances</dt><dd class="font-semibold">@_health.RecentSuppressedInstanceCount</dd></div>
+                    <div><dt class="text-muted">Pending/delivering outbox</dt><dd class="font-semibold">@_health.RecentPendingOrDeliveringOutboxCount</dd></div>
+                    <div><dt class="text-muted">As of (UTC)</dt><dd>@_health.GeneratedAtUtc.UtcDateTime.ToString("u")</dd></div>
+                </dl>
+            }
+            else
+            {
+                <p class="text-muted">Health summary unavailable.</p>
+            }
+            @if (_configDiagnostics is not null && _configDiagnostics.Warnings.Count > 0)
+            {
+                <ul class="mt-3 list-inside list-disc text-muted">
+                    @foreach (var w in _configDiagnostics.Warnings)
+                    {
+                        <li>@w.Message</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <div class="ui-detail-block text-xs">
+            <div class="font-semibold text-heading mb-2">Integration diagnostics</div>
+            <div class="flex flex-wrap items-end gap-2">
+                <label>
+                    Integration id (required for tables)
+                    <input class="ui-input font-mono" @bind="_integrationId" />
+                </label>
+                <label>
+                    Definition id (optional filter)
+                    <input class="ui-input font-mono" @bind="_definitionId" />
+                </label>
+                <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="LoadIntegrationDiagAsync">Load</button>
+            </div>
+            @if (_integrationDiag is not null)
+            {
+                <p class="mt-2 text-muted">Suppressed instances: @_integrationDiag.RecentSuppressedInstances.Count · Failed outbox: @_integrationDiag.RecentFailedDeliveries.Count</p>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _canManage;
+    private bool _busy;
+    private string? _error;
+    private string _integrationId = "";
+    private string _definitionId = "";
+    private NotificationDeliveryHealthSummaryDto? _health;
+    private NotificationIntegrationDiagnosticsDto? _integrationDiag;
+    private NotificationConfigurationDiagnosticsDto? _configDiagnostics;
+    private string _smtpTestRecipient = "";
+    private string _pipelineTestIntegrationId = "";
+    private bool _pipelineTestDryRun = true;
+    private bool _pipelineTestDispatch;
+    private NotificationSmtpTestResultDto? _smtpTestResult;
+    private PlatformNotificationPipelineTestResultDto? _pipelineTestResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations && caps.CanViewNotificationDefinitions;
+        _canManage = caps.CanManageNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView) return;
+
+        var q = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did;
+        if (q.TryGetValue("integrationId", out var iid))
+        {
+            _integrationId = iid;
+            _pipelineTestIntegrationId = iid;
+        }
+
+        try
+        {
+            _health = await Client.GetNotificationDeliveryHealthAsync();
+            _configDiagnostics = await Client.GetNotificationConfigurationDiagnosticsAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task LoadIntegrationDiagAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_integrationId)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            _integrationDiag = await Client.GetNotificationIntegrationDiagnosticsAsync(
+                _integrationId.Trim(),
+                string.IsNullOrWhiteSpace(_definitionId) ? null : _definitionId.Trim());
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RunSmtpTestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_smtpTestRecipient)) return;
+        _busy = true;
+        _error = null;
+        _smtpTestResult = null;
+        try
+        {
+            _smtpTestResult = await Client.SendNotificationSmtpTestAsync(
+                new NotificationSmtpTestRequestDto(_smtpTestRecipient.Trim()));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task RunPipelineTestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pipelineTestIntegrationId)) return;
+        _busy = true;
+        _error = null;
+        _pipelineTestResult = null;
+        try
+        {
+            _pipelineTestResult = await Client.RunPlatformNotificationPipelineTestAsync(
+                new PlatformNotificationPipelineTestRequestDto(
+                    _pipelineTestIntegrationId.Trim(),
+                    DefinitionId: null,
+                    DryRun: _pipelineTestDryRun,
+                    DispatchImmediately: !_pipelineTestDryRun && _pipelineTestDispatch));
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}

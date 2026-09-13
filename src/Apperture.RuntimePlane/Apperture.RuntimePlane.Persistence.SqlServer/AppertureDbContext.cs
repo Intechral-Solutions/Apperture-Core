@@ -9,6 +9,7 @@ namespace Apperture.RuntimePlane.Persistence.SqlServer;
 public class AppertureDbContext : Apperture.Persistence.SqlServer.AppertureDbContext
 {
     public AppertureDbContext(DbContextOptions<AppertureDbContext> options)
-        : base(options)
+        // EF Core typed options are not covariant across derived DbContext types; cast is the supported workaround.
+        : base((DbContextOptions<Apperture.Persistence.SqlServer.AppertureDbContext>)(object)options)
     { }
 }

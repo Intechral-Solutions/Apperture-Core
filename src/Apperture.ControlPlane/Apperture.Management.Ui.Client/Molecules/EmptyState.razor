@@ -1,0 +1,9 @@
+<PageMessage Kind="PageMessageKind.Empty" Title="@Title" Message="@Message" Class="ui-state-panel">
+    @ChildContent
+</PageMessage>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Message { get; set; } = "No items to show.";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

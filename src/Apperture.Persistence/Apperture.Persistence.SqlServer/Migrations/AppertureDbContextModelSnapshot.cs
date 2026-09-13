@@ -17,10 +17,57 @@ namespace Apperture.Persistence.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
+                .HasAnnotation("ProductVersion", "10.0.7")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AccountActionTokenEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DestinationEmail")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_AccountActionTokens_TokenHash");
+
+                    b.HasIndex("UserId", "Purpose")
+                        .HasDatabaseName("IX_AccountActionTokens_UserId_Purpose");
+
+                    b.ToTable("AccountActionTokens", (string)null);
+                });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentEntity", b =>
                 {
@@ -65,6 +112,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset?>("ResolvedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -75,6 +126,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_AttentionIncidents_ResourceContextId");
+
                     b.HasIndex("IntegrationId", "ConditionKey")
                         .IsUnique()
                         .HasFilter("[Status] = N'Active'");
@@ -84,105 +138,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("IntegrationId", "ConditionKey", "Status");
 
                     b.ToTable("AttentionIncidents", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.AttentionIncidentNotificationEntity", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset?>("AttemptedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("AttentionIncidentId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("ConditionKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("EscalationThresholdApplied")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset?>("FailedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("FailureSummary")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<string>("IntegrationId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("NotificationKind")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("OperationalTeamId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("OperationalTeamNameSnapshot")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("ProviderMessageId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("Recipient")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("RecipientResolvedFrom")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset?>("SentAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("SubjectSnapshot")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<bool>("SuppressedDueToAcknowledgment")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("SuppressionReason")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<bool>("WasEscalation")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AttentionIncidentId", "CreatedAtUtc");
-
-                    b.HasIndex("AttentionIncidentId", "NotificationKind");
-
-                    b.ToTable("AttentionIncidentNotifications", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.AuditLogEntity", b =>
@@ -217,6 +172,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -237,6 +196,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("Outcome", "At")
                         .IsDescending(false, true)
                         .HasFilter("[Outcome] IS NOT NULL");
+
+                    b.HasIndex("ResourceContextId", "At")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_AuditLogs_ResourceContextId_At")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
 
                     b.HasIndex("RunId", "At")
                         .IsDescending(false, true)
@@ -325,6 +289,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -343,6 +312,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_Connections_ResourceContextId");
 
                     b.ToTable("Connections", (string)null);
                 });
@@ -387,16 +359,107 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("EnrollmentTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.EntraAccessRequestEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("AuthenticatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("MailSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ProviderObjectId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ProvisionedUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RegistrationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ReviewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserPrincipalNameSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("UserTypeSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("TenantId", "ProviderObjectId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_EntraAccessRequests_PendingTenantIdentity")
+                        .HasFilter("[Status] = 0");
+
+                    b.HasIndex("RegistrationId", "TenantId", "ProviderObjectId", "Status");
+
+                    b.ToTable("EntraAccessRequests", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.EntraInstanceRegistrationEntity", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<bool>("AllowGuestAccessRequests")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("AllowMemberAccessRequests")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("AuthenticationContextId")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
                     b.Property<string>("Authority")
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("AzureTenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("CallbackPath")
                         .HasMaxLength(256)
@@ -407,8 +470,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ClientSecretRef")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset>("CreatedUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("DirectoryDiscoveryStatus")
+                        .HasColumnType("int");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
@@ -420,6 +490,31 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<string>("LastDirectoryDiscoveryDetail")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("LastDirectoryDiscoverySummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastDirectoryDiscoveryUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastOpenIdValidationDetail")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("LastOpenIdValidationSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastOpenIdValidationUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("OpenIdConfigurationStatus")
+                        .HasColumnType("int");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -448,6 +543,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("DisplayNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("ExternalId")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -455,6 +554,21 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<DateTimeOffset?>("LastAuthenticatedAt")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LinkedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("MailSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ProviderSubject")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RegistrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -464,19 +578,37 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<int>("Source")
                         .HasColumnType("int");
 
+                    b.Property<string>("TenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserPrincipalNameSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
                     b.HasIndex("Source", "ExternalId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdentityLinks_Local_Source_ExternalId")
+                        .HasFilter("[Source] = 1");
 
-                    b.ToTable("IdentityLinks", (string)null);
+                    b.HasIndex("Source", "TenantId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_IdentityLinks_Entra_Source_TenantId_ExternalId")
+                        .HasFilter("[Source] = 0 AND [TenantId] IS NOT NULL");
+
+                    b.ToTable("IdentityLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_IdentityLinks_EntraRequiresTenant", "[Source] <> 0 OR ([TenantId] IS NOT NULL AND DATALENGTH([TenantId]) > 0)");
+                        });
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.InstanceAttentionRoutingEntity", b =>
@@ -626,6 +758,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -646,6 +783,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_Integrations_ResourceContextId");
 
                     b.ToTable("Integrations", (string)null);
                 });
@@ -684,6 +824,136 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("LocalCredentials", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LinkedUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LinkedUserId");
+
+                    b.HasIndex("Source");
+
+                    b.ToTable("ManagedContacts", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactGroupEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("EntraGroupObjectId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntraGroupObjectId")
+                        .IsUnique();
+
+                    b.ToTable("ManagedContactGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactIdentityLinkEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ExternalGroupObjectId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ExternalObjectId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ExternalPrincipalName")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastSyncedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LinkStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ManagedContactId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManagedContactId");
+
+                    b.HasIndex("Provider", "ExternalObjectId")
+                        .IsUnique();
+
+                    b.ToTable("ManagedContactIdentityLinks", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.ModuleInstallationStateEntity", b =>
                 {
                     b.Property<string>("EnvironmentId")
@@ -715,6 +985,477 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("ModuleInstallationStates", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationDefinitionEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DefaultSeverity")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Mutability")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PrimaryEventType")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RuleJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SourceKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("TemplateJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegrationId")
+                        .HasFilter("[IntegrationId] IS NOT NULL");
+
+                    b.HasIndex("ModuleId")
+                        .HasFilter("[ModuleId] IS NOT NULL");
+
+                    b.HasIndex("Origin");
+
+                    b.HasIndex("PrimaryEventType")
+                        .HasFilter("[PrimaryEventType] IS NOT NULL");
+
+                    b.HasIndex("SourceKind", "IsEnabled");
+
+                    b.HasIndex("Scope", "IntegrationId", "DisplayName")
+                        .IsUnique()
+                        .HasFilter("[Origin] = N'userCreated'");
+
+                    b.ToTable("NotificationDefinitions", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationDeliveryOutboxEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NotificationInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RecipientDisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("RecipientKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("RecipientSource")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset?>("SentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc");
+
+                    b.HasIndex("NotificationInstanceId", "RecipientEmail", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("NotificationDeliveryOutbox", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationInstanceEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AttentionIncidentId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("InstanceDedupeKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("NotificationDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("NotificationKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PlatformEventId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RecipientSnapshotJson")
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RenderContextJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RenderedActionText")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RenderedActionUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("RenderedBodyHtml")
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RenderedBodyText")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RenderedContentFieldsJson")
+                        .HasMaxLength(65536)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RenderedSubject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("RenderedSummary")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScheduleId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SuppressionReason")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TemplateVersionHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlatformEventId")
+                        .HasFilter("[PlatformEventId] IS NOT NULL");
+
+                    b.HasIndex("AttentionIncidentId", "NotificationKind")
+                        .HasFilter("[AttentionIncidentId] IS NOT NULL");
+
+                    b.HasIndex("IntegrationId", "CreatedAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[IntegrationId] IS NOT NULL");
+
+                    b.HasIndex("NotificationDefinitionId", "InstanceDedupeKey")
+                        .IsUnique();
+
+                    b.HasIndex("ResourceContextId", "CreatedAtUtc")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_NotificationInstances_ResourceContextId_CreatedAtUtc")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
+
+                    b.ToTable("NotificationInstances", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationSubscriptionEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DeliveryMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NotificationDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("RecipientKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("RecipientRef")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IntegrationId")
+                        .HasFilter("[IntegrationId] IS NOT NULL");
+
+                    b.HasIndex("NotificationDefinitionId");
+
+                    b.HasIndex("RecipientKind", "RecipientRef");
+
+                    b.HasIndex("NotificationDefinitionId", "RecipientKind", "RecipientRef")
+                        .IsUnique()
+                        .HasFilter("[IntegrationId] IS NULL");
+
+                    b.HasIndex("NotificationDefinitionId", "IntegrationId", "RecipientKind", "RecipientRef")
+                        .IsUnique()
+                        .HasFilter("[IntegrationId] IS NOT NULL");
+
+                    b.ToTable("NotificationSubscriptions", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationSubscriptionUserOverrideEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("NotificationDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OperationalTeamId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "NotificationDefinitionId")
+                        .IsUnique()
+                        .HasFilter("[OperationalTeamId] IS NULL");
+
+                    b.HasIndex("UserId", "NotificationDefinitionId", "OperationalTeamId")
+                        .IsUnique()
+                        .HasFilter("[OperationalTeamId] IS NOT NULL");
+
+                    b.ToTable("NotificationSubscriptionUserOverrides", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationUserInboxItemEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeliveryOutboxId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("FirstViewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastViewedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("NotificationInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PrincipalUserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("ReadAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SourceRecipientKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SourceRecipientRef")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrincipalUserId", "NotificationInstanceId")
+                        .IsUnique();
+
+                    b.HasIndex("PrincipalUserId", "IsRead", "CreatedAtUtc");
+
+                    b.ToTable("NotificationUserInboxItems", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>
                 {
                     b.Property<string>("RunId")
@@ -743,6 +1484,87 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("OperationCancelRequests", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationGroupEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ModuleId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("OperationKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ProcedureId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceLabel")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("SucceededCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SummaryJson")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("OperationGroups", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationInstanceEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -765,6 +1587,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -784,6 +1610,251 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("OperationInstances", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemAttentionAcknowledgementEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("AcknowledgedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AcknowledgedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Disposition")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OperationGroupId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OperationItemId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("ReopenedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReopenedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcknowledgedAtUtc");
+
+                    b.HasIndex("OperationGroupId");
+
+                    b.HasIndex("OperationItemId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OperationItemAttentionAcknowledgements_OperationItemId_Active")
+                        .HasFilter("[ReopenedAtUtc] IS NULL");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("OperationItemAttentionAcknowledgements", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ChangeSummaryJson")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DisplayLabel")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<bool>("IsRetryable")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastAttemptedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("MetadataJson")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OperationGroupId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SharedBusinessKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SharedRecordType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SubjectKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("SubjectKey");
+
+                    b.HasIndex("OperationGroupId", "Sequence");
+
+                    b.HasIndex("RunId", "Status");
+
+                    b.HasIndex("SharedRecordType", "SharedBusinessKey", "CompletedAtUtc")
+                        .HasDatabaseName("IX_OperationItems_SharedRecordType_SharedBusinessKey_CompletedAtUtc");
+
+                    b.ToTable("OperationItems", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemRetryAttemptEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("AttemptIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ChildOperationGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ChildOperationItemId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ChildRunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("OperationGroupId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OperationItemId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("RequestedByActorId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildRunId");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("OperationItemId", "AttemptIndex")
+                        .IsUnique();
+
+                    b.HasIndex("OperationItemId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("OperationItemRetryAttempts", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationLifecycleEventEntity", b =>
@@ -914,6 +1985,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RetryOfRunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -929,6 +2004,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_OperationRuns_ResourceContextId");
 
                     b.HasIndex("RetryOfRunId");
 
@@ -983,6 +2061,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("ProcedureId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -1086,6 +2168,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
+                    b.Property<string>("ManagedContactId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("MemberKind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1105,16 +2191,250 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ManagedContactId");
+
                     b.HasIndex("OperationalTeamId");
 
                     b.HasIndex("PrincipalUserId");
+
+                    b.HasIndex("MemberKind", "ManagedContactId");
 
                     b.HasIndex("MemberKind", "PrincipalUserId");
 
                     b.ToTable("OperationalTeamMembers", null, t =>
                         {
-                            t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_OperationalTeamMembers_MemberKindPayload", "([MemberKind] = N'Principal' AND [PrincipalUserId] IS NOT NULL AND [EmailAddress] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ExternalEmail' AND [EmailAddress] IS NOT NULL AND [PrincipalUserId] IS NULL AND [ManagedContactId] IS NULL) OR ([MemberKind] = N'ManagedContact' AND [ManagedContactId] IS NOT NULL AND [PrincipalUserId] IS NULL AND [EmailAddress] IS NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.PlatformEventEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DataContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasMaxLength(16384)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DedupeKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ModuleId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ProcedureId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RunId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScheduleId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SpecVersion")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId")
+                        .HasFilter("[CorrelationId] IS NOT NULL");
+
+                    b.HasIndex("RecordedAtUtc")
+                        .IsDescending();
+
+                    b.HasIndex("IntegrationId", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("ModuleId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[ModuleId] IS NOT NULL");
+
+                    b.HasIndex("ResourceContextId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_PlatformEvents_ResourceContextId_OccurredAtUtc")
+                        .HasFilter("[ResourceContextId] IS NOT NULL");
+
+                    b.HasIndex("RunId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[RunId] IS NOT NULL");
+
+                    b.HasIndex("ScheduleId", "OccurredAtUtc")
+                        .IsDescending(false, true)
+                        .HasFilter("[ScheduleId] IS NOT NULL");
+
+                    b.HasIndex("Severity", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("Type", "OccurredAtUtc")
+                        .IsDescending(false, true);
+
+                    b.HasIndex("Source", "Type", "DedupeKey")
+                        .IsUnique()
+                        .HasFilter("[DedupeKey] IS NOT NULL");
+
+                    b.ToTable("PlatformEvents", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.PlatformSettingValueEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ScopeKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("UpdatedByPrincipalId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ValueJson")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key", "ScopeKind", "ScopeId")
+                        .IsUnique();
+
+                    b.ToTable("PlatformSettingValues", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ResourceContextEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<bool>("IsReserved")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ResourceContexts_Slug");
+
+                    b.ToTable("ResourceContexts", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.RoleEntity", b =>
@@ -1312,6 +2632,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ResourceContextId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("TargetJobConfigurationJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -1327,6 +2652,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_ScheduleDefinitions_ResourceContextId");
 
                     b.ToTable("ScheduleDefinitions", (string)null);
                 });
@@ -1363,6 +2691,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("RunId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -1378,6 +2710,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssignmentId");
+
+                    b.HasIndex("ResourceContextId")
+                        .HasDatabaseName("IX_ScheduleRuns_ResourceContextId");
 
                     b.HasIndex("ScheduleId", "FireTimeUtc")
                         .IsUnique();
@@ -1411,6 +2746,72 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("AssignmentId");
 
                     b.ToTable("ScheduleStates", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.SchedulerDispatchHeartbeatEntity", b =>
+                {
+                    b.Property<string>("RuntimePlaneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("HostId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ApplicationVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("AssignmentCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CandidateCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ClaimedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DispatchedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DueCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EnvironmentName")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset?>("LastCycleCompletedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("LastCycleStartedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastErrorSummary")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("LastSuccessfulCycleUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("PollIntervalSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ProcessStartedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StaleCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("RuntimePlaneId", "HostId");
+
+                    b.ToTable("SchedulerDispatchHeartbeats", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.SecretAuditEntity", b =>
@@ -1549,101 +2950,21 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("TelemetryEvents", (string)null);
                 });
 
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.UnisaFileImportWatermarkEntity", b =>
-                {
-                    b.Property<string>("SourceKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTimeOffset>("LastWriteTimeUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("SourceKey");
-
-                    b.ToTable("UnisaFileImportWatermarks", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.UnisaFundSourceCampusMapEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("CampusId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("FundSourceIdsCsv")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<string>("SchoolFundId")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SchoolFundId")
-                        .IsUnique();
-
-                    b.ToTable("UnisaFundSourceCampusMaps", (string)null);
-                });
-
-            modelBuilder.Entity("Apperture.Persistence.SqlServer.UnisaPaymentPlanArrangementEntity", b =>
-                {
-                    b.Property<Guid>("ArrangementId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("CnsStudentId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("ExternalKey")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<int?>("InSchoolPaymentPlanId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsCurrent")
-                        .HasColumnType("bit");
-
-                    b.Property<int?>("OutOfSchoolPaymentPlanId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("SchoolFundId")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("SourceKind")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("StudentNumber")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTimeOffset?>("SupersededAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.HasKey("ArrangementId");
-
-                    b.HasIndex("ExternalKey", "SchoolFundId", "IsCurrent");
-
-                    b.ToTable("UnisaPaymentPlanArrangements", (string)null);
-                });
-
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserEntity", b =>
                 {
                     b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AvatarImageKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AvatarKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("AvatarOptionId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
@@ -1652,12 +2973,23 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("DisplayTimeZoneId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("EmailAddress")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<DateTimeOffset?>("EmailVerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<bool>("IsBreakGlassEligible")
                         .HasColumnType("bit");
+
+                    b.Property<string>("PendingEmailAddress")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -1666,7 +2998,130 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmailAddress")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_VerifiedContactEmail")
+                        .HasFilter("[EmailVerifiedAtUtc] IS NOT NULL AND [EmailAddress] IS NOT NULL");
+
+                    b.HasIndex("IsBreakGlassEligible")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_EmergencyAccess")
+                        .HasFilter("[IsBreakGlassEligible] = 1");
+
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserMfaRecoveryCodeEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Algorithm")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Salt")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserMfaRecoveryCodes", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserPreferenceEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Appearance")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("TimeFormat")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserPreferences", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserProfileImageEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("ByteLength")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ImageKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Size")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ImageKey", "Size")
+                        .IsUnique();
+
+                    b.ToTable("UserProfileImages", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserRoleEntity", b =>
@@ -1684,6 +3139,46 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("UserRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpCredentialEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EnrolledAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsEnrolled")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("LastUsedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("LastVerifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("ProtectedSecret")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ProtectorKeyId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserTotpCredentials", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowCancelRequestEntity", b =>
@@ -1808,6 +3303,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -1927,6 +3426,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ResourceContextId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -1988,11 +3491,38 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("WorkflowStepInstances", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.AccountActionTokenEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ConnectionEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.IntegrationEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2006,8 +3536,63 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("LinkedUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ManagedContactIdentityLinkEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ManagedContactEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManagedContactId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemAttentionAcknowledgementEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.OperationItemEntity", "Item")
+                        .WithMany("AttentionAcknowledgements")
+                        .HasForeignKey("OperationItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.OperationGroupEntity", "Group")
+                        .WithMany("Items")
+                        .HasForeignKey("OperationGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemRetryAttemptEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.OperationItemEntity", "Item")
+                        .WithMany("RetryAttempts")
+                        .HasForeignKey("OperationItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationalTeamMemberEntity", b =>
                 {
+                    b.HasOne("Apperture.Persistence.SqlServer.ManagedContactEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManagedContactId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Apperture.Persistence.SqlServer.OperationalTeamEntity", null)
                         .WithMany()
                         .HasForeignKey("OperationalTeamId")
@@ -2018,6 +3603,42 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .WithMany()
                         .HasForeignKey("PrincipalUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.ScheduleDefinitionEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.ResourceContextEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ResourceContextId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserMfaRecoveryCodeEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserPreferenceEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserProfileImageEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserRoleEntity", b =>
@@ -2033,6 +3654,27 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpCredentialEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationGroupEntity", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationItemEntity", b =>
+                {
+                    b.Navigation("AttentionAcknowledgements");
+
+                    b.Navigation("RetryAttempts");
                 });
 #pragma warning restore 612, 618
         }

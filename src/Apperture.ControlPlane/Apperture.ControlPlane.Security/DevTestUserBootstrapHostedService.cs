@@ -41,6 +41,11 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
             return;
 
         var username = LocalAuthHelpers.NormalizeUsername(opts.Username);
+        if (EmergencyAccessIdentity.IsReservedLocalUsername(username))
+        {
+            _logger?.LogWarning("Dev test user username is reserved for Emergency Access; skipped.");
+            return;
+        }
         var displayName = string.IsNullOrWhiteSpace(opts.DisplayName) ? opts.Username : opts.DisplayName.Trim();
 
         using var scope = _scopeFactory.CreateScope();
@@ -52,6 +57,9 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
         var existing = await userRepo.GetByIdentityLinkAsync(IdentitySource.Local, username, cancellationToken);
         if (existing is not null)
         {
+            await EnsureDevPasswordAsync(existing.Id, opts, localCredRepo, passwordHasher, username, cancellationToken)
+                .ConfigureAwait(false);
+
             var roles = await roleRepo.GetForUserAsync(existing.Id, cancellationToken);
             var hasAdmin = roles.Any(r => string.Equals(r.Id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal));
             if (hasAdmin)
@@ -91,7 +99,8 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
 
         if (!string.IsNullOrEmpty(opts.Password) && localCredRepo is not null && passwordHasher is not null)
         {
-            var (hash, salt) = passwordHasher.HashPassword(opts.Password);
+            if (!TryHashDevPassword(opts.Password, username, displayName, passwordHasher, out var hash, out var salt))
+                return;
             await localCredRepo.SetPasswordAsync(userId, hash, salt, passwordHasher.AlgorithmName, cancellationToken);
         }
         else if (string.IsNullOrEmpty(opts.Password))
@@ -103,4 +112,46 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private async Task EnsureDevPasswordAsync(
+        UserId userId,
+        DevTestUserOptions opts,
+        ILocalCredentialRepository? localCredRepo,
+        ILocalPasswordHasher? passwordHasher,
+        string username,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(opts.Password) || localCredRepo is null || passwordHasher is null)
+            return;
+
+        if (!TryHashDevPassword(opts.Password, username, null, passwordHasher, out var hash, out var salt))
+            return;
+        await localCredRepo.SetPasswordAsync(userId, hash, salt, passwordHasher.AlgorithmName, cancellationToken)
+            .ConfigureAwait(false);
+        _logger?.LogDebug("Ensured DevTestUser password for {Username}.", username);
+    }
+
+    private bool TryHashDevPassword(
+        string password,
+        string username,
+        string? displayName,
+        ILocalPasswordHasher passwordHasher,
+        out string hash,
+        out string salt)
+    {
+        try
+        {
+            LocalPasswordPolicy.Require(password, LocalPasswordPolicy.ForLocalIdentity(username, displayName));
+        }
+        catch (PasswordPolicyException ex)
+        {
+            _logger?.LogWarning("DevTestUser password for {Username} was rejected: {Reason}", username, ex.Message);
+            hash = "";
+            salt = "";
+            return false;
+        }
+
+        (hash, salt) = passwordHasher.HashPassword(password);
+        return true;
+    }
 }

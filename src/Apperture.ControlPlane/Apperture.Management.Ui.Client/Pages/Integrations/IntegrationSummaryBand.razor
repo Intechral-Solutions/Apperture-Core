@@ -1,0 +1,116 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+
+<ManagementSection Title="Overview"
+                   Layer="ManagementSection.UiLayer.Summary"
+                   Subtitle="Health, connections, and next actions for this integration.">
+    <div class="flex flex-wrap gap-x-6 gap-y-3">
+        <div>
+            <div class="text-xs text-muted">Lifecycle state</div>
+            <div class="mt-1">
+                <StatusPill Label="@(Integration?.State ?? "—")"
+                            Semantic="@ManagementUiSemantics.MapIntegrationState(Integration?.State)" />
+            </div>
+        </div>
+        @if (Readiness is not null)
+        {
+            <div>
+                <div class="text-xs text-muted">Readiness</div>
+                <div class="mt-1">
+                    <StatusPill Label="@(Readiness.IsRunnable ? "Runnable" : "Not runnable")"
+                                Semantic="@(Readiness.IsRunnable ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Warning)" />
+                </div>
+            </div>
+            <div>
+                <div class="text-xs text-muted">Issues</div>
+                <div class="mt-1 flex flex-wrap gap-2">
+                    @if (Readiness.BlockingIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{Readiness.BlockingIssueCount} blocking")"
+                                       Semantic="@ManagementAttentionSemantic.Critical" />
+                    }
+                    @if (Readiness.AdvisoryIssueCount > 0)
+                    {
+                        <AttentionPill Label="@($"{Readiness.AdvisoryIssueCount} advisory")"
+                                       Semantic="@ManagementAttentionSemantic.Warning" />
+                    }
+                    @if (Readiness.BlockingIssueCount == 0 && Readiness.AdvisoryIssueCount == 0)
+                    {
+                        <span class="text-xs text-muted">No open issues</span>
+                    }
+                </div>
+            </div>
+        }
+        <div>
+            <div class="text-xs text-muted">Schedules</div>
+            <div class="mt-1 text-sm text-body">@ScheduleCount total · @EnabledScheduleCount enabled</div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(ConnectionsSummary))
+        {
+            <div>
+                <div class="text-xs text-muted">Connections</div>
+                <div class="mt-1 text-sm text-body">@ConnectionsSummary</div>
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(RecentOutcomeSummary) || !string.IsNullOrWhiteSpace(NextScheduleSummary))
+    {
+        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            @if (!string.IsNullOrWhiteSpace(RecentOutcomeSummary))
+            {
+                <div class="ui-detail-block text-sm">
+                    <div class="text-xs font-semibold text-heading">Recent outcome</div>
+                    <div class="mt-1 text-body">@RecentOutcomeSummary</div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(NextScheduleSummary))
+            {
+                <div class="ui-detail-block text-sm">
+                    <div class="text-xs font-semibold text-heading">Schedules</div>
+                    <div class="mt-1 text-body">@NextScheduleSummary</div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ManagementSummaryCard Title="Connections"
+                               Description="Connection requirements and bindings for this integration."
+                               Href="@ConnectionsHref" />
+        <ManagementSummaryCard Title="View runs"
+                               Description="Execution history for this integration."
+                               Href="@RunsHref" />
+        <ManagementSummaryCard Title="Schedules"
+                               Description="Recurring workflow triggers for this integration."
+                               Href="@SchedulesHref" />
+        <ManagementSummaryCard Title="Execute"
+                               Description="Launch procedures, workflows, or operations for this integration."
+                               Href="@ExecuteHref" />
+        <ManagementSummaryCard Title="Notifications"
+                               Description="Integration-scoped notification definitions."
+                               Href="@NotificationsHref" />
+        <ManagementSummaryCard Title="Settings"
+                               Description="Integration-scoped configuration overrides."
+                               Href="@SettingsHref" />
+    </div>
+</ManagementSection>
+
+@code {
+    [Parameter] public IntegrationDto? Integration { get; set; }
+    [Parameter] public IntegrationReadinessDto? Readiness { get; set; }
+    [Parameter] public int ScheduleCount { get; set; }
+    [Parameter] public int EnabledScheduleCount { get; set; }
+    [Parameter] public int BindingCount { get; set; }
+    [Parameter] public string IntegrationId { get; set; } = "";
+    [Parameter] public string? RecentOutcomeSummary { get; set; }
+    [Parameter] public string? NextScheduleSummary { get; set; }
+    [Parameter] public string? ConnectionsSummary { get; set; }
+
+    private string ExecuteHref => $"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}";
+    private string RunsHref => IntegrationUiRoutes.Runs(IntegrationId);
+    private string ConnectionsHref => IntegrationUiRoutes.Connections(IntegrationId);
+    private string SchedulesHref => IntegrationUiRoutes.Schedules(IntegrationId);
+    private string NotificationsHref => IntegrationUiRoutes.Notifications(IntegrationId);
+    private string SettingsHref => IntegrationUiRoutes.Settings(IntegrationId);
+}

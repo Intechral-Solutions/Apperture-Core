@@ -1,10 +1,11 @@
 @page "/dashboard/delete"
 @layout MainLayout
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Dashboard</div>
-    <h1 class="text-xl font-semibold text-heading">Delete dashboard page</h1>
-    <div class="mt-4 text-sm text-body text-muted">
-        <p>Placeholder: deleting dashboard pages is not yet implemented.</p>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Delete dashboard page"
+                Eyebrow="Developer"
+                Subtitle="Deferred — not part of the operator shell." />
+    <PageMessage Kind="PageMessageKind.Info"
+                 Message="Deleting dashboard pages is not yet available in v1. Return to the platform dashboard, or open Developer tasks for related stubs." />
+    <a href="@ShellSectionRoutes.DeveloperTasks" class="text-sm text-link">← Developer tasks</a>
 </div>

@@ -1,0 +1,34 @@
+{
+  "_Comment": "On-premises Windows instance template. Merge into appsettings.Production.json or instance-specific config. See docs/03-operations/management-platform-configuration.md and docs/01-architecture/bootstrap-and-secrets-boundary.md.",
+  "SqlServer": {
+    "Server": "your-sql-host",
+    "Database": "Apperture",
+    "CredentialReference": {
+      "SourceType": "WindowsIntegrated",
+      "Reference": ""
+    }
+  },
+  "LocalAuth": {
+    "Enabled": false
+  },
+  "Entra": {
+    "Enabled": false,
+    "TenantId": "",
+    "ClientId": "",
+    "Instance": "https://login.microsoftonline.com/"
+  },
+  "BootstrapPlatformAdmin": {
+    "Enabled": true,
+    "CreateUserIfMissing": false,
+    "Principals": []
+  },
+  "PlatformEvents": {
+    "Enabled": false
+  },
+  "_Notifications_Comment": "Independent operational toggles. Leave off until SMTP (Notifications:Email) and recipients are configured. There is no UsePlatformPipeline switch — this is the only delivery architecture.",
+  "Notifications": {
+    "Evaluation": { "Enabled": false },
+    "Instances": { "Enabled": false },
+    "Delivery": { "Enabled": false }
+  }
+}

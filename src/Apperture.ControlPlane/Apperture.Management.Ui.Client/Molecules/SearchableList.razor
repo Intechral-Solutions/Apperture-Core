@@ -1,0 +1,220 @@
+@using Apperture.Management.Ui.Client.Atoms
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="ui-searchable-list" @attributes="AdditionalAttributes">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="block text-sm font-medium text-heading" for="@SearchId">@Label</label>
+    }
+    @if (!string.IsNullOrWhiteSpace(HelpText))
+    {
+        <p id="@HelpId" class="mt-1 text-sm text-muted">@HelpText</p>
+    }
+
+    <div class="ui-searchable-list__toolbar">
+        <TextInput Id="@SearchId"
+                   Class="max-w-xs"
+                   Placeholder="@SearchPlaceholder"
+                   Value="@_query"
+                   ValueChanged="OnQueryChanged"
+                   Disabled="@Disabled"
+                   aria-describedby="@HelpId"
+                   aria-controls="@ListId" />
+        @if (OnUseDefault.HasDelegate)
+        {
+            <button type="button"
+                    class="btn btn-secondary"
+                    disabled="@Disabled"
+                    @onclick="InvokeDefaultAsync">
+                @UseDefaultLabel
+            </button>
+        }
+    </div>
+
+    @if (_statusMessage is not null)
+    {
+        <p class="text-sm text-muted" role="status">@_statusMessage</p>
+    }
+
+    <div class="ui-searchable-list__panel">
+        <div class="ui-searchable-list__header">
+            <span>@HeaderLabel</span>
+            <span class="font-mono">@_visibleCount of @_totalCount</span>
+        </div>
+        <div id="@ListId"
+             class="ui-searchable-list__scroll"
+             role="listbox"
+             aria-label="@ListAriaLabel"
+             tabindex="0"
+             @onkeydown="OnListKeyDown">
+            @if (IncludeNullOption)
+            {
+                var nullSelected = Value is null;
+                <button type="button"
+                        role="option"
+                        class="ui-searchable-list__option"
+                        data-state="@(nullSelected ? "on" : "off")"
+                        data-highlighted="@(_highlightIndex == 0)"
+                        aria-selected="@nullSelected"
+                        tabindex="-1"
+                        disabled="@Disabled"
+                        @onclick="() => SelectAsync(null, 0)">
+                    @NullOptionLabel
+                    @if (nullSelected)
+                    {
+                        <span class="sr-only">Selected</span>
+                    }
+                </button>
+            }
+
+            @for (var i = 0; i < _items.Count; i++)
+            {
+                var index = IncludeNullOption ? i + 1 : i;
+                var item = _items[i];
+                var selected = string.Equals(item.Value, Value, StringComparison.Ordinal);
+                <button type="button"
+                        @key="item.Value"
+                        role="option"
+                        class="ui-searchable-list__option"
+                        data-state="@(selected ? "on" : "off")"
+                        data-highlighted="@(_highlightIndex == index)"
+                        aria-selected="@selected"
+                        tabindex="-1"
+                        disabled="@Disabled"
+                        @onclick="() => SelectAsync(item.Value, index)">
+                    @item.Label
+                    @if (selected)
+                    {
+                        <span class="sr-only">Selected</span>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+
+    <div>
+        <span class="ui-searchable-list__chip" title="@SelectedLabel">@SelectedLabel</span>
+    </div>
+</div>
+
+@code {
+    public sealed record Option(string Value, string Label);
+
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? HelpText { get; set; }
+    [Parameter] public string SearchPlaceholder { get; set; } = "Search";
+    [Parameter] public string HeaderLabel { get; set; } = "Results";
+    [Parameter] public string ListAriaLabel { get; set; } = "Options";
+    [Parameter] public string UseDefaultLabel { get; set; } = "Use browser default";
+    [Parameter] public string NullOptionLabel { get; set; } = "Follow this browser";
+    [Parameter] public bool IncludeNullOption { get; set; } = true;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string IdPrefix { get; set; } = "searchable";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public EventCallback OnUseDefault { get; set; }
+    [Parameter] public string? StatusMessage { get; set; }
+    [Parameter] public Func<string, IReadOnlyList<Option>>? Filter { get; set; }
+    [Parameter] public Func<string?, string>? DescribeSelected { get; set; }
+    [Parameter] public IReadOnlyList<Option> AllOptions { get; set; } = [];
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string _query = "";
+    private string? _statusMessage;
+    private int _highlightIndex;
+    private List<Option> _items = [];
+    private int _totalCount;
+    private int _visibleCount;
+
+    private string SearchId => $"{IdPrefix}-search";
+    private string ListId => $"{IdPrefix}-list";
+    private string HelpId => $"{IdPrefix}-help";
+
+    private string SelectedLabel =>
+        DescribeSelected?.Invoke(Value)
+        ?? (string.IsNullOrWhiteSpace(Value) ? NullOptionLabel : Value);
+
+    protected override void OnParametersSet()
+    {
+        _statusMessage = StatusMessage;
+        Rebuild();
+    }
+
+    private async Task OnQueryChanged(string? query)
+    {
+        _query = query ?? "";
+        Rebuild();
+        await Task.CompletedTask;
+    }
+
+    private void Rebuild()
+    {
+        _totalCount = AllOptions.Count + (IncludeNullOption ? 1 : 0);
+        _items = (Filter?.Invoke(_query) ?? AllOptions
+            .Where(o => string.IsNullOrWhiteSpace(_query)
+                || o.Label.Contains(_query, StringComparison.OrdinalIgnoreCase)
+                || o.Value.Contains(_query, StringComparison.OrdinalIgnoreCase))
+            .ToList()).ToList();
+        _visibleCount = _items.Count + (IncludeNullOption ? 1 : 0);
+        if (_highlightIndex >= _visibleCount)
+            _highlightIndex = Math.Max(0, _visibleCount - 1);
+    }
+
+    private async Task SelectAsync(string? value, int index)
+    {
+        if (Disabled)
+            return;
+        _highlightIndex = index;
+        Value = value;
+        await ValueChanged.InvokeAsync(value);
+    }
+
+    private async Task InvokeDefaultAsync()
+    {
+        if (Disabled)
+            return;
+        await OnUseDefault.InvokeAsync();
+    }
+
+    private async Task OnListKeyDown(KeyboardEventArgs e)
+    {
+        if (Disabled || _visibleCount == 0)
+            return;
+
+        var next = e.Key switch
+        {
+            "ArrowDown" => (_highlightIndex + 1) % _visibleCount,
+            "ArrowUp" => (_highlightIndex - 1 + _visibleCount) % _visibleCount,
+            "Home" => 0,
+            "End" => _visibleCount - 1,
+            "Enter" or " " => _highlightIndex,
+            _ => -1
+        };
+
+        if (next < 0)
+            return;
+
+        if (e.Key is "Enter" or " ")
+        {
+            await SelectHighlightedAsync();
+            return;
+        }
+
+        _highlightIndex = next;
+        await SelectHighlightedAsync();
+    }
+
+    private async Task SelectHighlightedAsync()
+    {
+        if (IncludeNullOption && _highlightIndex == 0)
+        {
+            await SelectAsync(null, 0);
+            return;
+        }
+
+        var itemIndex = IncludeNullOption ? _highlightIndex - 1 : _highlightIndex;
+        if (itemIndex < 0 || itemIndex >= _items.Count)
+            return;
+        await SelectAsync(_items[itemIndex].Value, _highlightIndex);
+    }
+}

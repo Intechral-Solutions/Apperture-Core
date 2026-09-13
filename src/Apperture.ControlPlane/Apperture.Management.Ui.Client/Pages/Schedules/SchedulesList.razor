@@ -1,97 +1,239 @@
 @page "/schedules"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Schedules</h1>
-            <div class="text-xs text-muted">Schedule definitions and execution state.</div>
-        </div>
-        <div class="flex items-center gap-2">
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Schedules"
+                Subtitle="Schedule health and targets at a glance. Open a row for timing, outcomes, and actions.">
+        <Toolbar>
+            <label class="flex items-center gap-2 text-sm text-body">
+                <input type="checkbox" class="h-4 w-4" @bind="_showNeedsAttentionOnly" />
+                Needs attention
+            </label>
             @if (_capabilities?.CanManageSchedules == true)
             {
-                <a href="/schedules/new" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Create schedule</a>
+                <a href="/schedules/new" class="ui-toolbar-btn">Create schedule</a>
             }
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_schedules is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState />
     }
     else if (_schedules.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No schedules found.</div>
+        <EmptyState Title="No schedules yet"
+                    Message="Schedules trigger workflows or operations on a recurrence. Create one from an integration or here.">
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                <a href="/schedules/new" class="mt-3 inline-block ui-toolbar-btn">Create schedule</a>
+            }
+        </EmptyState>
+    }
+    else if (!DisplaySchedules.Any())
+    {
+        <EmptyState Title="Nothing needs attention"
+                    Message="All visible schedules look healthy under the current filter.">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ShowAllSchedules">Show all schedules</button>
+        </EmptyState>
     }
     else
     {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
-                    <tr>
-                        <th class="px-3 py-2">Id</th>
-                        <th class="px-3 py-2">Name</th>
-                        <th class="px-3 py-2">Enabled</th>
-                        <th class="px-3 py-2">Target</th>
-                        <th class="px-3 py-2"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var s in _schedules)
-                    {
-                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
-                            @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
-                            <td class="px-3 py-2 font-mono text-xs">@s.Id</td>
-                            <td class="px-3 py-2">@s.Name</td>
-                            <td class="px-3 py-2">@(s.Enabled ? "Yes" : "No")</td>
-                            <td class="px-3 py-2">
-                                <span class="font-mono text-xs">@GetTargetKind(s.TargetJobType)</span>
-                                @if (!string.IsNullOrEmpty(s.TargetJobConfiguration))
-                                {
-                                    <div class="text-xs text-muted truncate max-w-xs">@s.TargetJobConfiguration</div>
-                                }
-                            </td>
-                            <td class="px-3 py-2">
-                                <a href="@("/schedules/" + Uri.EscapeDataString(s.Id))" class="underline text-sm" @onclick:stopPropagation>Open</a>
-                            </td>
+        <ManagementSection Title="Summary"
+                           Layer="ManagementSection.UiLayer.Summary"
+                           Help="Derived from loaded schedule rows — next-fire and readiness are compute-only projections.">
+            <div class="flex flex-wrap items-center gap-2">
+                <StatusPill Label="@($"Total: {_schedules.Count}")" Semantic="@ManagementStatusSemantic.Neutral" />
+                <StatusPill Label="@($"Enabled: {EnabledCount}")" Semantic="@ManagementStatusSemantic.Success" />
+                <StatusPill Label="@($"Disabled: {DisabledCount}")" Semantic="@ManagementStatusSemantic.Warning" />
+                @{
+                    var needsAttention = _schedules.Count(RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention);
+                }
+                @if (needsAttention > 0)
+                {
+                    <AttentionPill Label="@($"{needsAttention} need review")" Semantic="@ManagementAttentionSemantic.Warning" />
+                }
+            </div>
+
+            <div class="ui-summary-card-grid ui-summary-card-grid--wide">
+                <ManagementSummaryCard Title="Integrations"
+                                       Description="Open deployment units owning schedules."
+                                       Href="/integrations" />
+                <ManagementSummaryCard Title="Runs history"
+                                       Description="Correlation and status filters apply from list rows."
+                                       Href="/runs" />
+                <ManagementSummaryCard Title="Control Center"
+                                       Description="Platform schedule health and blocked dispatch signals."
+                                       Href="/control/center" />
+                <ManagementSummaryCard Title="Blocked work"
+                                       Description="Deferred runs and retry recovery."
+                                       Href="@RunStatusFacets.BlockedRunsHref" />
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="All schedules"
+                           Layer="ManagementSection.UiLayer.Detail">
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead class="border-b border-default text-xs text-muted">
+                        <tr>
+                            <th class="px-3 py-2">Schedule</th>
+                            <th class="px-3 py-2">State</th>
+                            <th class="px-3 py-2">Execution</th>
+                            <th class="px-3 py-2">Health</th>
+                            <th class="px-3 py-2">Next fire</th>
+                            <th class="px-3 py-2">Target</th>
+                            <th class="px-3 py-2">Integration</th>
+                            <th class="px-3 py-2">Links</th>
+                            <th class="px-3 py-2"></th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-        <div class="mt-2 text-xs text-muted">
-            Schedule detail (including last outcome) is shown on the detail page.
-        </div>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in DisplaySchedules)
+                        {
+                            var healthLabel = RunScheduleOperatorUiHelpers.FormatScheduleHealthLabel(s.HealthStatus, s.Enabled);
+                            var primaryReason = RunScheduleOperatorUiHelpers.FormatPrimaryStatusReason(s.StatusReasons);
+                            var integrationRunnable = GetIntegrationRunnable(s.IntegrationId);
+                            var executionPill = IntegrationConfigurationOperatorUiHelpers.BuildScheduleExecutionPill(s.Enabled, integrationRunnable, s.IntegrationId);
+                            <tr class="border-b border-default hover:bg-row-hover cursor-pointer"
+                                @onclick="@(() => Nav.NavigateTo("/schedules/" + Uri.EscapeDataString(s.Id)))">
+                                <td class="px-3 py-2">
+                                    <div class="text-sm font-medium text-body">@s.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(primaryReason))
+                                    {
+                                        <div class="text-xs text-muted mt-0.5 line-clamp-2">@primaryReason</div>
+                                    }
+                                    <details class="mt-1" @onclick:stopPropagation="true">
+                                        <summary class="cursor-pointer text-xs text-muted">Technical</summary>
+                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.Id</div>
+                                        <div class="mt-1 font-mono text-xs text-muted break-all">@s.RecurrenceExpression (@(s.ScheduleTimeZoneId ?? s.TimeZone))</div>
+                                    </details>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@(s.Enabled ? "Enabled" : "Disabled")"
+                                                Semantic="@(s.Enabled ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                </td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@executionPill.Label" Semantic="@executionPill.Semantic" />
+                                    @if (!string.IsNullOrWhiteSpace(executionPill.RemediationHref))
+                                    {
+                                        <div class="mt-1">
+                                            <DrillInLink Href="@executionPill.RemediationHref" StopClickPropagation="true">Fix configuration</DrillInLink>
+                                        </div>
+                                    }
+                                </td>
+                                <td class="px-3 py-2">
+                                    <StatusPill Label="@healthLabel"
+                                                Semantic="@RunScheduleOperatorUiHelpers.MapScheduleHealthSemantic(s.HealthStatus)" />
+                                </td>
+                                <td class="px-3 py-2 text-sm">
+                                    @if (s.NextFireUtc is not null)
+                                    {
+                                        <TimestampDisplay Value="@s.NextFireUtc" ShowUtcDetail="true" />
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-muted">@(s.Enabled ? "None in window" : "—")</span>
+                                    }
+                                </td>
+                                <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatScheduleTargetSummary(s)</td>
+                                <td class="px-3 py-2">
+                                    @if (!string.IsNullOrWhiteSpace(s.IntegrationId))
+                                    {
+                                        <DrillInLink Href="@($"/integrations/{Uri.EscapeDataString(s.IntegrationId)}")"
+                                                     StopClickPropagation="true">@s.IntegrationId</DrillInLink>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs text-muted">Not linked</span>
+                                    }
+                                </td>
+                                <td class="px-3 py-2">
+                                    <div class="flex flex-wrap gap-2 text-xs">
+                                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetRunsListCorrelationFilterHref($"schedule:{s.Id}")"
+                                                     StopClickPropagation="true">Runs</DrillInLink>
+                                        <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForSchedule(s.Id)"
+                                                     StopClickPropagation="true">Audit</DrillInLink>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <a href="@($"/schedules/{Uri.EscapeDataString(s.Id)}")"
+                                       class="ui-drill-in-link text-sm"
+                                       @onclick:stopPropagation>Open</a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="List semantics and diagnostics"
+                                   Subtitle="Constraints that affect how this view should be interpreted."
+                                   InitiallyOpen="false">
+            <ul class="list-disc space-y-2 pl-4 text-xs text-muted">
+                <li>Next fire is a compute-only projection from cron + schedule time zone (not persisted). Look-ahead is bounded (32 days).</li>
+                <li>Schedule time zone is the cron evaluation zone; operator timestamps use display time zone (SWM-4/SWM-5).</li>
+                <li>@RunScheduleOperatorUiHelpers.ScheduleCatchUpHelpText</li>
+                <li>Last attempt/outcome detail remains richest on the schedule detail page. Calendar and date-period scheduling are deferred.</li>
+            </ul>
+        </ManagementAdvancedSection>
     }
 </div>
 
 @code {
     private IReadOnlyList<ScheduleDto>? _schedules;
     private OperatorCapabilitiesDto? _capabilities;
+    private readonly Dictionary<string, bool> _integrationRunnableById = new(StringComparer.Ordinal);
     private bool _loading;
+    private bool _showNeedsAttentionOnly;
     private string? _error;
+
+    private int EnabledCount => _schedules?.Count(x => x.Enabled) ?? 0;
+
+    private int DisabledCount => _schedules?.Count(x => !x.Enabled) ?? 0;
+
+    private IEnumerable<ScheduleDto> DisplaySchedules
+    {
+        get
+        {
+            if (_schedules is null)
+                return [];
+
+            var sorted = RunScheduleOperatorUiHelpers.SortSchedulesForTriage(_schedules);
+            if (!_showNeedsAttentionOnly)
+                return sorted;
+
+            return sorted.Where(RunScheduleOperatorUiHelpers.ScheduleListNeedsAttention);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
-        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); }
+        catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
         await LoadAsync();
     }
+
+    private void ShowAllSchedules() => _showNeedsAttentionOnly = false;
 
     private async Task LoadAsync()
     {
@@ -100,6 +242,7 @@
         try
         {
             _schedules = await Client.GetSchedulesAsync();
+            await LoadIntegrationReadinessCacheAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -111,6 +254,35 @@
         }
     }
 
-    private static string GetTargetKind(int targetJobType) =>
-        targetJobType == 0 ? "Workflow" : targetJobType == 1 ? "Operation" : $"Type{targetJobType}";
+    private bool? GetIntegrationRunnable(string? integrationId)
+    {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            return null;
+
+        return _integrationRunnableById.TryGetValue(integrationId, out var runnable) ? runnable : null;
+    }
+
+    private async Task LoadIntegrationReadinessCacheAsync()
+    {
+        _integrationRunnableById.Clear();
+        if (_schedules is null)
+            return;
+
+        foreach (var integrationId in _schedules
+                     .Select(s => s.IntegrationId)
+                     .Where(id => !string.IsNullOrWhiteSpace(id))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                var readiness = await Client.GetIntegrationReadinessAsync(integrationId!);
+                if (readiness is not null)
+                    _integrationRunnableById[integrationId!] = readiness.IsRunnable;
+            }
+            catch (HttpRequestException)
+            {
+                // Leave uncached; pill shows pending check.
+            }
+        }
+    }
 }

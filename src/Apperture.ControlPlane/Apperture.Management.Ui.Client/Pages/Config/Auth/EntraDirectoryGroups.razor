@@ -1,0 +1,123 @@
+@page "/config/auth/entra/{RegistrationId}/groups"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication — Entra directory"
+                Title="Entra directory groups"
+                Subtitle="Browse-only view from Microsoft Graph. Groups are not imported until a future managed-contact flow.">
+        <Toolbar>
+            <a href="/config/auth/tenants" class="ui-toolbar-btn text-sm">← Entra tenant setup</a>
+            <button type="button"
+                    class="ui-toolbar-btn text-sm"
+                    disabled="@_busy"
+                    @onclick="SearchAsync">
+                Search
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission." />
+    }
+    else if (_loading)
+    {
+        <LoadingState />
+    }
+    else if (_result is null)
+    {
+        <ErrorState Message="Could not load directory groups." />
+    }
+    else
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Use object ids when preparing for a future group import flow. No membership expansion in this view." />
+
+        <ManagementSection Title="Search" Layer="@ManagementSection.UiLayer.Summary">
+            <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
+                Search (display name, mail nickname)
+                <input class="ui-input"
+                       @bind="_search"
+                       @bind:event="oninput" />
+            </label>
+        </ManagementSection>
+
+        @if (!_result.Success)
+        {
+            <PageMessage Kind="PageMessageKind.Error" Message="@_result.Summary" />
+            @if (!string.IsNullOrEmpty(_result.TechnicalDetail))
+            {
+                <pre class="ui-code-block text-xs whitespace-pre-wrap max-w-3xl overflow-x-auto">@_result.TechnicalDetail</pre>
+            }
+        }
+
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-xs">
+                <thead>
+                    <tr>
+                        <th>Display name</th>
+                        <th>Mail nickname</th>
+                        <th>Object id</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var g in _result.Items)
+                    {
+                        <tr>
+                            <td class="font-medium text-heading">@g.DisplayName</td>
+                            <td class="text-muted">@(g.MailNickname ?? "—")</td>
+                            <td class="font-mono break-all text-[11px] text-muted">@g.ObjectId</td>
+                            <td class="max-w-xs truncate text-muted" title="@g.Description">@(g.Description ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string RegistrationId { get; set; } = "";
+
+    private bool _canView;
+    private bool _loading = true;
+    private bool _busy;
+    private EntraDirectoryGroupsApiDto? _result;
+    private string _search = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewAuthConfiguration || caps.CanManageEntraTenants;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await SearchAsync();
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        _busy = true;
+        try
+        {
+            _result = await Client.GetEntraDirectoryGroupsAsync(
+                RegistrationId,
+                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+                50);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

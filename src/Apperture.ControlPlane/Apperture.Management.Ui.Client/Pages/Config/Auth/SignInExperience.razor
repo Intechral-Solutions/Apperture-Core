@@ -10,54 +10,51 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Sign-in chooser"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication"
+                Title="Sign-in chooser"
                 Subtitle="Primary sign-in page: which methods appear and in what order. Local sign-in availability is controlled by deployment; this page only controls chooser visibility and Entra preference." />
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission to view sign-in configuration.</p>
+        <ForbiddenState Message="You do not have permission to view sign-in configuration." />
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (_policy is null || _opts is null)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Could not load policy or sign-in options." />
+        <ErrorState Message="Could not load policy or sign-in options." />
     }
     else
     {
-        <div class="mt-6 max-w-xl space-y-6 text-sm text-body">
+        <div class="max-w-xl space-y-4 text-sm text-body">
             @if (_overview?.RuntimeMayRequireRestartToApplyChanges == true)
             {
                 <PageMessage Kind="PageMessageKind.Warning"
                              Message="@_overview.RuntimeApplicationStatus" />
             }
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Effective experience (read-only)</h2>
-                <p class="mt-2 text-xs text-body">@(_opts.EffectiveExperienceDescription ?? "—")</p>
+            <ManagementSection Title="Effective experience (read-only)" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs text-body">@(_opts.EffectiveExperienceDescription ?? "—")</p>
                 @if (!string.IsNullOrEmpty(_opts.EffectiveExperience))
                 {
-                    <p class="mt-1 text-xs text-muted">Label: <code class="rounded bg-surface-muted px-1">@_opts.EffectiveExperience</code></p>
+                    <p class="mt-1 text-xs text-muted">Label: <code class="ui-inline-code">@_opts.EffectiveExperience</code></p>
                 }
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Capabilities (read-only)</h2>
-                <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+            <ManagementSection Title="Capabilities (read-only)" Layer="@ManagementSection.UiLayer.Summary">
+                <ul class="list-inside list-disc space-y-1 text-xs">
                     <li>Local sign-in (deployment): @(_opts.LocalSignInEnabled ? "enabled" : "disabled")</li>
                     <li>Entra sign-in (effective): @(_opts.EntraSignInEnabled ? "enabled" : _opts.EntraMisconfigured ? "misconfigured" : "disabled")</li>
                 </ul>
-                <p class="mt-2 text-xs text-muted">Recovery URL when local is hidden from the primary page: <code class="rounded bg-surface-muted px-1">/login/local</code></p>
-            </section>
+                <p class="mt-2 text-xs text-muted">Recovery URL when local is hidden from the primary page: <code class="ui-inline-code">/login/local</code></p>
+            </ManagementSection>
 
             @if (_canManage)
             {
-                <section class="rounded border border-default bg-surface p-4 space-y-4">
-                    <h2 class="font-medium text-heading">Chooser policy</h2>
+                <ManagementSection Title="Chooser policy" Layer="@ManagementSection.UiLayer.Detail">
                     <PageMessage Kind="PageMessageKind.Warning"
                                  Message="You cannot hide local sign-in from the primary page unless Entra sign-in is enabled and correctly configured. The server rejects saves that would lock operators out." />
                     <label class="flex items-center gap-2">
@@ -77,12 +74,12 @@
                         <PageMessage Kind="PageMessageKind.Error" Message="@_saveError" />
                     }
                     <button type="button"
-                            class="rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50"
+                            class="btn btn-primary"
                             disabled="@_saving"
                             @onclick="SaveAsync">
                         @(_saving ? "Saving…" : "Save")
                     </button>
-                </section>
+                </ManagementSection>
             }
             else
             {

@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.ResourceContexts;
 
 namespace Apperture.Core.Application.Services;
 
@@ -12,6 +13,26 @@ public interface IConnectionManagementService
     /// Lists connections visible to the current actor.
     /// </summary>
     ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists connections visible to the current actor, optionally restricted to one owning ResourceContext.
+    /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; the production
+    /// implementation pushes the filter down to the repository query.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListConnectionsAsync(cancellationToken).ConfigureAwait(false);
+        if (resourceContextId is null)
+            return all;
+        return all.Where(c => string.Equals(c.ResourceContextId.Value, resourceContextId.Value, StringComparison.Ordinal)).ToList();
+    }
 
     /// <summary>
     /// Gets a connection by id. Returns null if not found or not visible.
@@ -35,6 +56,7 @@ public interface IConnectionManagementService
 
     /// <summary>
     /// Executes connector-specific test-connect and persists the latest verification result on the connection.
+    /// Requires <c>connection.read</c> on the connection (diagnostic for operators who can view the resource).
     /// </summary>
     ValueTask<Connection> VerifyConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default);
 }

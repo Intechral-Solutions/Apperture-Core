@@ -1,0 +1,18 @@
+@*
+    Keeps the standalone /preferences path working. The account root is now the Account section.
+*@
+@page "/preferences"
+@layout MainLayout
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+<div class="p-6">
+    <p class="text-sm text-muted" role="status">Opening your account…</p>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo(AccountUiRoutes.Preferences, replace: true);
+    }
+}

@@ -12,4 +12,8 @@ public static class UnisaCampusNexusPaymentPlansConstants
 
     /// <summary>SQL connection for UNISA payment plan mapping tables (<see cref="System.Data.IDbConnection"/>).</summary>
     public const string SlotIntegrationDb = "IntegrationDb";
+
+    public const string ProcedureProcessDailyFiles = "Unisa.CampusNexus.PaymentPlans.procedures.processDailyFiles";
+
+    public const string ProcedureProcessTransFiles = "Unisa.CampusNexus.PaymentPlans.procedures.processTransFiles";
 }

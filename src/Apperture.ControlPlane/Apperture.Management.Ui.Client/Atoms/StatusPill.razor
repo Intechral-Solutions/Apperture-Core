@@ -1,0 +1,17 @@
+@using Apperture.Management.Ui.Shared
+
+<span class="@CssClass" title="@Title">@Label</span>
+
+@code {
+  [Parameter] public string Label { get; set; } = "";
+  [Parameter] public string? Title { get; set; }
+  [Parameter] public ManagementStatusSemantic Semantic { get; set; } = ManagementStatusSemantic.Neutral;
+
+  /// <summary>When set, maps runtime health strings (Healthy / Degraded / …) to pill styles.</summary>
+  [Parameter] public string? RuntimeHealthStatus { get; set; }
+
+  private string CssClass =>
+      !string.IsNullOrWhiteSpace(RuntimeHealthStatus)
+          ? ManagementUiSemantics.GetRuntimeHealthStatusPillClass(RuntimeHealthStatus)
+          : ManagementUiSemantics.GetStatusPillClass(Semantic);
+}

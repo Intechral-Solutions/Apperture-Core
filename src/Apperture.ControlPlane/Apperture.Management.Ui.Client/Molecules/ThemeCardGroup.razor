@@ -1,0 +1,86 @@
+@using Apperture.Management.Ui.Shared
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="ui-theme-card-group"
+     role="radiogroup"
+     aria-label="@AriaLabel"
+     @attributes="AdditionalAttributes">
+    @for (var i = 0; i < Choices.Length; i++)
+    {
+        var index = i;
+        var choice = Choices[index];
+        var selected = Value == choice.Preference;
+        <button type="button"
+                class="ui-theme-card"
+                role="radio"
+                data-state="@(selected ? "on" : "off")"
+                aria-checked="@selected"
+                tabindex="@(selected || (!HasSelection && index == 0) ? 0 : -1)"
+                disabled="@Disabled"
+                @onclick="() => SelectAsync(choice.Preference)"
+                @onkeydown="e => OnKeyDownAsync(e, index)">
+            <span class="ui-theme-card__swatch @SwatchClass(choice.Preference)" aria-hidden="true"></span>
+            <span class="ui-theme-card__label">@choice.Label</span>
+            <span class="ui-theme-card__hint">@choice.Hint</span>
+            @if (selected)
+            {
+                <span class="ui-theme-card__badge" aria-hidden="true">Selected</span>
+                <span class="sr-only">Selected</span>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    private sealed record Choice(ThemePreference Preference, string Label, string Hint);
+
+    private static readonly Choice[] Choices =
+    [
+        new(ThemePreference.System, "System", "Follow this device"),
+        new(ThemePreference.Light, "Light", "Always light"),
+        new(ThemePreference.Dark, "Dark", "Always dark"),
+    ];
+
+    [Parameter] public ThemePreference Value { get; set; } = ThemePreference.System;
+    [Parameter] public EventCallback<ThemePreference> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Appearance";
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private bool HasSelection => Choices.Any(c => c.Preference == Value);
+
+    private static string SwatchClass(ThemePreference preference) => preference switch
+    {
+        ThemePreference.Light => "ui-theme-card__swatch--light",
+        ThemePreference.Dark => "ui-theme-card__swatch--dark",
+        _ => "ui-theme-card__swatch--system"
+    };
+
+    private async Task SelectAsync(ThemePreference preference)
+    {
+        if (Disabled)
+            return;
+        Value = preference;
+        await ValueChanged.InvokeAsync(preference);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e, int index)
+    {
+        if (Disabled)
+            return;
+
+        var next = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => (index + 1) % Choices.Length,
+            "ArrowLeft" or "ArrowUp" => (index - 1 + Choices.Length) % Choices.Length,
+            "Home" => 0,
+            "End" => Choices.Length - 1,
+            _ => -1
+        };
+
+        if (next < 0)
+            return;
+
+        await SelectAsync(Choices[next].Preference);
+    }
+}

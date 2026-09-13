@@ -70,7 +70,7 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
 
         if (dispatchResult is null)
         {
-            await TryAuditRetryBlockedAsync(runId.Value, originalRun.DefinitionId, cancellationToken).ConfigureAwait(false);
+            await TryAuditRetryBlockedAsync(runId.Value, originalRun.DefinitionId, originalRun.ResourceContextId, cancellationToken).ConfigureAwait(false);
             return new WorkflowRetryResult(
                 new OperationRunId(runId.Value),
                 RunId: null,
@@ -108,7 +108,8 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
         string.Equals(status, WorkflowLifecycleStatusNames.Failed, StringComparison.Ordinal) ||
         string.Equals(status, WorkflowLifecycleStatusNames.Cancelled, StringComparison.Ordinal);
 
-    private async ValueTask TryAuditRetryBlockedAsync(string runId, string definitionId, CancellationToken cancellationToken)
+    private async ValueTask TryAuditRetryBlockedAsync(
+        string runId, string definitionId, string? resourceContextId, CancellationToken cancellationToken)
     {
         if (_audit is null)
             return;
@@ -125,7 +126,8 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
                     Timestamp: DateTimeOffset.UtcNow,
                     new CorrelationId(runId),
                     $"runId={runId};definitionId={definitionId};reason={BlockedReasonMessage}",
-                    RunId: runId),
+                    RunId: runId,
+                    ResourceContextId: resourceContextId),
                 cancellationToken).ConfigureAwait(false);
         }
         catch

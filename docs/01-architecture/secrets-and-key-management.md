@@ -93,6 +93,17 @@ The Azure Functions host (RuntimeHost.Azure.Template) uses Key Vault and Managed
 
 Consumers pass `SecretRef`; resolution routing is transparent.
 
+## Platform settings producer
+
+Sensitive platform settings reuse `ISecretStore` / `ISecretResolver` the same way connection secrets do:
+
+- **Provisioner:** `PlatformSettingSecretMaterialProvisioner` (`provider = platform-setting`, name `platform-setting:{settingKey}`)
+- **Persistence:** only the GUID reference is stored in `PlatformSettingValues`
+- **API:** platform settings PUT carries explicit `SecretOperation` (`replace` / `clear`); plaintext is never returned on GET
+- **SMTP:** operators set `Notifications.Email.SmtpPasswordRef` via the Platform Settings password editor; runtime resolves through `EmailSmtpCredentialResolver`
+
+See [platform-settings-registry.md](platform-settings-registry.md#sensitive-settings).
+
 ## Secret model and reference policy
 
 - Secrets are passed and persisted as `SecretRef`.

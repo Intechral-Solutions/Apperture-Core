@@ -1,0 +1,69 @@
+@*
+    HUB-1: persistent section navigation across the Integration Operations Hub. Real links (not a
+    client-side view switch) so every section is bookmarkable and behaves like normal navigation
+    for keyboard/screen-reader users — mirrors AccountSectionNav.
+*@
+@implements IDisposable
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+<nav class="ui-tabs" aria-label="Integration sections">
+    @foreach (var tab in _visibleSections)
+    {
+        var isCurrent = IsCurrent(tab);
+        <a href="@tab.Href"
+           aria-current="@(isCurrent ? "page" : null)"
+           title="@tab.Description"
+           data-state="@(isCurrent ? "active" : "inactive")"
+           class="ui-tabs__link">
+            @tab.Label
+        </a>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public string IntegrationId { get; set; } = "";
+
+    /// <summary>
+    /// Hide the Notifications tab when the operator lacks ViewNotificationDefinitions. Menu/tab
+    /// hiding is never a substitute for page/API authorization — the Notifications page and its
+    /// APIs enforce independently regardless of this flag.
+    /// </summary>
+    [Parameter] public bool ShowNotificationsTab { get; set; } = true;
+
+    private string _path = "";
+
+    private IReadOnlyList<IntegrationHubSection> _visibleSections
+    {
+        get
+        {
+            var all = IntegrationUiRoutes.Sections(IntegrationId);
+            return ShowNotificationsTab
+                ? all
+                : all.Where(s => s.Key != IntegrationUiRoutes.SectionNotifications).ToList();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        _path = CurrentPath();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var next = CurrentPath();
+        if (string.Equals(next, _path, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _path = next;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string CurrentPath() => new Uri(Nav.Uri).AbsolutePath;
+
+    private bool IsCurrent(IntegrationHubSection tab) =>
+        string.Equals(IntegrationUiRoutes.ResolveSectionKey(_path), tab.Key, StringComparison.Ordinal);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

@@ -2,81 +2,73 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <div class="text-xs text-muted mb-1">Config — Governance — Roles</div>
-            <h1 class="text-xl font-semibold text-heading">Roles</h1>
-            <div class="text-xs text-muted">Platform roles and their permission grants. Use the permission catalog to browse available actions and resources.</div>
-        </div>
-        <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
-                disabled="@_loading"
-                @onclick="LoadAsync">
-            Refresh
-        </button>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Governance"
+                Title="Roles"
+                Subtitle="Platform roles and their permission grants. Use the permission catalog to browse available actions and resources.">
+        <Toolbar>
+            <button type="button"
+                    class="ui-toolbar-btn"
+                    disabled="@_loading"
+                    @onclick="LoadAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view roles.</div>
-        </div>
+        <ForbiddenState Message="You do not have permission to view roles." />
     }
     else if (_forbidden)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view roles.</div>
-        </div>
+        <ForbiddenState Message="You do not have permission to view roles." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_roles is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else if (_roles.Count == 0)
     {
-        <div class="mt-4 text-sm text-muted">No roles found.</div>
+        <EmptyState Message="No roles found." />
     }
     else
     {
-        <div class="mt-4 overflow-x-auto rounded border border-default bg-surface">
-            <table class="min-w-full text-left text-sm text-body">
-                <thead class="border-b border-default text-xs text-muted">
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-body">
+                <thead>
                     <tr>
-                        <th class="px-3 py-2">Id</th>
-                        <th class="px-3 py-2">Name</th>
-                        <th class="px-3 py-2">Description</th>
-                        <th class="px-3 py-2">System role</th>
-                        <th class="px-3 py-2"></th>
+                        <th>Id</th>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>System role</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var r in _roles)
                     {
-                        <tr class="border-b border-default hover:bg-surface-muted cursor-pointer"
+                        <tr class="cursor-pointer"
                             @onclick="@(() => Nav.NavigateTo("/config/governance/roles/" + Uri.EscapeDataString(r.Id)))">
-                            <td class="px-3 py-2 font-mono text-xs">@r.Id</td>
-                            <td class="px-3 py-2">@r.Name</td>
-                            <td class="px-3 py-2">@(r.Description ?? "-")</td>
-                            <td class="px-3 py-2">@(r.IsSystemRole ? "Yes" : "No")</td>
-                            <td class="px-3 py-2">
+                            <td class="font-mono text-xs">@r.Id</td>
+                            <td>@r.Name</td>
+                            <td>@(r.Description ?? "-")</td>
+                            <td>@(r.IsSystemRole ? "Yes" : "No")</td>
+                            <td>
                                 <a href="@("/config/governance/roles/" + Uri.EscapeDataString(r.Id))" class="underline text-sm" @onclick:stopPropagation>View</a>
                             </td>
                         </tr>

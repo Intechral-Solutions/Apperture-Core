@@ -10,23 +10,21 @@
 <div class="p-4">
     <PageHeader Title="Integration Authoring Wizard" Subtitle="Create an integration, then continue directly to bindings, readiness remediation, schedules, and procedures.">
         <Toolbar>
-            <a href="/integrations" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
+            <a href="/integrations" class="ui-toolbar-btn">Back to list</a>
         </Toolbar>
     </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanManageIntegrations != true)
     {
-        <PageMessage Kind="PageMessageKind.Forbidden"
-                     Title="Not authorized"
-                     Message="You do not have permission to create integrations." />
+        <ForbiddenState Message="You do not have permission to create integrations." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <PageMessage Kind="PageMessageKind.Error" Title="Error" Message="@_error" />
+        <ErrorState Message="@_error" />
     }
     else
     {
@@ -38,24 +36,24 @@
                              CurrentStepId="@_wizard.CurrentStepId"
                              OnSelect="OnWizardStepSelectedAsync" />
 
-            <div class="rounded border border-default bg-surface p-4">
+            <div class="ui-section-panel">
                 @if (string.Equals(_wizard.CurrentStepId, StepChooseModule, StringComparison.Ordinal))
                 {
                     <div class="text-sm font-semibold text-heading">Step 1: Select module</div>
                     <div class="mt-1 text-xs text-muted">Only effectively active modules are shown.</div>
                     @if (_modulesLoading)
                     {
-                        <div class="mt-3 text-sm text-muted">Loading modules…</div>
+                        <LoadingState Message="Loading modules…" />
                     }
                     else if (_availableModules.Count == 0)
                     {
-                        <div class="mt-3 text-sm text-body">No eligible modules are currently active.</div>
+                        <EmptyState Message="No eligible modules are currently active." />
                     }
                     else
                     {
                         <div class="mt-3">
-                            <label class="block text-xs text-muted">Module definition</label>
-                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            <label class="block text-sm font-medium text-heading">Module definition</label>
+                            <select class="ui-input mt-1 w-full text-sm"
                                     @bind="_moduleId"
                                     @bind:after="OnModuleChanged">
                                 <option value="">Select…</option>
@@ -77,27 +75,27 @@
                     <div class="mt-1 text-xs text-muted">This creates the integration and routes you to configuration/remediation.</div>
                     <form class="mt-3 grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
                         <div>
-                            <label class="block text-xs text-muted">Display Name (required)</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            <label class="block text-sm font-medium text-heading">Display Name (required)</label>
+                            <input class="ui-input mt-1 w-full text-sm"
                                    @bind="_displayName"
                                    required />
                         </div>
                         <div>
-                            <label class="block text-xs text-muted">Module definition</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                            <label class="block text-sm font-medium text-heading">Module definition</label>
+                            <input class="ui-input mt-1 w-full text-sm font-mono"
                                    value="@_moduleId"
                                    readonly />
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-xs text-muted">Scope key (optional)</label>
-                            <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                            <label class="block text-sm font-medium text-heading">Scope key (optional)</label>
+                            <input class="ui-input mt-1 w-full text-sm font-mono"
                                    @bind="_scopeKey"
                                    placeholder="instance (default if empty)" />
                             <div class="mt-0.5 text-xs text-muted">Environment/context; leave empty for instance scope.</div>
                         </div>
                         <div class="md:col-span-2">
                             <button type="submit"
-                                    class="rounded bg-body px-3 py-2 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                                    class="btn btn-primary"
                                     disabled="@(_submitting || !CanCreate())">
                                 @(_submitting ? "Creating…" : "Create Integration")
                             </button>
@@ -107,13 +105,13 @@
 
                 <div class="mt-4 flex gap-2">
                     <button type="button"
-                            class="rounded bg-surface-muted px-2 py-1 text-sm text-body hover:bg-surface disabled:opacity-50"
+                            class="btn btn-secondary text-sm"
                             disabled="@(!CanMovePrevious())"
                             @onclick="MovePreviousAsync">
                         Previous
                     </button>
                     <button type="button"
-                            class="rounded bg-body px-2 py-1 text-sm text-surface hover:bg-body/90 disabled:opacity-50"
+                            class="btn btn-primary text-sm"
                             disabled="@(!CanMoveNext())"
                             @onclick="MoveNextAsync">
                         Next

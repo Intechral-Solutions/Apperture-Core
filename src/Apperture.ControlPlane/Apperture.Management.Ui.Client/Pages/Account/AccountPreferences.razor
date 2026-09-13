@@ -1,0 +1,362 @@
+@page "/account/preferences"
+@layout MainLayout
+@implements IDisposable
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Atoms
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Blazor.Heroicons.Outline
+@inject SessionStateService Session
+@inject IManagementClient Client
+@inject ThemeService Theme
+@inject AppearancePreferenceCoordinator Appearance
+@inject IOperatorDisplayTimeZone DisplayTimeZone
+@inject IToastService Toasts
+
+<div class="ui-settings-page">
+    <PageHeader Eyebrow="Account settings"
+                Title="Appearance & regional"
+                Subtitle="Theme, timezone, and clock format. These settings apply to you only.">
+        <Toolbar>
+            <span class="ui-settings-status" data-state="@(IsRegionalDirty ? "dirty" : "saved")">
+                <span class="ui-settings-status__dot" aria-hidden="true"></span>
+                @(IsRegionalDirty ? "Unsaved changes" : "All changes saved")
+            </span>
+        </Toolbar>
+    </PageHeader>
+
+    <AccountSectionNav />
+
+    @if (_loading)
+    {
+        <p class="mt-6 text-sm text-muted" role="status">Loading your preferences…</p>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="mt-6">
+            <ErrorState Message="@_loadError" />
+        </div>
+    }
+    else
+    {
+        <div class="ui-settings-grid mt-8">
+            <div class="space-y-8">
+                <section class="ui-settings-card" aria-labelledby="appearance-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="appearance-heading" class="ui-settings-card__title">Appearance</h2>
+                        <p class="ui-settings-card__help">
+                            Applies as soon as you choose it, and is saved to your account so it follows you to
+                            other browsers.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body">
+                        <ThemeCardGroup Value="_appearance"
+                                        ValueChanged="SetAppearanceAsync"
+                                        Disabled="_saving"
+                                        AriaLabel="Appearance" />
+                        <p class="mt-3 text-sm text-muted">
+                            <strong class="font-medium text-heading">System</strong> follows your device setting.
+                            Before you sign in, Apperture uses the theme last used in this browser.
+                        </p>
+                    </div>
+                </section>
+
+                <section class="ui-settings-card" aria-labelledby="regional-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="regional-heading" class="ui-settings-card__title">Dates and times</h2>
+                        <p class="ui-settings-card__help">
+                            Changes how timestamps are shown to you. It never changes when work runs — schedules
+                            and stored timestamps stay in UTC.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body space-y-6">
+                        <TimeZoneSelector Value="@_timeZoneId"
+                                          ValueChanged="OnTimeZoneChanged"
+                                          Disabled="@_saving"
+                                          IdPrefix="account-timezone" />
+
+                        <div>
+                            <div class="text-sm font-medium text-heading mb-2">Clock</div>
+                            <SegmentedControl TValue="string"
+                                              Items="_clockItems"
+                                              Value="_timeFormat"
+                                              ValueChanged="SetTimeFormatAsync"
+                                              Disabled="_saving"
+                                              IdPrefix="clock"
+                                              aria-label="Clock format" />
+                            <p class="mt-2 text-sm text-muted">Preview: <span class="text-body font-mono">@ClockPreview</span></p>
+                        </div>
+                    </div>
+                    <div class="ui-settings-card__footer">
+                        <span class="text-sm text-muted">
+                            @(IsRegionalDirty ? "Unsaved changes" : "Saved")
+                        </span>
+                        <div class="flex items-center gap-3">
+                            @if (IsRegionalDirty && !_saving)
+                            {
+                                <button type="button"
+                                        class="text-sm text-muted underline hover:text-heading"
+                                        @onclick="DiscardRegional">
+                                    Discard changes
+                                </button>
+                            }
+                            <button type="button"
+                                    class="btn btn-primary"
+                                    disabled="@(_saving || !IsRegionalDirty)"
+                                    @onclick="SaveRegionalAsync">
+                                @(_saving ? "Saving…" : "Save")
+                            </button>
+                        </div>
+                    </div>
+                    @if (_saveError is not null)
+                    {
+                        <p class="px-5 pb-4 text-sm text-message-error" role="alert">@_saveError</p>
+                    }
+                </section>
+            </div>
+
+            <aside class="space-y-5">
+                <div class="ui-settings-callout" aria-labelledby="timestamps-heading">
+                    <ClockIcon class="ui-settings-callout__icon" aria-hidden="true" />
+                    <div>
+                        <div id="timestamps-heading" class="ui-settings-callout__title">Timestamps</div>
+                        <p class="ui-settings-callout__body">
+                            Schedules and stored timestamps stay in UTC. Your timezone only changes how times
+                            are displayed to you.
+                        </p>
+                    </div>
+                </div>
+
+                <section class="ui-settings-card" aria-labelledby="platform-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="platform-heading" class="ui-settings-card__title">Platform settings</h2>
+                        <p class="ui-settings-card__help">
+                            Mail delivery, integration configuration, scheduling defaults, and other
+                            instance-wide settings are managed by administrators and are not personal
+                            preferences.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body">
+                        <div class="ui-settings-meta">
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Mail delivery</span>
+                                <span class="ui-settings-meta__value text-muted">Configuration</span>
+                            </div>
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Scheduling defaults</span>
+                                <span class="ui-settings-meta__value">UTC</span>
+                            </div>
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Integrations</span>
+                                <span class="ui-settings-meta__value text-muted">Administrator owned</span>
+                            </div>
+                        </div>
+                        <a class="ui-settings-link" href="/config">Open Configuration →</a>
+                    </div>
+                </section>
+
+                <section class="ui-settings-card" aria-labelledby="session-heading">
+                    <div class="ui-settings-card__header">
+                        <h2 id="session-heading" class="ui-settings-card__title">Session</h2>
+                        <p class="ui-settings-card__help">
+                            What this browser is using right now for theme and timezone display.
+                        </p>
+                    </div>
+                    <div class="ui-settings-card__body">
+                        <div class="ui-settings-meta">
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Browser timezone</span>
+                                <span class="ui-settings-meta__value font-mono">@DisplayTimeZone.TimeZoneId</span>
+                            </div>
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Timezone source</span>
+                                <span class="ui-settings-meta__value">@TimezoneSourceLabel</span>
+                            </div>
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Theme</span>
+                                <span class="ui-settings-meta__value">@_appearance</span>
+                            </div>
+                            <div class="ui-settings-meta__row">
+                                <span class="ui-settings-meta__label">Theme source</span>
+                                <span class="ui-settings-meta__value">@ThemeSourceLabel</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly SegmentedControl<string>.Item[] _clockItems =
+    [
+        new("System", "Platform default"),
+        new("Hour24", "24-hour"),
+        new("Hour12", "12-hour"),
+    ];
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _loadError;
+    private string? _saveError;
+
+    private ThemePreference _appearance = ThemePreference.System;
+    private string _timeFormat = "System";
+    private string? _timeZoneId;
+
+    private string _savedTimeFormat = "System";
+    private string? _savedTimeZoneId;
+
+    private bool IsRegionalDirty =>
+        !string.Equals(_timeFormat, _savedTimeFormat, StringComparison.Ordinal)
+        || !string.Equals(_timeZoneId ?? "", _savedTimeZoneId ?? "", StringComparison.Ordinal);
+
+    private string ThemeSourceLabel => Appearance.Source switch
+    {
+        AppearancePreferenceSource.AccountPreference => $"{_appearance} (account)",
+        AppearancePreferenceSource.Browser => $"{_appearance} (this browser)",
+        _ => $"{_appearance} (platform default)"
+    };
+
+    private string TimezoneSourceLabel => DisplayTimeZone.Source switch
+    {
+        OperatorDisplayTimeZoneSource.UserPreference => "Account preference",
+        OperatorDisplayTimeZoneSource.Browser => "This browser",
+        _ => "UTC fallback"
+    };
+
+    private string ClockPreview
+    {
+        get
+        {
+            var clock = OperatorTimestampFormat.ParseClockFormatOrDefault(_timeFormat);
+            var zone = string.IsNullOrWhiteSpace(_timeZoneId) ? DisplayTimeZone.TimeZoneId : _timeZoneId;
+            var source = string.IsNullOrWhiteSpace(_timeZoneId)
+                ? DisplayTimeZone.Source
+                : OperatorDisplayTimeZoneSource.UserPreference;
+            return OperatorTimestampFormat.FormatPrimary(
+                DateTimeOffset.UtcNow,
+                zone,
+                source,
+                showUtcDetail: false,
+                clockFormat: clock);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        DisplayTimeZone.Changed -= OnDisplayZoneChanged;
+    }
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            var preferences = await Client.GetAccountPreferencesAsync();
+            AppearancePreferenceResolution.TryParseExact(preferences.Appearance, out _appearance);
+            _timeFormat = preferences.TimeFormat;
+            _timeZoneId = preferences.TimeZoneId;
+            _savedTimeFormat = _timeFormat;
+            _savedTimeZoneId = _timeZoneId;
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SetAppearanceAsync(ThemePreference preference)
+    {
+        _appearance = preference;
+        _saveError = null;
+
+        await Theme.SetPreferenceAsync(preference);
+
+        try
+        {
+            var current = await Client.GetAccountPreferencesAsync();
+            await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = ThemePreferenceParser.ToStorageValue(preference),
+                TimeFormat = current.TimeFormat,
+                TimeZoneId = current.TimeZoneId
+            });
+            await Session.RefreshAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _saveError = ex.Message;
+        }
+    }
+
+    private Task SetTimeFormatAsync(string value)
+    {
+        _timeFormat = value;
+        _saveError = null;
+        return Task.CompletedTask;
+    }
+
+    private Task OnTimeZoneChanged(string? value)
+    {
+        _timeZoneId = value;
+        _saveError = null;
+        return Task.CompletedTask;
+    }
+
+    private void DiscardRegional()
+    {
+        _timeFormat = _savedTimeFormat;
+        _timeZoneId = _savedTimeZoneId;
+        _saveError = null;
+    }
+
+    private async Task SaveRegionalAsync()
+    {
+        if (!IsRegionalDirty)
+            return;
+
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = ThemePreferenceParser.ToStorageValue(_appearance),
+                TimeFormat = _timeFormat,
+                TimeZoneId = _timeZoneId
+            });
+            _savedTimeFormat = _timeFormat;
+            _savedTimeZoneId = _timeZoneId;
+            await Session.RefreshAsync();
+            Toasts.Show(ToastSeverity.Success, "Date and time settings saved.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

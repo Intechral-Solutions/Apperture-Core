@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.ControlPlane.Security;
@@ -7,6 +8,7 @@ using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Apperture.Core.Domain.Scheduling;
 using FluentAssertions;
 using Moq;
+using System.Reflection;
 using Xunit;
 
 namespace Apperture.UnitTests.Integration;
@@ -124,12 +126,6 @@ public sealed class IntegrationScheduleDiagnosticsTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AttentionIncidentProjection>());
-        var ledger = new Mock<IAttentionIncidentNotificationLedger>();
-        ledger.Setup(x => x.ListRecentForIncidentsAsync(
-                It.IsAny<IReadOnlyList<string>>(),
-                It.IsAny<int>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<AttentionIncidentNotificationProjection>());
         var resolver = new Mock<IAttentionRecipientResolver>();
         resolver.Setup(x => x.ResolveAsync(It.IsAny<IntegrationId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
@@ -159,14 +155,29 @@ public sealed class IntegrationScheduleDiagnosticsTests
                     SuppressEscalationWhenAcknowledged: true,
                     IntegrationRowPrimaryOperationalTeamId: null,
                     IntegrationRowEscalationOperationalTeamId: null));
+        var platformDiag = new Mock<INotificationDeliveryDiagnosticsStore>();
+        platformDiag.Setup(x => x.GetByIntegrationAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+                new NotificationIntegrationDiagnostics(
+                    "int01",
+                    new NotificationDeliveryHealthSummary(null, [], [], 0, 0, 0, utcNow),
+                    [],
+                    [],
+                    [],
+                    []));
+
         var service = new IntegrationScheduleDiagnosticsService(
             integrationManagement.Object,
             readiness.Object,
             scheduleRepo.Object,
             runQuery.Object,
             attention.Object,
-            ledger.Object,
             resolver.Object,
+            platformDiag.Object,
             new FixedUtcTimeProvider(utcNow));
         return service;
     }
@@ -628,6 +639,77 @@ public sealed class IntegrationScheduleDiagnosticsTests
         var diag = await sut.GetDiagnosticsAsync(IntId);
         diag.Should().NotBeNull();
         diag!.RecentExpectedFires.Count.Should().Be(10);
+    }
+
+    [Fact]
+    public void ToDiagnosticsDto_ExposesResourceContextId_OnRecentAttentionIncidents()
+    {
+        var utcNow = DateTimeOffset.UtcNow;
+        var incident = new AttentionIncidentProjection(
+            "inc-1", "int-1", "condition-1", "Open",
+            utcNow, utcNow, null, null, null, null, null, null, null,
+            ResourceContextId: "app-a");
+
+        var routingSummary = new AttentionRoutingDiagnosticsSummary(
+            HasRoute: false,
+            Enabled: true,
+            PrimaryRecipients: Array.Empty<string>(),
+            PrimarySource: "None",
+            EscalationRecipients: Array.Empty<string>(),
+            EscalationSource: "None",
+            PrimaryOperationalTeamId: null,
+            PrimaryOperationalTeamName: null,
+            EscalationOperationalTeamId: null,
+            EscalationOperationalTeamName: null,
+            HasPrimaryRoute: false,
+            HasEscalationRoute: false,
+            PrimaryNoRouteReason: "NoTeamConfigured",
+            EscalationNoRouteReason: "NoTeamConfigured",
+            ResolvedPrimaryPrincipalUserIds: Array.Empty<string>(),
+            ResolvedEscalationPrincipalUserIds: Array.Empty<string>(),
+            ResolvedPrimaryExternalRecipients: Array.Empty<string>(),
+            ResolvedEscalationExternalRecipients: Array.Empty<string>(),
+            EscalationAfter: null,
+            ReminderInterval: null,
+            SendResolvedNotification: true,
+            SuppressRemindersWhenAcknowledged: true,
+            SuppressEscalationWhenAcknowledged: true,
+            IntegrationRowPrimaryOperationalTeamId: null,
+            IntegrationRowEscalationOperationalTeamId: null);
+
+        var projection = new IntegrationScheduleDiagnosticsProjection(
+            IntegrationId: IntId,
+            HasRecurringScheduleExpectation: false,
+            EvaluationStatus: ScheduleExpectationEvaluationStatus.NoExpectation,
+            InGracePeriod: false,
+            GraceReason: null,
+            GraceAnchorUtc: null,
+            MostRecentExpectedFireUtc: null,
+            LastSatisfyingScheduleOriginAuthorizedRunId: null,
+            LastSatisfyingScheduleOriginAuthorizedRunAt: null,
+            ReferenceScheduleId: null,
+            ReferenceScheduleEnabled: null,
+            LastScheduleEnabledAtUtc: null,
+            LastScheduleDisabledAtUtc: null,
+            MaterialScheduleSemanticsChangedAtUtc: null,
+            LastAuthorizedRunId: null,
+            LastAuthorizedRunStatus: null,
+            LastAuthorizedRunAt: null,
+            RecentExpectedFires: Array.Empty<ExpectedFireDiagnosticEntry>(),
+            RecentAttentionIncidents: new[] { incident },
+            AttentionRouting: routingSummary,
+            RecentPlatformNotificationInstances: Array.Empty<NotificationInstanceDiagnosticRow>(),
+            RecentPlatformNotificationOutbox: Array.Empty<NotificationOutboxDiagnosticRow>());
+
+        // Use reflection to call the private static ToDiagnosticsDto method
+        var controllerType = typeof(Apperture.Management.Api.Controllers.IntegrationsController);
+        var method = controllerType.GetMethod("ToDiagnosticsDto",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        method.Should().NotBeNull("ToDiagnosticsDto method should exist on controller");
+
+        var dto = (Apperture.Management.Client.IntegrationScheduleDiagnosticsDto)method!.Invoke(null, new object[] { projection })!;
+        dto.RecentAttentionIncidents.Should().HaveCount(1);
+        dto.RecentAttentionIncidents[0].ResourceContextId.Should().Be("app-a");
     }
 }
 

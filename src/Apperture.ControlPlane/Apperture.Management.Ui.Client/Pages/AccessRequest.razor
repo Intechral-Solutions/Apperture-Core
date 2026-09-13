@@ -1,0 +1,133 @@
+@page "/access-request"
+@layout AuthLayout
+@using System.Net
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject ShellHostNavigation HostNav
+@inject NavigationManager Nav
+
+<div class="mx-auto max-w-md ui-section-panel p-6">
+    @if (_loading)
+    {
+        <PageHeader Title="Checking access" Subtitle="Confirming your Microsoft identity." />
+        <LoadingState Message="Loading…" />
+    }
+    else if (_session is null)
+    {
+        <PageHeader Title="Sign in required" Subtitle="Sign in with Microsoft to continue." />
+        <p class="mt-4 text-sm">
+            <a class="underline hover:text-heading" href="/login">Back to sign in</a>
+        </p>
+    }
+    else
+    {
+        <PageHeader Title="@TitleFor(_session.State)" Subtitle="@_session.Message" />
+
+        <div class="mt-4 space-y-2 text-sm text-body">
+            @if (!string.IsNullOrWhiteSpace(_session.DisplayName) || !string.IsNullOrWhiteSpace(_session.DirectoryAddress))
+            {
+                <p>You're signed in with Microsoft as</p>
+                @if (!string.IsNullOrWhiteSpace(_session.DisplayName))
+                {
+                    <p class="font-medium text-heading">@_session.DisplayName</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_session.DirectoryAddress))
+                {
+                    <p class="text-muted">@_session.DirectoryAddress</p>
+                }
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
+        }
+
+        <div class="mt-6 space-y-3">
+            @if (_session.CanRequest)
+            {
+                <ActionButton @ref="_requestButton"
+                              Class="w-full"
+                              DefaultText="Request access"
+                              ActiveText="Requesting…"
+                              SuccessText="Requested"
+                              ErrorText="Request failed"
+                              OnClick="SubmitAsync" />
+            }
+            else if (_session.State is "already_provisioned" or "approved")
+            {
+                <button type="button" class="btn btn-primary w-full" @onclick="SignInWithMicrosoft">Sign in with Microsoft</button>
+            }
+
+            <button type="button" class="btn btn-secondary w-full" @onclick="SignOut">Sign out</button>
+        </div>
+    }
+</div>
+
+@code {
+    private EntraAccessRequestSessionDto? _session;
+    private bool _loading = true;
+    private string? _error;
+    private ActionButton? _requestButton;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _session = await Client.GetAccessRequestSessionAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _session = null;
+        }
+        _loading = false;
+    }
+
+    private async Task SubmitAsync(MouseEventArgs _)
+    {
+        _error = null;
+        if (_requestButton is not null)
+            await _requestButton.SetStateAsync(ActionButtonState.Active);
+        try
+        {
+            _session = await Client.SubmitAccessRequestAsync();
+            if (_requestButton is not null)
+                await _requestButton.SetStateAsync(ActionButtonState.Success);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.StatusCode == HttpStatusCode.Conflict
+                ? "You cannot request access right now."
+                : "Your request could not be submitted. Try again later.";
+            if (_requestButton is not null)
+                await _requestButton.SetStateAsync(ActionButtonState.Error);
+        }
+    }
+
+    private void SignInWithMicrosoft()
+    {
+        var host = HostNav.GetManagementHostBase(Nav);
+        Nav.NavigateTo(new Uri(host, "signin").ToString(), forceLoad: true);
+    }
+
+    private void SignOut() =>
+        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
+
+    private static string TitleFor(string state) => state switch
+    {
+        "eligible" => "You don't have access to Apperture yet",
+        "pending" => "Access requested",
+        "rejected" => "Access was not approved",
+        "approved" => "Access approved",
+        "already_provisioned" => "You already have access",
+        "requests_disabled" => "Access requests are not enabled",
+        "guest_disabled" => "Guest identities cannot request access",
+        "eligibility_unavailable" => "Your identity could not be confirmed",
+        "registration_disabled" => "This directory is not accepting requests",
+        "throttled" => "Try again later",
+        _ => "You don't have access to Apperture yet"
+    };
+}

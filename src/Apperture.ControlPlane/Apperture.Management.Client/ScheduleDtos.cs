@@ -1,21 +1,23 @@
+using Apperture.Core.Domain.ResourceContexts;
+
 namespace Apperture.Management.Client;
 
-/// <summary>Epic 50: Create schedule for Integration. Shape matches API CreateIntegrationScheduleRequestBody.</summary>
+/// <summary>Epic 50 / SWM-3: Create schedule for Integration. Null/blank TimeZone → platform Scheduling.DefaultTimeZoneId.</summary>
 public sealed record CreateIntegrationScheduleRequest(
     string Name,
     string RecurrenceExpression,
-    string? TimeZone = "UTC",
+    string? TimeZone = null,
     bool Enabled = true,
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
     string? ExecutionPolicyRef = null,
     string? RuntimePlaneId = "local");
 
-/// <summary>Epic 38: Create schedule request. Shape matches API CreateScheduleRequestBody.</summary>
+/// <summary>Epic 38 / SWM-3: Create schedule request. Null/blank TimeZone → platform Scheduling.DefaultTimeZoneId.</summary>
 public sealed record CreateScheduleRequest(
     string Name,
     string RecurrenceExpression,
-    string? TimeZone = "UTC",
+    string? TimeZone = null,
     bool Enabled = true,
     int? TargetJobType = 0,
     string? TargetJobConfiguration = null,
@@ -44,6 +46,9 @@ public sealed class ScheduleValidationException : Exception
 
 public sealed record ScheduleCapabilitiesDto(bool CanManage);
 
+/// <summary>SWM-10: stable schedule status reason (code + operator message).</summary>
+public sealed record ScheduleStatusReasonDto(string Code, string Message);
+
 public sealed record ScheduleDto(
     string Id,
     string Name,
@@ -53,11 +58,21 @@ public sealed record ScheduleDto(
     int TargetJobType,
     string? TargetJobConfiguration,
     int Version,
-    string? IntegrationId = null);
+    string? IntegrationId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    /// <summary>CTX-1: Schedule's current owning ResourceContext. Backfilled here — the API has
+    /// exposed this since CTX-1 but this client-side DTO was silently dropping it.</summary>
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Schedule with execution state for operator visibility. Epic 28, Epic 36 (claim visibility).
 /// Claim fields: populated only when a schedule run is <strong>in progress</strong> for this plane's assignment; absent once completed.
+/// SWM-10: additive next-fire / readiness projection fields (compute-only, not persisted).
+/// <see cref="ClaimResourceContextId"/>: CTX-2 historical snapshot from that same in-progress ScheduleRun —
+/// do not confuse with <see cref="ResourceContextId"/> above, which is the Schedule's current ownership (CTX-1).
 /// </summary>
 public sealed record ScheduleDetailDto(
     string Id,
@@ -74,4 +89,20 @@ public sealed record ScheduleDetailDto(
     DateTimeOffset? LastSuccessfulDispatchUtc,
     string? ClaimedByHostId = null,
     DateTimeOffset? ClaimedAtUtc = null,
-    bool? IsClaimStale = null);
+    bool? IsClaimStale = null,
+    string? IntegrationId = null,
+    string? RuntimePlaneId = null,
+    DateTimeOffset? NextFireUtc = null,
+    string? ScheduleTimeZoneId = null,
+    string? HealthStatus = null,
+    IReadOnlyList<ScheduleStatusReasonDto>? StatusReasons = null,
+    /// <summary>CTX-1: Schedule's current owning ResourceContext id. Backfilled here — the API has
+    /// exposed this since CTX-1 but this client-side DTO was silently dropping it.</summary>
+    string? ResourceContextId = null,
+    /// <summary>CTX-1: compact ResourceContext reference (id/name/slug). Backfilled here alongside
+    /// <see cref="ResourceContextId"/> above.</summary>
+    ResourceContextRef? ResourceContext = null,
+    /// <summary>CTX-2: historical ResourceContext snapshot from the active in-progress ScheduleRun this
+    /// claim belongs to. Distinct from <see cref="ResourceContextId"/> above (current ownership, CTX-1).
+    /// Null whenever no in-progress claim exists.</summary>
+    string? ClaimResourceContextId = null);

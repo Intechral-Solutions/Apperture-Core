@@ -43,6 +43,21 @@
       "dependsOn": "build"
     },
     {
+      "label": "Start Dev (Aspire)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/src/Apperture.AppHost/Apperture.AppHost.csproj"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Start Dev (API + UI)",
       "type": "shell",
       "command": "${workspaceFolder}/scripts/Start-Dev.ps1",

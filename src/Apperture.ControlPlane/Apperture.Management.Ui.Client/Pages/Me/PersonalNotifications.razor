@@ -1,0 +1,278 @@
+@page "/me/notifications"
+@layout MainLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject NavigationManager Nav
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 md:p-6">
+    <PageHeader Title="My notifications"
+                Subtitle="Notifications addressed to you. Opening this page does not mark items as read." />
+
+    <p class="mt-2 text-sm text-muted">
+        Choose which notifications reach you, and how, in
+        <a class="underline hover:text-heading" href="@AccountUiRoutes.Notifications">Account → Notifications</a>.
+    </p>
+
+    <div class="ui-inbox-toolbar mt-4">
+        <SegmentedControl TValue="string"
+                          Items="_filterItems"
+                          Value="_filter"
+                          ValueChanged="OnFilterChangedAsync"
+                          Disabled="_busy"
+                          IdPrefix="inbox-filter"
+                          aria-label="Filter notifications" />
+        @if (_unreadCount > 0)
+        {
+            <span class="text-xs text-muted">@_unreadCount unread</span>
+            <span class="flex-1"></span>
+            <button type="button"
+                    class="btn btn-secondary text-sm"
+                    disabled="@_busy"
+                    @onclick="MarkAllReadAsync">
+                Mark all as read
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_actionError))
+    {
+        <div class="mt-4">
+            <PageMessage Kind="PageMessageKind.Error" Message="@_actionError" />
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <p class="mt-6 text-sm text-muted">Loading…</p>
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <div class="mt-6">
+            <ErrorState Message="@_loadError" />
+        </div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="mt-6">
+            <EmptyState Title="@EmptyTitle"
+                        Message="@EmptyMessage" />
+        </div>
+    }
+    else
+    {
+        <ul class="ui-inbox-list">
+            @foreach (var item in _items)
+            {
+                <li class="ui-inbox-list__item"
+                    data-state="@(item.IsRead ? "read" : "unread")">
+                    <button type="button"
+                            class="ui-inbox-list__open"
+                            @onclick="() => OpenItemAsync(item)">
+                        <div class="flex items-center gap-2">
+                            @if (!item.IsRead)
+                            {
+                                <span class="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>
+                            }
+                            <span class="truncate text-sm font-medium text-heading">@item.Subject</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(item.Summary))
+                        {
+                            <p class="mt-1 text-xs text-muted line-clamp-2">@item.Summary</p>
+                        }
+                        <p class="mt-1 text-[11px] text-muted">
+                            @item.NotificationKind · @item.InstanceCreatedAtUtc.ToLocalTime().ToString("g")
+                            @if (!string.IsNullOrWhiteSpace(item.IntegrationId))
+                            {
+                                <span> · Integration @item.IntegrationId</span>
+                            }
+                        </p>
+                    </button>
+                    <div class="ui-inbox-list__actions">
+                        @if (item.IsRead)
+                        {
+                            <button type="button"
+                                    class="ui-inbox-list__action"
+                                    disabled="@_busy"
+                                    @onclick="() => MarkUnreadAsync(item)">
+                                Mark unread
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button"
+                                    class="ui-inbox-list__action"
+                                    disabled="@_busy"
+                                    @onclick="() => MarkReadAsync(item)">
+                                Mark read
+                            </button>
+                        }
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private static readonly SegmentedControl<string>.Item[] _filterItems =
+    [
+        new("all", "All"),
+        new("unread", "Unread"),
+        new("read", "Read"),
+    ];
+
+    private string _filter = "all";
+    private bool _loading = true;
+    private bool _busy;
+    private int _unreadCount;
+    private bool _canOpenAdmin;
+    private string? _loadError;
+    private string? _actionError;
+    private List<PersonalNotificationInboxItemDto> _items = [];
+
+    private string EmptyTitle => _filter switch
+    {
+        "unread" => "No unread notifications",
+        "read" => "No read notifications",
+        _ => "No notifications",
+    };
+
+    private string EmptyMessage => _filter switch
+    {
+        "unread" => "You are caught up.",
+        "read" => "Nothing marked as read yet.",
+        _ => "When the platform sends you a notification, it will appear here.",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync().ConfigureAwait(false);
+            _canOpenAdmin = caps.CanViewNotificationDefinitions;
+        }
+        catch
+        {
+            _canOpenAdmin = false;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task OnFilterChangedAsync(string filter)
+    {
+        _filter = filter;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        try
+        {
+            _items = (await Client.GetMyNotificationsAsync(readFilter: _filter, take: 100).ConfigureAwait(false)).ToList();
+            _unreadCount = (await Client.GetMyUnreadNotificationCountAsync().ConfigureAwait(false)).UnreadCount;
+            if (_items.Count > 0)
+                await Client.RecordMyNotificationsPageViewedAsync(_items.Select(x => x.Id).ToList()).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _items = [];
+            _unreadCount = 0;
+        }
+        catch (Exception)
+        {
+            _loadError = "Could not load notifications.";
+            _items = [];
+            _unreadCount = 0;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenItemAsync(PersonalNotificationInboxItemDto item)
+    {
+        await MarkReadAsync(item);
+        var target = PersonalNotificationUiRoutes.ResolveOpenTarget(item, _canOpenAdmin);
+        if (!string.IsNullOrWhiteSpace(target))
+            Nav.NavigateTo(target);
+    }
+
+    private async Task MarkReadAsync(PersonalNotificationInboxItemDto item)
+    {
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            await Client.MarkMyNotificationReadAsync(item.Id).ConfigureAwait(false);
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark notification as read.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkUnreadAsync(PersonalNotificationInboxItemDto item)
+    {
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            await Client.MarkMyNotificationUnreadAsync(item.Id).ConfigureAwait(false);
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark notification as unread.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkAllReadAsync()
+    {
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            await Client.MarkAllMyNotificationsReadAsync().ConfigureAwait(false);
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _actionError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _actionError = "Could not mark all notifications as read.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

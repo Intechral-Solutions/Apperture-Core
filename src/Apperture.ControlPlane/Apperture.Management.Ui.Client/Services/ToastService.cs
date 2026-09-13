@@ -20,14 +20,34 @@ public sealed class ToastService : IToastService
 
     public void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null)
     {
-        var id = Guid.NewGuid();
-        var ttl = duration ?? TimeSpan.FromSeconds(6);
-        var item = new ToastItem(id, severity, message, title, DateTimeOffset.UtcNow.Add(ttl));
+        var ttl = ToastPolicy.ResolveDuration(severity, duration);
+        var signature = ToastPolicy.BuildSignature(severity, message, title);
+        var expiresAt = ttl is { } window ? DateTimeOffset.UtcNow.Add(window) : (DateTimeOffset?)null;
+
+        Guid id;
         lock (_gate)
-            _items.Add(item);
+        {
+            // UIX-6: repeating an identical outcome re-arms the existing toast rather than
+            // stacking another announcement.
+            var existingIndex = _items.FindIndex(t =>
+                string.Equals(ToastPolicy.BuildSignature(t.Severity, t.Message, t.Title), signature, StringComparison.Ordinal));
+
+            if (existingIndex >= 0)
+            {
+                id = _items[existingIndex].Id;
+                _items[existingIndex] = _items[existingIndex] with { ExpiresAt = expiresAt };
+            }
+            else
+            {
+                id = Guid.NewGuid();
+                _items.Add(new ToastItem(id, severity, message, title, expiresAt));
+            }
+        }
+
         Changed?.Invoke();
 
-        _ = DelayedDismissAsync(id, ttl);
+        if (ttl is { } delay)
+            _ = DelayedDismissAsync(id, delay);
     }
 
     private async Task DelayedDismissAsync(Guid id, TimeSpan delay)
@@ -35,6 +55,17 @@ public sealed class ToastService : IToastService
         try
         {
             await Task.Delay(delay).ConfigureAwait(false);
+
+            // A re-armed toast has a later expiry; do not dismiss it on the original timer.
+            lock (_gate)
+            {
+                var current = _items.Find(t => t.Id == id);
+                if (current is null)
+                    return;
+                if (current.ExpiresAt is { } expiry && expiry > DateTimeOffset.UtcNow.AddMilliseconds(250))
+                    return;
+            }
+
             Dismiss(id);
         }
         catch

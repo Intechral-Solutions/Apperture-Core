@@ -1,0 +1,106 @@
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
+
+@{
+    var hasChildren = Item.Children is { Count: > 0 };
+    var expandKey = DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item);
+    var expanded = Expanded.Contains(expandKey);
+    // Visibility follows expand state only; ancestors for the current route are seeded in ControlPanel when path/domain changes.
+    var showChildren = hasChildren && expanded;
+    var selfActive = !string.IsNullOrWhiteSpace(Item.Href) && NavPathMatching.PathMatchesMenuHref(CurrentPath, Item.Href);
+    var linkActiveClass = selfActive ? "font-medium text-heading bg-surface-muted" : "text-body hover:bg-surface-muted";
+    var linkBaseClass = "block rounded px-3 py-2 text-sm";
+}
+
+<li>
+    @if (!hasChildren)
+    {
+        @if (string.IsNullOrWhiteSpace(Item.Href))
+        {
+            <span class="block rounded px-3 py-2 text-sm text-muted">@Item.Text</span>
+        }
+        else
+        {
+            <a href="@Item.Href"
+               class="@linkBaseClass @linkActiveClass">
+                @Item.Text
+            </a>
+        }
+    }
+    else if (!string.IsNullOrWhiteSpace(Item.Href))
+    {
+        <div class="flex items-center gap-0 text-sm text-body hover:bg-surface-muted">
+            <a href="@Item.Href"
+               class="@linkBaseClass min-w-0 flex-1 @linkActiveClass"
+               @onclick="EnsureExpandedOnNavigateAsync">
+                @Item.Text
+            </a>
+            <button type="button"
+                    class="focus-ring shrink-0 rounded px-2 py-2 text-body hover:bg-surface-muted/80"
+                    aria-expanded="@expanded"
+                    aria-label="@($"Expand or collapse {Item.Text}")"
+                    @onclick="NotifyToggleAsync"
+                    @onclick:preventDefault="true">
+                <svg class="h-4 w-4 transform transition-transform duration-200 @(expanded ? "rotate-90" : "")"
+                     xmlns="http://www.w3.org/2000/svg"
+                     fill="none" viewBox="0 0 24 24"
+                     stroke="currentColor" stroke-width="2"
+                     aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-body hover:bg-surface-muted"
+             @onclick="NotifyToggleAsync">
+            <span>@Item.Text</span>
+            <svg class="h-4 w-4 transform transition-transform duration-200 @(expanded ? "rotate-90" : "")"
+                 xmlns="http://www.w3.org/2000/svg"
+                 fill="none" viewBox="0 0 24 24"
+                 stroke="currentColor" stroke-width="2"
+                 aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+        </div>
+    }
+
+    @if (hasChildren)
+    {
+        <ul class="@(showChildren ? "block" : "hidden") ml-4 border-l border-default">
+            @for (var i = 0; i < Item.Children!.Count; i++)
+            {
+                var child = Item.Children[i];
+                var childPath = string.IsNullOrEmpty(IndexPath) ? i.ToString() : $"{IndexPath}/{i}";
+                <ControlPanelNavNode @key="@childPath"
+                                     Item="@child"
+                                     DomainName="@DomainName"
+                                     IndexPath="@childPath"
+                                     CurrentPath="@CurrentPath"
+                                     Expanded="@Expanded"
+                                     OnToggleKey="@OnToggleKey"
+                                     OnExpandHeader="@OnExpandHeader" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public DomainMenuItem Item { get; set; } = default!;
+    [Parameter, EditorRequired] public string DomainName { get; set; } = "";
+    [Parameter, EditorRequired] public string IndexPath { get; set; } = "";
+    [Parameter, EditorRequired] public string CurrentPath { get; set; } = "";
+    [Parameter, EditorRequired] public HashSet<string> Expanded { get; set; } = default!;
+    [Parameter, EditorRequired] public EventCallback<string> OnToggleKey { get; set; }
+    [Parameter, EditorRequired] public EventCallback<(string Key, string IndexPath)> OnExpandHeader { get; set; }
+
+    private Task NotifyToggleAsync() =>
+        OnToggleKey.InvokeAsync(DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item));
+
+    private Task EnsureExpandedOnNavigateAsync()
+    {
+        var key = DomainMenuTree.GetExpandStateKey(DomainName, IndexPath, Item);
+        return OnExpandHeader.InvokeAsync((key, IndexPath));
+    }
+}

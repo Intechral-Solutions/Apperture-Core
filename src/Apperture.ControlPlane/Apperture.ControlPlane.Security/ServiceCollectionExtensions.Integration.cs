@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
@@ -17,18 +18,17 @@ public static class IntegrationServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddAppertureIntegrationWorkflows(this IServiceCollection services)
     {
+        services.AddResourceContextPersistence();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IAttentionIncidentTracker, SqlAttentionIncidentTracker>();
-        services.AddScoped<IAttentionIncidentNotificationLedger, SqlAttentionIncidentNotificationLedger>();
         services.AddScoped<IAttentionRecipientResolver, SqlAttentionRecipientResolver>();
         services.AddScoped<IAttentionRoutingManagementService, AttentionRoutingManagementService>();
         services.AddScoped<IAttentionContactGroupManagementService, AttentionContactGroupManagementService>();
         services.AddScoped<IOperationalTeamManagementService, OperationalTeamManagementService>();
-        services.AddScoped<IAttentionNotificationSender, SmtpAttentionNotificationSender>();
-        services.AddScoped<AttentionIncidentNotificationOrchestrator>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
+        services.AddIntegrationDispatchReadiness();
         services.AddScoped<IIntegrationReadinessService, IntegrationReadinessService>();
         services.AddScoped<IIntegrationProcedureService, IntegrationProcedureService>();
         return services;
@@ -41,8 +41,6 @@ public static class IntegrationServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<AttentionNotificationOptions>(
-            configuration.GetSection(AttentionNotificationOptions.SectionName));
         services.Configure<AttentionIncidentObservationOptions>(
             configuration.GetSection(AttentionIncidentObservationOptions.SectionName));
         services.AddHostedService<AttentionIncidentObservationHostedService>();

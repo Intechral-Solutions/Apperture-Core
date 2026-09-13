@@ -19,7 +19,15 @@ public interface IWorkflowExecutor
         string stepName,
         WorkflowInstance instance,
         IReadOnlyDictionary<string, object?>? parameters,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default) =>
+        ExecuteStepAsync(
+            definition,
+            stepName,
+            instance,
+            parameters,
+            integrationId: null,
+            executionScope: null,
+            cancellationToken);
 
     /// <summary>
     /// Executes a step with optional integration scope for slot resolution (Epic 54).
@@ -30,5 +38,25 @@ public interface IWorkflowExecutor
         WorkflowInstance instance,
         IReadOnlyDictionary<string, object?>? parameters,
         string? integrationId,
+        CancellationToken cancellationToken) =>
+        ExecuteStepAsync(
+            definition,
+            stepName,
+            instance,
+            parameters,
+            integrationId,
+            executionScope: null,
+            cancellationToken);
+
+    /// <summary>
+    /// Executes a step with optional integration scope (Epic 54) and correlation scope for platform signals (Epic 77 Phase 2).
+    /// </summary>
+    ValueTask<object?> ExecuteStepAsync(
+        WorkflowDefinition definition,
+        string stepName,
+        WorkflowInstance instance,
+        IReadOnlyDictionary<string, object?>? parameters,
+        string? integrationId,
+        WorkflowStepExecutionScope? executionScope,
         CancellationToken cancellationToken);
 }

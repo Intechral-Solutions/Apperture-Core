@@ -1,31 +1,70 @@
 @using System.Net.Http
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
-@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared.Auth
 @using Microsoft.AspNetCore.Components.Forms
 @inject IManagementClient Client
-@inject SessionStateService Session
 @inject NavigationManager Nav
 
 <div class="space-y-4">
     <EditForm Model="_model" OnValidSubmit="SubmitAsync">
-        <div>
-            <label class="text-xs text-muted">Username</label>
-            <InputText @bind-Value="_model.Username" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="username" />
-        </div>
-        <div>
-            <label class="text-xs text-muted">Password</label>
-            <InputText type="password" @bind-Value="_model.Password" class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm" autocomplete="current-password" />
-        </div>
+        @if (!_awaitingMfa)
+        {
+            <div>
+                <label class="block text-sm font-medium text-heading" for="local-login-username">Username</label>
+                <InputText id="local-login-username"
+                           @bind-Value="_model.Username"
+                           class="ui-input mt-1"
+                           autocomplete="username" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-heading" for="local-login-password">Password</label>
+                <InputText id="local-login-password"
+                           type="password"
+                           @bind-Value="_model.Password"
+                           class="ui-input mt-1"
+                           autocomplete="current-password" />
+            </div>
+        }
+        else
+        {
+            <p class="text-sm text-muted">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+            <div>
+                <label class="block text-sm font-medium text-heading" for="local-login-totp">Authenticator code</label>
+                <InputText id="local-login-totp"
+                           @bind-Value="_model.TotpCode"
+                           class="ui-input mt-1"
+                           autocomplete="one-time-code"
+                           inputmode="numeric" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-heading" for="local-login-recovery">Recovery code</label>
+                <InputText id="local-login-recovery"
+                           @bind-Value="_model.RecoveryCode"
+                           class="ui-input mt-1"
+                           autocomplete="off" />
+            </div>
+        }
         <div class="mt-6 space-y-3">
             @if (!string.IsNullOrEmpty(_error))
             {
                 <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
             }
-            <button type="submit" class="w-full rounded bg-surface-muted px-3 py-2 text-sm font-medium text-heading hover:bg-surface disabled:opacity-50" disabled="@_busy">
-                @(_busy ? "Signing in…" : "Sign in")
+            <button type="submit" class="btn btn-primary w-full" disabled="@_busy">
+                @(_busy ? "Signing in…" : _awaitingMfa ? "Continue" : "Sign in")
             </button>
+            @if (!_awaitingMfa)
+            {
+                <p class="text-center text-sm">
+                    <a class="text-body underline hover:text-heading" href="@AccountUiRoutes.ForgotPassword">Forgot password</a>
+                </p>
+            }
+            @if (_awaitingMfa)
+            {
+                <button type="button" class="btn btn-secondary w-full" disabled="@_busy" @onclick="CancelMfa">
+                    Back
+                </button>
+            }
         </div>
     </EditForm>
 </div>
@@ -36,6 +75,7 @@
     private readonly LoginModel _model = new();
     private string? _error;
     private bool _busy;
+    private bool _awaitingMfa;
 
     private async Task SubmitAsync()
     {
@@ -43,15 +83,36 @@
         _busy = true;
         try
         {
-            await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
-            await Session.RefreshAsync();
-            var safe = LoginRouteHelper.NormalizeReturnUrl(ReturnPath) ?? LoginRouteHelper.DefaultPostLoginPath;
-            // Full load matches credentialed fetch + location.reload(): fresh WASM scope and cookie jar for API :9000.
-            Nav.NavigateTo(safe, forceLoad: true);
+            if (!_awaitingMfa)
+            {
+                var result = await Client.LocalLoginAsync(new LocalLoginRequest(_model.Username.Trim(), _model.Password));
+                if (result.RequiresMfa)
+                {
+                    _awaitingMfa = true;
+                    _model.Password = null;
+                    return;
+                }
+
+                NavigateAfterLogin();
+                return;
+            }
+
+            var totp = string.IsNullOrWhiteSpace(_model.TotpCode) ? null : _model.TotpCode.Trim();
+            var recovery = string.IsNullOrWhiteSpace(_model.RecoveryCode) ? null : _model.RecoveryCode.Trim();
+            if ((totp is null) == (recovery is null))
+            {
+                _error = "Enter an authenticator code or a recovery code, not both.";
+                return;
+            }
+
+            await Client.CompleteLocalMfaAsync(new LocalMfaChallengeRequest(totp, recovery));
+            NavigateAfterLogin();
         }
         catch (HttpRequestException)
         {
-            _error = "Sign-in failed. Check your username and password.";
+            _error = _awaitingMfa
+                ? "Verification failed. Check the authenticator or recovery code."
+                : "Sign-in failed. Check your username and password.";
         }
         catch (Exception ex)
         {
@@ -63,9 +124,25 @@
         }
     }
 
+    private void CancelMfa()
+    {
+        _awaitingMfa = false;
+        _model.TotpCode = "";
+        _model.RecoveryCode = "";
+        _error = null;
+    }
+
+    private void NavigateAfterLogin()
+    {
+        var safe = LoginRouteHelper.NormalizeReturnUrl(ReturnPath) ?? LoginRouteHelper.DefaultPostLoginPath;
+        Nav.NavigateTo(safe, forceLoad: true);
+    }
+
     private sealed class LoginModel
     {
         public string Username { get; set; } = "";
         public string? Password { get; set; }
+        public string TotpCode { get; set; } = "";
+        public string RecoveryCode { get; set; } = "";
     }
 }

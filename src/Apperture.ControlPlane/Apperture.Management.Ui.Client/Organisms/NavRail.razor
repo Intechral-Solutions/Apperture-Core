@@ -1,22 +1,24 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Blazor.Heroicons.Solid
+@using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @using Apperture.Management.Ui.Shared.Models
 @inject NavigationManager NavManager
 @inject DomainMenuService DomainMenuService
+@implements IDisposable
 
 <div id="nav-rail" class="fixed z-60 flex min-h-0 flex-row h-full print:hidden start-0 top-0 @(IsControlPanelOpen ? "" : "w-18")">
-    <div class="w-17 flex-none flex flex-col h-full relative border-r border-dashed border-default bg-surface text-body duration-300 z-40">
+    <div class="ui-nav-rail w-17 flex-none flex flex-col h-full relative border-r border-default text-body duration-300 z-40">
         <div role="button"
-             class="logo-link group mt-0.5 mb-8 block p-3 text-muted transition-all duration-200 cursor-pointer @(_isDashboardActive ? "opacity-100" : "opacity-70 hover:opacity-90")"
-             aria-label="Dashboard home"
+             class="logo-link group mt-0.5 mb-8 block p-3 text-icon transition-colors duration-200 cursor-pointer hover:text-heading @(_isDashboardActive ? "text-heading" : "")"
+             aria-label="Control Center"
              @onclick="HandleLogoClick"
              @onkeydown="HandleLogoKeyDown"
              tabindex="0">
             <AppertureLogo WrapperClass="" ShapeClass="w-full" />
         </div>
         <nav class="flex flex-1 flex-col">
-            <div class="flex flex-col space-y-4">
+            <div class="flex w-full flex-col space-y-4">
                 @foreach (var m in _menuItems)
                 {
                     <NavRailItem @key="m.Domain"
@@ -25,27 +27,31 @@
                                  AriaLabel="@m.Tooltip"
                                  Domain="@m.Domain"
                                  Href="@m.Href"
-                                 CurrentDomain="@CurrentDomainName"
+                                 CurrentDomain="@ActiveDomain"
                                  CurrentPageUri="@NavManager.Uri"
                                  OnItemClick="HandleNavItemClick" />
                 }
             </div>
-            <div class="mt-auto flex justify-center">
+            <div class="mt-auto flex w-full justify-center overflow-visible pb-1">
                 <NavRailItem Domain="@SectionOwnerConstants.Config"
                              IconType="@typeof(CogIcon)"
                              Tooltip="Configuration"
                              AriaLabel="Configuration"
-                             CurrentDomain="@CurrentDomainName"
+                             CurrentDomain="@ActiveDomain"
                              CurrentPageUri="@NavManager.Uri"
-                             ContainerStyle="group relative inline-block -translate-y-5"
-                             NavButtonStyle="h-12 w-12 flex items-center"
+                             ContainerStyle="group relative flex w-full shrink-0 justify-center -translate-y-5 overflow-visible"
+                             NavButtonStyle="nav-rail-btn nav-rail-btn--config-gear flex items-center justify-center transition-all duration-300"
                              IconStyle="@GetConfigIconStyle()"
                              UseGlowEffect="true"
                              OnItemClick="HandleNavItemClick" />
             </div>
         </nav>
     </div>
-    <ControlPanel IsOpen="@IsControlPanelOpen" DomainName="@CurrentDomainName" />
+    @* UIX-2: do not mount ControlPanel while closed — full nav tree on first paint caused parentNode. *@
+    @if (IsControlPanelOpen)
+    {
+        <ControlPanel IsOpen="true" DomainName="@ActiveDomain" />
+    }
 </div>
 
 @code {
@@ -56,37 +62,87 @@
     [Parameter] public EventCallback OnControlPanelClose { get; set; }
 
     private List<(Type Icon, string Tooltip, string? Href, string? Domain)> _menuItems = new();
+    private bool _disposed;
+
+    /// <summary>
+    /// When the panel is locked, keep the operator-selected domain; otherwise follow the route
+    /// so MainLayout does not need to StateHasChanged on every navigation.
+    /// </summary>
+    private string ActiveDomain =>
+        IsControlPanelLocked && !string.IsNullOrWhiteSpace(CurrentDomainName)
+            ? CurrentDomainName
+            : ResolveDomainFromUri();
 
     private bool _isDashboardActive =>
-        string.Equals(CurrentDomainName, SectionOwnerConstants.Dashboard, StringComparison.OrdinalIgnoreCase);
+        string.Equals(ActiveDomain, SectionOwnerConstants.ControlCenter, StringComparison.OrdinalIgnoreCase);
     private bool _isConfigActive =>
-        string.Equals(CurrentDomainName, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
+        string.Equals(ActiveDomain, SectionOwnerConstants.Config, StringComparison.OrdinalIgnoreCase);
 
     private string GetConfigIconStyle() =>
-        "h-10 w-10 translate-x-1 text-body transition-opacity duration-200 " +
-        (_isConfigActive ? "opacity-100" : "opacity-60 group-hover:opacity-90");
+        "ui-nav-rail__icon block h-full w-full min-h-0 min-w-0 transition-colors duration-200" +
+        (_isConfigActive ? " ui-nav-rail__icon--active" : "");
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await DomainMenuService.LoadMenusAsync();
+        DomainMenuService.Changed += OnMenusChanged;
+        NavManager.LocationChanged += OnLocationChanged;
         BuildMenuItems();
     }
+
+    // UIX-2: MainLayout owns post-paint LoadMenusAsync; rail is the sole Changed subscriber
+    // and also owns location SHC for active-domain highlight (layout no longer SHC every nav).
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        DomainMenuService.Changed -= OnMenusChanged;
+        NavManager.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        _ = InvokeAsync(async () =>
+        {
+            // Defer past the originating click (onGlobalEvent) so we do not SHC while the
+            // navigated-away page is still finishing event dispatch → orphaned components.
+            await Task.Yield();
+            if (_disposed)
+                return;
+            StateHasChanged();
+        });
+
+    private string ResolveDomainFromUri()
+    {
+        var path = new Uri(NavManager.Uri).AbsolutePath;
+        return RouteToSectionResolver.Resolve(
+            path,
+            DomainMenuService.GetDomain,
+            DomainMenuService.GetValidDomains());
+    }
+
+    private void OnMenusChanged() =>
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            var previous = _menuItems.Select(m => m.Domain).ToArray();
+            BuildMenuItems();
+            var next = _menuItems.Select(m => m.Domain).ToArray();
+            if (previous.SequenceEqual(next, StringComparer.OrdinalIgnoreCase))
+                return;
+
+            StateHasChanged();
+        });
 
     private void BuildMenuItems()
     {
         var iconMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Catalog"] = typeof(Squares2X2Icon),
-            ["Integrations"] = typeof(PuzzlePieceIcon),
-            ["Environments"] = typeof(BuildingOffice2Icon),
-            ["Connections"] = typeof(ServerStackIcon),
-            ["Clients"] = typeof(CubeIcon),
-            ["Tools"] = typeof(WrenchIcon),
-            ["Schedules"] = typeof(ClockIcon),
-            ["Runs"] = typeof(PlayIcon),
-            ["Control"] = typeof(PlayIcon),
-            ["Test Suite"] = typeof(PlayIcon),
-            ["Settings"] = typeof(CogIcon),
+            [SectionOwnerConstants.Integrations] = typeof(PuzzlePieceIcon),
+            [SectionOwnerConstants.BusinessData] = typeof(CircleStackIcon),
+            ["Settings"] = typeof(WrenchScrewdriverIcon),
             ["Users"] = typeof(UsersIcon)
         };
 
@@ -99,7 +155,7 @@
 
             var icon = iconMap.TryGetValue(domainName, out var mappedIcon)
                 ? mappedIcon
-                : typeof(Squares2X2Icon);
+                : typeof(Squares2x2Icon);
 
             if (domain.Items?.Count > 0)
             {
@@ -110,24 +166,43 @@
         }
     }
 
-    private async Task HandleLogoClick()
+    private void HandleLogoClick()
     {
+        _ = HandleLogoClickCoreAsync();
+    }
+
+    private async Task HandleLogoClickCoreAsync()
+    {
+        await Task.Delay(1);
+        if (_disposed)
+            return;
+
         if (OnControlPanelOpen.HasDelegate)
-            await OnControlPanelOpen.InvokeAsync(SectionOwnerConstants.Dashboard);
-        NavManager.NavigateTo(ShellSectionRoutes.DashboardHome);
+            await OnControlPanelOpen.InvokeAsync(SectionOwnerConstants.ControlCenter);
+        NavManager.NavigateTo(ShellSectionRoutes.ControlCenterHome);
     }
 
     private static bool IsActivationKey(KeyboardEventArgs e) =>
         e.Key == "Enter" || e.Key == " ";
 
-    private async Task HandleLogoKeyDown(KeyboardEventArgs e)
+    private void HandleLogoKeyDown(KeyboardEventArgs e)
     {
         if (IsActivationKey(e))
-            await HandleLogoClick();
+            HandleLogoClick();
     }
 
-    private async Task HandleNavItemClick(DomainNavClickArgs args)
+    private void HandleNavItemClick(DomainNavClickArgs args)
     {
+        _ = HandleNavItemClickCoreAsync(args);
+    }
+
+    private async Task HandleNavItemClickCoreAsync(DomainNavClickArgs args)
+    {
+        // Leave onGlobalEvent before layout EventCallback SHC + NavigateTo dispose Body.
+        await Task.Delay(1);
+        if (_disposed)
+            return;
+
         if (!string.IsNullOrEmpty(args.Href))
         {
             if (OnControlPanelClose.HasDelegate)

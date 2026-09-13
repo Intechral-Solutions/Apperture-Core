@@ -1,0 +1,17 @@
+@using Apperture.Management.Ui.Shared
+
+<span class="@CssClass" title="@Title">@Label</span>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public ManagementAttentionSemantic Semantic { get; set; } = ManagementAttentionSemantic.None;
+
+    /// <summary>Dashboard card attention token (Critical, Warning, Info, …).</summary>
+    [Parameter] public string? DashboardAttention { get; set; }
+
+    private string CssClass =>
+        !string.IsNullOrWhiteSpace(DashboardAttention)
+            ? ManagementUiSemantics.GetDashboardAttentionPillClass(DashboardAttention)
+            : ManagementUiSemantics.GetAttentionPillClass(Semantic);
+}

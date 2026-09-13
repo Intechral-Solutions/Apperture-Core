@@ -1,0 +1,235 @@
+@page "/config/governance/users/new"
+@layout ConfigLayout
+@using System.Net
+@using Apperture.Core.Domain.Identity
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="New user" Subtitle="Create a local platform user">
+        <Toolbar>
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageUsers != true)
+    {
+        <ForbiddenState Message="You do not have permission to create users." />
+    }
+    else
+    {
+        <div class="ui-settings-callout">
+            Creates a local Apperture user. The usual path sends an account setup invitation so the person chooses their own password. This is not a Microsoft Entra invitation.
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <ManagementSection Title="User details" Layer="ManagementSection.UiLayer.Detail">
+            <div class="space-y-4 text-sm text-body">
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-display-name">Display name</label>
+                    <input id="new-user-display-name"
+                           class="ui-input mt-1"
+                           @bind="_displayName"
+                           disabled="@_saving"
+                           autocomplete="name"
+                           placeholder="e.g. Operator" />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-username">Username</label>
+                    <input id="new-user-username"
+                           class="ui-input mt-1"
+                           @bind="_username"
+                           disabled="@_saving"
+                           autocomplete="username"
+                           placeholder="local sign-in username" />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted" for="new-user-email">Contact email</label>
+                    <input id="new-user-email"
+                           class="ui-input mt-1"
+                           type="email"
+                           @bind="_contactEmail"
+                           disabled="@_saving"
+                           autocomplete="email"
+                           placeholder="name@example.com" />
+                    <p class="mt-1 text-xs text-muted">Required for a setup invitation. The address is unverified until the person opens the invitation.</p>
+                </div>
+                <fieldset class="space-y-2">
+                    <legend class="block text-xs text-muted">Credential setup</legend>
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="radio" name="credential-setup" checked="@_sendInvitation" disabled="@_saving" @onchange="@(() => _sendInvitation = true)" />
+                        <span>Send account setup invitation</span>
+                    </label>
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="radio" name="credential-setup" checked="@(!_sendInvitation)" disabled="@_saving" @onchange="@(() => _sendInvitation = false)" />
+                        <span>Set an initial password now</span>
+                    </label>
+                </fieldset>
+                @if (!_sendInvitation)
+                {
+                    <PasswordSetupFields @ref="_passwordFields"
+                                         PasswordChanged="value => _password = value"
+                                         ConfirmationChanged="value => _confirmPassword = value"
+                                         Context="PasswordContext"
+                                         PasswordId="new-user-password"
+                                         ConfirmId="new-user-password-confirm"
+                                         PasswordLabel="Initial password"
+                                         Disabled="@_saving"
+                                         IsValidChanged="valid => _passwordSetupValid = valid" />
+                    <p class="text-xs text-muted">Use this only when you must set a temporary password yourself. The person should change it after first sign-in.</p>
+                }
+                @if (_capabilities?.CanAssignRoles == true)
+                {
+                    <div>
+                        <label class="block text-xs text-muted" for="new-user-role">Role (optional)</label>
+                        <select id="new-user-role"
+                                class="ui-input mt-1"
+                                @bind="_selectedRoleId"
+                                disabled="@_saving">
+                            <option value="">None — assign later</option>
+                            @foreach (var role in _roles)
+                            {
+                                <option value="@role.Id">@role.Name (@role.Id)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <FormValidationFeedback Visible="@_showFormAttention" />
+                <div class="flex gap-2 pt-2">
+                    <ActionButton @ref="_createButton"
+                                  Variant="ActionButtonVariant.Primary"
+                                  DefaultText="Create user"
+                                  ActiveText="Creating…"
+                                  SuccessText="Created"
+                                  ErrorText="Create failed"
+                                  OnClick="HandleCreateClick" />
+                    <a href="/config/governance/users" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private string? _error;
+    private bool _saving;
+    private bool _showFormAttention;
+    private ActionButton? _createButton;
+    private PasswordSetupFields? _passwordFields;
+    private IReadOnlyList<RoleDto> _roles = Array.Empty<RoleDto>();
+    private string _displayName = "";
+    private string _username = "";
+    private string _password = "";
+    private string _confirmPassword = "";
+    private bool _passwordSetupValid;
+    private string _contactEmail = "";
+    private bool _sendInvitation = true;
+    private string _selectedRoleId = "";
+
+    private PasswordEvaluationContext PasswordContext =>
+        new(Username: _username.Trim(), DisplayName: _displayName.Trim(), Email: _contactEmail.Trim());
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+            if (_capabilities?.CanAssignRoles == true)
+                _roles = await Client.GetRolesAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false);
+        }
+        _capabilitiesLoaded = true;
+    }
+
+    private async Task CreateAsync()
+    {
+        var passwordReady = _sendInvitation || (_passwordFields?.ValidateForSubmit() ?? _passwordSetupValid);
+        var detailsReady = !string.IsNullOrWhiteSpace(_displayName)
+            && !string.IsNullOrWhiteSpace(_username)
+            && (!_sendInvitation || !string.IsNullOrWhiteSpace(_contactEmail));
+        if (!detailsReady || !passwordReady)
+        {
+            _showFormAttention = true;
+            return;
+        }
+
+        _showFormAttention = false;
+        _saving = true;
+        if (_createButton is not null)
+            await _createButton.SetStateAsync(ActionButtonState.Active);
+        _error = null;
+        try
+        {
+            var created = await Client.CreateUserAsync(
+                new CreateUserRequest(
+                    _displayName.Trim(),
+                    "Local",
+                    _username.Trim(),
+                    _sendInvitation ? null : _password,
+                    _contactEmail.Trim(),
+                    _sendInvitation));
+
+            if (!string.IsNullOrEmpty(_selectedRoleId))
+            {
+                try
+                {
+                    await Client.AssignRoleAsync(created.UserId, _selectedRoleId);
+                }
+                catch (Exception ex)
+                {
+                    Toasts.Show(ToastSeverity.Warning, "User created, but the role could not be assigned: " + ex.Message);
+                    if (_createButton is not null)
+                        await _createButton.SetStateAsync(ActionButtonState.Success);
+                    Nav.NavigateTo("/config/governance/users/" + Uri.EscapeDataString(created.UserId));
+                    return;
+                }
+            }
+
+            Toasts.Show(ToastSeverity.Success, _sendInvitation
+                ? "User created. A setup invitation was sent if email delivery is configured."
+                : "User created.");
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Success);
+            Nav.NavigateTo("/config/governance/users/" + Uri.EscapeDataString(created.UserId));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private Task HandleCreateClick(MouseEventArgs _) => CreateAsync();
+}

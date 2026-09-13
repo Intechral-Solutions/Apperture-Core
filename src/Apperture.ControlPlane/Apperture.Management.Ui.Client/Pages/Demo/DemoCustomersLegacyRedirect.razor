@@ -1,0 +1,29 @@
+@page "/demo/customers"
+@page "/demo/customers/{BusinessKey}"
+@page "/demo/customers/{BusinessKey}/activity"
+@using Apperture.Management.Ui.Shared
+@inject NavigationManager Nav
+
+@code {
+    [Parameter]
+    public string? BusinessKey { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        if (path.EndsWith("/activity", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(BusinessKey))
+        {
+            Nav.NavigateTo(BusinessDataUiRoutes.CustomerActivity(BusinessKey), replace: true);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(BusinessKey))
+        {
+            Nav.NavigateTo(BusinessDataUiRoutes.CustomerDetail(BusinessKey), replace: true);
+            return;
+        }
+
+        Nav.NavigateTo(BusinessDataUiRoutes.Customers, replace: true);
+    }
+}

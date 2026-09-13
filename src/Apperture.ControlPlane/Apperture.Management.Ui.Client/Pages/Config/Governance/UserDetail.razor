@@ -2,15 +2,22 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@inject SessionStateService Session
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject ShellHostNavigation HostNav
 @inject IToastService Toasts
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 
 <div class="p-4">
-    <PageHeader Title="User — Role assignments">
+    <PageHeader @key="@UserId"
+                Title="@EntityShellTitles.Detail(_user?.DisplayName, "User")"
+                Subtitle="Role assignments">
         <ChildContent>
             <div class="mt-1 text-xs text-muted">
                 <a href="/config/governance/users" class="hover:underline">Users</a> / Role assignments
@@ -18,74 +25,251 @@
             <div class="mt-1 font-mono text-xs text-muted break-all">@UserId</div>
         </ChildContent>
         <Toolbar>
-            <a href="/config/governance/users" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to users</a>
-            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId) + "/role-derived-access")" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">View role-derived access</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+            <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId) + "/role-derived-access")" class="ui-toolbar-btn">View role-derived access</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
             </button>
+            @if (CanSendSetupInvitation)
+            {
+                <ActionButton @ref="_invitationToolbarButton"
+                              Variant="ActionButtonVariant.Secondary"
+                              Class="ui-toolbar-btn"
+                              DefaultText="@(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")"
+                              ActiveText="Sending…"
+                              SuccessText="Sent"
+                              ErrorText="Send failed"
+                              IsInactive="@_mutating"
+                              OnClick="_ => ResendInvitationAsync()" />
+            }
         </Toolbar>
     </PageHeader>
 
-    <div class="mt-2 rounded border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-2 text-xs text-body">
-        This page manages <strong>role assignments only</strong>. User identity and credentials are not editable here. To edit role definitions, go to the role detail page.
+    <div class="ui-settings-callout">
+        This page shows linked sign-in methods and role assignments. Administrators with <strong>user.manage</strong> can add an Entra identity link (object id) to an existing platform user.
     </div>
 
     @if (!_capabilitiesLoaded)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Loading" Message="Loading…" />
+            <LoadingState Message="Loading…" />
         </div>
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this user." />
+            <ForbiddenState Message="You do not have permission to view this user." />
         </div>
     }
     else if (_forbidden)
     {
         <div class="mt-4">
-            <PageMessage Kind="PageMessageKind.Forbidden"
-                         Title="Not authorized"
-                         Message="You do not have permission to view this user." />
+            <ForbiddenState Message="You do not have permission to view this user." />
         </div>
     }
     else
     {
         @if (!string.IsNullOrEmpty(_error))
         {
-            <div class="mt-4 rounded border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30 px-3 py-2 text-sm text-body">
-                <div class="font-semibold">Error</div>
-                <div class="text-muted">@_error</div>
+            <div class="mt-4">
+                <ErrorState Message="@_error" />
             </div>
         }
         @if (_user is null)
         {
-            <div class="mt-4 text-sm text-muted">@(string.IsNullOrEmpty(_error) ? "Loading..." : "")</div>
+            @if (string.IsNullOrEmpty(_error))
+            {
+                <div class="mt-4">
+                    <LoadingState Message="Loading…" />
+                </div>
+            }
         }
         else
         {
         <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">User</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">User ID</div>
-                        <div class="text-sm font-mono">@_user.UserId</div>
+            <ManagementSection Title="User" Layer="ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="User ID" Monospace="true" Value="@_user.UserId" />
+                    <MetadataItem Label="Display name" Value="@_user.DisplayName" />
+                    <MetadataItem Label="Contact email" Value="@FormatContactEmail(_user)" />
+                    <MetadataItem Label="Password" Value="@FormatPasswordState(_user.PasswordState)" />
+                    <MetadataItem Label="Invitation" Value="@FormatInvitationState(_user.InvitationState)" />
+                    <MetadataItem Label="Local sign-in" Value="@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)" />
+                </MetadataGrid>
+                @if (CanSendSetupInvitation)
+                {
+                    <div class="mt-3 space-y-2">
+                        <PageMessage Kind="PageMessageKind.Info"
+                                     Title="Account setup is not finished"
+                                     Message="This user has not chosen a password yet. Send a new invitation to their contact email. The previous link stops working." />
+                        <ActionButton @ref="_invitationButton"
+                                      DefaultText="@(InvitationAlreadyIssued ? "Resend setup invitation" : "Send setup invitation")"
+                                      ActiveText="Sending…"
+                                      SuccessText="Invitation sent"
+                                      ErrorText="Send failed"
+                                      IsInactive="@_mutating"
+                                      OnClick="_ => ResendInvitationAsync()" />
                     </div>
-                    <div>
-                        <div class="text-xs text-muted">Display name</div>
-                        <div class="text-sm text-body">@_user.DisplayName</div>
-                    </div>
-                </div>
-            </div>
+                }
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Assigned roles</div>
+            <ManagementSection Title="Linked sign-in methods" Layer="ManagementSection.UiLayer.Detail">
+                @if (_user.IdentityLinks.Count == 0)
+                {
+                    <div class="mt-2 text-xs text-muted">No linked identities.</div>
+                }
+                else
+                {
+                    <ul class="mt-2 divide-y divide-default text-sm">
+                        @foreach (var link in _user.IdentityLinks)
+                        {
+                            <li class="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                                <span class="font-mono text-xs text-body break-all">@FormatLinkLabel(link)</span>
+                                <span class="text-xs text-muted">@link.Source · @FormatLinkState(link)</span>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <div class="mt-3 text-xs text-muted space-y-1">
+                    <div>Microsoft Entra: <span class="text-body">@FormatEntraAssociation(_user.EntraAssociationStatus)</span></div>
+                    <div>Local sign-in: <span class="text-body">@FormatLocalSignInPolicy(_user.LocalSignInPolicy, _user.IsCredentialDisabled, _user.LocalRecoverySafeguard)</span></div>
+                    @if (_user.EmergencyAccessAccount)
+                    {
+                        <p>This is the system-managed Recovery Access account. Native authenticator: @(_user.NativeMfaEnrolled ? "enrolled" : "not enrolled"). Recovery codes: @(_user.EmergencyRecoveryCodesPresent ? "on file" : "none"). Manage it through Emergency Access operator tooling, not ordinary user administration.</p>
+                    }
+                    @if (_user.LocalRecoverySafeguard)
+                    {
+                        <p>This local credential is temporarily retained because Emergency Access is not healthy yet.</p>
+                    }
+                </div>
+
+                @if (_capabilities?.CanManageCredentials == true && _user.IsCredentialDisabled == true)
+                {
+                    <div class="mt-4 border-t border-default pt-3">
+                        <div class="text-xs font-medium text-heading">Enable local sign-in</div>
+                        @if (Session.User?.StrongAuthenticationConfigured == false)
+                        {
+                            <p class="mt-1 text-xs text-muted">
+                                Strong authentication is not configured. Set a Microsoft Entra Conditional Access
+                                authentication-context identifier on the active Entra registration before local
+                                sign-in can be restored.
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="mt-1 text-xs text-muted">
+                                Restores the existing local password. This does not change the password. Recent
+                                strong authentication is required.
+                            </p>
+                            @if (!string.IsNullOrEmpty(_credentialError))
+                            {
+                                <div class="mt-2">
+                                    <PageMessage Kind="PageMessageKind.Error" Message="@_credentialError" />
+                                </div>
+                            }
+                            <button type="button"
+                                    class="btn btn-secondary mt-2"
+                                    disabled="@_mutating"
+                                    @onclick="EnableLocalSignInAsync">
+                                Enable local sign-in
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (_capabilities?.CanManageUsers == true && !_user.EmergencyAccessAccount)
+                {
+                    <div class="mt-4 border-t border-default pt-3">
+                        <div class="text-xs font-medium text-heading">Link a Microsoft account</div>
+                        <p class="mt-1 text-xs text-muted">
+                            Search your directory and select the person. The association stays pending until they
+                            sign in with that Microsoft account for the first time; local sign-in is left as it is
+                            until that first proof.
+                        </p>
+                        @if (_directoryTenantId is null)
+                        {
+                            <p class="mt-2 text-xs text-muted">
+                                Directory search is unavailable because no Microsoft Entra registration is active. Paste an object id below instead.
+                            </p>
+                        }
+                        else
+                        {
+                            <div class="mt-2 flex flex-wrap items-end gap-2">
+                                <label class="min-w-[16rem] flex-1 text-xs text-muted">
+                                    Search directory
+                                    <input class="ui-input mt-1 text-xs"
+                                           @bind="_directorySearch"
+                                           @bind:event="oninput"
+                                           disabled="@(_mutating || _directoryBusy)"
+                                           placeholder="Name or user principal name" />
+                                </label>
+                                <button type="button"
+                                        class="btn btn-secondary"
+                                        disabled="@(_mutating || _directoryBusy)"
+                                        @onclick="SearchDirectoryAsync">
+                                    @(_directoryBusy ? "Searching…" : "Search")
+                                </button>
+                            </div>
+                            @if (_directoryMessage is not null)
+                            {
+                                <p class="mt-2 text-xs text-muted">@_directoryMessage</p>
+                            }
+                            @if (_directoryResults.Count > 0)
+                            {
+                                <ul class="mt-2 divide-y divide-default text-sm">
+                                    @foreach (var candidate in _directoryResults)
+                                    {
+                                        <li class="flex flex-wrap items-center justify-between gap-2 py-2">
+                                            <span>
+                                                <span class="text-body">@candidate.DisplayName</span>
+                                                <span class="ml-2 text-xs text-muted">@(candidate.UserPrincipalName ?? candidate.Mail)</span>
+                                            </span>
+                                            <button type="button"
+                                                    class="btn btn-secondary"
+                                                    disabled="@_mutating"
+                                                    @onclick="() => LinkDirectoryUserAsync(candidate.ObjectId)">
+                                                Link
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        }
+
+                        <div class="mt-3 text-xs font-medium text-heading">Or paste an object id</div>
+                        <p class="mt-1 text-xs text-muted">
+                            Use the Entra object id (oid) as a GUID. Email addresses and user principal names are not identities.
+                        </p>
+                        @if (!string.IsNullOrEmpty(_identityLinkError))
+                        {
+                            <div class="mt-2">
+                                <PageMessage Kind="PageMessageKind.Error" Message="@_identityLinkError" />
+                            </div>
+                        }
+                        <div class="mt-2 flex flex-wrap items-end gap-2">
+                            <label class="min-w-[16rem] flex-1 text-xs text-muted">
+                                Entra object id
+                                <input class="ui-input mt-1 font-mono text-xs"
+                                       @bind="_entraOidToLink"
+                                       disabled="@_mutating"
+                                       placeholder="00000000-0000-0000-0000-000000000000" />
+                            </label>
+                            <button type="button"
+                                    class="btn btn-secondary"
+                                    disabled="@(_mutating || string.IsNullOrWhiteSpace(_entraOidToLink))"
+                                    @onclick="AddEntraLinkAsync">
+                                Link object id
+                            </button>
+                        </div>
+                    </div>
+                }
+            </ManagementSection>
+
+            <ManagementSection Title="Assigned roles" Layer="ManagementSection.UiLayer.Detail">
                 @if (_user.RoleIds.Count == 0)
                 {
                     <div class="mt-2 text-xs text-muted">User has no assigned roles. Use the control below to assign one.</div>
@@ -96,7 +280,7 @@
                         @foreach (var roleId in _user.RoleIds)
                         {
                             var roleInfo = _rolesById.GetValueOrDefault(roleId);
-                            <div class="flex items-center justify-between gap-2 rounded border border-default bg-surface-muted/50 px-3 py-2">
+                            <div class="ui-detail-block flex items-center justify-between gap-2">
                                 <div>
                                     <a href="@("/config/governance/roles/" + Uri.EscapeDataString(roleId))" class="font-mono text-sm underline hover:no-underline">@roleId</a>
                                     @if (roleInfo is not null)
@@ -106,7 +290,7 @@
                                 </div>
                                 @if (_capabilities?.CanAssignRoles == true)
                                 {
-                                    <button class="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    <button class="rounded px-2 py-1 text-xs text-error hover:bg-message-error"
                                             disabled="@_mutating"
                                             title="Remove this role from the user"
                                             @onclick="@(() => RemoveRoleAsync(roleId))">
@@ -117,12 +301,11 @@
                         }
                     </div>
                 }
-            </div>
+            </ManagementSection>
 
             @if (_capabilities?.CanAssignRoles == true)
             {
-                <div class="rounded border border-default bg-surface p-3">
-                    <div class="text-sm font-semibold text-heading">Assign role</div>
+                <ManagementSection Title="Assign role" Layer="ManagementSection.UiLayer.Detail">
                     @if (_assignableRoles.Count == 0)
                     {
                         <div class="mt-2 text-xs text-muted">No additional roles available to assign.</div>
@@ -130,7 +313,7 @@
                     else
                     {
                         <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <select class="rounded border border-default bg-surface px-3 py-2 text-sm"
+                            <select class="ui-input max-w-md"
                                     @bind="_selectedRoleToAssign"
                                     disabled="@_mutating">
                                 <option value="">— Select role —</option>
@@ -139,14 +322,15 @@
                                     <option value="@r.Id">@r.Name (@r.Id)</option>
                                 }
                             </select>
-                            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+                            <button type="button"
+                                    class="btn btn-primary"
                                     disabled="@(_mutating || string.IsNullOrEmpty(_selectedRoleToAssign))"
                                     @onclick="AssignRoleAsync">
                                 Assign
                             </button>
                         </div>
                     }
-                </div>
+                </ManagementSection>
             }
         </div>
         }
@@ -165,9 +349,36 @@
     private bool _forbidden;
     private bool _mutating;
     private string? _error;
+    private string? _identityLinkError;
+    private string? _credentialError;
+    private string _entraOidToLink = "";
+    private string _directorySearch = "";
+    private string? _directoryTenantId;
+    private string? _directoryMessage;
+    private bool _directoryBusy;
+    private IReadOnlyList<EntraDirectoryUserItemDto> _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
+    private ActionButton? _invitationButton;
+    private ActionButton? _invitationToolbarButton;
+
+    private bool CanSendSetupInvitation =>
+        _capabilities?.CanManageUsers == true
+        && _user is { EmergencyAccessAccount: false }
+        && _user.IdentityLinks.Any(l => string.Equals(l.Source, "Local", StringComparison.OrdinalIgnoreCase))
+        && _user.HasLocalCredential != true;
+
+    private bool InvitationAlreadyIssued =>
+        _user?.InvitationState is "pending" or "expired" or "accepted";
+
+    private async Task SetInvitationButtonsAsync(ActionButtonState state)
+    {
+        if (_invitationButton is not null)
+            await _invitationButton.SetStateAsync(state);
+        if (_invitationToolbarButton is not null)
+            await _invitationToolbarButton.SetStateAsync(state);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -184,6 +395,8 @@
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _user = null;
+        ReadStepUpOutcomeFromQuery();
         await LoadAsync();
     }
 
@@ -193,6 +406,7 @@
 
         _loading = true;
         _error = null;
+        _identityLinkError = null;
         _forbidden = false;
         try
         {
@@ -202,6 +416,8 @@
                 _error = "User not found.";
                 return;
             }
+            if (_capabilities?.CanManageUsers == true)
+                await LoadDirectoryTenantAsync();
             _allRoles = await Client.GetRolesAsync();
             _rolesById = _allRoles.ToDictionary(r => r.Id, StringComparer.OrdinalIgnoreCase);
             var assignedSet = _user.RoleIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -220,6 +436,10 @@
         finally
         {
             _loading = false;
+            ShellOrientation.PublishForCurrentUri(
+                Nav,
+                EntityShellTitles.Detail(_user?.DisplayName, "User"),
+                "Role assignments");
         }
     }
 
@@ -277,5 +497,235 @@
         {
             _mutating = false;
         }
+    }
+
+    /// <summary>
+    /// Directory browse is scoped to the active registration, which is also the only directory whose
+    /// object ids the platform will accept.
+    /// </summary>
+    private async Task LoadDirectoryTenantAsync()
+    {
+        try
+        {
+            var tenants = await Client.GetEntraTenantsAsync();
+            _directoryTenantId = tenants.FirstOrDefault(t => t.IsActive && t.Enabled)?.Id;
+        }
+        catch (Exception)
+        {
+            _directoryTenantId = null;
+        }
+    }
+
+    private async Task SearchDirectoryAsync()
+    {
+        if (_directoryTenantId is null)
+            return;
+
+        _directoryBusy = true;
+        _directoryMessage = null;
+        try
+        {
+            var result = await Client.GetEntraDirectoryUsersAsync(_directoryTenantId, _directorySearch, top: 25);
+            if (result is null)
+            {
+                _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+                _directoryMessage = "Not authorized to browse the directory.";
+                return;
+            }
+
+            _directoryResults = result.Items;
+            _directoryMessage = result.Success
+                ? (result.Items.Count == 0 ? "No matching directory users." : null)
+                : result.Summary;
+        }
+        catch (Exception ex)
+        {
+            _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+            _directoryMessage = ex.Message;
+        }
+        finally
+        {
+            _directoryBusy = false;
+        }
+    }
+
+    private async Task LinkDirectoryUserAsync(string objectId)
+    {
+        _entraOidToLink = objectId;
+        await AddEntraLinkAsync();
+        _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();
+    }
+
+    private async Task AddEntraLinkAsync()
+    {
+        if (_user is null || string.IsNullOrWhiteSpace(_entraOidToLink))
+            return;
+
+        _mutating = true;
+        _identityLinkError = null;
+        try
+        {
+            await Client.AddIdentityLinkAsync(
+                UserId,
+                new AddIdentityLinkRequest("Entra", _entraOidToLink.Trim()));
+            Toasts.Show(
+                ToastSeverity.Success,
+                "Microsoft account associated. It becomes active after their first successful sign-in.",
+                "Governance");
+            _entraOidToLink = "";
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _identityLinkError = "Not authorized to manage users.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _identityLinkError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _identityLinkError = ex.Message;
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    /// <summary>A link is only a usable sign-in path once an authentication has proven it.</summary>
+    private static string FormatLinkState(IdentityLinkDto link) =>
+        link.LastAuthenticatedAt is null ? "pending first sign-in" : "active";
+
+    private static string FormatLinkLabel(IdentityLinkDto link)
+    {
+        if (string.Equals(link.Source, "Entra", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = link.ExternalId;
+            var suffix = id.Length >= 4 ? id[^4..] : id;
+            return $"Entra · …{suffix}";
+        }
+
+        return link.ExternalId;
+    }
+
+    private void ReadStepUpOutcomeFromQuery()
+    {
+        var query = new Uri(Nav.Uri).Query;
+        if (string.IsNullOrEmpty(query))
+            return;
+        var parameters = System.Web.HttpUtility.ParseQueryString(query);
+        if (parameters["steppedUp"] == "1")
+        {
+            _credentialError = null;
+            return;
+        }
+
+        var error = parameters["error"];
+        if (string.IsNullOrEmpty(error))
+            return;
+        _credentialError = error switch
+        {
+            "identity_mismatch" => "The Microsoft account that completed step-up is not the signed-in administrator.",
+            "tenant_mismatch" => "The Microsoft directory that completed step-up is not the directory this instance trusts.",
+            "authentication_context_not_satisfied" => "Microsoft did not report the configured authentication context. Strong authentication was not recorded.",
+            "not_configured" => "Strong authentication is not configured on this instance.",
+            _ => "Strong authentication did not complete. Your existing session was kept."
+        };
+    }
+
+    private async Task EnableLocalSignInAsync()
+    {
+        _credentialError = null;
+        _mutating = true;
+        try
+        {
+            await Client.SetLocalCredentialDisabledAsync(UserId, isDisabled: false);
+            Toasts.Show(ToastSeverity.Success, "Local sign-in enabled.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            var returnPath = "/config/governance/users/" + Uri.EscapeDataString(UserId);
+            var host = HostNav.GetManagementHostBase(Nav);
+            Nav.NavigateTo(new Uri(host, "signin/step-up?returnUrl=" + Uri.EscapeDataString(returnPath)).ToString(), forceLoad: true);
+        }
+        catch (HttpRequestException ex)
+        {
+            _credentialError = ex.Message;
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    private async Task ResendInvitationAsync()
+    {
+        if (_user is null)
+            return;
+
+        _mutating = true;
+        _error = null;
+        await SetInvitationButtonsAsync(ActionButtonState.Active);
+        try
+        {
+            var result = await Client.SendSetupInvitationAsync(_user.UserId, new SetupInvitationRequest(_user.PendingContactEmail ?? _user.ContactEmail));
+            await SetInvitationButtonsAsync(result.DeliverySucceeded ? ActionButtonState.Success : ActionButtonState.Error);
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            await SetInvitationButtonsAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _mutating = false;
+        }
+    }
+
+    private static string FormatContactEmail(UserDetailDto user) =>
+        user.ContactEmailStatus switch
+        {
+            "verified" => string.IsNullOrWhiteSpace(user.ContactEmail) ? "Verified" : $"{user.ContactEmail} · Verified",
+            "pending" => string.IsNullOrWhiteSpace(user.PendingContactEmail) ? "Pending" : $"{user.PendingContactEmail} · Pending",
+            _ => "None"
+        };
+
+    private static string FormatPasswordState(string? state) => state switch
+    {
+        "set" => "Set",
+        "setup_pending" => "Setup pending",
+        _ => "None"
+    };
+
+    private static string FormatInvitationState(string? state) => state switch
+    {
+        "pending" => "Pending",
+        "expired" => "Expired",
+        "accepted" => "Accepted",
+        _ => "None"
+    };
+
+    private static string FormatEntraAssociation(string? status) => status switch
+    {
+        "pending" => "Pending first sign-in",
+        "proven" => "Proven / primary",
+        "none" => "Not associated",
+        _ => "Not associated"
+    };
+
+    private static string FormatLocalSignInPolicy(string? policy, bool? disabled, bool safeguard)
+    {
+        if (policy == "emergency_access")
+            return "Enabled for Recovery Access";
+        if (safeguard || policy == "recovery_safeguard")
+            return "Enabled for emergency platform recovery";
+        if (policy == "disabled" || disabled == true)
+            return "Disabled";
+        if (policy == "enabled" || disabled == false)
+            return "Enabled";
+        return "Not configured";
     }
 }

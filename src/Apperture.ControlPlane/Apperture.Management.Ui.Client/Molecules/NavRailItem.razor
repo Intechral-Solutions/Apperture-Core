@@ -9,7 +9,7 @@
        aria-label="@AriaLabel"
        @onclick="@RaiseClick"
        @onclick:preventDefault="@(OnItemClick.HasDelegate)">
-        <span class="@EffectiveNavButtonStyle inline-flex">
+        <span class="@EffectiveNavButtonStyle">
             <DynamicComponent Type="@IconType" Parameters="EffectiveIconParameters" />
         </span>
         <div class="@TooltipStyle">@Tooltip</div>
@@ -34,21 +34,19 @@ else
     [Parameter] public string? AriaLabel { get; set; }
     [Parameter] public string? CurrentDomain { get; set; }
     [Parameter] public string? CurrentPageUri { get; set; }
-    [Parameter] public string ContainerStyle { get; set; } = "group relative inline-block";
+    [Parameter] public string ContainerStyle { get; set; } = "group relative flex w-full shrink-0 justify-center";
     /// <summary>When true, uses blue glow on icon instead of tile background for hover/active.</summary>
     [Parameter] public bool UseGlowEffect { get; set; }
     [Parameter]
     public string NavButtonStyle { get; set; } =
-        "p-3 rounded-sm transition-colors duration-200 " +
-        "group-hover:bg-slate-400 dark:group-hover:bg-slate-600 group-hover:bg-opacity-80 " +
-        "h-12 w-12 mx-auto rounded-md transition-all duration-300 flex flex-col items-center justify-center cursor-pointer relative";
+        "nav-rail-btn nav-rail-btn--hover transition-all duration-300";
     [Parameter]
     public string IconStyle { get; set; } =
-        "h-6 w-6 text-body opacity-60 group-hover:opacity-90 transition-all duration-200";
+        "ui-nav-rail__icon h-6 w-6 transition-colors duration-200";
     [Parameter]
     public string TooltipStyle { get; set; } =
         "absolute left-full top-1/2 transform -translate-y-1/2 -translate-x-1 " +
-        "bg-slate-300 dark:bg-slate-700 dark:text-white text-sm rounded px-2 py-1 " +
+        "bg-tooltip text-tooltip text-sm rounded px-2 py-1 " +
         "opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10 pointer-events-none";
     [Parameter] public EventCallback<DomainNavClickArgs> OnItemClick { get; set; }
 
@@ -62,11 +60,11 @@ else
 
     private string EffectiveNavButtonStyle =>
         IsActive && !UseGlowEffect
-            ? NavButtonStyle + " bg-slate-400 dark:bg-slate-600 bg-opacity-30 dark:bg-opacity-30"
+            ? NavButtonStyle + " nav-rail-btn--active"
             : NavButtonStyle;
 
     private string EffectiveIconClass =>
-        (IsActive ? $"{IconStyle} opacity-100" : IconStyle) +
+        (IsActive ? $"{IconStyle} ui-nav-rail__icon--active" : IconStyle) +
         (UseGlowEffect ? " nav-rail-icon-glow" : "");
 
     private IDictionary<string, object> EffectiveIconParameters =>

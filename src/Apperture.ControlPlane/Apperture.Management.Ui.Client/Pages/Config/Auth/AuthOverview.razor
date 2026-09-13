@@ -6,26 +6,26 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config — Authentication</div>
-    <PageHeader Title="Overview"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication"
+                Title="Overview"
                 Subtitle="What operators see at sign-in, how that relates to deployment and policy, and recovery paths." />
 
     @if (!_canView)
     {
-        <p class="mt-4 text-sm text-muted">You do not have permission to view authentication configuration.</p>
+        <ForbiddenState Message="You do not have permission to view authentication configuration." />
     }
     else if (_loading)
     {
-        <p class="mt-4 text-sm text-muted">Loading…</p>
+        <LoadingState />
     }
     else if (_overview is null)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Could not load authentication overview." />
+        <ErrorState Message="Could not load authentication overview." />
     }
     else
     {
-        <div class="mt-6 max-w-3xl space-y-6 text-sm text-body">
+        <div class="max-w-3xl space-y-4 text-sm text-body">
             @if (_overview.Warnings.Count > 0)
             {
                 foreach (var w in _overview.Warnings)
@@ -34,19 +34,42 @@
                 }
             }
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">What users see</h2>
-                <p class="mt-2 text-xs">@_overview.EffectiveExperienceDescription</p>
+            <ManagementSection Title="What users see" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs">@_overview.EffectiveExperienceDescription</p>
                 <ul class="mt-3 list-inside list-disc space-y-1 text-xs text-muted">
                     <li>Local on primary login: @(_overview.LocalShownOnPrimaryLogin ? "yes" : "no")</li>
-                    <li>Local only as fallback at <code class="rounded bg-surface-muted px-1">/login/local</code>: @(_overview.LocalFallbackOnly ? "yes" : "no")</li>
+                    <li>Local only as fallback at <code class="ui-inline-code">/login/local</code>: @(_overview.LocalFallbackOnly ? "yes" : "no")</li>
                     <li>Entra sign-in (effective): @(_overview.EntraSignInEnabled ? "available" : "not available")</li>
                 </ul>
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Capabilities vs policy</h2>
-                <ul class="mt-2 list-inside list-disc space-y-1 text-xs">
+            @if (_overview.AuthProviderAvailability is not null)
+            {
+                var ap = _overview.AuthProviderAvailability;
+                <ManagementSection Title="Provider readiness" Layer="@ManagementSection.UiLayer.Summary">
+                    <ul class="list-inside list-disc space-y-1 text-xs">
+                        <li>Entra sign-in ready (effective): @(ap.EntraSignInReady ? "yes" : "no")</li>
+                        <li>Local sign-in available: @(ap.LocalSignInAvailable ? "yes" : "no")</li>
+                        <li>Active registration OID validation status: @(ap.ActiveEntraOpenIdConfigurationStatus ?? "—")</li>
+                        <li>Active registration directory discovery status: @(ap.ActiveEntraDirectoryDiscoveryStatus ?? "—")</li>
+                    </ul>
+                    @if (!string.IsNullOrEmpty(ap.AdminDiagnosis))
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="@ap.AdminDiagnosis" />
+                    }
+                </ManagementSection>
+            }
+
+            <ManagementSection Title="Entra administration" Layer="@ManagementSection.UiLayer.Summary">
+                <p class="text-xs text-muted">
+                    Configure tenants, validate OpenID metadata, browse directory objects, and import users into
+                    <a class="underline" href="/config/contacts">managed contacts</a>:
+                    <a class="underline" href="/config/auth/tenants">Entra tenant setup</a>
+                </p>
+            </ManagementSection>
+
+            <ManagementSection Title="Capabilities vs policy" Layer="@ManagementSection.UiLayer.Summary">
+                <ul class="list-inside list-disc space-y-1 text-xs">
                     <li>Local auth (deployment): @(_overview.LocalAuthEnabled ? "enabled" : "disabled")</li>
                     <li>Entra enabled in deployment configuration: @(_overview.EntraEnabledInDeploymentConfiguration ? "yes" : "no")</li>
                     <li>Entra configuration valid: @(_overview.EntraConfigurationValid ? "yes" : "no")</li>
@@ -70,12 +93,42 @@
                     <li>Prefer Entra in chooser: @_overview.PreferEntraInChooser</li>
                     <li>Auto-redirect to Entra: @_overview.AutoRedirectToEntra</li>
                 </ul>
-            </section>
+            </ManagementSection>
 
-            <section class="rounded border border-default bg-surface p-4">
-                <h2 class="font-medium text-heading">Recovery</h2>
-                <p class="mt-2 text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
-            </section>
+            <ManagementSection Title="Emergency Access" Layer="@ManagementSection.UiLayer.Summary">
+                @if (_emergency is null)
+                {
+                    <p class="text-xs text-muted">Emergency Access status is available to operators who can read users.</p>
+                }
+                else
+                {
+                    <ul class="list-inside list-disc space-y-1 text-xs">
+                        <li>Status: @(_emergency.IsHealthy ? "Healthy" : "Not healthy")</li>
+                        <li>Account: @(_emergency.DesignatedDisplayName ?? "(none)")</li>
+                        <li>Username: @(_emergency.DesignatedUsername ?? "(none)")</li>
+                        <li>Local credential: @(_emergency.LocalCredentialEnabled ? "Enabled" : "Disabled")</li>
+                        <li>Authenticator: @(_emergency.NativeMfaEnrolled ? "Enrolled" : "Not enrolled")</li>
+                        <li>Recovery codes: @_emergency.UnusedRecoveryCodeCount available</li>
+                    </ul>
+                    @if (_emergency.FallbackSafeguardRequired)
+                    {
+                        <p class="mt-2 text-xs text-muted">Last-administrator local fallback is still required until Emergency Access is healthy.</p>
+                    }
+                    @if (_emergency.CanonicalUsernameConflict)
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="Another user already owns the reserved Recovery Access username. The existing emergency account was not renamed." />
+                    }
+                    @if (_emergency.HasEntraIdentityLink)
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="Recovery Access has a Microsoft identity linked. Recovery still depends only on the local password and native authenticator." />
+                    }
+                    <TechnicalDetails>
+                        <TechnicalDetail Label="User id" Value="@(_emergency.DesignatedUserId ?? "—")" />
+                    </TechnicalDetails>
+                }
+                <p class="mt-2 text-xs text-muted">Recovery Access is omitted from ordinary Governance user administration. That is an operational boundary, not a secrecy guarantee — assume the username is guessable.</p>
+                <p class="mt-1 text-xs text-muted">Local backup sign-in: <a class="underline" href="/login/local">/login/local</a></p>
+            </ManagementSection>
         </div>
     }
 </div>
@@ -84,6 +137,7 @@
     private bool _canView;
     private bool _loading = true;
     private ConfigAuthOverviewDto? _overview;
+    private EmergencyAccessPostureDto? _emergency;
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,6 +150,14 @@
         }
 
         _overview = await Client.GetConfigAuthOverviewAsync();
+        try
+        {
+            _emergency = await Client.GetEmergencyAccessAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _emergency = null;
+        }
         _loading = false;
     }
 }

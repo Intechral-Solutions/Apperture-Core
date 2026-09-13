@@ -58,6 +58,7 @@ public sealed class BindingEligibilityServiceTests
             moduleId: "M",
             slotName: "slot",
             contractType: typeof(TestContract).FullName!,
+            owningResourceContextId: null,
             CancellationToken.None);
 
         eligible.Should().ContainSingle();
@@ -93,6 +94,7 @@ public sealed class BindingEligibilityServiceTests
             moduleId: "M",
             slotName: "slot",
             contractType: typeof(TestContract).FullName!,
+            owningResourceContextId: null,
             CancellationToken.None);
 
         eligible.Should().ContainSingle();

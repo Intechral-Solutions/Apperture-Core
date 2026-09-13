@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ControlFacade;
+using Apperture.Core.Application.OperationItems;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,6 +18,10 @@ public sealed class RunsController : ControllerBase
     private readonly IWorkflowExternalControlService _externalControl;
     private readonly IRunActionAvailabilityQueryService _runActions;
     private readonly IRunTimelineQueryService _timeline;
+    private readonly IOperationItemizationQueryService _operationItems;
+    private readonly IOperationItemRetryService _itemRetry;
+    private readonly IBulkOperationItemRetryService _bulkItemRetry;
+    private readonly IOperationItemAttentionService _itemAttention;
 
     public RunsController(
         IRunQueryService runs,
@@ -24,7 +29,11 @@ public sealed class RunsController : ControllerBase
         IWorkflowRetryService retry,
         IWorkflowExternalControlService externalControl,
         IRunActionAvailabilityQueryService runActions,
-        IRunTimelineQueryService timeline)
+        IRunTimelineQueryService timeline,
+        IOperationItemizationQueryService operationItems,
+        IOperationItemRetryService itemRetry,
+        IBulkOperationItemRetryService bulkItemRetry,
+        IOperationItemAttentionService itemAttention)
     {
         _runs = runs;
         _cancel = cancel;
@@ -32,6 +41,10 @@ public sealed class RunsController : ControllerBase
         _externalControl = externalControl;
         _runActions = runActions;
         _timeline = timeline;
+        _operationItems = operationItems;
+        _itemRetry = itemRetry;
+        _bulkItemRetry = bulkItemRetry;
+        _itemAttention = itemAttention;
     }
 
     [HttpGet]
@@ -45,6 +58,7 @@ public sealed class RunsController : ControllerBase
         [FromQuery] string? correlationKey,
         [FromQuery] string? integrationId,
         [FromQuery] int? take,
+        [FromQuery] string? resourceContextId,
         CancellationToken cancellationToken)
     {
         try
@@ -58,7 +72,8 @@ public sealed class RunsController : ControllerBase
                 ModuleId: moduleId,
                 CorrelationKey: correlationKey,
                 IntegrationId: integrationId,
-                Take: take);
+                Take: take,
+                ResourceContextId: resourceContextId);
             var list = await _runs.ListRunsAsync(filter, cancellationToken);
             return Ok(list);
         }
@@ -109,6 +124,198 @@ public sealed class RunsController : ControllerBase
             if (timeline is null)
                 return NotFound();
             return Ok(timeline);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-3B: business-facing operation groups for a run (not platform log lines).</summary>
+    [HttpGet("{id}/operation-groups")]
+    public async Task<ActionResult<IReadOnlyList<OperationGroupSummaryDto>>> GetOperationGroups(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var groups = await _operationItems.ListGroupsByRunAsync(new OperationRunId(id), cancellationToken);
+            if (groups is null)
+                return NotFound();
+            return Ok(groups);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-3B: paged operation items for a group under a run.</summary>
+    [HttpGet("{id}/operation-groups/{groupId}/items")]
+    public async Task<ActionResult<OperationItemPageDto>> GetOperationGroupItems(
+        string id,
+        string groupId,
+        [FromQuery] string? status,
+        [FromQuery] bool? retryableOnly,
+        [FromQuery] string? q,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = OperationItemizationBounds.DefaultItemPageTake,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var page = await _operationItems.ListItemsByGroupAsync(
+                new OperationRunId(id),
+                groupId,
+                new OperationItemQuery(status, retryableOnly, q, skip, take),
+                cancellationToken);
+            if (page is null)
+                return NotFound();
+            return Ok(page);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>SDK-4A: request a per-item retry (child run + durable attempt). Outcome sync deferred to SDK-4B.</summary>
+    [HttpPost("{id}/operation-items/{itemId}/retry")]
+    public async Task<ActionResult<OperationItemRetryAttemptDto>> RetryOperationItem(
+        string id,
+        string itemId,
+        [FromBody] RequestOperationItemRetryDto? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            body ??= new RequestOperationItemRetryDto("");
+            var result = await _itemRetry.RequestRetryAsync(
+                new OperationRunId(id),
+                itemId,
+                body,
+                cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (OperationItemRetryException ex)
+        {
+            var payload = new { error = ex.Message, errorCode = ex.ErrorCode, blocked = true };
+            return ex.IsConflict ? Conflict(payload) : BadRequest(payload);
+        }
+    }
+
+    /// <summary>JOB-1: bounded selective bulk retry within one run + one operation group.</summary>
+    [HttpPost("{id}/operation-groups/{groupId}/items/retry")]
+    public async Task<ActionResult<BulkRetryOperationItemsResult>> BulkRetryOperationItems(
+        string id,
+        string groupId,
+        [FromBody] BulkRetryOperationItemsRequest? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            body ??= new BulkRetryOperationItemsRequest(Array.Empty<string>());
+            var result = await _bulkItemRetry.BulkRetryAsync(
+                new OperationRunId(id),
+                groupId,
+                body,
+                cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (OperationItemRetryException ex)
+        {
+            var payload = new { error = ex.Message, errorCode = ex.ErrorCode, blocked = true };
+            return ex.IsConflict ? Conflict(payload) : BadRequest(payload);
+        }
+    }
+
+    /// <summary>JOB-1: acknowledge failed items (clears attention; does not change execution outcome).</summary>
+    [HttpPost("{id}/operation-groups/{groupId}/items/acknowledge")]
+    public async Task<ActionResult<BulkAcknowledgeOperationItemsResult>> AcknowledgeOperationItems(
+        string id,
+        string groupId,
+        [FromBody] BulkAcknowledgeOperationItemsRequest? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            body ??= new BulkAcknowledgeOperationItemsRequest(Array.Empty<string>(), "");
+            var result = await _itemAttention.AcknowledgeAsync(
+                new OperationRunId(id),
+                groupId,
+                body,
+                cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (OperationItemRetryException ex)
+        {
+            var payload = new { error = ex.Message, errorCode = ex.ErrorCode, blocked = true };
+            return ex.IsConflict ? Conflict(payload) : BadRequest(payload);
+        }
+    }
+
+    /// <summary>JOB-1: reopen attention for previously acknowledged failures.</summary>
+    [HttpPost("{id}/operation-groups/{groupId}/items/reopen-attention")]
+    public async Task<ActionResult<BulkReopenOperationItemsResult>> ReopenOperationItemAttention(
+        string id,
+        string groupId,
+        [FromBody] BulkReopenOperationItemsRequest? body,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            body ??= new BulkReopenOperationItemsRequest(Array.Empty<string>());
+            var result = await _itemAttention.ReopenAttentionAsync(
+                new OperationRunId(id),
+                groupId,
+                body,
+                cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (OperationItemRetryException ex)
+        {
+            var payload = new { error = ex.Message, errorCode = ex.ErrorCode, blocked = true };
+            return ex.IsConflict ? Conflict(payload) : BadRequest(payload);
+        }
+    }
+
+    /// <summary>SDK-4A: list durable retry attempts for an operation item.</summary>
+    [HttpGet("{id}/operation-items/{itemId}/retries")]
+    public async Task<ActionResult<IReadOnlyList<OperationItemRetryAttemptDto>>> ListOperationItemRetries(
+        string id,
+        string itemId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _itemRetry.ListAttemptsAsync(new OperationRunId(id), itemId, cancellationToken);
+            if (result is null)
+                return NotFound();
+            return Ok(result);
         }
         catch (UnauthorizedAccessException)
         {

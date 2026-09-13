@@ -1,5 +1,6 @@
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.Core.Application.Services;
@@ -11,6 +12,26 @@ public interface IScheduleRepository
 {
     ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists schedule definitions, optionally restricted to one owning ResourceContext.
+    /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <remarks>
+    /// A store-backed implementation must push the context filter into the query. The default
+    /// implementation here exists only so in-memory test doubles keep working; it is not a query plan.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListDefinitionsAsync(cancellationToken).ConfigureAwait(false);
+        if (resourceContextId is null)
+            return all;
+        return all.Where(d => string.Equals(d.ResourceContextId?.Value, resourceContextId.Value, StringComparison.Ordinal)).ToList();
+    }
 
     /// <summary>
     /// Gets schedules owned by the given Integration. Epic 50.
@@ -36,6 +57,25 @@ public interface IScheduleRepository
     ValueTask<bool> TryClaimFireAsync(string scheduleId, DateTimeOffset fireTimeUtc, string assignmentId, string hostId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims a fire and snapshots <paramref name="resourceContextId"/> onto the ScheduleRun row at
+    /// claim time (not at successful dispatch). CTX-2: the caller resolves this once, from the
+    /// ScheduleDefinition's own ResourceContext; this method does not derive it. Never rewritten
+    /// after the row is written, including on stale-claim recovery.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; it ignores
+    /// the context. The production implementation snapshots it.
+    /// </remarks>
+    async ValueTask<bool> TryClaimFireAsync(
+        string scheduleId,
+        DateTimeOffset fireTimeUtc,
+        string assignmentId,
+        string hostId,
+        string? resourceContextId,
+        CancellationToken cancellationToken = default) =>
+        await TryClaimFireAsync(scheduleId, fireTimeUtc, assignmentId, hostId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
     /// Returns candidates for stale-claim recovery: InProgress runs with StartedAtUtc before cutoff, for assignments in the plane.
     /// Epic 36.
     /// </summary>
@@ -52,7 +92,7 @@ public interface IScheduleRepository
     /// (<c>Outcome = InProgress</c>). Returns null when no such row exists (including after
     /// <c>CompleteRunAsync</c>). Does not surface historical claim owners on completed runs. Epic 36.
     /// </summary>
-    ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken cancellationToken = default);
+    ValueTask<(string ClaimedByHostId, DateTimeOffset StartedAtUtc, string? ResourceContextId)?> GetInProgressRunClaimAsync(string assignmentId, CancellationToken cancellationToken = default);
 
     ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken cancellationToken = default);
     ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken cancellationToken = default);

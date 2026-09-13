@@ -25,4 +25,10 @@ public sealed record ModuleCatalogEntry(
     bool Installed,
     bool Enabled,
     bool EffectivelyActive,
-    IReadOnlyList<ModuleLifecycleBlocker> ValidationIssues);
+    IReadOnlyList<ModuleLifecycleBlocker> ValidationIssues,
+    /// <summary>
+    /// Persisted installation-state last-changed time (<c>ModuleInstallationStates.UpdatedAt</c>).
+    /// Null for modules that are discovered but never installed — there is no persisted
+    /// timestamp to report for those, and none is fabricated.
+    /// </summary>
+    DateTimeOffset? UpdatedAtUtc = null);

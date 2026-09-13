@@ -61,7 +61,7 @@ To run steps that use slot-bound resolution, the worker host must register:
 - **IStepHandlerRegistry** (with step handlers registered for each (moduleId, stepName))
 - **IWorkflowExecutor** (e.g. DefaultWorkflowExecutor)
 
-See WorkerHost Program.cs and WorkerStub for an example that runs one demo step (Sample.HelloWorld / DoWork) resolving the "Db" slot.
+See WorkerHost `Program.cs` (module-driven handlers, e.g. Sample.HelloWorld `DoWork`) for wiring that runs steps with slot resolution such as the `"Db"` slot.
 
 ## Related
 

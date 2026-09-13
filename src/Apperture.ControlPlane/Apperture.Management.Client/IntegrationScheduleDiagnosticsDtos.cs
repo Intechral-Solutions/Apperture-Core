@@ -26,8 +26,9 @@ public sealed record IntegrationScheduleDiagnosticsDto(
     DateTimeOffset? LastAuthorizedRunAt,
     IReadOnlyList<ExpectedFireDiagnosticDto> RecentExpectedFires,
     IReadOnlyList<AttentionIncidentDto> RecentAttentionIncidents,
-    IReadOnlyList<AttentionIncidentNotificationDto> RecentAttentionIncidentNotifications,
-    AttentionRoutingEffectiveDto AttentionRouting);
+    AttentionRoutingEffectiveDto AttentionRouting,
+    IReadOnlyList<PlatformNotificationInstanceDiagnosticDto> RecentPlatformNotificationInstances,
+    IReadOnlyList<PlatformNotificationOutboxDiagnosticDto> RecentPlatformNotificationOutbox);
 
 /// <summary>Epic 68: bounded incident history for schedule attention conditions.</summary>
 public sealed record AttentionIncidentDto(
@@ -43,35 +44,10 @@ public sealed record AttentionIncidentDto(
     DateTimeOffset? LastExpectedFireAtUtc,
     DateTimeOffset? AcknowledgedAtUtc,
     string? AcknowledgedBy,
-    string? AcknowledgementNote);
+    string? AcknowledgementNote,
+    string? ResourceContextId = null);
 
 public sealed record AcknowledgeAttentionIncidentRequest(string? Note);
-
-/// <summary>Epic 69: durable notification attempt or suppression for schedule attention incidents.</summary>
-public sealed record AttentionIncidentNotificationDto(
-    string Id,
-    string AttentionIncidentId,
-    string IntegrationId,
-    string ConditionKey,
-    string NotificationKind,
-    string Channel,
-    string Recipient,
-    string Status,
-    string? SuppressionReason,
-    DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? AttemptedAtUtc,
-    DateTimeOffset? SentAtUtc,
-    DateTimeOffset? FailedAtUtc,
-    string? FailureSummary,
-    string? ProviderMessageId,
-    string? SubjectSnapshot,
-    string? RecipientResolvedFrom,
-    bool WasEscalation,
-    bool EscalationThresholdApplied,
-    bool SuppressedDueToAcknowledgment,
-    string? OperationalTeamId,
-    string? OperationalTeamNameSnapshot);
-
 
 /// <summary>
 /// Epic 67: one expected fire instance with evaluation outcome.

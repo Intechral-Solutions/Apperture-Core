@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -25,6 +26,12 @@ public sealed class UserManagementService : IUserManagementService
     private readonly ILocalPasswordHasher _passwordHasher;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
+    private readonly IEntraIdentityAssociationService? _entraAssociation;
+    private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
+    private readonly IStrongAuthenticationGate? _strongAuthentication;
+    private readonly IEmergencyAccessService? _emergencyAccess;
+    private readonly IAccountInvitationService? _invitations;
+    private readonly IAccountActionTokenService? _actionTokens;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -36,8 +43,20 @@ public sealed class UserManagementService : IUserManagementService
         ILocalCredentialRepository localCredentialRepository,
         ILocalPasswordHasher passwordHasher,
         IAuditService audit,
-        IOptions<LocalAuthOptions> localOptions)
+        IOptions<LocalAuthOptions> localOptions,
+        IEntraIdentityAssociationService? entraAssociation = null,
+        IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
+        IStrongAuthenticationGate? strongAuthentication = null,
+        IEmergencyAccessService? emergencyAccess = null,
+        IAccountInvitationService? invitations = null,
+        IAccountActionTokenService? actionTokens = null)
     {
+        _entraAssociation = entraAssociation;
+        _entraOptions = entraOptions;
+        _strongAuthentication = strongAuthentication;
+        _emergencyAccess = emergencyAccess;
+        _invitations = invitations;
+        _actionTokens = actionTokens;
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _auth = auth;
@@ -61,7 +80,30 @@ public sealed class UserManagementService : IUserManagementService
     public async ValueTask<User?> GetUserByIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
         await RequireUserReadAsync(cancellationToken);
-        return await _userRepository.GetByIdAsync(userId, cancellationToken);
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
+            return null;
+        return user;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<EmergencyAccessPosture> GetEmergencyAccessPostureAsync(CancellationToken cancellationToken = default)
+    {
+        await RequireUserReadAsync(cancellationToken);
+        if (_emergencyAccess is null)
+        {
+            return new EmergencyAccessPosture(
+                IsHealthy: false,
+                FallbackSafeguardRequired: true,
+                DesignatedUserId: null,
+                DesignatedDisplayName: null,
+                DesignatedIsPlatformAdministrator: false,
+                LocalCredentialEnabled: false,
+                NativeMfaEnrolled: false,
+                UnusedRecoveryCodeCount: 0);
+        }
+
+        return await _emergencyAccess.GetPostureAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -125,14 +167,59 @@ public sealed class UserManagementService : IUserManagementService
         r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
 
     /// <inheritdoc />
-    public async ValueTask<UserId> CreateUserAsync(string displayName, IdentitySource source, string externalId, string? password = null, CancellationToken cancellationToken = default)
+    public async ValueTask<UserId> CreateUserAsync(
+        string displayName,
+        IdentitySource source,
+        string externalId,
+        string? password = null,
+        CancellationToken cancellationToken = default,
+        string? contactEmail = null,
+        bool sendSetupInvitation = false)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("user.create", actorId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(displayName))
+            throw new InvalidOperationException("Display name is required.");
         ValidateEntraExternalId(source, externalId);
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
+        if (string.IsNullOrWhiteSpace(linkExternalId))
+            throw new InvalidOperationException("A username is required.");
+
+        if (source == IdentitySource.Local)
+        {
+            if (sendSetupInvitation && _invitations is null)
+                throw new InvalidOperationException("Apperture setup invitations are not available.");
+            if (EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+            {
+                throw new EmergencyAccessException(
+                    EmergencyAccessErrorCodes.ReservedUsername,
+                    "That username is reserved for Emergency Access.");
+            }
+            if (sendSetupInvitation)
+            {
+                if (!string.IsNullOrEmpty(password))
+                    throw new InvalidOperationException("Do not supply a password when sending a setup invitation.");
+                if (!ContactEmailAddress.IsValid(contactEmail))
+                    throw new AccountSecurityException(AccountSecurityErrorCodes.InvalidEmail, "A contact email is required for the setup invitation.");
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(password))
+                    throw new InvalidOperationException("A password is required when creating a local user without a setup invitation.");
+                LocalPasswordPolicy.Require(
+                    password,
+                    LocalPasswordPolicy.ForLocalIdentity(linkExternalId, displayName, contactEmail));
+            }
+        }
+
+        if (source == IdentitySource.Entra)
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Microsoft identities are added from the directory or by linking, not by creating a user with an object id alone.");
+        }
 
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
@@ -155,7 +242,35 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         await AppendAuditAsync("user.created", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
+
+        if (sendSetupInvitation && source == IdentitySource.Local)
+            await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+
         return userId;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AccountInvitationResult> SendSetupInvitationAsync(
+        UserId userId,
+        string? contactEmail = null,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireUserManageAsync(cancellationToken);
+        return await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+    }
+
+    private async ValueTask<AccountInvitationResult> SendSetupInvitationCoreAsync(
+        UserId userId,
+        string? contactEmail,
+        CancellationToken cancellationToken)
+    {
+        if (_invitations is null)
+            throw new InvalidOperationException("Apperture setup invitations are not available.");
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+        var email = contactEmail ?? user.PendingEmailAddress ?? user.EmailAddress;
+        return await _invitations.SendSetupInvitationAsync(userId, email ?? "", cancellationToken);
     }
 
     /// <inheritdoc />
@@ -167,6 +282,72 @@ public sealed class UserManagementService : IUserManagementService
         var linkExternalId = source == IdentitySource.Local
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+            throw new IdentityLinkException(IdentityLinkErrorCodes.UserNotFound, $"User {userId.Value} not found.");
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
+        }
+
+        if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.ReservedUsername,
+                "That username is reserved for Emergency Access.");
+        }
+
+        if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
+            return;
+
+        if (source == IdentitySource.Entra && _entraAssociation is not null)
+        {
+            if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra))
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.EntraLinkAlreadyPresent,
+                    "This user already has a Microsoft identity linked. Remove the existing link first.");
+            }
+
+            var pendingLink = await _entraAssociation.BuildPendingAdminLinkAsync(linkExternalId, cancellationToken);
+            if (string.IsNullOrEmpty(pendingLink.TenantId))
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.InvalidEntraExternalId,
+                    "Microsoft identities can only be linked when a directory tenant is configured.");
+            }
+
+            var existingEntra = await _userRepository.GetByIdentityLinkAsync(
+                ProviderIdentityKey.Entra(pendingLink.TenantId, pendingLink.ExternalId),
+                cancellationToken);
+            if (existingEntra is not null)
+            {
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.ExternalIdInUse,
+                    "An identity link with this source and external id is already attached to another user.");
+            }
+
+            await _userRepository.AddIdentityLinkAsync(userId, pendingLink, cancellationToken);
+            await AppendAuditAsync(
+                EntraLinkAuditActionNames.Pending,
+                actorId,
+                userId.Value,
+                $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId}",
+                cancellationToken);
+            return;
+        }
+
+        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
+        if (existing is not null)
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.ExternalIdInUse,
+                "An identity link with this source and external id is already attached to another user.");
+        }
 
         await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
         await AppendAuditAsync("identity_link.added", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
@@ -181,6 +362,32 @@ public sealed class UserManagementService : IUserManagementService
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
 
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove", cancellationToken);
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
+        }
+        if (user is not null && source == IdentitySource.Local)
+        {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove_local", cancellationToken);
+            var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
+            var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
+            var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+            var removedLink = user.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == linkExternalId);
+            if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
+            {
+                await AppendAuditAsync("auth_admin.blocked.last_admin_link_removed", actorId, userId.Value, $"userId={userId.Value} source={source}", cancellationToken);
+                throw new IdentityLinkException(
+                    IdentityLinkErrorCodes.LastViableSignInMethod,
+                    "Cannot remove the last sign-in method for the last platform administrator. A pending Microsoft identity is not a sign-in path until it has been used successfully.");
+            }
+        }
+
         await _userRepository.RemoveIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
         await AppendAuditAsync("identity_link.removed", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
     }
@@ -193,6 +400,12 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+        }
         var role = await _roleRepository.GetAsync(roleId, cancellationToken);
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
@@ -209,12 +422,22 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove", cancellationToken);
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+        }
         var role = await _roleRepository.GetAsync(roleId, cancellationToken);
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
         if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
         {
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove_platform_administrator", cancellationToken);
             var count = await _roleRepository.CountUserAssignmentsAsync(roleId, cancellationToken);
             if (count <= 1)
             {
@@ -235,14 +458,21 @@ public sealed class UserManagementService : IUserManagementService
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
             throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
+        }
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
             throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
-        if (_localOptions.MinPasswordLength > 0 && (newPassword?.Length ?? 0) < _localOptions.MinPasswordLength)
-            throw new InvalidOperationException($"Password must be at least {_localOptions.MinPasswordLength} characters.");
+        LocalPasswordPolicy.Require(newPassword, user);
 
         var (hash, salt) = _passwordHasher.HashPassword(newPassword!);
         await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);
+        if (_actionTokens is not null)
+            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
         await AppendAuditAsync("credential.password_set", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
     }
 
@@ -261,13 +491,48 @@ public sealed class UserManagementService : IUserManagementService
         if (cred is null)
             throw new InvalidOperationException("User has no local credential row; set a password first.");
 
+        if (!disabled)
+        {
+            if (_strongAuthentication is null)
+            {
+                throw new StrongAuthenticationException(
+                    StrongAuthenticationErrorCodes.NotConfigured,
+                    "Strong authentication is not available. Local sign-in cannot be re-enabled.");
+            }
+
+            try
+            {
+                await _strongAuthentication.RequireRecentStrongAuthenticationAsync(cancellationToken);
+            }
+            catch (StrongAuthenticationException ex)
+            {
+                await AppendAuditAsync(
+                    StrongAuthenticationAuditActionNames.AssuranceInsufficient,
+                    actorId,
+                    userId.Value,
+                    $"userId={userId.Value} code={ex.Code}",
+                    cancellationToken);
+                throw;
+            }
+        }
+
         if (disabled)
         {
+            if (EmergencyAccessIdentity.IsSystemManaged(user))
+            {
+                if (_emergencyAccess is not null)
+                    await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
+                throw new EmergencyAccessException(
+                    EmergencyAccessErrorCodes.UnsafeOperation,
+                    "Recovery Access is system-managed. The local credential cannot be disabled through ordinary user administration.");
+            }
+
+            if (_emergencyAccess is not null)
+                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
             var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
             var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
             var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
-            var onlyLocalLink = user.IdentityLinks.Count == 1 && user.IdentityLinks[0].Source == IdentitySource.Local;
-            if (adminCount == 1 && userHasPlatformAdmin && onlyLocalLink)
+            if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
             {
                 await AppendAuditAsync("auth_admin.blocked.last_admin_credential_disabled", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
                 throw new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path.");
@@ -275,7 +540,9 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         await _localCredentialRepository.SetDisabledAsync(userId, disabled, cancellationToken);
-        var action = disabled ? "credential.disabled" : "credential.enabled";
+        var action = disabled
+            ? "credential.disabled"
+            : StrongAuthenticationAuditActionNames.LocalReenabledStrongAdmin;
         await AppendAuditAsync(action, actorId, userId.Value, $"userId={userId.Value} disabled={disabled}", cancellationToken);
     }
 
@@ -348,14 +615,33 @@ public sealed class UserManagementService : IUserManagementService
         return new ActorId(actor.Id.Value);
     }
 
+    /// <summary>
+    /// An Entra link is a real alternative only when it has been proven by a successful authentication
+    /// (<c>LastAuthenticatedAt != null</c>) and Entra is currently usable. A pending administrator
+    /// association is not a sign-in path and must not satisfy the last-administrator guard.
+    /// </summary>
+    private bool HasViableAlternateSignIn(User user, IdentityLink? excludedLink)
+    {
+        var entraUsable = EntraConfigurationState.IsUsable(_entraOptions?.CurrentValue);
+        return user.IdentityLinks.Any(l =>
+            l.Source == IdentitySource.Entra
+            && l.IsProven
+            && entraUsable
+            && (excludedLink is null || !ReferenceEquals(l, excludedLink)));
+    }
+
     private static void ValidateEntraExternalId(IdentitySource source, string externalId)
     {
         if (source != IdentitySource.Entra)
             return;
         if (string.IsNullOrWhiteSpace(externalId))
-            throw new InvalidOperationException("Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Entra external id must not be null or empty. Use the stable subject (oid or sub) from the token.");
         if (externalId.Contains('@'))
-            throw new InvalidOperationException("Entra external id must be the stable subject (oid or sub), not an email or UPN.");
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.InvalidEntraExternalId,
+                "Entra external id must be the stable subject (oid or sub), not an email or UPN.");
     }
 
     /// <summary>

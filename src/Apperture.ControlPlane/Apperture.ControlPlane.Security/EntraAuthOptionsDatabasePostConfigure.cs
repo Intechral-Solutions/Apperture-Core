@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Services;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -36,10 +37,30 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
 
             options.Authority = active.Authority;
             options.ClientId = active.ClientId;
+            if (!string.IsNullOrWhiteSpace(active.AzureTenantId))
+                options.AzureTenantId = active.AzureTenantId;
+            options.AuthenticationContextId = string.IsNullOrWhiteSpace(active.AuthenticationContextId)
+                ? null
+                : active.AuthenticationContextId.Trim();
             if (!string.IsNullOrWhiteSpace(active.CallbackPath))
                 options.CallbackPath = active.CallbackPath!;
 
-            // v1: client secret always comes from deployment when UsesDeploymentSecret is true.
+            var resolver = scope.ServiceProvider.GetService<ISecretResolver>();
+            var resolved = EntraClientSecretAccess
+                .TryResolveAsync(active, resolver, options.ClientSecret, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (!string.IsNullOrWhiteSpace(resolved))
+                options.ClientSecret = resolved;
+
+            if (string.IsNullOrWhiteSpace(options.ClientSecret))
+            {
+                _logger.LogWarning(
+                    "Active Entra registration '{RegistrationId}' has no client secret in the secret store or Entra:ClientSecret. Entra sign-in stays disabled until a secret is recorded.",
+                    active.Id);
+                return;
+            }
+
             options.Enabled = true;
         }
         catch (Exception ex)

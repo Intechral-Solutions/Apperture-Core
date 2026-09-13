@@ -1,0 +1,285 @@
+@page "/business-data/customers"
+@layout ConfigLayout
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="@DemoCustomerUiHelpers.PageTitle"
+                Eyebrow="Business Data"
+                Subtitle="@DemoCustomerUiHelpers.PageSubtitle">
+        <Toolbar>
+            <StatusPill Label="@DemoCustomerUiHelpers.DemoBadge" Semantic="@ManagementStatusSemantic.Neutral" />
+            <a href="@ShellSectionRoutes.BusinessDataHome" class="ui-toolbar-btn text-sm">← Collections</a>
+            <button type="button"
+                    class="ui-toolbar-btn text-sm"
+                    disabled="@(_loading || _busy)"
+                    @onclick="RefreshAsync">
+                Refresh
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    <PageMessage Kind="PageMessageKind.Info" Message="@DemoCustomerUiHelpers.DemoScopeBanner" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="@DemoCustomerUiHelpers.ForbiddenMessage" />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="RefreshAsync">Try again</button>
+        </ErrorState>
+    }
+    else if (_loading && _items is null)
+    {
+        <LoadingState Message="Loading demo customers…" />
+    }
+    else
+    {
+        <ManagementSection Title="Filters" Layer="@ManagementSection.UiLayer.Summary">
+            <div class="flex flex-wrap items-end gap-3 text-sm">
+                <label class="flex min-w-[12rem] flex-1 flex-col gap-1">
+                    Search
+                    <input class="ui-input"
+                           placeholder="Name, key, or email"
+                           @bind="_query"
+                           @bind:event="oninput"
+                           @onkeydown="OnSearchKeyDown" />
+                </label>
+                <label class="flex flex-col gap-1">
+                    Source
+                    <select class="ui-input ui-input--narrow" @bind="_sourceKind">
+                        @foreach (var opt in DemoCustomerUiHelpers.SourceKindOptions)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="flex items-center gap-2 pb-2 text-sm">
+                    <input type="checkbox" @bind="_conflictsOnly" />
+                    Conflicts only
+                </label>
+                <button type="button"
+                        class="ui-toolbar-btn"
+                        disabled="@_busy"
+                        @onclick="ApplyFiltersAsync">
+                    Apply
+                </button>
+                @if (DemoCustomerUiHelpers.FiltersActive(_appliedQuery, _appliedSourceKind, _appliedConflictsOnly))
+                {
+                    <button type="button"
+                            class="ui-toolbar-btn"
+                            disabled="@_busy"
+                            @onclick="ClearFiltersAsync">
+                        Clear
+                    </button>
+                }
+            </div>
+        </ManagementSection>
+
+        @if (_items is null)
+        {
+            <LoadingState Message="Loading demo customers…" />
+        }
+        else if (_items.Count == 0)
+        {
+            var empty = DemoCustomerUiHelpers.ResolveEmptyCopy(_appliedQuery, _appliedSourceKind, _appliedConflictsOnly);
+            <EmptyState Title="@empty.Title" Message="@empty.Message">
+                @if (DemoCustomerUiHelpers.FiltersActive(_appliedQuery, _appliedSourceKind, _appliedConflictsOnly))
+                {
+                    <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
+                }
+            </EmptyState>
+        }
+        else
+        {
+            <ManagementSection Title="Customers" Layer="@ManagementSection.UiLayer.Summary">
+                <div class="mb-3 flex flex-wrap items-center gap-2">
+                    <StatusPill Label="@($"{_totalCount} customer(s)")" Semantic="ManagementStatusSemantic.Neutral" />
+                    @if (_items.Any(i => i.HasConflict))
+                    {
+                        <StatusPill Label="@($"{_items.Count(i => i.HasConflict)} with conflicts in view")"
+                                    Semantic="ManagementStatusSemantic.Warning" />
+                    }
+                </div>
+
+                <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-body">
+                        <thead>
+                            <tr>
+                                <th>Customer</th>
+                                <th>Business key</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Sources</th>
+                                <th>Conflicts</th>
+                                <th>Last observed</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _items)
+                            {
+                                <tr class="align-top">
+                                    <td class="font-medium text-heading">@DemoCustomerUiHelpers.CustomerDisplayName(row)</td>
+                                    <td class="font-mono text-xs text-body">@row.BusinessKey</td>
+                                    <td class="break-all text-body">@(row.PrimaryEmail ?? "—")</td>
+                                    <td class="text-body">@(row.PrimaryStatus ?? "—")</td>
+                                    <td class="text-body">@DemoCustomerUiHelpers.FormatSourceCount(row.SourceCount)</td>
+                                    <td>
+                                        <StatusPill Label="@(row.HasConflict ? "Conflict" : "OK")"
+                                                    Semantic="@DemoCustomerUiHelpers.ConflictSemantic(row.HasConflict)" />
+                                        @if (row.HasConflict && !string.IsNullOrWhiteSpace(row.PrimaryConflictSummary))
+                                        {
+                                            <div class="mt-1 text-xs text-muted">@row.PrimaryConflictSummary</div>
+                                        }
+                                    </td>
+                                    <td class="text-body">
+                                        <TimestampDisplay Value="@row.LastObservedAtUtc" ShowUtcDetail="true" />
+                                    </td>
+                                    <td>
+                                        <a class="text-link text-sm"
+                                           href="@DemoCustomerUiRoutes.Detail(row.BusinessKey)">
+                                            Open
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (_items.Count < _totalCount)
+                {
+                    <div class="mt-3">
+                        <button type="button"
+                                class="ui-toolbar-btn"
+                                disabled="@_busy"
+                                @onclick="LoadMoreAsync">
+                            Load more
+                        </button>
+                        <span class="ml-2 text-xs text-muted">Showing @_items.Count of @_totalCount</span>
+                    </div>
+                }
+            </ManagementSection>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _loadError;
+    private string _query = "";
+    private string _sourceKind = DemoCustomerUiHelpers.SourceKindAll;
+    private bool _conflictsOnly;
+    private string? _appliedQuery;
+    private string? _appliedSourceKind;
+    private bool _appliedConflictsOnly;
+    private List<DemoCustomerRecordDto>? _items;
+    private int _totalCount;
+    private int _skip;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await LoadPageAsync(reset: true);
+    }
+
+    private async Task RefreshAsync() => await LoadPageAsync(reset: true);
+
+    private async Task ApplyFiltersAsync() => await LoadPageAsync(reset: true);
+
+    private async Task ClearFiltersAsync()
+    {
+        _query = "";
+        _sourceKind = DemoCustomerUiHelpers.SourceKindAll;
+        _conflictsOnly = false;
+        await LoadPageAsync(reset: true);
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_items is null || _items.Count >= _totalCount)
+            return;
+        _skip = _items.Count;
+        await LoadPageAsync(reset: false);
+    }
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ApplyFiltersAsync();
+    }
+
+    private async Task LoadPageAsync(bool reset)
+    {
+        _busy = true;
+        _loadError = null;
+        if (reset)
+        {
+            _loading = true;
+            _skip = 0;
+            _appliedQuery = string.IsNullOrWhiteSpace(_query) ? null : _query.Trim();
+            _appliedSourceKind = string.IsNullOrWhiteSpace(_sourceKind) ? null : _sourceKind;
+            _appliedConflictsOnly = _conflictsOnly;
+        }
+
+        try
+        {
+            var filter = DemoCustomerUiHelpers.BuildListFilter(
+                _appliedQuery,
+                _appliedSourceKind,
+                _appliedConflictsOnly,
+                _skip);
+
+            var page = await Client.GetDemoCustomerRecordsAsync(filter);
+            if (page is null)
+            {
+                _canView = false;
+                _items = null;
+                return;
+            }
+
+            _totalCount = page.TotalCount;
+            if (reset || _items is null)
+                _items = page.Items.ToList();
+            else
+                _items.AddRange(page.Items);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = string.IsNullOrWhiteSpace(ex.Message)
+                ? DemoCustomerUiHelpers.LoadErrorMessage
+                : ex.Message;
+            if (reset)
+                _items = null;
+        }
+        catch (Exception)
+        {
+            _loadError = DemoCustomerUiHelpers.LoadErrorMessage;
+            if (reset)
+                _items = null;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+        }
+    }
+}

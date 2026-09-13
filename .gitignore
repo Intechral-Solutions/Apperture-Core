@@ -58,6 +58,7 @@ yarn-error.log*
 
 # Local dev (spikes, discarded designs, meeting notes)
 archives/
+backups/
 
 # Temp and OS
 *.tmp
@@ -91,3 +92,18 @@ secrets.json
 *.coveragexml
 coverage/
 .nyc_output/
+poc/
+
+# Local script runtime state (Manage.ps1 defaults, dev PIDs)
+scripts/.runtime/
+
+s1-test.log
+
+# Ad-hoc local debug/session logs
+debug-*.log
+*.debug.log
+
+.vs/
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, review packages)
+.superpowers/

@@ -8,7 +8,12 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Apperture.ServiceDefaults\Apperture.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Client\Apperture.Management.Ui.Client.csproj" />
+    <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\..\deploy\config\ui\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

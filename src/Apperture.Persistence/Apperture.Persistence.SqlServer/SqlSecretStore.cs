@@ -83,28 +83,35 @@ public sealed class SqlSecretStore : ISecretStore
 
     public async ValueTask ActivateVersionAsync(SecretId secretId, string version, CancellationToken cancellationToken = default)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        try
+        // EF Core SQL retry execution strategy does not allow user-initiated transactions
+        // unless the whole unit of work is wrapped inside the execution strategy.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Secret {secretId} not found.");
-            var versionEntity = await _db.SecretVersions.FindAsync([secretId.Value, version], cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
-            if (versionEntity.State != (int)SecretState.Pending)
-                throw new InvalidOperationException($"Version {version} is not in Pending state.");
-            versionEntity.State = (int)SecretState.Active;
-            descriptor.ActiveVersion = version;
-            descriptor.State = (int)SecretState.Active;
-            descriptor.UpdatedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Secret {secretId} not found.");
+                var versionEntity = await _db.SecretVersions.FindAsync([secretId.Value, version], cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
+                if (versionEntity.State != (int)SecretState.Pending)
+                    throw new InvalidOperationException($"Version {version} is not in Pending state.");
+                versionEntity.State = (int)SecretState.Active;
+                descriptor.ActiveVersion = version;
+                descriptor.State = (int)SecretState.Active;
+                descriptor.UpdatedAt = DateTimeOffset.UtcNow;
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+
             await AppendAuditAsync(secretId.Value, version, "ActivateVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw;
-        }
+        }).ConfigureAwait(false);
     }
 
     public async ValueTask DisableAsync(SecretId secretId, CancellationToken cancellationToken = default)

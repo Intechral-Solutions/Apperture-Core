@@ -1,0 +1,254 @@
+@page "/config/auth/entra/{RegistrationId}/users"
+@layout ConfigLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Microsoft.JSInterop
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IJSRuntime JS
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Authentication — Entra directory"
+                Title="Entra directory users"
+                Subtitle="Browse users from Microsoft Graph. Import selected rows as managed contacts (no automatic login users).">
+        <Toolbar>
+            <a href="/config/auth/tenants" class="ui-toolbar-btn text-sm">← Entra tenant setup</a>
+            <a href="/config/contacts" class="ui-toolbar-btn text-sm">Managed contacts</a>
+            @if (_canImport)
+            {
+                <button type="button"
+                        class="ui-toolbar-btn text-sm"
+                        disabled="@(_busy || _selected.Count == 0)"
+                        @onclick="ImportSelectedAsync">
+                    Import selected
+                </button>
+            }
+            <button type="button"
+                    class="ui-toolbar-btn text-sm"
+                    disabled="@_busy"
+                    @onclick="SearchAsync">
+                Search
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission." />
+    }
+    else if (_loading)
+    {
+        <LoadingState />
+    }
+    else if (_result is null)
+    {
+        <ErrorState Message="@(_loadError ?? "Could not load directory users.")" />
+    }
+    else
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Import creates or updates managed contacts by Entra object id using server-side Graph refresh. To link an Entra sign-in to a platform user, copy an object id below and paste it on Config → Governance → Users → user detail → Add Entra link." />
+
+        <ManagementSection Title="Search" Layer="@ManagementSection.UiLayer.Summary">
+            <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
+                Search (display name, mail, UPN)
+                <input class="ui-input"
+                       @bind="_search"
+                       @bind:event="oninput" />
+            </label>
+        </ManagementSection>
+
+        @if (!string.IsNullOrEmpty(_searchError))
+        {
+            <PageMessage Kind="PageMessageKind.Error" Message="@_searchError" />
+        }
+
+        @if (!_result.Success)
+        {
+            <PageMessage Kind="PageMessageKind.Error" Message="@_result.Summary" />
+            @if (!string.IsNullOrEmpty(_result.TechnicalDetail))
+            {
+                <pre class="ui-code-block text-xs whitespace-pre-wrap max-w-3xl overflow-x-auto">@_result.TechnicalDetail</pre>
+            }
+        }
+
+        @if (!string.IsNullOrEmpty(_importMessage))
+        {
+            <PageMessage Kind="PageMessageKind.Info" Message="@_importMessage" />
+        }
+
+        @if (!string.IsNullOrEmpty(_copyMessage))
+        {
+            <PageMessage Kind="PageMessageKind.Info" Message="@_copyMessage" />
+        }
+
+        <div class="ui-data-table">
+            <table class="ui-data-table__table min-w-full text-left text-xs">
+                <thead>
+                    <tr>
+                        @if (_canImport)
+                        {
+                            <th class="w-10"></th>
+                        }
+                        <th>Display name</th>
+                        <th>UPN</th>
+                        <th>Mail</th>
+                        <th>Object id</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in _result.Items)
+                    {
+                        <tr>
+                            @if (_canImport)
+                            {
+                                <td>
+                                    <input type="checkbox" checked="@_selected.Contains(u.ObjectId)" @onclick="() => Toggle(u.ObjectId)" />
+                                </td>
+                            }
+                            <td class="font-medium text-heading">@u.DisplayName</td>
+                            <td class="break-all text-muted">@(u.UserPrincipalName ?? "—")</td>
+                            <td class="break-all text-muted">@(u.Mail ?? "—")</td>
+                            <td class="font-mono break-all text-[11px] text-muted">
+                                <span>@u.ObjectId</span>
+                                <button type="button"
+                                        class="ui-toolbar-btn ms-2 px-1.5 py-0.5 text-[10px]"
+                                        title="Copy object id"
+                                        @onclick="() => CopyOidAsync(u.ObjectId)">
+                                    Copy
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string RegistrationId { get; set; } = "";
+
+    private bool _canView;
+    private bool _canImport;
+    private bool _loading = true;
+    private bool _busy;
+    private EntraDirectoryUsersApiDto? _result;
+    private string? _loadError;
+    private string? _searchError;
+    private string _search = "";
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private string? _importMessage;
+    private string? _copyMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewAuthConfiguration || caps.CanManageEntraTenants;
+        _canImport = caps.CanImportManagedContacts;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        await SearchAsync();
+        _loading = false;
+    }
+
+    private void Toggle(string objectId)
+    {
+        if (!_selected.Add(objectId))
+            _selected.Remove(objectId);
+    }
+
+    private async Task SearchAsync()
+    {
+        _busy = true;
+        _searchError = null;
+        if (_loading)
+            _loadError = null;
+        try
+        {
+            _result = await Client.GetEntraDirectoryUsersAsync(
+                RegistrationId,
+                string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+                50);
+            _selected.Clear();
+            _importMessage = null;
+        }
+        catch (HttpRequestException ex)
+        {
+            if (_loading || _result is null)
+            {
+                _loadError = ex.Message;
+                _result = null;
+            }
+            else
+            {
+                _searchError = ex.Message;
+            }
+        }
+        catch (Exception)
+        {
+            const string message = "Could not load directory users.";
+            if (_loading || _result is null)
+            {
+                _loadError = message;
+                _result = null;
+            }
+            else
+            {
+                _searchError = message;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ImportSelectedAsync()
+    {
+        if (!_canImport || _selected.Count == 0)
+            return;
+        _busy = true;
+        _importMessage = null;
+        try
+        {
+            var resp = await Client.ImportEntraUsersToManagedContactsAsync(
+                new ImportEntraUsersRequest(RegistrationId, _selected.ToList()));
+            if (resp is null)
+            {
+                _importMessage = "Import failed (permission or network).";
+                return;
+            }
+            var ok = resp.Items.Count(x => x.Success);
+            var fail = resp.Items.Count - ok;
+            _importMessage = $"Imported {ok} contact(s); {fail} row(s) skipped or failed. See managed contacts for status.";
+            foreach (var line in resp.Items.Where(x => !x.Success && !string.IsNullOrEmpty(x.ErrorMessage)).Take(5))
+            {
+                _importMessage += $" {line.EntraObjectId}: {line.ErrorMessage}";
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyOidAsync(string objectId)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", objectId);
+            _copyMessage = "Object id copied. Open a platform user under Config → Governance → Users to add an Entra link.";
+        }
+        catch
+        {
+            _copyMessage = "Could not copy automatically. Select and copy the object id manually.";
+        }
+    }
+}

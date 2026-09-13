@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Apperture.Core.Domain.Scheduling;
 using Cronos;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.Core.Application.Scheduling;
 
@@ -14,17 +15,10 @@ public static class ScheduleExpectedFireCollector
         ScheduleDefinition schedule,
         DateTime fromUtc,
         DateTime toUtc,
-        ISet<DateTime> sink)
+        ISet<DateTime> sink,
+        ILogger? logger = null)
     {
-        TimeZoneInfo tz;
-        try
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZone);
-        }
-        catch
-        {
-            tz = TimeZoneInfo.Utc;
-        }
+        var tz = ScheduleTimeZoneResolver.ResolvePersistedOrUtc(schedule.TimeZone, logger);
 
         CronExpression cron;
         try
@@ -50,4 +44,3 @@ public static class ScheduleExpectedFireCollector
             sink.Add(occ);
     }
 }
-

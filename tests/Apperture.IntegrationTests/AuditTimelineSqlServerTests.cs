@@ -16,7 +16,7 @@ namespace Apperture.IntegrationTests;
 /// Requires SQL Server (e.g. Docker on port 1433).
 /// Uses a collection to run sequentially and avoid shared-database interference.
 /// </summary>
-[Collection("SqlServerAudit")]
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class AuditTimelineSqlServerTests
 {
     [Fact]
@@ -26,7 +26,7 @@ public sealed class AuditTimelineSqlServerTests
         if (connectionString is null)
         {
             throw new InvalidOperationException(
-                "SQL Server not configured. Set MSSQL_SA_PASSWORD (e.g. in repo-root .env) and ensure SQL Server is running on localhost:1433.");
+                SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
@@ -41,7 +41,7 @@ public sealed class AuditTimelineSqlServerTests
         {
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
-                throw new InvalidOperationException("SQL Server not reachable. Is the server running and is MSSQL_SA_PASSWORD correct?");
+                throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
             await db.Database.MigrateAsync();
         }
 
@@ -76,7 +76,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -122,7 +122,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -167,7 +167,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -218,7 +218,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -261,7 +261,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -302,7 +302,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -343,7 +343,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -388,7 +388,7 @@ public sealed class AuditTimelineSqlServerTests
     {
         var connectionString = SqlServerTestConfiguration.GetConnectionString();
         if (connectionString is null)
-            throw new InvalidOperationException("SQL Server not configured. Set MSSQL_SA_PASSWORD.");
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 

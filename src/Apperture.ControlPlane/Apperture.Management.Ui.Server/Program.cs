@@ -1,10 +1,14 @@
 using Apperture.Management.Ui.Client.Services;
+using Apperture.Management.Ui.Client.Services;
 using Apperture.Management.Ui.Shared.Options;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
 builder.Services.AddRazorPages();
 
 // Register client services required for prerendering (NavRail, ControlPanel, etc.)
@@ -13,12 +17,29 @@ builder.Services.Configure<ControlPanelMenuOptions>(
 builder.Services.Configure<ShellUiOptions>(
     builder.Configuration.GetSection(ShellUiOptions.SectionName));
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:9000/api";
+var uiBaseAddress = builder.Configuration["ASPNETCORE_URLS"]?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()
+    ?? "http://localhost:9001";
+var apiBaseUrl = ManagementUiDevApiRouting.ResolveApiBaseUrl(
+    builder.Configuration["ApiBaseUrl"],
+    uiBaseAddress);
 if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
     apiBaseUrl += "/";
-var apiUri = new Uri(apiBaseUrl);
+if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri))
+{
+    var uiBase = Uri.TryCreate(uiBaseAddress, UriKind.Absolute, out var parsedUi)
+        ? parsedUi
+        : new Uri("http://localhost:9001");
+    apiUri = new Uri(uiBase, apiBaseUrl);
+}
 
-builder.Services.AddScoped(_ => new HttpClient { BaseAddress = apiUri });
+builder.Services.AddScoped<IncludeCredentialsHandler>();
+
+builder.Services.AddScoped(sp =>
+{
+    var handler = sp.GetRequiredService<IncludeCredentialsHandler>();
+    handler.InnerHandler = new HttpClientHandler();
+    return new HttpClient(handler) { BaseAddress = apiUri };
+});
 builder.Services.AddScoped<IManagementClient>(sp => new ManagementClient(sp.GetRequiredService<HttpClient>()));
 
 builder.Services.AddScoped<DomainMenuService>(sp =>
@@ -34,6 +55,35 @@ builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesSer
 builder.Services.AddAppertureShellServices();
 
 var app = builder.Build();
+
+// #region agent log
+try
+{
+    var hostPath = Path.Combine(app.Environment.ContentRootPath, "Pages", "_Host.cshtml");
+    var hostText = File.Exists(hostPath) ? File.ReadAllText(hostPath) : "";
+    var payload = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        sessionId = "4bd3d8",
+        hypothesisId = "H1",
+        location = "Program.cs:startup",
+        message = "ui-server-start-host-file",
+        data = new
+        {
+            hostPath,
+            hasWebAssemblyPrerenderedAttr = hostText.Contains("render-mode=\"WebAssemblyPrerendered\"", StringComparison.Ordinal),
+            hasComponentTag = hostText.Contains("<component ", StringComparison.Ordinal),
+            hasWebAssemblyAttr = hostText.Contains("render-mode=\"WebAssembly\"", StringComparison.Ordinal),
+            singleRootClientMount = hostText.Contains("RootComponents.Add", StringComparison.Ordinal)
+                || hostText.Contains("do not emit <component", StringComparison.OrdinalIgnoreCase),
+            hostHead = hostText.Length > 280 ? hostText[..280] : hostText
+        },
+        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+    });
+    await File.AppendAllTextAsync(@"f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log", payload + Environment.NewLine);
+}
+catch { /* debug ingest best-effort */ }
+// #endregion
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
@@ -59,6 +109,7 @@ else
         await next();
     });
 }
+var isDevelopment = app.Environment.IsDevelopment();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -69,9 +120,18 @@ app.UseStaticFiles(new StaticFileOptions
         // a now-missing hashed asset => 404 => runtime fails to start.
         if (ctx.Context.Request.Path.StartsWithSegments("/_framework", StringComparison.OrdinalIgnoreCase))
             ctx.Context.Response.Headers["Cache-Control"] = "no-store, max-age=0";
+
+        // Development only: the Tailwind watcher (watch-ui) rewrites css/app.css in
+        // place, and stylesheet URLs are unversioned, so a cached copy would survive
+        // a normal refresh. Production caching is unchanged.
+        if (isDevelopment && ctx.Context.Request.Path.StartsWithSegments("/css", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers["Cache-Control"] = "no-store, max-age=0";
     }
 });
 app.UseRouting();
 app.MapRazorPages();
 app.MapFallbackToPage("/_Host");
+
+app.MapDefaultEndpoints();
+
 app.Run();

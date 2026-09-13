@@ -1,0 +1,48 @@
+@page "/config/developer"
+@layout ConfigLayout
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Developer & internal tasks"
+                Eyebrow="Config"
+                Subtitle="Stabilization utilities, deferred features, and diagnostics. Not part of the primary operator workflow." />
+
+    <PageMessage Kind="PageMessageKind.Info"
+                 Message="These pages are useful during platform development. Day-to-day operations use Control Center, Integrations, Business Data, and Runs." />
+
+    <ManagementSection Title="Deferred dashboard management" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Manage dashboards"
+                                   Description="Deferred — customize dashboard pages and layouts."
+                                   Href="@DeveloperTaskRoutes.ManageDashboards" />
+            <ManagementSummaryCard Title="Add dashboard page"
+                                   Description="Deferred — add a new dashboard page."
+                                   Href="@DeveloperTaskRoutes.AddDashboardPage" />
+            <ManagementSummaryCard Title="Delete dashboard page"
+                                   Description="Deferred — remove a dashboard page."
+                                   Href="@DeveloperTaskRoutes.DeleteDashboardPage" />
+            <ManagementSummaryCard Title="Edit dashboard layout"
+                                   Description="Deferred — rearrange dashboard widgets."
+                                   Href="@DeveloperTaskRoutes.EditDashboardLayout" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="Diagnostics & demos" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Worker runtime (Control Center)"
+                                   Description="Observe WorkerHost heartbeat and scheduler ops. Process start/stop/restart is external (Aspire/Manage.ps1)."
+                                   Href="@DeveloperTaskRoutes.WorkerRuntimeControlCenter" />
+            <ManagementSummaryCard Title="Worker lifecycle (quarantined)"
+                                   Description="Direct Management WorkerHost start/stop is not supported in v1. runtime-worker/start returns 410. Use Aspire or Manage.ps1."
+                                   Href="@DeveloperTaskRoutes.WorkerHostingGuidanceDoc" />
+            <ManagementSummaryCard Title="Notification diagnostics"
+                                   Description="Delivery health, SMTP test, and platform pipeline verification (read-only unless you run an admin test)."
+                                   Href="@DeveloperTaskRoutes.NotificationDiagnostics" />
+            <ManagementSummaryCard Title="Nested navigation demo"
+                                   Description="Internal shell navigation depth demo."
+                                   Href="@DeveloperTaskRoutes.NestedNavDemo" />
+            <ManagementSummaryCard Title="Account preferences"
+                                   Description="Personal appearance, timezone, and clock settings for the signed-in operator."
+                                   Href="@DeveloperTaskRoutes.Preferences" />
+        </div>
+    </ManagementSection>
+</div>

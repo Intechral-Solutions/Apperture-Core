@@ -7,6 +7,7 @@ public sealed class OperationalTeamMemberEntity
     public string MemberKind { get; set; } = "";
     public string? PrincipalUserId { get; set; }
     public string? EmailAddress { get; set; }
+    public string? ManagedContactId { get; set; }
     public string? DisplayName { get; set; }
     public bool IsEnabled { get; set; } = true;
     public DateTimeOffset CreatedAtUtc { get; set; }

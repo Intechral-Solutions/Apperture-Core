@@ -16,6 +16,7 @@ namespace Apperture.Management.Api.Controllers;
 [Authorize]
 public sealed class WorkflowsController : ControllerBase
 {
+    private const string DirectStartDeprecationHeader = "299 - \"Direct workflow starts are deprecated; use integration procedure launch APIs where available.\"";
     private readonly IWorkflowStartAuthorizationService _workflowStartAuth;
     private readonly IWorkflowStartDispatchService _dispatch;
     private readonly IAuditService? _audit;
@@ -36,6 +37,8 @@ public sealed class WorkflowsController : ControllerBase
     [HttpPost("{workflowId}/start")]
     public async Task<ActionResult> Start([FromRoute] string workflowId, [FromBody] StartWorkflowRequestBody? body, CancellationToken cancellationToken)
     {
+        TryAppendWarningHeader(DirectStartDeprecationHeader);
+
         try
         {
             await _workflowStartAuth.EnsureCanStartWorkflowAsync(new WorkflowDefinitionId(workflowId), cancellationToken);
@@ -47,6 +50,12 @@ public sealed class WorkflowsController : ControllerBase
 
         var parameters = body?.Parameters;
         OrchestrationSafeValidator.ValidateParameters(parameters);
+        if (string.IsNullOrWhiteSpace(body?.IntegrationId))
+        {
+            return BadRequest(new { error = "IntegrationId is required. Manual workflow execution must target an integration." });
+        }
+
+        var integrationId = body.IntegrationId;
 
         var request = new StartWorkflowRequest(
             new WorkflowDefinitionId(workflowId),
@@ -54,7 +63,7 @@ public sealed class WorkflowsController : ControllerBase
             body?.IdempotencyKey,
             body?.CorrelationId,
             RetryOfRunId: null,
-            IntegrationId: body?.IntegrationId,
+            IntegrationId: integrationId,
             ProcedureId: body?.ProcedureId,
             ExecutionOrigin: RunExecutionOriginNames.Manual);
 
@@ -84,6 +93,13 @@ public sealed class WorkflowsController : ControllerBase
             workflowDefinitionId = dispatchResult.WorkflowDefinitionId.Value,
             status = dispatchResult.Status
         });
+    }
+
+    private void TryAppendWarningHeader(string value)
+    {
+        if (HttpContext?.Response?.Headers is null)
+            return;
+        HttpContext.Response.Headers.Append("Warning", value);
     }
 
     private async Task TryAppendStartBlockedAuditAsync(

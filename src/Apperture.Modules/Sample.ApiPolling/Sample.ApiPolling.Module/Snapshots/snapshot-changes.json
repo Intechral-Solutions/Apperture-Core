@@ -1,0 +1,56 @@
+{
+  "snapshotId": "snapshot-changes",
+  "fetchedAtUtc": "2026-07-18T12:00:00Z",
+  "records": [
+    {
+      "externalId": "C-001",
+      "displayName": "Ada Lovelace",
+      "email": "ada.billing@example.com",
+      "status": "Active",
+      "tier": "Premium",
+      "updatedAtUtc": "2026-07-10T08:00:00Z",
+      "version": 2,
+      "isDeleted": false
+    },
+    {
+      "externalId": "C-002",
+      "displayName": "Alan Turing",
+      "email": "alan@example.com",
+      "status": "Active",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-02T09:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "C-100",
+      "displayName": "Valid One Inc",
+      "email": "conflict.c100@apipolling.example",
+      "status": "Inactive",
+      "tier": "Enterprise",
+      "updatedAtUtc": "2026-07-11T10:00:00Z",
+      "version": 2,
+      "isDeleted": false
+    },
+    {
+      "externalId": "C-400",
+      "displayName": "Delta Media",
+      "email": "team@deltamedia.example",
+      "status": "Inactive",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-04T11:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "C-500",
+      "displayName": "Echo Corp",
+      "email": "ops@echo.example",
+      "status": "Pending",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-12T12:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    }
+  ]
+}

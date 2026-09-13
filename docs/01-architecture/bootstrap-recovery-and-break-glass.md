@@ -18,6 +18,16 @@ Well-known recovery actions (see `BootstrapRecoveryAction`):
 | `ReplaceLocalCredential` | Replace a locally protected bootstrap credential (e.g. DPAPI-stored). |
 | `RestorePlatformAccess` | Restore platform access when primary auth is unavailable (generic recovery). |
 
+## Break-glass operator login (v1 status — Epic S2B)
+
+**Not available.** `POST /api/auth/break-glass` is disabled by default via `BreakGlassAuth:Enabled` (`false`). Disabled requests return **404 Not Found** with code `auth.break_glass.disabled` and audit `auth.break_glass.rejected_disabled`.
+
+IAM-3 Emergency Access does **not** enable that endpoint. The supported Entra-independent recovery path is the system-managed **Recovery Access** account (`Users.IsBreakGlassEligible`, username `breakglass`) who signs in with a local password plus native authenticator MFA (or a one-time recovery code). See [IAM-3 emergency access](../02-decisions/S2D-iam3-emergency-access-native-mfa.md) and the [live smoke procedure](../03-operations/iam3-emergency-access-smoke-test.md).
+
+- Default bootstrap paths do not designate an emergency user.
+- RBAC grant-all for `IsBreakGlassSession` remains in code for a possible future recovery epic but is **not reachable** through the default disabled endpoint.
+- **SQL/bootstrap recovery** (`IBootstrapRecoveryService`, CLI recovery-unlock) is separate from emergency operator login.
+
 ## Flow
 
 1. **Authorize** — All recovery flows go through `IBootstrapRecoveryAuthorizer.AuthorizeAsync(BootstrapRecoveryRequest)`.

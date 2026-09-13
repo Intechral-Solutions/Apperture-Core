@@ -1,0 +1,9 @@
+externalId,firstName,lastName,email,category,status,effectiveDate
+C-100,Valid,One,valid.one@example.com,Premium,Active,2024-04-01
+,Missing,Id,noid@example.com,Standard,Active,2024-04-02
+C-101,Bad,Email,not-an-email,Standard,Active,2024-04-03
+C-102,Bad,Status,bad.status@example.com,Standard,Unknown,2024-04-04
+C-100,Duplicate,Key,dupe@example.com,Premium,Active,2024-04-05
+C-103,Bad,Date,bad.date@example.com,Standard,Active,not-a-date
+C-104,Valid,Two,valid.two@example.com,Standard,Pending,2024-04-07
+not,enough,columns

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (delivery path to be superseded by [ADR-0037](./ADR-0037-platform-signals-events-and-notification-system.md) / [Epic 77](./Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md) when implemented)
 
 ## Context
 

@@ -1,0 +1,27 @@
+@using Apperture.Core.Domain.Identity
+
+<div class="@($"ui-validated-field {Class}".Trim())">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="ui-validated-field__label" for="@For">@Label</label>
+    }
+    <div class="ui-validated-field__control" style="--ui-adornment-slots: @AdornmentSlots">
+        @Control
+        <div class="ui-validated-field__adornments">
+            @Adornments
+            <FieldValidationIndicator State="Validation" />
+        </div>
+    </div>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? For { get; set; }
+    [Parameter] public int AdornmentSlots { get; set; } = 2;
+    [Parameter] public FieldValidationPresentation Validation { get; set; } = FieldValidationPresentation.Pristine;
+    [Parameter] public RenderFragment? Control { get; set; }
+    [Parameter] public RenderFragment? Adornments { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string Class { get; set; } = "";
+}

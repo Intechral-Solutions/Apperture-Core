@@ -64,7 +64,8 @@ public sealed class WorkflowsControllerTests
         var body = new StartWorkflowRequestBody
         {
             Parameters = new Dictionary<string, object?> { ["id"] = "safe-value" },
-            IdempotencyKey = "key-1"
+            IdempotencyKey = "key-1",
+            IntegrationId = "int-1"
         };
 
         var result = await controller.Start("workflow-1", body, CancellationToken.None);
@@ -73,7 +74,7 @@ public sealed class WorkflowsControllerTests
     }
 
     [Fact]
-    public async Task Start_WhenBodyIsNull_DoesNotThrow()
+    public async Task Start_WhenBodyIsNull_ReturnsBadRequest()
     {
         var controller = new WorkflowsController(
             CreateAllowAllAuthService(),
@@ -86,7 +87,28 @@ public sealed class WorkflowsControllerTests
 
         var result = await controller.Start("workflow-1", null, CancellationToken.None);
 
-        result.Should().BeOfType<AcceptedResult>();
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Start_WhenIntegrationIdMissing_ReturnsBadRequest()
+    {
+        var controller = new WorkflowsController(
+            CreateAllowAllAuthService(),
+            CreateDispatchService(req => new WorkflowStartDispatchResult(
+                new OperationRunId("run-1"),
+                new WorkflowInstanceId("inst-1"),
+                req.WorkflowDefinitionId,
+                "requested")),
+            StubPrincipal());
+        var body = new StartWorkflowRequestBody
+        {
+            Parameters = new Dictionary<string, object?> { ["id"] = "safe-value" }
+        };
+
+        var result = await controller.Start("workflow-1", body, CancellationToken.None);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     private sealed class StubPrincipalContext : IPrincipalContext

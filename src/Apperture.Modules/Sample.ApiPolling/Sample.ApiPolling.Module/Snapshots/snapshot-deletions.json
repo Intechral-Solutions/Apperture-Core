@@ -1,0 +1,36 @@
+{
+  "snapshotId": "snapshot-deletions",
+  "fetchedAtUtc": "2026-07-18T14:00:00Z",
+  "records": [
+    {
+      "externalId": "C-001",
+      "displayName": "Ada Lovelace",
+      "email": "ada@example.com",
+      "status": "Active",
+      "tier": "Premium",
+      "updatedAtUtc": "2026-07-01T08:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    },
+    {
+      "externalId": "C-002",
+      "displayName": "Alan Turing",
+      "email": "alan@example.com",
+      "status": "Inactive",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-15T09:00:00Z",
+      "version": 2,
+      "isDeleted": true
+    },
+    {
+      "externalId": "C-400",
+      "displayName": "Delta Media",
+      "email": "team@deltamedia.example",
+      "status": "Inactive",
+      "tier": "Standard",
+      "updatedAtUtc": "2026-07-04T11:00:00Z",
+      "version": 1,
+      "isDeleted": false
+    }
+  ]
+}

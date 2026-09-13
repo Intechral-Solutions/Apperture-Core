@@ -15,14 +15,13 @@ public sealed class SqlBindingRepository : IBindingRepository
     public SqlBindingRepository(AppertureDbContext db) => _db = db;
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Integration-scoped resolution is deferred: when multiple bindings exist for (moduleId, slotName)
-    /// (e.g. Integration-owned and legacy), returns the first match. No Integration-aware selection.
-    /// </remarks>
-    public async ValueTask<Binding?> GetBySlotAsync(string moduleId, string slotName, CancellationToken cancellationToken = default)
+    public async ValueTask<Binding?> GetUnownedBySlotAsync(string moduleId, string slotName, CancellationToken cancellationToken = default)
     {
+        // IntegrationId == null is load-bearing: it restricts this contextless lookup to genuinely
+        // global bindings. Without it the query returns the first instance-wide match and one
+        // Integration can silently resolve another Integration's Connection.
         var entity = await _db.Bindings.AsNoTracking()
-            .FirstOrDefaultAsync(e => e.ModuleId == moduleId && e.SlotName == slotName, cancellationToken);
+            .FirstOrDefaultAsync(e => e.ModuleId == moduleId && e.SlotName == slotName && e.IntegrationId == null, cancellationToken);
         return entity is null ? null : ToDomain(entity);
     }
 

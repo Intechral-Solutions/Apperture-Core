@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Recovery;
+using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
@@ -46,6 +47,15 @@ public sealed class RecoveryController : ControllerBase
 
     /// <summary>
     /// Lists blocked deferred work with remediation eligibility.
+    /// NAV-1 stabilization note (independent-review F-08): the standalone Blocked Work page that
+    /// called this list endpoint and <see cref="RetryBlockedWork"/> was folded into the Runs
+    /// "blocked" status facet, which has no list-level retry action of its own. Kept undeleted
+    /// rather than removed -- it is a documented API contract (docs/04-api/contracts.md) with no
+    /// internal-only carve-out, and its eligibility reasons / inspection-only guidance for
+    /// operation-kind blocked work are richer than the surviving <c>runs/{id}/retry</c> path.
+    /// <see cref="RecoveryController.GetBlockedWork"/> (single-item) still has a UI caller
+    /// (run detail); this list endpoint and the retry endpoint currently do not. Candidate for a
+    /// future execution-domain pass to restore as UI rather than remove.
     /// </summary>
     [HttpGet("blocked-work")]
     [ProducesResponseType(typeof(IReadOnlyList<BlockedWorkRemediationEntry>), StatusCodes.Status200OK)]
@@ -83,7 +93,7 @@ public sealed class RecoveryController : ControllerBase
 
     /// <summary>
     /// Retries a blocked workflow start. Returns 409 if still ineligible.
-    /// Operation blocked work is inspectable only; retry is not supported. Returns 400 with inspectionOnly.
+    /// Operation blocked work is inspectable only; whole-operation retry is intentionally unsupported (JOB-1 final decision).
     /// </summary>
     [HttpPost("blocked-work/{runId}/retry")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -106,11 +116,20 @@ public sealed class RecoveryController : ControllerBase
         {
             return BadRequest(new
             {
-                error = "Operation retry not yet supported.",
+                error = "Operation-level retry is not supported.",
                 runId,
                 definitionKind = "operation",
                 inspectionOnly = true,
-                message = "Operation blocked work is inspectable via GET blocked-work; platform recovery does not yet support operation retry."
+                finalDecision = true,
+                message =
+                    "Operation blocked work is inspectable only. Recover by opening the run’s Affected records, then retry or acknowledge individual failed items. Whole-operation retry is not offered because it would re-run successful work already completed in the same operation.",
+                recoveryGuidance = new
+                {
+                    openAffectedRecords = true,
+                    itemRetrySupported = true,
+                    acknowledgementSupported = true,
+                    operationRetrySupported = false,
+                },
             });
         }
 
@@ -173,12 +192,13 @@ public sealed class RecoveryController : ControllerBase
     /// <summary>
     /// Triggers a global scheduler re-evaluation cycle for the runtime plane.
     /// Processes all schedules due at the current time; this is not a schedule-specific replay.
-    /// Blocked schedules will re-evaluate at their NextDueUtc when the cycle runs.
+    /// SWM-8: returns enriched counts; does <strong>not</strong> write the WorkerHost scheduler heartbeat.
+    /// Prefer <c>POST /api/control/scheduler/run-cycle</c> for the clearer alias.
     /// </summary>
     [HttpPost("schedules/run-cycle")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(SchedulerManualOperationResult), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<ActionResult> RunScheduleCycle(
+    public async Task<ActionResult<SchedulerManualOperationResult>> RunScheduleCycle(
         [FromQuery] string? runtimePlaneId = "local",
         CancellationToken cancellationToken = default)
     {
@@ -187,19 +207,33 @@ public sealed class RecoveryController : ControllerBase
             await TryAuditRunCycleDeniedAsync(cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
-        var planeId = new RuntimePlaneId(runtimePlaneId ?? "local");
-        await _scheduleRunner.RunCycleAsync(planeId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
-        await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
-        return Accepted(new
+
+        var planeId = new RuntimePlaneId(runtimePlaneId ?? ScheduleRuntimePlaneDefaults.ExpectedManagementPlaneId);
+        string? error = null;
+        ScheduleDispatchCycleResult cycle;
+        try
         {
-            runtimePlaneId = planeId.Value,
-            action = "global_scheduler_run_cycle",
-            message = "Global scheduler cycle completed. Processes schedules due at cycle time; not schedule-specific."
-        });
+            cycle = await _scheduleRunner.RunCycleAsync(planeId, DateTimeOffset.UtcNow, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            error = SchedulerStatusClassifier.SanitizeErrorSummary(ex);
+            cycle = new ScheduleDispatchCycleResult(0, 0, 0, HostId: null);
+        }
+
+        var result = SchedulerManualOperationMapper.FromCycle(
+            planeId.Value,
+            SchedulerManualOperationMapper.ActionRunCycle,
+            cycle,
+            error);
+        await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
+        return Accepted(result);
     }
 
     /// <summary>
-    /// Development-only worker runtime status projection used for launch recovery diagnostics.
+    /// SWM-9a: Epic72B file/PID worker status is quarantined.
+    /// Use GET /api/control/scheduler-status for supported WorkerHost observability.
     /// </summary>
     [HttpGet("runtime-worker/status")]
     [ProducesResponseType(typeof(DevWorkerRuntimeStatus), StatusCodes.Status200OK)]
@@ -213,34 +247,37 @@ public sealed class RecoveryController : ControllerBase
     }
 
     /// <summary>
-    /// Development-only worker runtime start/retry action. Allows start without full env teardown.
+    /// SWM-9a: WorkerHost start/restart via Management is quarantined (410 Gone).
+    /// Does not shell to scripts. Use Aspire AppHost or Manage.ps1 for process lifecycle.
     /// </summary>
     [HttpPost("runtime-worker/start")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult> StartRuntimeWorker([FromQuery] bool restart = false, CancellationToken cancellationToken = default)
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
             return Forbid();
-        var result = await _devWorkerRecovery.StartAsync(restart, cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded)
-        {
-            return Conflict(new
-            {
-                error = "runtime_worker_start_failed",
-                result.Message,
-                result.ExitCode,
-                result.Output,
-                result.Error
-            });
-        }
 
-        return Accepted(new
+        // Still call the service so quarantine messaging stays centralized; never returns success in v1.
+        var result = await _devWorkerRecovery.StartAsync(restart, cancellationToken).ConfigureAwait(false);
+        return StatusCode(StatusCodes.Status410Gone, new
         {
+            error = WorkerLifecycleQuarantine.ErrorCode,
+            quarantined = true,
             action = restart ? "runtime_worker_restart" : "runtime_worker_start",
             result.Message,
-            result.Output
+            observe = "GET /api/control/scheduler-status",
+            schedulerOps = new[]
+            {
+                "POST /api/control/scheduler/run-cycle",
+                "POST /api/control/scheduler/recover-stale"
+            },
+            hostGuidance = new[]
+            {
+                WorkerLifecycleQuarantine.GuidanceAspire,
+                WorkerLifecycleQuarantine.GuidanceScriptDev,
+                WorkerLifecycleQuarantine.GuidanceFuture
+            }
         });
     }
 

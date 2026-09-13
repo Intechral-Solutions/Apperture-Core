@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
@@ -25,6 +26,11 @@ public sealed class AuthController : ControllerBase
     private const string AuthActionUnlinkedPrincipal = "auth.unlinked_principal";
     private const string AuthActionBreakGlassLoginSuccess = "auth.break_glass.login.success";
     private const string AuthActionBreakGlassLoginFailed = "auth.break_glass.login.failed";
+    private const string AuthActionBreakGlassRejectedDisabled = "auth.break_glass.rejected_disabled";
+    private const string AuthActionLocalPasswordChangeSuccess = "auth.local.password_change.success";
+    private const string AuthActionLocalPasswordChangeFailed = "auth.local.password_change.failed";
+
+    private const string PendingMfaCookieName = "apperture.mfa.pending";
 
     private readonly IUserRepository _userRepository;
     private readonly ILocalCredentialRepository _localCredentialRepository;
@@ -32,10 +38,21 @@ public sealed class AuthController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IRoleProvider _roleProvider;
+    private readonly IUserPreferencesRepository _userPreferences;
     private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
+    private readonly BreakGlassAuthOptions _breakGlassOptions;
     private readonly EntraAuthOptions _entraOptions;
     private readonly IInstanceAuthUiPolicyRepository _authUiPolicyRepository;
+    private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
+    private readonly IAuthenticationAssuranceEvaluator? _assuranceEvaluator;
+    private readonly INativeMfaService? _nativeMfa;
+    private readonly IPendingMfaLoginTicketService? _pendingMfaTickets;
+    private readonly IForgottenPasswordService? _forgottenPassword;
+    private readonly IAccountInvitationService? _invitations;
+    private readonly IAccountContactService? _contact;
+    private readonly IAccountActionTokenService? _actionTokens;
+    private readonly IRecentAccountVerificationGate? _accountVerification;
 
     public AuthController(
         IUserRepository userRepository,
@@ -44,10 +61,21 @@ public sealed class AuthController : ControllerBase
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         IRoleProvider roleProvider,
+        IUserPreferencesRepository userPreferences,
         IAuditService audit,
         IOptions<LocalAuthOptions> localOptions,
+        IOptions<BreakGlassAuthOptions> breakGlassOptions,
         IOptions<EntraAuthOptions> entraOptions,
-        IInstanceAuthUiPolicyRepository authUiPolicyRepository)
+        IInstanceAuthUiPolicyRepository authUiPolicyRepository,
+        IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
+        IAuthenticationAssuranceEvaluator? assuranceEvaluator = null,
+        INativeMfaService? nativeMfa = null,
+        IPendingMfaLoginTicketService? pendingMfaTickets = null,
+        IForgottenPasswordService? forgottenPassword = null,
+        IAccountInvitationService? invitations = null,
+        IAccountContactService? contact = null,
+        IAccountActionTokenService? actionTokens = null,
+        IRecentAccountVerificationGate? accountVerification = null)
     {
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
@@ -55,10 +83,21 @@ public sealed class AuthController : ControllerBase
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _roleProvider = roleProvider;
+        _userPreferences = userPreferences;
         _audit = audit;
         _localOptions = localOptions.Value;
+        _breakGlassOptions = breakGlassOptions.Value;
         _entraOptions = entraOptions.Value;
         _authUiPolicyRepository = authUiPolicyRepository;
+        _entraPrimaryPolicy = entraPrimaryPolicy;
+        _assuranceEvaluator = assuranceEvaluator;
+        _nativeMfa = nativeMfa;
+        _pendingMfaTickets = pendingMfaTickets;
+        _forgottenPassword = forgottenPassword;
+        _invitations = invitations;
+        _contact = contact;
+        _actionTokens = actionTokens;
+        _accountVerification = accountVerification;
     }
 
     /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
@@ -110,7 +149,311 @@ public sealed class AuthController : ControllerBase
             return Forbid();
 
         var roles = await _roleProvider.GetRolesForUserAsync(uid, cancellationToken);
-        return Ok(new MeResponse(user.Id.Value, user.DisplayName, roles.Select(r => r.Id.Value).ToArray()));
+        var credential = await _localCredentialRepository.GetByUserIdAsync(uid, cancellationToken);
+        var userPrincipal = ResolveUserPrincipal(User);
+        var localStatus = AccountMeSnapshotBuilder.ResolveLocalCredentialStatus(user, credential);
+        var identityLinks = user.IdentityLinks
+            .Select(l => new AccountIdentityLinkDto(
+                l.Source.ToString(),
+                AccountMeSnapshotBuilder.FormatIdentityLinkLabel(l.Source, l.ExternalId),
+                l.LastAuthenticatedAt))
+            .ToArray();
+        // Preferences ride along on the session response so the shell can apply appearance and clock
+        // format on first paint instead of after a second request.
+        var preferences = await _userPreferences.GetAsync(uid, cancellationToken);
+        var deferred = AccountMeSnapshotBuilder.BuildDeferredFeatures();
+        var presentation = _entraPrimaryPolicy is null
+            ? null
+            : await _entraPrimaryPolicy.DescribeAsync(user, credential, cancellationToken);
+        var assurance = _assuranceEvaluator?.Evaluate(User) ?? AuthenticationAssurance.None;
+        var strongConfigured = (EntraConfigurationState.IsUsable(_entraOptions)
+                && EntraAuthenticationContextId.TryNormalize(_entraOptions.AuthenticationContextId) is not null)
+            || (await (_nativeMfa?.IsEnrolledAsync(uid, cancellationToken) ?? ValueTask.FromResult(false)));
+        var nativeMfaEnrolled = _nativeMfa is not null && await _nativeMfa.IsEnrolledAsync(uid, cancellationToken);
+        var accountVerification = _accountVerification?.GetCurrent() ?? RecentAccountVerification.None;
+        return Ok(new MeResponse(
+            user.Id.Value,
+            user.DisplayName,
+            roles.Select(r => r.Id.Value).ToArray(),
+            userPrincipal,
+            AccountMeSnapshotBuilder.ResolveSignInSource(User),
+            identityLinks,
+            localStatus,
+            roles.Select(r => r.Name).ToArray(),
+            AccountMeSnapshotBuilder.CanChangeLocalPassword(_localOptions.Enabled, localStatus)
+                && !user.IsBreakGlassEligible,
+            deferred is null
+                ? null
+                : new AccountDeferredFeaturesDto(
+                    deferred.AvatarManagementDeferred,
+                    deferred.ProfileEditDeferred,
+                    deferred.NotificationSubscriptionsDeferred,
+                    deferred.Message),
+            user.DisplayTimeZoneId,
+            AccountAvatarDtoMapper.ToDto(user.EffectiveAvatar),
+            preferences?.TimeFormat.ToString(),
+            preferences?.Appearance.ToString(),
+            presentation?.EntraAssociationStatus,
+            presentation?.LocalSignInPolicy,
+            assurance.RequirementSatisfied && assurance.IsRecent,
+            strongConfigured,
+            presentation?.EmergencyAccessAccount ?? user.IsBreakGlassEligible,
+            nativeMfaEnrolled,
+            accountVerification.IsSatisfied,
+            accountVerification.ExpiresAtUtc));
+    }
+
+    /// <summary>
+    /// Self-service local password change for the signed-in user when an active local credential exists.
+    /// </summary>
+    [HttpPost("local/change-password")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(LocalPasswordChangeErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(LocalPasswordChangeErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ChangeLocalPassword(
+        [FromBody] ChangeLocalPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return Unauthorized();
+
+        var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
+        if (userId is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(actor.Id.Value),
+                "Authenticated principal not linked to platform user",
+                cancellationToken);
+            return Forbid();
+        }
+
+        if (!_localOptions.Enabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Local auth disabled",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "Local sign-in is disabled for this deployment.",
+                LocalPasswordChangeErrorCodes.LocalAuthDisabled));
+        }
+
+        if (request.NewPassword is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Missing password fields",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "A new password is required.",
+                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+        }
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Platform user not found",
+                cancellationToken);
+            return Forbid();
+        }
+
+        if (EmergencyAccessIdentity.IsSystemManaged(user))
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "System-managed recovery account",
+                cancellationToken);
+            return Conflict(new LocalPasswordChangeErrorResponse(
+                "This account is system-managed. Use Emergency Access operator tooling to change the password.",
+                LocalPasswordChangeErrorCodes.NoCredential));
+        }
+
+        if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "No local identity link",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "This account does not have a local sign-in credential.",
+                LocalPasswordChangeErrorCodes.NoCredential));
+        }
+
+        var credential = await _localCredentialRepository.GetByUserIdAsync(userId, cancellationToken);
+        if (credential is null)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "No local credential row",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                "This account does not have a local sign-in credential.",
+                LocalPasswordChangeErrorCodes.NoCredential));
+        }
+
+        if (credential.IsDisabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "Local credential disabled",
+                cancellationToken);
+            return Conflict(new LocalPasswordChangeErrorResponse(
+                "Local sign-in is disabled for this account. Contact an administrator.",
+                LocalPasswordChangeErrorCodes.CredentialDisabled));
+        }
+
+        var recentlyVerified = _accountVerification?.GetCurrent().IsSatisfied == true;
+        if (!recentlyVerified)
+        {
+            if (string.IsNullOrEmpty(request.CurrentPassword)
+                || !_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+            {
+                await AppendAuthAuditAsync(
+                    AuthActionLocalPasswordChangeFailed,
+                    new ActorId(userId.Value),
+                    string.IsNullOrEmpty(request.CurrentPassword)
+                        ? "Recent account verification required"
+                        : "Current password verification failed",
+                    cancellationToken);
+                if (string.IsNullOrEmpty(request.CurrentPassword))
+                {
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        new LocalPasswordChangeErrorResponse(
+                            "Verify your identity to change your password.",
+                            LocalPasswordChangeErrorCodes.RecentVerificationRequired));
+                }
+
+                return BadRequest(new LocalPasswordChangeErrorResponse(
+                    "Current password is incorrect.",
+                    LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+            }
+        }
+
+        try
+        {
+            LocalPasswordPolicy.Require(request.NewPassword, user);
+        }
+        catch (PasswordPolicyException ex)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionLocalPasswordChangeFailed,
+                new ActorId(userId.Value),
+                "New password rejected by policy",
+                cancellationToken);
+            return BadRequest(new LocalPasswordChangeErrorResponse(
+                ex.Message,
+                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+        }
+
+        var (hash, salt) = _passwordHasher.HashPassword(request.NewPassword);
+        await _localCredentialRepository.SetPasswordAsync(
+            userId,
+            hash,
+            salt,
+            _passwordHasher.AlgorithmName,
+            cancellationToken);
+        if (_actionTokens is not null)
+            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
+        await AppendAuthAuditAsync(
+            AuthActionLocalPasswordChangeSuccess,
+            new ActorId(userId.Value),
+            null,
+            cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>Unauthenticated forgotten-password request. Always returns the same acknowledgement.</summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ForgotPasswordResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(
+        [FromBody] ForgotPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_forgottenPassword is not null)
+            await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+        return Ok(new ForgotPasswordResponse(ForgottenPasswordService.GenericAcknowledgement));
+    }
+
+    /// <summary>Consumes a one-time password-reset token. Does not enable a disabled local credential.</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] TokenPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_forgottenPassword is null)
+            return Conflict(new { message = "This reset link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _forgottenPassword.CompleteAsync(request.Token ?? "", request.NewPassword ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    /// <summary>Consumes an Apperture account setup invitation and sets the first local password.</summary>
+    [HttpPost("setup-password")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetupPassword(
+        [FromBody] TokenPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_invitations is null)
+            return Conflict(new { message = "This setup link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _invitations.CompletePasswordSetupAsync(request.Token ?? "", request.NewPassword ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+    }
+
+    /// <summary>Consumes a contact-email verification token.</summary>
+    [HttpPost("verify-contact-email")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> VerifyContactEmail(
+        [FromBody] VerifyContactEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_contact is null)
+            return Conflict(new { message = "This verification link is invalid or has expired.", code = AccountSecurityErrorCodes.TokenInvalid });
+        try
+        {
+            await _contact.VerifyAsync(request.Token ?? "", cancellationToken);
+            return NoContent();
+        }
+        catch (AccountSecurityException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
     }
 
     /// <summary>
@@ -158,35 +501,148 @@ public sealed class AuthController : ControllerBase
             return Unauthorized();
         }
 
-        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
-        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
-
-        var principal = new ClaimsPrincipal(identity);
-        var props = new AuthenticationProperties
+        var mfaRequired = _nativeMfa is not null && await _nativeMfa.IsRequiredAsync(user, cancellationToken);
+        if (mfaRequired)
         {
-            IsPersistent = true,
-            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
-        };
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
+            var enrolled = await _nativeMfa!.IsEnrolledAsync(user.Id, cancellationToken);
+            if (!enrolled || _pendingMfaTickets is null)
+            {
+                await AppendAuthAuditAsync(
+                    user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginFailed : AuthActionLocalLoginFailed,
+                    new ActorId("anonymous"),
+                    user.IsBreakGlassEligible ? "mfa_not_enrolled" : null,
+                    cancellationToken);
+                return Unauthorized();
+            }
 
-        await AppendAuthAuditAsync(AuthActionLocalLoginSuccess, new ActorId(user.Id.Value), null, cancellationToken);
+            var ticket = await _pendingMfaTickets.IssueAsync(user.Id, normalizedUsername, DateTimeOffset.UtcNow, cancellationToken);
+            Response.Cookies.Append(PendingMfaCookieName, ticket, CreatePendingMfaCookieOptions());
+            return Ok(new LocalLoginResponse("", "", RequiresMfa: true));
+        }
+
+        await SignInLocalAsync(user, normalizedUsername, assuranceMechanism: null, cancellationToken);
+        await AppendAuthAuditAsync(
+            user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
+            new ActorId(user.Id.Value),
+            null,
+            cancellationToken);
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
 
     /// <summary>
-    /// Break-glass login: local-auth-only recovery path. Same credentials as local login but requires the user to be break-glass eligible.
-    /// On success, the session is granted all permission checks. Do not reveal whether the username exists or why login failed.
+    /// Completes local sign-in after a successful password when native MFA is required.
+    /// Accepts a TOTP code or a one-time recovery code. Do not reveal whether the username exists.
+    /// </summary>
+    [HttpPost("local/mfa")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(LocalLoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<LocalLoginResponse>> LocalMfa(
+        [FromBody] LocalMfaChallengeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!_localOptions.Enabled || _nativeMfa is null || _pendingMfaTickets is null)
+        {
+            await AppendAuthAuditAsync(AuthActionLocalLoginFailed, new ActorId("anonymous"), "MFA challenge unavailable", cancellationToken);
+            return Unauthorized();
+        }
+
+        var cookie = Request.Cookies[PendingMfaCookieName];
+        var ticket = cookie is null ? null : await _pendingMfaTickets.RedeemAsync(cookie, DateTimeOffset.UtcNow, cancellationToken);
+        if (ticket is null)
+        {
+            ClearPendingMfaCookie();
+            await AppendAuthAuditAsync(AuthActionLocalLoginFailed, new ActorId("anonymous"), "MFA ticket invalid", cancellationToken);
+            return Unauthorized();
+        }
+
+        var user = await _userRepository.GetByIdAsync(ticket.UserId, cancellationToken);
+        if (user is null)
+        {
+            ClearPendingMfaCookie();
+            await AppendAuthAuditAsync(AuthActionLocalLoginFailed, new ActorId("anonymous"), null, cancellationToken);
+            return Unauthorized();
+        }
+
+        var totp = request.TotpCode;
+        var recovery = request.RecoveryCode;
+        var hasTotp = !string.IsNullOrWhiteSpace(totp);
+        var hasRecovery = !string.IsNullOrWhiteSpace(recovery);
+        if (hasTotp == hasRecovery)
+        {
+            await AppendAuthAuditAsync(
+                user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginFailed : AuthActionLocalLoginFailed,
+                new ActorId("anonymous"),
+                "mfa_challenge_invalid",
+                cancellationToken);
+            return Unauthorized();
+        }
+
+        string mechanism;
+        if (hasTotp)
+        {
+            if (!await _nativeMfa.VerifyTotpAsync(user.Id, totp!, cancellationToken))
+            {
+                await AppendAuthAuditAsync(
+                    user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginFailed : AuthActionLocalLoginFailed,
+                    new ActorId("anonymous"),
+                    "totp_invalid",
+                    cancellationToken);
+                return Unauthorized();
+            }
+
+            mechanism = AuthenticationAssuranceClaims.NativeTotpMechanism;
+        }
+        else
+        {
+            if (!await _nativeMfa.ConsumeRecoveryCodeAsync(user.Id, recovery!, cancellationToken))
+            {
+                await AppendAuthAuditAsync(
+                    user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginFailed : AuthActionLocalLoginFailed,
+                    new ActorId("anonymous"),
+                    "recovery_code_invalid",
+                    cancellationToken);
+                return Unauthorized();
+            }
+
+            mechanism = AuthenticationAssuranceClaims.NativeRecoveryCodeMechanism;
+        }
+
+        ClearPendingMfaCookie();
+        await SignInLocalAsync(user, ticket.Username, mechanism, cancellationToken);
+        await AppendAuthAuditAsync(
+            user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
+            new ActorId(user.Id.Value),
+            $"mechanism={mechanism}",
+            cancellationToken);
+        return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
+    }
+
+    /// <summary>
+    /// Break-glass login: local-auth-only recovery path. Disabled by default for v1 (<see cref="BreakGlassAuthOptions.Enabled"/>).
+    /// When enabled, requires <see cref="User.IsBreakGlassEligible"/> and grants all permission checks for the session.
     /// </summary>
     [HttpPost("break-glass")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(LocalLoginResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(BreakGlassAuthErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<LocalLoginResponse>> BreakGlassLogin(
         [FromBody] LocalLoginRequest request,
         CancellationToken cancellationToken)
     {
+        if (!_breakGlassOptions.Enabled)
+        {
+            await AppendAuthAuditAsync(
+                AuthActionBreakGlassRejectedDisabled,
+                new ActorId("anonymous"),
+                "Break-glass login is not available.",
+                cancellationToken);
+            return NotFound(new BreakGlassAuthErrorResponse(
+                "Break-glass login is not available in this release.",
+                BreakGlassAuthErrorCodes.Disabled));
+        }
+
         if (!_localOptions.Enabled)
         {
             await AppendAuthAuditAsync(AuthActionBreakGlassLoginFailed, new ActorId("anonymous"), null, cancellationToken);
@@ -244,6 +700,45 @@ public sealed class AuthController : ControllerBase
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
 
+    private async Task SignInLocalAsync(
+        User user,
+        string normalizedUsername,
+        string? assuranceMechanism,
+        CancellationToken cancellationToken)
+    {
+        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
+        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
+        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        if (!string.IsNullOrWhiteSpace(assuranceMechanism))
+        {
+            AuthenticationAssuranceClaims.Replace(identity, assuranceMechanism, DateTimeOffset.UtcNow, providerContext: null);
+        }
+
+        var principal = new ClaimsPrincipal(identity);
+        var props = new AuthenticationProperties
+        {
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
+        };
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
+        _ = cancellationToken;
+    }
+
+    private CookieOptions CreatePendingMfaCookieOptions() => new()
+    {
+        HttpOnly = true,
+        IsEssential = true,
+        SameSite = SameSiteMode.Lax,
+        Secure = Request.IsHttps,
+        MaxAge = PendingMfaLoginTicketService.Lifetime
+    };
+
+    private void ClearPendingMfaCookie()
+    {
+        Response.Cookies.Delete(PendingMfaCookieName, CreatePendingMfaCookieOptions());
+    }
+
     private async Task AppendAuthAuditAsync(string action, ActorId actorId, string? details, CancellationToken cancellationToken)
     {
         var record = new AuditRecord(
@@ -269,10 +764,93 @@ public sealed class AuthController : ControllerBase
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return NoContent();
     }
+
+    private static string? ResolveUserPrincipal(ClaimsPrincipal principal)
+    {
+        return principal.FindFirst("preferred_username")?.Value
+            ?? principal.FindFirst("upn")?.Value
+            ?? principal.FindFirst(ClaimTypes.Upn)?.Value
+            ?? principal.FindFirst("email")?.Value
+            ?? principal.FindFirst(ClaimTypes.Email)?.Value
+            ?? principal.FindFirst("unique_name")?.Value
+            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    }
 }
 
 public sealed record LocalLoginRequest(string Username, string? Password);
 
-public sealed record LocalLoginResponse(string UserId, string DisplayName);
+public sealed record LocalLoginResponse(string UserId, string DisplayName, bool RequiresMfa = false);
 
-public sealed record MeResponse(string UserId, string DisplayName, string[] Roles);
+public sealed record LocalMfaChallengeRequest(string? TotpCode, string? RecoveryCode);
+
+public sealed record MeResponse(
+    string UserId,
+    string DisplayName,
+    string[] Roles,
+    string? UserPrincipal,
+    string SignInSource,
+    IReadOnlyList<AccountIdentityLinkDto> IdentityLinks,
+    string LocalCredentialStatus,
+    string[] RoleNames,
+    bool CanChangeLocalPassword,
+    /// <summary>Account capabilities not yet available, or null when there are none.</summary>
+    AccountDeferredFeaturesDto? Deferred,
+    /// <summary>Stored operator display timezone preference; null means follow the browser.</summary>
+    string? DisplayTimeZoneId = null,
+    /// <summary>Current avatar selection, so the shell can render it without a second request.</summary>
+    Apperture.Management.Client.AccountAvatarDto? Avatar = null,
+    /// <summary>Stored clock preference (<c>System</c>, <c>Hour12</c>, <c>Hour24</c>).</summary>
+    string? TimeFormat = null,
+    /// <summary>Stored appearance preference (<c>System</c>, <c>Light</c>, <c>Dark</c>); null when unset.</summary>
+    string? Appearance = null,
+    string? EntraAssociationStatus = null,
+    string? LocalSignInPolicy = null,
+    bool HasRecentStrongAuthentication = false,
+    bool StrongAuthenticationConfigured = false,
+    bool EmergencyAccessAccount = false,
+    bool NativeMfaEnrolled = false,
+    bool HasRecentAccountVerification = false,
+    DateTimeOffset? RecentAccountVerificationExpiresAtUtc = null);
+
+public sealed record AccountIdentityLinkDto(
+    string Source,
+    string DisplayLabel,
+    DateTimeOffset? LastAuthenticatedAtUtc);
+
+public sealed record AccountDeferredFeaturesDto(
+    bool AvatarManagementDeferred,
+    bool ProfileEditDeferred,
+    bool NotificationSubscriptionsDeferred,
+    string Message);
+
+public sealed record ChangeLocalPasswordRequest(string? CurrentPassword, string? NewPassword);
+
+public sealed record ForgotPasswordRequest(string? Identifier);
+
+public sealed record ForgotPasswordResponse(string Message);
+
+public sealed record TokenPasswordRequest(string? Token, string? NewPassword);
+
+public sealed record VerifyContactEmailRequest(string? Token);
+
+/// <summary>Stable self-service password change error codes for clients.</summary>
+public static class LocalPasswordChangeErrorCodes
+{
+    public const string WrongCurrentPassword = "auth.local_password.wrong_current";
+    public const string NoCredential = "auth.local_password.no_credential";
+    public const string CredentialDisabled = "auth.local_password.credential_disabled";
+    public const string InvalidNewPassword = "auth.local_password.invalid_new";
+    public const string LocalAuthDisabled = "auth.local_password.local_auth_disabled";
+    public const string RecentVerificationRequired = "auth.account_verification.required";
+}
+
+public sealed record LocalPasswordChangeErrorResponse(string Message, string Code);
+
+/// <summary>Stable break-glass error codes for clients and automation.</summary>
+public static class BreakGlassAuthErrorCodes
+{
+    public const string Disabled = "auth.break_glass.disabled";
+}
+
+/// <summary>Structured break-glass error payload.</summary>
+public sealed record BreakGlassAuthErrorResponse(string Message, string Code);

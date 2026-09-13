@@ -1,0 +1,160 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
+@implements IDisposable
+
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
+
+<div class="ui-topbar-orientation min-w-0">
+    <ManagementBreadcrumbs Items="@_parents" />
+    @if (!string.IsNullOrWhiteSpace(_title) || !string.IsNullOrWhiteSpace(_subtitle))
+    {
+        <div class="ui-topbar__heading-line">
+            @if (!string.IsNullOrWhiteSpace(_title))
+            {
+                <div class="ui-topbar__title truncate" role="heading" aria-level="1">@_title</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_subtitle))
+            {
+                <p class="ui-topbar__subtitle truncate">@_subtitle</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private readonly ManagementBreadcrumbLocationState _location = new();
+    private IReadOnlyList<BreadcrumbItem> _parents = [];
+    private string? _title;
+    private string? _subtitle;
+    private bool _disposed;
+    private bool _listenToLocation;
+    private bool _acceptPageContext;
+    private bool _acceptKickoffStarted;
+
+    protected override void OnInitialized()
+    {
+        ApplyFromUri(force: true);
+        // Subscribe to location after first apply. Page-context (ShellOrientation) waits until
+        // after first paint so PageHeader cannot StateHasChanged this subtree mid first paint.
+        _listenToLocation = true;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || _disposed || _acceptKickoffStarted)
+            return;
+
+        // UIX-2: do not await inside OnAfterRenderAsync — Yield+SHC raced Body/dashboard (parentNode).
+        _acceptKickoffStarted = true;
+        _ = AcceptPageContextAsync();
+    }
+
+    private async Task AcceptPageContextAsync()
+    {
+        await Task.Yield();
+        if (_disposed)
+            return;
+
+        _acceptPageContext = true;
+        ShellOrientation.Changed += OnShellOrientationChanged;
+        // Do not StateHasChanged on first accept — first paint already has route titles.
+        // Page overrides arrive later via Changed after the shell has settled.
+        ApplyTitleSubtitle();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _listenToLocation = false;
+        _acceptPageContext = false;
+        Nav.LocationChanged -= OnLocationChanged;
+        ShellOrientation.Changed -= OnShellOrientationChanged;
+        _location.Dispose();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_disposed || !_listenToLocation)
+            return;
+
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Yield();
+            if (_disposed)
+                return;
+
+            if (!ApplyFromUri(force: false))
+                return;
+
+            StateHasChanged();
+        });
+    }
+
+    private void OnShellOrientationChanged()
+    {
+        if (_disposed || !_acceptPageContext)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed || !_acceptPageContext)
+                return;
+
+            var previousTitle = _title;
+            var previousSubtitle = _subtitle;
+            ApplyTitleSubtitle();
+            if (previousTitle == _title && previousSubtitle == _subtitle)
+                return;
+
+            StateHasChanged();
+        });
+    }
+
+    private bool ApplyFromUri(bool force)
+    {
+        var changed = force
+            ? _location.Refresh(Nav.Uri)
+            : _location.TryApplyLocation(Nav.Uri);
+
+        if (!changed && !force)
+            return false;
+
+        _parents = _location.Parents;
+        ApplyTitleSubtitle();
+        return true;
+    }
+
+    private void ApplyTitleSubtitle()
+    {
+        var path = _location.CurrentPath;
+        var route = _location.Orientation;
+
+        if (ShellOrientation.AppliesTo(path)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageTitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageTitle, path))
+        {
+            _title = ShellOrientation.PageTitle;
+        }
+        else
+        {
+            _title = route.Title;
+        }
+
+        if (ShellOrientation.AppliesTo(path)
+            && !string.IsNullOrWhiteSpace(ShellOrientation.PageSubtitle)
+            && !EntityShellTitles.LooksLikeRouteKey(ShellOrientation.PageSubtitle, path))
+        {
+            _subtitle = ShellOrientation.PageSubtitle;
+        }
+        else
+        {
+            _subtitle = route.Subtitle;
+        }
+    }
+}

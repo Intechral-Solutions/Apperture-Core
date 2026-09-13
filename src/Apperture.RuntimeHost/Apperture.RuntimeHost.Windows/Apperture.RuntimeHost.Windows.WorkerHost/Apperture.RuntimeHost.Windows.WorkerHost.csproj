@@ -8,17 +8,31 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\Apperture.ServiceDefaults\Apperture.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
-    <ProjectReference Include="..\..\..\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Dispatch.SqlServer\Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Connectors\Apperture.Connectors.Sftp\Apperture.Connectors.Sftp.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />
-    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.DTFx\Apperture.RuntimePlane.DTFx.csproj" />
-    <ProjectReference Include="..\..\..\Apperture.RuntimePlane\Apperture.RuntimePlane.Persistence.SqlServer\Apperture.RuntimePlane.Persistence.SqlServer.csproj" />
     <ProjectReference Include="..\..\..\Apperture.ModuleSdk\Apperture.ModuleSdk\Apperture.ModuleSdk.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Sample.FileImport\Sample.FileImport.Contracts\Sample.FileImport.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Sample.FileImport\Sample.FileImport.Module\Sample.FileImport.Module.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Contracts\Sample.ApiPolling.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
     <ProjectReference Include="..\..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Unisa.CampusNexus.PaymentPlans.Persistence\Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
+    <ProjectReference Include="..\..\..\Apperture.Modules\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
     <ProjectReference Include="..\Apperture.RuntimeHost.Windows.ModuleHost\Apperture.RuntimeHost.Windows.ModuleHost.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

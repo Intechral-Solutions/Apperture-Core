@@ -2,8 +2,8 @@
 
 <button @ref="_button"
         class="relative -mx-3 flex items-center justify-center px-3 transition-all duration-300
-               @(IsLocked ? "hamburger-toggle-open" : "hamburger-toggle-closed")
-               @(IsOpen && !IsLocked ? "opacity-50" : "")"
+               @(IsLocked ? "hamburger-toggle-open" : "hamburger-toggle-closed")"
+        aria-label="@(IsLocked ? "Close domain menu" : "Open domain menu")"
         @onclick="Toggle">
     <div class="flex h-[16px] w-[20px] origin-center transform flex-col justify-between overflow-hidden transition-all duration-300 @(IsLocked ? "-translate-x-1.5 rotate-180" : "")">
         <div class="@hamburgerLineBase @(IsLocked ? "rotate-[42deg] w-[22px] -translate-x-1" : "")"></div>
@@ -19,7 +19,8 @@
     [Parameter] public bool IsLocked { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
 
-    private string hamburgerLineBase => "bg-slate-800 dark:bg-slate-400 h-[2px] transform transition-all duration-300 delay-150 w-7 pointer-events-none";
+    private string hamburgerLineBase =>
+        "ui-hamburger-line h-[2px] transform transition-all duration-300 delay-150 w-7 pointer-events-none";
 
     private async Task Toggle()
     {

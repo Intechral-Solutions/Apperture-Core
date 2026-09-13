@@ -1,0 +1,14 @@
+{
+  "_Comment": "Worker dev SQL overlay only — no DevTestUser or notification blocks. Password via SqlServer__Password or User Secrets / .env. Copy to WorkerHost/appsettings.Development.json",
+  "SqlServer": {
+    "Server": "localhost,1433",
+    "Database": "Apperture",
+    "User": "sa",
+    "TrustServerCertificate": true
+  },
+  "Logging": {
+    "LogLevel": {
+      "Microsoft.EntityFrameworkCore.Database.Command": "Warning"
+    }
+  }
+}

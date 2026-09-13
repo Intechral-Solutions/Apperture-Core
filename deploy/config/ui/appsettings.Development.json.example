@@ -1,0 +1,4 @@
+{
+  "_Comment": "Optional WASM overlay when not using ManagementUiDevApiRouting alone. Copy to Ui.Client wwwroot/appsettings.Development.json",
+  "ApiBaseUrl": "http://localhost:9000/api"
+}

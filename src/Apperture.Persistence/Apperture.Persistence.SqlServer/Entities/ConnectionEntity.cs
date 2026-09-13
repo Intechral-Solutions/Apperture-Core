@@ -9,7 +9,11 @@ public sealed class ConnectionEntity
     public string Name { get; set; } = "";
     public string ConfigJson { get; set; } = "{}";
     public string SecretRefsJson { get; set; } = "{}";
+    /// <summary>Authorization scope. Unrelated to <see cref="ResourceContextId"/>, which is ownership.</summary>
     public string? ScopeKey { get; set; }
+
+    /// <summary>Owning ResourceContext. Required; existing rows were backfilled to the reserved Shared context.</summary>
+    public string ResourceContextId { get; set; } = "";
     public string? OwnerId { get; set; }
     public int State { get; set; }
     public int LastVerificationStatus { get; set; }

@@ -1,21 +1,26 @@
+@using System.Net.Http
+@using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @implements IDisposable
 @inject ThemeService ThemeService
+@inject SessionStateService Session
+@inject IManagementClient Client
+@inject TopBarMenuCoordinator Menus
 
 <div class="relative" @onclick:stopPropagation="true">
     <button type="button"
             class="flex items-center justify-center rounded p-2 text-body hover:bg-surface-muted"
-            aria-expanded="@_open"
+            aria-expanded="@IsOpen"
             aria-haspopup="true"
             aria-label="@($"Appearance: {Label(ThemeService.Current)}")"
             title="@Label(ThemeService.Current)"
             @onclick="Toggle">
-        <ThemePreferenceIcon Preference="ThemeService.Current" Class="h-5 w-5 shrink-0 text-heading" />
+        <ThemePreferenceIcon Preference="ThemeService.Current" Class="h-6 w-6 shrink-0 text-heading" />
     </button>
-    @if (_open)
+    @if (IsOpen)
     {
-        <div class="absolute end-0 z-50 mt-1 min-w-52 rounded border border-default bg-surface py-1 text-sm shadow-lg"
+        <div class="ui-menu-panel"
              role="menu"
              aria-label="Theme options">
             @foreach (var p in _prefs)
@@ -24,23 +29,23 @@
                 <button type="button"
                         role="menuitemradio"
                         aria-checked="@active"
-                        class="flex w-full items-center gap-3 px-3 py-2 text-start hover:bg-surface-muted @(active ? "bg-surface-muted/80" : "")"
+                        data-state="@(active ? "on" : "off")"
+                        class="ui-menu-item"
                         @onclick="() => SelectAsync(p)">
-                    <ThemePreferenceIcon Preference="p" Class="h-5 w-5 shrink-0 text-body" />
-                    <span class="flex-1 @(active ? "font-medium text-heading" : "text-body")">@Label(p)</span>
-                    <span class="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden="true">
-                        @if (active)
-                        {
-                            <svg class="h-4 w-4 text-heading"
-                                 viewBox="0 0 20 20"
-                                 fill="currentColor"
-                                 aria-hidden="true">
-                                <path fill-rule="evenodd"
-                                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                      clip-rule="evenodd" />
-                            </svg>
-                        }
-                    </span>
+                    <ThemePreferenceIcon Preference="p" Class="h-5 w-5 shrink-0" />
+                    <span class="flex-1">@Label(p)</span>
+                    @if (active)
+                    {
+                        <span class="sr-only">Selected</span>
+                        <svg class="h-4 w-4 shrink-0"
+                             viewBox="0 0 20 20"
+                             fill="currentColor"
+                             aria-hidden="true">
+                            <path fill-rule="evenodd"
+                                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                  clip-rule="evenodd" />
+                        </svg>
+                    }
                 </button>
             }
         </div>
@@ -50,21 +55,55 @@
 @code {
     private static readonly ThemePreference[] _prefs = [ThemePreference.Light, ThemePreference.Dark, ThemePreference.System];
 
-    private bool _open;
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.Theme);
 
-    protected override void OnInitialized() => ThemeService.Changed += OnThemeChanged;
+    protected override void OnInitialized()
+    {
+        ThemeService.Changed += OnThemeChanged;
+        Menus.Changed += OnMenusChanged;
+    }
 
     private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
-    private void Toggle() => _open = !_open;
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Toggle() => Menus.Toggle(TopBarMenuCoordinator.Ids.Theme);
 
     private async Task SelectAsync(ThemePreference p)
     {
-        _open = false;
+        Menus.Close(TopBarMenuCoordinator.Ids.Theme);
+
+        // Apply locally first so the theme switches immediately even if the account save is slow.
         await ThemeService.SetPreferenceAsync(p);
+
+        if (Session.State != SessionLoadState.Authenticated)
+            return;
+
+        // Signed in, so this becomes the account preference and follows the operator to other
+        // browsers. A failure here is silent: the theme is already applied and stored locally, and
+        // the header menu is not the place to report a background save problem.
+        try
+        {
+            var current = await Client.GetAccountPreferencesAsync();
+            await Client.UpdateAccountPreferencesAsync(new UpdateUserPreferencesRequestDto
+            {
+                Appearance = ThemePreferenceParser.ToStorageValue(p),
+                TimeFormat = current.TimeFormat,
+                TimeZoneId = current.TimeZoneId
+            });
+            await Session.RefreshAsync();
+        }
+        catch (HttpRequestException)
+        {
+            // Local preference stands; the account preferences page can save it explicitly.
+        }
     }
 
-    public void Dispose() => ThemeService.Changed -= OnThemeChanged;
+    public void Dispose()
+    {
+        ThemeService.Changed -= OnThemeChanged;
+        Menus.Changed -= OnMenusChanged;
+    }
 
     private static string Label(ThemePreference p) => p switch
     {

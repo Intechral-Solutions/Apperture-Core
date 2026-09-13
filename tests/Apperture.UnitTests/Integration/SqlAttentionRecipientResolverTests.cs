@@ -20,6 +20,9 @@ public sealed class SqlAttentionRecipientResolverTests
 
     private static DateTimeOffset UtcNow() => DateTimeOffset.UtcNow;
 
+    private static SqlAttentionRecipientResolver CreateSut(AppertureDbContext db) =>
+        new(db, new OperationalTeamRecipientExpander(db));
+
     [Fact]
     public async Task Integration_primary_overrides_instance()
     {
@@ -83,7 +86,7 @@ public sealed class SqlAttentionRecipientResolverTests
         db.IntegrationAttentionRoutings.Add(intRow);
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.PrimaryRecipients.Should().Equal("override@test.com");
@@ -98,7 +101,7 @@ public sealed class SqlAttentionRecipientResolverTests
     public async Task When_no_instance_row_returns_disabled_resolution()
     {
         await using var db = CreateDb();
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.Enabled.Should().BeFalse();
@@ -145,7 +148,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
         r.PrimaryRecipients.Should().ContainSingle().Which.Should().Be("owner@test.com");
         r.ResolvedPrimaryPrincipalUserIds.Should().ContainSingle().Which.Should().Be("user_1");
@@ -191,7 +194,7 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.HasPrimaryRoute.Should().BeFalse();
@@ -242,10 +245,185 @@ public sealed class SqlAttentionRecipientResolverTests
         });
         await db.SaveChangesAsync();
 
-        var sut = new SqlAttentionRecipientResolver(db);
+        var sut = CreateSut(db);
         var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
 
         r.PrimaryRecipients.Should().BeEquivalentTo(new[] { "ok@test.com", "fallback@test.com" });
         r.PrimaryNoRouteReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Managed_contact_member_resolves_email_from_managed_contacts_table()
+    {
+        await using var db = CreateDb();
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mcontact_mc1",
+            DisplayName = "Importer",
+            EmailAddress = "mc@test.com",
+            Source = "Custom",
+            IsEnabled = true,
+            LinkedUserId = null,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = "team_mc",
+            Name = "MC",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "mcmem1",
+            OperationalTeamId = "team_mc",
+            MemberKind = "ManagedContact",
+            ManagedContactId = "mcontact_mc1",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
+        {
+            Id = InstanceAttentionRoutingDefaults.RowId,
+            ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
+            IsEnabled = true,
+            SendResolvedNotification = true,
+            SuppressRemindersWhenAcknowledged = true,
+            SuppressEscalationWhenAcknowledged = true,
+            PrimaryOperationalTeamId = "team_mc",
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
+
+        r.PrimaryRecipients.Should().Equal("mc@test.com");
+        r.PrimaryNoRouteReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Managed_contact_only_without_deliverable_email_uses_managed_specific_no_route_reason()
+    {
+        await using var db = CreateDb();
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mcontact_no_mail",
+            DisplayName = "MC",
+            EmailAddress = null,
+            Source = "Custom",
+            IsEnabled = true,
+            LinkedUserId = null,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = "team_mc_only",
+            Name = "MC only",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "mcm_only",
+            OperationalTeamId = "team_mc_only",
+            MemberKind = "ManagedContact",
+            ManagedContactId = "mcontact_no_mail",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
+        {
+            Id = InstanceAttentionRoutingDefaults.RowId,
+            ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
+            IsEnabled = true,
+            SendResolvedNotification = true,
+            SuppressRemindersWhenAcknowledged = true,
+            SuppressEscalationWhenAcknowledged = true,
+            PrimaryOperationalTeamId = "team_mc_only",
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
+
+        r.HasPrimaryRoute.Should().BeFalse();
+        r.PrimaryRecipients.Should().BeEmpty();
+        r.PrimaryNoRouteReason.Should().Be(AttentionNoRouteReasons.ManagedContactMembersNoDeliverableEmail);
+    }
+
+    [Fact]
+    public async Task Mixed_principal_and_managed_without_deliverable_email_reports_member_recipients_reason()
+    {
+        await using var db = CreateDb();
+        db.Users.Add(new UserEntity
+        {
+            Id = "u_no",
+            DisplayName = "N",
+            EmailAddress = null,
+        });
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mc_no",
+            DisplayName = "M",
+            EmailAddress = null,
+            Source = "Custom",
+            IsEnabled = true,
+            LinkedUserId = null,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = "team_mix",
+            Name = "Mix",
+            IsEnabled = true,
+            CreatedAtUtc = UtcNow(),
+            UpdatedAtUtc = UtcNow(),
+        });
+        db.OperationalTeamMembers.AddRange(
+            new OperationalTeamMemberEntity
+            {
+                Id = "mx1",
+                OperationalTeamId = "team_mix",
+                MemberKind = "Principal",
+                PrincipalUserId = "u_no",
+                IsEnabled = true,
+                CreatedAtUtc = UtcNow(),
+                UpdatedAtUtc = UtcNow(),
+            },
+            new OperationalTeamMemberEntity
+            {
+                Id = "mx2",
+                OperationalTeamId = "team_mix",
+                MemberKind = "ManagedContact",
+                ManagedContactId = "mc_no",
+                IsEnabled = true,
+                CreatedAtUtc = UtcNow(),
+                UpdatedAtUtc = UtcNow(),
+            });
+        db.InstanceAttentionRoutings.Add(new InstanceAttentionRoutingEntity
+        {
+            Id = InstanceAttentionRoutingDefaults.RowId,
+            ConditionKey = AttentionConditionKeys.ExpectedRunMissing,
+            IsEnabled = true,
+            SendResolvedNotification = true,
+            SuppressRemindersWhenAcknowledged = true,
+            SuppressEscalationWhenAcknowledged = true,
+            PrimaryOperationalTeamId = "team_mix",
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var r = await sut.ResolveAsync(new IntegrationId("int1"), AttentionConditionKeys.ExpectedRunMissing);
+
+        r.HasPrimaryRoute.Should().BeFalse();
+        r.PrimaryRecipients.Should().BeEmpty();
+        r.PrimaryNoRouteReason.Should().Be(AttentionNoRouteReasons.MemberRecipientsNoDeliverableEmail);
     }
 }

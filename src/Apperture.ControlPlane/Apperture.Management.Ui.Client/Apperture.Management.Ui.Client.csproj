@@ -4,7 +4,12 @@
     <RootNamespace>Apperture.Management.Ui.Client</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UiAppSettingsCanonical>$(MSBuildThisFileDirectory)..\..\..\deploy\config\ui\appsettings.json</UiAppSettingsCanonical>
+    <UiAppSettingsWwwRoot>$(MSBuildThisFileDirectory)wwwroot\appsettings.json</UiAppSettingsWwwRoot>
   </PropertyGroup>
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Zxcvbn" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Blazor.Heroicons" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
@@ -14,5 +19,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
   </ItemGroup>
+  <Target Name="SyncCanonicalUiAppSettings" BeforeTargets="BeforeBuild">
+    <Copy SourceFiles="$(UiAppSettingsCanonical)" DestinationFiles="$(UiAppSettingsWwwRoot)" SkipUnchangedFiles="true" Condition="Exists('$(UiAppSettingsCanonical)')" />
+  </Target>
 </Project>

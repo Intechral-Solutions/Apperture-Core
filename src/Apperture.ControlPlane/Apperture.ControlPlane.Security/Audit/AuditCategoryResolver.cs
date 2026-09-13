@@ -43,7 +43,8 @@ public static class AuditCategoryResolver
             || action.StartsWith("user.", StringComparison.Ordinal)
             || action.StartsWith("credential.", StringComparison.Ordinal)
             || action.StartsWith("identity_link.", StringComparison.Ordinal)
-            || action.StartsWith("auth_admin.", StringComparison.Ordinal))
+            || action.StartsWith("auth_admin.", StringComparison.Ordinal)
+            || action.StartsWith("account.", StringComparison.Ordinal))
             return CategoryAuth;
 
         return CategoryOther;

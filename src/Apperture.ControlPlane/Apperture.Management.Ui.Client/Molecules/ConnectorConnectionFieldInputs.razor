@@ -1,0 +1,51 @@
+@using Apperture.Management.Client
+
+@if (Definition is not null)
+{
+    @foreach (var field in Definition.Fields)
+    {
+        <div>
+            <label class="block text-xs text-muted">
+                @field.DisplayName
+                @if (field.IsRequired)
+                {
+                    <span class="ml-1 text-warning">(required)</span>
+                }
+                @if (field.IsSecret)
+                {
+                    <span class="ml-1 text-muted">(stored as secret)</span>
+                }
+            </label>
+            <input type="@(field.IsSecret ? "password" : "text")"
+                   class="ui-input mt-1"
+                   value="@GetValue(field)"
+                   @oninput="e => OnFieldChanged(field, e.Value?.ToString())"
+                   placeholder="@field.Key" />
+            @if (!string.IsNullOrWhiteSpace(field.Description))
+            {
+                <div class="mt-1 text-xs text-muted">@field.Description</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public ConnectorDefinitionCatalogDto? Definition { get; set; }
+
+    [Parameter] public Dictionary<string, string> ConfigValues { get; set; } = null!;
+
+    [Parameter] public Dictionary<string, string> SecretValues { get; set; } = null!;
+
+    private string GetValue(ConnectionFieldCatalogDto field) =>
+        field.IsSecret
+            ? (SecretValues.TryGetValue(field.Key, out var s) ? s : "")
+            : (ConfigValues.TryGetValue(field.Key, out var c) ? c : "");
+
+    private void OnFieldChanged(ConnectionFieldCatalogDto field, string? value)
+    {
+        if (field.IsSecret)
+            SecretValues[field.Key] = value ?? "";
+        else
+            ConfigValues[field.Key] = value ?? "";
+    }
+}

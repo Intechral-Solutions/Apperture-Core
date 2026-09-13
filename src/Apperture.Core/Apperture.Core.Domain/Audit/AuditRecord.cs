@@ -17,4 +17,11 @@ public sealed record AuditRecord(
     string? Details,
     string? ModuleId = null,
     string? ScheduleId = null,
-    string? RunId = null);
+    string? RunId = null,
+    /// <summary>
+    /// CTX-2: the authoritative ResourceContext the caller already knows for this occurrence (e.g. an
+    /// already-loaded Integration/Run/ScheduleDefinition/OperationGroup). Never inferred here from
+    /// other ids. Null for System/IAM/platform-settings audit and for callers with no authoritative
+    /// context available.
+    /// </summary>
+    string? ResourceContextId = null);

@@ -3,6 +3,7 @@ using Apperture.Core.Application.RuntimeComposition;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Workflow;
+using Apperture.Management.Ui.Shared;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
@@ -183,6 +184,169 @@ public sealed class RunQueryServiceTests
 
         filtered.Should().ContainSingle();
         filtered[0].RunId.Should().Be("r-a");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_WhenResourceContextIdFilter_ReturnsMatchingRunsOnly()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity
+            {
+                Id = "r-ctx-a",
+                WorkflowInstanceId = "i-ctx-a",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                ResourceContextId = "app-a"
+            },
+            new OperationRunEntity
+            {
+                Id = "r-ctx-b",
+                WorkflowInstanceId = "i-ctx-b",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                ResourceContextId = "app-b"
+            });
+        foreach (var (runId, instId) in new[] { ("r-ctx-a", "i-ctx-a"), ("r-ctx-b", "i-ctx-b") })
+        {
+            db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+            {
+                RunId = runId,
+                WorkflowInstanceId = instId,
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Requested
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var filtered = await service.ListRunsAsync(new RunQueryFilter(ResourceContextId: "app-a"));
+
+        filtered.Should().ContainSingle();
+        filtered[0].RunId.Should().Be("r-ctx-a");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_ResourceContextIdFilter_ComposesWithIntegrationIdFilter()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity
+            {
+                // Matches both filter values — the only row that should be returned.
+                Id = "r-comp-both",
+                WorkflowInstanceId = "i-comp-both",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                IntegrationId = "int-1",
+                ResourceContextId = "app-a"
+            },
+            new OperationRunEntity
+            {
+                // Matches ResourceContextId only — must be excluded by the IntegrationId clause.
+                Id = "r-comp-ctx-only",
+                WorkflowInstanceId = "i-comp-ctx-only",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                IntegrationId = "int-2",
+                ResourceContextId = "app-a"
+            },
+            new OperationRunEntity
+            {
+                // Matches IntegrationId only — must be excluded by the ResourceContextId clause.
+                Id = "r-comp-int-only",
+                WorkflowInstanceId = "i-comp-int-only",
+                DefinitionId = "wf.def",
+                Status = WorkflowLifecycleStatusNames.Completed,
+                CreatedAt = DateTimeOffset.UtcNow,
+                IntegrationId = "int-1",
+                ResourceContextId = "app-b"
+            });
+        foreach (var (runId, instId) in new[]
+                 {
+                     ("r-comp-both", "i-comp-both"),
+                     ("r-comp-ctx-only", "i-comp-ctx-only"),
+                     ("r-comp-int-only", "i-comp-int-only")
+                 })
+        {
+            db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+            {
+                RunId = runId,
+                WorkflowInstanceId = instId,
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Requested
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var filtered = await service.ListRunsAsync(new RunQueryFilter(IntegrationId: "int-1", ResourceContextId: "app-a"));
+
+        // If either .Where clause were missing or broken, one of the single-match rows
+        // would leak into this result (or the "both" row would be wrongly excluded).
+        filtered.Should().ContainSingle();
+        filtered[0].RunId.Should().Be("r-comp-both");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_ResourceContextIdFilter_DoesNotMatchNullHistoricalRows()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "r-null-ctx",
+            WorkflowInstanceId = "i-null-ctx",
+            DefinitionId = "wf.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow
+            // ResourceContextId intentionally null — pre-CTX-2 row.
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "r-null-ctx",
+            WorkflowInstanceId = "i-null-ctx",
+            WorkflowDefinitionId = "wf.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var filtered = await service.ListRunsAsync(new RunQueryFilter(ResourceContextId: "app-a"));
+
+        filtered.Should().BeEmpty("a pre-CTX-2 null historical row must never match a specific context filter, and must never be treated as Shared");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_NoResourceContextIdFilter_ReturnsSameSetAsBefore()
+    {
+        var db = NewDb();
+        db.OperationRuns.AddRange(
+            new OperationRunEntity { Id = "r-x1", WorkflowInstanceId = "i-x1", DefinitionId = "wf.def", Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = DateTimeOffset.UtcNow, ResourceContextId = "app-a" },
+            new OperationRunEntity { Id = "r-x2", WorkflowInstanceId = "i-x2", DefinitionId = "wf.def", Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = DateTimeOffset.UtcNow });
+        foreach (var (runId, instId) in new[] { ("r-x1", "i-x1"), ("r-x2", "i-x2") })
+        {
+            db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+            {
+                RunId = runId,
+                WorkflowInstanceId = instId,
+                WorkflowDefinitionId = "wf.def",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = WorkflowLifecycleStatusNames.Requested
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var all = await service.ListRunsAsync(new RunQueryFilter());
+
+        all.Should().HaveCount(2, "omitting the filter must return the same set as before this change");
     }
 
     [Fact]
@@ -1040,6 +1204,214 @@ public sealed class RunQueryServiceTests
         var detail = await NewService(db).GetRunAsync(new OperationRunId("r1"));
         detail!.Error!.DetailsJson.Should().Contain("from-lifecycle");
         detail.Result!.DiagnosticsJson.Should().BeNull();
+    }
+
+    // --- Blocked status facet (NAV-1 stabilization: F-07) ---
+    // Blocked is a derived Runs facet (failed + RunFailureCapture.DeferredWorkBlockedPrefix on
+    // FailureSummary), never a persisted lifecycle status or database column. These tests pin
+    // recognition, non-blocked exclusion, and composition with sibling filters.
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ReturnsOnlyFailedRunsWithBlockedPrefix()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "Workflow definition is not effectively active");
+        AddWorkflowRun(db, "r-failed-plain", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: "Some other failure, unrelated to blocked deferred work.");
+        AddWorkflowRun(db, "r-running", "wf.def", WorkflowLifecycleStatusNames.Running);
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ExcludesFailedRunsWithoutBlockedPrefix()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-failed-plain", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: "Timed out calling downstream API.");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ExcludesFailedRunsWithNullFailureSummary()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-failed-nosummary", "wf.def", WorkflowLifecycleStatusNames.Failed, failureSummary: null);
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(Status: RunStatusFacets.Blocked));
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ComposesWithIntegrationIdFilter()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked-a", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", integrationId: "int-a");
+        AddWorkflowRun(db, "r-blocked-b", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", integrationId: "int-b");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(
+            Status: RunStatusFacets.Blocked,
+            IntegrationId: "int-a"));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked-a");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_StatusBlocked_ComposesWithCorrelationKeyFilter()
+    {
+        var db = NewDb();
+        AddWorkflowRun(db, "r-blocked-a", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", correlationKey: "schedule:s1");
+        AddWorkflowRun(db, "r-blocked-b", "wf.def", WorkflowLifecycleStatusNames.Failed,
+            failureSummary: RunFailureCapture.DeferredWorkBlockedPrefix + "reason", correlationKey: "schedule:s2");
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var result = await service.ListRunsAsync(new RunQueryFilter(
+            Status: RunStatusFacets.Blocked,
+            CorrelationKey: "schedule:s2"));
+
+        result.Should().ContainSingle();
+        result[0].RunId.Should().Be("r-blocked-b");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_ExposesResourceContextId()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop",
+            WorkflowInstanceId = "i-op",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ResourceContextId = "app-a"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop",
+            OperationInstanceId = "i-op",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var list = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        list.Should().ContainSingle();
+        list[0].ResourceContextId.Should().Be("app-a");
+    }
+
+    [Fact]
+    public async Task GetRunAsync_ExposesResourceContextId()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop2",
+            WorkflowInstanceId = "i-op2",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ResourceContextId = "app-b"
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop2",
+            OperationInstanceId = "i-op2",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var detail = await service.GetRunAsync(new OperationRunId("rop2"));
+
+        detail.Should().NotBeNull();
+        detail!.ResourceContextId.Should().Be("app-b");
+    }
+
+    [Fact]
+    public async Task ListRunsAsync_ResourceContextId_IsNull_ForPreCtx2Rows()
+    {
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "rop3",
+            WorkflowInstanceId = "i-op3",
+            DefinitionId = "op.def",
+            Status = WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow
+            // ResourceContextId intentionally omitted — simulates a pre-CTX-2 row.
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "rop3",
+            OperationInstanceId = "i-op3",
+            OperationDefinitionId = "op.def",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
+        await db.SaveChangesAsync();
+
+        var service = NewService(db);
+        var list = await service.ListRunsAsync(new RunQueryFilter(ExecutionKind: "operation"));
+
+        list.Should().ContainSingle();
+        list[0].ResourceContextId.Should().BeNull();
+    }
+
+    private static void AddWorkflowRun(
+        AppertureDbContext db,
+        string runId,
+        string definitionId,
+        string status,
+        string? failureSummary = null,
+        string? integrationId = null,
+        string? correlationKey = null)
+    {
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = $"i-{runId}",
+            DefinitionId = definitionId,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow,
+            FailureSummary = failureSummary,
+            IntegrationId = integrationId,
+            CorrelationKey = correlationKey
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = runId,
+            WorkflowInstanceId = $"i-{runId}",
+            WorkflowDefinitionId = definitionId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowLifecycleStatusNames.Requested
+        });
     }
 
     private static AppertureDbContext NewDb()

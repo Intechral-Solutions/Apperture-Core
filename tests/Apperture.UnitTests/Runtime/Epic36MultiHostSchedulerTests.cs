@@ -1,8 +1,10 @@
 using Apperture.Core.Application.RuntimeComposition;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
@@ -190,6 +192,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -200,6 +205,23 @@ public sealed class Epic36MultiHostSchedulerTests
         detail!.InProgressClaim.Should().NotBeNull();
         detail.InProgressClaim!.ClaimedByHostId.Should().Be("my-host");
         detail.InProgressClaim.ClaimedAtUtc.Should().BeCloseTo(DeterministicAsOfUtc.AddMinutes(-1), TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// CTX-2: the historical ResourceContext snapshotted onto the claiming ScheduleRun at claim time
+    /// is surfaced on the claim projection.
+    /// </summary>
+    [Fact]
+    public async Task GetInProgressRunClaimAsync_ExposesResourceContextId_FromTheClaimingScheduleRun()
+    {
+        var db = NewDb();
+        var repo = new SqlScheduleRepository(db);
+        await repo.TryClaimFireAsync("sched-ctx", DateTimeOffset.UtcNow, "assign-ctx", "host-1", resourceContextId: "app-a");
+
+        var claim = await repo.GetInProgressRunClaimAsync("assign-ctx");
+
+        claim.Should().NotBeNull();
+        claim!.Value.ResourceContextId.Should().Be("app-a");
     }
 
     /// <summary>
@@ -231,6 +253,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var detail = await scope.ServiceProvider.GetRequiredService<IScheduleManagementService>()
@@ -262,6 +287,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -294,6 +322,9 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.AddScoped<IResourceContextService, ResourceContextService>();
+        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -324,6 +355,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IOperationStartDispatchService, OperationStartDispatchService>();
         services.AddSingleton<ISchedulerHostIdentity>(new DefaultSchedulerHostIdentity(hostId));
         services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(claimLeaseMinutes));
+        services.AddScheduleDispatchRunnerDependencies(modules);
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
         return services;
     }

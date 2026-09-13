@@ -11,13 +11,12 @@ namespace Apperture.UnitTests.Connections;
 public sealed class Epic48ConnectionsSurfaceTests
 {
     [Fact]
-    public void ConnectionsMenu_HasConnectionsAndAddConnection()
+    public void Connections_AreOffRail_DiscoveredFromInventory()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
-        menus.Should().ContainKey("Connections");
-        var connections = menus["Connections"];
-        connections.Items.Should().Contain(i => i.Text == "Connections" && i.Href == "/connections");
-        connections.Items.Should().Contain(i => i.Text == "Add Connection" && i.Href == "/connections/new");
+        menus.Should().NotContainKey("Connections");
+        menus.Should().ContainKey(SectionOwnerConstants.Config);
+        menus[SectionOwnerConstants.Config].Items.Should().Contain(i => i.Href == ShellSectionRoutes.Inventory);
     }
 
     [Fact]
@@ -61,6 +60,21 @@ public sealed class Epic48ConnectionsSurfaceTests
         var dto = new OperatorCapabilitiesDto(
             false, false, false, false, false, false, false, false, false, false, false, true);
         dto.CanViewConnections.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OperatorCapabilitiesDto_ConnectionAuthoringFlags()
+    {
+        var dto = new OperatorCapabilitiesDto(
+            false, false, false, false, false,
+            false, false, false, false, false, false, false,
+            false, false, false,
+            CanCreateConnections: true,
+            CanUpdateConnections: true,
+            CanRetireConnections: false);
+        dto.CanCreateConnections.Should().BeTrue();
+        dto.CanUpdateConnections.Should().BeTrue();
+        dto.CanRetireConnections.Should().BeFalse();
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Apperture.ControlPlane.Security.Models;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Xunit;
 
 namespace Apperture.IntegrationTests.ManagementHost;
@@ -23,7 +24,8 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. Set {ManagementGovernanceTestConstants.ConnectionStringEnvironmentVariable} or install LocalDB. Connection attempted: {_fixture.ConnectionString}");
+            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
+            $"Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
     }
 
     private static (string Host, string Port, string Username, string Password) GetSftpTestSettings() =>
@@ -131,7 +133,7 @@ public sealed class ManagementHostGovernanceHttpTests
             connectorDefinitionId = "Apperture.Platform.Sql",
             name = $"Epic59 verify perm {Guid.NewGuid():N}"[..24],
             config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
-            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            secretValues = new Dictionary<string, string> { ["Password"] = "TestPassword123!" },
             scopeKey = "instance"
         });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -145,16 +147,31 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
-    public async Task Post_connection_test_connect_sql_reports_unavailable()
+    public async Task Post_connection_test_connect_sql_runs_probe_against_configured_database()
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
+
+        var csb = new SqlConnectionStringBuilder(_fixture.ConnectionString);
+        var config = new Dictionary<string, string>
+        {
+            ["Server"] = csb.DataSource,
+            ["Database"] = csb.InitialCatalog,
+        };
+        IReadOnlyDictionary<string, string>? secretValues = null;
+        if (!csb.IntegratedSecurity)
+        {
+            config["UserId"] = csb.UserID;
+            secretValues = new Dictionary<string, string> { ["Password"] = csb.Password };
+        }
+
         var create = await client.PostAsJsonAsync("/api/connections", new
         {
             connectorDefinitionId = "Apperture.Platform.Sql",
             name = $"Epic59 verify sql {Guid.NewGuid():N}"[..24],
-            config = new Dictionary<string, string> { ["Server"] = "localhost", ["Database"] = "db", ["UserId"] = "sa" },
-            secretRefs = new Dictionary<string, string> { ["Password"] = "local:test/password" },
+            config,
+            secretRefs = new Dictionary<string, string>(),
+            secretValues,
             scopeKey = "instance"
         });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -165,8 +182,9 @@ public sealed class ManagementHostGovernanceHttpTests
         var verify = await client.PostAsync($"/api/connections/{connectionId}/test-connect", null);
         verify.StatusCode.Should().Be(HttpStatusCode.OK);
         using var verifyDoc = JsonDocument.Parse(await verify.Content.ReadAsStringAsync());
-        verifyDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeFalse();
-        verifyDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Unavailable");
+        verifyDoc.RootElement.GetProperty("supportsVerification").GetBoolean().Should().BeTrue();
+        verifyDoc.RootElement.GetProperty("lastVerificationStatus").GetString().Should().Be("Success");
+        verifyDoc.RootElement.GetProperty("lastVerificationSummary").GetString().Should().Contain("SELECT 1");
     }
 
     [Fact]
@@ -291,9 +309,9 @@ public sealed class ManagementHostGovernanceHttpTests
                     ["Database"] = "TestDb",
                     ["UserId"] = "sa"
                 },
-                secretRefs = new Dictionary<string, string>
+                secretValues = new Dictionary<string, string>
                 {
-                    ["Password"] = "local:test/password"
+                    ["Password"] = "TestPassword123!"
                 },
                 scopeKey = "instance"
             });
@@ -467,6 +485,38 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Operation_start_without_integration_id_returns_bad_request()
+    {
+        AssertSqlAvailable();
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            "/api/operations/Sample.HelloWorld.DoWork/start",
+            new
+            {
+                parameters = new Dictionary<string, object?> { ["message"] = "missing-integration" }
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("IntegrationId is required");
+    }
+
+    [Fact]
+    public async Task Workflow_start_without_integration_id_returns_bad_request()
+    {
+        AssertSqlAvailable();
+        using var launcher = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
+        var response = await launcher.PostAsJsonAsync(
+            "/api/workflows/Sample.HelloWorld.HelloWorld/start",
+            new
+            {
+                parameters = new Dictionary<string, object?> { ["name"] = "missing-integration" }
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("IntegrationId is required");
+    }
+
+    [Fact]
     public async Task Post_sftp_test_connect_persists_and_updates_readiness_across_unverified_success_failed()
     {
         AssertSqlAvailable();
@@ -512,7 +562,7 @@ public sealed class ManagementHostGovernanceHttpTests
                 ["Port"] = sftpPort,
                 ["Username"] = sftpUser
             },
-            secretRefs = new Dictionary<string, string>
+            secretValues = new Dictionary<string, string>
             {
                 ["Password"] = sftpPassword
             },
@@ -572,7 +622,7 @@ public sealed class ManagementHostGovernanceHttpTests
         {
             Content = JsonContent.Create(new
             {
-                secretRefs = new Dictionary<string, string>
+                secretValues = new Dictionary<string, string>
                 {
                     ["Password"] = "wrong-password-epic59a"
                 }

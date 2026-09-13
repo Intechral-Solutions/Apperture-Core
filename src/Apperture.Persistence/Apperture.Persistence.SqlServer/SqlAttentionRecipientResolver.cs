@@ -9,10 +9,16 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
 {
     private const string MemberKindPrincipal = "Principal";
     private const string MemberKindExternalEmail = "ExternalEmail";
+    private const string MemberKindManagedContact = "ManagedContact";
 
     private readonly AppertureDbContext _db;
+    private readonly OperationalTeamRecipientExpander _teamExpander;
 
-    public SqlAttentionRecipientResolver(AppertureDbContext db) => _db = db;
+    public SqlAttentionRecipientResolver(AppertureDbContext db, OperationalTeamRecipientExpander teamExpander)
+    {
+        _db = db;
+        _teamExpander = teamExpander;
+    }
 
     public async ValueTask<AttentionRecipientResolution> ResolveInstanceDefaultsAsync(
         string conditionKey,
@@ -186,64 +192,69 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
         if (string.IsNullOrWhiteSpace(teamId))
             return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured);
 
-        var team = await _db.OperationalTeams.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == teamId, cancellationToken)
-            .ConfigureAwait(false);
-        if (team is null)
+        var expansion = await _teamExpander.ExpandAsync(teamId, cancellationToken).ConfigureAwait(false);
+        if (expansion.NoRouteReason == "NoTeamConfigured")
             return TeamExpansion.NoRoute(AttentionNoRouteReasons.NoTeamConfigured, teamId, null);
-        if (!team.IsEnabled)
-            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamDisabled, team.Id, team.Name);
+        if (expansion.NoRouteReason == "TeamDisabled")
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamDisabled, expansion.TeamId, expansion.TeamName);
+        if (expansion.NoRouteReason == "TeamEmpty")
+            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamEmpty, expansion.TeamId, expansion.TeamName);
 
         var members = await _db.OperationalTeamMembers.AsNoTracking()
-            .Where(m => m.OperationalTeamId == team.Id && m.IsEnabled)
+            .Where(m => m.OperationalTeamId == expansion.TeamId && m.IsEnabled)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (members.Count == 0)
-            return TeamExpansion.NoRoute(AttentionNoRouteReasons.TeamEmpty, team.Id, team.Name);
 
-        var principalIds = members
+        var principalIds = expansion.Members
             .Where(m => string.Equals(m.MemberKind, MemberKindPrincipal, StringComparison.OrdinalIgnoreCase))
-            .Select(m => m.PrincipalUserId)
+            .Select(m => m.UserId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x!)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var externalRecipients = members
+        var externalRecipients = expansion.Members
             .Where(m => string.Equals(m.MemberKind, MemberKindExternalEmail, StringComparison.OrdinalIgnoreCase))
-            .Select(m => m.EmailAddress)
+            .Select(m => m.Email)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x!.Trim())
-            .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-
-        var principalEmails = principalIds.Length == 0
-            ? Array.Empty<string>()
-            : await _db.Users.AsNoTracking()
-                .Where(u => principalIds.Contains(u.Id) && u.EmailAddress != null)
-                .Select(u => u.EmailAddress!)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-        var recipients = principalEmails
-            .Concat(externalRecipients)
-            .Select(x => x.Trim())
-            .Where(x => x.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var managedContactIds = expansion.Members
+            .Where(m => string.Equals(m.MemberKind, MemberKindManagedContact, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.ManagedContactId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var noRouteReason = recipients.Length == 0
-            ? (principalIds.Length > 0
-                ? AttentionNoRouteReasons.PrincipalMembersNoEmail
-                : AttentionNoRouteReasons.TeamEmpty)
-            : null;
+        var principalEmails = expansion.Members
+            .Where(m => string.Equals(m.MemberKind, MemberKindPrincipal, StringComparison.OrdinalIgnoreCase)
+                        && m.Usability == NotificationUsabilityStatusValues.Deliverable)
+            .Select(m => m.Email!)
+            .ToArray();
+        var managedContactEmails = expansion.Members
+            .Where(m => string.Equals(m.MemberKind, MemberKindManagedContact, StringComparison.OrdinalIgnoreCase)
+                        && m.Usability == NotificationUsabilityStatusValues.Deliverable)
+            .Select(m => m.Email!)
+            .ToArray();
+
+        var recipients = await _teamExpander.ExpandToEmailAddressesAsync(teamId, cancellationToken).ConfigureAwait(false);
+
+        var noRouteReason = ResolveNoRouteWhenRecipientsEmpty(
+            recipients,
+            members,
+            principalIds,
+            principalEmails,
+            managedContactIds,
+            managedContactEmails,
+            externalRecipients);
 
         return new TeamExpansion(
             recipients,
             principalIds,
             externalRecipients,
-            team.Id,
-            team.Name,
+            expansion.TeamId,
+            expansion.TeamName,
             noRouteReason);
     }
 
@@ -257,5 +268,45 @@ public sealed class SqlAttentionRecipientResolver : IAttentionRecipientResolver
     {
         public static TeamExpansion NoRoute(string reason, string? teamId = null, string? teamName = null) =>
             new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), teamId, teamName, reason);
+    }
+
+    /// <summary>
+    /// When the union of deliverable addresses is empty but the team has enabled members,
+    /// classify why routing failed without mis-attributing managed-contact gaps to principals.
+    /// </summary>
+    private static string? ResolveNoRouteWhenRecipientsEmpty(
+        string[] recipients,
+        List<OperationalTeamMemberEntity> members,
+        string[] principalIds,
+        string[] principalEmails,
+        string[] managedContactIds,
+        string[] managedContactEmails,
+        string[] externalRecipients)
+    {
+        if (recipients.Length > 0)
+            return null;
+
+        static bool HasDeliverable(IEnumerable<string> emails) =>
+            emails.Any(e => !string.IsNullOrWhiteSpace(e) && e.Trim().Length > 0);
+
+        var principalsDeliverable = HasDeliverable(principalEmails);
+        var managedDeliverable = HasDeliverable(managedContactEmails);
+        var externalDeliverable = externalRecipients.Length > 0;
+        if (principalsDeliverable || managedDeliverable || externalDeliverable)
+            return null;
+
+        var hasPrincipalMember = principalIds.Length > 0;
+        var hasManagedMember = managedContactIds.Length > 0;
+        var hasExternalMember = members.Exists(m =>
+            m.IsEnabled &&
+            string.Equals(m.MemberKind, MemberKindExternalEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (hasPrincipalMember && !hasManagedMember && !hasExternalMember)
+            return AttentionNoRouteReasons.PrincipalMembersNoEmail;
+
+        if (hasManagedMember && !hasPrincipalMember && !hasExternalMember)
+            return AttentionNoRouteReasons.ManagedContactMembersNoDeliverableEmail;
+
+        return AttentionNoRouteReasons.MemberRecipientsNoDeliverableEmail;
     }
 }

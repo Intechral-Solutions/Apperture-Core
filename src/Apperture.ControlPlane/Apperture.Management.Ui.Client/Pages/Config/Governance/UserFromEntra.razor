@@ -1,0 +1,381 @@
+@page "/config/governance/users/from-entra"
+@layout ConfigLayout
+@using System.Net
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Add from Microsoft Entra"
+                Subtitle="Search a configured directory and create Apperture users. Microsoft sign-in is still required before the identity is proven.">
+        <Toolbar>
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageUsers != true)
+    {
+        <ForbiddenState Message="You do not have permission to add users." />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError" />
+    }
+    else if (_registrations.Count == 0)
+    {
+        <EmptyState Message="No enabled Microsoft directory is configured. Register a tenant under Authentication first." />
+    }
+    else
+    {
+        <div class="ui-settings-callout">
+            Apperture identity is the Microsoft object id, not email or user principal name. Disabled directory accounts cannot be added. Guest identities can be added if you select them intentionally.
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <ManagementSection Title="Directory" Layer="ManagementSection.UiLayer.Detail">
+            <div class="space-y-4 text-sm text-body">
+                @if (_registrations.Count > 1)
+                {
+                    <div>
+                        <label class="block text-xs text-muted" for="entra-registration">Directory</label>
+                        <select id="entra-registration" class="ui-input mt-1" @bind="_registrationId" disabled="@_busy">
+                            @foreach (var r in _registrations)
+                            {
+                                <option value="@r.Id">@r.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div class="flex flex-wrap gap-2 items-end">
+                    <div class="flex-1 min-w-[12rem]">
+                        <label class="block text-xs text-muted" for="entra-search">Search</label>
+                        <input id="entra-search"
+                               class="ui-input mt-1"
+                               @bind="_search"
+                               @bind:event="oninput"
+                               disabled="@_busy"
+                               placeholder="Display name, email, or user principal name"
+                               @onkeydown="OnSearchKey" />
+                    </div>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="SearchAsync">Search</button>
+                </div>
+
+                @if (_searching)
+                {
+                    <LoadingState Message="Searching the directory…" />
+                }
+                else if (_page is not null && !_page.Success)
+                {
+                    <ErrorState Message="@_page.Summary" />
+                    @if (!string.IsNullOrWhiteSpace(_page.TechnicalDetail))
+                    {
+                        <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-2">
+                            <dt>Detail</dt>
+                            <dd>@_page.TechnicalDetail</dd>
+                        </TechnicalDetails>
+                    }
+                }
+                else if (_items.Count == 0 && _searched)
+                {
+                    <EmptyState Message="No directory people matched that search." />
+                }
+                else if (_items.Count > 0)
+                {
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Name</th>
+                                    <th>Directory address</th>
+                                    <th>Type</th>
+                                    <th>Apperture</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var u in _items)
+                                {
+                                    var selectable = CanSelect(u);
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox"
+                                                   disabled="@(!selectable || _busy)"
+                                                   checked="@_selected.Contains(u.ObjectId)"
+                                                   @onchange="e => Toggle(u, e.Value is true)" />
+                                        </td>
+                                        <td>@u.DisplayName</td>
+                                        <td>@(FirstNonEmpty(u.Mail, u.UserPrincipalName) ?? "—")</td>
+                                        <td>@DirectoryType(u)</td>
+                                        <td>@StatusLabel(u)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_continuation))
+                    {
+                        <button type="button" class="btn btn-secondary text-xs" disabled="@_busy" @onclick="LoadMoreAsync">Load more</button>
+                    }
+                }
+            </div>
+        </ManagementSection>
+
+        @if (_selected.Count > 0)
+        {
+            <ManagementSection Title="Add to Apperture" Layer="ManagementSection.UiLayer.Detail">
+                <div class="space-y-4 text-sm text-body">
+                    @if (_capabilities?.CanAssignRoles == true)
+                    {
+                        <div>
+                            <label class="block text-xs text-muted" for="entra-role">Initial role</label>
+                            <select id="entra-role" class="ui-input mt-1" @bind="_selectedRoleId" disabled="@_busy">
+                                <option value="">None — assign later</option>
+                                @foreach (var role in _roles)
+                                {
+                                    <option value="@role.Id">@role.Name (@role.Id)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-xs text-muted">You can add people without assigning a role. Role assignment requires additional permission.</p>
+                    }
+
+                    @if (SelectedHaveMail)
+                    {
+                        <label class="flex items-start gap-2 text-sm">
+                            <input type="checkbox" @bind="_sendWelcome" disabled="@_busy" />
+                            <span>Send welcome email to directory mail addresses. This does not verify Apperture contact email and is not a Microsoft invitation.</span>
+                        </label>
+                    }
+
+                    <FormValidationFeedback Visible="@_showFormAttention" />
+                    <div class="flex gap-2">
+                        <ActionButton @ref="_addButton"
+                                      Variant="ActionButtonVariant.Primary"
+                                      DefaultText="@AddLabel"
+                                      ActiveText="Adding…"
+                                      SuccessText="Added"
+                                      ErrorText="Add failed"
+                                      OnClick="HandleAddClick" />
+                        <a href="/config/governance/users" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </div>
+            </ManagementSection>
+        }
+    }
+</div>
+
+@code {
+    private const int MaxBatch = 20;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private string? _loadError;
+    private string? _error;
+    private bool _busy;
+    private bool _searching;
+    private bool _searched;
+    private bool _showFormAttention;
+    private ActionButton? _addButton;
+    private IReadOnlyList<EntraProvisioningRegistrationDto> _registrations = [];
+    private IReadOnlyList<RoleDto> _roles = [];
+    private string _registrationId = "";
+    private string _search = "";
+    private string? _continuation;
+    private EntraProvisioningDirectoryPageDto? _page;
+    private readonly List<EntraProvisioningDirectoryUserDto> _items = [];
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, EntraProvisioningDirectoryUserDto> _selectedUsers = new(StringComparer.OrdinalIgnoreCase);
+    private string _selectedRoleId = "";
+    private bool _sendWelcome = true;
+
+    private string AddLabel => _selected.Count == 1 ? "Add 1 person" : $"Add {_selected.Count} people";
+    private bool SelectedHaveMail => _selectedUsers.Values.Any(u => !string.IsNullOrWhiteSpace(u.Mail));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+            if (_capabilities?.CanManageUsers != true)
+            {
+                _capabilitiesLoaded = true;
+                return;
+            }
+
+            _registrations = await Client.GetEntraProvisioningRegistrationsAsync();
+            var active = _registrations.FirstOrDefault(r => r.IsActive) ?? _registrations.FirstOrDefault();
+            _registrationId = active?.Id ?? "";
+            if (_capabilities.CanAssignRoles)
+                _roles = await Client.GetRolesAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+        }
+        _capabilitiesLoaded = true;
+    }
+
+    private async Task OnSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        _items.Clear();
+        _continuation = null;
+        _searched = true;
+        await LoadPageAsync(reset: true);
+    }
+
+    private async Task LoadMoreAsync() => await LoadPageAsync(reset: false);
+
+    private async Task LoadPageAsync(bool reset)
+    {
+        if (string.IsNullOrWhiteSpace(_registrationId))
+            return;
+        _busy = true;
+        _searching = true;
+        _error = null;
+        try
+        {
+            _page = await Client.SearchEntraProvisioningDirectoryAsync(
+                _registrationId,
+                _search,
+                reset ? null : _continuation);
+            if (reset)
+                _items.Clear();
+            if (_page.Success)
+                _items.AddRange(_page.Items);
+            _continuation = _page.ContinuationToken;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _searching = false;
+            _busy = false;
+        }
+    }
+
+    private static bool CanSelect(EntraProvisioningDirectoryUserDto u) =>
+        u.AccountEnabled
+        && string.Equals(u.AppertureStatus, "Available", StringComparison.OrdinalIgnoreCase);
+
+    private void Toggle(EntraProvisioningDirectoryUserDto user, bool on)
+    {
+        if (on)
+        {
+            if (_selected.Count >= MaxBatch)
+            {
+                Toasts.Show(ToastSeverity.Warning, $"Choose at most {MaxBatch} people at a time.");
+                return;
+            }
+            _selected.Add(user.ObjectId);
+            _selectedUsers[user.ObjectId] = user;
+        }
+        else
+        {
+            _selected.Remove(user.ObjectId);
+            _selectedUsers.Remove(user.ObjectId);
+        }
+    }
+
+    private async Task HandleAddClick(MouseEventArgs _)
+    {
+        if (_selected.Count == 0)
+        {
+            _showFormAttention = true;
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        if (_addButton is not null)
+            await _addButton.SetStateAsync(ActionButtonState.Active);
+        try
+        {
+            var result = await Client.ProvisionFromEntraDirectoryAsync(new EntraDirectoryProvisionRequest(
+                _registrationId,
+                _selected.ToList(),
+                string.IsNullOrWhiteSpace(_selectedRoleId) ? null : _selectedRoleId,
+                _sendWelcome && SelectedHaveMail));
+            var ok = result.Results.Count(r => r.Succeeded);
+            var fail = result.Results.Where(r => !r.Succeeded).ToList();
+            var mailFail = result.Results.Where(r => r.Succeeded && r.WelcomeMailAttempted && !r.WelcomeMailDelivered).ToList();
+            foreach (var person in result.Results.Where(r => r.Succeeded))
+            {
+                _selected.Remove(person.ObjectId);
+                _selectedUsers.Remove(person.ObjectId);
+            }
+
+            if (ok > 0)
+                Toasts.Show(ToastSeverity.Success, ok == 1 ? "Added 1 person." : $"Added {ok} people.");
+            if (mailFail.Count > 0)
+                Toasts.Show(ToastSeverity.Warning, "Access was created, but the welcome email could not be sent for one or more people.");
+            if (fail.Count > 0)
+            {
+                _error = string.Join(" ", fail.Select(f => f.ErrorMessage).Where(m => !string.IsNullOrWhiteSpace(m)).Distinct());
+                if (_addButton is not null)
+                    await _addButton.SetStateAsync(ActionButtonState.Error);
+            }
+            else
+            {
+                if (_addButton is not null)
+                    await _addButton.SetStateAsync(ActionButtonState.Success);
+                if (_selected.Count == 0)
+                    Nav.NavigateTo("/config/governance/users");
+            }
+
+            await SearchAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            if (_addButton is not null)
+                await _addButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string DirectoryType(EntraProvisioningDirectoryUserDto u) =>
+        string.Equals(u.UserType, "Guest", StringComparison.OrdinalIgnoreCase) ? "Guest" : "Member";
+
+    private static string StatusLabel(EntraProvisioningDirectoryUserDto u)
+    {
+        if (!u.AccountEnabled)
+            return "Disabled in directory";
+        return u.AppertureStatus switch
+        {
+            "Provisioned" => "Already in Apperture",
+            "AccessRequestPending" => "Access request pending",
+            _ => "Available"
+        };
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+}

@@ -69,7 +69,7 @@ public static class Epic33UiDisplayHelpers
     }
 
     public static string GetStatusCssClass(string status) =>
-        status == "Healthy" ? "text-green-600" : status == "Degraded" ? "text-amber-600" : "text-red-600";
+        status == "Healthy" ? "text-success" : status == "Degraded" ? "text-warning" : "text-error";
 
     // --- Audit cross-navigation (links from module/schedule/run context) ---
 
@@ -124,11 +124,48 @@ public static class Epic33UiDisplayHelpers
             "audit" when !string.IsNullOrEmpty(targetId) => GetAuditLinkForRun(targetId),
             "module" when !string.IsNullOrEmpty(targetId) => $"/modules/{Uri.EscapeDataString(targetId)}",
             "schedule" when !string.IsNullOrEmpty(targetId) => $"/schedules/{Uri.EscapeDataString(targetId)}",
-            "blocked_work" => "/control/blocked-work",
+            "blocked_work" => RunStatusFacets.BlockedRunsHref,
             "runtime_health" => "/control/center",
             _ => "#"
         };
 
     public static string GetRunsListCorrelationFilterHref(string correlationKey) =>
         $"/runs?correlationKey={Uri.EscapeDataString(correlationKey)}";
+
+    /// <summary>Runs list filtered by integration id (Epic 94/95).</summary>
+    public static string GetRunsListIntegrationFilterHref(string integrationId) =>
+        $"/runs?integrationId={Uri.EscapeDataString(integrationId)}";
+
+    /// <summary>Runs list filtered by module id on execution definition (Epic 95).</summary>
+    public static string GetRunsListModuleFilterHref(string moduleId) =>
+        $"/runs?moduleId={Uri.EscapeDataString(moduleId)}";
+
+    /// <summary>
+    /// Builds a <c>/runs</c> URL preserving every supplied sibling filter. Used so changing one
+    /// filter (e.g. the status facet dropdown) never silently discards the others — a status
+    /// change alters only <paramref name="status"/>. Omit/blank a parameter to clear it.
+    /// </summary>
+    public static string BuildRunsListUrl(
+        string? correlationKey = null,
+        string? status = null,
+        string? createdFrom = null,
+        string? integrationId = null,
+        string? moduleId = null)
+    {
+        var parts = new List<string>(5);
+
+        void Add(string key, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                parts.Add($"{key}={Uri.EscapeDataString(value)}");
+        }
+
+        Add("correlationKey", correlationKey);
+        Add("status", status);
+        Add("createdFrom", createdFrom);
+        Add("integrationId", integrationId);
+        Add("moduleId", moduleId);
+
+        return parts.Count == 0 ? "/runs" : $"/runs?{string.Join("&", parts)}";
+    }
 }

@@ -1,6 +1,6 @@
-using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Services;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimeHost.Windows.WorkerHost;
 using Apperture.RuntimePlane.Abstractions;
@@ -56,6 +56,7 @@ public sealed class WorkerHostStartupDiTests
         // WorkerHost must do that via its helper.
         services.AddWorkerHostIntegrationRepository();
 
+        services.AddScheduleDispatchRunnerDependencies();
         services.AddScoped<IScheduleDispatchRunner, ScheduleDispatchRunner>();
 
         var provider = services.BuildServiceProvider();

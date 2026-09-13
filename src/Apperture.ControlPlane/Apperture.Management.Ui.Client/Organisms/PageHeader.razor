@@ -1,15 +1,22 @@
-<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div class="min-w-0">
-        <h1 class="text-xl font-semibold text-heading">@Title</h1>
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+
+<div class="ui-page-header flex flex-wrap items-start justify-between gap-3">
+    <div class="ui-page-header__intro min-w-0">
+        @if (!string.IsNullOrWhiteSpace(Eyebrow))
+        {
+            <div class="ui-page-header__eyebrow">@Eyebrow</div>
+        }
+            <h1 class="ui-page-header__title text-heading">@Title</h1>
         @if (!string.IsNullOrWhiteSpace(Subtitle))
         {
-            <div class="mt-1 text-xs text-muted">@Subtitle</div>
+            <div class="ui-page-header__subtitle mt-1">@Subtitle</div>
         }
         @ChildContent
     </div>
     @if (Toolbar is not null)
     {
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="ui-page-header__toolbar shrink-0">
             @Toolbar
         </div>
     }
@@ -17,7 +24,79 @@
 
 @code {
     [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Eyebrow { get; set; }
     [Parameter] public string? Subtitle { get; set; }
+    /// <summary>Route entity key (e.g. connection id). Used with @key to recreate header on navigation.</summary>
+    [Parameter] public string? ShellKey { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? Toolbar { get; set; }
+
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private ShellOrientationService ShellOrientation { get; set; } = null!;
+
+    private string? _lastPublishedPath;
+    private string? _lastPublishedTitle;
+    private string? _lastPublishedSubtitle;
+    private bool _firstPublishStarted;
+
+    protected override void OnParametersSet()
+    {
+        // Do not publish here — SetPageContext during OnParametersSet runs while the layout tree is still
+        // rendering and TopBar cannot reliably accept StateHasChanged from a descendant.
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (_firstPublishStarted)
+                return;
+            _firstPublishStarted = true;
+            // UIX-2: do not await inside OnAfterRenderAsync — Yield+publish raced TopBar/Body SHC (parentNode).
+            _ = PublishAfterFirstPaintAsync();
+            return;
+        }
+
+        PublishPageContextIfChanged();
+    }
+
+    private async Task PublishAfterFirstPaintAsync()
+    {
+        await Task.Yield();
+        await InvokeAsync(PublishPageContextIfChanged);
+    }
+
+    private void PublishPageContextIfChanged()
+    {
+        var path = EntityShellTitles.NormalizePath(new Uri(Nav.Uri).AbsolutePath);
+        if (path == _lastPublishedPath
+            && Title == _lastPublishedTitle
+            && Subtitle == _lastPublishedSubtitle)
+        {
+            return;
+        }
+
+        // When PageHeader matches route orientation, TopBar already shows the same text —
+        // skip SetPageContext/Changed so we do not SHC the top bar during first paint.
+        var route = ManagementBreadcrumbResolver.ResolveOrientation(path);
+        if (TitlesEqual(Title, route.Title) && TitlesEqual(Subtitle, route.Subtitle))
+        {
+            _lastPublishedPath = path;
+            _lastPublishedTitle = Title;
+            _lastPublishedSubtitle = Subtitle;
+            return;
+        }
+
+        _lastPublishedPath = path;
+        _lastPublishedTitle = Title;
+        _lastPublishedSubtitle = Subtitle;
+        ShellOrientation.SetPageContext(path, Title, Subtitle);
+    }
+
+    private static bool TitlesEqual(string? left, string? right)
+    {
+        var a = string.IsNullOrWhiteSpace(left) ? null : left.Trim();
+        var b = string.IsNullOrWhiteSpace(right) ? null : right.Trim();
+        return string.Equals(a, b, StringComparison.Ordinal);
+    }
 }

@@ -1,0 +1,11 @@
+@if (Count > 0)
+{
+    <span class="ui-notification-unread-badge"
+          aria-label="@($"{Count} unread notifications")">
+        @(Count > 99 ? "99+" : Count.ToString())
+    </span>
+}
+
+@code {
+    [Parameter] public int Count { get; set; }
+}

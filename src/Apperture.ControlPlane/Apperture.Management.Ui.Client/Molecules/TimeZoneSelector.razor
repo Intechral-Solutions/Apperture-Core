@@ -1,0 +1,102 @@
+@*
+    Searchable timezone picker. The list is built from the zones the host recognizes, so a selection
+    can never be rejected by the server. Browser detection is offered as a shortcut, not a default.
+*@
+@using Apperture.Management.Ui.Shared
+@inject IJSRuntime Js
+
+<SearchableList Label="Timezone"
+                HelpText="Used to display dates and times to you. Schedules and stored timestamps always remain UTC."
+                SearchPlaceholder="Search timezones"
+                HeaderLabel="Available timezones"
+                ListAriaLabel="Available timezones"
+                UseDefaultLabel="Use this browser"
+                NullOptionLabel="Follow this browser"
+                IncludeNullOption="true"
+                IdPrefix="@IdPrefix"
+                Disabled="@Disabled"
+                Value="@Value"
+                ValueChanged="OnValueChanged"
+                OnUseDefault="DetectAsync"
+                StatusMessage="@_detectError"
+                AllOptions="@_allOptions"
+                Filter="FilterZones"
+                DescribeSelected="OperatorTimeZoneCatalog.DescribeId" />
+
+@code {
+    /// <summary>Selected timezone id, or null to follow the browser.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Distinguishes the control's ids when more than one is rendered on a page.</summary>
+    [Parameter] public string IdPrefix { get; set; } = "timezone";
+
+    private string? _detectError;
+    private IReadOnlyList<SearchableList.Option> _allOptions = [];
+
+    protected override void OnInitialized()
+    {
+        _allOptions = OperatorTimeZoneCatalog.All
+            .Select(z => new SearchableList.Option(z.Id, z.Label))
+            .ToList();
+    }
+
+    private IReadOnlyList<SearchableList.Option> FilterZones(string query)
+    {
+        var results = OperatorTimeZoneCatalog.Search(query)
+            .Select(z => new SearchableList.Option(z.Id, z.Label))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(Value)
+            && !results.Any(c => string.Equals(c.Value, Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            var current = _allOptions.FirstOrDefault(c =>
+                string.Equals(c.Value, Value, StringComparison.OrdinalIgnoreCase));
+            if (current is not null)
+                results.Insert(0, current);
+        }
+
+        return results;
+    }
+
+    private async Task OnValueChanged(string? next)
+    {
+        _detectError = null;
+        Value = next;
+        await ValueChanged.InvokeAsync(next);
+    }
+
+    private async Task DetectAsync()
+    {
+        _detectError = null;
+        string? detected = null;
+        try
+        {
+            detected = await Js.InvokeAsync<string?>("appertureShell.getTimeZone");
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        if (string.IsNullOrWhiteSpace(detected))
+        {
+            _detectError = "This browser did not report a timezone. Choose one from the list instead.";
+            return;
+        }
+
+        if (!OperatorTimeZoneCatalog.IsKnown(detected))
+        {
+            _detectError = $"This browser reported “{detected}”, which this server does not recognize. Choose the closest match from the list.";
+            return;
+        }
+
+        Value = detected.Trim();
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

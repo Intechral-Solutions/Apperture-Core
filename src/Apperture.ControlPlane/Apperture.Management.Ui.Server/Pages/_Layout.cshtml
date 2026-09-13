@@ -17,8 +17,9 @@
     <base href="/" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/management-ui-primitives.css" />
     <script>
         (function () {
             try {
@@ -30,9 +31,49 @@
         })();
     </script>
     <script src="js/apperture-shell.js"></script>
+    <script src="js/control-panel-resize.js"></script>
+    @* #region agent log *@
+    <script>
+        (function () {
+            function snap() {
+                var app = document.getElementById('app');
+                var html = app ? (app.innerHTML || '') : '';
+                var stamp = 'pass18-singleroot';
+                if (window.appertureShell && window.appertureShell.debugLog) {
+                    window.appertureShell.debugLog('_Layout.cshtml:pre-wasm', 'host-dom-before-wasm', 'H1', {
+                        buildStamp: stamp,
+                        appChildCount: app ? app.childNodes.length : -1,
+                        appHtmlLen: html.length,
+                        appHtmlHead: html.slice(0, 240),
+                        bodyIdIsApp: document.body && document.body.id === 'app',
+                        hasBlazorComment: html.indexOf('blazor') >= 0 || html.indexOf('Blazor') >= 0
+                    });
+                }
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', snap);
+            } else {
+                snap();
+            }
+            window.addEventListener('load', function () {
+                var app = document.getElementById('app');
+                var html = app ? (app.innerHTML || '') : '';
+                if (window.appertureShell && window.appertureShell.debugLog) {
+                    window.appertureShell.debugLog('_Layout.cshtml:load', 'host-dom-after-load', 'H2', {
+                        appHtmlLen: html.length,
+                        appHtmlHead: html.slice(0, 240)
+                    });
+                }
+            });
+        })();
+    </script>
+    @* #endregion *@
 </head>
-<body id="app">
-    @RenderBody()
+<body>
+    @* Blazor root must not be <body> — that would replace the boot script node. *@
+    <div id="app">
+        @RenderBody()
+    </div>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

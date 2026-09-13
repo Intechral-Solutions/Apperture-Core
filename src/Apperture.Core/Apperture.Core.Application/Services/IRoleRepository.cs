@@ -29,6 +29,12 @@ public interface IRoleRepository
     ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists user ids that currently have the given role. Default is empty so test doubles need not implement it.
+    /// </summary>
+    ValueTask<IReadOnlyList<UserId>> ListUserIdsWithRoleAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<UserId>>(Array.Empty<UserId>());
+
+    /// <summary>
     /// Assigns a role to a user.
     /// </summary>
     ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);

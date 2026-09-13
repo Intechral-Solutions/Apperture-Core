@@ -1,15 +1,20 @@
 using System.Collections.Generic;
 using System.Data;
+using Apperture.Core.Application.Execution;
+using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
-using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Abstractions.Signals;
+using Apperture.ModuleSdk.Testing.Signals;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Options;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Engine;
+using Apperture.RuntimePlane.Engine.PlatformEvents;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Sample.HelloWorld;
 using Xunit;
@@ -94,7 +99,17 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
         await db.SaveChangesAsync();
 
         var slotResolver = new CountingRuntimeSlotResolver();
-        var executor = new DefaultWorkflowExecutor(slotResolver, registry);
+        // S13B Complete fails when emit is skipped — do not use the 2-arg executor (Null emitter).
+        var platformEvents = new RecordingModulePlatformEventEmitter(
+            ModuleSignalRegistry.FromModules([module]),
+            enabled: true);
+        var executor = new DefaultWorkflowExecutor(
+            slotResolver,
+            registry,
+            platformEvents,
+            NullModuleOperationalLogger.Instance,
+            NoOpModuleTelemetry.Instance,
+            NullLoggerFactory.Instance);
         var definitionResolver = new WorkflowDefinitionResolver(new IModule[] { module });
         var leaseOptions = Options.Create(new WorkflowStartRequestLeaseOptions { LeaseTimeout = TimeSpan.FromMinutes(10) });
 
@@ -127,6 +142,7 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
 
         slotResolver.OpenCount.Should().Be(3);
         slotResolver.CloseCount.Should().Be(3);
+        platformEvents.ShouldContain("demo.completed");
     }
 
     [Fact]
@@ -197,11 +213,39 @@ public sealed class HelloWorldWorkflowTruthfulnessTests
         }
     }
 
-    private sealed class StubStepExecutionContext(string moduleId) : IStepExecutionContext
+    private sealed class StubStepExecutionContext : IStepExecutionContext
     {
-        public string ModuleId { get; } = moduleId;
+        private readonly IStepExecutionSignals _signals;
+
+        public StubStepExecutionContext(string moduleId)
+        {
+            ModuleId = moduleId;
+            _signals = new StepExecutionSignals(
+                this,
+                NullModulePlatformEventEmitter.Instance,
+                NullModuleOperationalLogger.Instance,
+                NoOpModuleTelemetry.Instance);
+        }
+
+        public string ModuleId { get; }
 
         public string? IntegrationId => null;
+
+        public IStepExecutionSignals Signals => _signals;
+
+        public IModulePlatformEventEmitter PlatformEvents => _signals.Events;
+
+        public string? RunId => null;
+
+        public string? ProcedureId => null;
+
+        public string? ScheduleId => null;
+
+        public string? CorrelationId => null;
+
+        public string? CausationId => null;
+
+        public string? ResourceContextId => null;
 
         public ValueTask<T?> ResolveSlotAsync<T>(string slotName, CancellationToken cancellationToken = default)
             where T : class

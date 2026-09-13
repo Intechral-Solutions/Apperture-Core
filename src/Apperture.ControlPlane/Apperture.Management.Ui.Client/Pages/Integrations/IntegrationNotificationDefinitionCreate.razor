@@ -1,0 +1,82 @@
+@page "/integrations/{IntegrationId}/notifications/definitions/new"
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
+
+<div class="p-4">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integrationDisplayName, "Integration")"
+                Subtitle="Create notification definition" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canSave)
+    {
+        <div class="mt-4">
+            <ForbiddenState Message="Creating notification definitions requires notification definition manage and integration update permissions." />
+        </div>
+    }
+    else
+    {
+        <div class="mt-4">
+            <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Create"
+                                                 IntegrationId="@IntegrationId"
+                                                 LockIntegration="true"
+                                                 ReturnUrl="@ReturnUrl"
+                                                 CanSave="true"
+                                                 OnSaved="OnSavedAsync" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canSave;
+    private string? _integrationDisplayName;
+
+    private string ReturnUrl => $"/integrations/{Uri.EscapeDataString(IntegrationId)}/notifications";
+
+    private string? _dataLoadKey;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
+        _capabilitiesLoaded = true;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = IntegrationId ?? "";
+        if (key == _dataLoadKey)
+            return;
+
+        _dataLoadKey = key;
+        _integrationDisplayName = null;
+
+        var integration = await Client.GetIntegrationAsync(IntegrationId);
+        _integrationDisplayName = integration?.DisplayName;
+        ShellOrientation.PublishForCurrentUri(
+            Nav,
+            EntityShellTitles.Detail(_integrationDisplayName, "Integration"),
+            "Create notification definition");
+    }
+
+    private Task OnSavedAsync(string definitionId)
+    {
+        Nav.NavigateTo(NotificationPostCreateNavigation.IntegrationNotificationsAfterCreate(IntegrationId, definitionId));
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,109 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="05 Workflow Hot Path (Current)" id="05-workflow-hot-path-current">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;05 — Workflow Hot Path (Current)&lt;/b&gt;&lt;br&gt;SQL durable enqueue + WorkerHost inline step execution" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="10" width="700" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="cpLane" value="Control Plane" style="swimlane;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="320" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="api" value="Management API&lt;br&gt;POST /workflows/{id}/start&lt;br&gt;POST /runs/{id}/cancel|retry|park|resume" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cpLane">
+          <mxGeometry x="20" y="50" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="scheduleTrig" value="ScheduleDispatchRunner&lt;br&gt;(WorkerHost background)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="cpLane">
+          <mxGeometry x="20" y="140" width="280" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="sharedLane" value="Shared / Core" style="swimlane;startSize=30;fillColor=#e1d5e7;strokeColor=#9673a6;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="300" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatchSvc" value="IWorkflowStartDispatchService&lt;br&gt;WorkflowStartDispatchService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sharedLane">
+          <mxGeometry x="20" y="50" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="extCtrl" value="WorkflowCancelRequests&lt;br&gt;WorkflowExternalControlRequests&lt;br&gt;(park / resume intent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="sharedLane">
+          <mxGeometry x="20" y="130" width="260" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="foundLane" value="Foundation — Persistence (SQL Server)" style="swimlane;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="740" y="80" width="300" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="persistTriple" value="Atomic enqueue (transaction):&lt;br&gt;• WorkflowStartRequests&lt;br&gt;• OperationRuns&lt;br&gt;• WorkflowInstances&lt;br&gt;• WorkflowLifecycleEvents (Dispatched)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="foundLane">
+          <mxGeometry x="20" y="50" width="260" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="ipLane" value="Instance Plane — WorkerHost" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="1000" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="worker" value="StartRequestWorker&lt;br&gt;poll + claim/lease&lt;br&gt;(ClaimedAt / ClaimedBy)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="20" y="50" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="processor" value="WorkflowStartRequestProcessor&lt;br&gt;• resolve definition (IModule)&lt;br&gt;• check cancel / park / resume&lt;br&gt;• lease renew at step boundaries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="230" y="40" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="executor" value="DefaultWorkflowExecutor&lt;br&gt;step loop (IStepHandlerRegistry)&lt;br&gt;module-driven handlers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="500" y="50" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="history" value="WorkflowLifecycleEvents&lt;br&gt;WorkflowStepInstances&lt;br&gt;(per-step history)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="ipLane">
+          <mxGeometry x="730" y="50" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="safeBound" value="Safe boundaries:&lt;br&gt;before start • before each step • before terminal write&lt;br&gt;cancel → cancelled | park → parked | resume → running&lt;br&gt;retry → new run via dispatch (RetryOfRunId)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;" vertex="1" parent="ipLane">
+          <mxGeometry x="20" y="160" width="910" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="rtLane" value="Runtime Plane (not on hot path today)" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="400" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="iwrStub" value="IWorkflowRuntime&lt;br&gt;(stubbed — not wired to start)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" vertex="1" parent="rtLane">
+          <mxGeometry x="20" y="45" width="360" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;  Implemented #dae8fc  |  Partial #fff2cc  |  Stubbed dashed #f5f5f5" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="480" y="640" width="560" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="api" target="dispatchSvc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="HTTP 202">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="scheduleTrig" target="dispatchSvc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="StartWorkflowRequest">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="dispatchSvc" target="persistTriple" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="SQL txn enqueue">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="persistTriple" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="Status=requested">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="worker" target="processor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="lease claim">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="processor" target="executor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="execute steps">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="executor" target="history" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="write events + steps">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="api" target="extCtrl" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=0;" value="persist intent">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="300"/>
+              <mxPoint x="550" y="300"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="extCtrl" target="processor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="read at safe boundaries">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="550" y="310"/>
+              <mxPoint x="350" y="310"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="api" target="iwrStub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" value="not wired">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="600"/>
+              <mxPoint x="240" y="600"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

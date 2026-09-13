@@ -1,0 +1,85 @@
+@using Apperture.Management.Ui.Shared
+
+@if (Loading)
+{
+    <LoadingState Message="Loading recent activity…" />
+}
+else if (!string.IsNullOrEmpty(Error))
+{
+    <PageMessage Kind="PageMessageKind.Error"
+                 Title="Recent activity unavailable"
+                 Message="@Error" />
+}
+else if (Items is null || Items.Count == 0)
+{
+    <EmptyState Message="@EmptyMessage" />
+}
+else
+{
+    <div class="ui-data-table">
+        <table class="ui-data-table__table min-w-full text-left text-body">
+            <thead class="border-b border-default text-xs text-muted">
+                <tr>
+                    <th class="px-2 py-2">When</th>
+                    <th class="px-2 py-2">Source</th>
+                    <th class="px-2 py-2">Summary</th>
+                    <th class="px-2 py-2">Actor</th>
+                    <th class="px-2 py-2">Status</th>
+                    <th class="px-2 py-2"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Items)
+                {
+                    <tr>
+                        <td class="px-2 py-2">
+                            <div class="font-mono text-xs">@FmtWhen(item.TimestampUtc)</div>
+                        </td>
+                        <td class="px-2 py-2">
+                            <div class="text-xs font-semibold">@item.SourceKind</div>
+                            <div class="font-mono text-xs text-muted">@item.TypeLabel</div>
+                        </td>
+                        <td class="px-2 py-2">
+                            <div class="text-xs break-words">@item.Summary</div>
+                        </td>
+                        <td class="px-2 py-2">
+                            <span class="font-mono text-xs">@(string.IsNullOrWhiteSpace(item.Actor) ? "—" : item.Actor)</span>
+                        </td>
+                        <td class="px-2 py-2">
+                            @if (!string.IsNullOrWhiteSpace(item.StatusOrOutcome))
+                            {
+                                <StatusPill Label="@item.StatusOrOutcome"
+                                            Semantic="@EntityRecentActivityComposer.MapStatusSemantic(item.StatusOrOutcome)" />
+                            }
+                            else
+                            {
+                                <span class="text-xs text-muted">—</span>
+                            }
+                        </td>
+                        <td class="px-2 py-2">
+                            @if (!string.IsNullOrWhiteSpace(item.DrillInHref))
+                            {
+                                <DrillInLink Href="@item.DrillInHref">@item.DrillInLabel</DrillInLink>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (FooterLinks is not null)
+    {
+        <div class="mt-3 flex flex-wrap gap-3">@FooterLinks</div>
+    }
+}
+
+@code {
+    [Parameter] public IReadOnlyList<EntityRecentActivityItem>? Items { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "No recent activity for this entity in the lookback window.";
+    [Parameter] public RenderFragment? FooterLinks { get; set; }
+
+    private static string FmtWhen(DateTimeOffset ts) =>
+        ts.UtcDateTime.ToString("u");
+}

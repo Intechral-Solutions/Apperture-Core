@@ -1,0 +1,35 @@
+@*
+    UIX-6 — one identifier / metadata entry inside <TechnicalDetails>.
+    Values wrap and stay selectable for copying.
+*@
+
+<div class="ui-technical-details__entry">
+    <dt class="ui-technical-details__label">@TechnicalDetailsUiHelpers.FormatLabel(Label)</dt>
+    <dd class="@ValueClass">
+        @if (ChildContent is not null)
+        {
+            @ChildContent
+        }
+        else
+        {
+            @TechnicalDetailsUiHelpers.FormatValue(Value)
+        }
+    </dd>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>Set false for prose-like values (summaries) that should not be monospace.</summary>
+    [Parameter] public bool Monospace { get; set; } = true;
+
+    /// <summary>Structured value content replacing <see cref="Value"/>.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string ValueClass =>
+        Monospace
+            ? "ui-technical-details__value ui-technical-details__value--mono"
+            : "ui-technical-details__value";
+}

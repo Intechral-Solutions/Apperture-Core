@@ -53,7 +53,7 @@ public sealed class RecoveryQueryServiceTests
 
         var entry = list.Should().ContainSingle().Subject;
         entry.RetryEligibleNow.Should().BeFalse();
-        entry.RetryEligibleReason.Should().Contain("Operation retry not yet supported");
+        entry.RetryEligibleReason.Should().Contain("Operation-level retry is not supported");
     }
 
     [Fact]

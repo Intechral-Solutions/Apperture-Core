@@ -65,7 +65,8 @@ flowchart TB
     WorkerHost --> Secrets
     WorkerHost --> Bootstrap
     ModuleHost --> WorkerHost
-    SchedulerHost --> IWorkflowStarter
+    WorkerHost --> SqlStartDispatch[SQL durable start dispatch<br/>IWorkflowStartDispatchService + worker claim/execute]
+    SchedulerHost -.->|stub process; not live dispatch| SqlStartDispatch
     InstanceAgent --> Persistence
 
     Bootstrap --> Persistence
@@ -300,11 +301,13 @@ flowchart TB
 **Implemented:**
 - Portable model (StartWorkflowRequest, WorkflowDefinitionId, etc.)
 - OrchestrationSafeValidator (parameter/signal validation)
-- DbContext entities for workflow/step/operation state
+- DbContext entities for workflow/step/operation state (platform `AppertureDbContext`; module-owned contexts for module tables — see [Epic 73 ADR](../02-decisions/Epic73-execution-hot-path-and-host-roles.md))
+- SQL-backed durable enqueue: `IWorkflowStartDispatchService`, `IOperationStartDispatchService` (`Apperture.Core.Application`); implementations in `Apperture.RuntimePlane.Dispatch.SqlServer`
 
 **Stubbed:**
 - DTFx adapter
 - Durable Functions adapter (all IWorkflowRuntime methods throw)
+- `IWorkflowStarter` (contract exists; not the current enqueue surface — use dispatch services)
 
 ---
 
@@ -313,9 +316,9 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph WindowsHost["RuntimeHost.Windows"]
-        WorkerHost[WorkerHost<br/>WorkerStub: ISecretResolver demo]
+        WorkerHost[WorkerHost<br/>StartRequestWorker + schedule dispatch]
         ModuleHost[ModuleHostStub]
-        SchedulerHost[SchedulerHostStub<br/>BackgroundService]
+        SchedulerHost[SchedulerHostStub<br/>not used for live schedule dispatch]
         InstanceAgent[InstanceAgent]
     end
 
@@ -332,7 +335,6 @@ flowchart TB
     end
 
     WorkerHost --> Dependencies
-    SchedulerHost -.->|would call| IWorkflowStarter
     Template --> HttpTriggerStub
     Template --> AzureSecrets
 ```

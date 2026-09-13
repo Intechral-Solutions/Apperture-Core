@@ -1,4 +1,3 @@
-using Apperture.Connectors.CampusNexus;
 using Apperture.Core.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +10,7 @@ public static class UnisaCampusNexusPaymentPlansServiceCollectionExtensions
     /// only where <see cref="IModuleSlotRegistry"/> is registered (control plane);
     /// runtime workers must pass <c>false</c>.
     /// </summary>
+    /// <param name="applyModulePersistenceMigrationsOnStartup">When true, runs EF migrations for module-owned tables on startup (Management.Host).</param>
     public static IServiceCollection AddUnisaCampusNexusPaymentPlansIntegration(
         this IServiceCollection services,
         bool registerCapabilitySlotBootstrap = true)
@@ -19,8 +19,6 @@ public static class UnisaCampusNexusPaymentPlansServiceCollectionExtensions
             services.AddHostedService<UnisaCampusNexusPaymentPlansSlotBootstrapHostedService>();
 
         services.AddScoped<IUnisaPaymentPlanManagementService, UnisaPaymentPlanManagementService>();
-        services.AddScoped<UnisaPaymentPlanArrangementRepository>();
-        services.AddSingleton<IConnectorDefinitionContributor, CampusNexusConnectorDefinitionContributor>();
         return services;
     }
 }

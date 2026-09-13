@@ -48,6 +48,12 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
             ? LocalAuthHelpers.NormalizeUsername(externalId)
             : externalId.Trim();
 
+        if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+            return FirstAdminBootstrapResult.DuplicateIdentityLink;
+
+        if (source == IdentitySource.Entra)
+            return FirstAdminBootstrapResult.DuplicateIdentityLink;
+
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
             return FirstAdminBootstrapResult.DuplicateIdentityLink;
@@ -60,6 +66,14 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
             new[] { new RoleId(BootstrapConstants.PlatformAdminRoleId) },
             IsBreakGlassEligible: false);
 
+        if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&
+            _localCredentialRepository is not null && _passwordHasher is not null)
+        {
+            LocalPasswordPolicy.Require(
+                password,
+                LocalPasswordPolicy.ForLocalIdentity(linkExternalId, displayName));
+        }
+
         await _userRepository.AddAsync(user, cancellationToken);
 
         if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&
@@ -70,6 +84,13 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         }
 
         return FirstAdminBootstrapResult.Success(userId);
+    }
+
+    /// <inheritdoc />
+    public async Task<BootstrapSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var count = await _userRepository.GetUserCountAsync(cancellationToken);
+        return BootstrapSetupStatus.FromUserCount(count);
     }
 }
 

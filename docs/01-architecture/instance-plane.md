@@ -6,12 +6,12 @@ Folder layout: `Apperture.RuntimePlane` (shared engine), `Apperture.RuntimeHost`
 
 ## On-prem (RuntimeHost.Windows)
 
-- **WorkerHost** — Hosts the DTFx runtime adapter
+- **WorkerHost** — **Current:** SQL-backed durable enqueue (`IWorkflowStartDispatchService` / dispatch stack), claim of start requests, and **inline** step execution via `IWorkflowExecutor` / engine. **Future:** DTFx adapter when wired for orchestration (see [Epic 73 ADR](../02-decisions/Epic73-execution-hot-path-and-host-roles.md)).
 - **ModuleHost** — One module per process boundary
 - **InstanceAgent** — Local instance management endpoint/service
-- **SchedulerHost** — Triggers workflow starts only (optional dedicated service)
+- **SchedulerHost** — Stub in current deployment; schedule dispatch runs in WorkerHost via `IScheduleDispatchRunner`
 
-SQL Server is the persistence store. DTFx coordinates durable orchestration.
+SQL Server is the shared persistence store for platform and runtime state today. DTFx/Durable Functions adapters are portability targets, not the current worker hot path.
 
 ## Cloud (RuntimeHost.Azure)
 

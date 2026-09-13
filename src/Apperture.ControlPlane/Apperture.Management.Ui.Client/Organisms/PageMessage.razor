@@ -11,18 +11,26 @@
     [Parameter] public PageMessageKind Kind { get; set; } = PageMessageKind.Info;
     [Parameter] public string? Title { get; set; }
     [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Class { get; set; } = "";
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private string Role => Kind == PageMessageKind.Error ? "alert" : "status";
 
-    private string RootClass => Kind switch
+    private string RootClass
     {
-        PageMessageKind.Error =>
-            "rounded border px-3 py-2 text-sm border-message-error bg-message-error text-message-error-text",
-        PageMessageKind.Warning =>
-            "rounded border px-3 py-2 text-sm border-message-warning bg-message-warning text-message-warning-text",
-        _ => $"{BoxClass} rounded border px-3 py-2 text-sm text-body"
-    };
+        get
+        {
+            var baseClass = Kind switch
+            {
+                PageMessageKind.Error =>
+                    "rounded border px-3 py-2 text-sm border-message-error bg-message-error text-message-error-text",
+                PageMessageKind.Warning =>
+                    "rounded border px-3 py-2 text-sm border-message-warning bg-message-warning text-message-warning-text",
+                _ => $"{BoxClass} rounded border px-3 py-2 text-sm text-body"
+            };
+            return string.IsNullOrWhiteSpace(Class) ? baseClass : $"{baseClass} {Class}";
+        }
+    }
 
     private string TitleClass => Kind switch
     {

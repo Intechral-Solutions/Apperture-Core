@@ -53,6 +53,65 @@ public sealed class WorkflowProcessorDefinitionResolutionTests
             .Where(x => x.Message.Contains("not effectively active", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task TryAuditDefinitionUnavailableAsync_PassesResourceContextIdThrough()
+    {
+        await using var db = CreateDb();
+        var module = new HelloWorldModule();
+        var registry = new StepHandlerRegistry();
+        module.RegisterStepHandlers(registry);
+        var executor = new DefaultWorkflowExecutor(new NoOpSlotResolver(), registry);
+        var definitionResolver = new WorkflowDefinitionResolver([module], new DenyAllActivationFilter());
+        var audit = new CapturingAuditService();
+
+        var processor = new WorkflowStartRequestProcessor(
+            db,
+            executor,
+            definitionResolver,
+            "worker",
+            Options.Create(new WorkflowStartRequestLeaseOptions { LeaseTimeout = TimeSpan.FromMinutes(5) }),
+            audit: audit);
+
+        var ex = new DefinitionNotExecutableException("wf.def", ExecutionDefinitionKind.Workflow, "not effectively active");
+        await InvokeAudit(processor, ex, "run-1", "app-a");
+
+        audit.LastRecord.Should().NotBeNull();
+        audit.LastRecord!.ResourceContextId.Should().Be("app-a");
+    }
+
+    private static async Task InvokeAudit(
+        WorkflowStartRequestProcessor processor, Exception ex, string runId, string? resourceContextId)
+    {
+        var method = typeof(WorkflowStartRequestProcessor).GetMethod(
+            "TryAuditDefinitionUnavailableAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance,
+            null,
+            [typeof(Exception), typeof(string), typeof(string), typeof(CancellationToken)],
+            null);
+        if (method is null)
+            throw new InvalidOperationException("TryAuditDefinitionUnavailableAsync not found");
+        var result = method.Invoke(processor, new object?[] { ex, runId, resourceContextId, CancellationToken.None });
+        if (result is ValueTask vt)
+            await vt.ConfigureAwait(false);
+        else
+            throw new InvalidOperationException($"Unexpected return type {result?.GetType().FullName}");
+    }
+
+    private sealed class CapturingAuditService : Apperture.Core.Application.Services.IAuditService
+    {
+        public Apperture.Core.Domain.Audit.AuditRecord? LastRecord { get; private set; }
+        public ValueTask AppendAsync(Apperture.Core.Domain.Audit.AuditRecord record, CancellationToken cancellationToken = default)
+        {
+            LastRecord = record;
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<Apperture.Core.Application.Services.AuditPage> QueryAsync(Apperture.Core.Application.Services.AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new Apperture.Core.Application.Services.AuditPage([], null));
+        public ValueTask<int> CountAsync(Apperture.Core.Application.Services.AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<Apperture.Core.Domain.Audit.AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Apperture.Core.Domain.Audit.AuditRecord?>(null);
+    }
+
     private static async Task InvokeResolve(WorkflowStartRequestProcessor processor, string workflowDefinitionId)
     {
         var method = typeof(WorkflowStartRequestProcessor).GetMethod(

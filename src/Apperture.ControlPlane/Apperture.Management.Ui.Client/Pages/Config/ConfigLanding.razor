@@ -1,18 +1,93 @@
 @page "/config"
 @layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
 
-<div class="p-4">
-    <div class="text-xs text-muted mb-1">Config</div>
-    <h1 class="text-xl font-semibold text-heading">Configuration</h1>
-    <div class="mt-4 text-sm text-body">
-        <p>Select a configuration area:</p>
-        <ul class="mt-2 list-disc list-inside space-y-1">
-            <li>
-                <a href="/config/auth" class="underline hover:no-underline">Authentication</a> — Sign-in overview, chooser policy, and Entra registrations
-            </li>
-            <li>
-                <a href="/config/governance" class="underline hover:no-underline">Governance</a> — Roles, users, permission catalog, and role assignment
-            </li>
-        </ul>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Configuration"
+                Eyebrow="Config"
+                Subtitle="Inventory, governance, Attention configuration, and system settings. Day-to-day operations stay on Control Center, Integrations, and Runs." />
+
+    @if (_authWarning is not null)
+    {
+        <PageMessage Kind="PageMessageKind.Warning" Message="@_authWarning">
+            <a class="underline" href="/config/auth">Review authentication</a>
+        </PageMessage>
+    }
+
+    <ManagementSection Title="Inventory" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Inventory"
+                                   Description="Search and open modules, integrations, connections, schedules, notification definitions, runs, and audit events."
+                                   Href="@ShellSectionRoutes.Inventory" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="Governance" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Governance"
+                                   Description="Roles, users, permission catalog, and role assignment."
+                                   Href="/config/governance" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="Attention" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Operational teams"
+                                   Description="Teams used for Attention routing."
+                                   Href="/attention/operational-teams" />
+            <ManagementSummaryCard Title="Routing defaults"
+                                   Description="Reminder and escalation intervals and default teams."
+                                   Href="/attention/routing-defaults" />
+            <ManagementSummaryCard Title="Managed contacts"
+                                   Description="People and addresses used in routing."
+                                   Href="/config/contacts" />
+            <ManagementSummaryCard Title="Notifications"
+                                   Description="Definitions, instances, delivery, and diagnostics."
+                                   Href="/config/notifications" />
+        </div>
+    </ManagementSection>
+
+    <ManagementSection Title="System" Layer="@ManagementSection.UiLayer.Summary">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ManagementSummaryCard Title="Platform settings"
+                                   Description="Instance-scoped runtime flags with database overrides."
+                                   Href="/config/platform-settings" />
+            <ManagementSummaryCard Title="Modules"
+                                   Description="Installed module lifecycle, validation, and links to runs and audit."
+                                   Href="/modules" />
+            <ManagementSummaryCard Title="Authentication"
+                                   Description="Sign-in experience, chooser policy, and Entra tenant validation."
+                                   Href="/config/auth" />
+            <ManagementSummaryCard Title="Developer & internal"
+                                   Description="Deferred dashboard tools, diagnostics, and internal demos."
+                                   Href="@ShellSectionRoutes.DeveloperTasks" />
+        </div>
+    </ManagementSection>
 </div>
+
+@code {
+    private string? _authWarning;
+
+    // NAV-1 stabilization (independent-review F-01 / 7A): the retired Dashboard's
+    // auth-warnings card carried a proactive "no viable sign-in path" signal that had no
+    // replacement surface after Control Center became the sole home. Restored here as a small,
+    // capability-safe summary rather than a new card framework. GetConfigAuthOverviewAsync
+    // already returns null on 401/403, so operators without the auth-read/manage capability
+    // simply see nothing.
+    protected override async Task OnInitializedAsync()
+    {
+        ConfigAuthOverviewDto? overview;
+        try
+        {
+            overview = await Client.GetConfigAuthOverviewAsync();
+        }
+        catch (HttpRequestException)
+        {
+            overview = null;
+        }
+
+        _authWarning = ConfigAuthPostureUiHelpers.ResolveWarning(overview);
+    }
+}

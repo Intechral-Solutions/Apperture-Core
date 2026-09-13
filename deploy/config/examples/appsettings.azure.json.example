@@ -1,0 +1,41 @@
+{
+  "_Comment": "Azure App Service / container instance template. Set secrets via App Service configuration or Key Vault references — never commit ClientSecret or SQL passwords. See docs/01-architecture/bootstrap-and-secrets-boundary.md.",
+  "SqlServer": {
+    "Server": "your-server.database.windows.net",
+    "Database": "Apperture",
+    "CredentialReference": {
+      "SourceType": "KeyVaultReference",
+      "Reference": "https://your-vault.vault.azure.net/secrets/sql-connection"
+    }
+  },
+  "Entra": {
+    "Enabled": true,
+    "TenantId": "your-tenant-id",
+    "ClientId": "your-app-registration-client-id",
+    "Instance": "https://login.microsoftonline.com/"
+  },
+  "LocalAuth": {
+    "Enabled": false
+  },
+  "BootstrapPlatformAdmin": {
+    "Enabled": true,
+    "CreateUserIfMissing": false,
+    "Principals": [
+      {
+        "IdentitySource": "Entra",
+        "ExternalId": "user-object-id-oid-from-token",
+        "DisplayName": "Bootstrap administrator"
+      }
+    ]
+  },
+  "PlatformEvents": {
+    "Enabled": false
+  },
+  "_Notifications_Comment": "Independent operational toggles. Leave off until SMTP (Notifications:Email) and recipients are configured. There is no UsePlatformPipeline switch — this is the only delivery architecture.",
+  "Notifications": {
+    "Evaluation": { "Enabled": false },
+    "Instances": { "Enabled": false },
+    "Delivery": { "Enabled": false }
+  },
+  "_AzureAppService_EnvVarExamples": "Entra__TenantId, Entra__ClientId, Entra__ClientSecret, SqlServer__CredentialReference__Reference — use double underscore for nested keys"
+}

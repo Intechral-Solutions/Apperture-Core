@@ -12,4 +12,10 @@ public interface IProcedureRegistryService
     ValueTask<IReadOnlyList<ProcedureDefinition>> ListAsync(CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<ProcedureDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default);
+
+    ValueTask<ProcedureDefinition?> FindByTargetAsync(
+        string moduleId,
+        ProcedureLaunchKind launchKind,
+        string targetDefinitionId,
+        CancellationToken cancellationToken = default);
 }

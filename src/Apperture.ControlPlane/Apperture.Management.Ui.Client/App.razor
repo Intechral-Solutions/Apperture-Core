@@ -3,6 +3,10 @@
 @inject ThemeService ThemeService
 @inject SessionStateService SessionStateService
 @inject AuthSignInOptionsService AuthSignInOptionsService
+@inject AppearancePreferenceCoordinator AppearancePreferences
+@inject IOperatorDisplayTimeZone OperatorDisplayTimeZone
+@inject ShellBootstrapState ShellBootstrap
+@inject IJSRuntime Js
 
 <AuthRouteGate>
     <Router AppAssembly="@typeof(App).Assembly">
@@ -18,10 +22,25 @@
 </AuthRouteGate>
 
 @code {
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private bool _bootstrapStarted;
+
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (!firstRender)
+        if (!firstRender || _bootstrapStarted)
             return;
+
+        // UIX-2: do not await RefreshAsync inside OnAfterRenderAsync. Session notify mounts
+        // AuthRouteGate → MainLayout while App would still be mid-callback → parentNode.
+        _bootstrapStarted = true;
+        _ = BootstrapAsync();
+    }
+
+    private async Task BootstrapAsync()
+    {
+        // #region agent log
+        try { await Js.InvokeVoidAsync("appertureShell.debugLog", "App.razor:BootstrapAsync", "bootstrap-start", "H3", new { runId = "post-fix", instanceId = GetHashCode() }); } catch { /* ignore */ }
+        // #endregion
+
         try
         {
             await ThemeService.InitializeAsync();
@@ -35,7 +54,20 @@
             /* JS interop not ready */
         }
 
+        // SWM-5: Me (preference) before display-TZ resolve so stored DisplayTimeZoneId can win.
         await SessionStateService.RefreshAsync();
+        // AUP-1: the account appearance preference outranks the browser value the theme service
+        // booted with, so reconcile once the session is known.
+        await AppearancePreferences.ReconcileAsync();
+        // SWM-4/5: non-blocking; pages may briefly show UTC then upgrade to pref/browser IANA.
+        await OperatorDisplayTimeZone.EnsureResolvedAsync();
         await AuthSignInOptionsService.RefreshAsync();
+
+        // UIX-2: only then allow AuthRouteGate to mount MainLayout (with capabilities).
+        ShellBootstrap.MarkReady();
+
+        // #region agent log
+        try { await Js.InvokeVoidAsync("appertureShell.debugLog", "App.razor:BootstrapAsync", "bootstrap-markReady", "H3", new { runId = "post-fix", instanceId = GetHashCode(), shellBootstrapReady = true }); } catch { /* ignore */ }
+        // #endregion
     }
 }

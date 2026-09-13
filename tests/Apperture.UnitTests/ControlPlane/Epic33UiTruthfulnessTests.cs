@@ -110,9 +110,9 @@ public sealed class Epic33UiTruthfulnessTests
     [Fact]
     public void ControlCenter_StatusCssClass_HealthyGreen_DegradedAmber()
     {
-        Epic33UiDisplayHelpers.GetStatusCssClass("Healthy").Should().Be("text-green-600");
-        Epic33UiDisplayHelpers.GetStatusCssClass("Degraded").Should().Be("text-amber-600");
-        Epic33UiDisplayHelpers.GetStatusCssClass("Unhealthy").Should().Be("text-red-600");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Healthy").Should().Be("text-success");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Degraded").Should().Be("text-warning");
+        Epic33UiDisplayHelpers.GetStatusCssClass("Unhealthy").Should().Be("text-error");
     }
 
     // --- Audit cross-navigation links ---
@@ -138,6 +138,9 @@ public sealed class Epic33UiTruthfulnessTests
     public void AuditLinks_SpecialChars_AreEscaped()
     {
         Epic33UiDisplayHelpers.GetAuditLinkForModule("m/1").Should().Contain("moduleId=");
+
+        Epic33UiDisplayHelpers.GetRunsListModuleFilterHref("m1").Should().Be("/runs?moduleId=m1");
+        Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref("i1").Should().Be("/runs?integrationId=i1");
         Epic33UiDisplayHelpers.GetAuditLinkForModule("m/1").Should().NotContain("m/1"); // encoded
     }
 
@@ -181,7 +184,7 @@ public sealed class Epic33UiTruthfulnessTests
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", "r1").Should().Be("/control/audit?runId=r1");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("module", "m1").Should().Be("/modules/m1");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("schedule", "s1").Should().Be("/schedules/s1");
-        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("blocked_work", null).Should().Be("/control/blocked-work");
+        Epic33UiDisplayHelpers.GetRunInvestigationHintHref("blocked_work", null).Should().Be("/runs?status=blocked");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("runtime_health", null).Should().Be("/control/center");
         Epic33UiDisplayHelpers.GetRunInvestigationHintHref("audit", null).Should().Be("#");
     }

@@ -6,11 +6,16 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="xunit" />
-    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Moq" />
@@ -25,16 +30,32 @@
     <ProjectReference Include="..\..\src\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Abstractions\Apperture.RuntimePlane.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Engine\Apperture.RuntimePlane.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.RuntimePlane\Apperture.RuntimePlane.Dispatch.SqlServer\Apperture.RuntimePlane.Dispatch.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Azure\Apperture.RuntimeHost.Azure.Secrets\Apperture.RuntimeHost.Azure.Secrets.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Dashboard\Apperture.ControlPlane.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ConnectorResolution\Apperture.ConnectorResolution.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Connectors\Apperture.Connectors.Sftp\Apperture.Connectors.Sftp.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview\Proof.CampusNexus.StudentReview.csproj" />
     <ProjectReference Include="..\..\src\Apperture.Modules\Sample.HelloWorld\Sample.HelloWorld.Module\Sample.HelloWorld.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.FileImport\Sample.FileImport.Contracts\Sample.FileImport.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.FileImport\Sample.FileImport.Module\Sample.FileImport.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Contracts\Sample.ApiPolling.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Module\Sample.ApiPolling.Module.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Sample.ApiPolling\Sample.ApiPolling.Persistence\Sample.ApiPolling.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans\Unisa.CampusNexus.PaymentPlans.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Unisa.CampusNexus.PaymentPlans.Persistence\Unisa.CampusNexus.PaymentPlans.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Modules\Proof.CampusNexus.StudentReview.Persistence\Proof.CampusNexus.StudentReview.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration.Testing\Apperture.ModuleSdk.Integration.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ModuleSdk\Apperture.ModuleSdk.Testing\Apperture.ModuleSdk.Testing.csproj" />
     <ProjectReference Include="..\..\src\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />
   </ItemGroup>
 </Project>

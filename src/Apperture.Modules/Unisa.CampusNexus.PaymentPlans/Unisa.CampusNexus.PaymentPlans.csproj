@@ -5,7 +5,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
@@ -13,8 +12,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.CampusNexus\Apperture.Connectors.CampusNexus.csproj" />
     <ProjectReference Include="..\..\Apperture.Connectors\Apperture.Connectors.Sftp\Apperture.Connectors.Sftp.csproj" />
-    <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />
     <ProjectReference Include="..\..\Apperture.Shared\Apperture.Shared.Kernel\Apperture.Shared.Kernel.csproj" />
   </ItemGroup>
 </Project>

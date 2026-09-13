@@ -23,4 +23,9 @@ public interface IFirstAdminBootstrapService
         string externalId,
         string? password = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns whether the platform has been initialized (at least one user exists).
+    /// </summary>
+    Task<BootstrapSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken = default);
 }

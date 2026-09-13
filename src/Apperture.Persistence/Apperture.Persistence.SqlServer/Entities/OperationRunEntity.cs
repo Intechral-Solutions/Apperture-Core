@@ -15,6 +15,16 @@ public sealed class OperationRunEntity
     public string? IntegrationId { get; set; }
 
     /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot resolved once at dispatch, before this row is
+    /// written. Never re-derived from current Integration/Schedule ownership, even if that
+    /// ownership later changes. Null for pre-CTX-2 rows and for legitimately contextless
+    /// (System) runs. See <see cref="Apperture.Core.Domain.ResourceContexts.ResourceContext"/>
+    /// for the current-ownership counterpart (<c>Integration.ResourceContextId</c>): that value
+    /// is ownership, this one is history.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
+
+    /// <summary>
     /// Values: schedule, manual (see RunExecutionOriginNames in Core.Domain.Workflow); null for legacy rows (Epic 64).
     /// </summary>
     public string? ExecutionOrigin { get; set; }

@@ -2,73 +2,272 @@
 @using Apperture.Management.Ui.Shared.Auth
 @implements IDisposable
 @inject SessionStateService Session
+@inject IOperatorCapabilitiesService Capabilities
+@inject ShellBootstrapState ShellBootstrap
 @inject NavigationManager Nav
 
-@if (_blockProtectedShell)
+@* UIX-2 pass 7: keep ChildContent mounted after first show. Initial auth still loading-only.
+   Public routes (login) render ChildContent without committing the protected shell. *@
+@if (_blockProtectedShell && !_shellCommitted)
 {
     <div class="flex min-h-screen items-center justify-center bg-surface-elevated px-4">
-        <p class="text-sm text-muted">Loading session…</p>
+        <p class="text-sm text-muted">@_loadingMessage</p>
     </div>
 }
 else
 {
-    @ChildContent
+    <div class="@(_blockProtectedShell ? "hidden" : null)" aria-hidden="@_blockProtectedShell">
+        @ChildContent
+    </div>
+    @if (_blockProtectedShell)
+    {
+        <div class="flex min-h-screen items-center justify-center bg-surface-elevated px-4">
+            <p class="text-sm text-muted">@_loadingMessage</p>
+        </div>
+    }
 }
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
-    private bool _blockProtectedShell;
+    private bool _blockProtectedShell = true;
+    private bool _shellCommitted;
+    private string _loadingMessage = "Loading session…";
+    private bool _capabilitiesReady;
+    private SessionLoadState _lastSessionState = SessionLoadState.Unknown;
+    private int _capabilitiesWarmGeneration;
+    private bool _loginRedirectIssued;
+    private bool _disposed;
 
     protected override void OnInitialized()
     {
         Session.Changed += OnSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        ShellBootstrap.Changed += OnBootstrapChanged;
         UpdateBlocking();
         _ = ApplyNavigationRulesAsync();
+        _ = SyncCapabilitiesWithSessionAsync();
     }
 
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
         Session.Changed -= OnSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        ShellBootstrap.Changed -= OnBootstrapChanged;
+    }
+
+    private void OnBootstrapChanged()
+    {
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            if (UpdateBlocking())
+                StateHasChanged();
+        });
     }
 
     private void OnSessionChanged()
     {
-        UpdateBlocking();
-        _ = ApplyNavigationRulesAsync();
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed)
+            return;
+
+        // Marshal onto the renderer: Session.RefreshAsync may resume off-context.
+        _ = InvokeAsync(async () =>
+        {
+            if (_disposed)
+                return;
+
+            var blockChanged = UpdateBlocking();
+            _ = ApplyNavigationRulesAsync();
+            _ = SyncCapabilitiesWithSessionAsync();
+            if (blockChanged)
+                StateHasChanged();
+            await Task.CompletedTask;
+        });
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        UpdateBlocking();
-        _ = ApplyNavigationRulesAsync();
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            var blockChanged = UpdateBlocking();
+            _ = ApplyNavigationRulesAsync();
+            if (blockChanged)
+                StateHasChanged();
+        });
     }
 
-    private void UpdateBlocking()
+    /// <returns>True when the block flag or commit flag changed (caller should re-render).</returns>
+    private bool UpdateBlocking()
     {
         var path = new Uri(Nav.Uri).AbsolutePath;
         var pub = LoginRouteHelper.IsPublicPath(path);
-        _blockProtectedShell = !pub && Session.State is SessionLoadState.Unknown or SessionLoadState.Loading;
+        var loginChooser = LoginRouteHelper.IsLoginChooserPath(path);
+        var root = LoginRouteHelper.IsRootBootstrapPath(path);
+        var wasCommitted = _shellCommitted;
+
+        if (AuthShellAccess.ShouldReleaseShellCommit(Session.State, pub))
+            _shellCommitted = false;
+
+        _loadingMessage = AuthShellAccess.GetBlockingMessage(Session.State, _capabilitiesReady);
+        var next = AuthShellAccess.ShouldBlockProtectedShell(
+            Session.State,
+            _capabilitiesReady,
+            pub,
+            root,
+            _shellCommitted,
+            ShellBootstrap.IsReady,
+            loginChooser);
+
+        if (AuthShellAccess.ShouldCommitShell(next, pub, root))
+            _shellCommitted = true;
+
+        var changed = next != _blockProtectedShell || wasCommitted != _shellCommitted;
+        _blockProtectedShell = next;
+        return changed;
+    }
+
+    private async Task SyncCapabilitiesWithSessionAsync()
+    {
+        if (Session.State != SessionLoadState.Authenticated)
+        {
+            await InvokeAsync(() =>
+            {
+                if (_disposed)
+                    return;
+
+                if (Session.State is SessionLoadState.Unauthenticated or SessionLoadState.Error)
+                    Capabilities.InvalidateCache();
+
+                if (_lastSessionState == SessionLoadState.Authenticated && !_shellCommitted)
+                    _capabilitiesReady = false;
+
+                _lastSessionState = Session.State;
+                if (UpdateBlocking())
+                    StateHasChanged();
+            });
+            return;
+        }
+
+        if (_capabilitiesReady && _lastSessionState == SessionLoadState.Authenticated)
+            return;
+
+        var generation = Interlocked.Increment(ref _capabilitiesWarmGeneration);
+
+        await InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            // Never clear ready after the shell is committed — that would hide/re-show ChildContent
+            // and reintroduce dispose-during-await races.
+            if (!_shellCommitted)
+                _capabilitiesReady = false;
+
+            _lastSessionState = Session.State;
+            if (UpdateBlocking())
+                StateHasChanged();
+        });
+
+        try
+        {
+            await Capabilities.RefreshAsync();
+        }
+        catch
+        {
+            /* RefreshAsync does not throw; guard for future changes */
+        }
+
+        if (_disposed || generation != _capabilitiesWarmGeneration)
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            if (_disposed || generation != _capabilitiesWarmGeneration)
+                return;
+
+            _capabilitiesReady = true;
+            if (!UpdateBlocking())
+                return;
+
+            // Defer shell mount one tick so it is not nested inside the caps continuation
+            // that also races App bootstrap / first-paint children (parentNode).
+            await Task.Yield();
+            if (_disposed || generation != _capabilitiesWarmGeneration)
+                return;
+            StateHasChanged();
+        });
     }
 
     private async Task ApplyNavigationRulesAsync()
     {
         var path = new Uri(Nav.Uri).AbsolutePath;
-        await Task.Yield();
+        var isPublic = LoginRouteHelper.IsPublicPath(path);
+        var isRoot = LoginRouteHelper.IsRootBootstrapPath(path);
 
-        if (LoginRouteHelper.IsPublicPath(path))
+        await Task.Yield();
+        if (_disposed)
+            return;
+
+        if (AuthShellAccess.ShouldRedirectRootBootstrap(Session.State, isRoot))
         {
-            if (Session.State == SessionLoadState.Authenticated && Session.User is not null)
+            _loginRedirectIssued = false;
+            if (Session.State is SessionLoadState.Authenticated or SessionLoadState.ForbiddenUnlinked)
             {
-                var returnUrl = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
-                var safe = LoginRouteHelper.NormalizeReturnUrl(returnUrl) ?? LoginRouteHelper.DefaultPostLoginPath;
-                Nav.NavigateTo(safe, replace: true);
+                Nav.NavigateTo(LoginRouteHelper.DefaultPostLoginPath, replace: true);
+                return;
             }
 
+            if (Session.State == SessionLoadState.AccessRequestSession)
+            {
+                Nav.NavigateTo("/access-request", replace: true);
+                return;
+            }
+
+            if (AuthShellAccess.ShouldRedirectToLogin(Session.State, isPublicPath: false))
+            {
+                if (_loginRedirectIssued)
+                    return;
+                _loginRedirectIssued = true;
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/")}", replace: true);
+            }
+
+            return;
+        }
+
+        if (AuthShellAccess.ShouldRedirectAuthenticatedAwayFromLogin(Session.State, LoginRouteHelper.IsLoginChooserPath(path))
+            && Session.User is not null)
+        {
+            _loginRedirectIssued = false;
+            var returnUrl = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
+            var safe = LoginRouteHelper.NormalizeReturnUrl(returnUrl) ?? LoginRouteHelper.DefaultPostLoginPath;
+            Nav.NavigateTo(safe, replace: true);
+            return;
+        }
+
+        if (isPublic)
+        {
+            _loginRedirectIssued = false;
+            return;
+        }
+
+        if (AuthShellAccess.ShouldRedirectToAccessRequest(Session.State, LoginRouteHelper.IsAccessRequestPath(path)))
+        {
+            Nav.NavigateTo("/access-request", replace: true);
             return;
         }
 
@@ -76,12 +275,19 @@ else
             return;
 
         if (Session.State is SessionLoadState.ForbiddenUnlinked or SessionLoadState.Authenticated)
+        {
+            _loginRedirectIssued = false;
+            return;
+        }
+
+        if (!AuthShellAccess.ShouldRedirectToLogin(Session.State, isPublic))
             return;
 
-        if (Session.State is SessionLoadState.Unauthenticated or SessionLoadState.Error)
-        {
-            var enc = Uri.EscapeDataString(path + new Uri(Nav.Uri).Query);
-            Nav.NavigateTo($"/login?returnUrl={enc}", replace: true);
-        }
+        if (_loginRedirectIssued)
+            return;
+
+        _loginRedirectIssued = true;
+        var enc = Uri.EscapeDataString(path + new Uri(Nav.Uri).Query);
+        Nav.NavigateTo($"/login?returnUrl={enc}", replace: true);
     }
 }

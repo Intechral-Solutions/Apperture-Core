@@ -1,0 +1,5 @@
+externalId,firstName,lastName,email,category,status,effectiveDate
+,No,Id,a@example.com,Standard,Active,2024-01-01
+C-201,Bad,Email,nope,Standard,Active,2024-01-02
+C-202,Bad,Status,b@example.com,Standard,Nope,2024-01-03
+C-203,Bad,Date,c@example.com,Standard,Active,13/40/2024

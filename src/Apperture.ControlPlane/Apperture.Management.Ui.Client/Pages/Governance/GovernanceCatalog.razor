@@ -2,129 +2,118 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <div class="text-xs text-muted mb-1">Config — Governance — Permission catalog</div>
-            <h1 class="text-xl font-semibold text-heading">Permission Catalog</h1>
-            <div class="text-xs text-muted">Resources and permissions from the governance catalog. Source and module attribution where available.</div>
-        </div>
-        <div class="flex items-center gap-2">
-            <a href="@Epic33UiDisplayHelpers.GetGovernanceAuditLink()" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">View governance audit history</a>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Governance"
+                Title="Permission catalog"
+                Subtitle="Resources and permissions from the governance catalog. Source and module attribution where available.">
+        <Toolbar>
+            <a href="@Epic33UiDisplayHelpers.GetGovernanceAuditLink()" class="ui-toolbar-btn">View governance audit history</a>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
                     @onclick="LoadAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (!_capabilitiesLoaded)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else if (_capabilities?.CanViewGovernance != true)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view the governance catalog.</div>
-        </div>
+        <ForbiddenState Message="You do not have permission to view the governance catalog." />
     }
     else if (_forbidden)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to view the governance catalog.</div>
-        </div>
+        <ForbiddenState Message="You do not have permission to view the governance catalog." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_catalog is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading...</div>
+        <LoadingState Message="Loading…" />
     }
     else
     {
-        <div class="mt-4 space-y-6">
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Resources</h2>
+        <div class="space-y-6">
+            <ManagementSection Title="Resources" Layer="ManagementSection.UiLayer.Detail">
                 @if (_catalog.Resources.Count == 0)
                 {
                     <div class="text-xs text-muted">No resources in catalog.</div>
                 }
                 else
                 {
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
                                 <tr>
-                                    <th class="px-2 py-2">Resource Type</th>
-                                    <th class="px-2 py-2">Scope Key</th>
-                                    <th class="px-2 py-2">Family</th>
+                                    <th>Resource type</th>
+                                    <th>Scope key</th>
+                                    <th>Family</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var r in _catalog.Resources)
                                 {
-                                    <tr class="border-b border-default hover:bg-surface-muted">
-                                        <td class="px-2 py-2 font-mono text-xs">@r.ResourceType</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@r.ScopeKey</td>
-                                        <td class="px-2 py-2 text-xs">@(r.Family ?? "-")</td>
+                                    <tr>
+                                        <td class="font-mono text-xs">@r.ResourceType</td>
+                                        <td class="font-mono text-xs">@r.ScopeKey</td>
+                                        <td class="text-xs">@(r.Family ?? "-")</td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
                 }
-            </div>
+            </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <h2 class="text-sm font-semibold text-heading mb-2">Permissions</h2>
+            <ManagementSection Title="Permissions" Layer="ManagementSection.UiLayer.Detail">
                 @if (_catalog.Permissions.Count == 0)
                 {
                     <div class="text-xs text-muted">No permissions in catalog.</div>
                 }
                 else
                 {
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full text-left text-sm text-body">
-                            <thead class="border-b border-default text-xs text-muted">
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
                                 <tr>
-                                    <th class="px-2 py-2">Action</th>
-                                    <th class="px-2 py-2">Resource Type</th>
-                                    <th class="px-2 py-2">Scope Key</th>
-                                    <th class="px-2 py-2">Family</th>
-                                    <th class="px-2 py-2">Source</th>
-                                    <th class="px-2 py-2">Module</th>
+                                    <th>Action</th>
+                                    <th>Resource type</th>
+                                    <th>Scope key</th>
+                                    <th>Family</th>
+                                    <th>Source</th>
+                                    <th>Module</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var p in _catalog.Permissions)
                                 {
-                                    <tr class="border-b border-default hover:bg-surface-muted">
-                                        <td class="px-2 py-2 font-mono text-xs">@p.Action</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ResourceType ?? "-")</td>
-                                        <td class="px-2 py-2 font-mono text-xs">@(p.ScopeKey ?? "-")</td>
-                                        <td class="px-2 py-2 text-xs">@(p.Family ?? "-")</td>
-                                        <td class="px-2 py-2 text-xs">@p.Source</td>
-                                        <td class="px-2 py-2 text-xs">@(p.ModuleId ?? "-")</td>
+                                    <tr>
+                                        <td class="font-mono text-xs">@p.Action</td>
+                                        <td class="font-mono text-xs">@(p.ResourceType ?? "-")</td>
+                                        <td class="font-mono text-xs">@(p.ScopeKey ?? "-")</td>
+                                        <td class="text-xs">@(p.Family ?? "-")</td>
+                                        <td class="text-xs">@p.Source</td>
+                                        <td class="text-xs">@(p.ModuleId ?? "-")</td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
                 }
-            </div>
+            </ManagementSection>
         </div>
     }
 </div>

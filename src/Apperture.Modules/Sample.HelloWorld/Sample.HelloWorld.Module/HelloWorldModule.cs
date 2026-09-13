@@ -1,14 +1,16 @@
+using Apperture.Core.Application.Execution;
 using Apperture.ModuleSdk.Abstractions;
+using Apperture.ModuleSdk.Integration.Configuration;
+using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Procedures;
 using Apperture.Shared.Kernel;
-using Apperture.Core.Application.Execution;
 
 namespace Sample.HelloWorld;
 
-public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IModuleNavigationProvider
+public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOperationDefinitionProvider, IIntegrationConfigurationContributor
 {
     private static readonly WorkflowDefinitionId DefinitionId = new("Sample.HelloWorld.HelloWorld");
     private static readonly OperationId OperationDefId = new("Sample.HelloWorld.DoWork");
@@ -22,6 +24,15 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
             ,
             // Allow operation execution for this module's operations.
             new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+        ],
+        Signals =
+        [
+            new ModuleSignalDeclaration(
+                "demo.completed",
+                "Demo completed",
+                "Emitted when the HelloWorld Complete step runs (disable per-run with emitDemoPlatformEvent=false).",
+                "info",
+                RequiredDataProperties: ["message"])
         ],
         Procedures =
         [
@@ -78,9 +89,6 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    public IReadOnlyList<NavigationContributionDescriptor> GetNavigationContributions()
-        => [new NavigationContributionDescriptor("Runs", "Start HelloWorld Workflow", "/workflows/start", $"{ModuleId}.start-workflow")];
-
     public void RegisterStepHandlers(IStepHandlerRegistry registry)
     {
         // Register handlers for every step declared by the workflow definition so the sample
@@ -89,4 +97,13 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
         registry.Register(ModuleId, "DoWork", new HelloWorldDoWorkStepHandler());
         registry.Register(ModuleId, "Complete", new HelloWorldCompleteStepHandler());
     }
+
+    public IReadOnlyList<IntegrationSettingDefinition> GetSettingDefinitions() =>
+        HelloWorldIntegrationConfiguration.Settings;
+
+    public IReadOnlyList<ConnectionRequirementDefinition> GetConnectionRequirements() =>
+        HelloWorldIntegrationConfiguration.Connections;
+
+    public IReadOnlyList<ProcedureRequirementSet> GetProcedureRequirements() =>
+        HelloWorldIntegrationConfiguration.Procedures;
 }

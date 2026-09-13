@@ -1,0 +1,195 @@
+@page "/config/governance/users/requests"
+@layout ConfigLayout
+@using System.Net
+@using Apperture.Management.Client
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Title="Access requests"
+                Subtitle="People who signed in with Microsoft and asked for an Apperture account.">
+        <Toolbar>
+            <a href="/config/governance/users" class="ui-toolbar-btn">Back to users</a>
+            <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageUsers != true)
+    {
+        <ForbiddenState Message="You do not have permission to review access requests." />
+    }
+    else if (_forbidden)
+    {
+        <ForbiddenState Message="You do not have permission to review access requests." />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error" />
+    }
+    else if (_list is null)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_list.Items.Count == 0)
+    {
+        <EmptyState Message="No pending access requests." />
+    }
+    else
+    {
+        <div class="space-y-4">
+            @foreach (var item in _list.Items)
+            {
+                <ManagementSection Title="@(item.DisplayName ?? "Microsoft user")" Layer="ManagementSection.UiLayer.Detail">
+                    <div class="space-y-3 text-sm text-body">
+                        <div>@(item.DirectoryAddress ?? "—")</div>
+                        <div class="text-xs text-muted">
+                            Microsoft Entra · @item.RegistrationDisplayName · @DirectoryType(item.UserType)
+                            · Requested @item.RequestedAtUtc.ToString("MMM d, yyyy")
+                        </div>
+                        @if (_capabilities?.CanAssignRoles == true)
+                        {
+                            <div>
+                                <label class="block text-xs text-muted" for="@($"role-{item.Id}")">Initial role</label>
+                                <select id="@($"role-{item.Id}")"
+                                        class="ui-input mt-1"
+                                        @bind="_rolesByRequest[item.Id]"
+                                        disabled="@_busy">
+                                    <option value="">None — assign later</option>
+                                    @foreach (var role in _roles)
+                                    {
+                                        <option value="@role.Id">@role.Name (@role.Id)</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.DirectoryAddress) && item.DirectoryAddress.Contains('@'))
+                        {
+                            <label class="flex items-start gap-2 text-sm">
+                                <input type="checkbox" @bind="_welcomeByRequest[item.Id]" disabled="@_busy" />
+                                <span>Send access-granted email to the directory address. This does not verify Apperture contact email.</span>
+                            </label>
+                        }
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => ApproveAsync(item)">Approve access</button>
+                            <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="() => RejectAsync(item)">Reject</button>
+                        </div>
+                        <TechnicalDetails Summary="Technical details" Dense="true">
+                            <dt>Request</dt>
+                            <dd>@item.Id</dd>
+                            <dt>Directory object</dt>
+                            <dd>@item.ProviderObjectId</dd>
+                            <dt>Registration</dt>
+                            <dd>@item.RegistrationId</dd>
+                        </TechnicalDetails>
+                    </div>
+                </ManagementSection>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _capabilitiesLoaded;
+    private bool _loading;
+    private bool _busy;
+    private bool _forbidden;
+    private string? _error;
+    private EntraAccessRequestListDto? _list;
+    private IReadOnlyList<RoleDto> _roles = [];
+    private readonly Dictionary<string, string> _rolesByRequest = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _welcomeByRequest = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _capabilities = await Capabilities.GetCapabilitiesAsync(); } catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
+        _capabilitiesLoaded = true;
+        if (_capabilities?.CanAssignRoles == true)
+        {
+            try { _roles = await Client.GetRolesAsync(); } catch { /* roles optional */ }
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_capabilities?.CanManageUsers != true)
+            return;
+        _loading = true;
+        _error = null;
+        _forbidden = false;
+        try
+        {
+            _list = await Client.GetEntraAccessRequestsAsync();
+            foreach (var item in _list.Items)
+            {
+                _rolesByRequest.TryAdd(item.Id, "");
+                _welcomeByRequest.TryAdd(item.Id, !string.IsNullOrWhiteSpace(item.DirectoryAddress) && item.DirectoryAddress.Contains('@'));
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _forbidden = true;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApproveAsync(EntraAccessRequestItemDto item)
+    {
+        _busy = true;
+        try
+        {
+            var role = _rolesByRequest.GetValueOrDefault(item.Id);
+            var welcome = _welcomeByRequest.GetValueOrDefault(item.Id);
+            var result = await Client.ApproveEntraAccessRequestAsync(
+                item.Id,
+                new EntraAccessRequestDecisionRequest(string.IsNullOrWhiteSpace(role) ? null : role, welcome));
+            Toasts.Show(ToastSeverity.Success, $"Approved {result.DisplayName ?? item.DisplayName}.");
+            if (result.WelcomeMailAttempted && !result.WelcomeMailDelivered)
+                Toasts.Show(ToastSeverity.Warning, "Access was created, but the welcome email could not be sent.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RejectAsync(EntraAccessRequestItemDto item)
+    {
+        _busy = true;
+        try
+        {
+            await Client.RejectEntraAccessRequestAsync(item.Id);
+            Toasts.Show(ToastSeverity.Success, "Request rejected.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string DirectoryType(string? userType) =>
+        string.Equals(userType, "Guest", StringComparison.OrdinalIgnoreCase) ? "Guest" : "Member";
+}

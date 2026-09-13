@@ -12,6 +12,8 @@ public sealed class EntraInstanceRegistrationEntity
 
     public bool UsesDeploymentSecret { get; set; } = true;
 
+    public string? ClientSecretRef { get; set; }
+
     public string? CallbackPath { get; set; }
 
     public bool Enabled { get; set; } = true;
@@ -23,4 +25,28 @@ public sealed class EntraInstanceRegistrationEntity
     public DateTimeOffset UpdatedUtc { get; set; }
 
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
+    public string? AzureTenantId { get; set; }
+
+    public string? AuthenticationContextId { get; set; }
+
+    public int OpenIdConfigurationStatus { get; set; }
+
+    public DateTimeOffset? LastOpenIdValidationUtc { get; set; }
+
+    public string? LastOpenIdValidationSummary { get; set; }
+
+    public string? LastOpenIdValidationDetail { get; set; }
+
+    public int DirectoryDiscoveryStatus { get; set; }
+
+    public DateTimeOffset? LastDirectoryDiscoveryUtc { get; set; }
+
+    public string? LastDirectoryDiscoverySummary { get; set; }
+
+    public string? LastDirectoryDiscoveryDetail { get; set; }
+
+    public bool AllowMemberAccessRequests { get; set; }
+
+    public bool AllowGuestAccessRequests { get; set; }
 }

@@ -1,0 +1,34 @@
+@using Apperture.Core.Domain.Identity
+@using Blazor.Heroicons.Solid
+
+@if (State.Kind == FieldValidationKind.Valid)
+{
+    <span class="ui-field-validation ui-field-validation--valid"
+          role="img"
+          aria-label="Valid">
+        <span class="ui-field-validation__icon" aria-hidden="true">
+            <CheckIcon class="h-3.5 w-3.5" />
+        </span>
+    </span>
+}
+else if (State.Kind == FieldValidationKind.Invalid)
+{
+    <button type="button"
+            class="ui-field-validation ui-field-validation--invalid"
+            aria-label="@TooltipText"
+            aria-describedby="@TooltipId"
+            title="@TooltipText">
+        <span class="ui-field-validation__icon" aria-hidden="true">
+            <XMarkIcon class="h-3.5 w-3.5" />
+        </span>
+        <span id="@TooltipId" class="ui-field-validation__tooltip" role="tooltip">@TooltipText</span>
+    </button>
+}
+
+@code {
+    [Parameter, EditorRequired] public FieldValidationPresentation State { get; set; } = FieldValidationPresentation.Pristine;
+
+    private string TooltipText => string.IsNullOrWhiteSpace(State.Message) ? "This field needs attention." : State.Message;
+
+    private string TooltipId => $"field-validation-{GetHashCode():x}";
+}

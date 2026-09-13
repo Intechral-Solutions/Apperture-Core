@@ -32,6 +32,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
         IntegrationId integrationId,
         ScheduleExpectationSnapshot snapshot,
         DateTimeOffset observedAtUtc,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var conditionKey = AttentionConditionKeys.ExpectedRunMissing;
@@ -51,6 +52,8 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
                 {
                     Id = id,
                     IntegrationId = integrationId.Value,
+                    // CTX-2: snapshot at open only; never rewritten by later observation/resolution.
+                    ResourceContextId = resourceContextId,
                     ConditionKey = conditionKey,
                     Status = AttentionIncidentStatuses.Active,
                     StartedAtUtc = observedAtUtc,
@@ -61,7 +64,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
                 try
                 {
                     await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Opened, id);
+                    return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Opened, id, resourceContextId);
                 }
                 catch (DbUpdateException)
                 {
@@ -83,7 +86,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
             }
 
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id);
+            return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id, active.ResourceContextId);
         }
 
         var toResolve = await _db.AttentionIncidents
@@ -102,7 +105,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
         toResolve.ResolutionReason = AttentionIncidentResolutionReasons.ExpectationCleared;
         toResolve.LastObservedAtUtc = observedAtUtc;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Resolved, resolvedId);
+        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.Resolved, resolvedId, toResolve.ResourceContextId);
     }
 
     private async ValueTask<AttentionIncidentObserveResult> ObserveStillActiveAfterConcurrentOpenAsync(
@@ -129,7 +132,7 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
         }
 
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id);
+        return new AttentionIncidentObserveResult(AttentionIncidentObserveTransition.ObservedStillActive, active.Id, active.ResourceContextId);
     }
 
     /// <inheritdoc />
@@ -199,7 +202,8 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
             e.LastExpectedFireAtUtc,
             e.AcknowledgedAtUtc,
             e.AcknowledgedBy,
-            e.AcknowledgementNote);
+            e.AcknowledgementNote,
+            e.ResourceContextId);
 
     private static string NewIncidentId() => $"attn_{Guid.NewGuid():N}";
 }

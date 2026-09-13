@@ -54,6 +54,12 @@ public static class BootstrapPlatformAdminAssignment
                 ? LocalAuthHelpers.NormalizeUsername(p.ExternalId)
                 : p.ExternalId.Trim();
 
+            if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(externalId))
+            {
+                logger?.LogWarning("Bootstrap principal skipped: username is reserved for Emergency Access.");
+                continue;
+            }
+
             if (source == IdentitySource.Entra && externalId.Contains('@', StringComparison.Ordinal))
             {
                 logger?.LogWarning(
@@ -62,37 +68,88 @@ public static class BootstrapPlatformAdminAssignment
                 continue;
             }
 
-            var existing = await userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken).ConfigureAwait(false);
-            if (existing is null)
+            User? existing;
+            if (source == IdentitySource.Entra)
             {
-                if (!options.CreateUserIfMissing)
+                var tenantId = EntraTokenClaims.Normalize(p.TenantId);
+                if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(tenantId) || !EntraTokenClaims.IsValidObjectId(externalId))
                 {
+                    logger?.LogWarning(
+                        "Bootstrap Entra principal skipped: TenantId and ExternalId must be directory ids (tid + oid).");
+                    continue;
+                }
+
+                existing = await userRepository
+                    .GetByIdentityLinkAsync(ProviderIdentityKey.Entra(tenantId, externalId), cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is null)
+                {
+                    if (!options.CreateUserIfMissing)
+                    {
+                        logger?.LogInformation(
+                            "Bootstrap principal {Source}/{TenantId}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
+                            source,
+                            tenantId,
+                            externalId);
+                        continue;
+                    }
+
+                    var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
+                        ? $"Bootstrap administrator ({externalId})"
+                        : p.DisplayName.Trim();
+
+                    var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
+                    var user = new User(
+                        userId,
+                        displayName,
+                        [new IdentityLink(IdentitySource.Entra, externalId, LastAuthenticatedAt: null, TenantId: tenantId)],
+                        [adminRoleId],
+                        IsBreakGlassEligible: false);
+
+                    await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
                     logger?.LogInformation(
-                        "Bootstrap principal {Source}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
+                        "Created user {UserId} for bootstrap principal {Source}/{TenantId}/{ExternalId} with Platform Administrator role.",
+                        userId.Value,
+                        source,
+                        tenantId,
+                        externalId);
+                    continue;
+                }
+            }
+            else
+            {
+                existing = await userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken).ConfigureAwait(false);
+                if (existing is null)
+                {
+                    if (!options.CreateUserIfMissing)
+                    {
+                        logger?.LogInformation(
+                            "Bootstrap principal {Source}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
+                            source,
+                            externalId);
+                        continue;
+                    }
+
+                    var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
+                        ? $"Bootstrap administrator ({externalId})"
+                        : p.DisplayName.Trim();
+
+                    var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
+                    var user = new User(
+                        userId,
+                        displayName,
+                        [new IdentityLink(source, externalId, LastAuthenticatedAt: null)],
+                        [adminRoleId],
+                        IsBreakGlassEligible: false);
+
+                    await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
+                    logger?.LogInformation(
+                        "Created user {UserId} for bootstrap principal {Source}/{ExternalId} with Platform Administrator role.",
+                        userId.Value,
                         source,
                         externalId);
                     continue;
                 }
-
-                var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
-                    ? $"Bootstrap administrator ({externalId})"
-                    : p.DisplayName.Trim();
-
-                var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
-                var user = new User(
-                    userId,
-                    displayName,
-                    new[] { new IdentityLink(source, externalId, LastAuthenticatedAt: null) },
-                    new[] { adminRoleId },
-                    IsBreakGlassEligible: false);
-
-                await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
-                logger?.LogInformation(
-                    "Created user {UserId} for bootstrap principal {Source}/{ExternalId} with Platform Administrator role.",
-                    userId.Value,
-                    source,
-                    externalId);
-                continue;
             }
 
             var roles = await roleRepository.GetForUserAsync(existing.Id, cancellationToken).ConfigureAwait(false);

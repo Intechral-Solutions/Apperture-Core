@@ -1,0 +1,433 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Atoms
+@using Apperture.Management.Ui.Client.Organisms
+
+@inject IManagementClient Client
+
+@{
+    var helpTooltip = PlatformSettingUiHelpers.BuildHelpTooltip(Row);
+    var sourceTooltip = $"{PlatformSettingUiHelpers.GetSourceTooltip(Row.Source, IntegrationScope)} Resolved: {GetResolvedDisplay()}";
+    var isSecret = PlatformSettingUiHelpers.IsSecret(Row.InputKind, Row.IsSensitive);
+}
+
+<div id="@Row.Key" class="border-b border-default py-2 last:border-b-0">
+    <div class="flex flex-wrap items-center gap-2 gap-y-1">
+        <div class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="font-medium text-heading text-sm truncate" title="@Row.DisplayName">@Row.DisplayName</span>
+            @if (IsRequired)
+            {
+                <span class="text-xs text-warning shrink-0" title="Required by module declaration">Required</span>
+            }
+            <SettingInfoAffordance Tooltip="@helpTooltip" />
+            @if (Row.RequiresRestart)
+            {
+                <span class="text-xs text-warning shrink-0"
+                      title="@PlatformSettingUiHelpers.GetRequiresRestartHint()"
+                      aria-label="Requires restart">⚠</span>
+            }
+            <StatusPill Label="@PlatformSettingUiHelpers.GetSourceLabel(Row.Source, IntegrationScope)"
+                        Title="@sourceTooltip"
+                        Semantic="@PlatformSettingUiHelpers.GetSourceSemantic(Row.Source)" />
+            @if (isSecret)
+            {
+                <StatusPill Label="@IntegrationConfigurationOperatorUiHelpers.FormatSecretPresenceLabel(true, Row.IsSecretConfigured)"
+                            Title="@(Row.IsSecretConfigured ? "A secret is configured for this setting. The value is never shown." : "No secret is configured.")"
+                            Semantic="@IntegrationConfigurationOperatorUiHelpers.MapSecretPresenceSemantic(Row.IsSecretConfigured)" />
+            }
+            @if (IsDirty)
+            {
+                <span class="text-xs text-muted shrink-0">Unsaved</span>
+            }
+        </div>
+
+        @if (CanEdit)
+        {
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
+                @if (isSecret)
+                {
+                    <input type="password"
+                           class="ui-input ui-input--inline"
+                           value="@EditValue"
+                           disabled="@IsSaving"
+                           autocomplete="new-password"
+                           placeholder="@(Row.IsSecretConfigured ? "Enter new value to replace" : "Enter secret value")"
+                           aria-label="@(Row.IsSecretConfigured ? $"Replace {Row.DisplayName}" : $"Set {Row.DisplayName}")"
+                           @onchange="OnTextInput" />
+                }
+                else if (PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
+                {
+                    <span class="text-sm text-body">@EditValues.Count selected</span>
+                }
+                else if (PlatformSettingUiHelpers.IsSelect(Row.InputKind))
+                {
+                    @if (EditorOptions is not { Count: > 0 })
+                    {
+                        <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : PageMessageKind.Warning)"
+                                     Message="@GetSelectUnavailableMessage()" />
+                    }
+                    else
+                    {
+                        var optionValues = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                        var includeUnavailableValue = !string.IsNullOrWhiteSpace(EditValue) && !optionValues.Contains(EditValue);
+                        <select class="ui-input ui-input--inline font-mono"
+                                value="@EditValue"
+                                disabled="@IsSaving"
+                                @onchange="OnTextInput">
+                            @if (string.IsNullOrWhiteSpace(EditValue))
+                            {
+                                <option value="">(none)</option>
+                            }
+                            else if (includeUnavailableValue)
+                            {
+                                <option value="@EditValue">@EditValue (unavailable)</option>
+                            }
+                            @foreach (var option in EditorOptions)
+                            {
+                                <option value="@option.Value">@option.Label (@option.Value)</option>
+                            }
+                        </select>
+                    }
+                }
+                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindToggle, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(Row.ValueType, "Boolean", StringComparison.OrdinalIgnoreCase))
+                {
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox"
+                               checked="@IsBoolChecked(EditValue)"
+                               disabled="@IsSaving"
+                               @onchange="OnBoolChanged" />
+                        <span>@(IsBoolChecked(EditValue) ? "On" : "Off")</span>
+                    </label>
+                }
+                else if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindNumber, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(Row.ValueType, "Integer", StringComparison.OrdinalIgnoreCase))
+                {
+                    <input type="number"
+                           class="ui-input ui-input--narrow"
+                           value="@EditValue"
+                           min="@Row.MinInteger"
+                           disabled="@IsSaving"
+                           @onchange="OnTextInput" />
+                }
+                else
+                {
+                    <input class="ui-input ui-input--inline font-mono"
+                           value="@EditValue"
+                           disabled="@IsSaving"
+                           placeholder="@GetTextInputPlaceholder()"
+                           title="@GetTextInputTitle()"
+                           aria-label="@Row.DisplayName"
+                           @onchange="OnTextInput" />
+                    @if (!string.IsNullOrWhiteSpace(GetInputHint()))
+                    {
+                        <span class="text-xs text-muted">@GetInputHint()</span>
+                    }
+                }
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+                <button type="button"
+                        class="btn btn-secondary text-xs"
+                        disabled="@(!CanSave || IsSaving)"
+                        title="@SaveTitle"
+                        @onclick="OnSave">
+                    @(IsSaving ? "Saving…" : (isSecret && Row.IsSecretConfigured ? "Replace" : "Save"))
+                </button>
+                @if (isSecret)
+                {
+                    <button type="button"
+                            class="btn btn-secondary text-xs"
+                            disabled="@(!CanClearSecret || IsSaving)"
+                            title="@PlatformSettingUiHelpers.GetSecretClearTitle(CanClearSecret)"
+                            @onclick="OnClear">
+                        Clear
+                    </button>
+                }
+                <button type="button"
+                        class="btn btn-secondary text-xs"
+                        disabled="@(!CanReset || IsSaving)"
+                        title="@ResetTitle"
+                        @onclick="OnReset">
+                    Reset
+                </button>
+            </div>
+        }
+        else
+        {
+            @if (isSecret)
+            {
+                <span class="text-xs text-muted">@PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured)</span>
+            }
+            else
+            {
+                <code class="ui-inline-code max-w-xs truncate" title="@GetResolvedDisplay()">@GetResolvedDisplay()</code>
+            }
+        }
+    </div>
+
+    @if (CanEdit && PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind))
+    {
+        <div class="mt-2 space-y-2">
+            @if (EditorOptions is not { Count: > 0 })
+            {
+                <PageMessage Kind="@(_loadingProviderOptions ? PageMessageKind.Loading : (string.IsNullOrWhiteSpace(_providerOptionsError) ? PageMessageKind.Warning : PageMessageKind.Error))"
+                             Message="@GetSelectUnavailableMessage()" />
+            }
+            else
+            {
+                @foreach (var option in EditorOptions)
+                {
+                    var isChecked = IsArrayOptionChecked(option.Value);
+                    <label class="flex items-start gap-2 text-sm">
+                        <input type="checkbox"
+                               class="mt-0.5"
+                               checked="@isChecked"
+                               disabled="@IsSaving"
+                               @onchange="e => OnMultiSelectChanged(option.Value, e)" />
+                        <span>
+                            <span class="font-medium">@option.Label</span>
+                            <span class="text-xs text-muted font-mono ml-1">(@option.Value)</span>
+                        </span>
+                    </label>
+                }
+
+                var available = EditorOptions.Select(o => o.Value).ToHashSet(StringComparer.Ordinal);
+                var unavailable = EditValues
+                    .Where(v => !available.Contains(v))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                @if (unavailable.Length > 0)
+                {
+                    <p class="text-xs text-muted">Unavailable selections: @string.Join(", ", unavailable)</p>
+                }
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <PageMessage Kind="PageMessageKind.Error" Class="mt-2" Message="@Error" />
+    }
+    else if (!CanEdit)
+    {
+        <p class="text-xs text-muted mt-1">@ReadOnlyMessage</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlatformSettingResolvedDto Row { get; set; } = default!;
+
+    [Parameter] public bool CanManage { get; set; }
+
+    [Parameter] public string EditValue { get; set; } = "";
+
+    [Parameter] public IReadOnlyList<string> EditValues { get; set; } = Array.Empty<string>();
+
+    [Parameter] public bool IsSaving { get; set; }
+
+    [Parameter] public string? Error { get; set; }
+
+    [Parameter] public EventCallback<string> EditValueChanged { get; set; }
+
+    [Parameter] public EventCallback<IReadOnlyList<string>> EditValuesChanged { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    [Parameter] public EventCallback OnClear { get; set; }
+
+    [Parameter] public EventCallback OnReset { get; set; }
+
+    [Parameter] public string? IntegrationId { get; set; }
+
+    [Parameter] public bool IntegrationScope { get; set; }
+
+    [Parameter] public bool IsRequired { get; set; }
+
+    private IReadOnlyList<PlatformSettingAllowedValueDto>? _providerOptions;
+    private bool _loadingProviderOptions;
+    private string? _providerOptionsError;
+    private string? _loadedProviderKey;
+    private string? _loadedSettingKey;
+
+    private bool CanEdit => CanManage && Row.IsEditable;
+
+    private IReadOnlyList<PlatformSettingAllowedValueDto>? EditorOptions =>
+        Row.AllowedValues is { Count: > 0 } ? Row.AllowedValues : _providerOptions;
+
+    private string ReadOnlyMessage => !Row.IsEditable
+        ? PlatformSettingUiHelpers.GetDefinitionReadOnlyMessage()
+        : PlatformSettingUiHelpers.GetReadOnlyPermissionMessage(IntegrationScope);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Row.AllowedValues is { Count: > 0 } || string.IsNullOrWhiteSpace(Row.OptionProviderKey) || !CanEdit)
+        {
+            _providerOptions = null;
+            _loadingProviderOptions = false;
+            _providerOptionsError = null;
+            _loadedProviderKey = null;
+            _loadedSettingKey = null;
+            return;
+        }
+
+        var isSelectOrMulti = PlatformSettingUiHelpers.IsSelect(Row.InputKind) ||
+                             PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind);
+        if (!isSelectOrMulti)
+            return;
+
+        if (_loadedProviderKey == Row.OptionProviderKey &&
+            _loadedSettingKey == Row.Key &&
+            _providerOptions is not null)
+            return;
+
+        _providerOptions = null;
+        _providerOptionsError = null;
+        _loadingProviderOptions = true;
+        _loadedProviderKey = Row.OptionProviderKey;
+        _loadedSettingKey = Row.Key;
+
+        try
+        {
+            IReadOnlyList<PlatformSettingAllowedValueDto>? options;
+            if (IntegrationScope && !string.IsNullOrWhiteSpace(IntegrationId))
+            {
+                options = await Client
+                    .GetIntegrationSettingOptionsAsync(IntegrationId, Row.Key)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                options = await Client.GetPlatformSettingOptionsAsync(Row.Key).ConfigureAwait(false);
+            }
+
+            if (options is null)
+                _providerOptionsError = "Editor unavailable — unable to load provider options (access or availability issue).";
+            else
+                _providerOptions = options;
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            _providerOptionsError = ex.Message;
+        }
+        finally
+        {
+            _loadingProviderOptions = false;
+        }
+    }
+
+    private string GetSelectUnavailableMessage()
+    {
+        if (_loadingProviderOptions)
+            return "Loading options…";
+        if (!string.IsNullOrWhiteSpace(_providerOptionsError))
+            return _providerOptionsError;
+        if (string.IsNullOrWhiteSpace(Row.OptionProviderKey))
+            return "Editor unavailable — no static options defined.";
+        return "Editor unavailable — no options defined.";
+    }
+
+    private bool IsSecretRow => PlatformSettingUiHelpers.IsSecret(Row.InputKind, Row.IsSensitive);
+
+    private bool IsDirty => IsSecretRow
+        ? !string.IsNullOrWhiteSpace(EditValue)
+        : PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
+            ? PlatformSettingUiHelpers.IsDirtyArray(EditValues, Row.CurrentValues)
+            : PlatformSettingUiHelpers.IsDirty(EditValue, Row.CurrentValue);
+
+    private bool CanSave => IsSecretRow
+        ? !string.IsNullOrWhiteSpace(EditValue)
+        : IsDirty;
+
+    private string SaveTitle => IsSecretRow
+        ? (string.IsNullOrWhiteSpace(EditValue)
+            ? "Enter a new value to replace the secret. Leaving blank keeps the current secret."
+            : (Row.IsSecretConfigured ? "Replace the stored secret." : "Store the secret."))
+        : (IsDirty ? null : "Change the value to enable save.")!;
+
+    private bool CanClearSecret => Row.HasPlatformOverride || PlatformSettingUiHelpers.IsScopedOverride(Row.Source);
+
+    private bool CanReset => PlatformSettingUiHelpers.IsScopedOverride(Row.Source);
+
+    private string ResetTitle => PlatformSettingUiHelpers.GetResetTitle(IntegrationScope, CanReset);
+
+    private string GetResolvedDisplay()
+    {
+        if (IsSecretRow)
+            return PlatformSettingUiHelpers.GetSecretConfiguredLabel(Row.IsSecretConfigured);
+
+        return PlatformSettingUiHelpers.IsMultiSelect(Row.InputKind)
+            ? PlatformSettingUiHelpers.FormatArrayDisplay(Row.CurrentValues)
+            : Row.CurrentValue;
+    }
+
+    private static bool IsBoolChecked(string? value) =>
+        bool.TryParse(value, out var b) && b;
+
+    private bool IsArrayOptionChecked(string optionValue) =>
+        EditValues.Any(v => string.Equals(v, optionValue, StringComparison.Ordinal));
+
+    private async Task OnBoolChanged(ChangeEventArgs e)
+    {
+        var enabled = e.Value is bool b && b;
+        await EditValueChanged.InvokeAsync(enabled ? "true" : "false");
+    }
+
+    private async Task OnTextInput(ChangeEventArgs e)
+    {
+        await EditValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    }
+
+    private async Task OnMultiSelectChanged(string optionValue, ChangeEventArgs e)
+    {
+        var selected = e.Value is bool b && b;
+        var next = EditValues.ToList();
+        if (selected)
+        {
+            if (!next.Any(v => string.Equals(v, optionValue, StringComparison.Ordinal)))
+                next.Add(optionValue);
+        }
+        else
+        {
+            next.RemoveAll(v => string.Equals(v, optionValue, StringComparison.Ordinal));
+        }
+
+        await EditValuesChanged.InvokeAsync(next);
+    }
+
+    private string? GetTextInputPlaceholder()
+    {
+        if (string.Equals(Row.InputKind, PlatformSettingUiHelpers.InputKindDuration, StringComparison.OrdinalIgnoreCase))
+            return "00:05:00";
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "0.00";
+        if (Row.Key.Contains("TimeZone", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Timezone", StringComparison.OrdinalIgnoreCase))
+            return "America/Los_Angeles";
+        if (Row.Key.Contains("Uri", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Url", StringComparison.OrdinalIgnoreCase))
+            return "https://";
+        return null;
+    }
+
+    private string? GetTextInputTitle()
+    {
+        if (Row.MinDurationIso is not null)
+            return $"ISO 8601 duration; min {Row.MinDurationIso}";
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "Decimal number";
+        return null;
+    }
+
+    private string? GetInputHint()
+    {
+        if (string.Equals(Row.ValueType, "Decimal", StringComparison.OrdinalIgnoreCase))
+            return "Decimal value";
+        if (Row.Key.Contains("TimeZone", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Timezone", StringComparison.OrdinalIgnoreCase))
+            return "IANA time zone id (e.g. UTC, America/Los_Angeles)";
+        if (Row.Key.Contains("Uri", StringComparison.OrdinalIgnoreCase)
+            || Row.Key.Contains("Url", StringComparison.OrdinalIgnoreCase))
+            return "Absolute URI including scheme";
+        return null;
+    }
+}

@@ -1,3 +1,4 @@
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -38,7 +39,7 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ConnectionString = Environment.GetEnvironmentVariable(ManagementGovernanceTestConstants.ConnectionStringEnvironmentVariable)
+        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
             ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
 
         try
@@ -214,6 +215,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 DisplayName = "Governance test integration",
                 ModuleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
                 ScopeKey = null,
+                // Direct entity seeding bypasses the management service, so ownership must be set
+                // explicitly; the ResourceContexts foreign key rejects an unowned row.
+                ResourceContextId = ResourceContextIds.SharedValue,
                 State = 0,
                 SettingsJson = null,
                 CreatedAt = now,
@@ -275,6 +279,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 DisplayName = "Governance test — foreign module integration",
                 ModuleId = "Governance.Test.ForeignModule",
                 ScopeKey = null,
+                ResourceContextId = ResourceContextIds.SharedValue,
                 State = 0,
                 SettingsJson = null,
                 CreatedAt = now,

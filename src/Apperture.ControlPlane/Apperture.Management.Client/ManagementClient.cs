@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 
@@ -17,6 +19,17 @@ public sealed class ManagementClient : IManagementClient
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    /// <summary>
+    /// Serialize request DTO property names as camelCase; keep dictionary keys literal so connector field keys are not rewritten.
+    /// </summary>
+    private static readonly JsonSerializerOptions ApiJsonWriteOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DictionaryKeyPolicy = null,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly HttpClient _http;
@@ -54,14 +67,18 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<StartWorkflowResult> StartWorkflowAsync(
         string workflowId,
+        string integrationId,
         IReadOnlyDictionary<string, object?>? parameters,
         string? idempotencyKey,
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            throw new ArgumentException("IntegrationId is required for manual workflow starts.", nameof(integrationId));
+
         var response = await _http.PostAsJsonAsync(
             $"workflows/{workflowId}/start",
-            new { parameters, idempotencyKey, correlationId },
+            new { parameters, idempotencyKey, correlationId, integrationId },
             cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<StartWorkflowResult>(cancellationToken).ConfigureAwait(false);
@@ -94,6 +111,278 @@ public sealed class ManagementClient : IManagementClient
     public async Task<RunTimelineDto?> GetRunTimelineAsync(string runId, CancellationToken cancellationToken = default)
     {
         return await _http.GetFromJsonAsync<RunTimelineDto>($"runs/{runId}/timeline", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<OperationGroupSummaryDto>?> GetRunOperationGroupsAsync(
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<IReadOnlyList<OperationGroupSummaryDto>>(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OperationItemPageDto?> GetRunOperationGroupItemsAsync(
+        string runId,
+        string operationGroupId,
+        OperationItemListFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        filter ??= new OperationItemListFilter();
+        var qs = new List<string>
+        {
+            $"skip={filter.Skip}",
+            $"take={filter.Take}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            qs.Add($"status={Uri.EscapeDataString(filter.Status)}");
+        if (filter.RetryableOnly is not null)
+            qs.Add($"retryableOnly={filter.RetryableOnly.Value.ToString().ToLowerInvariant()}");
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q)}");
+
+        var path =
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items?{string.Join("&", qs)}";
+        return await _http.GetFromJsonAsync<OperationItemPageDto>(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OperationItemRetryAttemptDto?> RetryOperationItemAsync(
+        string runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retry",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Retry request failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<OperationItemRetryAttemptDto>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BulkRetryOperationItemsResult?> BulkRetryOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkRetryOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/retry",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Bulk retry failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkRetryOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BulkAcknowledgeOperationItemsResult?> AcknowledgeOperationItemsAsync(
+        string runId,
+        string operationGroupId,
+        BulkAcknowledgeOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/acknowledge",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Acknowledge failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkAcknowledgeOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<BulkReopenOperationItemsResult?> ReopenOperationItemAttentionAsync(
+        string runId,
+        string operationGroupId,
+        BulkReopenOperationItemsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-groups/{Uri.EscapeDataString(operationGroupId)}/items/reopen-attention",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Reopen attention failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<BulkReopenOperationItemsResult>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<OperationItemRetryAttemptDto>?> GetOperationItemRetriesAsync(
+        string runId,
+        string operationItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync(
+            $"runs/{Uri.EscapeDataString(runId)}/operation-items/{Uri.EscapeDataString(operationItemId)}/retries",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var message = TryReadApiErrorMessage(body)
+                          ?? $"Retry history request failed ({(int)response.StatusCode}).";
+            throw new HttpRequestException(message, inner: null, statusCode: response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<OperationItemRetryAttemptDto>>(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerRecordPageDto?> GetDemoCustomerRecordsAsync(
+        DemoCustomerRecordListFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        filter ??= new DemoCustomerRecordListFilter();
+        var qs = new List<string>
+        {
+            $"skip={filter.Skip}",
+            $"take={filter.Take}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.SourceKind))
+            qs.Add($"sourceKind={Uri.EscapeDataString(filter.SourceKind.Trim())}");
+        if (filter.HasConflict is not null)
+            qs.Add($"hasConflict={filter.HasConflict.Value.ToString().ToLowerInvariant()}");
+
+        var path = $"demo/business-records/customers?{string.Join("&", qs)}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerRecordPageDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerRecordDto?> GetDemoCustomerRecordAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        var path = $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerRecordDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerActivityPageDto?> GetDemoCustomerActivityAsync(
+        string businessKey,
+        DemoCustomerActivityFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        filter ??= new DemoCustomerActivityFilter();
+        var qs = new List<string>
+        {
+            $"skip={Math.Max(0, filter.Skip)}",
+            $"take={(filter.Take <= 0 ? 25 : filter.Take)}",
+            $"attentionOnly={filter.AttentionOnly.ToString().ToLowerInvariant()}",
+        };
+        if (!string.IsNullOrWhiteSpace(filter.SourceKind))
+            qs.Add($"sourceKind={Uri.EscapeDataString(filter.SourceKind.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            qs.Add($"status={Uri.EscapeDataString(filter.Status.Trim())}");
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+            qs.Add($"q={Uri.EscapeDataString(filter.Q.Trim())}");
+        if (filter.LookbackDays is > 0)
+            qs.Add($"lookbackDays={filter.LookbackDays.Value}");
+
+        var path =
+            $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}/activity?{string.Join("&", qs)}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerActivityPageDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<DemoCustomerActivitySummaryDto?> GetDemoCustomerActivitySummaryAsync(
+        string businessKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(businessKey))
+            throw new ArgumentException("Business key is required.", nameof(businessKey));
+
+        var path =
+            $"demo/business-records/customers/{Uri.EscapeDataString(businessKey.Trim())}/activity/summary";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<DemoCustomerActivitySummaryDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static string? TryReadApiErrorMessage(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var text = error.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    if (root.TryGetProperty("errorCode", out var code)
+                        && code.ValueKind == System.Text.Json.JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(code.GetString()))
+                    {
+                        return $"{text} ({code.GetString()})";
+                    }
+
+                    return text;
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // fall through
+        }
+
+        return null;
     }
 
     public async Task<CancelRunResult> CancelRunAsync(string runId, CancellationToken cancellationToken = default)
@@ -141,8 +430,36 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default)
     {
-        var dto = await _http.GetFromJsonAsync<ControlCenterDto>("control/center", cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync("control/center", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        var dto = await response.Content.ReadFromJsonAsync<ControlCenterDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
         return dto ?? new ControlCenterDto([], [], []);
+    }
+
+    public async Task<InventoryQueryResult> GetInventoryAsync(
+        string mode = "resources",
+        string? type = null,
+        string? q = null,
+        string? status = null,
+        string? sort = null,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var pairs = new List<string>
+        {
+            $"mode={Uri.EscapeDataString(mode)}",
+            $"take={take.ToString(CultureInfo.InvariantCulture)}"
+        };
+        Add(pairs, "type", type);
+        Add(pairs, "q", q);
+        Add(pairs, "status", status);
+        Add(pairs, "sort", sort);
+        var query = "?" + string.Join("&", pairs);
+        var dto = await _http.GetFromJsonAsync<InventoryQueryResult>(
+            $"inventory{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? new InventoryQueryResult([], []);
     }
 
     public async Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default)
@@ -223,9 +540,19 @@ public sealed class ManagementClient : IManagementClient
         CancellationToken cancellationToken = default)
     {
         var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}&blockedDeferredWindowHours={blockedDeferredWindowHours}&scheduleFailureWindowHours={scheduleFailureWindowHours}";
-        return await _http.GetFromJsonAsync<RuntimeHealthSnapshotDto>(
-            $"control/runtime-health{query}",
-            cancellationToken).ConfigureAwait(false);
+        using var response = await _http.GetAsync($"control/runtime-health{query}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<RuntimeHealthSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<SchedulerStatusSnapshotDto?> GetSchedulerStatusAsync(
+        string? runtimePlaneId = "local",
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
+        using var response = await _http.GetAsync($"control/scheduler-status{query}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerStatusSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default)
@@ -244,10 +571,30 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<ConnectionDto> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default)
     {
-        var response = await _http.PostAsJsonAsync("connections", request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        var response = await _http.PostAsJsonAsync("connections", request, ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var created = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return created ?? throw new InvalidOperationException("Server returned no connection body.");
+    }
+
+    public async Task<ConnectionDto> UpdateConnectionAsync(string id, UpdateConnectionRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync(
+            $"connections/{Uri.EscapeDataString(id)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        var updated = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return updated ?? throw new InvalidOperationException("Server returned no connection body.");
+    }
+
+    public async Task RetireConnectionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync(
+            $"connections/{Uri.EscapeDataString(id)}",
+            cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
@@ -256,7 +603,7 @@ public sealed class ManagementClient : IManagementClient
             $"connections/{Uri.EscapeDataString(id)}/test-connect",
             content: null,
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<ConnectionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Server returned no connection body.");
     }
@@ -568,8 +915,57 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<IntegrationOperatorDetailDto?> GetIntegrationOperatorDetailAsync(string id, CancellationToken cancellationToken = default)
     {
-        return await _http.GetFromJsonAsync<IntegrationOperatorDetailDto>(
+        using var response = await _http.GetAsync(
             $"integrations/{Uri.EscapeDataString(id)}/detail",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationOperatorDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationConfigurationDeclarationsDto?> GetIntegrationConfigurationDeclarationsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/configuration/declarations",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationConfigurationDeclarationsDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationReadinessDto?> GetIntegrationReadinessAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/readiness",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationReadinessDto>(
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IntegrationProcedureReadinessDto?> GetIntegrationProcedureReadinessAsync(
+        string integrationId,
+        string procedureId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/procedures/{Uri.EscapeDataString(procedureId)}/readiness",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<IntegrationProcedureReadinessDto>(
             ApiJsonReadOptions,
             cancellationToken).ConfigureAwait(false);
     }
@@ -887,11 +1283,20 @@ public sealed class ManagementClient : IManagementClient
         return new BlockedWorkRetryResult(false, null, response.ReasonPhrase, false);
     }
 
-    public async Task TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    public async Task<SchedulerManualOperationResultDto?> TriggerSchedulerRunCycleAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
     {
         var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
-        var response = await _http.PostAsync($"control/recovery/schedules/run-cycle{query}", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        using var response = await _http.PostAsync($"control/scheduler/run-cycle{query}", content: null, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerManualOperationResultDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<SchedulerManualOperationResultDto?> RecoverStaleScheduleRunsAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default)
+    {
+        var query = $"?runtimePlaneId={Uri.EscapeDataString(runtimePlaneId ?? "local")}";
+        using var response = await _http.PostAsync($"control/scheduler/recover-stale{query}", content: null, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<SchedulerManualOperationResultDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default)
@@ -929,6 +1334,131 @@ public sealed class ManagementClient : IManagementClient
         var query = $"?skip={skip}&take={take}";
         var dto = await _http.GetFromJsonAsync<UserListResponse>($"users{query}", cancellationToken).ConfigureAwait(false);
         return dto ?? new UserListResponse([], 0);
+    }
+
+    public async Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("users", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.Conflict)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "Could not create user.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to create users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<CreateUserResponse>(cancellationToken).ConfigureAwait(false);
+        return body ?? throw new InvalidOperationException("Create user succeeded without a user id.");
+    }
+
+    public async Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("users/entra/registrations", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<EntraProvisioningRegistrationDto[]>(cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<EntraProvisioningRegistrationDto>();
+    }
+
+    public async Task<EntraProvisioningDirectoryPageDto> SearchEntraProvisioningDirectoryAsync(
+        string registrationId,
+        string? search = null,
+        string? continuation = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var qs = $"?registrationId={Uri.EscapeDataString(registrationId)}&top={top}";
+        if (!string.IsNullOrWhiteSpace(search))
+            qs += $"&search={Uri.EscapeDataString(search.Trim())}";
+        if (!string.IsNullOrWhiteSpace(continuation))
+            qs += $"&continuation={Uri.EscapeDataString(continuation)}";
+        using var response = await _http.GetAsync("users/entra/directory" + qs, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningDirectoryPageDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraProvisioningDirectoryPageDto(false, "No directory results were returned.", null, registrationId, null, null, []);
+    }
+
+    public async Task<EntraProvisioningBatchResultDto> ProvisionFromEntraDirectoryAsync(
+        EntraDirectoryProvisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync("users/entra", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningBatchResultDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraProvisioningBatchResultDto([]);
+    }
+
+    public async Task<EntraAccessRequestListDto> GetEntraAccessRequestsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("users/entra/access-requests", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestListDto>(cancellationToken).ConfigureAwait(false)
+            ?? new EntraAccessRequestListDto(0, []);
+    }
+
+    public async Task<EntraProvisioningPersonResultDto> ApproveEntraAccessRequestAsync(
+        string requestId,
+        EntraAccessRequestDecisionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"users/entra/access-requests/{Uri.EscapeDataString(requestId)}/approve",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraProvisioningPersonResultDto>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Approve succeeded without a result.");
+    }
+
+    public async Task RejectEntraAccessRequestAsync(string requestId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync(
+            $"users/entra/access-requests/{Uri.EscapeDataString(requestId)}/reject",
+            null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to manage users.", null, HttpStatusCode.Forbidden);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraAccessRequestSessionDto?> GetAccessRequestSessionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("access-requests/session", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (!response.IsSuccessStatusCode)
+            return null;
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestSessionDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraAccessRequestSessionDto> SubmitAccessRequestAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync("access-requests", null, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<EntraAccessRequestSessionDto>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Access request succeeded without a session.");
+    }
+
+    public async Task SignOutAccessRequestAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync("access-requests/sign-out", null, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            return;
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<UserDetailDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -972,6 +1502,52 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task AddIdentityLinkAsync(string userId, AddIdentityLinkRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/identity-links",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Could not add identity link.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    public async Task SetLocalCredentialDisabledAsync(string userId, bool isDisabled, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/local-credential",
+            new { isDisabled },
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Could not update local sign-in.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
     private static async Task<string?> TryGetMessageFromResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         try
@@ -989,19 +1565,23 @@ public sealed class ManagementClient : IManagementClient
         using var response = await _http.GetAsync("control/capabilities", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<OperatorCapabilitiesDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
-        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        return dto ?? new OperatorCapabilitiesDto(false, false, false, false, false);
     }
 
     public async Task<StartOperationResult> StartOperationAsync(
         string operationDefinitionId,
+        string integrationId,
         IReadOnlyDictionary<string, object?>? parameters,
         string? idempotencyKey,
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(integrationId))
+            throw new ArgumentException("IntegrationId is required for manual operation starts.", nameof(integrationId));
+
         var response = await _http.PostAsJsonAsync(
             $"operations/{operationDefinitionId}/start",
-            new { parameters, idempotencyKey, correlationId },
+            new { parameters, idempotencyKey, correlationId, integrationId },
             cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<StartOperationResult>(cancellationToken).ConfigureAwait(false);
@@ -1084,10 +1664,148 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? throw new InvalidOperationException("Login response was empty.");
     }
 
+    public async Task<LocalLoginResponse> CompleteLocalMfaAsync(LocalMfaChallengeRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/local/mfa", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new HttpRequestException("Login failed.", null, HttpStatusCode.Unauthorized);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<LocalLoginResponse>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Login response was empty.");
+    }
+
+    public async Task<EmergencyAccessPostureDto> GetEmergencyAccessAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync("emergency-access", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to view emergency access.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<EmergencyAccessPostureDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Emergency access response was empty.");
+    }
+
     public async Task LocalLogoutAsync(CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync("auth/local/logout", content: null, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/local/change-password", request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        LocalPasswordChangeErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<LocalPasswordChangeErrorResponse>(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        var message = error?.Message ?? "Password change failed.";
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    public async Task<ForgotPasswordResponse> RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/forgot-password", request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>(cancellationToken).ConfigureAwait(false);
+        return body ?? new ForgotPasswordResponse("If an eligible account matches, a reset email is on its way.");
+    }
+
+    public Task CompletePasswordResetAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default) =>
+        PostTokenPasswordAsync("auth/reset-password", request, cancellationToken);
+
+    public Task CompletePasswordSetupAsync(TokenPasswordRequest request, CancellationToken cancellationToken = default) =>
+        PostTokenPasswordAsync("auth/setup-password", request, cancellationToken);
+
+    public async Task VerifyContactEmailAsync(VerifyContactEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("auth/verify-contact-email", request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+        var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(msg ?? "This verification link is invalid or has expired.", null, response.StatusCode);
+    }
+
+    public async Task<AccountContactEmailDto> GetContactEmailAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http.GetFromJsonAsync<AccountContactEmailDto>("account/contact-email", cancellationToken).ConfigureAwait(false);
+        return dto ?? new AccountContactEmailDto();
+    }
+
+    public async Task<AccountContactMutationDto> RequestContactEmailAsync(RequestContactEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("account/contact-email", request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not update contact email.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<AccountContactMutationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new AccountContactMutationDto();
+    }
+
+    public async Task<AccountContactMutationDto> ResendContactEmailAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync("account/contact-email/resend", content: null, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not resend verification.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<AccountContactMutationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new AccountContactMutationDto();
+    }
+
+    public async Task<RecentAccountVerificationDto> VerifySecuredAccountAsync(
+        VerifySecuredAccountRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("account/secured/verify", request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Verification failed.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<RecentAccountVerificationDto>(cancellationToken).ConfigureAwait(false)
+            ?? new RecentAccountVerificationDto();
+    }
+
+    public async Task<SetupInvitationResponse> SendSetupInvitationAsync(
+        string userId,
+        SetupInvitationRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/setup-invitation",
+            request ?? new SetupInvitationRequest(null),
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(msg ?? "Could not send the setup invitation.", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<SetupInvitationResponse>(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Setup invitation response was empty.");
+    }
+
+    private async Task PostTokenPasswordAsync(string path, TokenPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var response = await _http.PostAsJsonAsync(path, request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+        var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(msg ?? "This link is invalid or has expired.", null, response.StatusCode);
     }
 
     public async Task<AuthSignInOptionsDto> GetAuthSignInOptionsAsync(CancellationToken cancellationToken = default)
@@ -1122,6 +1840,167 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<AuthUiPolicyDto>(cancellationToken).ConfigureAwait(false);
         return dto ?? throw new InvalidOperationException("auth-ui-policy patch response was empty.");
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListPlatformSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("config/platform-settings", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto[]>(cancellationToken).ConfigureAwait(false);
+        return dto ?? Array.Empty<PlatformSettingResolvedDto>();
+    }
+
+    public async Task<PlatformSettingResolvedDto?> GetPlatformSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedDto> SetPlatformSettingAsync(string key, UpdatePlatformSettingRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("platform-settings put response was empty.");
+    }
+
+    public async Task<PlatformSettingResolvedDto?> ResetPlatformSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync($"config/platform-settings/{Uri.EscapeDataString(key)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetPlatformSettingOptionsAsync(
+        string key,
+        string? integrationId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = $"config/platform-settings/{Uri.EscapeDataString(key)}/options";
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            path += $"?integrationId={Uri.EscapeDataString(integrationId)}";
+
+        using var response = await _http.GetAsync(path, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            var message = string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail;
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        var dtoList = await response.Content.ReadFromJsonAsync<PlatformSettingAllowedValueDto[]>(cancellationToken).ConfigureAwait(false);
+        return dtoList;
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingResolvedDto>?> ListIntegrationSettingsAsync(
+        string integrationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .GetAsync($"integrations/{Uri.EscapeDataString(integrationId)}/settings", cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto[]>(cancellationToken).ConfigureAwait(false);
+        return dto ?? Array.Empty<PlatformSettingResolvedDto>();
+    }
+
+    public async Task<PlatformSettingResolvedDto?> GetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .GetAsync(
+                $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PlatformSettingResolvedDto> SetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        UpdatePlatformSettingRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+            request,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.Forbidden)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new HttpRequestException(
+                string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail,
+                null,
+                response.StatusCode);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var dto = await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("integration-settings put response was empty.");
+    }
+
+    public async Task<PlatformSettingResolvedDto?> ResetIntegrationSettingAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformSettingResolvedDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<PlatformSettingAllowedValueDto>?> GetIntegrationSettingOptionsAsync(
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/settings/{Uri.EscapeDataString(key)}/options",
+            cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+            var message = string.IsNullOrWhiteSpace(detail) ? response.ReasonPhrase : detail;
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        return await response.Content.ReadFromJsonAsync<PlatformSettingAllowedValueDto[]>(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ConfigAuthOverviewDto?> GetConfigAuthOverviewAsync(CancellationToken cancellationToken = default)
@@ -1222,5 +2101,1006 @@ public sealed class ManagementClient : IManagementClient
         }
 
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<ValidateOpenIdResponseDto?> ValidateEntraTenantOpenIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/validate-openid",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ValidateOpenIdResponseDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraDirectoryUsersApiDto?> GetEntraDirectoryUsersAsync(
+        string id,
+        string? search = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/users?top={top}";
+        if (!string.IsNullOrEmpty(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraDirectoryUsersApiDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(
+        string id,
+        string? search = null,
+        int top = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/groups?top={top}";
+        if (!string.IsNullOrEmpty(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EntraDirectoryGroupsApiDto>(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ManagedContactSummaryDto>?> ListManagedContactsAsync(
+        string? query,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"managed-contacts?take={take}";
+        if (!string.IsNullOrWhiteSpace(query))
+            url += $"&query={Uri.EscapeDataString(query.Trim())}";
+        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<ManagedContactSummaryDto>>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> GetManagedContactAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"managed-contacts/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> CreateManagedContactAsync(
+        CreateManagedContactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> UpdateManagedContactAsync(
+        string id,
+        UpdateManagedContactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> SetManagedContactEnabledAsync(
+        string id,
+        bool isEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/enabled",
+            new SetManagedContactEnabledRequest(isEnabled),
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ImportEntraUsersResponseDto?> ImportEntraUsersToManagedContactsAsync(
+        ImportEntraUsersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts/import/entra-users",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ImportEntraUsersResponseDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ManagedContactGroupSummaryDto>?> ImportEntraGroupsMetadataAsync(
+        ImportEntraGroupsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "managed-contacts/import/entra-groups",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<ManagedContactGroupSummaryDto>>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> LinkManagedContactToUserAsync(
+        string id,
+        LinkManagedContactUserRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/link-user",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ManagedContactDetailDto?> UnlinkManagedContactUserAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsync(
+            $"managed-contacts/{Uri.EscapeDataString(id)}/unlink-user",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedContactDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<NotificationDefinitionSummaryDto>> ListNotificationDefinitionsAsync(
+        string? integrationId = null,
+        string? eventType = null,
+        bool? enabled = null,
+        string? origin = null,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(eventType))
+            query.Add($"eventType={Uri.EscapeDataString(eventType.Trim())}");
+        if (enabled is not null)
+            query.Add($"enabled={enabled.Value.ToString().ToLowerInvariant()}");
+        if (!string.IsNullOrWhiteSpace(origin))
+            query.Add($"origin={Uri.EscapeDataString(origin.Trim())}");
+        var path = $"notification-definitions?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<NotificationDefinitionSummaryDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationDefinitionSummaryDto>();
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> GetNotificationDefinitionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-definitions/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> SetNotificationDefinitionEnabledAsync(
+        string id,
+        bool isEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(id)}/enabled",
+            new SetNotificationDefinitionEnabledRequest(isEnabled),
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewAsync(
+        string definitionId,
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/render-preview",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RenderedNotificationSnapshotDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from RenderNotificationPreview.");
+    }
+
+    public async Task<RenderedNotificationSnapshotDto> RenderNotificationPreviewDraftAsync(
+        RenderNotificationPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions/render-preview",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RenderedNotificationSnapshotDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from RenderNotificationPreviewDraft.");
+    }
+
+    public async Task<IReadOnlyList<PlatformEventCatalogEntryDto>> ListPlatformEventCatalogAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<PlatformEventCatalogEntryDto[]>(
+            "platform-events/catalog",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<PlatformEventCatalogEntryDto>();
+    }
+
+    public async Task<PlatformEventCatalogEntryDto?> GetPlatformEventCatalogEntryAsync(
+        string eventType,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"platform-events/catalog/{Uri.EscapeDataString(eventType)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PlatformEventCatalogEntryDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<NotificationValidationResultDto> ValidateNotificationDefinitionAsync(
+        ValidateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions/validate",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationValidationResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from ValidateNotificationDefinition.");
+    }
+
+    public async Task<NotificationDefinitionDetailDto> CreateNotificationDefinitionAsync(
+        CreateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-definitions",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from CreateNotificationDefinition.");
+    }
+
+    public async Task<NotificationDefinitionDetailDto?> UpdateNotificationDefinitionAsync(
+        string id,
+        UpdateNotificationDefinitionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(id)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
+        string definitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http.GetFromJsonAsync<NotificationSubscriptionDto[]>(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationSubscriptionDto>();
+    }
+
+    public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByIntegrationAsync(
+        string integrationId,
+        string? definitionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = string.IsNullOrWhiteSpace(definitionId)
+            ? ""
+            : $"?definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var list = await _http.GetFromJsonAsync<NotificationSubscriptionDto[]>(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/notification-subscriptions{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationSubscriptionDto>();
+    }
+
+    public async Task<NotificationSubscriptionDto> AddNotificationSubscriptionAsync(
+        string definitionId,
+        AddNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationSubscriptionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from AddNotificationSubscription.");
+    }
+
+    public async Task<NotificationSubscriptionDto?> PatchNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        PatchNotificationSubscriptionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions/{Uri.EscapeDataString(subscriptionId)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationSubscriptionDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RemoveNotificationSubscriptionAsync(
+        string definitionId,
+        string subscriptionId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/subscriptions/{Uri.EscapeDataString(subscriptionId)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return;
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<NotificationRecipientResolutionPreviewDto> ResolveNotificationRecipientsAsync(
+        string definitionId,
+        ResolveNotificationRecipientsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            $"notification-definitions/{Uri.EscapeDataString(definitionId)}/recipients/resolve",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationRecipientResolutionPreviewDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Unexpected null response from ResolveNotificationRecipients.");
+    }
+
+    public async Task<IReadOnlyList<NotificationInstanceSummaryDto>> ListNotificationInstancesAsync(
+        string? integrationId = null,
+        string? definitionId = null,
+        string? incidentId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query.Add($"definitionId={Uri.EscapeDataString(definitionId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(incidentId))
+            query.Add($"incidentId={Uri.EscapeDataString(incidentId.Trim())}");
+        var path = $"notification-instances?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<NotificationInstanceSummaryDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationInstanceSummaryDto>();
+    }
+
+    public async Task<IReadOnlyList<PersonalNotificationInboxItemDto>> GetMyNotificationsAsync(
+        string readFilter = "all",
+        int take = 50,
+        string? integrationId = null,
+        string? kind = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>
+        {
+            $"readFilter={Uri.EscapeDataString(readFilter)}",
+            $"take={take}",
+        };
+        if (!string.IsNullOrWhiteSpace(integrationId))
+            query.Add($"integrationId={Uri.EscapeDataString(integrationId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(kind))
+            query.Add($"kind={Uri.EscapeDataString(kind.Trim())}");
+        var path = $"me/notifications?{string.Join("&", query)}";
+        var list = await _http.GetFromJsonAsync<PersonalNotificationInboxItemDto[]>(path, ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<PersonalNotificationInboxItemDto>();
+    }
+
+    public async Task<IReadOnlyList<PersonalNotificationEmailPreferenceDto>> GetMyNotificationEmailPreferencesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<PersonalNotificationEmailPreferenceDto[]>(
+                "me/notification-subscriptions",
+                ApiJsonReadOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<PersonalNotificationEmailPreferenceDto>();
+    }
+
+    public async Task<PersonalNotificationEmailPreferenceDto> SetMyNotificationEmailPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PutAsJsonAsync(
+                $"me/notification-subscriptions/{Uri.EscapeDataString(definitionId)}",
+                new SetPersonalNotificationEmailPreferenceRequest { EmailEnabled = emailEnabled },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<PersonalNotificationEmailPreferenceDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    // --- Account: profile, personal preferences, avatar (AUP-1) ---
+
+    public async Task<AccountProfileDto?> GetAccountProfileAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync("account/profile", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return null;
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<AccountProfileDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<AccountProfileDto> UpdateAccountProfileAsync(
+        string? displayName,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                "account/profile",
+                new UpdateAccountProfileRequestDto { DisplayName = displayName },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountProfileDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<UserPreferencesDto> GetAccountPreferencesAsync(CancellationToken cancellationToken = default)
+    {
+        var dto = await _http
+            .GetFromJsonAsync<UserPreferencesDto>("account/preferences", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return dto ?? new UserPreferencesDto();
+    }
+
+    public async Task<UserPreferencesDto> UpdateAccountPreferencesAsync(
+        UpdateUserPreferencesRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http
+            .PutAsJsonAsync("account/preferences", request, ApiJsonWriteOptions, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<UserPreferencesDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<IReadOnlyList<AvatarOptionDto>> GetAvatarOptionsAsync(CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<AvatarOptionDto[]>("account/avatar/options", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<AvatarOptionDto>();
+    }
+
+    public async Task<AccountAvatarDto> SelectAvatarAsync(
+        string optionId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                "account/avatar/selection",
+                new SelectAvatarRequestDto { OptionId = optionId },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarDto> UploadAvatarAsync(
+        byte[] content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(content);
+        if (!string.IsNullOrWhiteSpace(contentType)
+            && MediaTypeHeaderValue.TryParse(contentType, out var parsed))
+        {
+            fileContent.Headers.ContentType = parsed;
+        }
+
+        form.Add(fileContent, "file", fileName);
+
+        using var response = await _http.PostAsync("account/avatar", form, cancellationToken).ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarDto> ResetAvatarAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync("account/avatar", cancellationToken).ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<AccountAvatarDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    public async Task<AccountAvatarImageDto?> GetAccountAvatarImageAsync(
+        int size,
+        string? version,
+        CancellationToken cancellationToken = default)
+    {
+        var path = $"account/avatar/image?size={size}";
+        if (!string.IsNullOrWhiteSpace(version))
+            path += $"&v={Uri.EscapeDataString(version)}";
+
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? "image/png";
+        return new AccountAvatarImageDto(mediaType, bytes);
+    }
+
+    public async Task<IReadOnlyList<NotificationPreferenceDto>> GetAccountNotificationPreferencesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var list = await _http
+            .GetFromJsonAsync<NotificationPreferenceDto[]>(
+                "account/notification-preferences",
+                ApiJsonReadOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationPreferenceDto>();
+    }
+
+    public async Task<NotificationPreferenceDto> SetAccountNotificationPreferenceAsync(
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+                $"account/notification-preferences/{Uri.EscapeDataString(definitionId)}",
+                new SetNotificationPreferenceRequestDto { EmailEnabled = emailEnabled },
+                ApiJsonWriteOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureAccountSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content
+            .ReadFromJsonAsync<NotificationPreferenceDto>(ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// Surfaces the server's ProblemDetails message so account forms can show the actual validation
+    /// failure instead of a bare status code.
+    /// </summary>
+    private static async Task EnsureAccountSuccessAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var message = await ReadProblemMessageAsync(response, cancellationToken).ConfigureAwait(false);
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private static async Task<string> ReadProblemMessageAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var problem = await response.Content
+                .ReadFromJsonAsync<ValidationProblemPayload>(ApiJsonReadOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            var fromErrors = problem?.Errors?
+                .SelectMany(e => e.Value ?? [])
+                .FirstOrDefault(m => !string.IsNullOrWhiteSpace(m));
+            if (!string.IsNullOrWhiteSpace(fromErrors))
+                return fromErrors!;
+
+            if (!string.IsNullOrWhiteSpace(problem?.Detail))
+                return problem!.Detail!;
+
+            if (!string.IsNullOrWhiteSpace(problem?.Title))
+                return problem!.Title!;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or HttpRequestException)
+        {
+            // Non-ProblemDetails body: fall through to the generic message below.
+        }
+
+        return $"The request failed with status {(int)response.StatusCode}.";
+    }
+
+    private sealed record ValidationProblemPayload(
+        string? Title,
+        string? Detail,
+        Dictionary<string, string[]?>? Errors);
+
+    public async Task<PersonalNotificationUnreadCountDto> GetMyUnreadNotificationCountAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var dto = await _http
+            .GetFromJsonAsync<PersonalNotificationUnreadCountDto>("me/notifications/unread-count", ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return dto ?? new PersonalNotificationUnreadCountDto();
+    }
+
+    public async Task MarkMyNotificationReadAsync(string inboxItemId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/{Uri.EscapeDataString(inboxItemId)}/mark-read", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task MarkMyNotificationUnreadAsync(string inboxItemId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/{Uri.EscapeDataString(inboxItemId)}/mark-unread", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<PersonalNotificationMarkAllReadResultDto> MarkAllMyNotificationsReadAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync("me/notifications/mark-all-read", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PersonalNotificationMarkAllReadResultDto>(ApiJsonReadOptions, cancellationToken)
+               ?? new PersonalNotificationMarkAllReadResultDto();
+    }
+
+    public async Task RecordMyNotificationsMenuViewedAsync(int take = 20, CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsync($"me/notifications/record-menu-viewed?take={take}", content: null, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task RecordMyNotificationsPageViewedAsync(
+        IReadOnlyList<string> inboxItemIds,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http
+            .PostAsJsonAsync("me/notifications/record-page-viewed", inboxItemIds, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<NotificationInstanceDetailDto?> GetNotificationInstanceAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-instances/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationInstanceDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<NotificationDeliveryOutboxDto>> ListNotificationInstanceOutboxAsync(
+        string instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"notification-instances/{Uri.EscapeDataString(instanceId)}/outbox", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return Array.Empty<NotificationDeliveryOutboxDto>();
+        response.EnsureSuccessStatusCode();
+        var list = await response.Content.ReadFromJsonAsync<NotificationDeliveryOutboxDto[]>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return list ?? Array.Empty<NotificationDeliveryOutboxDto>();
+    }
+
+    public async Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var dto = await _http.GetFromJsonAsync<NotificationDeliveryHealthSummaryDto>(
+            $"notification-diagnostics/health?{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Unexpected null response from GetNotificationDeliveryHealth.");
+    }
+
+    public async Task<NotificationIntegrationDiagnosticsDto> GetNotificationIntegrationDiagnosticsAsync(
+        string integrationId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        var dto = await _http.GetFromJsonAsync<NotificationIntegrationDiagnosticsDto>(
+            $"notification-diagnostics/by-integration/{Uri.EscapeDataString(integrationId)}?{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return dto ?? throw new InvalidOperationException("Unexpected null response from GetNotificationIntegrationDiagnostics.");
+    }
+
+    public async Task<NotificationIncidentDiagnosticsDto?> GetNotificationIncidentDiagnosticsAsync(
+        string attentionIncidentId,
+        string? definitionId = null,
+        int take = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"take={take}";
+        if (!string.IsNullOrWhiteSpace(definitionId))
+            query += $"&definitionId={Uri.EscapeDataString(definitionId.Trim())}";
+        using var response = await _http.GetAsync(
+            $"notification-diagnostics/by-incident/{Uri.EscapeDataString(attentionIncidentId)}?{query}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NotificationIncidentDiagnosticsDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<NotificationConfigurationDiagnosticsDto> GetNotificationConfigurationDiagnosticsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            "notification-diagnostics/configuration",
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<NotificationConfigurationDiagnosticsDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<NotificationSmtpTestResultDto> SendNotificationSmtpTestAsync(
+        NotificationSmtpTestRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-diagnostics/smtp-test",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<NotificationSmtpTestResultDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<PlatformNotificationPipelineTestResultDto> RunPlatformNotificationPipelineTestAsync(
+        PlatformNotificationPipelineTestRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            "notification-diagnostics/platform-pipeline-test",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<PlatformNotificationPipelineTestResultDto>(
+                ApiJsonReadOptions,
+                cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var detail = await TryReadManagementApiErrorAsync(response, cancellationToken).ConfigureAwait(false);
+        var message = string.IsNullOrWhiteSpace(detail)
+            ? $"{(int)response.StatusCode} {response.ReasonPhrase}"
+            : detail;
+        throw new HttpRequestException(message, null, response.StatusCode);
+    }
+
+    private static async Task<string?> TryReadManagementApiErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        string? raw;
+        try
+        {
+            raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return ParseManagementApiErrorPayload(raw);
+    }
+
+    /// <summary>
+    /// Extracts a human-readable message from API error JSON (anonymous <c>{ error }</c>, ProblemDetails, validation <c>errors</c>).
+    /// Uses string-based parsing so Blazor WASM and case/culture variations behave consistently.
+    /// </summary>
+    private static string? ParseManagementApiErrorPayload(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var trimmed = raw.TrimStart();
+        if (trimmed.Length == 0)
+            return null;
+        if (trimmed[0] != '{' && trimmed[0] != '[')
+            return raw.Length > 512 ? raw[..512] + "…" : raw;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return raw.Length > 512 ? raw[..512] + "…" : raw;
+
+            if (TryGetPropertyIgnoreCase(root, "error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
+            {
+                var s = errEl.GetString();
+                if (!string.IsNullOrWhiteSpace(s))
+                    return s;
+            }
+
+            if (TryGetPropertyIgnoreCase(root, "message", out var messageEl) && messageEl.ValueKind == JsonValueKind.String)
+            {
+                var s = messageEl.GetString();
+                if (!string.IsNullOrWhiteSpace(s))
+                    return s;
+            }
+
+            string? title = null;
+            if (TryGetPropertyIgnoreCase(root, "title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String)
+                title = titleEl.GetString();
+
+            var details = FormatValidationErrorsIgnoreCase(root);
+            if (!string.IsNullOrWhiteSpace(details))
+                return string.IsNullOrWhiteSpace(title) ? details : $"{title}: {details}";
+
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+
+            if (TryGetPropertyIgnoreCase(root, "detail", out var detailEl) && detailEl.ValueKind == JsonValueKind.String)
+            {
+                var d = detailEl.GetString();
+                if (!string.IsNullOrWhiteSpace(d))
+                    return d;
+            }
+        }
+        catch (JsonException)
+        {
+            return raw.Length > 512 ? raw[..512] + "…" : raw;
+        }
+
+        return raw.Length > 512 ? raw[..512] + "…" : raw;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (var p in obj.EnumerateObject())
+        {
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = p.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? FormatValidationErrorsIgnoreCase(JsonElement root)
+    {
+        if (!TryGetPropertyIgnoreCase(root, "errors", out var errors) || errors.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var parts = new List<string>();
+        foreach (var field in errors.EnumerateObject())
+        {
+            if (field.Value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in field.Value.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var msg = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(msg))
+                            parts.Add($"{field.Name}: {msg}");
+                    }
+                }
+            }
+            else if (field.Value.ValueKind == JsonValueKind.String)
+            {
+                var msg = field.Value.GetString();
+                if (!string.IsNullOrWhiteSpace(msg))
+                    parts.Add($"{field.Name}: {msg}");
+            }
+        }
+
+        return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 }

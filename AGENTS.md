@@ -11,6 +11,7 @@ When working in this repository, follow the canonical guidance in:
 2. **Single-tenant Instance** — Each deployment is one Instance (one customer per deployment). Everything is auditable per instance.
 3. **One module per compute process** — On-prem: one module per worker process. Cloud: one module per Azure Function App.
 4. **Portable workflow model** — Workflow definitions and step semantics are backend-agnostic. Adapters exist for DTFx (on-prem) and Azure Durable Functions (cloud).
-5. **Scheduling triggers workflows only** — Scheduler calls `IWorkflowStarter.StartAsync(...)`; it never executes steps directly.
+5. **Scheduling triggers workflows only** — When a schedule fires, the host enqueues a durable start (today: `IWorkflowStartDispatchService` / schedule dispatch runner with an idempotency key). Nothing in the scheduling path executes workflow steps directly.
+6. **No internal development metadata in runtime-visible content** — Do NOT put epic IDs, track names (SDK-/SWM-/BDS-/RR-/PFB-), agent notes, migration names, or planning labels into operator-facing display names, seeded records, notification titles/templates, UI labels, settings help text, or sample business data. Those belong in docs, ADRs, audits, tests, migrations, comments, and commits. Prefer product-like names (`Sample API Polling`, `Demo Customers`, `Import completed with errors`). See [.ai/playbooks/anti-patterns.md](.ai/playbooks/anti-patterns.md).
 
 Review `.ai/playbooks/anti-patterns.md` to avoid common mistakes.

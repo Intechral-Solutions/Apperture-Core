@@ -7,6 +7,12 @@ public sealed class ScheduleDefinitionEntity
 {
     public string Id { get; set; } = "";
     public string? IntegrationId { get; set; }
+
+    /// <summary>
+    /// Owning ResourceContext. Required; direct rather than derived because standalone schedules are
+    /// legal and have no Integration to derive from.
+    /// </summary>
+    public string ResourceContextId { get; set; } = "";
     public string Name { get; set; } = "";
     public string RecurrenceExpression { get; set; } = "";
     public string TimeZone { get; set; } = "";

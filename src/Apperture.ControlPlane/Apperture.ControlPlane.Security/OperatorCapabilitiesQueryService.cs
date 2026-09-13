@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -72,6 +72,21 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ConnectionRead,
                 ResourceTypeConstants.Connection,
                 cancellationToken).ConfigureAwait(false);
+            var canCreateConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionCreate,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
+            var canUpdateConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionUpdate,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
+            var canRetireConnections = await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionDelete,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
             var canViewIntegrations = await EvaluateAsync(
                 actor,
                 ActionConstants.IntegrationRead,
@@ -82,10 +97,60 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.IntegrationCreate,
                 ResourceTypeConstants.Integration,
                 cancellationToken).ConfigureAwait(false);
+            var canUpdateIntegrations = await EvaluateAsync(
+                actor,
+                ActionConstants.IntegrationUpdate,
+                ResourceTypeConstants.Integration,
+                cancellationToken).ConfigureAwait(false);
             var canViewConnectorDefinitions = await EvaluateAsync(
                 actor,
                 ActionConstants.ConnectorDefinitionRead,
                 ResourceTypeConstants.ConnectorDefinition,
+                cancellationToken).ConfigureAwait(false);
+            var canViewManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactRead,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
+            var canManageManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactManage,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
+            var canImportManagedContacts = await EvaluateAsync(
+                actor,
+                ActionConstants.ManagedContactImport,
+                ResourceTypeConstants.ManagedContact,
+                cancellationToken).ConfigureAwait(false);
+            var canViewNotificationDefinitions = await EvaluateAsync(
+                actor,
+                ActionConstants.NotificationDefinitionRead,
+                ResourceTypeConstants.NotificationDefinition,
+                cancellationToken).ConfigureAwait(false);
+            var canManageNotificationDefinitions = await EvaluateAsync(
+                actor,
+                ActionConstants.NotificationDefinitionManage,
+                ResourceTypeConstants.NotificationDefinition,
+                cancellationToken).ConfigureAwait(false);
+            var canViewPlatformSettings = await EvaluateAsync(
+                actor,
+                ActionConstants.PlatformSettingsRead,
+                ResourceTypeConstants.InstanceConfiguration,
+                cancellationToken).ConfigureAwait(false);
+            var canManagePlatformSettings = await EvaluateAsync(
+                actor,
+                ActionConstants.PlatformSettingsManage,
+                ResourceTypeConstants.InstanceConfiguration,
+                cancellationToken).ConfigureAwait(false);
+            var canManageUsers = await EvaluateAsync(
+                actor,
+                ActionConstants.UserManage,
+                ResourceTypeConstants.User,
+                cancellationToken).ConfigureAwait(false);
+            var canManageCredentials = await EvaluateAsync(
+                actor,
+                ActionConstants.CredentialManage,
+                ResourceTypeConstants.User,
                 cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
@@ -103,7 +168,26 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canViewConnections,
                 canViewIntegrations,
                 canManageIntegrations,
-                canViewConnectorDefinitions);
+                canViewConnectorDefinitions,
+                canCreateConnections,
+                canUpdateConnections,
+                canRetireConnections,
+                canViewManagedContacts,
+                canManageManagedContacts,
+                canImportManagedContacts,
+                canViewNotificationDefinitions,
+                canManageNotificationDefinitions,
+                canUpdateIntegrations,
+                canViewPlatformSettings,
+                canManagePlatformSettings,
+                canManageUsers,
+                canManageCredentials);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // Common when the Blazor client aborts an in-flight fetch during login/navigation (HTTP 499).
+            _logger.LogDebug(ex, "Operator capabilities request canceled; returning deny-all.");
+            return DenyAll;
         }
         catch (Exception ex)
         {

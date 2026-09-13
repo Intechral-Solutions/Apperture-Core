@@ -1,4 +1,7 @@
 using Apperture.ControlPlane.Security;
+using Apperture.RuntimePlane.Dispatch.SqlServer;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
@@ -132,6 +135,28 @@ public sealed class WorkflowRetryServiceTests
         (await db.WorkflowLifecycleEvents.AnyAsync(x => x.EventType == "workflow.retry_requested")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task RequestRetryAsync_WhenDispatchBlocked_AuditsWithOriginalRunsResourceContextId()
+    {
+        var db = NewDb();
+        SeedTerminalRun(db, "r1", "i1", "failed", resourceContextId: "app-a");
+        SeedStartRequest(db, "r1", "i1", "failed");
+        await db.SaveChangesAsync();
+
+        var nullResolver = new NullDefinitionResolver();
+        var dispatch = new WorkflowStartDispatchService(nullResolver, new SqlWorkflowPersistence(db), db);
+        var authz = new AllowRetryAuthz();
+        var audit = new CapturingAuditService();
+        var service = new WorkflowRetryService(db, authz, dispatch, audit);
+
+        var result = await service.RequestRetryAsync(new OperationRunId("r1"));
+
+        result.Should().NotBeNull();
+        result!.IsBlocked.Should().BeTrue();
+        audit.LastRecord.Should().NotBeNull();
+        audit.LastRecord!.ResourceContextId.Should().Be("app-a");
+    }
+
     private static WorkflowRetryService CreateService(AppertureDbContext db, bool allowAuthz)
     {
         var definitionResolver = new StubDefinitionResolver(new WorkflowDefinition(
@@ -144,7 +169,7 @@ public sealed class WorkflowRetryServiceTests
         return new WorkflowRetryService(db, authz, dispatch);
     }
 
-    private static void SeedTerminalRun(AppertureDbContext db, string runId, string instanceId, string status)
+    private static void SeedTerminalRun(AppertureDbContext db, string runId, string instanceId, string status, string? resourceContextId = null)
     {
         db.WorkflowInstances.Add(new WorkflowInstanceEntity
         {
@@ -164,7 +189,8 @@ public sealed class WorkflowRetryServiceTests
             Status = status,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
             CompletedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
-            CorrelationKey = "corr-1"
+            CorrelationKey = "corr-1",
+            ResourceContextId = resourceContextId
         });
     }
 
@@ -220,6 +246,21 @@ public sealed class WorkflowRetryServiceTests
     {
         public ValueTask EnsureCanRetryRunAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
             throw new UnauthorizedAccessException("deny");
+    }
+
+    private sealed class CapturingAuditService : IAuditService
+    {
+        public AuditRecord? LastRecord { get; private set; }
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+        {
+            LastRecord = record;
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new AuditPage([], null));
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<AuditRecord?>(null);
     }
 }
 

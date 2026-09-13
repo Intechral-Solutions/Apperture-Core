@@ -1,0 +1,39 @@
+@*
+    UIX-6 — identifiers, metadata, and diagnostics.
+    Collapsed by default; definition-list semantics; monospace values.
+    Never the only place an operator-required fact appears.
+*@
+
+<Disclosure Summary="@ResolvedSummary"
+            Dense="@Dense"
+            Class="@RootClass">
+    <dl class="ui-technical-details__list">
+        @ChildContent
+    </dl>
+    @if (Note is not null)
+    {
+        <p class="ui-technical-details__note">@Note</p>
+    }
+</Disclosure>
+
+@code {
+    /// <summary>Overrides the default "Technical details" summary where context demands it.</summary>
+    [Parameter] public string? Summary { get; set; }
+
+    /// <summary>Optional trailing explanation (for example what a drill-through link does).</summary>
+    [Parameter] public RenderFragment? Note { get; set; }
+
+    [Parameter] public bool Dense { get; set; }
+
+    [Parameter] public string Class { get; set; } = "";
+
+    /// <summary>Expected to contain <c>TechnicalDetail</c> entries.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string ResolvedSummary => TechnicalDetailsUiHelpers.ResolveSummary(Summary);
+
+    private string RootClass =>
+        string.IsNullOrWhiteSpace(Class)
+            ? ManagementInteractionSurfaces.TechnicalDetailsClass
+            : $"{ManagementInteractionSurfaces.TechnicalDetailsClass} {Class}";
+}

@@ -1,48 +1,85 @@
 # Module SDK
 
+**Full guide:** [module-authoring-guide.md](../../docs/05-modules/module-authoring-guide.md)  
+**Manifest reference:** [module-manifest-spec.md](../../docs/05-modules/module-manifest-spec.md)  
+**Integration SDK (SDK-6A):** [SDK-6A spec](../../docs/superpowers/specs/SDK-6A-Integration-Sdk-Contract-Consolidation.md) · [contract inventory](../../docs/audits/sdk6a-integration-sdk-contract-inventory.md)  
+**Signals conventions:** [ADR-0038](../../docs/02-decisions/ADR-0038-platform-signals-sdk-conventions.md)  
+**Handler snippets:** [execution-contract-handler-patterns.md](../../docs/05-modules/execution-contract-handler-patterns.md)
+
 ## Module structure
 
 A module provides:
 
-- Workflow definitions ("procedures")
-- Step implementations
-- Optional connectors/adapters
-- Optional UI metadata (nav links, screens)
-- Permission/resource declarations
+- Workflow definitions and step handlers (`IModule`, `IModuleStepHandlerRegistrar`) from **`Apperture.ModuleSdk.Integration`** (not Core.Application)
+- Optional operations (`IOperationDefinitionProvider`) and manifest **procedures**
+- Manifest: permissions, **signals**, governance, connector documentation
+- Optional menu links (`IModuleNavigationProvider`)
+- Slot-bound connections (resolve via `IStepExecutionContext.ResolveSlotAsync` — no connection ids in handlers)
+
+Optional `.Ui` projects exist but are **not** loaded by the Management shell today.
+
+## Platform signals (Epic 103 — shipped)
+
+Step handlers use **`context.Signals` only** — do not resolve signal services from DI.
+
+| API | Use |
+|-----|-----|
+| `context.Signals.Events` | Declared platform events (`ModuleManifest.Signals`); may trigger notifications |
+| `context.Signals.Logs` | Correlated operational diagnostics; best-effort; not notifications |
+| `context.Signals.Telemetry` | Optional metrics; no-op unless host wires OTel (later) |
+| `context.Signals.Correlation` | Pass to `EmitAsync` (same fields as execution context) |
+
+**Compatibility:** `context.PlatformEvents` → `Signals.Events`. Prefer `Signals` in new code.
+
+```csharp
+await context.Signals.Events.EmitAsync(context.Signals.Correlation, "my.event", payload, ct);
+context.Signals.Logs.LogOperational(OperationalLogLevel.Information, "myModule.step.done", "Done.");
+context.Signals.Telemetry.RecordCounter("myModule.rows", count);
+```
+
+**Rules:** Declare signals in manifest before emit. Do not emit `apperture.execution.run.*` from modules (platform-owned). See [ADR-0038](../../docs/02-decisions/ADR-0038-platform-signals-sdk-conventions.md) and [platform-signal-catalog.md](../../docs/01-architecture/platform-signal-catalog.md).
+
+## Testing
+
+**`Apperture.ModuleSdk.Testing`** — `ModuleTestHarness.ForModule(module).WithRunId(...).WithSlotResolver(...).Build()` records events, logs, and telemetry without SQL.
 
 ## Resource and permission registration (implemented)
 
-Modules **declare** permissions in the **manifest** via the optional `Permissions` property (list of `ModulePermissionDeclaration`: Action, optional ResourceType). The host discovers known modules (e.g. DI-registered `IModule` instances), reads each manifest’s declared permissions, validates them per ADR-0013, and registers them at startup into the single `IResourceDescriptorRegistry` with scope `module:{moduleId}`. Modules do not receive the registry or call `RegisterPermission` themselves; registration is host-driven from manifest data.
-
-**Module permission declaration:** Add a `Permissions` list to your `ModuleManifest` (e.g. in `GetManifest()`). Each entry must have a valid Action (lowercase, at least two dot-separated segments). ResourceType is optional. Registration is automatic for modules that are registered with the host (e.g. via `AddKnownModules`). **Runtime enforcement:** Registered permissions are enforced on module/workflow API operations (e.g. listing workflows for a module, starting a workflow). The same `IAuthorizationService` and RBAC model apply; see [module-manifest-spec](../../docs/05-modules/module-manifest-spec.md) and [Epic 5 Prompt 2 summary](../../docs/02-decisions/Epic5-prompt2-module-workflow-enforcement-summary.md).
+Modules declare **Permissions** (and optional **GovernedResources** / **GovernedActions**) in the manifest. The host registers them at startup; modules do not call `RegisterPermission` themselves.
 
 **Constraints:**
-- Do not browse arbitrary global resources at runtime.
-- Resolve only explicitly declared and bound dependencies (slots, connections).
-- Binding is an explicit delegation mechanism; do not bypass it.
 
-See auth and resource governance plan Section 7.2 (Forbidden) and 7.3 (Anti-Patterns).
+- Do not browse arbitrary global resources at runtime.
+- Resolve only declared slots via bindings.
+- Do not use audit or SMTP for operational outcomes.
+
+See [module-manifest-spec.md](../../docs/05-modules/module-manifest-spec.md) and [Epic 5 Prompt 2 summary](../../docs/02-decisions/Epic5-prompt2-module-workflow-enforcement-summary.md).
 
 ## Metadata (manifest)
 
-- Id, Name, Version, Description
-- Permissions (optional) — list of ModulePermissionDeclaration; registered at host startup
-- Capabilities (future)
-- Configuration schema (future UI-driven config)
+| Field | Status |
+|-------|--------|
+| Id, Name, Version, Description | Required |
+| Permissions, Signals, Procedures, GovernedResources, GovernedActions | Optional, shipped |
+| ConnectorDefinitions | Optional, documentation only |
+| Configuration schema | Future |
 
-## Workflow registration
+## Workflow and step execution
 
-Modules register workflow definitions with the runtime. Each definition includes:
-
-- Typed parameter schema (for UI-generated forms)
-- Step graph (linear sequence first; extensible later)
-- Operational attributes: category (Query vs Command), required permissions, visibility, retry policy, idempotency rules
-
-## Step implementation
-
-Steps are the unit of execution. The runtime invokes them in order according to the workflow definition. Steps receive context and parameters; they return results that feed the next step or the final OperationResult.
+- Workflows: linear step lists on `WorkflowDefinition`; handlers registered per `(moduleId, stepName)`.
+- Operations: single step; `OperationDefinition.Name` = handler name; `ParameterSchema` on operation definition.
+- Procedures: manifest entries launching workflow/operation per integration with `ParameterSchema`.
+- Outcomes: prefer `OperatorExecutionResult` for operator-visible success/failure ([ADR-0022/0023](../../docs/02-decisions/)).
 
 ## Deployment
 
-- **On-prem:** Modules are compiled-in projects referenced by the worker host. One module per process.
-- **Cloud:** Modules are deployed as their own Function App. "Install" is deployment configuration.
+- **On-prem:** Compiled into worker host; explicit `IEnumerable<IModule>` registration. One module per process (intent).
+- **Cloud:** One module per Function App.
+
+## Runtime-visible naming
+
+Do not encode epic/track IDs in module, procedure, workflow, notification, or settings **display** strings. Prefer product-like names (`Sample File Import`, `Import completed with errors`). Planning labels stay in docs/ADRs/tests. See [anti-patterns](./anti-patterns.md) and [AGENTS.md](../../AGENTS.md).
+
+## Signals backlog (not module SDK basics)
+
+Tracked in [Epic103A plan](../../docs/02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md): OpenTelemetry adapter, log elevation, handler factory/DI, built-in module notification definitions in manifest, calendar/event SDK — **not available** for authors today.

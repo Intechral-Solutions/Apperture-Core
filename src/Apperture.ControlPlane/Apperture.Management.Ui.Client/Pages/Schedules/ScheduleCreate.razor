@@ -2,31 +2,34 @@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Atoms
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Create schedule</h1>
-            <div class="text-xs text-muted">Define a new scheduled workflow or operation.</div>
-        </div>
-        <a href="/schedules" class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface">Back to list</a>
-    </div>
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Create schedule"
+                Subtitle="Define a new scheduled workflow or operation for an integration.">
+        <Toolbar>
+            <a href="/schedules" class="ui-toolbar-btn">Back to list</a>
+        </Toolbar>
+    </PageHeader>
 
-    @if (_capabilities?.CanManageSchedules != true)
+    @if (!_capabilitiesLoaded)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Not authorized</div>
-            <div class="text-muted">You do not have permission to create schedules.</div>
-        </div>
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageSchedules != true)
+    {
+        <ForbiddenState Title="Not authorized"
+                        Message="You do not have permission to create schedules." />
     }
     else if (!string.IsNullOrEmpty(_error))
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
+        <ErrorState Message="@_error">
             @if (_validationErrors is { Count: > 0 })
             {
                 <ul class="mt-2 list-disc pl-4 text-muted">
@@ -36,27 +39,43 @@
                     }
                 </ul>
             }
-        </div>
+        </ErrorState>
     }
     else
     {
-        <div class="mt-4 rounded border border-default bg-surface p-3">
-            <div class="text-xs text-muted mb-3">@Epic33UiDisplayHelpers.ScheduleActionExplanatoryText</div>
-            <div class="text-xs text-muted mb-4">On first evaluation, only runs due in the last 5 minutes are dispatched to avoid burst.</div>
-
+        <ManagementSection Title="Schedule definition"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="@($"{Epic33UiDisplayHelpers.ScheduleActionExplanatoryText} Schedules are integration-owned — select an integration first, then workflow or operation targets from that integration's module.")">
             <form class="grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
                 <div class="space-y-3">
                     <div>
                         <label class="block text-xs text-muted">Name (required)</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        <input class="ui-input mt-1 w-full text-sm"
                                @bind="_name"
                                required />
                     </div>
 
                     <div>
+                        <label class="block text-xs text-muted">Integration</label>
+                        <select class="ui-input mt-1 w-full text-sm"
+                                value="@(_selectedIntegrationId ?? "")"
+                                @onchange="OnIntegrationChanged">
+                            <option value="">Select…</option>
+                            @if (_integrations is not null)
+                            {
+                                @foreach (var integration in _integrations)
+                                {
+                                    <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
+                                }
+                            }
+                        </select>
+                    </div>
+
+                    <div>
                         <label class="block text-xs text-muted">Target kind</label>
-                        <div class="text-xs text-muted mt-0.5">Target options come from the platform catalog (modules, workflows, operations APIs). Permission-gated.</div>
-                        <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        <div class="text-xs text-muted mt-0.5">Target options are filtered to the selected integration's module.</div>
+                        <select class="ui-input mt-1 w-full text-sm"
+                                disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
                                 @onchange="OnTargetKindChanged"
                                 value="@(_targetKind == 0 ? "0" : "1")">
                             <option value="0">Workflow</option>
@@ -67,24 +86,9 @@
                     @if (_targetKind == 0)
                     {
                         <div>
-                            <label class="block text-xs text-muted">Module</label>
-                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                    value="@(_selectedModuleId ?? "")"
-                                    @onchange="OnModuleChanged">
-                                <option value="">Select…</option>
-                                @if (_modules is not null)
-                                {
-                                    @foreach (var m in _modules)
-                                    {
-                                        <option value="@m.Id">@m.Name (@m.Id)</option>
-                                    }
-                                }
-                            </select>
-                        </div>
-                        <div>
                             <label class="block text-xs text-muted">Workflow</label>
-                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
-                                    disabled="@(_workflows is null)"
+                            <select class="ui-input mt-1 w-full text-sm"
+                                    disabled="@(_workflows is null || string.IsNullOrWhiteSpace(_selectedIntegrationId))"
                                     value="@(_selectedWorkflowId ?? "")"
                                     @onchange="OnWorkflowChanged">
                                 <option value="">Select…</option>
@@ -102,13 +106,14 @@
                     {
                         <div>
                             <label class="block text-xs text-muted">Operation</label>
-                            <select class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                            <select class="ui-input mt-1 w-full text-sm"
+                                    disabled="@string.IsNullOrWhiteSpace(_selectedIntegrationId)"
                                     value="@(_selectedOperationId ?? "")"
                                     @onchange="OnOperationChanged">
                                 <option value="">Select…</option>
-                                @if (_operations is not null)
+                                @if (FilteredOperations is { } ops)
                                 {
-                                    @foreach (var op in _operations)
+                                    @foreach (var op in ops)
                                     {
                                         <option value="@op.OperationDefinitionId">@op.DisplayName (@op.OperationDefinitionId)</option>
                                     }
@@ -119,7 +124,7 @@
 
                     <div>
                         <label class="block text-xs text-muted">Recurrence (cron expression, required)</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm font-mono"
+                        <input class="ui-input mt-1 w-full text-sm font-mono"
                                @bind="_recurrence"
                                placeholder="0 * * * *"
                                required />
@@ -128,10 +133,10 @@
 
                     <div>
                         <label class="block text-xs text-muted">Time zone</label>
-                        <input class="mt-1 w-full rounded border border-default bg-surface px-2 py-2 text-sm"
+                        <input class="ui-input mt-1 w-full text-sm"
                                @bind="_timeZone"
-                               placeholder="UTC" />
-                        <div class="mt-1 text-xs text-muted">IANA time zone (e.g. UTC, America/New_York)</div>
+                               placeholder="America/Los_Angeles" />
+                        <div class="mt-1 text-xs text-muted">IANA id (e.g. UTC, America/Los_Angeles). Cron is interpreted in this zone; fire times are stored as UTC. Leave blank to use Scheduling.DefaultTimeZoneId.</div>
                     </div>
 
                     <div class="flex items-center gap-2">
@@ -142,37 +147,43 @@
 
                 <div class="flex flex-col gap-2">
                     <button type="submit"
-                            class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface disabled:opacity-50 w-fit"
+                            class="btn btn-primary w-fit"
                             disabled="@(_loading || !CanSubmit)">
                         Create schedule
                     </button>
-                    <a href="/schedules" class="text-sm underline w-fit">Cancel</a>
+                    <DrillInLink Href="/schedules" Class="w-fit">Cancel</DrillInLink>
                 </div>
             </form>
-        </div>
+        </ManagementSection>
     }
 </div>
 
 @code {
+    private bool _capabilitiesLoaded;
     private OperatorCapabilitiesDto? _capabilities;
-    private IReadOnlyList<ModuleDto>? _modules;
+    private IReadOnlyList<IntegrationDto>? _integrations;
     private IReadOnlyList<WorkflowDto>? _workflows;
     private IReadOnlyList<OperationDefinitionDto>? _operations;
-    private string? _selectedModuleId;
+    private string? _selectedIntegrationId;
     private string? _selectedWorkflowId;
     private string? _selectedOperationId;
     private int _targetKind; // 0 = Workflow, 1 = Operation
     private string _name = "";
     private string _recurrence = "";
-    private string _timeZone = "UTC";
+    private string _timeZone = "";
     private bool _enabled = true;
     private bool _loading;
     private string? _error;
     private IReadOnlyList<string>? _validationErrors;
+    private IReadOnlyList<OperationDefinitionDto> FilteredOperations =>
+        _operations is null
+            ? Array.Empty<OperationDefinitionDto>()
+            : _operations.Where(DoesOperationMatchSelectedIntegration).ToList();
 
     private bool CanSubmit =>
         !string.IsNullOrWhiteSpace(_name) &&
         !string.IsNullOrWhiteSpace(_recurrence) &&
+        !string.IsNullOrWhiteSpace(_selectedIntegrationId) &&
         (_targetKind == 0
             ? !string.IsNullOrWhiteSpace(_selectedWorkflowId)
             : !string.IsNullOrWhiteSpace(_selectedOperationId));
@@ -180,9 +191,10 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadCapabilitiesAsync();
+        _capabilitiesLoaded = true;
         if (_capabilities?.CanManageSchedules != true)
             return;
-        await LoadModulesAsync();
+        await LoadIntegrationsAsync();
         await LoadOperationsAsync();
     }
 
@@ -198,15 +210,15 @@
         }
     }
 
-    private async Task LoadModulesAsync()
+    private async Task LoadIntegrationsAsync()
     {
         try
         {
-            _modules = await Client.GetModulesAsync();
+            _integrations = await Client.GetIntegrationsAsync();
         }
         catch
         {
-            _modules = Array.Empty<ModuleDto>();
+            _integrations = Array.Empty<IntegrationDto>();
         }
     }
 
@@ -225,22 +237,28 @@
     private void OnTargetKindChanged(ChangeEventArgs e)
     {
         _targetKind = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
-        _selectedModuleId = null;
         _selectedWorkflowId = null;
         _selectedOperationId = null;
         _workflows = null;
     }
 
-    private async Task OnModuleChanged(ChangeEventArgs e)
+    private async Task OnIntegrationChanged(ChangeEventArgs e)
     {
-        _selectedModuleId = e.Value?.ToString();
+        _selectedIntegrationId = e.Value?.ToString();
         _selectedWorkflowId = null;
         _workflows = null;
-        if (string.IsNullOrEmpty(_selectedModuleId))
+        _selectedOperationId = null;
+        if (string.IsNullOrEmpty(_selectedIntegrationId))
             return;
+
+        var selectedIntegration = _integrations?.FirstOrDefault(i =>
+            string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+        if (selectedIntegration is null)
+            return;
+
         try
         {
-            _workflows = await Client.GetWorkflowsAsync(_selectedModuleId);
+            _workflows = await Client.GetWorkflowsAsync(selectedIntegration.ModuleId);
         }
         catch
         {
@@ -252,6 +270,17 @@
 
     private void OnOperationChanged(ChangeEventArgs e) => _selectedOperationId = e.Value?.ToString();
 
+    private bool DoesOperationMatchSelectedIntegration(OperationDefinitionDto operation)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedIntegrationId))
+            return false;
+        var selectedIntegration = _integrations?.FirstOrDefault(i =>
+            string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+        if (selectedIntegration is null)
+            return false;
+        return string.Equals(operation.ModuleId, selectedIntegration.ModuleId, StringComparison.Ordinal);
+    }
+
     private async Task SubmitAsync()
     {
         if (!CanSubmit)
@@ -262,6 +291,14 @@
         _validationErrors = null;
         try
         {
+            var selectedIntegration = _integrations?.FirstOrDefault(i =>
+                string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+            if (selectedIntegration is null)
+            {
+                _error = "Select a valid integration before creating a schedule.";
+                return;
+            }
+
             string? targetConfig;
             if (_targetKind == 0)
             {
@@ -269,20 +306,28 @@
             }
             else
             {
+                var selectedOperation = _operations?.FirstOrDefault(o =>
+                    string.Equals(o.OperationDefinitionId, _selectedOperationId, StringComparison.Ordinal));
+                if (selectedOperation is not null &&
+                    !string.Equals(selectedOperation.ModuleId, selectedIntegration.ModuleId, StringComparison.Ordinal))
+                {
+                    _error = "Selected operation does not belong to the selected integration.";
+                    return;
+                }
                 targetConfig = System.Text.Json.JsonSerializer.Serialize(new { operationDefinitionId = _selectedOperationId });
             }
 
-            var request = new CreateScheduleRequest(
+            var request = new CreateIntegrationScheduleRequest(
                 _name.Trim(),
                 _recurrence.Trim(),
-                string.IsNullOrWhiteSpace(_timeZone) ? "UTC" : _timeZone.Trim(),
+                string.IsNullOrWhiteSpace(_timeZone) ? null : _timeZone.Trim(),
                 _enabled,
                 _targetKind,
                 targetConfig,
                 ExecutionPolicyRef: null,
                 RuntimePlaneId: "local");
 
-            var created = await Client.CreateScheduleAsync(request);
+            var created = await Client.CreateIntegrationScheduleAsync(selectedIntegration.Id, request);
             Nav.NavigateTo($"/schedules/{Uri.EscapeDataString(created.Id)}");
         }
         catch (ScheduleValidationException ex)

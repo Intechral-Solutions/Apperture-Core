@@ -1,0 +1,74 @@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+
+@if (Resolution is not null)
+{
+    <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+        <div>
+            <div class="font-semibold">Deliverable (@Resolution.Deliverable.Count)</div>
+            @if (ImplicitDeliverable.Count > 0)
+            {
+                <p class="mt-1 text-muted">Implicit (attention routing compatibility)</p>
+                <ul class="mt-1 space-y-1 max-h-32 overflow-y-auto">
+                    @foreach (var r in ImplicitDeliverable)
+                    {
+                        <li>@r.Email <span class="text-muted">(@NotificationRecipientSourceLabels.Label(r.Source))</span></li>
+                    }
+                </ul>
+            }
+            @if (ExplicitDeliverable.Count > 0)
+            {
+                <p class="mt-2 text-muted">Explicit subscriptions and team membership</p>
+                <ul class="mt-1 space-y-1 max-h-32 overflow-y-auto">
+                    @foreach (var r in ExplicitDeliverable)
+                    {
+                        <li>@r.Email <span class="text-muted">(@NotificationRecipientSourceLabels.Label(r.Source))</span></li>
+                    }
+                </ul>
+            }
+            @if (Resolution.Deliverable.Count == 0)
+            {
+                <p class="mt-1 text-muted">No deliverable recipients.</p>
+            }
+        </div>
+        <div>
+            <div class="font-semibold">Skipped / suppressed (@Resolution.Skipped.Count)</div>
+            @if (Resolution.Skipped.Count == 0)
+            {
+                <p class="mt-1 text-muted">None.</p>
+            }
+            else
+            {
+                <ul class="mt-1 space-y-2 max-h-48 overflow-y-auto">
+                    @foreach (var r in Resolution.Skipped)
+                    {
+                        <li>
+                            <div>@(r.Email ?? r.UserId ?? r.ManagedContactId ?? "—")</div>
+                            <div class="text-muted">@NotificationRecipientSkipReasonLabels.Label(r.Reason)</div>
+                            @if (NotificationRecipientSkipReasonLabels.HelpText(r.Reason) is { } help)
+                            {
+                                <div class="text-muted">@help</div>
+                            }
+                            @if (NotificationRecipientSkipReasonLabels.ActionGuidance(r.Reason) is { } action)
+                            {
+                                <div class="text-muted italic">@action</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public NotificationRecipientResolutionPreviewDto? Resolution { get; set; }
+
+    private IReadOnlyList<ResolvedNotificationRecipientDto> ImplicitDeliverable =>
+        Resolution?.Deliverable.Where(r => NotificationRecipientSourceLabels.IsImplicitAttentionRouting(r.Source)).ToList()
+        ?? [];
+
+    private IReadOnlyList<ResolvedNotificationRecipientDto> ExplicitDeliverable =>
+        Resolution?.Deliverable.Where(r => !NotificationRecipientSourceLabels.IsImplicitAttentionRouting(r.Source)).ToList()
+        ?? [];
+}

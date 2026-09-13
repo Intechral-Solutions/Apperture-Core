@@ -89,4 +89,25 @@ public static class ActionConstants
 
     /// <summary>Create, update, delete, and activate Entra instance registrations.</summary>
     public const string AuthEntraManage = "auth.entra.manage";
+
+    /// <summary>List and search managed contacts (canonical contact layer). Epic 76.</summary>
+    public const string ManagedContactRead = "managed_contact.read";
+
+    /// <summary>Create, update, enable/disable, link to users. Epic 76.</summary>
+    public const string ManagedContactManage = "managed_contact.manage";
+
+    /// <summary>Import from Entra directory into managed contacts. Epic 76.</summary>
+    public const string ManagedContactImport = "managed_contact.import";
+
+    /// <summary>Read notification definitions (instance and integration-scoped). Epic 77.</summary>
+    public const string NotificationDefinitionRead = "notification.definition.read";
+
+    /// <summary>Create/update/enable notification definitions. Epic 77.</summary>
+    public const string NotificationDefinitionManage = "notification.definition.manage";
+
+    /// <summary>Read instance platform settings registry (Phase 1). Epic 109.</summary>
+    public const string PlatformSettingsRead = "platform.settings.read";
+
+    /// <summary>Update or reset instance platform settings overrides. Epic 109.</summary>
+    public const string PlatformSettingsManage = "platform.settings.manage";
 }

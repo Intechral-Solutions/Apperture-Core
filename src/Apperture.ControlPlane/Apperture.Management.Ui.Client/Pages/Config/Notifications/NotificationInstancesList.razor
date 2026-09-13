@@ -1,0 +1,165 @@
+@page "/config/notifications/instances"
+@layout ConfigLayout
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="Notification instances"
+                Subtitle="Rendered platform notification instances (read-only)." />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission to view notification instances." />
+        </div>
+    }
+    else
+    {
+        <div class="ui-detail-block flex flex-wrap items-end gap-3 text-sm">
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Integration id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_integrationId" />
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Definition id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_definitionId" />
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-xs text-muted">Incident id</span>
+                <input class="ui-input ui-input--narrow font-mono" @bind="_incidentId" />
+            </label>
+            <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="LoadAsync">Apply</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="mt-4">
+                <ErrorState Message="@_error" />
+            </div>
+        }
+        else if (_loading)
+        {
+            <LoadingState Message="Loading…" />
+        }
+        else if (_items is { Count: 0 })
+        {
+            <EmptyState Message="No instances match." />
+        }
+        else if (_items is not null)
+        {
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Kind</th>
+                            <th>Definition</th>
+                            <th>Integration</th>
+                            <th>Incident</th>
+                            <th>Created</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var i in _items)
+                        {
+                            <tr>
+                                <td>@i.Status</td>
+                                <td>@i.NotificationKind</td>
+                                <td class="font-mono text-xs break-all">
+                                    <a class="underline" href="@NotificationUiRoutes.DefinitionDetail(i.NotificationDefinitionId)">@i.NotificationDefinitionId</a>
+                                </td>
+                                <td class="font-mono text-xs break-all">
+                                    @if (!string.IsNullOrWhiteSpace(i.IntegrationId))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(i.IntegrationId)">@i.IntegrationId</a>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td class="font-mono text-xs break-all">
+                                    @if (!string.IsNullOrWhiteSpace(i.AttentionIncidentId) && !string.IsNullOrWhiteSpace(i.IntegrationId))
+                                    {
+                                        <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(i.IntegrationId, i.AttentionIncidentId)">@i.AttentionIncidentId</a>
+                                    }
+                                    else
+                                    {
+                                        @(i.AttentionIncidentId ?? "—")
+                                    }
+                                </td>
+                                <td class="text-xs">@i.CreatedAtUtc.UtcDateTime.ToString("u")</td>
+                                <td><a class="underline" href="@NotificationUiRoutes.InstanceDetail(i.Id)">View</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string _integrationId = "";
+    private string _definitionId = "";
+    private string _incidentId = "";
+    private IReadOnlyList<NotificationInstanceSummaryDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+
+        var q = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("integrationId", out var iid)) _integrationId = iid;
+        if (q.TryGetValue("definitionId", out var did)) _definitionId = did;
+        if (q.TryGetValue("incidentId", out var inc)) _incidentId = inc;
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            _items = await Client.ListNotificationInstancesAsync(
+                string.IsNullOrWhiteSpace(_integrationId) ? null : _integrationId.Trim(),
+                string.IsNullOrWhiteSpace(_definitionId) ? null : _definitionId.Trim(),
+                string.IsNullOrWhiteSpace(_incidentId) ? null : _incidentId.Trim());
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _items = null;
+        }
+        finally
+        {
+            _busy = false;
+            _loading = false;
+        }
+    }
+}

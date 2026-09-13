@@ -1,0 +1,9 @@
+<PageMessage Kind="PageMessageKind.Error" Title="@Title" Message="@Message" Class="ui-state-panel">
+    @ChildContent
+</PageMessage>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Error";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

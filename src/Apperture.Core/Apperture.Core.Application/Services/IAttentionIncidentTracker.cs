@@ -14,10 +14,16 @@ public interface IAttentionIncidentTracker
         string conditionKey,
         CancellationToken cancellationToken = default);
 
+    /// <param name="resourceContextId">
+    /// CTX-2: the Integration's <b>current</b> ResourceContext, supplied by the caller (who already
+    /// has the Integration loaded). Used only to snapshot onto a newly opened incident; ignored
+    /// otherwise. Never queried inside the tracker.
+    /// </param>
     ValueTask<AttentionIncidentObserveResult> ObserveScheduleExpectationAsync(
         IntegrationId integrationId,
         ScheduleExpectationSnapshot snapshot,
         DateTimeOffset observedAtUtc,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<AttentionIncidentProjection>> ListRecentForIntegrationAsync(

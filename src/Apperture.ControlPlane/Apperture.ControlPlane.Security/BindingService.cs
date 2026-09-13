@@ -1,7 +1,9 @@
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
@@ -77,7 +79,23 @@ public sealed class BindingService : IBindingService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to assign bindings to this slot.");
 
-        var eligible = await _eligibilityService.GetEligibleConnectionsAsync(moduleId, slotName, contractType, cancellationToken);
+        // Authoritative ResourceContext reference check. Eligibility below also applies the rule, but
+        // integrity must not depend on a discovery query: an Integration may only bind a Connection in
+        // its own ResourceContext or in Shared.
+        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken)
+            ?? throw new InvalidOperationException($"Connection {connectionId.Value} not found.");
+        if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, connection.ResourceContextId))
+        {
+            throw new InvalidOperationException(
+                $"Connection {connectionId.Value} belongs to ResourceContext '{connection.ResourceContextId.Value}', which is neither this Integration's ResourceContext ('{integration.ResourceContextId.Value}') nor Shared.");
+        }
+
+        var eligible = await _eligibilityService.GetEligibleConnectionsAsync(
+            moduleId,
+            slotName,
+            contractType,
+            integration.ResourceContextId,
+            cancellationToken);
         if (!eligible.Any(c => c.Id.Value == connectionId.Value))
             throw new InvalidOperationException($"Connection {connectionId.Value} is not eligible for binding to slot {moduleId}:{slotName}.");
 
@@ -158,7 +176,8 @@ public sealed class BindingService : IBindingService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to view bindings for this slot.");
 
-        var binding = await _bindingRepository.GetBySlotAsync(moduleId, slotName, cancellationToken);
+        // Module-scoped surface: only a binding that no Integration owns may be resolved here.
+        var binding = await _bindingRepository.GetUnownedBySlotAsync(moduleId, slotName, cancellationToken);
         return binding?.State == BindingState.Active ? binding : null;
     }
 
@@ -167,6 +186,7 @@ public sealed class BindingService : IBindingService
         string moduleId,
         string slotName,
         string contractType,
+        ResourceContextId? owningResourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
@@ -183,6 +203,11 @@ public sealed class BindingService : IBindingService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to view eligible connections for this slot.");
 
-        return await _eligibilityService.GetEligibleConnectionsAsync(moduleId, slotName, contractType, cancellationToken);
+        return await _eligibilityService.GetEligibleConnectionsAsync(
+            moduleId,
+            slotName,
+            contractType,
+            owningResourceContextId,
+            cancellationToken);
     }
 }

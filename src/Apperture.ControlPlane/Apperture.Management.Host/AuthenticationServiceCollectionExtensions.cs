@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -20,10 +21,12 @@ public static class AuthenticationServiceCollectionExtensions
     {
         services.Configure<EntraAuthOptions>(configuration.GetSection(EntraAuthOptions.SectionName));
         services.Configure<LocalAuthOptions>(configuration.GetSection(LocalAuthOptions.SectionName));
+        services.Configure<BreakGlassAuthOptions>(configuration.GetSection(BreakGlassAuthOptions.SectionName));
+        services.Configure<AuthenticationAssuranceOptions>(configuration.GetSection(AuthenticationAssuranceOptions.SectionName));
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 
-        services.AddSingleton<IConfigureNamedOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
+        services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();
 
         services.AddAuthentication()
@@ -33,6 +36,16 @@ public static class AuthenticationServiceCollectionExtensions
                 options.LogoutPath = "/signout";
                 options.ExpireTimeSpan = TimeSpan.FromHours(12);
                 options.SlidingExpiration = true;
+                ManagementCookieAuthentication.Configure(options);
+            })
+            .AddCookie(EntraAccessRequestAuthentication.Scheme, options =>
+            {
+                options.Cookie.Name = EntraAccessRequestAuthentication.CookieName;
+                options.ExpireTimeSpan = EntraAccessRequestAuthentication.Lifetime;
+                options.SlidingExpiration = false;
+                options.LoginPath = "/signin";
+                options.LogoutPath = "/signout";
+                ManagementCookieAuthentication.Configure(options);
             })
             .AddOpenIdConnect(OpenIdConnectScheme, options =>
             {
@@ -42,6 +55,10 @@ public static class AuthenticationServiceCollectionExtensions
                 options.ClientSecret ??= "Apperture-Entra-Disabled-Placeholder";
                 if (!options.CallbackPath.HasValue)
                     options.CallbackPath = "/signin-oidc";
+                if (!options.SignedOutCallbackPath.HasValue)
+                    options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
+                if (!options.RemoteSignOutPath.HasValue)
+                    options.RemoteSignOutPath = EntraSignOut.RemoteSignOutPath;
                 options.ResponseType ??= "code";
                 if (options.Scope.Count == 0)
                 {

@@ -1,0 +1,25 @@
+<a href="@Href"
+   class="ui-drill-in-link @Class"
+   title="@Title"
+   @attributes="AdditionalAttributes"
+   @onclick:stopPropagation="true">@ChildContent</a>
+
+@code {
+    [Parameter] public string Href { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Class { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Retained for call-site compatibility. Propagation is always stopped on the anchor —
+    /// Blazor forbids @onclick:stopPropagation on components themselves.
+    /// </summary>
+    [Parameter] public bool StopClickPropagation { get; set; }
+
+    /// <summary>
+    /// Absorbs legacy @onclick:stopPropagation (compiled as __internal_stopPropagation_onclick)
+    /// so older call sites / cached pages do not crash the renderer.
+    /// </summary>
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+}

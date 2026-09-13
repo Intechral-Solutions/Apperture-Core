@@ -6,7 +6,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Ensures well-known platform connector definitions exist in <see cref="IConnectorDefinitionRegistry"/> (control plane stub registry).
-/// Aligns with runtime worker platform connector registration ids (Apperture.ConnectorResolution).
+/// Campus Nexus and SFTP definitions are contributed by connector packages via IConnectorDefinitionContributor.
 /// </summary>
 public sealed class SeedWellKnownConnectorDefinitionsHostedService : IHostedService
 {
@@ -18,8 +18,6 @@ public sealed class SeedWellKnownConnectorDefinitionsHostedService : IHostedServ
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _registry.Register(WellKnownConnectorDefinitions.CreatePlatformSql());
-        _registry.Register(WellKnownConnectorDefinitions.CreatePlatformCampusNexusMinimal());
-        _registry.Register(WellKnownConnectorDefinitions.CreatePlatformSftp());
         return Task.CompletedTask;
     }
 

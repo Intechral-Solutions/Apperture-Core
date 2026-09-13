@@ -1,0 +1,140 @@
+<mxfile host="app.diagrams.net" agent="Apperture" version="24.0.0" type="device">
+  <diagram name="07 Runtime Portability (Projected)" id="07-runtime-portability-projected">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="&lt;b&gt;07 — Runtime Portability (Projected)&lt;/b&gt;&lt;br&gt;Live adapters: on-prem DTFx+SQL vs cloud Durable Functions+Azure Storage" style="text;html=1;fontSize=16;align=center;" vertex="1" parent="1">
+          <mxGeometry x="240" y="10" width="920" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="rtLane" value="Runtime Plane — Portable Model (existing)" style="swimlane;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1320" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="abstractions" value="RuntimePlane.Abstractions&lt;br&gt;IWorkflowRuntime • StartWorkflowRequest&lt;br&gt;WorkflowDefinitionId • OrchestrationSafeValidator" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rtLane">
+          <mxGeometry x="30" y="45" width="320" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="engine" value="RuntimePlane.Engine&lt;br&gt;(backend-agnostic step semantics)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rtLane">
+          <mxGeometry x="400" y="45" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dispatch" value="Dispatch.SqlServer&lt;br&gt;(durable handoff — existing)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="rtLane">
+          <mxGeometry x="730" y="45" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="onPremLane" value="On-Prem Deployment (new adapter path)" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="620" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="workerOnPrem" value="WorkerHost / ModuleHost&lt;br&gt;(one module per process)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="onPremLane">
+          <mxGeometry x="30" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="dtfx" value="DTFx Adapter (live — new)&lt;br&gt;Durable Task Framework&lt;br&gt;orchestration + activities" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;" vertex="1" parent="onPremLane">
+          <mxGeometry x="260" y="45" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqlOnPrem" value="SQL Server&lt;br&gt;platform state + dispatch queue&lt;br&gt;WorkflowInstances • Runs • Steps" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="onPremLane">
+          <mxGeometry x="30" y="180" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="dtfxStore" value="DTFx task hub&lt;br&gt;(durable orchestration state)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="onPremLane">
+          <mxGeometry x="260" y="180" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="onPremNote" value="Worker delegates orchestration to DTFx; platform SQL remains source of truth for run/instance visibility" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="onPremLane">
+          <mxGeometry x="30" y="280" width="500" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="cloudLane" value="Cloud Deployment (new adapter path)" style="swimlane;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="260" width="660" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="funcApp" value="Azure Function App&lt;br&gt;(one module per app)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloudLane">
+          <mxGeometry x="30" y="50" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="df" value="Durable Functions Adapter (live — new)&lt;br&gt;orchestrator + activity functions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;" vertex="1" parent="cloudLane">
+          <mxGeometry x="270" y="45" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="azureStorage" value="Azure Storage&lt;br&gt;(Durable Functions task hub)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="cloudLane">
+          <mxGeometry x="30" y="180" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqlCloud" value="SQL Server / platform DB&lt;br&gt;(run visibility, dispatch)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cloudLane">
+          <mxGeometry x="270" y="180" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="kv" value="Azure Key Vault&lt;br&gt;(secrets — existing resolver)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="cloudLane">
+          <mxGeometry x="500" y="180" width="140" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="cloudNote" value="Same portable workflow definitions; backend selected at deployment time" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="cloudLane">
+          <mxGeometry x="30" y="280" width="500" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legend&lt;/b&gt;  Existing #dae8fc  |  New/changed #d5e8d4 (green)  |  Backend-specific stores in green cylinders" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="700" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="abstractions" target="engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="portable model">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="abstractions" target="dtfx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="on-prem">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="240"/>
+              <mxPoint x="370" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="abstractions" target="df" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="cloud">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="250"/>
+              <mxPoint x="1030" y="250"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="workerOnPrem" target="dtfx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="IWorkflowRuntime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="dtfx" target="dtfxStore" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="orchestration state">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="dtfx" target="sqlOnPrem" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="sync platform state">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="dispatch" target="sqlOnPrem" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="enqueue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="240"/>
+              <mxPoint x="130" y="240"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="funcApp" target="df" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="IWorkflowRuntime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="df" target="azureStorage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;" value="task hub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="df" target="sqlCloud" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="sync platform state">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="dispatch" target="sqlCloud" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="enqueue">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="230"/>
+              <mxPoint x="870" y="230"/>
+              <mxPoint x="870" y="500"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="funcApp" target="kv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" value="secrets">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="engine" target="dtfx" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;dashed=1;" value="step semantics">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="230"/>
+              <mxPoint x="370" y="230"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="engine" target="df" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82b366;dashed=1;" value="step semantics">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="235"/>
+              <mxPoint x="1030" y="235"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,69 @@
+@page "/config/notifications/definitions/new"
+@layout ConfigLayout
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Notifications"
+                Title="Create notification definition"
+                Subtitle="Integration-scoped, platform-event rule and template authoring.">
+        <Toolbar>
+            <DrillInLink Href="/config/notifications/definitions">Back to definitions</DrillInLink>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState />
+    }
+    else if (!_canSave)
+    {
+        <ForbiddenState Title="Not authorized"
+                        Message="Creating notification definitions requires notification definition manage and integration update permissions." />
+    }
+    else
+    {
+        <ManagementSection Title="Authoring"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Create a new definition; save and redirect behavior remains unchanged.">
+            <NotificationDefinitionAuthoringForm Mode="NotificationDefinitionAuthoringMode.Create"
+                                                 IntegrationId="@IntegrationId"
+                                                 LockIntegration="false"
+                                                 ReturnUrl="@ReturnUrl"
+                                                 CanSave="true"
+                                                 OnSaved="OnSavedAsync" />
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    [Parameter] public string? IntegrationId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "integrationId")]
+    public string? IntegrationIdQuery { get; set; }
+
+    private bool _capabilitiesLoaded;
+    private bool _canSave;
+    private string ReturnUrl => "/config/notifications/definitions";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(IntegrationId) && !string.IsNullOrWhiteSpace(IntegrationIdQuery))
+            IntegrationId = IntegrationIdQuery.Trim();
+
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canSave = caps.CanManageNotificationDefinitions && caps.CanUpdateIntegrations;
+        _capabilitiesLoaded = true;
+    }
+
+    private Task OnSavedAsync(string definitionId)
+    {
+        Nav.NavigateTo(NotificationPostCreateNavigation.DefinitionDetailAfterCreate(definitionId, IntegrationId));
+        return Task.CompletedTask;
+    }
+}

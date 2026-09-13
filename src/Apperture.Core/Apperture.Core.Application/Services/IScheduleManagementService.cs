@@ -1,4 +1,5 @@
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.Core.Application.Services;
@@ -19,8 +20,41 @@ public interface IScheduleManagementService
     ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a schedule definition.
+    /// Lists schedule definitions, optionally restricted to one owning ResourceContext.
     /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; the production
+    /// implementation pushes the filter down to the repository query.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<ScheduleDefinition>> ListDefinitionsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListDefinitionsAsync(cancellationToken).ConfigureAwait(false);
+        if (resourceContextId is null)
+            return all;
+        return all.Where(d => string.Equals(d.ResourceContextId?.Value, resourceContextId.Value, StringComparison.Ordinal)).ToList();
+    }
+
+    /// <summary>
+    /// Creates a schedule definition and resolves its owning ResourceContext.
+    /// </summary>
+    /// <remarks>
+    /// This is the authoritative ownership rule for Schedules; controllers must not reimplement it.
+    /// <list type="bullet">
+    /// <item>Standalone schedule, no context supplied: owned by the reserved Shared context.</item>
+    /// <item>Standalone schedule, context supplied: that context, which must exist and be Active.</item>
+    /// <item>Integration-attached, no context supplied: inherits the Integration's ResourceContext.</item>
+    /// <item>Integration-attached, context supplied: must equal the Integration's, otherwise rejected.</item>
+    /// </list>
+    /// An Integration-attached schedule is never blindly defaulted to Shared.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The supplied context does not exist, is archived, or disagrees with the Integration's context.
+    /// </exception>
     ValueTask<ScheduleDefinition> CreateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -74,4 +108,10 @@ public sealed record ScheduleWithExecutionState(
 public sealed record ScheduleInProgressClaim(
     string ClaimedByHostId,
     DateTimeOffset ClaimedAtUtc,
-    bool IsStale);
+    bool IsStale,
+    /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot from the specific ScheduleRun this claim belongs to
+    /// (copied at claim time from ScheduleDefinition.ResourceContextId). Distinct from the Schedule's
+    /// current ownership, which the caller already has on hand as ScheduleDefinition.ResourceContextId.
+    /// </summary>
+    string? ResourceContextId = null);

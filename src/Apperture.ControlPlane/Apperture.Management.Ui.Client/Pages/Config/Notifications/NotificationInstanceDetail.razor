@@ -1,0 +1,239 @@
+@page "/config/notifications/instances/{InstanceId}"
+@layout ConfigLayout
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Organisms.Notifications
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Notifications"
+                Title="@(_detail?.RenderedSubject ?? "Notification instance")"
+                Subtitle="@InstanceSubtitle">
+        <Toolbar>
+            <a href="/config/notifications/instances" class="ui-toolbar-btn text-sm">← Instances</a>
+        </Toolbar>
+        <ChildContent>
+            <div class="mt-1 font-mono text-xs text-muted break-all">@InstanceId</div>
+        </ChildContent>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canView)
+    {
+        <div class="mt-4">
+            <ForbiddenState Message="You do not have permission to view this instance." />
+        </div>
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error" />
+    }
+    else if (_detail is null)
+    {
+        <EmptyState Message="Instance not found." />
+    }
+    else
+    {
+        <div class="space-y-4 text-sm">
+            <ManagementSection Title="Metadata" Layer="@ManagementSection.UiLayer.Summary">
+                <MetadataGrid>
+                    <MetadataItem Label="Notification kind" Value="@_detail.NotificationKind" />
+                    <MetadataItem Label="Status" Value="@_detail.Status" />
+                    <MetadataItem Label="Suppression">
+                        @if (string.IsNullOrWhiteSpace(_detail.SuppressionReason))
+                        {
+                            <span>—</span>
+                        }
+                        else
+                        {
+                            <span>@NotificationInstanceSuppressionReasonLabels.Label(_detail.SuppressionReason)</span>
+                            @if (NotificationInstanceSuppressionReasonLabels.ActionGuidance(_detail.SuppressionReason) is { } suppressionAction)
+                            {
+                                <p class="mt-1 text-muted">@suppressionAction</p>
+                            }
+                        }
+                    </MetadataItem>
+                    <MetadataItem Label="Template hash" Monospace="true" Value="@_detail.TemplateVersionHash" />
+                    <MetadataItem Label="Definition">
+                        <a class="underline font-mono" href="@NotificationUiRoutes.DefinitionDetail(_detail.NotificationDefinitionId)">@_detail.NotificationDefinitionId</a>
+                    </MetadataItem>
+                    <MetadataItem Label="Integration">
+                        @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                        {
+                            <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">@_detail.IntegrationId</a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </MetadataItem>
+                    <MetadataItem Label="Incident">
+                        @if (!string.IsNullOrWhiteSpace(_detail.AttentionIncidentId) && !string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                        {
+                            <a class="underline font-mono" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId, _detail.AttentionIncidentId)">@_detail.AttentionIncidentId</a>
+                        }
+                        else
+                        {
+                            <span class="font-mono">@(_detail.AttentionIncidentId ?? "—")</span>
+                        }
+                    </MetadataItem>
+                    <MetadataItem Label="Created" Value="@_detail.CreatedAtUtc.UtcDateTime.ToString("u")" />
+                    <MetadataItem Label="Updated" Value="@_detail.UpdatedAtUtc.UtcDateTime.ToString("u")" />
+                </MetadataGrid>
+                @if (!string.IsNullOrWhiteSpace(_detail.IntegrationId))
+                {
+                    <div class="mt-2 flex flex-wrap gap-3 text-xs">
+                        <a class="underline" href="@NotificationUiRoutes.IntegrationNotifications(_detail.IntegrationId)">Integration notifications</a>
+                        <a class="underline" href="@NotificationUiRoutes.IntegrationScheduleDiagnostics(_detail.IntegrationId)">Schedule diagnostics</a>
+                    </div>
+                }
+            </ManagementSection>
+
+            <ManagementSection Title="Rendered content" Layer="@ManagementSection.UiLayer.Detail">
+                <dl class="space-y-1 text-xs">
+                    <div><dt class="text-muted inline">Subject:</dt> <dd class="inline">@_detail.RenderedSubject</dd></div>
+                    <div><dt class="text-muted inline">Summary:</dt> <dd class="inline">@_detail.RenderedSummary</dd></div>
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(_detail.RenderedBodyText))
+                {
+                    <Disclosure Summary="Body" InitiallyOpen="true" Dense="true" Class="mt-2">
+                        <pre class="ui-code-block whitespace-pre-wrap">@_detail.RenderedBodyText</pre>
+                    </Disclosure>
+                }
+            </ManagementSection>
+
+            <ManagementSection Title="Recipient snapshot" Layer="@ManagementSection.UiLayer.Detail">
+                <NotificationRecipientSnapshotDisplay RecipientSnapshotJson="@_detail.RecipientSnapshotJson"
+                                                      DeliveredEmailCount="@(_outbox?.Count)" />
+            </ManagementSection>
+
+            <ManagementSection Title="Render context" Layer="@ManagementSection.UiLayer.Detail">
+                <Disclosure Summary="Render context JSON" Dense="true">
+                    <pre class="ui-code-block overflow-x-auto max-h-64">@_detail.RenderContextJson</pre>
+                </Disclosure>
+            </ManagementSection>
+
+            <ManagementSection Title="Delivery outbox" Layer="@ManagementSection.UiLayer.Detail">
+                @if (_outbox is { Count: 0 })
+                {
+                    <p class="text-xs text-muted">No outbox rows.</p>
+                }
+                else if (_outbox is not null)
+                {
+                    <div class="ui-data-table">
+                        <table class="ui-data-table__table min-w-full text-left text-xs">
+                            <thead>
+                                <tr>
+                                    <th>Recipient</th>
+                                    <th>Source</th>
+                                    <th>Status</th>
+                                    <th>Attempts</th>
+                                    <th>Last error</th>
+                                    <th>Guidance</th>
+                                    <th>Sent</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var o in _outbox)
+                                {
+                                    <tr>
+                                        <td>@(o.RecipientDisplayName ?? o.RecipientEmail)</td>
+                                        <td>@NotificationRecipientSourceLabels.Label(o.RecipientSource)</td>
+                                        <td>@o.Status</td>
+                                        <td>@o.AttemptCount</td>
+                                        <td class="break-all">@(o.LastError ?? "—")</td>
+                                        <td class="text-muted">@(NotificationDeliveryErrorGuidance.Summarize(o.LastError, o.Status) ?? "—")</td>
+                                        <td>@(o.SentAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </ManagementSection>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="mt-4">
+                <PageMessage Kind="PageMessageKind.Error" Message="@_error" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string InstanceId { get; set; } = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _loading = true;
+    private string? _error;
+    private NotificationInstanceDetailDto? _detail;
+    private IReadOnlyList<NotificationDeliveryOutboxDto>? _outbox;
+
+    private string InstanceSubtitle =>
+        _detail is null ? "" : $"{_detail.NotificationKind} / {_detail.Status}";
+
+    private string? _dataLoadKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await base.OnParametersSetAsync();
+        var key = InstanceId ?? "";
+        if (key == _dataLoadKey)
+            return;
+        _dataLoadKey = key;
+        if (!_capabilitiesLoaded)
+            return;
+        if (!_canView)
+            return;
+        await LoadAsync();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        _detail = null;
+        _outbox = null;
+        try
+        {
+            _detail = await Client.GetNotificationInstanceAsync(InstanceId);
+            if (_detail is not null)
+                _outbox = await Client.ListNotificationInstanceOutboxAsync(InstanceId);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

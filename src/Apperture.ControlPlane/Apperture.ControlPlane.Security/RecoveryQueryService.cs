@@ -11,7 +11,8 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 public sealed class RecoveryQueryService : IRecoveryQueryService
 {
-    private const string OperationRetryNotSupportedReason = "Operation retry not yet supported.";
+    private const string OperationRetryNotSupportedReason =
+        "Operation-level retry is not supported. Recover via Affected records (item retry or acknowledgement).";
     private const string ModuleNotExecutableReason = "Module not executable for new work";
 
     private readonly IRuntimeHealthQueryService _health;

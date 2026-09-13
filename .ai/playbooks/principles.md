@@ -15,15 +15,12 @@ Each deployment is one Instance (one customer per deployment). Isolation and com
 
 Modules are trusted; no sandboxing. This is a core isolation boundary for reliability and deployment.
 
-## 4. Durable runtime portability
+## 4. Current execution path vs durable runtime portability
 
-Apperture Core supports two execution backends:
+**Current reality (on-prem today):** Workflow and operation work is **durably enqueued in SQL** (`IWorkflowStartDispatchService` / related dispatch), **claimed by the worker**, and **executed inline** via `IWorkflowExecutor` and the runtime engine against shared SQL persistence. This is the hot path; it is not DTFx orchestration.
 
-- **On-prem:** DTFx in a Worker Service; SQL Server persistence.
-- **Cloud:** Azure Durable Functions; one Function App per module; Durable Functions backing store + consistent telemetry/audit to instance store.
-
-The workflow model is portable. Adapters (DTFx, DurableFunctions) map the portable model to each backend.
+**Portability direction:** The workflow definition model stays backend-agnostic. **Adapters** for DTFx (on-prem) and Azure Durable Functions (cloud) are **future-facing**; they map the portable model when those backends are wired for orchestration. Management Host may register DTFx-related services for non-hot-path scenarios while the worker remains SQL enqueue + claim + inline execution until that changes.
 
 ## 5. Scheduling triggers workflows only
 
-Scheduling is behind an abstraction. Schedules fire by calling `IWorkflowStarter.StartAsync(...)` with an idempotency key (e.g. `ScheduleId:FireTimeUtc`). The scheduler never executes workflow steps directly.
+Scheduling is behind an abstraction. When a schedule fires, the host enqueues a durable workflow start (today: `IWorkflowStartDispatchService` and related SQL dispatch; idempotency keys such as `ScheduleId:FireTimeUtc`). The scheduling path never executes workflow steps directly.

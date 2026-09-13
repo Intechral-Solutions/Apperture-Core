@@ -1,0 +1,138 @@
+@page "/config/contacts"
+@layout ConfigLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Contacts"
+                Title="Managed contacts"
+                Subtitle="Canonical people layer for notifications and operational teams. Custom contacts do not require Entra or login.">
+        <Toolbar>
+            @if (_canManage)
+            {
+                <a href="/config/contacts/new" class="btn btn-primary">Create custom contact</a>
+            }
+            <button type="button"
+                    class="ui-toolbar-btn"
+                    disabled="@_busy"
+                    @onclick="SearchAsync">
+                Search
+            </button>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission." />
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!string.IsNullOrEmpty(_loadError))
+    {
+        <ErrorState Message="@_loadError" />
+    }
+    else
+    {
+        <ManagementSection Title="Filters" Layer="@ManagementSection.UiLayer.Summary">
+            <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs">
+                Search
+                <input class="ui-input"
+                       placeholder="Name or email"
+                       @bind="_query"
+                       @bind:event="oninput" />
+            </label>
+        </ManagementSection>
+
+        @if (_items is not null && _items.Count == 0)
+        {
+            <EmptyState Message="No contacts match." />
+        }
+        else if (_items is not null)
+        {
+            <div class="ui-data-table">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Source</th>
+                            <th>Enabled</th>
+                            <th>User link</th>
+                            <th>Notifications</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _items)
+                        {
+                            <tr>
+                                <td class="font-medium text-heading">@c.DisplayName</td>
+                                <td class="break-all text-muted">@(c.EmailAddress ?? "—")</td>
+                                <td>@c.Source</td>
+                                <td>@(c.IsEnabled ? "Yes" : "No")</td>
+                                <td>@c.UserLinkStatus</td>
+                                <td>@c.NotificationUsabilityStatus</td>
+                                <td><a class="underline" href="@($"/config/contacts/{Uri.EscapeDataString(c.Id)}")">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _canView;
+    private bool _canManage;
+    private bool _loading = true;
+    private bool _busy;
+    private string _query = "";
+    private string? _loadError;
+    private IReadOnlyList<ManagedContactSummaryDto>? _items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewManagedContacts;
+        _canManage = caps.CanManageManagedContacts;
+        if (!_canView)
+        {
+            _loading = false;
+            return;
+        }
+        await SearchAsync();
+        _loading = false;
+    }
+
+    private async Task SearchAsync()
+    {
+        _busy = true;
+        _loadError = null;
+        try
+        {
+            _items = await Client.ListManagedContactsAsync(string.IsNullOrWhiteSpace(_query) ? null : _query.Trim(), 100);
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _items = null;
+        }
+        catch (Exception)
+        {
+            _loadError = "Could not load managed contacts.";
+            _items = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

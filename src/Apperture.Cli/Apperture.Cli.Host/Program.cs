@@ -1,4 +1,6 @@
+using Apperture.Bootstrap.Models;
 using Apperture.Cli.Bootstrap;
+using Apperture.Cli.Host;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,6 +26,8 @@ try
         case "bootstrap":
             await RunBootstrapAsync(bootstrapCli, subArgs);
             break;
+        case "emergency":
+            return await EmergencyCli.RunAsync(subArgs, config, environmentName);
         case "--help":
         case "-h":
         case "help":
@@ -77,18 +81,51 @@ static async Task RunBootstrapAsync(BootstrapCliService bootstrapCli, string[] s
             }
             break;
         case "set-profile":
+        {
+            if (!BootstrapCommandLineParser.TryParseSetProfile(cmdArgs, out var setProfile, out var setProfileError))
+            {
+                Console.Error.WriteLine(setProfileError);
+                return;
+            }
+
+            var setProfileResult = await bootstrapCli.SetProfileAsync(setProfile!);
+            WriteResult(setProfileResult);
+            break;
+        }
         case "set-auth-mode":
+        {
+            if (!BootstrapCommandLineParser.TryParseAuthMode(cmdArgs, out var authMode, out var authModeError))
+            {
+                Console.Error.WriteLine(authModeError);
+                return;
+            }
+
+            var setAuthModeResult = await bootstrapCli.SetAuthModeAsync(authMode!.Value);
+            WriteResult(setAuthModeResult);
+            break;
+        }
         case "bind-keyvault-secret":
+            if (cmdArgs.Length != 1)
+            {
+                Console.Error.WriteLine("bind-keyvault-secret requires a secret URI argument.");
+                return;
+            }
+
+            WriteResult(await bootstrapCli.BindKeyVaultAsync(cmdArgs[0]));
+            break;
         case "bind-managed-identity":
+            WriteResult(await bootstrapCli.BindManagedIdentityAsync());
+            break;
         case "bind-integrated-security":
+            WriteResult(await bootstrapCli.BindIntegratedSecurityAsync());
+            break;
+        case "set-password":
+            WriteResult(await bootstrapCli.SetPasswordAsync(new object()));
+            break;
         case "rotate-sql-credential":
         case "repair":
         case "recovery-unlock":
-            Console.WriteLine($"Bootstrap subcommand '{cmd}' - not implemented (scaffolding).");
-            break;
-        case "set-password":
-            // When implementing: obtain payload via SensitiveInputHelper.ReadSensitivePayloadFromStdinAsync or secure prompt only; never from subArgs or argv.
-            Console.WriteLine("Bootstrap subcommand 'set-password' - not implemented (scaffolding). Password must not be passed on the command line.");
+            Console.WriteLine($"Bootstrap subcommand '{cmd}' - not implemented (deferred).");
             break;
         default:
             Console.Error.WriteLine($"Unknown bootstrap subcommand: {cmd}");
@@ -110,10 +147,12 @@ static void PrintHelp()
     Console.WriteLine("  bootstrap show           - show bootstrap config (no secrets)");
     Console.WriteLine("  bootstrap validate       - validate config");
     Console.WriteLine("  bootstrap sql test       - test SQL connection");
-    Console.WriteLine("  bootstrap set-profile    - set server/database (not implemented)");
-    Console.WriteLine("  bootstrap set-password   - set SQL credential via stdin or prompt; never pass password on command line (not implemented)");
-    Console.WriteLine("  bootstrap repair         - repair path (not implemented)");
-    Console.WriteLine("  bootstrap recovery-unlock - recovery only (not implemented)");
+    Console.WriteLine("  bootstrap set-profile --server <host> --database <name> [--trust-server-cert true|false]");
+    Console.WriteLine("  bootstrap set-auth-mode <mode>  - SqlPassword, WindowsIntegrated, ManagedIdentity, etc.");
+    Console.WriteLine("  bootstrap bind-keyvault-secret <uri> | bind-managed-identity | bind-integrated-security");
+    Console.WriteLine("  bootstrap set-password   - deferred (Epic 108b); use bind-* commands");
+    Console.WriteLine("  bootstrap repair | recovery-unlock | rotate-sql-credential - deferred");
+    Console.WriteLine("  emergency status | provision | designate | set-password | enroll-mfa | reset-mfa | regenerate-codes | revoke");
 }
 
 static void PrintBootstrapHelp()

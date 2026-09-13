@@ -2,6 +2,7 @@ using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
@@ -17,22 +18,31 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IIntegrationRepository _integrationRepository;
+    private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
 
     public IntegrationManagementService(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IIntegrationRepository integrationRepository,
+        IResourceContextService resourceContexts,
         AppertureDbContext db)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _integrationRepository = integrationRepository;
+        _resourceContexts = resourceContexts;
         _db = db;
     }
 
     /// <inheritdoc />
-    public async ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(CancellationToken cancellationToken = default) =>
+        ListIntegrationsAsync(resourceContextId: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
@@ -48,7 +58,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
             throw new UnauthorizedAccessException("Not authorized to list integrations.");
 
         var scopeKey = ScopeKeyConstants.Instance;
-        return await _integrationRepository.GetVisibleAsync(scopeKey, cancellationToken);
+        return await _integrationRepository.GetVisibleAsync(scopeKey, resourceContextId, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -93,6 +103,10 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to create integrations.");
 
+        // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
+        // existing create clients stay compatible. A supplied context must exist and be Active.
+        var owningContext = await _resourceContexts.ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken);
+
         var id = new IntegrationId(Guid.NewGuid().ToString("N")[..24]);
         var now = DateTimeOffset.UtcNow;
         var integration = new DomainIntegration(
@@ -103,7 +117,10 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
             IntegrationState.Active,
             request.Settings,
             now,
-            now);
+            now)
+        {
+            ResourceContextId = owningContext.Id
+        };
 
         await _integrationRepository.AddAsync(integration, cancellationToken);
         return integration;

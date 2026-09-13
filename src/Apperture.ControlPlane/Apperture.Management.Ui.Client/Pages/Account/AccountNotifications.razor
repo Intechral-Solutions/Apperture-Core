@@ -1,0 +1,196 @@
+@page "/account/notifications"
+@layout MainLayout
+@using System.Net.Http
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IToastService Toasts
+
+<div class="ui-settings-page">
+    <PageHeader Eyebrow="Account settings"
+                Title="Notifications"
+                Subtitle="Choose how the platform reaches you about work that needs attention." />
+
+    <AccountSectionNav />
+
+    <div class="ui-settings-grid mt-6">
+        <div class="space-y-5">
+        <section class="ui-settings-card" aria-labelledby="channels-heading">
+            <div class="ui-settings-card__header">
+                <h2 id="channels-heading" class="ui-settings-card__title">Delivery channels</h2>
+                <p class="ui-settings-card__help">
+                    <strong class="font-medium text-heading">In-app</strong> notifications appear in your
+                    inbox and are always delivered for anything routed to you.
+                    <strong class="font-medium text-heading">Email</strong> is yours to switch off per
+                    notification. Administrators decide which notifications exist and who they are routed
+                    to, so turning email off suppresses your email only.
+                </p>
+            </div>
+            <div class="ui-settings-card__body">
+                <p class="text-sm text-muted">
+                    Read your notifications in the
+                    <a class="ui-settings-link !mt-0" href="@AccountUiRoutes.NotificationInbox">notification inbox</a>.
+                </p>
+            </div>
+        </section>
+
+        @if (_loading)
+        {
+            <p class="text-sm text-muted" role="status">Loading your notification preferences…</p>
+        }
+        else if (_loadError is not null)
+        {
+            <ErrorState Message="@_loadError" />
+        }
+        else if (_preferences.Count == 0)
+        {
+            <EmptyState Title="Nothing to configure yet"
+                        Message="There are no personal notification preferences to configure yet." />
+        }
+        else
+        {
+            <section class="ui-settings-card" aria-labelledby="preferences-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="preferences-heading" class="ui-settings-card__title">Your notifications</h2>
+                </div>
+
+                @*
+                    A row per notification. The channel labels are repeated in each row rather than
+                    living only in a table header, so the layout stacks cleanly on narrow screens and
+                    every control keeps an explicit label.
+                *@
+                <ul class="divide-y divide-default">
+                    @foreach (var preference in _preferences)
+                    {
+                        <li class="p-4">
+                            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div class="min-w-0 md:flex-1">
+                                    <h3 class="text-sm font-medium text-heading">@preference.DisplayName</h3>
+                                    @if (!string.IsNullOrWhiteSpace(preference.Description))
+                                    {
+                                        <p class="mt-1 text-sm text-muted">@preference.Description</p>
+                                    }
+                                </div>
+
+                                <div class="flex flex-wrap gap-6 md:shrink-0">
+                                    <div>
+                                        <span class="block text-xs font-medium uppercase tracking-wide text-muted">In-app</span>
+                                        <span class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-heading">
+                                            Always on
+                                        </span>
+                                        <p class="mt-1 max-w-56 text-xs text-muted">
+                                            @preference.PlatformNotEditableReason
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <span class="block text-xs font-medium uppercase tracking-wide text-muted">Email</span>
+                                        <label class="mt-1 inline-flex items-center gap-2 text-sm">
+                                            <input type="checkbox"
+                                                   class="h-4 w-4"
+                                                   checked="@preference.EmailEnabled"
+                                                   disabled="@IsBusy(preference.DefinitionId)"
+                                                   aria-label="@($"Email me about {preference.DisplayName}")"
+                                                   @onchange="e => ToggleEmailAsync(preference, e)" />
+                                            <span class="text-heading">@(preference.EmailEnabled ? "On" : "Off")</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <TechnicalDetails Summary="Technical details" Dense="true" Class="mt-3">
+                                <TechnicalDetail Label="Notification id" Value="@preference.DefinitionId" />
+                            </TechnicalDetails>
+                        </li>
+                    }
+                </ul>
+            </section>
+
+            <section class="ui-settings-card" aria-labelledby="future-heading">
+                <div class="ui-settings-card__header">
+                    <h2 id="future-heading" class="ui-settings-card__title">Not available yet</h2>
+                    <p class="ui-settings-card__help">
+                        Digest summaries, quiet hours, and delivery to channels other than email are not
+                        built yet, so there is nothing to configure for them here. Ask an administrator
+                        about routing to a team if you need cover outside your own inbox.
+                    </p>
+                </div>
+            </section>
+        }
+        </div>
+
+        <aside class="space-y-5">
+            <div class="ui-settings-callout">
+                <div>
+                    <div class="ui-settings-callout__title">Personal only</div>
+                    <p class="ui-settings-callout__body">
+                        These preferences change how Apperture reaches you. Administrators still own which
+                        notifications exist and who they are routed to.
+                    </p>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private List<NotificationPreferenceDto> _preferences = [];
+    private readonly HashSet<string> _busy = new(StringComparer.Ordinal);
+    private bool _loading = true;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private bool IsBusy(string definitionId) => _busy.Contains(definitionId);
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        try
+        {
+            _preferences = (await Client.GetAccountNotificationPreferencesAsync()).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            _loadError = ex.Message;
+            _preferences = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ToggleEmailAsync(NotificationPreferenceDto preference, ChangeEventArgs args)
+    {
+        var enabled = args.Value is bool value && value;
+        _busy.Add(preference.DefinitionId);
+        try
+        {
+            var updated = await Client.SetAccountNotificationPreferenceAsync(preference.DefinitionId, enabled);
+            var index = _preferences.FindIndex(p => string.Equals(p.DefinitionId, preference.DefinitionId, StringComparison.Ordinal));
+            if (index >= 0)
+                _preferences[index] = updated;
+
+            Toasts.Show(
+                ToastSeverity.Success,
+                updated.EmailEnabled
+                    ? $"Email is on for “{updated.DisplayName}”."
+                    : $"Email is off for “{updated.DisplayName}”.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Could not save notification preference");
+            // Re-read so the checkbox reflects stored state rather than the failed click.
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy.Remove(preference.DefinitionId);
+        }
+    }
+}

@@ -16,6 +16,13 @@ public sealed class WorkflowInstanceEntity
     public string? ProcedureId { get; set; }
 
     /// <summary>
+    /// CTX-2: immutable ResourceContext snapshot copied from the start request/run at creation.
+    /// Never re-derived from current Integration ownership. Null for pre-CTX-2 rows and for
+    /// legitimately contextless (System) starts.
+    /// </summary>
+    public string? ResourceContextId { get; set; }
+
+    /// <summary>
     /// When status is <c>running</c>: the workflow step currently executing (or about to execute after the last boundary).
     /// When status is <c>parked</c>: the next step to run after resume (resume pointer); that step has not executed yet in this parked segment.
     /// </summary>

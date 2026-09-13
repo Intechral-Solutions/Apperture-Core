@@ -1,37 +1,45 @@
 @page "/runs/{RunId}"
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Shared.Models
 @using System.Linq
+@using Apperture.Management.Ui.Client.Molecules
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
 @inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
 @implements IDisposable
 
-<div class="p-4">
-    <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0">
-            <h1 class="text-xl font-semibold text-heading">Run</h1>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@RunId</div>
-        </div>
-        <div class="flex items-center gap-2">
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@RunId"
+                Eyebrow="Runs"
+                Title="@RunPageTitle"
+                Subtitle="@RunHeaderSubtitle">
+        <Toolbar>
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.cancel"))"
                     title="@ActionReason("execution.cancel")"
                     @onclick="CancelAsync">
                 Cancel
             </button>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.retry"))"
                     title="@ActionReason("execution.retry")"
                     @onclick="RetryAsync">
                 Retry (new run)
             </button>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.park"))"
                     title="@ActionReason("execution.park")"
                     @onclick="ParkAsync">
                 Park
             </button>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@(!CanInvoke("execution.resume"))"
                     title="@ActionReason("execution.resume")"
                     @onclick="ResumeAsync">
@@ -41,83 +49,107 @@
                 <input type="checkbox" class="h-4 w-4" @bind="_pollingEnabled" />
                 Poll
             </label>
-            <button class="rounded bg-surface-muted px-3 py-2 text-sm text-body hover:bg-surface"
+            <button type="button"
+                    class="ui-toolbar-btn"
                     disabled="@_loading"
-                    @onclick="LoadAsync">
+                    @onclick="RefreshAsync">
                 Refresh
             </button>
-        </div>
-    </div>
+        </Toolbar>
+    </PageHeader>
 
     @if (_error is not null)
     {
-        <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-            <div class="font-semibold">Error</div>
-            <div class="text-muted">@_error</div>
-        </div>
+        <ErrorState Message="@_error" />
     }
     else if (_detail is null)
     {
-        <div class="mt-4 text-sm text-muted">Loading…</div>
+        <LoadingState />
     }
     else
     {
         @if (!string.IsNullOrEmpty(_actionMessage))
         {
-            <div class="mt-4 rounded border border-default bg-surface px-3 py-2 text-sm text-body">
-                <div class="font-semibold">Action</div>
-                <div class="text-muted">@_actionMessage</div>
+            <ActionFeedback Message="@_actionMessage">
                 @if (!string.IsNullOrEmpty(_newRunId))
                 {
                     <div class="mt-2">
-                        <a class="underline font-mono text-xs" href="@($"/runs/{_newRunId}")">Open new run: @_newRunId</a>
+                        <DrillInLink Href="@PreserveRunHref($"/runs/{_newRunId}")">Open new run: @_newRunId</DrillInLink>
                     </div>
                 }
+            </ActionFeedback>
+        }
+
+        @if (_returnAffordance is not null)
+        {
+            <div class="flex flex-wrap items-center gap-3 text-sm">
+                <a class="ui-toolbar-btn"
+                   href="@_returnAffordance.Href"
+                   aria-label="@_returnAffordance.AriaLabel">
+                    @_returnAffordance.Label
+                </a>
             </div>
         }
 
-        @if (_detail.ForensicContext is { } fx)
+        @if (!string.IsNullOrEmpty(_anchorNotice))
         {
-            <div class="mt-4 rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Investigation</div>
-                <div class="text-xs text-muted">Run forensics from persisted data and platform conventions (Epic 35).</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <PageMessage Kind="PageMessageKind.Info" Message="@_anchorNotice" />
+        }
+
+        <RunSummaryBand Detail="@_detail"
+                        RunId="@RunId"
+                        BlockedWork="@_blockedWork"
+                        CurrentStepLabel="@CurrentStepLabel" />
+
+        <RunOperationItemizationPanel RunId="@RunId"
+                                      Summary="@_detail.OperationItemization"
+                                      Anchor="@_anchor"
+                                      ReturnContext="@_returnContext"
+                                      OnRetryCompleted="RefreshAsync"
+                                      OnAnchorNotice="OnAnchorNoticeAsync" />
+
+        @if (_detail.ForensicContext is { } fxInv)
+        {
+            <ManagementAdvancedSection Title="Investigation and forensics"
+                                       Subtitle="Origin inference, module state, retry lineage, and investigation hints (Epic 35)."
+                                       InitiallyOpen="@RunScheduleOperatorUiHelpers.IsProblematicRunStatus(_detail.Status)">
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <div class="text-xs text-muted">Outcome (derived)</div>
                         <div class="text-sm text-body">@(_detail.Result?.Outcome ?? "—")</div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Origin</div>
-                        <div class="text-sm text-body">@Epic33UiDisplayHelpers.FormatRunOriginKind(fx.OriginKind)</div>
-                        <div class="text-xs text-muted mt-1">@fx.OriginDetail</div>
+                        <div class="text-sm text-body">@Epic33UiDisplayHelpers.FormatRunOriginKind(fxInv.OriginKind)</div>
+                        <div class="text-xs text-muted mt-1">@fxInv.OriginDetail</div>
                     </div>
-                    @if (!string.IsNullOrEmpty(fx.ModuleId))
+                    @if (!string.IsNullOrEmpty(fxInv.ModuleId))
                     {
                         <div>
                             <div class="text-xs text-muted">@Epic33UiDisplayHelpers.RunForensicModuleLabel</div>
-                            <a class="text-sm underline font-mono break-all" href="@($"/modules/{fx.ModuleId}")">@fx.ModuleId</a>
+                            <DrillInLink Href="@($"/modules/{fxInv.ModuleId}")">@fxInv.ModuleId</DrillInLink>
                         </div>
                     }
-                    @if (fx.ModuleExecutableNow is not null)
+                    @if (fxInv.ModuleExecutableNow is not null)
                     {
                         <div>
                             <div class="text-xs text-muted">Module state (current snapshot)</div>
-                            <div class="text-sm text-body">@(fx.ModuleExecutableNow == true ? "Effectively executable" : "Not effectively executable")</div>
-                            @if (!string.IsNullOrEmpty(fx.ModuleExecutionHint))
+                            <div class="text-sm text-body">@(fxInv.ModuleExecutableNow == true ? "Effectively executable" : "Not effectively executable")</div>
+                            @if (!string.IsNullOrEmpty(fxInv.ModuleExecutionHint))
                             {
-                                <div class="text-xs text-muted mt-1">@fx.ModuleExecutionHint</div>
+                                <div class="text-xs text-muted mt-1">@fxInv.ModuleExecutionHint</div>
                             }
                             <div class="text-xs text-muted mt-1">Reflects composition now, not necessarily at run start.</div>
                         </div>
                     }
-                    @if (!string.IsNullOrEmpty(fx.ScheduleId))
+                    @if (!string.IsNullOrEmpty(fxInv.ScheduleId))
                     {
                         <div class="md:col-span-2">
                             <div class="text-xs text-muted">Schedule (inferred)</div>
-                            <a class="text-sm underline font-mono" href="@($"/schedules/{fx.ScheduleId}")">@fx.ScheduleId</a>
-                            @if (fx.ScheduleFireTimeUtc is not null)
+                            <DrillInLink Href="@($"/schedules/{fxInv.ScheduleId}")">@fxInv.ScheduleId</DrillInLink>
+                            @if (fxInv.ScheduleFireTimeUtc is not null)
                             {
-                                <span class="text-xs text-muted ml-2">fire @fx.ScheduleFireTimeUtc.Value.ToLocalTime().ToString("u")</span>
+                                <span class="text-xs text-muted ml-2">fire <TimestampDisplay Value="@fxInv.ScheduleFireTimeUtc" ShowUtcDetail="true" /></span>
                             }
                             <div class="text-xs text-muted mt-1">@Epic33UiDisplayHelpers.RunScheduleInferenceDisclaimer</div>
                         </div>
@@ -126,17 +158,17 @@
                     {
                         <div>
                             <div class="text-xs text-muted">Retry of</div>
-                            <a class="text-sm font-mono underline" href="@($"/runs/{_detail.RetryOfRunId}")">@_detail.RetryOfRunId</a>
+                            <DrillInLink Href="@($"/runs/{_detail.RetryOfRunId}")">@_detail.RetryOfRunId</DrillInLink>
                         </div>
                     }
-                    @if (fx.RetriedByRunIds.Count > 0)
+                    @if (fxInv.RetriedByRunIds.Count > 0)
                     {
                         <div class="md:col-span-2">
                             <div class="text-xs text-muted">Retried by (new runs)</div>
                             <div class="flex flex-wrap gap-2 mt-1">
-                                @foreach (var rid in fx.RetriedByRunIds)
+                                @foreach (var rid in fxInv.RetriedByRunIds)
                                 {
-                                    <a class="text-xs font-mono underline" href="@($"/runs/{rid}")">@rid</a>
+                                    <DrillInLink Href="@($"/runs/{rid}")">@rid</DrillInLink>
                                 }
                             </div>
                         </div>
@@ -144,132 +176,131 @@
                 </div>
                 <div class="mt-3 text-xs font-semibold text-heading">Investigate next</div>
                 <div class="mt-1 flex flex-wrap gap-2">
-                    @foreach (var h in fx.InvestigationHints)
+                    @foreach (var h in fxInv.InvestigationHints)
                     {
                         var href = Epic33UiDisplayHelpers.GetRunInvestigationHintHref(h.Kind, h.TargetId);
                         if (href == "#") { continue; }
-                        <a href="@href" class="text-xs underline">@FormatInvestigationHintLabel(h)</a>
+                        <DrillInLink Href="@href">@FormatInvestigationHintLabel(h)</DrillInLink>
                     }
                 </div>
-            </div>
+            </ManagementAdvancedSection>
         }
 
-        <div class="mt-4 grid gap-4">
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Action availability</div>
-                <div class="text-xs text-muted">Server-projected action eligibility for this run.</div>
-                @if (_actions.Count == 0)
-                {
-                    <div class="mt-2 text-sm text-muted">No actions available.</div>
-                }
-                else
-                {
-                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                        @foreach (var action in _actions.OrderBy(x => x.ActionKind, StringComparer.Ordinal))
-                        {
-                            <div class="rounded border border-default bg-surface-muted px-2 py-2">
-                                <div class="text-xs font-mono text-body">@action.ActionKind</div>
-                                <div class="text-xs text-muted">@action.AvailabilityState</div>
-                                @if (!string.IsNullOrWhiteSpace(action.ReasonCode))
-                                {
-                                    <div class="text-xs text-muted">@action.ReasonCode</div>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Related context</div>
-                <div class="text-xs text-muted">Linked operational context and audit.</div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <a href="@Epic33UiDisplayHelpers.GetAuditLinkForRun(RunId)" class="text-sm underline">View audit for this run</a>
-                    <a href="/control/blocked-work" class="text-sm underline">Blocked work / recovery</a>
-                </div>
-                @if (_blockedWork is not null)
-                {
-                    <div class="mt-2 rounded border border-default bg-surface-muted p-2">
-                        <div class="text-xs font-semibold">Blocked work context</div>
-                        <div class="text-xs text-muted">@_blockedWork.BlockedReason</div>
-                        @if (_blockedWork.RetryEligibleNow && string.Equals(_blockedWork.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase))
-                        {
-                            <a href="/control/blocked-work" class="text-xs underline">Retry from Blocked Work page</a>
-                        }
-                        else if (!string.IsNullOrEmpty(_blockedWork.RetryEligibleReason))
-                        {
-                            <div class="text-xs text-muted">@_blockedWork.RetryEligibleReason</div>
-                        }
-                        @if (!string.IsNullOrEmpty(_blockedWork.ModuleId))
-                        {
-                            <a href="@($"/modules/{_blockedWork.ModuleId}")" class="text-xs underline ml-1">Module @_blockedWork.ModuleId</a>
-                        }
-                    </div>
-                }
-            </div>
-
-            <div class="rounded border border-default bg-surface p-3">
+        <ManagementAdvancedSection Title="Action availability"
+                                   Subtitle="Server-projected action eligibility for this run."
+                                   InitiallyOpen="false">
+            @if (_actions.Count == 0)
+            {
+                <EmptyState Message="No actions available." />
+            }
+            else
+            {
                 <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <div>
-                        <div class="text-xs text-muted">Status</div>
-                        <div class="text-sm text-body">@_detail.Status</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation definition" : "Workflow definition")</div>
-                        <div class="text-sm font-mono break-all">@_detail.ExecutionDefinitionId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation instance" : "Workflow instance")</div>
-                        <div class="text-sm font-mono break-all">@_detail.ExecutionInstanceId</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Created</div>
-                        <div class="text-sm text-body">@_detail.CreatedAt.ToLocalTime().ToString("u")</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Completed</div>
-                        <div class="text-sm text-body">@((_detail.CompletedAt is null) ? "" : _detail.CompletedAt.Value.ToLocalTime().ToString("u"))</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Correlation key</div>
-                        <div class="text-sm text-body">@_detail.CorrelationKey</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-muted">Retry of</div>
-                        <div class="text-sm font-mono break-all">
-                            @if (!string.IsNullOrEmpty(_detail.RetryOfRunId))
+                    @foreach (var action in _actions.OrderBy(x => x.ActionKind, StringComparer.Ordinal))
+                    {
+                        <div class="ui-detail-block">
+                            <div class="text-xs font-mono text-body">@action.ActionKind</div>
+                            <div class="text-xs text-muted">@action.AvailabilityState</div>
+                            @if (!string.IsNullOrWhiteSpace(action.ReasonCode))
                             {
-                                <a class="underline" href="@($"/runs/{_detail.RetryOfRunId}")">@_detail.RetryOfRunId</a>
+                                <div class="text-xs text-muted">@action.ReasonCode</div>
                             }
                         </div>
-                    </div>
-                    @if (!string.IsNullOrEmpty(_detail.IntegrationId))
-                    {
-                        <div>
-                            <div class="text-xs text-muted">Integration</div>
-                            <div class="text-sm font-mono break-all">
-                                <a class="underline" href="@($"/integrations/{_detail.IntegrationId}")">@_detail.IntegrationId</a>
-                            </div>
-                        </div>
                     }
-                    @if (!string.IsNullOrEmpty(_detail.ProcedureId))
+                </div>
+            }
+        </ManagementAdvancedSection>
+
+        <ManagementSection Title="Related context"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="Linked operational context and audit.">
+            <div class="flex flex-wrap gap-2">
+                <DrillInLink Href="@Epic33UiDisplayHelpers.GetAuditLinkForRun(RunId)">View audit for this run</DrillInLink>
+                <DrillInLink Href="@RunStatusFacets.BlockedRunsHref">Blocked runs</DrillInLink>
+            </div>
+            @if (_blockedWork is not null)
+            {
+                <div class="ui-detail-block mt-2">
+                    <div class="text-xs font-semibold">Blocked work context</div>
+                    <div class="text-xs text-muted">@_blockedWork.BlockedReason</div>
+                    @if (_blockedWork.RetryEligibleNow && string.Equals(_blockedWork.DefinitionKind, "workflow", StringComparison.OrdinalIgnoreCase))
                     {
-                        <div>
-                            <div class="text-xs text-muted">Procedure</div>
-                            <div class="text-sm font-mono break-all">@_detail.ProcedureId</div>
-                        </div>
+                        <div class="text-xs text-muted">Eligible for retry — use the Retry (new run) button above.</div>
                     }
+                    else if (!string.IsNullOrEmpty(_blockedWork.RetryEligibleReason))
+                    {
+                        <div class="text-xs text-muted">@_blockedWork.RetryEligibleReason</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_blockedWork.ModuleId))
+                    {
+                        <DrillInLink Href="@($"/modules/{_blockedWork.ModuleId}")">Module @_blockedWork.ModuleId</DrillInLink>
+                    }
+                </div>
+            }
+        </ManagementSection>
+
+        <ManagementSection Title="Execution overview"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Help="@CurrentStepHelp">
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div>
+                    <div class="text-xs text-muted">@CurrentStepLabel</div>
+                    <div class="text-sm font-mono">@_detail.CurrentStepName</div>
+                </div>
+                @if (!string.IsNullOrEmpty(_detail.IntegrationId))
+                {
                     <div>
-                        <div class="text-xs text-muted">@CurrentStepLabel</div>
-                        <div class="text-sm font-mono">@_detail.CurrentStepName</div>
-                        <div class="text-xs text-muted">
-                            @CurrentStepHelp
+                        <div class="text-xs text-muted">Integration</div>
+                        <div class="text-sm font-mono break-all">
+                            <DrillInLink Href="@($"/integrations/{_detail.IntegrationId}")">@_detail.IntegrationId</DrillInLink>
                         </div>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(_detail.ProcedureId))
+                {
+                    <div>
+                        <div class="text-xs text-muted">Procedure</div>
+                        <div class="text-sm font-mono break-all">@_detail.ProcedureId</div>
+                    </div>
+                }
+            </div>
+        </ManagementSection>
+
+        <ManagementAdvancedSection Title="Technical identifiers and start request"
+                                   Subtitle="Execution ids, correlation, idempotency, and persisted start metadata (ADR-0031).">
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div>
+                    <div class="text-xs text-muted">Run id</div>
+                    <div class="text-sm font-mono break-all">@RunId</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">Lifecycle status</div>
+                    <div class="text-sm text-body">@_detail.Status</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation definition" : "Workflow definition")</div>
+                    <div class="text-sm font-mono break-all">@_detail.ExecutionDefinitionId</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">@(_detail.ExecutionKind == "operation" ? "Operation instance" : "Workflow instance")</div>
+                    <div class="text-sm font-mono break-all">@_detail.ExecutionInstanceId</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">Correlation key</div>
+                    <div class="text-sm text-body break-all">@_detail.CorrelationKey</div>
+                </div>
+                <div>
+                    <div class="text-xs text-muted">Retry of</div>
+                    <div class="text-sm font-mono break-all">
+                        @if (!string.IsNullOrEmpty(_detail.RetryOfRunId))
+                        {
+                            <DrillInLink Href="@($"/runs/{_detail.RetryOfRunId}")">@_detail.RetryOfRunId</DrillInLink>
+                        }
                     </div>
                 </div>
             </div>
 
-            <div class="rounded border border-default bg-surface p-3">
+            <div class="ui-detail-block mt-4">
                 <div class="text-sm font-semibold text-heading">Start request</div>
                 <div class="text-xs text-muted">Persisted start metadata for this execution run.</div>
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -289,11 +320,11 @@
                     }
                     <div>
                         <div class="text-xs text-muted">Requested</div>
-                        <div class="text-sm text-body">@Fmt(_detail.StartRequestedAt)</div>
+                        <div class="text-sm text-body"><TimestampDisplay Value="@_detail.StartRequestedAt" ShowUtcDetail="true" /></div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Claimed</div>
-                        <div class="text-sm text-body">@Fmt(_detail.StartClaimedAt)</div>
+                        <div class="text-sm text-body"><TimestampDisplay Value="@_detail.StartClaimedAt" ShowUtcDetail="true" /></div>
                     </div>
                     <div>
                         <div class="text-xs text-muted">Idempotency key</div>
@@ -315,15 +346,16 @@
                         <div class="mt-1 text-xs text-muted">
                             Full payload persisted on the start request after validation (ADR-0031). Intended for non-secret operational inputs; secret-bearing .NET types are rejected at launch. Plain strings are not redacted—do not put secrets here. May include PII or business data; a future sensitive-field model could change visibility.
                         </div>
-                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.StartParametersJson</code></pre>
+                        <pre class="ui-code-block"><code>@_detail.StartParametersJson</code></pre>
                     </div>
                 }
             </div>
+        </ManagementAdvancedSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Result</div>
-                <div class="text-xs text-muted">Outcome, summary, and captured output from persisted execution.</div>
-                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+        <ManagementSection Title="Result"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Subtitle="Outcome, summary, and captured output from persisted execution.">
+                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
                         <div class="text-xs text-muted">Outcome</div>
                         <div class="text-sm text-body">@_detail.Result?.Outcome</div>
@@ -360,7 +392,7 @@
                 </div>
                 @if (_detail.Error is not null)
                 {
-                    <div class="mt-2 rounded border border-default bg-surface-muted px-2 py-2">
+                    <div class="ui-detail-block mt-2">
                         <div class="text-xs text-muted">Failure</div>
                         <div class="text-sm text-body">@_detail.Error.Category: @_detail.Error.Message</div>
                         @if (!string.IsNullOrWhiteSpace(_detail.Error.DetailsJson))
@@ -393,7 +425,7 @@
                         {
                             <div class="text-xs text-muted">Output was truncated at persistence.</div>
                         }
-                        <pre class="mt-1 max-h-64 overflow-auto rounded border border-default bg-surface-muted p-2 text-xs text-body"><code>@_detail.Result?.PayloadJson</code></pre>
+                        <pre class="ui-code-block"><code>@_detail.Result?.PayloadJson</code></pre>
                     </div>
                 }
                 else if (IsSummaryOnlyOutput)
@@ -404,19 +436,19 @@
                 {
                     <div class="mt-2 text-sm text-muted">@OutputUnavailableMessage</div>
                 }
-            </div>
+        </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <div class="text-sm font-semibold text-heading">Execution timeline</div>
-                <div class="text-xs text-muted">Canonical ordered history projected from persisted execution artifacts.</div>
+        <ManagementSection Title="Execution timeline"
+                           Layer="ManagementSection.UiLayer.Detail"
+                           Subtitle="Canonical ordered history projected from persisted execution artifacts.">
 
                 @if (_timeline is null || _timeline.Events.Count == 0)
                 {
-                    <div class="mt-2 text-sm text-muted">No timeline events.</div>
+                    <div class="text-sm text-muted">No timeline events.</div>
                 }
                 else
                 {
-                    <div class="mt-2 overflow-x-auto">
+                    <div class="overflow-x-auto">
                         <table class="min-w-full text-left text-sm text-body">
                             <thead class="border-b border-default text-xs text-muted">
                                 <tr>
@@ -432,7 +464,7 @@
                                 @foreach (var e in _timeline.Events)
                                 {
                                     <tr class="border-b border-default">
-                                        <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                        <td class="px-2 py-2"><TimestampDisplay Value="@e.OccurredAt" ShowUtcDetail="true" /></td>
                                         <td class="px-2 py-2 font-mono text-xs">@e.EventKind</td>
                                         <td class="px-2 py-2">@e.Summary</td>
                                         <td class="px-2 py-2">@e.Actor</td>
@@ -456,15 +488,12 @@
                         </table>
                     </div>
                 }
-            </div>
+        </ManagementSection>
 
-            <div class="rounded border border-default bg-surface p-3">
-                <details>
-                    <summary class="cursor-pointer text-sm font-semibold text-heading">Supporting records (non-canonical)</summary>
-                    <div class="mt-2 text-xs text-muted">
-                        Execution timeline above is the canonical history narrative. The records below are raw supporting evidence.
-                    </div>
-                    <div class="mt-3 grid gap-4">
+        <ManagementAdvancedSection Title="Supporting records (non-canonical)"
+                                   Subtitle="Execution timeline above is the canonical history narrative. The records below are raw supporting evidence."
+                                   InitiallyOpen="false">
+                    <div class="grid gap-4">
                         <div>
                             <div class="text-sm font-semibold text-heading">Lifecycle records</div>
                             @if (_detail.LifecycleEvents.Count == 0)
@@ -489,7 +518,7 @@
                                             @foreach (var e in _detail.LifecycleEvents)
                                             {
                                                 <tr class="border-b border-default">
-                                                    <td class="px-2 py-2">@e.OccurredAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@e.OccurredAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2 font-mono text-xs">@e.EventType</td>
                                                     <td class="px-2 py-2">@e.FromStatus</td>
                                                     <td class="px-2 py-2">@e.ToStatus</td>
@@ -530,8 +559,8 @@
                                                     <td class="px-2 py-2 font-mono text-xs">@s.StepName</td>
                                                     <td class="px-2 py-2">@s.Attempt</td>
                                                     <td class="px-2 py-2">@s.Status</td>
-                                                    <td class="px-2 py-2">@Fmt(s.StartedAt)</td>
-                                                    <td class="px-2 py-2">@Fmt(s.EndedAt)</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@s.StartedAt" ShowUtcDetail="true" /></td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@s.EndedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2 text-xs break-all">@s.Error</td>
                                                 </tr>
                                             }
@@ -568,9 +597,9 @@
                                                 <tr class="border-b border-default">
                                                     <td class="px-2 py-2 font-mono text-xs">@c.ControlKind</td>
                                                     <td class="px-2 py-2">@c.Status</td>
-                                                    <td class="px-2 py-2">@c.RequestedAt.ToLocalTime().ToString("u")</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@c.RequestedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2">@c.RequestedBy</td>
-                                                    <td class="px-2 py-2">@Fmt(c.AppliedAt)</td>
+                                                    <td class="px-2 py-2"><TimestampDisplay Value="@c.AppliedAt" ShowUtcDetail="true" /></td>
                                                     <td class="px-2 py-2">@c.AppliedBy</td>
                                                     <td class="px-2 py-2 text-xs break-all">@c.LastError</td>
                                                 </tr>
@@ -581,9 +610,7 @@
                             }
                         </div>
                     </div>
-                </details>
-            </div>
-        </div>
+        </ManagementAdvancedSection>
     }
 </div>
 
@@ -602,16 +629,80 @@
     private PeriodicTimer? _timer;
     private CancellationTokenSource? _pollingCts;
     private string? _dataLoadKey;
+    private string? _navObservationKey;
+    private AffectedRecordAnchor _anchor = AffectedRecordAnchor.Empty;
+    private ManagementNavigationReturnContext? _returnContext;
+    private ManagementNavigationReturnAffordance? _returnAffordance;
+    private string? _anchorNotice;
+    private bool _listenToLocation;
+
+    protected override void OnInitialized()
+    {
+        ApplyNavigationContext();
+        _listenToLocation = true;
+        Nav.LocationChanged += OnLocationChanged;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
+        ApplyNavigationContext();
         var key = RunId ?? "";
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
+        _detail = null;
         await LoadAsync();
     }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_listenToLocation)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (!_listenToLocation)
+                return;
+
+            if (!ApplyNavigationContext())
+                return;
+
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>Returns true when observed path+query (or resolved context) changed.</summary>
+    private bool ApplyNavigationContext()
+    {
+        var key = ManagementShellOrientationTracker.GetObservationKey(Nav.Uri);
+        AffectedRecordNavigation.TryParseAffectedRecordNavigation(Nav.Uri, out var anchor, out var returnContext);
+        var affordance = AffectedRecordNavigation.TryResolveReturnAffordance(returnContext, out var resolved)
+            ? resolved
+            : null;
+
+        var changed = !string.Equals(key, _navObservationKey, StringComparison.Ordinal)
+                      || !Equals(anchor, _anchor)
+                      || !Equals(returnContext, _returnContext);
+
+        _navObservationKey = key;
+        _anchor = anchor;
+        _returnContext = returnContext;
+        _returnAffordance = affordance;
+        if (changed)
+            _anchorNotice = null;
+        return changed;
+    }
+
+    private Task OnAnchorNoticeAsync(string? message)
+    {
+        _anchorNotice = message;
+        return Task.CompletedTask;
+    }
+
+    private string PreserveRunHref(string href) =>
+        AffectedRecordNavigation.PreserveReturnContextOnRunHref(href, _returnContext);
+
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
         if (_pollingEnabled && _pollingCts is null)
@@ -623,6 +714,8 @@
 
     public void Dispose()
     {
+        _listenToLocation = false;
+        Nav.LocationChanged -= OnLocationChanged;
         StopPolling();
     }
 
@@ -635,6 +728,18 @@
         string.Equals(_detail?.Status, "parked", StringComparison.OrdinalIgnoreCase)
             ? "When parked, CurrentStepName is the saved resume pointer (the next step that will run after resume)."
             : "While running, CurrentStepName reflects current step progression.";
+
+    private string RunPageTitle =>
+        EntityShellTitles.Detail(
+            !string.IsNullOrWhiteSpace(_detail?.ProcedureId)
+                ? _detail.ProcedureId
+                : _detail?.ExecutionDefinitionId,
+            "Run");
+
+    private string RunHeaderSubtitle =>
+        _detail is null
+            ? string.Empty
+            : RunScheduleOperatorUiHelpers.BuildRunDetailSubtitle(_detail);
 
     private bool CanInvoke(string actionKind) =>
         !_loading && string.Equals(GetAction(actionKind)?.AvailabilityState, "available", StringComparison.Ordinal);
@@ -689,15 +794,20 @@
         _detail?.Result is not null
         && string.Equals(_detail.Result.DiagnosticsAvailability, "unsupported", StringComparison.Ordinal);
 
-    private async Task LoadAsync()
+    private Task RefreshAsync() => LoadAsync();
+
+    private async Task LoadAsync(bool preserveActionFeedback = false)
     {
         if (string.IsNullOrWhiteSpace(RunId))
             return;
 
         _loading = true;
         _error = null;
-        _actionMessage = null;
-        _newRunId = null;
+        if (!preserveActionFeedback)
+        {
+            _actionMessage = null;
+            _newRunId = null;
+        }
         try
         {
             _detail = await Client.GetRunAsync(RunId);
@@ -726,11 +836,12 @@
         finally
         {
             _loading = false;
+            PublishShellTitle();
         }
     }
 
-    private static string Fmt(DateTimeOffset? value) =>
-        value is null ? "" : value.Value.ToLocalTime().ToString("u");
+    private void PublishShellTitle() =>
+        ShellOrientation.PublishForCurrentUri(Nav, RunPageTitle, RunHeaderSubtitle);
 
     private static string FormatInvestigationHintLabel(RunInvestigationHintDto h) =>
         h.Kind.ToLowerInvariant() switch
@@ -754,7 +865,7 @@
             {
                 while (await _timer.WaitForNextTickAsync(_pollingCts.Token))
                 {
-                    await InvokeAsync(LoadAsync);
+                    await InvokeAsync(() => LoadAsync());
                 }
             }
             catch (OperationCanceledException)
@@ -835,7 +946,7 @@
             _loading = false;
         }
 
-        await LoadAsync();
+        await LoadAsync(preserveActionFeedback: true);
         StateHasChanged();
     }
 }

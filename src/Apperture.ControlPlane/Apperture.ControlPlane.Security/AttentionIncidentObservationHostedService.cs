@@ -1,3 +1,5 @@
+using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,8 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Epic 68: observes schedule expectation truth on an interval (not UI-driven) and persists <c>expected_run_missing</c> incidents.
-/// Epic 69: drives notification policy from incident transitions after each observation.
+/// Observes schedule expectation truth on an interval and persists <c>expected_run_missing</c> incidents.
+/// Still-active observations evaluate reminder and escalation through the platform notification pipeline.
 /// </summary>
 public sealed class AttentionIncidentObservationHostedService : BackgroundService
 {
@@ -69,7 +71,8 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
         var integrations = scope.ServiceProvider.GetRequiredService<IIntegrationRepository>();
         var readiness = scope.ServiceProvider.GetRequiredService<IIntegrationReadinessService>();
         var tracker = scope.ServiceProvider.GetRequiredService<IAttentionIncidentTracker>();
-        var notifier = scope.ServiceProvider.GetRequiredService<AttentionIncidentNotificationOrchestrator>();
+        var platformEvents = scope.ServiceProvider.GetRequiredService<ScheduleExpectationPlatformEventEmitter>();
+        var notificationEvaluation = scope.ServiceProvider.GetRequiredService<INotificationEvaluateOnlyCoordinator>();
         var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
         var observedAt = clock.GetUtcNow();
 
@@ -82,23 +85,39 @@ public sealed class AttentionIncidentObservationHostedService : BackgroundServic
             if (snapshot is null)
                 continue;
 
+            // CTX-2: the Integration is already loaded with its current ResourceContext; pass it
+            // through so the tracker snapshots it on Open without a second lookup.
             var observe = await tracker
-                .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, cancellationToken)
+                .ObserveScheduleExpectationAsync(integration.Id, snapshot, observedAt, integration.ResourceContextId.Value, cancellationToken)
                 .ConfigureAwait(false);
 
-            try
+            await platformEvents
+                .TryEmitForObserveResultAsync(integration.Id, observe, snapshot, observedAt, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (observe.Transition == AttentionIncidentObserveTransition.ObservedStillActive)
             {
-                await notifier
-                    .HandleObserveResultAsync(integration.Id, observe, snapshot, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Attention incident notification handling failed for integration {IntegrationId} after transition {Transition}.",
-                    integration.Id.Value,
-                    observe.Transition);
+                try
+                {
+                    await notificationEvaluation
+                        .EvaluateIncidentAsync(
+                            new IncidentEvaluationContext(
+                                integration.Id.Value,
+                                observe.Transition,
+                                observe.IncidentId,
+                                snapshot,
+                                observedAt,
+                                observe.ResourceContextId),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Notification reminder/escalation evaluation failed for integration {IntegrationId}.",
+                        integration.Id.Value);
+                }
             }
         }
     }

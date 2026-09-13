@@ -1,0 +1,177 @@
+@page "/integrations/{IntegrationId}/runs"
+@implements IDisposable
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject IOperatorDisplayTimeZone DisplayTimeZone
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@IntegrationId"
+                Eyebrow="Integrations"
+                Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
+                Subtitle="Runs">
+        <Toolbar>
+            <label class="block text-xs text-muted">
+                Status
+                <select class="ui-input mt-1 text-sm" disabled="@_loading" value="@_status" @onchange="OnStatusChangedAsync">
+                    <option value="">All</option>
+                    <option value="running">Running</option>
+                    <option value="failed">Failed</option>
+                    <option value="@RunStatusFacets.Blocked">Blocked</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="parked">Parked</option>
+                </select>
+            </label>
+            <a class="ui-toolbar-btn" href="@Epic33UiDisplayHelpers.GetRunsListIntegrationFilterHref(IntegrationId)">Open in global Runs</a>
+            <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
+        </Toolbar>
+    </PageHeader>
+    <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState />
+    }
+    else if (!_canView)
+    {
+        <ForbiddenState Message="You do not have permission to view integration runs." />
+    }
+    else if (RunStatusFacets.IsBlockedFacet(_status))
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Blocked is a derived run facet: failed runs waiting on deferred work. Open a run to retry eligible workflows." />
+    }
+
+    @if (_capabilitiesLoaded && _canView)
+    {
+        @if (_error is not null)
+        {
+            <ErrorState Message="@_error" />
+        }
+        else if (_loading)
+        {
+            <LoadingState Message="Loading runs…" />
+        }
+        else if (_runs is null || _runs.Count == 0)
+        {
+            <EmptyState Title="No runs"
+                        Message="@(string.IsNullOrEmpty(_status) ? "This integration has not run yet." : "No runs match the current status filter.")" />
+        }
+        else
+        {
+            <ManagementSection Title="Run history" Layer="ManagementSection.UiLayer.Detail">
+                <div class="ui-data-table">
+                    <table class="ui-data-table__table min-w-full text-left text-body">
+                        <thead class="border-b border-default text-xs text-muted">
+                            <tr>
+                                <th class="px-3 py-2">Outcome</th>
+                                <th class="px-3 py-2">Context</th>
+                                <th class="px-3 py-2">When</th>
+                                <th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in RunScheduleOperatorUiHelpers.SortRunsForTriage(_runs))
+                            {
+                                <tr class="border-b border-default hover:bg-row-hover cursor-pointer" @onclick="() => Open(r.RunId)">
+                                    <td class="px-3 py-2">
+                                        <StatusPill Label="@r.Status" Semantic="@ManagementUiSemantics.MapRunLifecycleStatus(r.Status)" />
+                                    </td>
+                                    <td class="px-3 py-2 text-sm">@RunScheduleOperatorUiHelpers.FormatRunListContextLine(r)</td>
+                                    <td class="px-3 py-2 text-sm">@FormatWhen(r)</td>
+                                    <td class="px-3 py-2">
+                                        <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(r.RunId)}")" StopClickPropagation="true">Open</DrillInLink>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ManagementSection>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string IntegrationId { get; set; } = "";
+
+    private IntegrationDto? _integration;
+    private IReadOnlyList<RunSummaryDto>? _runs;
+    private string _status = "";
+
+    private bool _capabilitiesLoaded;
+    private bool _canView;
+    private bool _showNotificationsTab;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        await DisplayTimeZone.EnsureResolvedAsync();
+
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canView = caps.CanViewIntegrations;
+        _showNotificationsTab = caps.CanViewNotificationDefinitions;
+        _capabilitiesLoaded = true;
+
+        if (_canView)
+        {
+            _integration = await Client.GetIntegrationAsync(IntegrationId);
+            await LoadAsync();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private string FormatWhen(RunSummaryDto run) =>
+        RunScheduleOperatorUiHelpers.FormatRunListWhenLine(run, DisplayTimeZone.TimeZoneId, DisplayTimeZone.Source);
+
+    private async Task OnStatusChangedAsync(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        // The integration scope is fixed to this page's route -- unlike the global Runs list,
+        // there is no control here that could accidentally navigate away to another integration.
+        _status = e.Value?.ToString() ?? "";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _runs = await Client.GetRunsAsync(new RunQueryFilter(
+                IntegrationId: IntegrationId,
+                Status: string.IsNullOrWhiteSpace(_status) ? null : _status,
+                Take: 200));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _runs = Array.Empty<RunSummaryDto>();
+            _error = "Not authorized to view runs (403).";
+        }
+        catch (HttpRequestException ex)
+        {
+            _runs = Array.Empty<RunSummaryDto>();
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Open(string runId) => Nav.NavigateTo($"/runs/{runId}");
+
+    public void Dispose() => DisplayTimeZone.Changed -= OnDisplayZoneChanged;
+}

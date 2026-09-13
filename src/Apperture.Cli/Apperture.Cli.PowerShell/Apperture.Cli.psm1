@@ -98,7 +98,7 @@ function Set-AppertureBootstrapSqlProfile {
         [Parameter(Mandatory = $true)]
         [string]$Database
     )
-    Write-Warning "Set-AppertureBootstrapSqlProfile - not implemented. Use 'apperture bootstrap sql set-profile' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-profile', '--server', $Server, '--database', $Database)
 }
 
 function Set-AppertureBootstrapSqlAuthMode {
@@ -116,7 +116,7 @@ function Set-AppertureBootstrapSqlAuthMode {
         [ValidateSet('SqlPassword', 'WindowsIntegrated', 'ManagedIdentity', 'KeyVaultReference')]
         [string]$AuthMode
     )
-    Write-Warning "Set-AppertureBootstrapSqlAuthMode - not implemented. Use 'apperture bootstrap set-auth-mode' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-auth-mode', $AuthMode)
 }
 
 function Set-AppertureBootstrapSqlPassword {
@@ -136,7 +136,7 @@ function Set-AppertureBootstrapSqlPassword {
     if (-not $SecurePassword) {
         $SecurePassword = Read-Host -AsSecureString -Prompt "Enter SQL password"
     }
-    Write-Warning "Set-AppertureBootstrapSqlPassword - not implemented. Use 'apperture bootstrap set-password' when available."
+    Invoke-AppertureBootstrapHelper -Args @('set-password')
 }
 
 function Set-AppertureBootstrapSqlKeyVaultBinding {
@@ -153,7 +153,7 @@ function Set-AppertureBootstrapSqlKeyVaultBinding {
         [Parameter(Mandatory = $true)]
         [string]$SecretUri
     )
-    Write-Warning "Set-AppertureBootstrapSqlKeyVaultBinding - not implemented. Use 'apperture bootstrap bind-keyvault-secret' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-keyvault-secret', $SecretUri)
 }
 
 function Set-AppertureBootstrapSqlManagedIdentityBinding {
@@ -165,7 +165,7 @@ function Set-AppertureBootstrapSqlManagedIdentityBinding {
     #>
     [CmdletBinding()]
     param()
-    Write-Warning "Set-AppertureBootstrapSqlManagedIdentityBinding - not implemented. Use 'apperture bootstrap bind-managed-identity' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-managed-identity')
 }
 
 function Set-AppertureBootstrapSqlIntegratedSecurityBinding {
@@ -177,7 +177,7 @@ function Set-AppertureBootstrapSqlIntegratedSecurityBinding {
     #>
     [CmdletBinding()]
     param()
-    Write-Warning "Set-AppertureBootstrapSqlIntegratedSecurityBinding - not implemented. Use 'apperture bootstrap bind-integrated-security' when available."
+    Invoke-AppertureBootstrapHelper -Args @('bind-integrated-security')
 }
 
 function Invoke-AppertureBootstrapSqlCredentialRotation {
@@ -222,3 +222,126 @@ function Unlock-AppertureBootstrapRecovery {
 }
 
 #endregion Bootstrap Functions
+
+#region Emergency Access Functions
+
+function Invoke-AppertureEmergencyHelper {
+    [CmdletBinding()]
+    param([string[]]$Args)
+    $apperture = Get-Command apperture -ErrorAction SilentlyContinue
+    if ($apperture) {
+        & apperture emergency @Args
+    } else {
+        Write-Warning "Apperture CLI not found. Run 'dotnet run --project src/Apperture.Cli/Apperture.Cli.Host -- emergency <subcommand>' from the repo root, or install the apperture CLI."
+        Write-Output "Not implemented (apperture not in PATH)."
+    }
+}
+
+function Get-AppertureEmergencyAccess {
+    <#
+    .SYNOPSIS
+        Shows whether a valid emergency administrator is configured.
+    #>
+    [CmdletBinding()]
+    param()
+    Invoke-AppertureEmergencyHelper -Args @('status')
+}
+
+function New-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Creates the system-managed Recovery Access account (username breakglass) if it does not exist.
+    .DESCRIPTION
+        The password is prompted by the CLI (stdin). Do not pass the password as an argument.
+        Username and display name are not configurable.
+    #>
+    [CmdletBinding()]
+    param()
+    Invoke-AppertureEmergencyHelper -Args @('provision')
+}
+
+function Set-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Designates an existing local Platform Administrator as emergency access.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+    Invoke-AppertureEmergencyHelper -Args @('designate', '--username', $Username)
+}
+
+function Set-AppertureEmergencyPassword {
+    <#
+    .SYNOPSIS
+        Sets the Recovery Access local password. The CLI prompts on stdin.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$Username
+    )
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @('set-password', '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @('set-password')
+    }
+}
+
+function Register-AppertureEmergencyAuthenticator {
+    <#
+    .SYNOPSIS
+        Enrolls native authenticator MFA for Recovery Access.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$Username,
+        [switch]$Reset
+    )
+    if ($Reset) {
+        $cmd = 'reset-mfa'
+    } else {
+        $cmd = 'enroll-mfa'
+    }
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @($cmd, '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @($cmd)
+    }
+}
+
+function New-AppertureEmergencyRecoveryCodes {
+    <#
+    .SYNOPSIS
+        Regenerates one-time recovery codes. Previous unused codes are invalidated.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$Username
+    )
+    if ($Username) {
+        Invoke-AppertureEmergencyHelper -Args @('regenerate-codes', '--username', $Username)
+    } else {
+        Invoke-AppertureEmergencyHelper -Args @('regenerate-codes')
+    }
+}
+
+function Remove-AppertureEmergencyAdministrator {
+    <#
+    .SYNOPSIS
+        Clears emergency designation and returns to last-administrator fallback protection.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [switch]$ConfirmFallback
+    )
+    Invoke-AppertureEmergencyHelper -Args @('revoke', '--confirm-fallback')
+}
+
+#endregion Emergency Access Functions
+

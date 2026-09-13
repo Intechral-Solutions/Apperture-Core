@@ -1,7 +1,10 @@
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -70,6 +73,10 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddApperturePersistenceMigrationsOnStartup(this IServiceCollection services)
     {
+        services.AddSingleton<MigrationCompletionState>();
+        services.AddSingleton<MigrationsCompleteHealthCheck>();
+        services.AddHealthChecks()
+            .AddCheck<MigrationsCompleteHealthCheck>("migrations");
         services.AddHostedService<PersistenceMigrationHostedService>();
         return services;
     }
@@ -84,6 +91,22 @@ public static class ServiceCollectionExtensions
         SqlPersistenceOptions? options = null)
     {
         return services.AddApperturePersistence(_ => connectionString, options);
+    }
+
+    /// <summary>
+    /// Registers ResourceContext persistence and the supported ResourceContext lifecycle service.
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    /// <remarks>
+    /// Registered with TryAdd so the several feature areas that depend on ResourceContext ownership can
+    /// each call this without producing duplicate registrations.
+    /// </remarks>
+    public static IServiceCollection AddResourceContextPersistence(this IServiceCollection services)
+    {
+        services.TryAddScoped<IResourceContextRepository, SqlResourceContextRepository>();
+        services.TryAddScoped<IResourceContextService, ResourceContextService>();
+        services.TryAddSingleton(TimeProvider.System);
+        return services;
     }
 
     /// <summary>
@@ -107,6 +130,20 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
         services.AddScoped<IScheduleEvaluator, CronScheduleEvaluator>();
         services.AddScoped<IScheduleProvider, SqlScheduleProvider>();
+        services.AddScoped<ISchedulerDispatchHeartbeatStore, SqlSchedulerDispatchHeartbeatStore>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers durable operation itemization store (SDK-3A).
+    /// Requires AddApperturePersistence (DbContext) to be registered first.
+    /// </summary>
+    public static IServiceCollection AddOperationItemizationPersistence(this IServiceCollection services)
+    {
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemStore, SqlOperationItemStore>();
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemRetryAttemptStore, SqlOperationItemRetryAttemptStore>();
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemRetryReconciliationService, OperationItemRetryReconciliationService>();
+        services.AddScoped<Apperture.Core.Application.OperationItems.IOperationItemAttentionAcknowledgementStore, SqlOperationItemAttentionAcknowledgementStore>();
         return services;
     }
 }
