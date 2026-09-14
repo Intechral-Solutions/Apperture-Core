@@ -1,0 +1,176 @@
+@page "/config/applications"
+@layout ConfigLayout
+@using Apperture.Core.Domain.ResourceContexts
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Applications"
+                Subtitle="Group integrations, connections and schedules by the application they serve.">
+        <Toolbar>
+            @if (_canManage)
+            {
+                <ActionButton Variant="ActionButtonVariant.Primary" DefaultText="New application" OnClick="HandleNewApplicationClick" />
+            }
+        </Toolbar>
+    </PageHeader>
+
+    @if (_loading)
+    {
+        <LoadingState Message="Loading applications…" />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Message="@_error" />
+    }
+    else
+    {
+        <ManagementSection Title="Shared" Layer="ManagementSection.UiLayer.Summary">
+            <div class="ui-summary-card-grid">
+                <ManagementSummaryCard Title="Shared"
+                                       Description="Resources that aren't specific to one application. Integrations in any application can use Shared connections."
+                                       Href="/config/applications/shared">
+                    <span class="text-xs text-muted">@SharedCountsLabel()</span>
+                </ManagementSummaryCard>
+            </div>
+        </ManagementSection>
+
+        <ManagementSection Title="Applications" Layer="ManagementSection.UiLayer.Detail">
+            <div class="flex flex-col gap-3">
+                <SegmentedControl TValue="bool"
+                                  Items="_filterItems"
+                                  Value="_showArchived"
+                                  ValueChanged="OnShowArchivedChangedAsync"
+                                  IdPrefix="applications-filter"
+                                  aria-label="Applications filter" />
+
+                @if (VisibleApplications.Count == 0)
+                {
+                    <EmptyState Message="@(_showArchived ? "No archived applications." : "No applications yet.")" />
+                }
+                else
+                {
+                    <div class="ui-data-table overflow-x-auto">
+                        <table class="ui-data-table__table min-w-full text-left text-body">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Resources</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var app in VisibleApplications)
+                                {
+                                    <tr>
+                                        <td class="font-medium text-heading">@app.Name</td>
+                                        <td class="text-xs text-muted">@CountsLabel(app.Id)</td>
+                                        <td>
+                                            @if (string.Equals(app.State, ResourceContextStates.Archived, StringComparison.Ordinal))
+                                            {
+                                                <StatusPill Label="Archived" Semantic="ManagementStatusSemantic.Neutral" />
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td><a class="underline" href="@($"/config/applications/{app.Id}")">Open</a></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    private static readonly SegmentedControl<bool>.Item[] _filterItems =
+    [
+        new(false, "Active"),
+        new(true, "Archived")
+    ];
+
+    private bool _loading = true;
+    private string? _error;
+    private bool _showArchived;
+    private bool _canManage;
+    private IReadOnlyList<ResourceContextDto> _allContexts = [];
+    private IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto> _summaries =
+        new Dictionary<string, ResourceContextOwnershipSummaryDto>();
+
+    /// <summary>
+    /// Application contexts only -- the reserved Shared context (Kind == Shared) is rendered as its
+    /// own card above this list, never as a row here.
+    /// </summary>
+    private IReadOnlyList<ResourceContextDto> VisibleApplications =>
+        _allContexts
+            .Where(c => string.Equals(c.Kind, ResourceContextKinds.Application, StringComparison.Ordinal)
+                && (_showArchived
+                    ? string.Equals(c.State, ResourceContextStates.Archived, StringComparison.Ordinal)
+                    : !string.Equals(c.State, ResourceContextStates.Archived, StringComparison.Ordinal)))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var caps = await Capabilities.GetCapabilitiesAsync();
+        _canManage = caps.CanManageResourceContexts;
+
+        try
+        {
+            _allContexts = await Client.GetResourceContextsAsync(includeArchived: true);
+            _summaries = await Client.GetResourceContextSummaryAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnShowArchivedChangedAsync(bool value)
+    {
+        _showArchived = value;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleNewApplicationClick(MouseEventArgs _)
+    {
+        Nav.NavigateTo("/config/applications/new");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The Summary endpoint omits (never zero-fills) a ResourceContext that owns no resources of any
+    /// family -- a missing dictionary key here means "no resources," not an error, and renders as "—".
+    /// </summary>
+    private string SharedCountsLabel()
+    {
+        var shared = _allContexts.FirstOrDefault(c => c.IsReserved);
+        if (shared is null)
+            return "—";
+        return _summaries.TryGetValue(shared.Id, out var summary) ? CountsLabelFromSummary(summary) : "—";
+    }
+
+    private string CountsLabel(string contextId) =>
+        _summaries.TryGetValue(contextId, out var summary) ? CountsLabelFromSummary(summary) : "—";
+
+    private static string CountsLabelFromSummary(ResourceContextOwnershipSummaryDto s)
+    {
+        var parts = new List<string>();
+        if (s.LiveIntegrations is { } i) parts.Add($"{i} integration{(i == 1 ? "" : "s")}");
+        if (s.ActiveConnections is { } c) parts.Add($"{c} connection{(c == 1 ? "" : "s")}");
+        if (s.EnabledSchedules is { } sc) parts.Add($"{sc} schedule{(sc == 1 ? "" : "s")}");
+        return parts.Count == 0 ? "—" : string.Join(" · ", parts);
+    }
+}

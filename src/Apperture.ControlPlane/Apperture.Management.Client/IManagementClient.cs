@@ -1062,7 +1062,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canViewPlatformSettings")] bool CanViewPlatformSettings = false,
     [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false,
     [property: JsonPropertyName("canManageUsers")] bool CanManageUsers = false,
-    [property: JsonPropertyName("canManageCredentials")] bool CanManageCredentials = false);
+    [property: JsonPropertyName("canManageCredentials")] bool CanManageCredentials = false,
+    [property: JsonPropertyName("canManageResourceContexts")] bool CanManageResourceContexts = false);
 
 public sealed record PlatformSettingAllowedValueDto(
     string Value,
