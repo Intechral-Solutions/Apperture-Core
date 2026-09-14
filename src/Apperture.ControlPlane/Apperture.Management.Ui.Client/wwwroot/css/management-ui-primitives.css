@@ -1993,6 +1993,50 @@ textarea.ui-input {
   padding: 0.25rem;
 }
 
+/* CTX-3A Task 8 — one-time discovery hint bubble anchored to a top-bar trigger (§3.3).
+   Sits below .ui-menu-panel's z-index (50) since the two can in principle render together. */
+.ui-hint-bubble {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 14rem;
+  max-width: 18rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-accent-line);
+  background: var(--color-accent-wash);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-card);
+  padding: 0.5rem 0.625rem;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.ui-hint-bubble > button {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.ui-hint-bubble > button:hover {
+  opacity: 1;
+}
+
+.ui-hint-bubble > button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  opacity: 1;
+}
+
 .ui-menu-item {
   display: flex;
   width: 100%;

@@ -10,6 +10,7 @@
 @using Apperture.Management.Ui.Shared
 @inject ResourceContextViewState ViewState
 @inject TopBarMenuCoordinator Menus
+@inject IJSRuntime Js
 
 @if (ViewState.SelectorVisible)
 {
@@ -24,6 +25,19 @@
                 @onclick="Toggle">
             View: @CurrentLabel()
         </button>
+
+        @* CTX-3A Task 8 (§3.3): one-time discovery hint, anchored to this trigger via the shared
+           `.relative` wrapper. Independent of IsOpen/Menus -- dismissing it never touches the
+           selector's own open/closed state, and it can in principle render alongside the dropdown
+           panel (rare in practice: a first-time user dismisses the hint before or via opening the
+           menu), so it sits at a lower z-index than `.ui-menu-panel` (50). *@
+        @if (!_hintDismissed)
+        {
+            <div class="ui-hint-bubble" role="status">
+                <span>Use View to focus lists on an application.</span>
+                <button type="button" @onclick="DismissHintAsync" aria-label="Dismiss hint">&times;</button>
+            </div>
+        }
 
         @if (IsOpen)
         {
@@ -97,6 +111,10 @@
 @code {
     private ElementReference _trigger;
 
+    // CTX-3A Task 8: defaults dismissed so the hint never flashes visible before the JS
+    // interop round-trip resolves the persisted localStorage state.
+    private bool _hintDismissed = true;
+
     private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.View);
 
     private IReadOnlyList<ResourceContextDto> ActiveApplications => ViewState.KnownActiveApplications;
@@ -116,6 +134,17 @@
     {
         ViewState.Changed += OnViewChanged;
         Menus.Changed += OnMenusChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hintDismissed = await Js.InvokeAsync<bool>("appertureShell.isViewHintDismissed");
+    }
+
+    private async Task DismissHintAsync()
+    {
+        _hintDismissed = true;
+        await Js.InvokeVoidAsync("appertureShell.dismissViewHint");
     }
 
     private void OnViewChanged() => _ = InvokeAsync(StateHasChanged);
