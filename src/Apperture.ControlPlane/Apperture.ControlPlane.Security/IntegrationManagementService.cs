@@ -147,6 +147,19 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to update this integration.");
 
+        // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
+        // it owns may become live again. Only fires on the transition INTO Active; other field
+        // updates on an already-non-Active integration under an archived context remain allowed.
+        if (request.State == IntegrationState.Active && existing.State != IntegrationState.Active)
+        {
+            var owningContext = await _resourceContexts.GetAsync(existing.ResourceContextId, cancellationToken).ConfigureAwait(false);
+            if (owningContext is not null && !owningContext.IsActive)
+            {
+                throw new InvalidOperationException(
+                    $"{owningContext.Name} is archived. Unarchive it first before activating this integration.");
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var updated = existing with
         {
