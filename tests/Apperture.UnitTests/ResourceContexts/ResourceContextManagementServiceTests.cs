@@ -96,6 +96,30 @@ public sealed class ResourceContextManagementServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_WhenRenameCommitsButSlugChangeThenFails_StillAuditsTheRename()
+    {
+        // Reviewer finding (Important #1): RenameAsync and ChangeSlugAsync each commit independently
+        // (SqlResourceContextRepository.UpdateAsync ends in its own SaveChangesAsync), so a rename can
+        // be durable before a later slug change throws. The finally block must still audit whatever
+        // actually changed before the exception escapes.
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var canvas = await harness.Service.CreateAsync("Canvas", slug: null, description: null, CancellationToken.None);
+        await harness.Service.CreateAsync("Other", slug: "taken-slug", description: null, CancellationToken.None);
+
+        var act = () => harness.Service.UpdateAsync(canvas.Id, name: "Renamed", slug: "taken-slug", description: null, CancellationToken.None).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*already in use*");
+
+        // The rename committed before the slug change failed -- it must be visible and audited.
+        var reloaded = await harness.Service.GetAsync(canvas.Id, CancellationToken.None);
+        reloaded!.Name.Should().Be("Renamed");
+        harness.AuditRecords.Should().ContainSingle(r =>
+            r.Action == "resource_context.updated" &&
+            r.ResourceContextId == canvas.Id.Value &&
+            r.Details != null && r.Details.Contains("name") && !r.Details.Contains("slug"));
+    }
+
+    [Fact]
     public async Task UpdateAsync_WithoutResourceContextManage_Throws()
     {
         await using var harness = ManagementServiceTestHarness.WithNoPermissions();
@@ -123,6 +147,46 @@ public sealed class ResourceContextManagementServiceTests
         var act = () => harness.Service.UnarchiveAsync(ResourceContextIds.Shared, CancellationToken.None).AsTask();
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_WhenAlreadyArchived_WritesNoAdditionalAuditRecord()
+    {
+        // Reviewer finding (Important #2): ResourceContextService.ArchiveAsync is a no-op (no state
+        // change, no save) when already archived; the wrapper must not audit a no-op as if it happened.
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Canvas", slug: null, description: null, CancellationToken.None);
+        await harness.Service.ArchiveAsync(created.Id, CancellationToken.None);
+
+        // Second archive is a true no-op.
+        await harness.Service.ArchiveAsync(created.Id, CancellationToken.None);
+
+        harness.AuditRecords.Count(r => r.Action == "resource_context.archived" && r.ResourceContextId == created.Id.Value).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UnarchiveAsync_WhenAlreadyActive_WritesNoAuditRecord()
+    {
+        // Reviewer finding (Important #2): ResourceContextService.UnarchiveAsync is a no-op when already
+        // Active; a never-archived context must not accumulate a false "unarchived" audit trail.
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Canvas", slug: null, description: null, CancellationToken.None);
+
+        await harness.Service.UnarchiveAsync(created.Id, CancellationToken.None);
+
+        harness.AuditRecords.Should().NotContain(r => r.Action == "resource_context.unarchived");
+    }
+
+    [Fact]
+    public async Task UnarchiveAsync_OnSharedContext_WritesNoAuditRecord()
+    {
+        // Reviewer's exact scenario: Shared is seeded Active and can never be archived, so calling
+        // UnarchiveAsync on it must remain a true no-op with no audit record claiming otherwise.
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+
+        await harness.Service.UnarchiveAsync(ResourceContextIds.Shared, CancellationToken.None);
+
+        harness.AuditRecords.Should().NotContain(r => r.Action == "resource_context.unarchived");
     }
 
     [Fact]

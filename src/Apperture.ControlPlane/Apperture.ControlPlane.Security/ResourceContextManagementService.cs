@@ -62,6 +62,15 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Each delegate call below (<see cref="IResourceContextService.RenameAsync"/>,
+    /// <see cref="IResourceContextService.ChangeSlugAsync"/>,
+    /// <see cref="IResourceContextService.UpdateDescriptionAsync"/>) commits independently -- so if, say,
+    /// the rename succeeds and the slug change then throws (reserved/taken/unnormalizable), the rename is
+    /// already durable by the time the exception propagates. The <c>finally</c> block below still appends
+    /// an audit record for whatever actually changed before the exception escapes, so a partially-applied
+    /// update is never silently unaudited.
+    /// </remarks>
     public async ValueTask<ResourceContext> UpdateAsync(ResourceContextId id, string? name, string? slug, string? description, CancellationToken cancellationToken = default)
     {
         var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
@@ -70,48 +79,71 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
             ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found.");
 
         var changedFields = new List<string>();
-
-        if (name is not null && !string.Equals(name, current.Name, StringComparison.Ordinal))
+        try
         {
-            current = await _resourceContexts.RenameAsync(id, name, cancellationToken).ConfigureAwait(false);
-            changedFields.Add("name");
-        }
+            if (name is not null && !string.Equals(name, current.Name, StringComparison.Ordinal))
+            {
+                current = await _resourceContexts.RenameAsync(id, name, cancellationToken).ConfigureAwait(false);
+                changedFields.Add("name");
+            }
 
-        if (slug is not null && !string.Equals(slug, current.Slug, StringComparison.Ordinal))
+            if (slug is not null && !string.Equals(slug, current.Slug, StringComparison.Ordinal))
+            {
+                current = await _resourceContexts.ChangeSlugAsync(id, slug, cancellationToken).ConfigureAwait(false);
+                changedFields.Add("slug");
+            }
+
+            if (description is not null && !string.Equals(description, current.Description, StringComparison.Ordinal))
+            {
+                current = await _resourceContexts.UpdateDescriptionAsync(id, description, cancellationToken).ConfigureAwait(false);
+                changedFields.Add("description");
+            }
+
+            return current;
+        }
+        finally
         {
-            current = await _resourceContexts.ChangeSlugAsync(id, slug, cancellationToken).ConfigureAwait(false);
-            changedFields.Add("slug");
+            if (changedFields.Count > 0)
+            {
+                await AppendAuditAsync("resource_context.updated", actor.Id, id, $"Changed fields: {string.Join(", ", changedFields)}.", cancellationToken).ConfigureAwait(false);
+            }
         }
-
-        if (description is not null && !string.Equals(description, current.Description, StringComparison.Ordinal))
-        {
-            current = await _resourceContexts.UpdateDescriptionAsync(id, description, cancellationToken).ConfigureAwait(false);
-            changedFields.Add("description");
-        }
-
-        if (changedFields.Count > 0)
-        {
-            await AppendAuditAsync("resource_context.updated", actor.Id, id, $"Changed fields: {string.Join(", ", changedFields)}.", cancellationToken).ConfigureAwait(false);
-        }
-
-        return current;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <see cref="IResourceContextService.ArchiveAsync"/> is a no-op (no state change, no save) when the
+    /// context is already archived, so the pre-call state is captured and compared to the delegate's
+    /// result: an audit record is appended only when the context actually transitioned out of Active.
+    /// </remarks>
     public async ValueTask<ResourceContext> ArchiveAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
         var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
         var archived = await _resourceContexts.ArchiveAsync(id, cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);
+        if (before is not null && before.IsActive)
+        {
+            await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);
+        }
         return archived;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <see cref="IResourceContextService.UnarchiveAsync"/> is a no-op (no state change, no save) when the
+    /// context is already Active -- including the reserved Shared context, which is never archived -- so
+    /// the pre-call state is captured and compared to the delegate's result: an audit record is appended
+    /// only when the context actually transitioned out of Archived.
+    /// </remarks>
     public async ValueTask<ResourceContext> UnarchiveAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
         var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
         var unarchived = await _resourceContexts.UnarchiveAsync(id, cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync("resource_context.unarchived", actor.Id, id, $"Unarchived '{unarchived.Name}'.", cancellationToken).ConfigureAwait(false);
+        if (before is not null && !before.IsActive)
+        {
+            await AppendAuditAsync("resource_context.unarchived", actor.Id, id, $"Unarchived '{unarchived.Name}'.", cancellationToken).ConfigureAwait(false);
+        }
         return unarchived;
     }
 
