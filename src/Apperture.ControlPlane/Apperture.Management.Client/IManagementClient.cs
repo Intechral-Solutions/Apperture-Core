@@ -1264,6 +1264,7 @@ public sealed record RunSummaryDto(
     string ExecutionKind = "workflow",
     string? IntegrationId = null,
     string? ProcedureId = null,
+    string? ExecutionOrigin = null,
     string? ResourceContextId = null);
 
 public sealed record RunQueryFilter(
