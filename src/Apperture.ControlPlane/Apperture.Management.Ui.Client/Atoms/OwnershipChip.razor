@@ -35,6 +35,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        _ready = false; // Reset when parameters change to avoid stale state if this instance is reused with a different ResourceContextId
         await ViewState.EnsureContextsKnownAsync([ResourceContextId]);
         _ready = true;
     }

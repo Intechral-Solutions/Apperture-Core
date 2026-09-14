@@ -232,6 +232,33 @@ button.ui-summary-card {
   color: var(--color-text-muted);
 }
 
+/* --- Ownership chip (context metadata, CTX-3A) --- */
+
+.ui-ownership-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.1875rem 0.5625rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+a.ui-ownership-chip:hover {
+  background: color-mix(in oklch, var(--color-surface-muted) 85%, var(--color-primary) 15%);
+  color: var(--color-text);
+}
+
+.ui-ownership-chip--muted {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
 /* --- Advanced (secondary) --- */
 
 .ui-advanced-section {
