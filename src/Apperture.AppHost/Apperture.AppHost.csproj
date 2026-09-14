@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Apperture.AppHost.Diagnostics\Apperture.AppHost.Diagnostics.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj" />
     <ProjectReference Include="..\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj" />
     <ProjectReference Include="..\Apperture.RuntimeHost\Apperture.RuntimeHost.Windows\Apperture.RuntimeHost.Windows.WorkerHost\Apperture.RuntimeHost.Windows.WorkerHost.csproj" />

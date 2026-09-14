@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/Apperture.AppHost/">
     <Project Path="src/Apperture.AppHost/Apperture.AppHost.csproj" />
+    <Project Path="src/Apperture.AppHost.Diagnostics/Apperture.AppHost.Diagnostics.csproj" />
     <Project Path="src/Apperture.ServiceDefaults/Apperture.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/src/" />
@@ -94,6 +95,7 @@
     <Project Path="src/Apperture.Shared/Apperture.Shared.Serialization/Apperture.Shared.Serialization.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Apperture.AppHost.Diagnostics.Tests/Apperture.AppHost.Diagnostics.Tests.csproj" />
     <Project Path="tests/Apperture.ArchTests/Apperture.ArchTests.csproj" />
     <Project Path="tests/Apperture.EndToEndTests/Apperture.EndToEndTests.csproj" />
     <Project Path="tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj" />

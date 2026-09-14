@@ -45,13 +45,46 @@ Requires Docker for the Aspire-managed SQL Server container.
    **URLs (important):**
    - Management UI: `http://localhost:9001` (HTTP only — there is no HTTPS listener on 9001)
    - Management API: `http://localhost:9000`
-   - Aspire dashboard: use the **login URL printed in the AppHost console** (for example `https://localhost:17173/login?t=...`). The bare dashboard origin may redirect or fail in the browser if the dev certificate is untrusted; prefer the tokenized login link. HTTP fallback is often `http://localhost:15235`.
+   - Aspire dashboard: **DCP assigns its ports at random on every run** (observed to vary run over run — e.g. `61548-61550` one run, `63014-63016` the next). Do not reuse a port number from a previous session or from this doc. Always read the actual **login URL printed in the AppHost console** for *this* run (for example `https://localhost:63015/login?t=...`) and use the full tokenized link, not the bare origin — the bare origin redirects to `/login` and needs the token anyway. If you've lost that console output, the AppHost terminal window (titled "Apperture AppHost (Aspire)" when launched via `Start-DevEnvironment.ps1 -Mode aspire`) still has it in scrollback; restarting AppHost is the only way to get a fresh one otherwise.
 
    Stop any prior AppHost session before restarting (Ctrl+C, or `.\scripts\Manage.ps1 -Area dev -Command stop` plus stop lingering `dcp.exe` / WorkerHost processes) to avoid port conflicts and file-lock build errors.
 
    **SQL and login (Aspire vs scripts):** AppHost uses a **separate** persistent SQL volume (`apperture-aspire-sql`), not the docker-compose `apperture-sqlserver` volume. Users and passwords from the script path are **not** shared. Under AppHost, `ConnectionStrings:DefaultConnection` from Aspire wins over `SqlServer:` in `appsettings.Development.json` for Management.Host and WorkerHost. Copy `appsettings.Development.json` for `DevTestUser` / `BootstrapPlatformAdmin` only — local login uses the password from that file (template default `dev`) against the **Aspire** database after Management.Host migrations run. To reset, delete the Aspire SQL volume in Docker and restart AppHost.
 
    Optional: override the SQL password with User Secrets on the AppHost (`dotnet user-secrets set "Parameters:sql-password" "<password>" --project src/Apperture.AppHost`).
+
+   **Reserved dev SQL port — 14333.** Host port 14333 is reserved *exclusively* for the Aspire-managed
+   dev SQL container. Never bind an ad-hoc `docker run` or another container to it, even temporarily —
+   see the incident below. Manual/one-off SQL Server containers (integration-test debugging, etc.) must
+   use a dynamically allocated port instead: `.\scripts\dev\maintenance\start-adhoc-test-sql.ps1`. The
+   committed integration-test paths (CI, `SqlServerTestConfiguration`) already don't hardcode 14333 —
+   they use Aspire's own dynamic port, a CI-ephemeral port, or 1433 via docker-compose.
+
+   **Startup safeguard.** AppHost registers a health check (`SqlDevPortGuard` in
+   `Apperture.AppHost.Diagnostics`) that verifies — via `docker ps --filter volume=apperture-aspire-sql`
+   and `docker port` — that the Aspire SQL container *actually* published 14333 before Management
+   Host/Worker are allowed to start. If port 14333 is already held by something else, Docker can leave
+   the Aspire container "running" without ever publishing the port; without this check, Aspire still
+   hands out `localhost,14333` in `DefaultConnection` regardless, and Management Host/Worker silently
+   connect through to whatever unrelated SQL Server already owns that port — no exception, just the
+   wrong database. With the check in place, the `sql` resource stays Unhealthy in the dashboard with a
+   message naming the conflict, and Management Host/Worker simply never start.
+
+   **If startup reports port 14333 is occupied:** find what's holding it
+   (`docker ps --filter publish=14333`), decide whether that container is still needed, then either stop
+   it (`docker stop <name>`) or, if it must keep running, permanently move it off 14333. Do **not** just
+   pick a different port for Aspire's dev SQL — 14333 is the stable, documented endpoint every dev tool
+   targets. Once the port is free, `docker rm` the Aspire SQL container (its data is safe in the
+   `apperture-aspire-sql` volume, untouched by removing the container) and restart AppHost so DCP
+   recreates it with the port actually bound.
+
+   *(Incident: 2026-09-14 — a leaked, manually-created `apperture-integration-sql-14333` container had
+   squatted on host port 14333 for 36+ hours. AppHost's own SQL container came up "running" but Docker
+   silently failed to publish the port; Management Host/Worker connected straight through to the
+   leftover container instead and ran migrations against a fresh, empty database there. Local logins
+   failed and the Microsoft/Entra sign-in option disappeared because the app was quietly talking to the
+   wrong SQL Server, not because credentials or Entra config were actually broken. The real dev database
+   was untouched throughout. This section and `SqlDevPortGuard` are the fix.)*
 
 **Epic 106 scope:** local dev orchestration. **Epic 108** adds the file-backed bootstrap configuration store for Windows/on-prem production (`%ProgramData%\Apperture\bootstrap\configuration.json`); Aspire local dev does not require that file.
 

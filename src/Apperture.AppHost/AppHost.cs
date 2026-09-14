@@ -1,3 +1,7 @@
+using Apperture.AppHost.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 var sqlPassword = builder.AddParameter("sql-password", secret: true);
@@ -13,12 +17,30 @@ if (sqlHostPort is <= 0 or > 65535)
     throw new InvalidOperationException(
         $"Aspire:SqlServer:HostPort must be an integer between 1 and 65535 (configured: '{sqlHostPortRaw}').");
 
+// Named (not random-suffixed) so both AppHost and SqlDevPortGuard can identify "our" container by the
+// volume it mounts, independent of the container name DCP happens to assign each run.
+const string sqlDataVolumeName = "apperture-aspire-sql";
+
+// Guards against Docker silently failing to publish sqlHostPort (e.g. because another container/process
+// already owns it) while the container itself still reports "running" - see SqlDevPortGuard for why a
+// plain TCP/SQL health check can't catch this: an unrelated SQL Server answering the same port looks
+// perfectly healthy on its own. WaitFor(db) below blocks Management Host/Worker on this passing.
+const string sqlPortHealthCheckKey = "sql-dev-port-published";
+builder.Services.AddHealthChecks().AddAsyncCheck(
+    sqlPortHealthCheckKey,
+    ct => SqlDevPortGuard.VerifyHostPortPublishedAsync(sqlDataVolumeName, sqlHostPort, ct));
+
 var sql = builder.AddSqlServer("sql", sqlPassword, port: sqlHostPort)
     .WithImageTag("2022-latest")
     .WithLifetime(ContainerLifetime.Persistent)
-    .WithDataVolume("apperture-aspire-sql");
+    .WithDataVolume(sqlDataVolumeName);
 
-var db = sql.AddDatabase("Apperture");
+// Attached to db only, not sql: attaching the same health-check key to both resources in this
+// parent-child chain made Aspire's WaitFor(db) hang forever below, even though the check itself always
+// reported Healthy (confirmed - Aspire's own built-in checks never share a key across chained
+// resources: "sql_check" on sql, a distinct "Apperture_check" on db).
+var db = sql.AddDatabase("Apperture")
+    .WithHealthCheck(sqlPortHealthCheckKey);
 
 var managementApi = builder.AddProject<Projects.Apperture_Management_Host>("management-api")
     .WithHttpEndpoint(port: 9000, name: "http")
