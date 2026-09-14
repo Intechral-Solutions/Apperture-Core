@@ -89,6 +89,10 @@ public static class PlatformPermissionSeeder
         Register(registry, ActionConstants.PlatformSettingsManage, ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
 
         // Administrative
+        registry.RegisterResource(
+            new ResourceDescriptor(ResourceTypeConstants.ResourceContext, ScopeKeyConstants.Instance),
+            ResourceFamily.Administrative);
+        Register(registry, ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.ScheduleManage, ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.RecoveryRead, ResourceTypeConstants.Recovery, ScopeKeyConstants.Instance, ResourceFamily.Administrative);
         Register(registry, ActionConstants.RecoveryManage, ResourceTypeConstants.Recovery, ScopeKeyConstants.Instance, ResourceFamily.Administrative);

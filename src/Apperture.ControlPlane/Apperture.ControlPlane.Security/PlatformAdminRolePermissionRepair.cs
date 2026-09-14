@@ -65,6 +65,12 @@ public static class PlatformAdminRolePermissionRepair
         new(ActionConstants.PlatformSettingsManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
     ];
 
+    /// <summary>ResourceContext (Application) management (CTX-3A).</summary>
+    public static readonly PermissionDescriptor[] RequiredResourceContextPermissions =
+    [
+        new(ActionConstants.ResourceContextManage, new ResourceDescriptor(ResourceTypeConstants.ResourceContext, ScopeKeyConstants.Instance))
+    ];
+
     /// <summary>
     /// Integration management. Epic 49.
     /// </summary>
@@ -118,6 +124,7 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureSet(step, RequiredManagedContactPermissions);
         step = EnsureSet(step, RequiredNotificationDefinitionPermissions);
         step = EnsureSet(step, RequiredPlatformSettingsPermissions);
+        step = EnsureSet(step, RequiredResourceContextPermissions);
         return step;
     }
 

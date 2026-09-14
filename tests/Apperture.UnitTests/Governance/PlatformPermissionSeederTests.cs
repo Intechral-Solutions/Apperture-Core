@@ -60,6 +60,21 @@ public sealed class PlatformPermissionSeederTests
     }
 
     [Fact]
+    public void SeedCore_RegistersResourceContextManagePermission()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        var permissions = registry.GetPermissionDescriptors();
+
+        permissions.Should().Contain(p =>
+            p.Action == ActionConstants.ResourceContextManage &&
+            p.Resource != null &&
+            p.Resource.ResourceType == ResourceTypeConstants.ResourceContext &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
+    }
+
+    [Fact]
     public void ActionConstants_match_ADR0013_convention()
     {
         ActionConstants.ConnectionCreate.Should().Be("connection.create");

@@ -109,6 +109,21 @@ public sealed class PlatformAdminRolePermissionRepairTests
     }
 
     [Fact]
+    public void ApplyAllRepairs_GrantsResourceContextManageToPlatformAdministrator()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        var repaired = PlatformAdminRolePermissionRepair.ApplyAllRepairs(Array.Empty<PermissionDescriptor>(), registry);
+
+        repaired.Should().Contain(p =>
+            p.Action == ActionConstants.ResourceContextManage &&
+            p.Resource != null &&
+            p.Resource.ResourceType == ResourceTypeConstants.ResourceContext &&
+            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
+    }
+
+    [Fact]
     public void ApplyAllRepairs_AddsManagedContactGrants_WhenMissing()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
