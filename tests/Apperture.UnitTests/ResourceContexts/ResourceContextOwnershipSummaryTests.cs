@@ -36,6 +36,46 @@ public sealed class ResourceContextOwnershipSummaryTests
         summary.BlocksArchive.Should().BeTrue();
     }
 
+    /// <summary>
+    /// C1 regression: <see cref="IntegrationState.Inactive"/> is neither Active nor Retired.
+    /// §6.5's archive rule is "no Integration whose state is not Retired" -- Inactive integrations
+    /// must therefore count as live (they block archive), not fall through both buckets uncounted.
+    /// </summary>
+    [Fact]
+    public async Task GetOwnershipSummaryAsync_WithAnInactiveIntegration_CountsAsLiveAndBlocksArchive()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Inactive);
+
+        var summary = await harness.ResourceContextRepository.GetOwnershipSummaryAsync(context.Id, CancellationToken.None);
+
+        summary.LiveIntegrations.Should().Be(1);
+        summary.RetiredIntegrations.Should().Be(0);
+        summary.BlocksArchive.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Guards the aggregation itself: Active and Inactive integrations are two distinct
+    /// (ResourceContextId, State) groups from the underlying GROUP BY, and both must be summed into
+    /// one LiveIntegrations count for the context rather than colliding on a dictionary key.
+    /// </summary>
+    [Fact]
+    public async Task GetOwnershipSummaryAsync_WithActiveAndInactiveIntegrations_SumsBothAsLive()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Active);
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Inactive);
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Retired);
+
+        var summary = await harness.ResourceContextRepository.GetOwnershipSummaryAsync(context.Id, CancellationToken.None);
+
+        summary.LiveIntegrations.Should().Be(2);
+        summary.RetiredIntegrations.Should().Be(1);
+        summary.BlocksArchive.Should().BeTrue();
+    }
+
     [Fact]
     public async Task GetOwnershipSummaryAsync_WithOnlyRetiredAndDisabled_DoesNotBlockArchive()
     {

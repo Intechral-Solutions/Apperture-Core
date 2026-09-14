@@ -99,8 +99,19 @@ public sealed class SqlResourceContextRepository : IResourceContextRepository
             .Select(g => new { g.Key.ResourceContextId, g.Key.Enabled, Count = g.Count() })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        var liveIntegrationsByContext = integrationCounts.Where(x => x.State == (int)IntegrationState.Active)
-            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        // Archive-blocking definition (§6.5, §14): "no Integration whose state is not Retired" -- so
+        // Active AND Inactive both count as live here, since neither is Retired. This is deliberately
+        // a different predicate shape than the reactivation guard's ("== Active" transition-target in
+        // IntegrationManagementService.UpdateIntegrationAsync): both encode the same underlying test,
+        // "can this resource dispatch/run", but archive-blocking asks it of a resource's *current*
+        // state while the guard asks it of a *transition's target* state. Retired<->Inactive needs no
+        // guard because neither transition produces a resource that can run.
+        // Active and Inactive are two distinct GROUP BY rows for the same ResourceContextId, so they
+        // must be summed per context rather than fed straight into ToDictionary (which would throw on
+        // the duplicate key).
+        var liveIntegrationsByContext = integrationCounts.Where(x => x.State != (int)IntegrationState.Retired)
+            .GroupBy(x => x.ResourceContextId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Count), StringComparer.Ordinal);
         var retiredIntegrationsByContext = integrationCounts.Where(x => x.State == (int)IntegrationState.Retired)
             .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
         var activeConnectionsByContext = connectionCounts.Where(x => x.State == (int)ConnectionState.Active)
