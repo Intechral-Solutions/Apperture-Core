@@ -82,11 +82,10 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
             // needs its own Active check. Only fires when the caller is asking for a live (Enabled)
             // schedule -- creating a disabled one under an archived context makes nothing live and
             // must remain allowed.
-            var owningContext = await _resourceContexts.GetAsync(integration.ResourceContextId, cancellationToken).ConfigureAwait(false);
-            if (owningContext is not null && !owningContext.IsActive && definition.Enabled)
+            if (definition.Enabled)
             {
-                throw new InvalidOperationException(
-                    $"{owningContext.Name} is archived. Unarchive it first before creating an enabled schedule for this integration.");
+                await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                    integration.ResourceContextId, _resourceContexts, "creating an enabled schedule for this integration", cancellationToken).ConfigureAwait(false);
             }
 
             return integration.ResourceContextId;
@@ -109,6 +108,20 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     {
         var previous = await _repo.GetDefinitionAsync(definition.Id, cancellationToken)
             ?? throw new InvalidOperationException($"Schedule {definition.Id.Value} not found.");
+
+        // Reactivation guard (§6.5, D2), CTX-3A finding C2: PATCH /schedules/{id} reaches this method
+        // directly and previously bypassed EnableAsync's guard entirely, letting an archived
+        // Application's schedule be re-enabled through an ordinary field update. Flipping
+        // Enabled false -> true here is the exact same reactivation EnableAsync guards, so it gets the
+        // same guard. Any other field update (rename, cron change, disabling, staying disabled, or
+        // staying enabled) remains allowed regardless of the owning context's archived state, since
+        // none of those make anything newly live.
+        if (!previous.Enabled && definition.Enabled && previous.ResourceContextId is { } owningContextId)
+        {
+            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                owningContextId, _resourceContexts, "enabling this schedule", cancellationToken).ConfigureAwait(false);
+        }
+
         var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(
             previous,
             definition,
@@ -139,12 +152,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         // it owns may become live again.
         if (def.ResourceContextId is { } owningContextId)
         {
-            var owningContext = await _resourceContexts.GetAsync(owningContextId, cancellationToken).ConfigureAwait(false);
-            if (owningContext is not null && !owningContext.IsActive)
-            {
-                throw new InvalidOperationException(
-                    $"{owningContext.Name} is archived. Unarchive it first before enabling this schedule.");
-            }
+            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                owningContextId, _resourceContexts, "enabling this schedule", cancellationToken).ConfigureAwait(false);
         }
 
         var proposed = def with { Enabled = true };

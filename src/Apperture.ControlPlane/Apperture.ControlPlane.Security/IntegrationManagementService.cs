@@ -152,12 +152,8 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         // updates on an already-non-Active integration under an archived context remain allowed.
         if (request.State == IntegrationState.Active && existing.State != IntegrationState.Active)
         {
-            var owningContext = await _resourceContexts.GetAsync(existing.ResourceContextId, cancellationToken).ConfigureAwait(false);
-            if (owningContext is not null && !owningContext.IsActive)
-            {
-                throw new InvalidOperationException(
-                    $"{owningContext.Name} is archived. Unarchive it first before activating this integration.");
-            }
+            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                existing.ResourceContextId, _resourceContexts, "activating this integration", cancellationToken).ConfigureAwait(false);
         }
 
         var now = DateTimeOffset.UtcNow;

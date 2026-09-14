@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
@@ -23,7 +24,7 @@ public sealed class ResourceContextReactivationGuardTests
 
         var act = async () => await harness.Integrations.ActivateIntegrationAsync(integration.Id);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*Canvas*archived*");
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
     }
 
     [Fact]
@@ -66,7 +67,7 @@ public sealed class ResourceContextReactivationGuardTests
 
         var act = async () => await harness.Schedules.EnableAsync(schedule.Id);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*Canvas*archived*");
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
     }
 
     /// <summary>
@@ -114,7 +115,7 @@ public sealed class ResourceContextReactivationGuardTests
 
         var act = async () => await harness.Schedules.CreateScheduleAsync(definition);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*Canvas*archived*");
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
     }
 
     /// <summary>
@@ -144,6 +145,63 @@ public sealed class ResourceContextReactivationGuardTests
         var created = await harness.Schedules.CreateScheduleAsync(definition);
 
         created.ResourceContextId!.Value.Should().Be(context.Id.Value);
+    }
+
+    /// <summary>
+    /// CTX-3A finding C2: EnableAsync's guard was bypassable via PATCH /schedules/{id} because
+    /// UpdateScheduleAsync persisted Enabled verbatim with no context check. Flipping a Schedule's
+    /// Enabled from false to true through UpdateScheduleAsync is the exact same reactivation
+    /// EnableAsync already guards, so it must be rejected identically.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSchedule_FlippingEnabledToTrueUnderAnArchivedContext_IsRejected()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+        await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        var act = async () => await harness.Schedules.UpdateScheduleAsync(schedule with { Enabled = true });
+
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
+    }
+
+    /// <summary>
+    /// Positive-path check for C2's guard: flipping Enabled false -> true via UpdateScheduleAsync under
+    /// an active (never archived) context must succeed exactly as before the guard was added.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSchedule_FlippingEnabledToTrueUnderAnActiveContext_Succeeds()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        await harness.Schedules.UpdateScheduleAsync(schedule with { Enabled = true });
+
+        var updated = await harness.Schedules.GetDefinitionAsync(schedule.Id);
+        updated!.Enabled.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Only the false -&gt; true transition is a reactivation. An ordinary field update on an already-
+    /// disabled Schedule (leaving Enabled false, i.e. false -&gt; false) makes nothing live and must
+    /// remain allowed under an archived context, the same way Integration's other-field update stays
+    /// allowed above.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSchedule_SettingOtherFieldsWhileStayingDisabledUnderAnArchivedContext_IsStillAllowed()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+        await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        await harness.Schedules.UpdateScheduleAsync(schedule with { Name = "Renamed" });
+
+        var updated = await harness.Schedules.GetDefinitionAsync(schedule.Id);
+        updated!.Name.Should().Be("Renamed");
+        updated.Enabled.Should().BeFalse();
     }
 
     [Fact]
