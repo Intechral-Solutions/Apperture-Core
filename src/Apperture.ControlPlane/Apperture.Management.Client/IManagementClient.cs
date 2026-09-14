@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.RuntimePlane.Abstractions;
 
 namespace Apperture.Management.Client;
@@ -1120,14 +1121,17 @@ public sealed record IntegrationDto(
     string State,
     IReadOnlyDictionary<string, string>? Settings,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null);
 
 /// <summary>Request to create an integration. Epic 49, Epic 50.</summary>
 public sealed record CreateIntegrationRequest(
     string DisplayName,
     string ModuleId,
     string? ScopeKey = null,
-    IReadOnlyDictionary<string, string>? Settings = null);
+    IReadOnlyDictionary<string, string>? Settings = null,
+    string? ResourceContextId = null);
 
 /// <summary>Request to update an integration. Epic 49, Epic 50.</summary>
 public sealed record UpdateIntegrationRequest(
@@ -1197,7 +1201,9 @@ public sealed record ConnectionDto(
     string LastVerificationStatus,
     DateTimeOffset? LastVerificationAtUtc,
     string? LastVerificationSummary,
-    IReadOnlyList<ConnectionUsedInEntry> UsedIn);
+    IReadOnlyList<ConnectionUsedInEntry> UsedIn,
+    string? ResourceContextId = null,
+    ResourceContextRef? ResourceContext = null);
 
 /// <summary>Request to create a connection resource.</summary>
 public sealed record CreateConnectionRequest(
@@ -1207,7 +1213,8 @@ public sealed record CreateConnectionRequest(
     IReadOnlyDictionary<string, string>? SecretRefs = null,
     string? ScopeKey = null,
     string? OwnerId = null,
-    IReadOnlyDictionary<string, string>? SecretValues = null);
+    IReadOnlyDictionary<string, string>? SecretValues = null,
+    string? ResourceContextId = null);
 
 /// <summary>Request to update a connection resource.</summary>
 public sealed record UpdateConnectionRequest(
