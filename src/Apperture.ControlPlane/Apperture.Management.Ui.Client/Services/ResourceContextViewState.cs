@@ -46,11 +46,15 @@ public sealed class ResourceContextViewState(
 
     /// <summary>
     /// Set for the duration of a <see cref="NavigationManager.NavigateTo(string, bool)"/> call this
-    /// class itself initiates. Blazor WebAssembly raises <see cref="NavigationManager.LocationChanged"/>
-    /// synchronously from inside that call, which would otherwise re-enter <see cref="OnLocationChanged"/>
-    /// mid-resolution and let a second, now-URL-explicit resolve pass silently overwrite the first
-    /// pass's <see cref="Notice"/> (e.g. wiping the archived-remembered toast) before any consumer ever
-    /// observes it.
+    /// class itself initiates, and cleared the instant that call returns. Blazor WebAssembly raises
+    /// <see cref="NavigationManager.LocationChanged"/> synchronously, on the same call stack, from
+    /// inside <c>NavigateTo</c> -- this flag guards exactly that same-stack reentrancy into
+    /// <see cref="OnLocationChanged"/>, which would otherwise re-enter mid-resolution and let a
+    /// second, now-URL-explicit resolve pass silently overwrite the first pass's <see cref="Notice"/>
+    /// (e.g. wiping the archived-remembered toast) before any consumer ever observes it. It does NOT
+    /// guard a <c>LocationChanged</c> notification that arrives after <c>NavigateTo</c> has already
+    /// returned (e.g. a different host's asynchronous notification ordering, or enhanced navigation)
+    /// -- that is a separate, out-of-scope robustness gap, not one this flag closes.
     /// </summary>
     private bool _navigatingInternally;
 

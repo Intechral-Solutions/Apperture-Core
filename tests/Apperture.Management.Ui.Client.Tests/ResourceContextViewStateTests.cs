@@ -66,10 +66,23 @@ public class ResourceContextViewStateTests
     }
 
     [Fact]
-    public async Task ArchivedRememberedNotice_SurvivesTheSelfTriggeredUrlRewrite()
+    public async Task ArchivedRememberedNotice_SurvivesTheSelfTriggeredUrlRewrite_OnALaterNavigation()
     {
         // Critical #2: the resolution rewrite's own NavigateTo(replace:true) raises LocationChanged
         // synchronously, which must NOT re-enter and wipe the Notice this pass just computed.
+        //
+        // This must be driven through a navigation AFTER LocationChanged is already subscribed --
+        // InitializeAsync's own first resolve runs BEFORE it subscribes the handler, so a rewrite
+        // triggered from inside InitializeAsync itself has no handler to re-enter and would pass even
+        // with the guard deleted. OnLocationChanged's own resolve (this test) and RefreshContextsAsync's
+        // resolve are the two paths where the handler really is already attached, and the guard is
+        // genuinely load-bearing.
+        //
+        // To reach the localStorage branch (as opposed to tab state, which -- once set by any earlier
+        // resolve -- always wins per §4.2 step 2) on this SECOND navigation, tab state must still be
+        // unset after the first one. An explicit-URL archived scope is honoured without being promoted
+        // into tab state (Important #1's fix), so visiting one first is what keeps tab state open for
+        // the second, silent-URL navigation to fall through to localStorage.
         var client = new Mock<IManagementClient>();
         client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("old-app-id", "Old App", archived: true)]);
@@ -85,16 +98,32 @@ public class ResourceContextViewStateTests
         var js = new FakeJsRuntime();
         js.Stored["user-1"] = "old-app-id"; // remembered (localStorage), not tab state or URL
 
-        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=old-app-id");
         var state = new ResourceContextViewState(js, nav, client.Object, session);
 
         await state.InitializeAsync();
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedExplicit);
+        nav.Navigations.Should().BeEmpty("an honoured explicit-URL archived scope is used as-is, no rewrite");
+
+        // A real, external navigation (e.g. a rail-link click) to another scoped page with a silent
+        // URL -- LocationChanged is already subscribed, so the resulting resolution's own
+        // self-triggered rewrite is the actual reentrancy scenario the guard exists for.
+        nav.NavigateTo("https://localhost/runs");
 
         state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedRemembered,
             "the re-entrant resolve triggered by the wrapper's own NavigateTo must be suppressed");
         state.Notice.ResourceContextId.Should().Be("old-app-id");
         state.Current.IsAll.Should().BeTrue();
-        nav.Navigations.Should().ContainSingle("the suppressed re-entrant pass must not navigate a second time");
+
+        // Exactly two navigations total: the test's own external one to /runs, and the wrapper's one
+        // self-triggered rewrite to ?context=all. If the guard did nothing, the reentrant
+        // OnLocationChanged call would resolve again (URL now explicit "all") and -- while that
+        // particular resolve would not itself rewrite again -- Notice would have been wiped to None
+        // and the assertion above would already have failed; a THIRD entry here would additionally
+        // indicate the suppression let a rewrite cascade rather than stopping it in one hop.
+        nav.Navigations.Should().HaveCount(2);
+        nav.Navigations[0].Should().Be(("https://localhost/runs", false));
+        nav.Navigations[1].Should().Be(("https://localhost/runs?context=all", true));
         js.Stored["user-1"].Should().Be("all", "the stale archived reference must be corrected");
     }
 
