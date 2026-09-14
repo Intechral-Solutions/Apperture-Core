@@ -11,7 +11,8 @@ public sealed record IntegrationFleetQueryParams(
     bool? HasOperationalFailure = null,
     bool? HasUnexpectedSilence = null,
     string? Attention = null,
-    string? Sort = null);
+    string? Sort = null,
+    string? Context = null);
 
 /// <summary>Epic 61: evidence-backed attention flags on fleet rows.</summary>
 public sealed record IntegrationFleetAttentionFlagsDto(
@@ -68,4 +69,5 @@ public sealed record IntegrationFleetRowDto(
     IntegrationFleetExpectedRunAttentionDto ExpectedRuns,
     string[] AttentionTokens,
     string[] TopIssueCodes,
-    bool HasActiveExpectedRunMissingIncident);
+    bool HasActiveExpectedRunMissingIncident,
+    string? ResourceContextId = null);

@@ -1263,7 +1263,8 @@ public sealed record RunSummaryDto(
     string? RetryOfRunId,
     string ExecutionKind = "workflow",
     string? IntegrationId = null,
-    string? ProcedureId = null);
+    string? ProcedureId = null,
+    string? ResourceContextId = null);
 
 public sealed record RunQueryFilter(
     string? ExecutionKind = null,
@@ -1274,7 +1275,8 @@ public sealed record RunQueryFilter(
     string? ModuleId = null,
     string? CorrelationKey = null,
     string? IntegrationId = null,
-    int? Take = null);
+    int? Take = null,
+    string? ResourceContextId = null);
 
 /// <summary>Epic 35: investigation navigation hint. Kind is stable; TargetId optional. UI must not link when TargetId is null.</summary>
 public sealed record RunInvestigationHintDto(string Kind, string? TargetId);
