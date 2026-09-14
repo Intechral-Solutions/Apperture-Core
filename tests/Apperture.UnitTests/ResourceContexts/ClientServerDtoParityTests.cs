@@ -7,6 +7,7 @@ using ClientConnectionDto = Apperture.Management.Client.ConnectionDto;
 using ClientCreateConnectionRequest = Apperture.Management.Client.CreateConnectionRequest;
 using ClientRunSummaryDto = Apperture.Management.Client.RunSummaryDto;
 using ClientRunQueryFilter = Apperture.Management.Client.RunQueryFilter;
+using ClientRunDetailDto = Apperture.Management.Client.RunDetailDto;
 using ClientIntegrationFleetRowDto = Apperture.Management.Client.IntegrationFleetRowDto;
 using ServerIntegrationDto = Apperture.Management.Api.Controllers.IntegrationDto;
 using ServerCreateIntegrationRequestBody = Apperture.Management.Api.Controllers.CreateIntegrationRequestBody;
@@ -14,6 +15,7 @@ using ServerConnectionDto = Apperture.Management.Api.Controllers.ConnectionDto;
 using ServerCreateConnectionRequestBody = Apperture.Management.Api.Controllers.CreateConnectionRequestBody;
 using ServerRunSummaryDto = Apperture.ControlPlane.Security.RunSummaryDto;
 using ServerRunQueryFilter = Apperture.ControlPlane.Security.RunQueryFilter;
+using ServerRunDetailDto = Apperture.ControlPlane.Security.RunDetailDto;
 using ServerIntegrationFleetRowProjection = Apperture.Core.Application.Integration.IntegrationFleetRowProjection;
 
 namespace Apperture.UnitTests.ResourceContexts;
@@ -38,6 +40,7 @@ public class ClientServerDtoParityTests
         yield return new object[] { typeof(ServerCreateConnectionRequestBody), typeof(ClientCreateConnectionRequest) };
         yield return new object[] { typeof(ServerRunSummaryDto), typeof(ClientRunSummaryDto) };
         yield return new object[] { typeof(ServerRunQueryFilter), typeof(ClientRunQueryFilter) };
+        yield return new object[] { typeof(ServerRunDetailDto), typeof(ClientRunDetailDto) };
         yield return new object[] { typeof(ServerIntegrationFleetRowProjection), typeof(ClientIntegrationFleetRowDto) };
     }
 

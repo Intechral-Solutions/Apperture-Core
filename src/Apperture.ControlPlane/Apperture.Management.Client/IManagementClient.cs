@@ -1320,7 +1320,8 @@ public sealed record RunDetailDto(
     RunForensicContextDto? ForensicContext = null,
     string? IntegrationId = null,
     string? ProcedureId = null,
-    RunOperationItemizationSummaryDto? OperationItemization = null);
+    RunOperationItemizationSummaryDto? OperationItemization = null,
+    string? ResourceContextId = null);
 
 public sealed record RunOperationItemizationSummaryDto(
     int GroupCount,

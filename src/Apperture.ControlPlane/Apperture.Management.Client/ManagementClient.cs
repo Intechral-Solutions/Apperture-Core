@@ -1603,6 +1603,9 @@ public sealed class ManagementClient : IManagementClient
         Add(pairs, "moduleId", filter.ModuleId);
         Add(pairs, "correlationKey", filter.CorrelationKey);
         Add(pairs, "integrationId", filter.IntegrationId);
+        // Server param name is "resourceContextId" (RunsController), not "contextId" like the
+        // Integrations/Connections/Schedules list endpoints -- do not conflate the two (CTX-3A I2).
+        Add(pairs, "resourceContextId", filter.ResourceContextId);
         if (filter.CreatedFrom is not null)
             Add(pairs, "createdFrom", filter.CreatedFrom.Value.ToString("o"));
         if (filter.CreatedTo is not null)
