@@ -55,7 +55,8 @@ public sealed class CoreLayerDependencies
                 "Apperture.RuntimePlane.DurableFunctions",
                 "Apperture.Management.Api",
                 "Apperture.Management.Host",
-                "Apperture.Management.Client")
+                "Apperture.Management.Client",
+                "Apperture.ControlPlane.Security")
             .GetResult();
 
         Assert.True(
