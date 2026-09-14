@@ -2,15 +2,20 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
+using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
+using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Security.Secrets.Abstractions;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
+using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -105,6 +110,19 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             TimeProvider.System,
             ResourceContexts,
             IntegrationRepository);
+
+        // Task 5 (CTX-3A Plan 4, §5.3): RunQueryService over the same DbContext, so
+        // RunHistoricalSnapshotFilteringTests exercises the production server-side filter
+        // (RunQueryFilter.ResourceContextId) rather than a mock of it. Authorization stubs always
+        // allow, matching this harness's ownership-focused scope elsewhere.
+        RunQueryService = new RunQueryService(
+            Db,
+            new StubOperationRegistry(),
+            new RunKindResolver(Db),
+            new AllowWorkflowReadAuthz(),
+            new AllowOperationReadAuthz(),
+            new StubWorkflowDefinitionResolver(),
+            new StubComposition());
     }
 
     /// <summary>Strict-free secret store double; assert on it to prove ownership never provisions secrets.</summary>
@@ -123,6 +141,7 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
     public IBindingEligibilityService Eligibility { get; }
     public IBindingService Bindings { get; }
     public IScheduleManagementService Schedules { get; }
+    public IRunQueryService RunQueryService { get; }
 
     /// <summary>
     /// Builds a second <see cref="IResourceContextRepository"/> over the SAME underlying InMemory
@@ -219,6 +238,69 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
         return Schedules.CreateScheduleAsync(definition, cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Seeds an OperationRun row (plus the matching OperationStartRequest RunKindResolver needs to
+    /// classify it as an operation run) directly via the DbContext, carrying whatever
+    /// <paramref name="resourceContextId"/> snapshot the caller supplies -- including null, for the
+    /// pre-CTX-2 / legitimately-contextless case. This never goes through a dispatch pipeline: it
+    /// exists purely to plant a Run row with a specific historical ResourceContextId snapshot,
+    /// independent of the Integration's current ownership (see
+    /// <see cref="SetIntegrationResourceContextDirectlyAsync"/>).
+    /// </summary>
+    public async Task<OperationRunEntity> SeedOperationRunAsync(
+        IntegrationId? integrationId,
+        ResourceContextId? resourceContextId,
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sequence = NextSequence();
+        var runId = $"run-{sequence}";
+        var definitionId = $"op-def-{sequence}";
+        var instanceId = $"op-instance-{sequence}";
+
+        var run = new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = instanceId,
+            DefinitionId = definitionId,
+            Status = status ?? WorkflowLifecycleStatusNames.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            IntegrationId = integrationId?.Value,
+            ResourceContextId = resourceContextId?.Value
+        };
+        Db.OperationRuns.Add(run);
+        Db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = runId,
+            OperationInstanceId = instanceId,
+            OperationDefinitionId = definitionId,
+            IntegrationId = integrationId?.Value,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        await Db.SaveChangesAsync(cancellationToken);
+        return run;
+    }
+
+    /// <summary>
+    /// Controlled test setup only: rewrites an Integration's <b>current</b> ResourceContext ownership
+    /// directly via the DbContext, bypassing <see cref="IIntegrationManagementService"/> entirely.
+    /// No supported API changes Integration ownership yet (that is CTX-3B); this exists so
+    /// RunHistoricalSnapshotFilteringTests can prove the Run list filter is driven by each Run's own
+    /// immutable ResourceContextId snapshot, never by the Integration's current column, even under a
+    /// future/direct ownership change like this one.
+    /// </summary>
+    public async Task SetIntegrationResourceContextDirectlyAsync(
+        IntegrationId integrationId,
+        ResourceContextId newContextId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await Db.Integrations.FindAsync(new object?[] { integrationId.Value }, cancellationToken)
+            ?? throw new InvalidOperationException($"Integration '{integrationId.Value}' not found.");
+        entity.ResourceContextId = newContextId.Value;
+        await Db.SaveChangesAsync(cancellationToken);
+    }
+
     private int NextSequence() => System.Threading.Interlocked.Increment(ref _nextResourceSequence);
 
     public async ValueTask DisposeAsync()
@@ -285,6 +367,51 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
     private sealed class StubClaimOptions : ISchedulerClaimOptions
     {
         public int ClaimLeaseMinutes => 5;
+    }
+
+    /// <summary>Minimal RunQueryService dependency stubs (mirrors RunRouteFamilyParityTests' pattern) -- these tests are about ResourceContext scoping, not operation registry or authorization contracts.</summary>
+    private sealed class StubOperationRegistry : IOperationRegistryService
+    {
+        public ValueTask<IReadOnlyList<OperationDefinition>> ListAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>(Array.Empty<OperationDefinition>());
+
+        public ValueTask<OperationDefinition?> GetOperationAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<OperationDefinition?>(new OperationDefinition(operationId, operationId.Value, "mod", OperationCategory.Command, null, []));
+
+        public ValueTask<IReadOnlyList<OperationDefinition>> GetByModuleAsync(string moduleId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<OperationDefinition>>(Array.Empty<OperationDefinition>());
+
+        public ValueTask RegisterAsync(OperationDefinition definition, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    private sealed class AllowWorkflowReadAuthz : IWorkflowRunReadAuthorizationService
+    {
+        public ValueTask EnsureCanReadRunsAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class AllowOperationReadAuthz : IOperationRunReadAuthorizationService
+    {
+        public ValueTask EnsureCanReadRunsAsync(OperationId operationId, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+    }
+
+    private sealed class StubWorkflowDefinitionResolver : IWorkflowDefinitionResolver
+    {
+        public ValueTask<WorkflowDefinition?> GetByIdAsync(WorkflowDefinitionId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<WorkflowDefinition?>(null);
+    }
+
+    private sealed class StubComposition : IRuntimeModuleCompositionQueryService
+    {
+        public ValueTask<HostEffectiveModuleSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new HostEffectiveModuleSnapshot(
+                DateTimeOffset.UtcNow,
+                [],
+                [],
+                [],
+                [],
+                []));
     }
 
     /// <summary>

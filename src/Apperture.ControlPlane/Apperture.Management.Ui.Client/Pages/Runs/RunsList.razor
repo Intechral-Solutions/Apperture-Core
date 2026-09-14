@@ -10,6 +10,7 @@
 @inject IManagementClient Client
 @inject NavigationManager Nav
 @inject IOperatorDisplayTimeZone DisplayTimeZone
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Control Center"
@@ -50,7 +51,18 @@
                      Message="Blocked is a derived run facet: failed runs waiting on deferred work. Open a run to retry eligible workflows. Scheduler cycle and stale-run recovery stay on Control Center." />
     }
 
-    @if (_error is not null)
+    @if (_context.State == ScopedListContextState.Ready && !_context.IsAll)
+    {
+        <PageMessage Kind="PageMessageKind.Info"
+                     Message="Some older runs don't have a recorded context. Runs without a recorded context appear only under All." />
+    }
+
+    @if (_context.State == ScopedListContextState.UnknownContext)
+    {
+        @* The "that context doesn't exist" message is surfaced by ResourceContextViewNotices, hosted
+           once in MainLayout above the page body -- render nothing here. *@
+    }
+    else if (_error is not null)
     {
         <ErrorState Message="@_error" />
     }
@@ -126,6 +138,10 @@
                             <th class="px-3 py-2">Context</th>
                             <th class="px-3 py-2">When</th>
                             <th class="px-3 py-2">Links</th>
+                            @if (ViewState.SelectorVisible && _context.IsAll)
+                            {
+                                <th class="px-3 py-2">Context</th>
+                            }
                             <th class="px-3 py-2"></th>
                         </tr>
                     </thead>
@@ -169,6 +185,12 @@
                                         }
                                     </div>
                                 </td>
+                                @if (ViewState.SelectorVisible && _context.IsAll)
+                                {
+                                    <td class="px-3 py-2 text-sm">
+                                        @(string.IsNullOrWhiteSpace(r.ResourceContextId) ? "Not recorded" : ViewState.DescribeContext(r.ResourceContextId))
+                                    </td>
+                                }
                                 <td class="px-3 py-2">
                                     <DrillInLink Href="@($"/runs/{Uri.EscapeDataString(r.RunId)}")"
                                                  StopClickPropagation="true">Open</DrillInLink>
@@ -270,12 +292,16 @@
     [SupplyParameterFromQuery(Name = "moduleId")]
     public string? QueryModuleId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
     private IReadOnlyList<RunSummaryDto>? _runs;
     private string? _executionKindFilter;
     private bool _loading;
     private bool _showProblemsOnly;
     private string? _error;
     private string? _dataLoadKey;
+    private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
 
     protected override async Task OnInitializedAsync()
     {
@@ -316,6 +342,29 @@
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
+
+        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        if (_context.State == ScopedListContextState.UnknownContext)
+        {
+            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
+            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        }
+
+        if (_context.State != ScopedListContextState.Ready)
+        {
+            // AwaitingContext (or still-UnknownContext after the retry): the URL is either mid-rewrite
+            // -- ResourceContextViewState.OnLocationChanged is still awaiting its JS call before it
+            // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
+            // previously-loaded context's rows on screen while this resolves; clear them so the existing
+            // loading state (or the UnknownContext branch, which renders nothing) is what's shown. Reset
+            // _dataLoadKey too, so the same context resolving again afterward is treated as a fresh load
+            // rather than skipped as "already loaded".
+            _runs = null;
+            _error = null;
+            _dataLoadKey = null;
+            return;
+        }
+
         var key = BuildLoadKey();
         if (key == _dataLoadKey)
             return;
@@ -323,7 +372,7 @@
     }
 
     private string BuildLoadKey() =>
-        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}";
+        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}\u001f{_context.QueryValue ?? ""}";
 
     private void ShowAllRuns() => _showProblemsOnly = false;
 
@@ -335,7 +384,8 @@
             status: next,
             createdFrom: QueryCreatedFromRaw,
             integrationId: QueryIntegrationId,
-            moduleId: QueryModuleId));
+            moduleId: QueryModuleId,
+            context: QueryContext));
     }
 
     private async Task LoadAsync()
@@ -353,13 +403,16 @@
                 && DateTimeOffset.TryParse(QueryCreatedFromRaw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
                 createdFrom = parsed;
 
-            _runs = await Client.GetRunsAsync(new RunQueryFilter(
+            var runs = await Client.GetRunsAsync(new RunQueryFilter(
                 ExecutionKind: _executionKindFilter,
                 Status: status,
                 CreatedFrom: createdFrom,
                 CorrelationKey: corr,
                 IntegrationId: integrationId,
-                ModuleId: moduleId));
+                ModuleId: moduleId,
+                ResourceContextId: _context.ApiFilter));
+            _runs = runs;
+            await ViewState.EnsureContextsKnownAsync(runs.Select(r => r.ResourceContextId));
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {

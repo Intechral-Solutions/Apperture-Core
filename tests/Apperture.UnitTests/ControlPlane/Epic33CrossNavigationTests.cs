@@ -143,4 +143,22 @@ public sealed class Epic33CrossNavigationTests
         var url = Epic33UiDisplayHelpers.BuildRunsListUrl(correlationKey: "a b&c");
         url.Should().Be($"/runs?correlationKey={Uri.EscapeDataString("a b&c")}");
     }
+
+    [Fact]
+    public void BuildRunsListUrl_changing_status_preserves_context()
+    {
+        // CTX-3A §5.3/R11: the Runs status-facet dropdown must preserve the current ?context=
+        // scope alongside the other sibling filters, exactly as it already does for correlationKey/
+        // integrationId/moduleId.
+        var url = Epic33UiDisplayHelpers.BuildRunsListUrl(
+            correlationKey: "schedule:s1",
+            status: RunStatusFacets.Blocked,
+            integrationId: "int-1",
+            context: "ctx-1");
+
+        url.Should().Contain($"correlationKey={Uri.EscapeDataString("schedule:s1")}");
+        url.Should().Contain($"status={RunStatusFacets.Blocked}");
+        url.Should().Contain("integrationId=int-1");
+        url.Should().Contain("context=ctx-1");
+    }
 }

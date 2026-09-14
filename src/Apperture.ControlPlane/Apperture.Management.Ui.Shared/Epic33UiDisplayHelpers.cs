@@ -150,9 +150,10 @@ public static class Epic33UiDisplayHelpers
         string? status = null,
         string? createdFrom = null,
         string? integrationId = null,
-        string? moduleId = null)
+        string? moduleId = null,
+        string? context = null)
     {
-        var parts = new List<string>(5);
+        var parts = new List<string>(6);
 
         void Add(string key, string? value)
         {
@@ -165,6 +166,7 @@ public static class Epic33UiDisplayHelpers
         Add("createdFrom", createdFrom);
         Add("integrationId", integrationId);
         Add("moduleId", moduleId);
+        Add("context", context);
 
         return parts.Count == 0 ? "/runs" : $"/runs?{string.Join("&", parts)}";
     }
