@@ -165,9 +165,14 @@
             return shared.Name;
 
         var app = ActiveApplications.FirstOrDefault(a => string.Equals(a.Id, ViewState.Current.ResourceContextId, StringComparison.Ordinal));
-        // No public surface resolves an archived context's name from here (Task 6's
-        // ResourceContextViewState exposes only active Applications + Shared); fall back to the id.
-        return app?.Name ?? $"{ViewState.Current.ResourceContextId} (archived)";
+        if (app is not null)
+            return app.Name;
+
+        // The current scope is neither active nor Shared, so it must be an archived context honoured
+        // via an explicit URL (§4.3 Q5) -- ResourceContextViewState.FindContext resolves its name from
+        // the full known-context cache (Finding 2).
+        var archived = ViewState.FindContext(ViewState.Current.ResourceContextId!);
+        return archived is not null ? $"{archived.Name} (archived)" : ViewState.Current.ResourceContextId!;
     }
 
     private async Task SelectAsync(ResourceContextViewScope scope)

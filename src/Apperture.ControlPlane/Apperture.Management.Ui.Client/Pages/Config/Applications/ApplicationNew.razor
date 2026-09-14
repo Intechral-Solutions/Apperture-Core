@@ -4,6 +4,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject ResourceContextViewState ViewState
 @inject NavigationManager Nav
 
 <div class="p-4 ui-page-stack">
@@ -141,6 +142,20 @@
             Toasts.Show(ToastSeverity.Success, $"Created '{created.Name}'.");
             if (_createButton is not null)
                 await _createButton.SetStateAsync(ActionButtonState.Success);
+
+            // Finding 1 (Plan 3 final review): design gate §3.3/D3 says the View selector should
+            // appear the moment the first Application is created. Without this, ResourceContextViewState's
+            // cache does not learn about `created` until some later mutation elsewhere refreshes it.
+            // Best-effort: a failure here must not block navigation, since the create itself succeeded.
+            try
+            {
+                await ViewState.RefreshContextsAsync();
+            }
+            catch
+            {
+                // Best-effort cache refresh; the create already succeeded.
+            }
+
             Nav.NavigateTo($"/config/applications/{created.Id}");
         }
         catch (InvalidOperationException ex)

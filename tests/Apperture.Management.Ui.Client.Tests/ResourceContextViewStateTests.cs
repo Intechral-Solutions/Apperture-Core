@@ -223,6 +223,51 @@ public class ResourceContextViewStateTests
         nav.Uri.Should().Be("https://localhost/runs?context=all");
     }
 
+    [Fact]
+    public async Task FindContext_ReturnsTheContext_EvenWhenArchived()
+    {
+        // Finding 2: KnownActiveApplications/SharedContext only expose active/Shared contexts, but
+        // _knownContexts (loaded with includeArchived:true) holds every known context. FindContext is
+        // the public surface for callers (e.g. ViewSelector's archived-id label fallback) that need to
+        // resolve ANY known id -- active, archived, or Shared -- to its DTO.
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("old-app-id", "Old App", archived: true)]);
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.FindContext("old-app-id").Should().NotBeNull();
+        state.FindContext("old-app-id")!.Name.Should().Be("Old App");
+        state.FindContext("does-not-exist").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ConsumeNotice_ReturnsTheNoticeOnce_ThenClearsIt()
+    {
+        // Finding 3: Notice has no consume/clear semantics today, so a page that mounts and reads it
+        // can't mark it "shown" -- ConsumeNotice() is the established one-time-toast convention Plans
+        // 4-6 should follow instead of inventing their own.
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("old-app-id", "Old App", archived: true)]);
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=old-app-id");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedExplicit);
+
+        var consumed = state.ConsumeNotice();
+        consumed.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedExplicit);
+        consumed.ResourceContextId.Should().Be("old-app-id");
+
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.None, "the notice must be cleared once consumed");
+        state.ConsumeNotice().Kind.Should().Be(ResourceContextViewNoticeKind.None, "a second consume must return None, not the stale notice");
+    }
+
     private sealed class FakeJsRuntime : IJSRuntime
     {
         public Dictionary<string, string?> Stored { get; } = new();

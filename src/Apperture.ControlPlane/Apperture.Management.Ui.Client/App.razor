@@ -6,6 +6,7 @@
 @inject AppearancePreferenceCoordinator AppearancePreferences
 @inject IOperatorDisplayTimeZone OperatorDisplayTimeZone
 @inject ShellBootstrapState ShellBootstrap
+@inject ResourceContextViewState ViewState
 @inject IJSRuntime Js
 
 <AuthRouteGate>
@@ -62,6 +63,35 @@
         // SWM-4/5: non-blocking; pages may briefly show UTC then upgrade to pref/browser IANA.
         await OperatorDisplayTimeZone.EnsureResolvedAsync();
         await AuthSignInOptionsService.RefreshAsync();
+
+        // CTX-3A Plan 3 Finding 1: the View selector's shell-wide state must be initialized on every
+        // boot, not only after an operator happens to mutate an Application from its detail page.
+        // Requires SessionStateService.User (read via SessionStateService.RefreshAsync() above) to
+        // already be populated so a signed-in operator's remembered view preference can be read from
+        // localStorage; must run before MarkReady() so the selector/resolved scope are correct the
+        // moment MainLayout mounts. Same JS-interop-unavailable exception pattern as ThemeService
+        // above. Unlike ThemeService, this call also reaches the management API
+        // (IManagementClient.GetResourceContextsAsync, via ManagementClient.GetFromJsonAsync) which
+        // throws HttpRequestException on any non-success response and -- unlike SessionStateService/
+        // AuthSignInOptionsService's own RefreshAsync -- ResourceContextViewState does not catch that
+        // internally; also caught here so a transient API failure degrades to "selector stays hidden"
+        // rather than hanging ShellBootstrap.MarkReady() (and the whole app) forever.
+        try
+        {
+            await ViewState.InitializeAsync();
+        }
+        catch (JSException)
+        {
+            /* Prerender or JS not available */
+        }
+        catch (InvalidOperationException)
+        {
+            /* JS interop not ready */
+        }
+        catch (HttpRequestException)
+        {
+            /* Management API unreachable; selector stays hidden until a later refresh succeeds */
+        }
 
         // UIX-2: only then allow AuthRouteGate to mount MainLayout (with capabilities).
         ShellBootstrap.MarkReady();

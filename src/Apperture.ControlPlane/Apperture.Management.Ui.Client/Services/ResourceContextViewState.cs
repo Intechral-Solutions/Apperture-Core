@@ -87,6 +87,17 @@ public sealed class ResourceContextViewState(
     /// <summary>The selector is hidden when there are no Application contexts to choose between (design gate §3).</summary>
     public bool SelectorVisible => KnownActiveApplications.Count > 0;
 
+    /// <summary>
+    /// Resolves any known ResourceContext id -- active, archived, or the reserved Shared context -- to
+    /// its DTO, or null if <paramref name="id"/> is not (yet) known. Unlike
+    /// <see cref="KnownActiveApplications"/>/<see cref="SharedContext"/>, this is not filtered to
+    /// active/Shared only: it is the public surface for callers (e.g. <c>ViewSelector</c>'s
+    /// archived-id label fallback, and future <c>ResourceContextViewNotice</c> id-to-name lookups in
+    /// Plans 4-6) that need to resolve an id honoured via an explicit URL even when it is archived.
+    /// </summary>
+    public ResourceContextDto? FindContext(string id) =>
+        _knownContexts.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
+
     /// <summary>Loads the known ResourceContexts and resolves the initial view. Call once during shell bootstrap.</summary>
     public async ValueTask InitializeAsync()
     {
@@ -185,6 +196,20 @@ public sealed class ResourceContextViewState(
             // for a scoped page (R4: "every history entry of a scoped page is self-describing").
             NavigateInternally(BuildUriWithContext(uri, resolution.Scope.ToQueryValue()), replace: true);
         }
+    }
+
+    /// <summary>
+    /// Returns the current <see cref="Notice"/> and resets it to <see cref="ResourceContextViewNotice.None"/>.
+    /// A one-time toast/banner consumer should call this (not just read <see cref="Notice"/>) so a
+    /// notice is shown at most once even if the consuming page re-renders or a later resolution has not
+    /// yet run -- this is the established convention Plans 4-6 should follow rather than inventing
+    /// their own consume/clear handling around this property.
+    /// </summary>
+    public ResourceContextViewNotice ConsumeNotice()
+    {
+        var notice = Notice;
+        Notice = ResourceContextViewNotice.None;
+        return notice;
     }
 
     /// <summary>Applies an operator's explicit selector choice. Writes localStorage (design gate §4.2: "Explicit selector changes do write localStorage").</summary>
