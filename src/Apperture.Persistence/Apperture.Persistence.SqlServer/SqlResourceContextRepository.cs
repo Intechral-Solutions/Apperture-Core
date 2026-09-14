@@ -1,4 +1,6 @@
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Microsoft.EntityFrameworkCore;
 
@@ -69,12 +71,65 @@ public sealed class SqlResourceContextRepository : IResourceContextRepository
     }
 
     /// <inheritdoc />
-    public async ValueTask<int> CountOwnedResourcesAsync(ResourceContextId id, CancellationToken cancellationToken = default)
+    public async ValueTask<ResourceContextOwnershipSummary> GetOwnershipSummaryAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
-        var integrations = await _db.Integrations.CountAsync(e => e.ResourceContextId == id.Value, cancellationToken);
-        var connections = await _db.Connections.CountAsync(e => e.ResourceContextId == id.Value, cancellationToken);
-        var schedules = await _db.ScheduleDefinitions.CountAsync(e => e.ResourceContextId == id.Value, cancellationToken);
-        return integrations + connections + schedules;
+        var all = await GetOwnershipSummariesAsync(cancellationToken).ConfigureAwait(false);
+        return all.TryGetValue(id.Value, out var summary)
+            ? summary
+            : new ResourceContextOwnershipSummary(0, 0, 0, 0, 0, 0);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyDictionary<string, ResourceContextOwnershipSummary>> GetOwnershipSummariesAsync(CancellationToken cancellationToken = default)
+    {
+        // One GROUP BY per resource family -- a constant number of queries regardless of how many
+        // ResourceContexts exist, so this scales for callers like the Applications list page.
+        var integrationCounts = await _db.Integrations
+            .GroupBy(e => new { e.ResourceContextId, e.State })
+            .Select(g => new { g.Key.ResourceContextId, g.Key.State, Count = g.Count() })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var connectionCounts = await _db.Connections
+            .GroupBy(e => new { e.ResourceContextId, e.State })
+            .Select(g => new { g.Key.ResourceContextId, g.Key.State, Count = g.Count() })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var scheduleCounts = await _db.ScheduleDefinitions
+            .GroupBy(e => new { e.ResourceContextId, e.Enabled })
+            .Select(g => new { g.Key.ResourceContextId, g.Key.Enabled, Count = g.Count() })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var liveIntegrationsByContext = integrationCounts.Where(x => x.State == (int)IntegrationState.Active)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        var retiredIntegrationsByContext = integrationCounts.Where(x => x.State == (int)IntegrationState.Retired)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        var activeConnectionsByContext = connectionCounts.Where(x => x.State == (int)ConnectionState.Active)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        var retiredConnectionsByContext = connectionCounts.Where(x => x.State == (int)ConnectionState.Retired)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        var enabledSchedulesByContext = scheduleCounts.Where(x => x.Enabled)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+        var disabledSchedulesByContext = scheduleCounts.Where(x => !x.Enabled)
+            .ToDictionary(x => x.ResourceContextId, x => x.Count, StringComparer.Ordinal);
+
+        var contextIds = integrationCounts.Select(x => x.ResourceContextId)
+            .Concat(connectionCounts.Select(x => x.ResourceContextId))
+            .Concat(scheduleCounts.Select(x => x.ResourceContextId))
+            .Distinct(StringComparer.Ordinal);
+
+        var result = new Dictionary<string, ResourceContextOwnershipSummary>(StringComparer.Ordinal);
+        foreach (var contextId in contextIds)
+        {
+            result[contextId] = new ResourceContextOwnershipSummary(
+                LiveIntegrations: liveIntegrationsByContext.GetValueOrDefault(contextId),
+                RetiredIntegrations: retiredIntegrationsByContext.GetValueOrDefault(contextId),
+                ActiveConnections: activeConnectionsByContext.GetValueOrDefault(contextId),
+                RetiredConnections: retiredConnectionsByContext.GetValueOrDefault(contextId),
+                EnabledSchedules: enabledSchedulesByContext.GetValueOrDefault(contextId),
+                DisabledSchedules: disabledSchedulesByContext.GetValueOrDefault(contextId));
+        }
+
+        return result;
     }
 
     private static ResourceContext ToDomain(ResourceContextEntity e) => new(

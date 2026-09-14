@@ -28,8 +28,20 @@ public interface IResourceContextRepository
     ValueTask UpdateAsync(ResourceContext resourceContext, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Counts the Integrations, Connections and ScheduleDefinitions currently owned by this context.
-    /// Used to keep archival conservative; it says nothing about historical ownership.
+    /// Gets the per-family live/retired-or-disabled ownership summary for this context: how many
+    /// Integrations, Connections and ScheduleDefinitions it owns, split by whether each is currently
+    /// live (Active integration/connection, enabled schedule) or not. Used by the "nothing live" archive
+    /// rule (CTX-3A §6.5, decision D2), which blocks archive only on live ownership, not on retired
+    /// Connections (never deletable) or disabled Schedules (never deletable). Says nothing about
+    /// historical ownership.
     /// </summary>
-    ValueTask<int> CountOwnedResourcesAsync(ResourceContextId id, CancellationToken cancellationToken = default);
+    ValueTask<ResourceContextOwnershipSummary> GetOwnershipSummaryAsync(ResourceContextId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the ownership summary (see <see cref="GetOwnershipSummaryAsync"/>) for every ResourceContext
+    /// that owns at least one resource, keyed by <see cref="ResourceContextId.Value"/>. Implementations
+    /// must compute this with a constant number of queries (one GROUP BY per resource family), not one
+    /// query per context, so callers such as an Applications list page can use it without an N+1 pattern.
+    /// </summary>
+    ValueTask<IReadOnlyDictionary<string, ResourceContextOwnershipSummary>> GetOwnershipSummariesAsync(CancellationToken cancellationToken = default);
 }

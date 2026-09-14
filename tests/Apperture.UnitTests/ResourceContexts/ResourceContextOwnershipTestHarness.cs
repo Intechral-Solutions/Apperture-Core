@@ -1,16 +1,23 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Connector;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Moq;
+using System.Linq.Expressions;
+using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 
 namespace Apperture.UnitTests.ResourceContexts;
 
@@ -24,11 +31,22 @@ namespace Apperture.UnitTests.ResourceContexts;
 /// </remarks>
 public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
 {
+    private readonly string _databaseName = Guid.NewGuid().ToString("N");
+
+    // EF Core's InMemory store lives on the internal service provider, not merely on the database name;
+    // two DbContexts with different configurations (e.g. different interceptors) get different internal
+    // service providers and therefore different, isolated stores even with the same name unless they
+    // share an explicit root like this one.
+    private readonly InMemoryDatabaseRoot _databaseRoot = new();
+
+    private readonly List<AppertureDbContext> _extraDbContexts = new();
+    private int _nextResourceSequence;
+
     public ResourceContextOwnershipTestHarness()
     {
         Db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+                .UseInMemoryDatabase(_databaseName, _databaseRoot)
                 .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
                 .Options);
 
@@ -106,7 +124,125 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
     public IBindingService Bindings { get; }
     public IScheduleManagementService Schedules { get; }
 
-    public ValueTask DisposeAsync() => Db.DisposeAsync();
+    /// <summary>
+    /// Builds a second <see cref="IResourceContextRepository"/> over the SAME underlying InMemory
+    /// database as <see cref="ResourceContextRepository"/>, instrumented to count EF Core LINQ query
+    /// compilations, plus a callback to read the running count.
+    /// </summary>
+    /// <remarks>
+    /// EF Core's InMemory provider issues no ADO.NET commands, so a relational
+    /// <c>IDbCommandInterceptor</c> cannot observe query activity; this counts
+    /// <see cref="IQueryExpressionInterceptor.QueryCompilationStarting"/> events instead, which fire once
+    /// per distinct query shape regardless of provider -- a proxy for "how many distinct queries were
+    /// issued" rather than a literal per-execution count, since EF caches compiled plans and would not
+    /// re-raise the event for a repeated call with the same shape.
+    /// </remarks>
+    /// <remarks>
+    /// This is deliberately a separate <see cref="AppertureDbContext"/> rather than an interceptor added
+    /// to <see cref="Db"/> directly: EF Core keys its internal service-provider cache on the exact set of
+    /// configured interceptors, so giving every harness instance its own interceptor object would give
+    /// every test in this suite a distinct configuration fingerprint and force EF to build a fresh
+    /// internal service provider per test, tripping its own
+    /// <c>CoreEventId.ManyServiceProvidersCreatedWarning</c> (which is an error by default) once the
+    /// suite creates more than twenty. Building the counting context only when a test asks for one keeps
+    /// that cost limited to the tests that actually need it.
+    /// </remarks>
+    public (IResourceContextRepository Repository, Func<int> QueryCount) CreateQueryCountingRepository()
+    {
+        var counter = new QueryCompilationCountInterceptor();
+        var countingDb = new AppertureDbContext(
+            new DbContextOptionsBuilder<AppertureDbContext>()
+                .UseInMemoryDatabase(_databaseName, _databaseRoot)
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+                .AddInterceptors(counter)
+                .Options);
+        _extraDbContexts.Add(countingDb);
+
+        return (new SqlResourceContextRepository(countingDb), () => counter.Count);
+    }
+
+    /// <summary>Creates an Integration owned by <paramref name="contextId"/>, moving it to <paramref name="state"/> via the real management service.</summary>
+    public async Task<DomainIntegration> CreateIntegrationAsync(
+        ResourceContextId contextId,
+        IntegrationState state = IntegrationState.Active,
+        CancellationToken cancellationToken = default)
+    {
+        var created = await Integrations.CreateIntegrationAsync(
+            new CreateIntegrationRequest($"Integration {NextSequence()}", "Sample.Mod", ResourceContextId: contextId),
+            cancellationToken);
+
+        if (state != IntegrationState.Active)
+            created = await Integrations.UpdateIntegrationAsync(created.Id, new UpdateIntegrationRequest(State: state), cancellationToken);
+
+        return created;
+    }
+
+    /// <summary>Creates a Connection owned by <paramref name="contextId"/>, retiring it via the real management service when <paramref name="state"/> is Retired.</summary>
+    public async Task<Connection> CreateConnectionAsync(
+        ResourceContextId contextId,
+        ConnectionState state = ConnectionState.Active,
+        CancellationToken cancellationToken = default)
+    {
+        var created = await Connections.CreateConnectionAsync(
+            new CreateConnectionRequest(
+                new ConnectorDefinitionId($"test.connector.{NextSequence()}"),
+                $"Connection {NextSequence()}",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                ResourceContextId: contextId),
+            cancellationToken);
+
+        if (state == ConnectionState.Retired)
+            await Connections.RetireConnectionAsync(created.Id, cancellationToken);
+
+        return created;
+    }
+
+    /// <summary>Creates a standalone (no owning Integration) ScheduleDefinition owned by <paramref name="contextId"/>.</summary>
+    public Task<ScheduleDefinition> CreateStandaloneScheduleAsync(
+        ResourceContextId contextId,
+        bool enabled = true,
+        CancellationToken cancellationToken = default)
+    {
+        var definition = new ScheduleDefinition(
+            new ScheduleId($"s-{NextSequence()}"),
+            "Nightly",
+            "0 0 * * *",
+            "UTC",
+            Enabled: enabled,
+            new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+            ExecutionPolicyRef: null,
+            Version: 1,
+            IntegrationId: null) with
+        { ResourceContextId = contextId };
+
+        return Schedules.CreateScheduleAsync(definition, cancellationToken).AsTask();
+    }
+
+    private int NextSequence() => System.Threading.Interlocked.Increment(ref _nextResourceSequence);
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var extra in _extraDbContexts)
+            await extra.DisposeAsync();
+        await Db.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Counts EF Core LINQ query compilations. Provider-agnostic (unlike <c>IDbCommandInterceptor</c>,
+    /// which never fires for the InMemory provider since it issues no ADO.NET commands), so it works
+    /// here where a relational command interceptor would not.
+    /// </summary>
+    private sealed class QueryCompilationCountInterceptor : IQueryExpressionInterceptor
+    {
+        public int Count { get; private set; }
+
+        public Expression QueryCompilationStarting(Expression queryExpression, QueryExpressionEventData eventData)
+        {
+            Count++;
+            return queryExpression;
+        }
+    }
 
     private sealed class AlwaysActor : IPrincipalContext
     {

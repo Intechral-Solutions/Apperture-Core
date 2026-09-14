@@ -12,8 +12,12 @@ public sealed class InMemoryResourceContextRepository : IResourceContextReposito
 {
     private readonly Dictionary<string, ResourceContext> _rows = new(StringComparer.Ordinal);
 
-    /// <summary>Owned-resource counts by context id, so archive guards can be exercised.</summary>
-    public Dictionary<string, int> OwnedResourceCounts { get; } = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Ownership summaries by context id, so archive guards can be exercised. Test authors populate this
+    /// directly; this double is used only by <see cref="ResourceContextServiceTests"/>, which tests
+    /// <see cref="ResourceContextService"/> in isolation from the real resource-family services.
+    /// </summary>
+    public Dictionary<string, ResourceContextOwnershipSummary> OwnershipSummaries { get; } = new(StringComparer.Ordinal);
 
     public InMemoryResourceContextRepository(bool seedShared = true)
     {
@@ -63,8 +67,13 @@ public sealed class InMemoryResourceContextRepository : IResourceContextReposito
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask<int> CountOwnedResourcesAsync(ResourceContextId id, CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult(OwnedResourceCounts.TryGetValue(id.Value, out var count) ? count : 0);
+    public ValueTask<ResourceContextOwnershipSummary> GetOwnershipSummaryAsync(ResourceContextId id, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(OwnershipSummaries.TryGetValue(id.Value, out var summary)
+            ? summary
+            : new ResourceContextOwnershipSummary(0, 0, 0, 0, 0, 0));
+
+    public ValueTask<IReadOnlyDictionary<string, ResourceContextOwnershipSummary>> GetOwnershipSummariesAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyDictionary<string, ResourceContextOwnershipSummary>>(OwnershipSummaries);
 
     /// <summary>Inserts a context directly, bypassing the service guards (for arranging test state).</summary>
     public ResourceContext Seed(ResourceContext resourceContext)

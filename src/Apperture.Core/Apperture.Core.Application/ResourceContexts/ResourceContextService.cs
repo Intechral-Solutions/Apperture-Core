@@ -117,11 +117,13 @@ public sealed class ResourceContextService : IResourceContextService
         if (!existing.IsActive)
             return existing;
 
-        var owned = await _repository.CountOwnedResourcesAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-        if (owned > 0)
+        var summary = await _repository.GetOwnershipSummaryAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+        if (summary.BlocksArchive)
         {
             throw new InvalidOperationException(
-                $"Cannot archive ResourceContext '{existing.Name}' ({existing.Id.Value}): it currently owns {owned} resource(s). Move or retire them first.");
+                $"Cannot archive ResourceContext '{existing.Name}' ({existing.Id.Value}): it still has " +
+                $"{summary.LiveIntegrations} active integration(s), {summary.ActiveConnections} active connection(s) " +
+                $"and {summary.EnabledSchedules} enabled schedule(s). Retire or disable them first.");
         }
 
         return await SaveAsync(existing with { State = ResourceContextStates.Archived }, cancellationToken).ConfigureAwait(false);

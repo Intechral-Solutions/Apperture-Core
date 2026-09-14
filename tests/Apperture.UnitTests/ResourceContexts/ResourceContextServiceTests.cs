@@ -161,15 +161,38 @@ public sealed class ResourceContextServiceTests
     }
 
     [Fact]
-    public async Task Archive_IsRejectedWhileTheContextOwnsResources()
+    public async Task Archive_IsRejectedWhileTheContextOwnsLiveResources()
     {
         var (service, repository) = ResourceContextTestFactory.CreateWithShared();
         var created = await service.CreateApplicationContextAsync("Payments");
-        repository.OwnedResourceCounts[created.Id.Value] = 3;
+        repository.OwnershipSummaries[created.Id.Value] = new ResourceContextOwnershipSummary(
+            LiveIntegrations: 2, RetiredIntegrations: 0,
+            ActiveConnections: 1, RetiredConnections: 0,
+            EnabledSchedules: 3, DisabledSchedules: 0);
 
         var act = async () => await service.ArchiveAsync(created.Id);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*owns 3 resource(s)*");
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*2 active integration*1 active connection*3 enabled schedule*");
+    }
+
+    /// <summary>
+    /// The "nothing live" archive rule (CTX-3A §6.5, D2): retired Connections (never deletable) and
+    /// disabled Schedules (never deletable) must not make archive unreachable.
+    /// </summary>
+    [Fact]
+    public async Task Archive_SucceedsWhenOnlyRetiredOrDisabledResourcesRemain()
+    {
+        var (service, repository) = ResourceContextTestFactory.CreateWithShared();
+        var created = await service.CreateApplicationContextAsync("Payments");
+        repository.OwnershipSummaries[created.Id.Value] = new ResourceContextOwnershipSummary(
+            LiveIntegrations: 0, RetiredIntegrations: 4,
+            ActiveConnections: 0, RetiredConnections: 2,
+            EnabledSchedules: 0, DisabledSchedules: 1);
+
+        var archived = await service.ArchiveAsync(created.Id);
+
+        archived.State.Should().Be(ResourceContextStates.Archived);
     }
 
     [Fact]

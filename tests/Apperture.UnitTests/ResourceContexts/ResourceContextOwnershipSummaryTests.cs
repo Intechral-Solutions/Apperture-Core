@@ -1,0 +1,85 @@
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Integration;
+using FluentAssertions;
+using Xunit;
+
+namespace Apperture.UnitTests.ResourceContexts;
+
+/// <summary>
+/// Per-family live/retired-or-disabled ownership summaries (CTX-3A §6.5, decision D2), computed via the
+/// real SQL repository over EF Core InMemory rather than mocked.
+/// </summary>
+public sealed class ResourceContextOwnershipSummaryTests
+{
+    [Fact]
+    public async Task GetOwnershipSummaryAsync_CountsLiveAndRetiredPerFamilySeparately()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Active);
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Retired);
+        await harness.CreateConnectionAsync(context.Id, state: ConnectionState.Active);
+        await harness.CreateConnectionAsync(context.Id, state: ConnectionState.Retired);
+        await harness.CreateStandaloneScheduleAsync(context.Id, enabled: true);
+        await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        var summary = await harness.ResourceContextRepository.GetOwnershipSummaryAsync(context.Id, CancellationToken.None);
+
+        summary.LiveIntegrations.Should().Be(1);
+        summary.RetiredIntegrations.Should().Be(1);
+        summary.ActiveConnections.Should().Be(1);
+        summary.RetiredConnections.Should().Be(1);
+        summary.EnabledSchedules.Should().Be(1);
+        summary.DisabledSchedules.Should().Be(1);
+        summary.BlocksArchive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOwnershipSummaryAsync_WithOnlyRetiredAndDisabled_DoesNotBlockArchive()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Retired);
+        await harness.CreateConnectionAsync(context.Id, state: ConnectionState.Retired);
+        await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        var summary = await harness.ResourceContextRepository.GetOwnershipSummaryAsync(context.Id, CancellationToken.None);
+
+        summary.BlocksArchive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetOwnershipSummaryAsync_ForAContextThatOwnsNothing_ReturnsAllZeros()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+
+        var summary = await harness.ResourceContextRepository.GetOwnershipSummaryAsync(context.Id, CancellationToken.None);
+
+        summary.Should().Be(new ResourceContextOwnershipSummary(0, 0, 0, 0, 0, 0));
+        summary.BlocksArchive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetOwnershipSummariesAsync_RunsAConstantNumberOfQueriesRegardlessOfContextCount()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var contextA = await harness.ResourceContexts.CreateApplicationContextAsync("A");
+        var contextB = await harness.ResourceContexts.CreateApplicationContextAsync("B");
+        await harness.CreateIntegrationAsync(contextA.Id, state: IntegrationState.Active);
+        await harness.CreateIntegrationAsync(contextB.Id, state: IntegrationState.Active);
+
+        var (countingRepository, queryCount) = harness.CreateQueryCountingRepository();
+        var queryCountBefore = queryCount();
+        var summaries = await countingRepository.GetOwnershipSummariesAsync(CancellationToken.None);
+        var queriesIssued = queryCount() - queryCountBefore;
+
+        summaries[contextA.Id.Value].LiveIntegrations.Should().Be(1);
+        summaries[contextB.Id.Value].LiveIntegrations.Should().Be(1);
+        queriesIssued.Should().BeLessThanOrEqualTo(3,
+            "GetOwnershipSummariesAsync should issue one GROUP BY per family (Integrations, Connections, " +
+            "ScheduleDefinitions), independent of context count -- not an N+1 pattern");
+    }
+}
