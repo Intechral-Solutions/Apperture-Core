@@ -31,16 +31,23 @@ public sealed class ResourceContextAuthorizationNonChangeTests
         members.Should().Contain(["Instance", "Environment", "Module", "Connection", "Operation", "RuntimeInstance", "Slot"]);
     }
 
-    /// <summary>Permissions on ResourceContexts themselves are CTX-3-or-later.</summary>
+    /// <summary>
+    /// CTX-3A deliberately introduces a "ResourceContext" resource type — not to scope authorization by
+    /// ownership (that remains explicitly forbidden; see NoContextScopeKeyFormExists and
+    /// GovernedIdentities_IgnoreResourceContextOwnership below, both unchanged), but to govern *managing the
+    /// ResourceContext rows themselves* (create/rename/re-slug/describe/archive/unarchive an Application) via
+    /// the new instance-scoped resource_context.manage permission. This is the one assertion CTX-3's design
+    /// gate (§9.3, R22) calls out as deliberately superseded.
+    /// </summary>
     [Fact]
-    public void NoResourceContextResourceTypeExists()
+    public void ResourceContextResourceTypeExists_ForManagingContextsThemselves_NotForOwnershipScoping()
     {
         var names = typeof(ResourceTypeConstants)
             .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Select(f => (string)f.GetRawConstantValue()!)
             .ToList();
 
-        names.Should().NotContain("ResourceContext");
+        names.Should().Contain("ResourceContext");
         names.Should().Contain(["Integration", "Connection", "Binding"]);
     }
 
