@@ -555,9 +555,10 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<SchedulerStatusSnapshotDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(string? contextId = null, CancellationToken cancellationToken = default)
     {
-        var list = await _http.GetFromJsonAsync<ConnectionDto[]>("connections", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        var path = string.IsNullOrWhiteSpace(contextId) ? "connections" : $"connections?contextId={Uri.EscapeDataString(contextId)}";
+        var list = await _http.GetFromJsonAsync<ConnectionDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return list ?? Array.Empty<ConnectionDto>();
     }
 
@@ -625,9 +626,10 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, CancellationToken cancellationToken = default)
     {
-        var list = await _http.GetFromJsonAsync<IntegrationDto[]>("integrations", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        var path = string.IsNullOrWhiteSpace(contextId) ? "integrations" : $"integrations?contextId={Uri.EscapeDataString(contextId)}";
+        var list = await _http.GetFromJsonAsync<IntegrationDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return list ?? Array.Empty<IntegrationDto>();
     }
 
@@ -1144,9 +1146,10 @@ public sealed class ManagementClient : IManagementClient
         return result ?? throw new InvalidOperationException("Unexpected null response from CreateIntegrationSchedule.");
     }
 
-    public async Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(string? contextId = null, CancellationToken cancellationToken = default)
     {
-        var list = await _http.GetFromJsonAsync<ScheduleDto[]>("schedules", cancellationToken).ConfigureAwait(false);
+        var path = string.IsNullOrWhiteSpace(contextId) ? "schedules" : $"schedules?contextId={Uri.EscapeDataString(contextId)}";
+        var list = await _http.GetFromJsonAsync<ScheduleDto[]>(path, cancellationToken).ConfigureAwait(false);
         return list ?? Array.Empty<ScheduleDto>();
     }
 

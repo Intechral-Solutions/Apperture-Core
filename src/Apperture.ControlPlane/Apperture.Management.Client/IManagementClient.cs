@@ -173,7 +173,7 @@ public interface IManagementClient
     /// <summary>
     /// Lists connections with Used In projection. Epic 48.
     /// </summary>
-    Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ConnectionDto>> GetConnectionsAsync(string? contextId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a connection by id with Used In projection. Epic 48.
@@ -213,7 +213,7 @@ public interface IManagementClient
     /// <summary>
     /// Lists integrations. Epic 49.
     /// </summary>
-    Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Fleet overview with readiness and attention signals. Epic 61.
@@ -418,7 +418,7 @@ public interface IManagementClient
     /// <summary>
     /// Lists schedules. Epic 28/33.
     /// </summary>
-    Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(string? contextId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets schedule detail with execution state.
