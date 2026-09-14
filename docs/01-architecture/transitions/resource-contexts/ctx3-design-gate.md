@@ -122,6 +122,8 @@ View
 
 When the first Application is created, show a one-time dismissible hint anchored to the selector: "Use View to focus lists on an application." Store the dismissal in local storage.
 
+Visibility depends **only** on the active-Application count, never on what the current page is displaying. With no active Application, the selector stays hidden even while an explicit URL naming an archived Application is honoured (§4.3 Q5); that page's own archived banner is the indication, and ownership labels stay hidden too. Config → Inventory's Context column and filter are the one exception to the ownership-label rule (§5.5), and they do not make the selector appear.
+
 ### 3.4 Per-page participation
 
 A pure route table, `ResourceContextViewRoutes.Resolve(path)`, returns one of the modes below. It follows the `IntegrationUiRoutes.ResolveSectionKey` / `RouteToSectionResolver` pattern.
@@ -183,9 +185,9 @@ Explicit selector changes **do** write localStorage. This is the principle "expl
 | 2. Survives refresh? | **Yes.** On scoped pages the URL carries it. On other pages, tab state is lost on refresh but re-seeded from localStorage (step 3). |
 | 3. Survives sign-out/sign-in? | **Yes, in the same browser**, via the user-keyed localStorage entry. Sign-out does not clear it. It does not follow the operator to another device, where the view starts at All. |
 | 4. Encoded in the URL on scoped collection pages? | **Yes, always**, as `?context=all` or `?context=<id>`. The id is used, not the slug, because ids are canonical and survive rename and re-slug. Slug-addressed URLs remain a later decision. |
-| 5. Selected Application is archived? | **From localStorage or tab state:** fall back to All and show an info toast once: "CampusNexus is archived. Showing all applications." Rewrite the stored value to `all`. **From an explicit URL:** honour it (the list APIs accept archived ids, and viewing what an archived Application still owns is legitimate). Show a page banner, "CampusNexus is archived", with a "View all" action. The selector trigger reads `View: CampusNexus (archived)` but does not list it as an option. |
+| 5. Selected Application is archived? | **From localStorage or tab state:** fall back to All and show an info toast once: "CampusNexus is archived. Showing all." Rewrite the stored value to `all`. **From an explicit URL:** honour it (the list APIs accept archived ids, and viewing what an archived Application still owns is legitimate). Show a page banner, "CampusNexus is archived", with a "View all" action. The selector trigger reads `View: CampusNexus (archived)` but does not list it as an option. |
 | 6. Direct link to a resource outside the selected view? | Detail pages are not scoped. The resource renders normally, and the view is not changed (§4.6). |
-| Unknown id in URL | Refresh the context list once. If still unknown, show "That application doesn't exist" with a "View all" action. Do not fall back silently. This mirrors the API's 400 on an unknown `contextId`. |
+| Unknown id in URL | Refresh the context list once. If still unknown, show "That context doesn't exist." with a "View all" action. Do not fall back silently. This mirrors the API's 400 on an unknown `contextId`. |
 | New tab | Seeds from localStorage. A link opened in a new tab carries `?context=` on scoped pages, so it opens exactly as linked. |
 | Two windows wanting different views | Supported. Tab state is per tab. localStorage is only read at tab start, and the shell does not subscribe to `storage` events, so one window never retargets another. |
 
@@ -201,14 +203,15 @@ Each scoped list's "Create …" button links with the current view, for example 
 
 **Adopt D with a C indicator.** Detail and hub routes ignore the view for data. The resource header owns the context display.
 
-- **Header:** an ownership chip beside the title, "Canvas" or "Shared", linking to `/config/applications/{id}`. It is hidden while no Application exists (§3.3).
+- **Header:** a Context chip beside the title, "Context: Canvas" or "Context: Shared", linking to that context's page under `/config/applications`. It is hidden while no active Application exists (§3.3).
+- **Display resolution:** every context name shown in the UI resolves by id from the shell's cached list of active and archived contexts; archived contexts show their name, marked archived. An id missing from the cache triggers one refresh of that list. If it is still missing, the UI shows "Unknown context", with no link and no switch action. Operator UI never shows a raw id or blank text for a context.
 - **Mismatch indicator:** when the view is a specific context that differs from the resource's owner, show a quiet inline notice under the header: *"This integration belongs to Canvas. Your view is CampusNexus."* It offers an action, **Switch view to Canvas**, which changes tab state and localStorage as an explicit choice.
   - Under **All** there is never a mismatch.
   - Shared resources under an Application view also count as a mismatch, and the notice adds "Integrations in CampusNexus can use it." for Connections.
 - **Never auto-switch.** Opening a resource is reading, not choosing a workspace. Auto-switching would retarget every subsequent list, including in the operator's head, based on which link they last clicked.
 - Hub sub-routes (`/integrations/{id}/runs` and the others) are `Detail` mode. They stay keyed to the Integration, and the shell view does not affect their contents.
 
-Pages showing ownership comparison: Integration hub (all six sections plus schedule-diagnostics), Connection detail, Schedule detail, and Run detail. On Run detail the comparison uses the **historical** snapshot ("This run happened in Canvas"). A null snapshot shows "Application not recorded" and no mismatch.
+Pages showing ownership comparison: Integration hub (all six sections plus schedule-diagnostics), Connection detail, Schedule detail, and Run detail. On Run detail the comparison uses the **historical** snapshot ("This run happened in Canvas"). A null snapshot shows "Context not recorded" and no mismatch.
 
 ---
 
@@ -217,21 +220,21 @@ Pages showing ownership comparison: Integration hub (all six sections plus sched
 | Surface | Scoped by view? | Own filter? | Global? | CTX-3A notes |
 |---|---|---|---|---|
 | **Control Center** | **Partial** | No | System sections | §5.1 |
-| **Integrations** `/integrations` | **Yes, current ownership** | Existing fleet filters compose (AND) | — | Needs fleet `contextId` (F2). "Application" column under All. |
-| **Integration hub** `/integrations/{id}/*` | No (Detail) | — | — | Ownership chip + mismatch indicator; Connections tab labels each bound Connection "This application"/"Shared" |
+| **Integrations** `/integrations` | **Yes, current ownership** | Existing fleet filters compose (AND) | — | Needs fleet `contextId` (F2). "Context" column under All, only while an active Application exists (§3.3). |
+| **Integration hub** `/integrations/{id}/*` | No (Detail) | — | — | Context chip + mismatch indicator; bound Connections are labelled with their Context |
 | **Connections** `/connections` | **Yes, ownership only** | — | — | §5.2 |
-| **Connection detail** | No (Detail) | — | — | "Used by" rows show each Integration's Application |
+| **Connection detail** | No (Detail) | — | — | "Used by" rows show each Integration's Context |
 | **Schedules** `/schedules` | **Yes, Schedule ownership** | — | — | Attached schedules match their Integration by invariant; legacy standalone rows filter by their own column |
 | **Schedule create** `/schedules/new` | Integration picker filtered by view | "Show all integrations" toggle | — | Context is inherited; shown read-only |
 | **Runs** `/runs` | **Yes, historical snapshot** | Existing URL filters compose | — | §5.3 |
-| **Run detail** | No (Detail) | — | — | Shows the historical Application |
-| **Execute** `/execute` | No | — | Unscoped | Integration pickers show Application labels; defer filtering |
-| **Audit** `/control/audit` | **No** | **Yes: "Application" filter**, default All, plus a "Use current view" chip | Unscoped | §5.4. Needs API param (F6). |
+| **Run detail** | No (Detail) | — | — | Shows the historical Context |
+| **Execute** `/execute` | No | — | Unscoped | Integration pickers show Context labels; defer filtering |
+| **Audit** `/control/audit` | **No** | **Yes: "Context" filter**, default All, plus a "Use current view" chip | Unscoped | §5.4. Needs API param (F6). |
 | **Notifications**: Config instances/definitions | No | Deferred | Unscoped | API filter exists; UI filter is a later NTF/CTX follow-up |
 | **Notifications**: hub tab | No (Detail) | — | — | Integration-keyed as today |
 | **Personal inbox** `/me/notifications` | No | — | Unscoped | Personal, not organizational |
 | **Platform events** | No UI | — | — | API filter exists; diagnostic only |
-| **Config Inventory** | **No** | Deferred | Unscoped (admin explorer, All) | Stays an honest cross-cutting explorer in 3A. Application filter and column are a follow-up. |
+| **Config Inventory** | **No** | **Yes: local Context filter (§5.5)** | Unscoped (admin explorer, All) | Independent of the shell view. Adds its own Context column and filter (All / System / Shared / each Application / Not recorded in Activity), always present even with no Applications. |
 | **Business Data** | **No** | — | Unscoped, with a transitional banner | §11 |
 | **Config: Applications** | No | Active/Archived filter | Unscoped | §6 |
 | **Config: Governance, Attention, System, Modules, Settings, Auth, Developer** | No | — | Unscoped | — |
@@ -254,7 +257,7 @@ Contextual sections follow the view. System sections are always instance-wide an
 UI rules:
 
 - The page subtitle reflects the view: "What needs attention in **CampusNexus** — …". Under All it is unchanged.
-- **Honest history note:** when a specific view is selected, show one muted line in the activity sections: *"Runs recorded before applications were introduced aren't associated with an application and appear only under All."* CTX-2 snapshots are null for old history, and those runs silently vanish under a specific view without this note.
+- **Honest history note:** when a specific view is selected, show one muted line in the activity sections: *"Some older runs don't have a recorded context. Runs without a recorded context appear only under All."* CTX-2 snapshots are null for old history, and those runs silently vanish under a specific view without this note.
 - Summary pills are split into two labelled groups, "In view" and "Platform". A number never changes meaning without its label changing.
 
 API: `GET api/control/center?resourceContextId=` is threaded into `ListRecentActivityAsync` and `ListAttentionAsync` as an optional parameter mapped to `RunQueryFilter.ResourceContextId`. Callers that omit it keep today's behavior. **This is reasonable for CTX-3A.** It is the last slice of 3A, and it can be cut without breaking anything else (§13). If cut, Control Center renders `Unscoped` with the banner "Control Center shows all applications."
@@ -273,8 +276,8 @@ Usability mitigation (C-lite): under an Application view, show a one-line notice
 
 `/runs?context=<id>` sends `RunQueryFilter.ResourceContextId`. This is the CTX-2 snapshot on `OperationRuns`. It must **not** be translated into "runs of Integrations currently owned by X". A test must prove that a run snapshotted under A still appears under A after its Integration's current owner is changed to B (in controlled test setup).
 
-- Under All, add an "Application" cell, resolved from the cached context list. Null renders "—".
-- The URL filter summary in "Filters and diagnostics" lists the Application.
+- Under All, while an active Application exists (§3.3), add a "Context" cell resolved as in §4.6. A null snapshot renders "Not recorded".
+- The URL filter summary in "Filters and diagnostics" lists the Context.
 - `Epic33UiDisplayHelpers.BuildRunsListUrl` gains a `context` argument, so the status facet dropdown preserves it. This was the class of bug NAV-1 stabilization fixed for `integrationId`.
 - Include the same pre-history note as Control Center when a specific view is selected.
 
@@ -283,9 +286,46 @@ Usability mitigation (C-lite): under an Application view, show a one-line notice
 Most audit rows are System/IAM and legitimately carry a null context (CTX-2 §15). If the shell view scoped Audit, CampusNexus would appear to have "almost no audit trail", which is misleading. Instead:
 
 - Audit stays `Unscoped`.
-- It adds an **Application** select (All / Shared / active + archived Applications), sent as `resourceContextId`.
+- It adds a **Context** select (All / Shared / active + archived Applications), sent as `resourceContextId`.
 - When the shell view is a specific Application, show a chip: "Filter to CampusNexus". One click applies the filter; nothing is applied automatically.
-- The filter's help text: "Only activity recorded against an application. Platform and account activity has no application."
+- The filter's help text: "Only activity recorded against a context. Platform and account activity has no context."
+
+### 5.5 Config Inventory: its own Context filter, not the shell's
+
+Config → Inventory is `Unscoped`. It never reads the shell view or the shell's `?context=`. It has its own **Context** column and filter. Because Inventory is an administrative cross-platform explorer, the column and filter are always present — including when no Application exists, which is an intentional exception to §3.3's ownership-label rule. They never make the shell View selector appear.
+
+**Filter values**
+
+| API token | Label | Modes |
+|---|---|---|
+| `all` (default) | All | Resources, Activity |
+| `system` | System | Resources, Activity |
+| `shared` | Shared | Resources, Activity |
+| `notRecorded` | Not recorded | Activity only |
+| an active or archived `ResourceContextId` | the Application's name (archived ones marked) | Resources, Activity |
+
+Any other token, an id that does not exist, or `notRecorded` in Resources mode is invalid input, and the API returns 400. The page then says the Context filter is no longer valid and offers **Reset to All**; it never shows an empty Inventory for an invalid filter. Applications are added to the options when they exist.
+
+**Classification of each row**
+
+- **Shared or an Application** — the row has a `ResourceContextId`. Integrations, Connections and Schedules use their current ownership. An integration-scoped NotificationDefinition (`Scope` = `Integration`) uses its Integration's current ownership, derived at query time, as long as that Integration still exists. Runs and audit events use the context recorded when they occurred (§5.3), never current ownership.
+- **System** — a UI-only classification, never a persisted `ResourceContext` row or id. It applies to Module records, NotificationDefinitions with `Scope` `Platform` or `Module`, and audit events with no `ResourceContextId` whose action name starts with a System-by-design prefix: `auth.`, `user.`, `credential.`, `identity_link.`, `auth_admin.`, `account.`, `governance.`, `audit.read.`, `module.lifecycle.`, `platform.settings.`, `emergency.`, `entra.`. The list is defined once in code and shared by classification and SQL filtering. Runs are never System.
+- **Not recorded** — Activity only: a context-eligible occurrence for which no ResourceContext was recorded. That means any Run with no `ResourceContextId`, and any audit event with no `ResourceContextId` whose action is not System-by-design. Pre-CTX-2 history is the main case but not the only one: `recovery.*` audit events are still written without a context today (threading it through `RecoveryController` is follow-up work outside CTX-3A).
+- **Unknown context** — an integration-scoped NotificationDefinition whose Integration no longer exists. Integration hard delete currently leaves such definitions behind (see §13 CTX-3B step 7). The row shows "Unknown context" (internal token `unknown`), appears only under All, and is never classified System or Not recorded. CTX-3A adds no Unknown filter option.
+
+Audit events classify **id-first**: a non-null `ResourceContextId` decides Shared or Application regardless of the action name, which is what correctly classifies `resource_context.*` events. Only a null value is tested against the prefix list. `AuditCategoryResolver` categories are not used: its `other` category mixes a context-eligible family (`integration.settings.*`) with System-shaped families it does not recognize (`platform.settings.*`, `emergency.*`, `entra.access_request.*`).
+
+**Filtering and truncation**
+
+Today Inventory collects rows from each source, applies Type, Status and search in memory, sorts, and takes the page size. Modules, Integrations, Connections and Schedules are fetched in full. Three sources are capped in their own query: Runs (100 newest), audit events (100 newest within Inventory's 24-hour window) and NotificationDefinitions (first 100 by name). Filtering a capped source in memory can drop matching rows and produce a false empty result, so every non-All Context value is applied inside the source query:
+
+- **A specific context:** Integrations, Connections, Schedules, Runs and audit events use their existing `ResourceContextId` filters; NotificationDefinitions are filtered by their existing Integration's ownership in the same query, so orphaned definitions never match; Modules are skipped.
+- **System:** Modules are included; NotificationDefinitions are limited to Platform/Module scope in the query; audit events are limited to no context with a System prefix in the query; owned resources and Runs are skipped.
+- **Not recorded:** Runs are limited to no context, and audit events to no context without a System prefix, in the query.
+
+The in-memory match stays as a cross-check. Type and Status filtering keep today's in-memory behavior; CTX-3A does not change it.
+
+**No new persistence.** Every classification derives at query time from existing columns and an Integration lookup. The new pieces are query options only (A12–A14).
 
 ---
 
@@ -421,11 +461,11 @@ The API default of Shared stays, for compatibility (CTX-1). The UI simply never 
 
 ### 7.2 Integration: `/integrations/new`, metadata step
 
-- Add an **Application** select, positioned before Display Name. Options: Shared, then the active Applications. The field is **required**.
+- Add a **Context** select, positioned before Display Name. Options: Shared, then the active Applications. The field is **required**. Help text: "Choose the application this resource belongs to, or Shared."
 - Preselection comes from `?context=`, else a specific tab view, else nothing ("Choose…", with submit disabled). Under All there is no preselection.
 - A line under the submit button restates the choice: "Creates the integration in **CampusNexus**." This is the stale-state guard: the operator sees the destination at the moment of commit.
 - If no active Application exists, the field is hidden and the request omits `ResourceContextId`. Today's behavior is unchanged.
-- **Scope key copy fix (fact F7):** move the field under an "Advanced" disclosure and relabel it "Authorization scope key (optional)". Help text: "Advanced authorization scope. Unrelated to the application. Leave empty for instance scope." Its behavior is unchanged.
+- **Scope key copy fix (fact F7):** move the field under an "Advanced" disclosure and relabel it "Authorization scope key (optional)". Help text: "Advanced authorization scope, unrelated to the Context. Leave empty for instance scope." Its behavior is unchanged.
 - The server re-validates (exists + Active) as today. A 400 for an archived context shows "That application was archived. Choose another."
 
 ### 7.3 Connection: `/connections/new`
@@ -433,14 +473,14 @@ The API default of Shared stays, for compatibility (CTX-1). The UI simply never 
 The same rules and field as §7.2.
 
 **In-flow creation during binding** (HUB-1 Connections tab, "create a connection while binding"): the choice is restricted by the reference rule.
-- The only options are **this Integration's Application** or **Shared**.
+- The field is labelled **Context**. The only options are **this Integration's Application** or **Shared**.
 - The default is the Integration's Application, with the label "Only this application's integrations can use it." Shared carries the label "Integrations in any application can use it."
 - When the Integration itself is Shared, the field is fixed to Shared and shown read-only.
 
 ### 7.4 Integration-attached Schedule: hub Schedules tab and `/schedules/new`
 
-- There is **no context selector.** Show a read-only row, "Application: CampusNexus (from integration)". CTX-1 inherits the context server-side, and the request omits `ResourceContextId`.
-- On `/schedules/new`, the Integration picker lists Integrations in the current view. A "Show all integrations" toggle is off by default under a specific view and not shown under All. Options are labelled with their Application under All.
+- There is **no context selector.** Show a read-only row, "Context: CampusNexus", with the note "Inherited from the integration." CTX-1 inherits the context server-side, and the request omits `ResourceContextId`. The row follows §3.3 and is hidden while no active Application exists.
+- On `/schedules/new`, the Integration picker lists Integrations in the current view. A "Show all integrations" toggle is off by default under a specific view and not shown under All. Options are labelled with their Context under All, while an active Application exists.
 
 ### 7.5 Standalone Schedule
 
@@ -653,11 +693,14 @@ The list below is the complete set, and nothing beyond it is needed. There are n
 | A4 | `ResourceContextsController` at `api/resource-contexts`: `GET` (`includeArchived`, default false), `GET {id}`, `POST`, `PATCH {id}`, `POST {id}/archive` (409 + `ResourceContextOwnershipSummary`), `POST {id}/unarchive`, `GET summary` (all contexts' ownership summaries, permission-masked per §9.2) | New controller + `ResourceContextManagementService` |
 | A5 | `GetOwnershipSummaryAsync` / `GetOwnershipSummariesAsync` replace `CountOwnedResourcesAsync`; archive rule refined; reactivation guards (§6.5) | `IResourceContextRepository`, `SqlResourceContextRepository`, `ResourceContextService`, Integration/Connection/Schedule management services |
 | A6 | `GET api/control/center?resourceContextId=` threaded into `IControlActivityQueryService.ListRecentActivityAsync` and `IControlAttentionQueryService.ListAttentionAsync`; rejected-control items joined to `OperationRuns.ResourceContextId` | `ControlCenterController`, `ControlCenterQueryService`, activity/attention services, client `GetControlCenterAsync` |
-| A7 | `GET api/control/audit?resourceContextId=` threaded through `IAuditTimelineQueryService` criteria into `AuditQuery.FilterByResourceContextId`; client `GetAuditTimelineAsync` gains the parameter | `AuditController`, audit timeline service, client |
+| A7 | `GET api/control/audit?resourceContextId=` passed into `AuditFilterCriteria.ResourceContextId` (added and threaded to `AuditQuery.FilterByResourceContextId` by A13); client `GetAuditTimelineAsync` gains the parameter | `AuditController`, client |
 | A8 | Integration eligible-connections response gains `ResourceContextId` (to label "This application"/"Shared" in the picker); client `EligibleConnectionDto` updated | `IntegrationBindingsController`, client |
 | A9 | `ConnectionUsedInEntry` gains `IntegrationResourceContextId`, resolved from the already-loaded Integration and the once-per-request dimension map | `ConnectionsController`, client |
 | A10 | `OperatorCapabilitiesDto.CanManageResourceContexts`; permission seeding and repair | §9.1 |
 | A11 | `all` added to `ResourceContextSlug` reserved set | Domain + slug tests |
+| A12 | `GET api/inventory?context=`: `all` (default) / `system` / `shared` / `notRecorded` (Activity only) / a real active or archived `ResourceContextId`; anything else, or `notRecorded` in Resources mode, returns 400. Each `InventoryItemDto` gains `ResourceContextId` and a classification (`system` / `shared` / `application` / `notRecorded` / `unknown`). The Context predicate is applied inside each capped source query (§5.5) | `InventoryController`, `InventoryQueryService`, `InventoryItemDto`, client `GetInventoryAsync` |
+| A13 | `AuditTimelineEntry`/`AuditTimelineEntryDto` gain `ResourceContextId` from the existing `AuditRecord.ResourceContextId`. `AuditFilterCriteria` gains `ResourceContextId`, threaded into the existing `AuditQuery.FilterByResourceContextId`, which `SqlAuditService` already applies but `AuditTimelineQueryService` never passed. Read-side only; A7 consumes it | `AuditTimelineModels.cs`, `AuditTimelineQueryService`, `AuditController` DTO mapping, client |
+| A14 | Query-only source filters for §5.5, no schema change: an `AuditQuery`/`AuditFilterCriteria` context-classification filter (no context, with or without a System action prefix, from one shared `AuditSystemActionPrefixes` list); `RunQueryFilter.ResourceContextIdIsNull` (server and client twin, for A2 parity); `NotificationDefinitionListQuery.OwnerResourceContextId` (Integration join) and `SystemScopedOnly`; a batched Integration owner-context lookup for integration-scoped NotificationDefinitions | `SqlAuditService`, `RunQueryService`, `SqlNotificationDefinitionStore`, notification definition service |
 
 ### 10.2 CTX-3B
 
@@ -670,7 +713,7 @@ The list below is the complete set, and nothing beyond it is needed. There are n
 
 ### 10.3 Not changed
 
-Detail DTOs (they already carry `ResourceContextRef`); Runs/NotificationInstances/PlatformEvents filters (they already exist); `ScopeKey` semantics; ID-based routes; module persistence; Business Data projection.
+Detail DTOs (they already carry `ResourceContextRef`); Runs/NotificationInstances/PlatformEvents filters (they already exist; A14 adds query-only options for Inventory, not new filter semantics for existing callers); `ScopeKey` semantics; ID-based routes; module persistence; Business Data projection.
 
 ---
 
@@ -712,7 +755,7 @@ Deriving "customers touched by CampusNexus" through OperationGroup snapshots was
 | R15 | **Archive impossible in practice** (F4) | Refined live-resource rule with a reactivation guard (§6.5). |
 | R16 | **Move vs bind race** creates a cross-context binding | Row-lock serialization plus the `binding_cross_context` readiness code (§8.7). |
 | R17 | **Too many Applications** | Search above 7 active Applications. The list is name-sorted. The summary endpoint costs O(1) queries. |
-| R18 | **Flash of unfiltered data before the view resolves** | Scoped pages defer their data load until `ResourceContextViewState` has resolved (§4.4). |
+| R18 | **Flash of unfiltered data before the view resolves** | Scoped pages build their request only from a validated `?context=` value and send nothing until the URL carries one (§4.2, §4.4). They never build a request from in-memory view state, so in-app navigation cannot issue the previous view's request first. |
 | R19 | **Existing single-team installations get new chrome for nothing** | The selector and ownership labels are hidden until the first Application exists (§3.3). |
 | R20 | **Menu hrefs don't carry state** | Handled by resolution step 2 (§4.2). Menu definitions stay static, so `ControlPanelMenuDefinitions` and `MenusController` do not change for the view. |
 | R21 | **Fleet endpoint N+1** (per-Integration binding/schedule reads in `ListFleetAsync`) | Pre-existing and not worsened. Scoping *reduces* it. It is noted for a later performance pass and is not a CTX-3 goal. |
@@ -742,7 +785,8 @@ Each step is independently reviewable and green.
    2. Connections: Shared-available notice.
    3. Schedules.
    4. Runs: snapshot filter, `BuildRunsListUrl` context, pre-history note.
-8. **Detail indicators:** ownership chips and mismatch notices on Integration hub, Connection, Schedule and Run detail. A8/A9 labels in the binding picker and "Used by".
+   5. Config Inventory: local Context filter and column (§5.5) — independent of the shell view, grouped here because it shares this step's ownership-classification work, not because it is view-scoped.
+8. **Detail indicators:** Context chips and mismatch notices on the Integration hub (including schedule-diagnostics), Connection, Schedule and Run detail. A8/A9 Context labels in the binding picker and "Used by".
 9. **Create flows:** Integration, Connection (including in-flow binding creation) and Schedule inherited display; ScopeKey copy fix (§7).
 10. **Audit filter:** A7 and the page filter with "Use current view" chip (§5.4).
 11. **Business Data banner** (§11).
@@ -757,7 +801,8 @@ Each step is independently reviewable and green.
 4. B4 audit (two-record model) with source, target and global query tests.
 5. B1 endpoints and client methods.
 6. Move dialogs (§8.9) and the archive-refusal copy update.
-7. CTX-3B closure.
+7. **Integration hard-delete referential inventory** (must be finished before CTX-3B is closed). CTX-3A verified that `DeleteIntegrationAsync` blocks only bindings and schedules, and that `NotificationDefinitions.IntegrationId` has no foreign key, so deleting an Integration leaves its Integration-scoped NotificationDefinitions and subscriptions behind. List every current-state (non-historical) table that references `IntegrationId` and which of its rows a hard delete can orphan, including at least that NotificationDefinition/subscription case. Then decide per dependent, deliberately, between blocking delete while current-state dependents exist and cleaning them up, and preserve historical records that are meant to survive. Do not add a one-off NotificationDefinition-only guard before this inventory. Until then, Inventory shows orphaned definitions as "Unknown context" (§5.5).
+8. CTX-3B closure.
 
 ---
 
@@ -768,20 +813,22 @@ Each step is independently reviewable and green.
 **Model and persistence**
 - `ResourceContextViewScope` exists in `Ui.Shared`. `All` is never represented as a ResourceContext row, id, Shared, or ambiguous null. `ToApiFilter()` returns null for All. Tests cover parsing `all`, an id, empty, and a whitespace value.
 - `all` is a reserved slug.
-- With no active Application, the selector and ownership labels are not rendered, the view is All, and every existing page behaves exactly as before (existing UI tests unchanged and green).
+- With no active Application, the selector and ownership labels are not rendered, the view is All, and every existing page behaves exactly as before (existing UI tests unchanged and green). Config → Inventory's Context column and filter are the one exception (§5.5).
 - On every `Scoped` route, the rendered URL always contains `?context=`, and back/forward restores the view of each entry.
 - An explicit selector change writes `localStorage["apperture.view.{userId}"]`. A `?context=` arriving by URL does not.
 - A remembered archived or unknown context falls back to All with a one-time notice. An explicit URL naming an archived context is honoured with a banner. An unknown URL context shows a not-found message with "View all".
 - Opening any detail or hub route never changes the view. A mismatch indicator appears only when the view is a specific context different from the resource's owner. "Switch view" changes it.
+- Every displayed context name resolves active and archived contexts by id. An id still missing after one refresh of the context list shows "Unknown context", never a raw id or blank text.
 
 **Surfaces**
 - `/integrations`, `/connections` and `/schedules` under a specific view request only that context's owned resources through the SQL-side filters. Under All they send no filter and match today's sets.
+- Scoped collection pages build their request only from a validated `?context=` value and reload when it changes. A page never sends a request for one context and then a corrective one for another, including after in-app navigation.
 - `/connections` under an Application view never includes Shared rows, and shows the Shared-available count link.
 - `/runs?context=X` filters by `OperationRuns.ResourceContextId`. A test proves a run snapshotted in A still lists under A after its Integration's current ownership becomes B. Null-snapshot runs appear only under All, and the note is shown.
 - The status facet change on `/runs` preserves `context`.
-- Audit has its own Application filter, sends `resourceContextId`, and is not driven by the shell view.
+- Audit has its own Context filter, sends `resourceContextId`, and is not driven by the shell view.
 - Business Data is never filtered and shows the transitional message under a specific view.
-- Config Inventory is not filtered by the view.
+- Config Inventory is never filtered by the shell view. Its own Context column and filter are always present, even with no Applications (§5.5). Values: All, System, Shared, Not recorded (Activity only), and each active or archived Application; an unknown id or an inapplicable value returns 400 and the page offers "Reset to All". Selecting a value shows exactly the matching rows, with no merging, and the Context predicate reaches each capped source before its cap, so no value produces a false empty result. System is never a persisted `ResourceContext` row or id, and Runs are never System. Not recorded means a context-eligible occurrence with no recorded context. No new persistence is added. An integration-scoped NotificationDefinition whose Integration no longer exists shows "Unknown context", appears only under All, and is never System or Not recorded.
 - Control Center under a specific view filters run-derived attention and activity by snapshot. It always shows stuck-shutdown items and all platform/worker/scheduler sections under a "Platform — all applications" heading, and its pills are grouped "In view" / "Platform". *(If step 12 is cut: Control Center is `Unscoped` with the banner, and this criterion is replaced by that.)*
 
 **Management**
@@ -794,9 +841,9 @@ Each step is independently reviewable and green.
 - The summary endpoint issues a constant number of queries, independent of context count (asserted). It returns null counts for families the caller cannot read.
 
 **Creation**
-- Under All, Integration and Connection create require an explicit Application choice before submit. Under a specific view, it is preselected and changeable. The destination is restated near submit. With no Applications, no field is shown and the request omits `ResourceContextId`.
+- Under All, Integration and Connection create require an explicit Context choice before submit. Under a specific view, it is preselected and changeable. The destination is restated near submit. With no Applications, no field is shown and the request omits `ResourceContextId`.
 - In-flow Connection creation from an Integration offers only that Integration's Application or Shared, defaulting to the Integration's.
-- Schedule creation shows the inherited Application read-only and sends no `ResourceContextId`. No standalone schedule creation path is added.
+- Schedule creation shows the inherited Context read-only ("Context: CampusNexus", inherited from the Integration) and sends no `ResourceContextId`. No standalone schedule creation path is added.
 - Scope key is under Advanced, labelled as an authorization scope, with unchanged behavior.
 
 **Authorization and contracts**
@@ -818,6 +865,7 @@ Each step is independently reviewable and green.
 - `binding_cross_context` readiness makes an Integration with a seeded cross-context binding not runnable.
 - Each successful move writes exactly two audit records (`moved_out` in the source, `moved_in` in the target) sharing a correlation id. A blocked move writes one `move_rejected` record in the source. Filtering Audit by source and by target each returns exactly its record.
 - Move dialogs show preview effects and blockers with links, always show "Used by" for Connections, and never switch the view.
+- The Integration hard-delete referential inventory (§13 CTX-3B step 7) is complete. Every current-state dependent it lists is either protected by a delete guard or cleaned up intentionally, with a test for each, and historical records survive.
 
 ---
 

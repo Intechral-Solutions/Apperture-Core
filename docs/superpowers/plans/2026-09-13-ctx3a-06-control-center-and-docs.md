@@ -270,7 +270,7 @@ Move the existing "Blocked work" `ManagementSummaryCard` (lines 59-63) to sit un
 
 In the "Action needed" section (lines 79-116) and the "Recent activity" section (lines 404-480), add, only when `!ViewState.Current.IsAll`:
 ```razor
-<div class="text-xs text-muted mb-2">Runs recorded before applications were introduced aren't associated with an application and appear only under All.</div>
+<div class="text-xs text-muted mb-2">Some older runs don't have a recorded context. Runs without a recorded context appear only under All.</div>
 ```
 Use this **exact wording**, matching what Plan 4 already put on the Runs page — do not paraphrase.
 
