@@ -21,6 +21,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<IOperatorDisplayTimeZone, OperatorDisplayTimeZoneService>();
         services.AddScoped<AccountAvatarService>();
         services.AddScoped<AppearancePreferenceCoordinator>();
+        services.AddScoped<ResourceContextViewState>();
         return services;
     }
 }

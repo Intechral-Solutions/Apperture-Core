@@ -25,6 +25,13 @@
                 localStorage.setItem(storageKey, value);
             } catch { /* ignore */ }
         },
+        /** CTX-3A: per-user remembered ResourceContext view (§4). Keyed by user id so a shared browser never seeds one operator's view from another's. */
+        getViewPreference: function (userId) {
+            try { return localStorage.getItem('apperture.view.' + userId); } catch { return null; }
+        },
+        setViewPreference: function (userId, value) {
+            try { localStorage.setItem('apperture.view.' + userId, value); } catch { /* ignore */ }
+        },
         isSystemDark: isSystemDark,
         apply: apply,
         initFromStorage: function () {
