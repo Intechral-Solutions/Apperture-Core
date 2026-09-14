@@ -210,6 +210,7 @@ public sealed class SchedulesController : ControllerBase
     [HttpPost("{id}/enable")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult> Enable(string id, CancellationToken cancellationToken = default)
     {
         if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
@@ -218,6 +219,10 @@ public sealed class SchedulesController : ControllerBase
         {
             await _scheduleManagement.EnableAsync(new ScheduleId(id), cancellationToken);
             return Ok();
+        }
+        catch (ResourceContextArchivedException ex)
+        {
+            return Conflict(new { error = ex.Message });
         }
         catch (InvalidOperationException)
         {

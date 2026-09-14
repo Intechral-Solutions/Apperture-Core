@@ -86,4 +86,43 @@ public sealed class SchedulesControllerReactivationGuardTests
         var badRequest = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
         badRequest.Value.Should().BeEquivalentTo(new { error = "Something else went wrong." });
     }
+
+    /// <summary>
+    /// Important #3 (reviewer): <see cref="SchedulesController.Enable"/> has the exact same defect the
+    /// carried-forward ruling fixed for <see cref="SchedulesController.Update"/> -- <c>EnableAsync</c> can
+    /// throw <see cref="ResourceContextArchivedException"/> via the reactivation guard (the canonical
+    /// §6.5 operator action this feature exists to guard), but the bare
+    /// <c>catch (InvalidOperationException)</c> reported a bodyless 404 "not found".
+    /// </summary>
+    [Fact]
+    public async Task Enable_WhenReactivationGuardThrowsResourceContextArchived_Returns409WithMessage()
+    {
+        var scheduleManagement = new Mock<IScheduleManagementService>();
+        scheduleManagement
+            .Setup(s => s.EnableAsync(It.IsAny<ScheduleId>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ResourceContextArchivedException(
+                new ResourceContextId("app-a"),
+                "Canvas",
+                "ResourceContext 'Canvas' (app-a) is archived and cannot own new resources."));
+        var controller = NewController(scheduleManagement);
+
+        var result = await controller.Enable("s1", CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new { error = "ResourceContext 'Canvas' (app-a) is archived and cannot own new resources." });
+    }
+
+    [Fact]
+    public async Task Enable_WhenPlainInvalidOperationException_StillReturns404()
+    {
+        var scheduleManagement = new Mock<IScheduleManagementService>();
+        scheduleManagement
+            .Setup(s => s.EnableAsync(It.IsAny<ScheduleId>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Schedule 's1' not found."));
+        var controller = NewController(scheduleManagement);
+
+        var result = await controller.Enable("s1", CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
 }

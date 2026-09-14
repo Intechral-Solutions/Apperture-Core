@@ -27,21 +27,9 @@ public sealed class ResourceContextsController(
     IPrincipalContext principalContext,
     IAuthorizationEvaluationService authorizationEvaluation) : ControllerBase
 {
-    public sealed record ResourceContextDto(
-        string Id, string Name, string Slug, string Kind, string State,
-        string? Description, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
-
-    public sealed record CreateResourceContextRequest(string Name, string? Slug, string? Description);
-
-    public sealed record UpdateResourceContextRequest(string? Name, string? Slug, string? Description);
-
-    public sealed record ResourceContextOwnershipSummaryDto(
-        int? LiveIntegrations, int? RetiredIntegrations,
-        int? ActiveConnections, int? RetiredConnections,
-        int? EnabledSchedules, int? DisabledSchedules);
-
     /// <summary>Lists ResourceContexts. No permission required beyond authentication (§9.2).</summary>
     [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyList<ResourceContextDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<ResourceContextDto>>> List([FromQuery] bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         var contexts = await management.ListAsync(includeArchived, cancellationToken).ConfigureAwait(false);
@@ -50,6 +38,8 @@ public sealed class ResourceContextsController(
 
     /// <summary>Gets a ResourceContext by id. No permission required beyond authentication (§9.2).</summary>
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(ResourceContextDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ResourceContextDto>> Get(string id, CancellationToken cancellationToken = default)
     {
         var context = await management.GetAsync(new ResourceContextId(id), cancellationToken).ConfigureAwait(false);
@@ -58,6 +48,9 @@ public sealed class ResourceContextsController(
 
     /// <summary>Creates a new Application ResourceContext. Requires <c>resource_context.manage</c>.</summary>
     [HttpPost]
+    [ProducesResponseType(typeof(ResourceContextDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<ResourceContextDto>> Create([FromBody] CreateResourceContextRequest request, CancellationToken cancellationToken = default)
     {
         try
@@ -69,12 +62,22 @@ public sealed class ResourceContextsController(
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
-    /// <summary>Updates name, slug and/or description. Requires <c>resource_context.manage</c>.</summary>
+    /// <summary>
+    /// Updates name, slug and/or description. Requires <c>resource_context.manage</c>. Rejected (409,
+    /// deterministically via the domain <see cref="ResourceContext.IsReserved"/> flag, never by
+    /// string-matching the exception message) for the reserved Shared context.
+    /// </summary>
     [HttpPatch("{id}")]
+    [ProducesResponseType(typeof(ResourceContextDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ResourceContextDto>> Update(string id, [FromBody] UpdateResourceContextRequest request, CancellationToken cancellationToken = default)
     {
         var resourceContextId = new ResourceContextId(id);
-        if (await management.GetAsync(resourceContextId, cancellationToken).ConfigureAwait(false) is null)
+        var context = await management.GetAsync(resourceContextId, cancellationToken).ConfigureAwait(false);
+        if (context is null)
             return NotFound();
 
         try
@@ -83,20 +86,35 @@ public sealed class ResourceContextsController(
             return Ok(ToDto(updated));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase)) { return Conflict(new { error = ex.Message }); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            // A caller without resource_context.manage is rejected above (UnauthorizedAccessException,
+            // checked first) regardless of the target; only once authorized does the deterministic
+            // IsReserved flag (never the exception message) decide reserved-vs-ordinary-validation.
+            return context.IsReserved
+                ? Conflict(new { error = $"The reserved ResourceContext '{context.Name}' cannot be modified." })
+                : BadRequest(new { error = ex.Message });
+        }
     }
 
     /// <summary>
-    /// Archives a ResourceContext. Requires <c>resource_context.manage</c>. Rejected (409) for the
-    /// reserved Shared context, and (409, with the ownership summary as the body) while the context
-    /// still owns a live resource (§6.5).
+    /// Archives a ResourceContext. Requires <c>resource_context.manage</c>. Rejected (409, with a plain
+    /// <c>{ error }</c> body, decided deterministically via <see cref="ResourceContext.IsReserved"/>) for
+    /// the reserved Shared context, and (409, with the ownership summary as the body) while the context
+    /// still owns a live resource (§6.5). These are semantically different failures, so the two 409s
+    /// intentionally carry different body shapes.
     /// </summary>
     [HttpPost("{id}/archive")]
+    [ProducesResponseType(typeof(ResourceContextDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ResourceContextOwnershipSummaryDto), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ResourceContextDto>> Archive(string id, CancellationToken cancellationToken = default)
     {
         var resourceContextId = new ResourceContextId(id);
-        if (await management.GetAsync(resourceContextId, cancellationToken).ConfigureAwait(false) is null)
+        var context = await management.GetAsync(resourceContextId, cancellationToken).ConfigureAwait(false);
+        if (context is null)
             return NotFound();
 
         try
@@ -105,9 +123,15 @@ public sealed class ResourceContextsController(
             return Ok(ToDto(archived));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase)) { return Conflict(new { error = ex.Message }); }
         catch (InvalidOperationException)
         {
+            // A caller without resource_context.manage is rejected above (UnauthorizedAccessException,
+            // checked first) regardless of the target. Only once authorized does the deterministic
+            // IsReserved flag (never the exception message, which interpolates the context's display
+            // NAME and can itself contain the word "reserved") decide which 409 body shape applies.
+            if (context.IsReserved)
+                return Conflict(new { error = $"The reserved ResourceContext '{context.Name}' cannot be archived." });
+
             var summary = await management.GetOwnershipSummaryAsync(resourceContextId, cancellationToken).ConfigureAwait(false);
             return Conflict(new ResourceContextOwnershipSummaryDto(
                 summary.LiveIntegrations, summary.RetiredIntegrations,
@@ -118,6 +142,9 @@ public sealed class ResourceContextsController(
 
     /// <summary>Returns an archived ResourceContext to Active. Requires <c>resource_context.manage</c>.</summary>
     [HttpPost("{id}/unarchive")]
+    [ProducesResponseType(typeof(ResourceContextDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ResourceContextDto>> Unarchive(string id, CancellationToken cancellationToken = default)
     {
         var resourceContextId = new ResourceContextId(id);
@@ -139,6 +166,7 @@ public sealed class ResourceContextsController(
     /// masking is the only gate.
     /// </summary>
     [HttpGet("summary")]
+    [ProducesResponseType(typeof(IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>>> Summary(CancellationToken cancellationToken = default)
     {
         var summaries = await management.GetOwnershipSummariesAsync(cancellationToken).ConfigureAwait(false);
@@ -178,6 +206,20 @@ public sealed class ResourceContextsController(
     }
 
     private static ResourceContextDto ToDto(ResourceContext context) => new(
-        context.Id.Value, context.Name, context.Slug, context.Kind, context.State,
+        context.Id.Value, context.Name, context.Slug, context.Kind, context.State, context.IsReserved,
         context.Description, context.CreatedAtUtc, context.UpdatedAtUtc);
 }
+
+public sealed record ResourceContextDto(
+    string Id, string Name, string Slug, string Kind, string State, bool IsReserved,
+    string? Description, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
+
+public sealed record CreateResourceContextRequest(string Name, string? Slug, string? Description);
+
+public sealed record UpdateResourceContextRequest(string? Name, string? Slug, string? Description);
+
+/// <summary>Per-family ownership counts for one ResourceContext, masked per caller by <see cref="ResourceContextsController.Summary"/> (§9.2).</summary>
+public sealed record ResourceContextOwnershipSummaryDto(
+    int? LiveIntegrations, int? RetiredIntegrations,
+    int? ActiveConnections, int? RetiredConnections,
+    int? EnabledSchedules, int? DisabledSchedules);

@@ -8,10 +8,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
-using ResourceContextDto = Apperture.Management.Api.Controllers.ResourceContextsController.ResourceContextDto;
-using CreateResourceContextRequest = Apperture.Management.Api.Controllers.ResourceContextsController.CreateResourceContextRequest;
-using UpdateResourceContextRequest = Apperture.Management.Api.Controllers.ResourceContextsController.UpdateResourceContextRequest;
-using ResourceContextOwnershipSummaryDto = Apperture.Management.Api.Controllers.ResourceContextsController.ResourceContextOwnershipSummaryDto;
 
 namespace Apperture.UnitTests.ResourceContexts;
 
@@ -47,7 +43,9 @@ public sealed class ResourceContextsControllerTests
 
         var result = await controller.Get(ResourceContextIds.SharedValue, CancellationToken.None);
 
-        OkValue<ResourceContextDto>(result.Result).Slug.Should().Be("shared");
+        var dto = OkValue<ResourceContextDto>(result.Result);
+        dto.Slug.Should().Be("shared");
+        dto.IsReserved.Should().BeTrue("the reviewer flagged IsReserved as missing from the DTO -- it must round-trip from the domain record");
     }
 
     [Fact]
@@ -99,6 +97,34 @@ public sealed class ResourceContextsControllerTests
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
+    /// <summary>
+    /// Reviewer finding (Important #2b): Create and Update disagreed on the status code for the exact
+    /// same "slug is reserved" validation error (400 vs 409, via message string-matching). Both must now
+    /// agree, since IsReserved-based 409 no longer overlaps with this ordinary validation failure.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithSystemReservedSlug_Returns400()
+    {
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var controller = NewController(harness.Service);
+
+        var result = await controller.Create(new CreateResourceContextRequest("System", "system", null), CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Update_WithSystemReservedSlug_Returns400_MatchingCreate()
+    {
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Canvas", slug: null, description: null, CancellationToken.None);
+        var controller = NewController(harness.Service);
+
+        var result = await controller.Update(created.Id.Value, new UpdateResourceContextRequest(null, "system", null), CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>("this is the same 'slug is reserved' validation failure Create maps to 400");
+    }
+
     // -------------------------------------------------------------------------------------------
     // Update
     // -------------------------------------------------------------------------------------------
@@ -123,6 +149,23 @@ public sealed class ResourceContextsControllerTests
         var result = await controller.Update(ResourceContextIds.SharedValue, new UpdateResourceContextRequest("Renamed", null, null), CancellationToken.None);
 
         result.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    /// <summary>
+    /// Critical #1 (reviewer): the existing <see cref="Update_OnShared_Returns409"/> test only sends a
+    /// <c>name</c>, so it never exercised the description-only path -- which, before the fix to
+    /// <c>ResourceContextService.UpdateDescriptionAsync</c>, silently mutated Shared and returned 200.
+    /// </summary>
+    [Fact]
+    public async Task Update_OnShared_WithOnlyDescription_Returns409()
+    {
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var controller = NewController(harness.Service);
+
+        var result = await controller.Update(ResourceContextIds.SharedValue, new UpdateResourceContextRequest(null, null, "New description"), CancellationToken.None);
+
+        result.Result.Should().BeOfType<ConflictObjectResult>();
+        (await harness.Service.GetAsync(ResourceContextIds.Shared, CancellationToken.None))!.Description.Should().BeNull("the 409 must mean nothing was mutated");
     }
 
     [Fact]
@@ -186,6 +229,30 @@ public sealed class ResourceContextsControllerTests
 
         var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
         var body = (ResourceContextOwnershipSummaryDto)conflict.Value!;
+        body.LiveIntegrations.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Important #2a (reviewer): the archive-blocked message interpolates the context's display NAME
+    /// ("Cannot archive ResourceContext '{Name}' ..."), so a context literally named "Reserved Capacity"
+    /// used to match the old <c>ex.Message.Contains("reserved")</c> filter and return a plain
+    /// <c>{ error }</c> 409 instead of the required <see cref="ResourceContextsController.ResourceContextOwnershipSummaryDto"/>
+    /// body -- breaking the contract Plan 3's UI depends on. The fix branches on the real
+    /// <c>IsReserved</c> domain flag instead of string-matching the message, so this must now still
+    /// return the full ownership-summary body.
+    /// </summary>
+    [Fact]
+    public async Task Archive_WhenBlockedAndNameContainsTheWordReserved_StillReturnsOwnershipSummaryBody()
+    {
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Reserved Capacity", slug: null, description: null, CancellationToken.None);
+        await harness.SeedLiveIntegration(created.Id);
+        var controller = NewController(harness.Service);
+
+        var result = await controller.Archive(created.Id.Value, CancellationToken.None);
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var body = conflict.Value.Should().BeOfType<ResourceContextOwnershipSummaryDto>().Subject;
         body.LiveIntegrations.Should().Be(1);
     }
 

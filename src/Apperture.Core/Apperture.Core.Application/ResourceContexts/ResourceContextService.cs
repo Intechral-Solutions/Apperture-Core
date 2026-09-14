@@ -104,6 +104,8 @@ public sealed class ResourceContextService : IResourceContextService
     public async ValueTask<ResourceContext> UpdateDescriptionAsync(ResourceContextId id, string? description, CancellationToken cancellationToken = default)
     {
         var existing = await GetRequiredAsync(id, cancellationToken).ConfigureAwait(false);
+        EnsureNotReserved(existing, "described");
+
         var next = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         return await SaveAsync(existing with { Description = next }, cancellationToken).ConfigureAwait(false);
     }

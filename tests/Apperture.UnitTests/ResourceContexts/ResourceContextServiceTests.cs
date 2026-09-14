@@ -68,6 +68,21 @@ public sealed class ResourceContextServiceTests
     }
 
     /// <summary>
+    /// Reviewer finding (Critical #1): unlike RenameAsync/ChangeSlugAsync, UpdateDescriptionAsync had no
+    /// EnsureNotReserved guard at all, so PATCH shared { description } silently mutated the reserved
+    /// Shared context and returned 200 -- violating the "Shared mutation attempts must fail" constraint.
+    /// </summary>
+    [Fact]
+    public async Task Shared_CannotBeDescribed()
+    {
+        var (service, _) = ResourceContextTestFactory.CreateWithShared();
+
+        var act = async () => await service.UpdateDescriptionAsync(ResourceContextIds.Shared, "New description");
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*cannot be described*");
+    }
+
+    /// <summary>
     /// Historical provenance resolves a recorded ResourceContextId back to its row for display, so a row
     /// must never physically disappear. Archive is the only retirement path.
     /// </summary>
