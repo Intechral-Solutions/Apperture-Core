@@ -69,6 +69,23 @@ public sealed class ResourceContextReactivationGuardTests
     }
 
     /// <summary>
+    /// Positive-path check for the guard above: enabling a Schedule owned by an active (never
+    /// archived) ResourceContext must succeed exactly as before the guard was added.
+    /// </summary>
+    [Fact]
+    public async Task EnableSchedule_UnderAnActiveContext_Succeeds()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        await harness.Schedules.EnableAsync(schedule.Id);
+
+        var updated = await harness.Schedules.GetDefinitionAsync(schedule.Id);
+        updated!.Enabled.Should().BeTrue();
+    }
+
+    /// <summary>
     /// Closes the inherit-on-create gap (§6.5, D2): creating an Integration-attached Schedule with
     /// no explicit ResourceContext inherits the Integration's context without going through
     /// <c>ResolveForNewOwnershipAsync</c>'s Active check, unlike the standalone and
