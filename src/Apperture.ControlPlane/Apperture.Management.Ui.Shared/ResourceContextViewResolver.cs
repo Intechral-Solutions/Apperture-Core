@@ -25,20 +25,23 @@ public enum ResourceContextViewNoticeKind
     /// <summary>
     /// A remembered view (tab state or localStorage) named an archived context. Resolution fell back
     /// to All; the localStorage entry has been (or will be) rewritten to <c>all</c>. §4.3 Q5 calls for
-    /// a one-time info toast, e.g. "&lt;Name&gt; is archived. Showing all applications."
+    /// a one-time info toast, e.g. "&lt;Name&gt; is archived. Showing all." (Plan 4 Task 2: rendered by
+    /// <c>ResourceContextViewNotices</c>.)
     /// </summary>
     ArchivedRemembered,
 
     /// <summary>
     /// An explicit <c>?context=</c> URL named an archived context. Honoured as-is (not replaced).
     /// §4.3 Q5 calls for a page banner, e.g. "&lt;Name&gt; is archived.", with a "View all" action.
+    /// (Plan 4 Task 2: rendered by <c>ResourceContextViewNotices</c>.)
     /// </summary>
     ArchivedExplicit,
 
     /// <summary>
     /// An explicit <c>?context=</c> URL named an id absent from both the active and archived lists.
-    /// §4.3's "Unknown id in URL" row calls for an error state, "That application doesn't exist.",
-    /// with a "View all" action -- not a silent fallback.
+    /// §4.3's "Unknown id in URL" row calls for an error state, "That context doesn't exist.", with a
+    /// "View all" action -- not a silent fallback. (Plan 4 Task 2: rendered by
+    /// <c>ResourceContextViewNotices</c>.)
     /// </summary>
     UnknownId
 }

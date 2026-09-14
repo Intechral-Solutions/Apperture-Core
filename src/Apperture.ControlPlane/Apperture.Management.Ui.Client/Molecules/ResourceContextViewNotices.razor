@@ -1,0 +1,89 @@
+@* CTX-3A Plan 4 (Task 2): surfaces Plan 3's ResourceContextViewResolver notices (§4.3 Q5) -- the
+   ArchivedRemembered/ArchivedExplicit/UnknownId notices existed since Plan 3 but had no UI consumer
+   anywhere in this app until now. Hosted once in MainLayout, above @Body, so every scoped list page
+   (Tasks 3-5's Connections/Schedules/Runs included) gets this for free without its own wiring.
+
+   Shown only on Scoped routes (ResourceContextViewRoutes) -- Notice is set by the last resolution on a
+   scoped page and is not cleared just because the operator navigated to an Unscoped route afterward, so
+   the Scoped-route gate (not just Notice.Kind) is what makes the banner/message disappear on navigating
+   away. *@
+@using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@implements IDisposable
+@inject ResourceContextViewState ViewState
+@inject NavigationManager Nav
+@inject IToastService Toasts
+
+@if (ShowArchivedExplicitBanner)
+{
+    <PageMessage Kind="PageMessageKind.Warning" Message="@($"{ArchivedExplicitName} is archived.")">
+        <a href="@ViewAllHref" class="text-sm underline">View all</a>
+    </PageMessage>
+}
+else if (ShowUnknownIdMessage)
+{
+    <PageMessage Kind="PageMessageKind.Error" Message="That context doesn't exist.">
+        <a href="@ViewAllHref" class="text-sm underline">View all</a>
+    </PageMessage>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        ViewState.Changed += OnViewChanged;
+        Nav.LocationChanged += OnLocationChanged;
+
+        // App.razor awaits ViewState.InitializeAsync() before the shell ever reveals @Body, so a Notice
+        // from that very first resolution can already be sitting on ViewState by the time this
+        // component mounts -- ViewState.Changed will not fire again to tell us about it, so we must
+        // process whatever is already there ourselves before ever rendering.
+        ProcessOneTimeNotice();
+    }
+
+    private void OnViewChanged() =>
+        _ = InvokeAsync(() =>
+        {
+            ProcessOneTimeNotice();
+            StateHasChanged();
+        });
+
+    // Not every navigation that should hide this component's banner/message raises ViewState.Changed
+    // (e.g. leaving a Scoped route for an Unscoped one does not re-resolve at all) -- re-render on every
+    // navigation so the Scoped-route gate below is re-evaluated.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// ArchivedRemembered is a one-time toast (§4.3 Q5): consume it via <see cref="ResourceContextViewState.ConsumeNotice"/>
+    /// so it fires exactly once, unlike ArchivedExplicit/UnknownId below which stay visible for as long
+    /// as the current scoped-page resolution still reports them.
+    /// </summary>
+    private void ProcessOneTimeNotice()
+    {
+        if (!IsScopedRoute || ViewState.Notice.Kind != ResourceContextViewNoticeKind.ArchivedRemembered)
+            return;
+
+        var notice = ViewState.ConsumeNotice();
+        var name = ViewState.DescribeContext(notice.ResourceContextId!);
+        Toasts.Show(ToastSeverity.Info, $"{name} is archived. Showing all.");
+    }
+
+    private bool IsScopedRoute =>
+        ResourceContextViewRoutes.Resolve(new Uri(Nav.Uri).AbsolutePath) == ResourceContextViewMode.Scoped;
+
+    private bool ShowArchivedExplicitBanner =>
+        IsScopedRoute && ViewState.Notice.Kind == ResourceContextViewNoticeKind.ArchivedExplicit;
+
+    private bool ShowUnknownIdMessage =>
+        IsScopedRoute && ViewState.Notice.Kind == ResourceContextViewNoticeKind.UnknownId;
+
+    private string ArchivedExplicitName => ViewState.DescribeContext(ViewState.Notice.ResourceContextId!);
+
+    private string ViewAllHref => new Uri(Nav.Uri).AbsolutePath + "?context=all";
+
+    public void Dispose()
+    {
+        ViewState.Changed -= OnViewChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

@@ -40,9 +40,12 @@ public sealed class ResourceContextViewState(
 {
     private const string QueryParamName = "context";
 
+    public const string UnknownContextLabel = "Unknown context";
+
     private ResourceContextViewScope? _tabState;
     private IReadOnlyList<ResourceContextDto> _knownContexts = [];
     private bool _locationChangedSubscribed;
+    private readonly HashSet<string> _refreshAttemptedFor = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Set for the duration of a <see cref="NavigationManager.NavigateTo(string, bool)"/> call this
@@ -98,6 +101,39 @@ public sealed class ResourceContextViewState(
     public ResourceContextDto? FindContext(string id) =>
         _knownContexts.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
 
+    /// <summary>Every known context: Shared plus active and archived Applications.</summary>
+    public IReadOnlyList<ResourceContextDto> KnownContexts => _knownContexts;
+
+    /// <summary>
+    /// Refreshes the active+archived context list once if any id is missing from it, then raises
+    /// <see cref="Changed"/>. An id that stays missing is not refreshed again for the life of the tab.
+    /// Does not re-resolve the view or navigate.
+    /// </summary>
+    public async ValueTask EnsureContextsKnownAsync(IEnumerable<string?> ids)
+    {
+        var missing = ids
+            .Where(id => !string.IsNullOrWhiteSpace(id) && FindContext(id!) is null && !_refreshAttemptedFor.Contains(id!))
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (missing.Count == 0)
+            return;
+
+        foreach (var id in missing)
+            _refreshAttemptedFor.Add(id);
+
+        await RefreshKnownContextsOnlyAsync();
+        Changed?.Invoke();
+    }
+
+    /// <summary>Operator-facing name for a context id: its name, suffixed " (archived)" when archived, or <see cref="UnknownContextLabel"/>.</summary>
+    public string DescribeContext(string resourceContextId) =>
+        FindContext(resourceContextId) is { } context
+            ? string.Equals(context.State, ResourceContextStates.Archived, StringComparison.Ordinal)
+                ? $"{context.Name} (archived)"
+                : context.Name
+            : UnknownContextLabel;
+
     /// <summary>Loads the known ResourceContexts and resolves the initial view. Call once during shell bootstrap.</summary>
     public async ValueTask InitializeAsync()
     {
@@ -119,6 +155,10 @@ public sealed class ResourceContextViewState(
     /// </summary>
     public async ValueTask RefreshContextsAsync()
     {
+        // A context created/unarchived by this mutation may be one EnsureContextsKnownAsync already
+        // gave up on earlier in the tab -- clear that memory so it can be resolved again now that the
+        // list is being refreshed for an actual reason, rather than staying "known missing" forever.
+        _refreshAttemptedFor.Clear();
         _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
         await ResolveForCurrentPathAsync();
         Changed?.Invoke();

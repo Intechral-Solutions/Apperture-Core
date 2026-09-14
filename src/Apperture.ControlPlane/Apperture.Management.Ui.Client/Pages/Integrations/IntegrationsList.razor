@@ -1,4 +1,5 @@
 @page "/integrations"
+@using Apperture.Core.Domain.ResourceContexts
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Organisms
@@ -7,6 +8,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4">
     <PageHeader Title="Integrations" Subtitle="Status and health across your integrations. Open a row for issues, schedules, recent outcomes, and next actions.">
@@ -32,6 +34,11 @@
     {
         <ForbiddenState Message="You do not have permission to view integrations." />
     }
+    else if (_context.State == ScopedListContextState.UnknownContext)
+    {
+        @* The "that context doesn't exist" message is surfaced by ResourceContextViewNotices, hosted
+           once in MainLayout above the page body -- render nothing here. *@
+    }
     else if (!string.IsNullOrEmpty(_error))
     {
         <ErrorState Message="@_error" />
@@ -44,9 +51,31 @@
     {
         @if (FiltersActive)
         {
+            @* The advanced fleet filters (State/Runnable/etc.) are a separate narrowing from context
+               scoping -- "no rows match the filters" stays the actionable message (Clear filters) even
+               when a context is also selected; R6's scoped empty state below is for the filters-off
+               case, where "in {context}" is itself the reason the list is empty. *@
             <EmptyState Title="No matches"
                         Message="No integrations match the current filters. Clear filters or adjust criteria.">
                 <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
+            </EmptyState>
+        }
+        else if (_context.State == ScopedListContextState.Ready && !_context.IsAll)
+        {
+            @* R6: the scoped empty state replaces the unscoped "no integrations at all" message when a
+               specific context is selected -- never show the unscoped copy here. *@
+            var scopedContextName = ViewState.DescribeContext(_context.ApiFilter!);
+            var scopedContextIsArchived = ViewState.FindContext(_context.ApiFilter!) is { } scopedContext
+                && string.Equals(scopedContext.State, ResourceContextStates.Archived, StringComparison.Ordinal);
+            <EmptyState Title="No integrations"
+                        Message="@($"No integrations in {scopedContextName}.")">
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <a href="?context=all" class="ui-toolbar-btn">View all</a>
+                    @if (!scopedContextIsArchived && _capabilities?.CanManageIntegrations == true)
+                    {
+                        <a href="@($"/integrations/new?context={Uri.EscapeDataString(_context.ApiFilter!)}")" class="ui-toolbar-btn">Create integration in @scopedContextName</a>
+                    }
+                </div>
             </EmptyState>
         }
         else
@@ -177,6 +206,10 @@
                         <th class="px-3 py-2">Recent outcomes (7d)</th>
                         <th class="px-3 py-2">Schedules</th>
                         <th class="px-3 py-2">Attention</th>
+                        @if (ViewState.SelectorVisible && _context.IsAll)
+                        {
+                            <th class="px-3 py-2">Context</th>
+                        }
                         <th class="px-3 py-2"></th>
                     </tr>
                 </thead>
@@ -294,6 +327,12 @@
                                     <div class="font-mono">@string.Join(", ", row.AttentionTokens)</div>
                                 </details>
                             </td>
+                            @if (ViewState.SelectorVisible && _context.IsAll)
+                            {
+                                <td class="px-3 py-2 text-sm">
+                                    @(string.IsNullOrWhiteSpace(row.ResourceContextId) ? "—" : ViewState.DescribeContext(row.ResourceContextId))
+                                </td>
+                            }
                             <td class="px-3 py-2 whitespace-nowrap" @onclick:stopPropagation="true">
                                 <a href="@("/integrations/" + Uri.EscapeDataString(row.Id))" class="mr-2 underline text-sm">Open</a>
                                 @if (_capabilities?.CanManageIntegrations == true &&
@@ -357,6 +396,12 @@
 
     private bool _showNeedsAttentionOnly;
 
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
+    private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
+    private string? _loadedContextValue;
+
     private IEnumerable<IntegrationFleetRowDto> DisplayFleet
     {
         get
@@ -386,9 +431,22 @@
             _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
+    }
 
-        if (_capabilities?.CanViewIntegrations == true)
-            await LoadAsync();
+    protected override async Task OnParametersSetAsync()
+    {
+        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        if (_context.State == ScopedListContextState.UnknownContext)
+        {
+            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
+            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        }
+
+        if (_context.State != ScopedListContextState.Ready || _context.QueryValue == _loadedContextValue)
+            return;
+
+        _loadedContextValue = _context.QueryValue;
+        await LoadAsync();
     }
 
     private async Task LoadAsync()
@@ -406,8 +464,11 @@
                 VerificationConcern: ParseNullableBool(_filterVerificationConcern),
                 HasOperationalFailure: ParseNullableBool(_filterHasOperationalFailure),
                 HasUnexpectedSilence: ParseNullableBool(_filterHasUnexpectedSilence),
-                Sort: string.IsNullOrWhiteSpace(_sort) ? null : _sort);
-            _fleet = await Client.GetIntegrationFleetAsync(q);
+                Sort: string.IsNullOrWhiteSpace(_sort) ? null : _sort,
+                Context: _context.ApiFilter);
+            var rows = await Client.GetIntegrationFleetAsync(q);
+            _fleet = rows;
+            await ViewState.EnsureContextsKnownAsync(rows.Select(r => r.ResourceContextId));
         }
         catch (HttpRequestException ex)
         {

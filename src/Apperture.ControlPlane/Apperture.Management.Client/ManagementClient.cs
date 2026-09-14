@@ -667,6 +667,8 @@ public sealed class ManagementClient : IManagementClient
             parts.Add($"attention={Uri.EscapeDataString(q.Attention)}");
         if (!string.IsNullOrWhiteSpace(q.Sort))
             parts.Add($"sort={Uri.EscapeDataString(q.Sort)}");
+        if (!string.IsNullOrWhiteSpace(q.Context))
+            parts.Add($"contextId={Uri.EscapeDataString(q.Context)}");
         return parts.Count == 0 ? "integrations/fleet" : $"integrations/fleet?{string.Join("&", parts)}";
     }
 

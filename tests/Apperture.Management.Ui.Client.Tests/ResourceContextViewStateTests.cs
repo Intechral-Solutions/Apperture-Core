@@ -268,6 +268,60 @@ public class ResourceContextViewStateTests
         state.ConsumeNotice().Kind.Should().Be(ResourceContextViewNoticeKind.None, "a second consume must return None, not the stale notice");
     }
 
+    [Fact]
+    public async Task EnsureContextsKnownAsync_MissingId_RefreshesOnce_ThenDescribesArchivedName()
+    {
+        var client = new Mock<IManagementClient>();
+        client.SetupSequence(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[])
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A", archived: true)]);
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.EnsureContextsKnownAsync(["app-a"]);
+
+        state.DescribeContext("app-a").Should().Be("App A (archived)");
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task EnsureContextsKnownAsync_StillMissing_DescribesUnknownContext_AndDoesNotRefreshAgain()
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[]);
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.EnsureContextsKnownAsync(["gone"]);
+        await state.EnsureContextsKnownAsync(["gone"]);
+
+        state.DescribeContext("gone").Should().Be(ResourceContextViewState.UnknownContextLabel);
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2)); // InitializeAsync + one refresh
+    }
+
+    [Theory]
+    [InlineData("/integrations")]
+    [InlineData("/connections")]
+    [InlineData("/schedules")]
+    public async Task SetExplicitAsync_OnScopedListPage_RewritesContextInTheUrl(string path)
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A")]);
+        var nav = new TestNavigationManager("https://localhost/", $"https://localhost{path}?context=all");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+        nav.Navigations.Clear();
+
+        await state.SetExplicitAsync(ResourceContextViewScope.Of("app-a"));
+
+        nav.Uri.Should().Be($"https://localhost{path}?context=app-a");
+        nav.Navigations.Should().ContainSingle(n => n.Replace == false);
+    }
+
     private sealed class FakeJsRuntime : IJSRuntime
     {
         public Dictionary<string, string?> Stored { get; } = new();
