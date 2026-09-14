@@ -1,0 +1,45 @@
+@implements IDisposable
+@using Apperture.Management.Ui.Client.Services
+@inject ResourceContextViewState ViewState
+
+@if (_ready && ViewState.SelectorVisible)
+{
+    if (string.IsNullOrWhiteSpace(ResourceContextId))
+    {
+        if (ShowNotRecorded)
+        {
+            <span class="ui-ownership-chip ui-ownership-chip--muted">Context not recorded</span>
+        }
+    }
+    else if (ViewState.FindContext(ResourceContextId) is null)
+    {
+        <span class="ui-ownership-chip ui-ownership-chip--muted">@ResourceContextViewState.UnknownContextLabel</span>
+    }
+    else
+    {
+        <a href="@($"/config/applications/{Uri.EscapeDataString(ResourceContextId)}")" class="ui-ownership-chip" title="Owning context">
+            Context: @ViewState.DescribeContext(ResourceContextId)
+        </a>
+    }
+}
+
+@code {
+    [Parameter] public string? ResourceContextId { get; set; }
+
+    /// <summary>Run detail only: render "Context not recorded" for a null historical snapshot.</summary>
+    [Parameter] public bool ShowNotRecorded { get; set; }
+
+    private bool _ready;
+
+    protected override void OnInitialized() => ViewState.Changed += OnViewStateChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ViewState.EnsureContextsKnownAsync([ResourceContextId]);
+        _ready = true;
+    }
+
+    private void OnViewStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ViewState.Changed -= OnViewStateChanged;
+}
