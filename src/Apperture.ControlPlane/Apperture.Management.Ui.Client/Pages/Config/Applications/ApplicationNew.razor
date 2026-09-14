@@ -1,0 +1,165 @@
+@page "/config/applications/new"
+@layout ConfigLayout
+@using Apperture.Core.Domain.ResourceContexts
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config" Title="New application" Subtitle="Group integrations, connections and schedules under one application.">
+        <Toolbar>
+            <a href="/config/applications" class="ui-toolbar-btn">Back to applications</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (!_canManage)
+    {
+        <ForbiddenState Message="You do not have permission to create applications." />
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <ManagementSection Title="Application details" Layer="ManagementSection.UiLayer.Detail">
+            <div class="space-y-4 text-sm text-body">
+                <div>
+                    <label class="block text-xs text-muted" for="new-application-name">Name</label>
+                    <input id="new-application-name"
+                           class="ui-input mt-1"
+                           @bind="_name"
+                           @bind:event="oninput"
+                           disabled="@_saving"
+                           placeholder="e.g. Billing Platform" />
+                </div>
+                <div>
+                    <label class="block text-xs text-muted" for="new-application-description">Description</label>
+                    <textarea id="new-application-description"
+                              class="ui-input mt-1 w-full"
+                              @bind="_description"
+                              disabled="@_saving"
+                              placeholder="Optional"></textarea>
+                </div>
+
+                <ManagementAdvancedSection Title="Advanced">
+                    <div>
+                        <label class="block text-xs text-muted" for="new-application-slug">Slug</label>
+                        <input id="new-application-slug"
+                               class="ui-input mt-1 font-mono text-sm"
+                               @bind="_slug"
+                               @bind:event="oninput"
+                               disabled="@_saving"
+                               placeholder="@SlugPreview" />
+                        <p class="mt-1 text-xs text-muted">
+                            Used only in future slug-addressed routes. Safe to leave blank — it will be derived as
+                            <span class="font-mono">@(string.IsNullOrEmpty(SlugPreview) ? "—" : SlugPreview)</span>.
+                        </p>
+                    </div>
+                </ManagementAdvancedSection>
+
+                <FormValidationFeedback Visible="@_showFormAttention" Message="Enter a name for the application." />
+
+                <div class="flex gap-2 pt-2">
+                    <ActionButton @ref="_createButton"
+                                  Variant="ActionButtonVariant.Primary"
+                                  DefaultText="Create application"
+                                  ActiveText="Creating…"
+                                  SuccessText="Created"
+                                  ErrorText="Create failed"
+                                  OnClick="HandleCreateClick" />
+                    <a href="/config/applications" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </ManagementSection>
+    }
+</div>
+
+@code {
+    private bool _capabilitiesLoaded;
+    private bool _canManage;
+    private string? _error;
+    private bool _saving;
+    private bool _showFormAttention;
+    private ActionButton? _createButton;
+
+    private string _name = "";
+    private string _description = "";
+    private string _slug = "";
+
+    /// <summary>
+    /// Live, display-only preview of the slug that will be derived from <see cref="_name"/> if the
+    /// operator leaves the Slug field blank. Uses the same normalization the server applies
+    /// authoritatively on submit (<see cref="ResourceContextSlug.TryNormalize"/>); this preview is
+    /// cosmetic only and never bypasses server-side validation.
+    /// </summary>
+    private string SlugPreview => ResourceContextSlug.TryNormalize(_name, out var normalized) ? normalized : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync();
+            _canManage = caps.CanManageResourceContexts;
+        }
+        catch
+        {
+            _canManage = false;
+        }
+        _capabilitiesLoaded = true;
+    }
+
+    private Task HandleCreateClick(MouseEventArgs _) => CreateAsync();
+
+    private async Task CreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            _showFormAttention = true;
+            return;
+        }
+
+        _showFormAttention = false;
+        _saving = true;
+        if (_createButton is not null)
+            await _createButton.SetStateAsync(ActionButtonState.Active);
+        _error = null;
+        try
+        {
+            var effectiveSlug = string.IsNullOrWhiteSpace(_slug) ? SlugPreview : _slug.Trim();
+            var created = await Client.CreateResourceContextAsync(new CreateResourceContextRequest(
+                _name.Trim(),
+                string.IsNullOrWhiteSpace(effectiveSlug) ? null : effectiveSlug,
+                string.IsNullOrWhiteSpace(_description) ? null : _description.Trim()));
+
+            Toasts.Show(ToastSeverity.Success, $"Created '{created.Name}'.");
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Success);
+            Nav.NavigateTo($"/config/applications/{created.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_createButton is not null)
+                await _createButton.SetStateAsync(ActionButtonState.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
