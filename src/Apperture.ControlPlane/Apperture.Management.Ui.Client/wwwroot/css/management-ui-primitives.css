@@ -1102,7 +1102,13 @@ a.ui-toolbar-btn--danger:hover {
 }
 
 .ui-topbar__orientation {
-  overflow: hidden;
+  /* CTX-3A Task 7: was `overflow: hidden`, but this element now also hosts ViewSelector's
+     absolutely-positioned dropdown panel as a sibling of the breadcrumb/title content, and hidden
+     overflow clipped that panel the instant it opened. Breadcrumb/title truncation does not depend
+     on this rule -- TopBarOrientation.razor's title/subtitle spans carry their own self-contained
+     `.truncate` (overflow: hidden; text-overflow: ellipsis; white-space: nowrap) -- so this can
+     safely match `.ui-topbar__utilities`' existing `overflow: visible` precedent. */
+  overflow: visible;
 }
 
 .ui-topbar-orientation {

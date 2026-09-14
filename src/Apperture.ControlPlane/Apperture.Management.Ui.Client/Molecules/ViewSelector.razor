@@ -158,7 +158,7 @@
     private string DescribeSelectedApp(string? resourceContextId) =>
         resourceContextId is null
             ? "No application selected"
-            : ActiveApplications.FirstOrDefault(a => a.Id == resourceContextId)?.Name ?? resourceContextId;
+            : ActiveApplications.FirstOrDefault(a => string.Equals(a.Id, resourceContextId, StringComparison.Ordinal))?.Name ?? resourceContextId;
 
     private async Task OnKeyDownAsync(KeyboardEventArgs e)
     {
