@@ -77,6 +77,18 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         if (definition.ResourceContextId is null)
         {
             // Inherit. Never blindly default an Integration-attached schedule to Shared.
+            // Reactivation guard (§6.5, D2): inheriting an archived context is not itself
+            // resolved through ResolveForNewOwnershipAsync (unlike the other two branches), so it
+            // needs its own Active check. Only fires when the caller is asking for a live (Enabled)
+            // schedule -- creating a disabled one under an archived context makes nothing live and
+            // must remain allowed.
+            var owningContext = await _resourceContexts.GetAsync(integration.ResourceContextId, cancellationToken).ConfigureAwait(false);
+            if (owningContext is not null && !owningContext.IsActive && definition.Enabled)
+            {
+                throw new InvalidOperationException(
+                    $"{owningContext.Name} is archived. Unarchive it first before creating an enabled schedule for this integration.");
+            }
+
             return integration.ResourceContextId;
         }
 
@@ -122,6 +134,19 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     {
         var def = await _repo.GetDefinitionAsync(scheduleId, cancellationToken)
             ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+
+        // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
+        // it owns may become live again.
+        if (def.ResourceContextId is { } owningContextId)
+        {
+            var owningContext = await _resourceContexts.GetAsync(owningContextId, cancellationToken).ConfigureAwait(false);
+            if (owningContext is not null && !owningContext.IsActive)
+            {
+                throw new InvalidOperationException(
+                    $"{owningContext.Name} is archived. Unarchive it first before enabling this schedule.");
+            }
+        }
+
         var proposed = def with { Enabled = true };
         var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(def, proposed, _timeProvider.GetUtcNow());
         await _repo.UpdateDefinitionAsync(merged, cancellationToken);
