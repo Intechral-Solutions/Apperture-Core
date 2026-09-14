@@ -46,6 +46,7 @@ public sealed class ResourceContextViewState(
     private IReadOnlyList<ResourceContextDto> _knownContexts = [];
     private bool _locationChangedSubscribed;
     private readonly HashSet<string> _refreshAttemptedFor = new(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>? _ownershipSummary;
 
     /// <summary>
     /// Set for the duration of a <see cref="NavigationManager.NavigateTo(string, bool)"/> call this
@@ -126,6 +127,20 @@ public sealed class ResourceContextViewState(
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Ownership summary counts keyed by context id, fetched once per tab and cached thereafter --
+    /// scoped-list pages (e.g. <c>ConnectionsPage</c>'s Shared-available notice, design gate §5.2:
+    /// "Count N from the already-cached summary endpoint. No extra query is needed.") should read
+    /// through this instead of issuing their own <c>GetResourceContextSummaryAsync</c> call. Cleared by
+    /// <see cref="RefreshContextsAsync"/> so a management mutation (archive/unarchive/create) does not
+    /// leave stale counts cached for the rest of the tab's life.
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetOwnershipSummaryAsync()
+    {
+        _ownershipSummary ??= await client.GetResourceContextSummaryAsync();
+        return _ownershipSummary;
+    }
+
     /// <summary>Operator-facing name for a context id: its name, suffixed " (archived)" when archived, or <see cref="UnknownContextLabel"/>.</summary>
     public string DescribeContext(string resourceContextId) =>
         FindContext(resourceContextId) is { } context
@@ -159,6 +174,10 @@ public sealed class ResourceContextViewState(
         // gave up on earlier in the tab -- clear that memory so it can be resolved again now that the
         // list is being refreshed for an actual reason, rather than staying "known missing" forever.
         _refreshAttemptedFor.Clear();
+        // The mutation that triggered this refresh (archive/unarchive/create) can also change ownership
+        // counts (e.g. an archived context's resources move to Shared) -- drop the cached summary too so
+        // GetOwnershipSummaryAsync re-fetches instead of serving stale counts for the rest of the tab.
+        _ownershipSummary = null;
         _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
         await ResolveForCurrentPathAsync();
         Changed?.Invoke();

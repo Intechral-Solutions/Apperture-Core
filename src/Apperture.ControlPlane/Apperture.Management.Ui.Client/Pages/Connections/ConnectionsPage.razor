@@ -1,10 +1,13 @@
 @page "/connections"
+@using Apperture.Core.Domain.ResourceContexts
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Organisms
+@using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Title="Connections" Subtitle="Manage connection instances and browse connector definitions (connection shape only — not executable client operations).">
@@ -56,7 +59,21 @@
 
         @if (_activeTab == "connections" && _capabilities?.CanViewConnections == true)
         {
-            @if (!string.IsNullOrEmpty(_error))
+            @if (_context.State == ScopedListContextState.Ready && !_context.IsAll
+                 && !ResourceContextIds.IsShared(_context.ApiFilter) && _sharedConnectionCount > 0)
+            {
+                <PageMessage Kind="PageMessageKind.Info">
+                    Integrations in @ViewState.DescribeContext(_context.ApiFilter!) can also use
+                    <a href="/connections?context=shared" class="ui-link">@_sharedConnectionCount Shared connections</a>.
+                </PageMessage>
+            }
+
+            @if (_context.State == ScopedListContextState.UnknownContext)
+            {
+                @* The "that context doesn't exist" message is surfaced by ResourceContextViewNotices, hosted
+                   once in MainLayout above the page body -- render nothing here. *@
+            }
+            else if (!string.IsNullOrEmpty(_error))
             {
                 <ErrorState Message="@_error" />
             }
@@ -134,6 +151,13 @@
     private bool _loading;
     private string? _error;
     private string _activeTab = "connections";
+    private int _sharedConnectionCount;
+
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
+    private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
+    private string? _loadedContextValue;
 
     private bool CanAccessPage =>
         _capabilities?.CanViewConnections == true || _capabilities?.CanViewConnectorDefinitions == true;
@@ -178,9 +202,6 @@
                 }
             }
         }
-
-        if (_capabilities?.CanViewConnections == true)
-            await LoadAsync();
     }
 
     private void SetTab(string tab)
@@ -188,9 +209,45 @@
         _activeTab = tab;
         var uri = new Uri(Nav.Uri);
         var basePath = uri.GetLeftPart(UriPartial.Path);
-        var newUri = tab == "connectors" ? $"{basePath}?tab=connectors" : basePath;
+        var queryParts = new List<string>();
+        if (tab == "connectors")
+            queryParts.Add("tab=connectors");
+        if (!string.IsNullOrEmpty(_context.QueryValue))
+            queryParts.Add("context=" + Uri.EscapeDataString(_context.QueryValue));
+        var newUri = queryParts.Count > 0 ? $"{basePath}?{string.Join("&", queryParts)}" : basePath;
         if (Nav.Uri != newUri)
             Nav.NavigateTo(newUri);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        if (_context.State == ScopedListContextState.UnknownContext)
+        {
+            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
+            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        }
+
+        if (_context.State != ScopedListContextState.Ready)
+        {
+            // AwaitingContext (or still-UnknownContext after the retry): the URL is either mid-rewrite
+            // -- ResourceContextViewState.OnLocationChanged is still awaiting its JS call before it
+            // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
+            // previously-loaded context's rows on screen while this resolves; clear them so the existing
+            // loading state (or the UnknownContext branch, which renders nothing) is what's shown. Reset
+            // _loadedContextValue too, so the same context resolving again afterward is treated as a
+            // fresh load rather than skipped as "already loaded".
+            _connections = null;
+            _error = null;
+            _loadedContextValue = null;
+            return;
+        }
+
+        if (_context.QueryValue == _loadedContextValue)
+            return;
+
+        _loadedContextValue = _context.QueryValue;
+        await LoadAsync();
     }
 
     private async Task LoadAsync()
@@ -200,7 +257,12 @@
         _error = null;
         try
         {
-            _connections = await Client.GetConnectionsAsync();
+            _connections = await Client.GetConnectionsAsync(_context.ApiFilter);
+
+            var summary = await ViewState.GetOwnershipSummaryAsync();
+            _sharedConnectionCount = summary.TryGetValue(ResourceContextIds.SharedValue, out var sharedSummary)
+                ? sharedSummary.ActiveConnections ?? 0
+                : 0;
         }
         catch (HttpRequestException ex)
         {
