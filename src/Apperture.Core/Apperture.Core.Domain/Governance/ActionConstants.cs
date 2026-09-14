@@ -110,4 +110,7 @@ public static class ActionConstants
 
     /// <summary>Update or reset instance platform settings overrides. Epic 109.</summary>
     public const string PlatformSettingsManage = "platform.settings.manage";
+
+    /// <summary>Create, rename, re-slug, describe, archive, unarchive a ResourceContext (Application). CTX-3A.</summary>
+    public const string ResourceContextManage = "resource_context.manage";
 }

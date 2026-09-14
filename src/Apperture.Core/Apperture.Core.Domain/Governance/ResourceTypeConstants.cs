@@ -29,6 +29,7 @@ public static class ResourceTypeConstants
     public const string RuntimeHealth = "RuntimeHealth";
     public const string SecretDescriptor = "SecretDescriptor";
     public const string AuditPolicy = "AuditPolicy";
+    public const string ResourceContext = "ResourceContext";
 
     // Trust / Relationship
     public const string TrustRelationship = "TrustRelationship";
