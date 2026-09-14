@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQueryService
 {
     private static readonly OperatorCapabilitiesDto DenyAll =
-        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+        new(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorization;
@@ -152,6 +152,11 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.CredentialManage,
                 ResourceTypeConstants.User,
                 cancellationToken).ConfigureAwait(false);
+            var canManageResourceContexts = await EvaluateAsync(
+                actor,
+                ActionConstants.ResourceContextManage,
+                ResourceTypeConstants.ResourceContext,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -181,7 +186,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canViewPlatformSettings,
                 canManagePlatformSettings,
                 canManageUsers,
-                canManageCredentials);
+                canManageCredentials,
+                canManageResourceContexts);
         }
         catch (OperationCanceledException ex)
         {
