@@ -258,19 +258,33 @@
         try
         {
             _connections = await Client.GetConnectionsAsync(_context.ApiFilter);
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            // Reset alongside _connections' implicit staleness so a later failed reload can't leave a
+            // stale "N Shared connections" notice showing above the ErrorState this sets.
+            _sharedConnectionCount = 0;
+            _loading = false;
+            return;
+        }
 
+        try
+        {
             var summary = await ViewState.GetOwnershipSummaryAsync();
             _sharedConnectionCount = summary.TryGetValue(ResourceContextIds.SharedValue, out var sharedSummary)
                 ? sharedSummary.ActiveConnections ?? 0
                 : 0;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            _error = ex.Message;
+            // The Shared-available notice is an enhancement on top of the primary connections list,
+            // which has already loaded successfully at this point (see the try block above) -- a
+            // transient failure fetching the ownership summary must not set _error and hide that
+            // already-loaded table behind ErrorState. Degrade gracefully: suppress the notice instead.
+            _sharedConnectionCount = 0;
         }
-        finally
-        {
-            _loading = false;
-        }
+
+        _loading = false;
     }
 }

@@ -135,6 +135,13 @@ public sealed class ResourceContextViewState(
     /// <see cref="RefreshContextsAsync"/> so a management mutation (archive/unarchive/create) does not
     /// leave stale counts cached for the rest of the tab's life.
     /// </summary>
+    /// <remarks>
+    /// Not synchronized: two callers racing before the first fetch completes can both observe
+    /// <c>_ownershipSummary</c> as null and each issue their own <c>GetResourceContextSummaryAsync</c>
+    /// call. Harmless (both requests return the same data and the field ends up holding one of the two
+    /// equivalent results) but not a true single-flight cache -- worth revisiting if this method grows
+    /// more concurrent callers than today's single-page-load use.
+    /// </remarks>
     public async ValueTask<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetOwnershipSummaryAsync()
     {
         _ownershipSummary ??= await client.GetResourceContextSummaryAsync();
