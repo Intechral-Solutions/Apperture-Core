@@ -31,7 +31,12 @@
         </Toolbar>
     </PageHeader>
 
-    @if (!string.IsNullOrEmpty(_error))
+    @if (_context.State == ScopedListContextState.UnknownContext)
+    {
+        @* The "that context doesn't exist" message is surfaced by ResourceContextViewNotices, hosted
+           once in MainLayout above the page body -- render nothing here. *@
+    }
+    else if (!string.IsNullOrEmpty(_error))
     {
         <ErrorState Message="@_error" />
     }
@@ -254,10 +259,9 @@
             // -- ResourceContextViewState.OnLocationChanged is still awaiting its JS call before it
             // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
             // previously-loaded context's rows on screen while this resolves; clear them so the existing
-            // LoadingState markup is what's shown (this page has no dedicated UnknownContext branch --
-            // the "that context doesn't exist" notice is surfaced globally by ResourceContextViewNotices
-            // in MainLayout). Reset _loadedContextValue too, so the same context resolving again
-            // afterward is treated as a fresh load rather than skipped as "already loaded".
+            // loading state (or the UnknownContext branch, which renders nothing) is what's shown. Reset
+            // _loadedContextValue too, so the same context resolving again afterward is treated as a
+            // fresh load rather than skipped as "already loaded".
             _schedules = null;
             _error = null;
             _loadedContextValue = null;
