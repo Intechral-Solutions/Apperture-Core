@@ -474,6 +474,48 @@ public interface IManagementClient
     /// </summary>
     Task<SchedulerManualOperationResultDto?> RecoverStaleScheduleRunsAsync(string? runtimePlaneId = "local", CancellationToken cancellationToken = default);
 
+    // --- ResourceContexts (CTX-3A Plan 3, wraps ResourceContextsController) ---
+
+    /// <summary>Lists ResourceContexts. Requires only authentication (no permission).</summary>
+    Task<IReadOnlyList<ResourceContextDto>> GetResourceContextsAsync(bool includeArchived = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets a ResourceContext by id. Requires only authentication (no permission). Returns null on 404.</summary>
+    Task<ResourceContextDto?> GetResourceContextAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a ResourceContext. Requires <c>resource_context.manage</c>; a 403 surfaces as <see cref="HttpRequestException"/>.</summary>
+    Task<ResourceContextDto> CreateResourceContextAsync(CreateResourceContextRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates a ResourceContext. Requires <c>resource_context.manage</c>. Throws
+    /// <see cref="HttpRequestException"/> (with <see cref="HttpRequestException.StatusCode"/> set) on
+    /// 400/403/409 -- the reserved Shared context rejects updates with 409 and a plain error message.
+    /// </summary>
+    Task<ResourceContextDto> UpdateResourceContextAsync(string id, UpdateResourceContextRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Archives a ResourceContext. Requires <c>resource_context.manage</c>. Throws
+    /// <see cref="ResourceContextArchiveConflictException"/> on 409 -- see that type's doc for the two
+    /// distinct body shapes (reserved-context vs. ownership-blocked) the server can return.
+    /// </summary>
+    Task<ResourceContextDto> ArchiveResourceContextAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns an archived ResourceContext to Active. Requires <c>resource_context.manage</c>.</summary>
+    Task<ResourceContextDto> UnarchiveResourceContextAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Per-context ownership counts, masked per caller by the server (a family's counts are null
+    /// unless the caller holds that family's own read permission). No <c>resource_context.manage</c>
+    /// requirement.
+    /// </summary>
+    /// <remarks>
+    /// IMPORTANT (omit-not-zero): a ResourceContext that owns no Integration, Connection, or Schedule
+    /// of any state is OMITTED from the returned dictionary entirely -- it is never present with
+    /// all-zero counts. This includes every freshly-created Application, which by definition owns
+    /// nothing yet. Callers MUST treat a missing key as "no resources, no restrictions," never as an
+    /// error or as an implicit zero.
+    /// </remarks>
+    Task<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetResourceContextSummaryAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Gets operator UI capabilities for permission-aware rendering. Epic 34.
     /// </summary>

@@ -1302,6 +1302,137 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<SchedulerManualOperationResultDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    // --- ResourceContexts (CTX-3A Plan 3, wraps ResourceContextsController) ---
+
+    public async Task<IReadOnlyList<ResourceContextDto>> GetResourceContextsAsync(bool includeArchived = false, CancellationToken cancellationToken = default)
+    {
+        var path = includeArchived ? "resource-contexts?includeArchived=true" : "resource-contexts";
+        var result = await _http.GetFromJsonAsync<ResourceContextDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? [];
+    }
+
+    public async Task<ResourceContextDto?> GetResourceContextAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"resource-contexts/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<ResourceContextDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ResourceContextDto> CreateResourceContextAsync(CreateResourceContextRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsJsonAsync("resource-contexts", request, ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ResourceContextDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<ResourceContextDto> UpdateResourceContextAsync(string id, UpdateResourceContextRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PatchAsJsonAsync($"resource-contexts/{Uri.EscapeDataString(id)}", request, ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ResourceContextDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// Archives a ResourceContext. The server (ResourceContextsController.Archive) returns 409 with two
+    /// distinct body shapes depending on cause -- see <see cref="ResourceContextArchiveConflictException"/>.
+    /// We must not assume every 409 body is a <see cref="ResourceContextOwnershipSummaryDto"/>: a plain
+    /// <c>{ error }</c> body would deserialize into that record just fine with every field null, silently
+    /// masquerading as "context owns nothing," so shape detection here keys off which JSON properties are
+    /// actually present, not off whether deserialization throws.
+    /// </summary>
+    public async Task<ResourceContextDto> ArchiveResourceContextAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync($"resource-contexts/{Uri.EscapeDataString(id)}/archive", content: null, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Conflict)
+            throw await BuildArchiveConflictExceptionAsync(response, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ResourceContextDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    public async Task<ResourceContextDto> UnarchiveResourceContextAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PostAsync($"resource-contexts/{Uri.EscapeDataString(id)}/unarchive", content: null, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ResourceContextDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// Omit-not-zero: the server dictionary never includes a key for a ResourceContext owning nothing,
+    /// so this method returns exactly what the server sent (no zero-filling) -- callers must treat a
+    /// missing key as "no resources," not as an error or as zero. See the interface doc for detail.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetResourceContextSummaryAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await _http.GetFromJsonAsync<Dictionary<string, ResourceContextOwnershipSummaryDto>>(
+            "resource-contexts/summary", ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? new Dictionary<string, ResourceContextOwnershipSummaryDto>();
+    }
+
+    private static readonly string[] OwnershipSummaryFieldNames =
+    [
+        "liveIntegrations", "retiredIntegrations", "activeConnections",
+        "retiredConnections", "enabledSchedules", "disabledSchedules"
+    ];
+
+    private static async Task<ResourceContextArchiveConflictException> BuildArchiveConflictExceptionAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        string raw;
+        try
+        {
+            raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return new ResourceContextArchiveConflictException(
+                ResourceContextArchiveConflictReason.Unrecognized,
+                "The ResourceContext could not be archived (409 Conflict).",
+                null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                var looksLikeOwnershipSummary = OwnershipSummaryFieldNames.Any(name => TryGetPropertyIgnoreCase(root, name, out _));
+                if (looksLikeOwnershipSummary)
+                {
+                    var summary = JsonSerializer.Deserialize<ResourceContextOwnershipSummaryDto>(raw, ApiJsonReadOptions);
+                    if (summary is not null)
+                    {
+                        return new ResourceContextArchiveConflictException(
+                            ResourceContextArchiveConflictReason.OwnershipBlocked,
+                            "The ResourceContext still owns one or more live resources and cannot be archived.",
+                            summary);
+                    }
+                }
+
+                if (TryGetPropertyIgnoreCase(root, "error", out var errorEl) && errorEl.ValueKind == JsonValueKind.String)
+                {
+                    var message = errorEl.GetString();
+                    return new ResourceContextArchiveConflictException(
+                        ResourceContextArchiveConflictReason.Reserved,
+                        string.IsNullOrWhiteSpace(message) ? "The ResourceContext cannot be archived." : message,
+                        null);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to the raw-message fallback below.
+        }
+
+        var fallbackMessage = ParseManagementApiErrorPayload(raw);
+        return new ResourceContextArchiveConflictException(
+            ResourceContextArchiveConflictReason.Unrecognized,
+            string.IsNullOrWhiteSpace(fallbackMessage) ? "The ResourceContext could not be archived (409 Conflict)." : fallbackMessage,
+            null);
+    }
+
     public async Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<GovernanceDescriptorResponse>("governance/descriptors", cancellationToken).ConfigureAwait(false);
