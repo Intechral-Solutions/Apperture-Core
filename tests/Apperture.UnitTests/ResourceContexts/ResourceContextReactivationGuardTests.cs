@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Scheduling;
 using FluentAssertions;
@@ -143,5 +144,20 @@ public sealed class ResourceContextReactivationGuardTests
         var created = await harness.Schedules.CreateScheduleAsync(definition);
 
         created.ResourceContextId!.Value.Should().Be(context.Id.Value);
+    }
+
+    [Fact]
+    public void ConnectionManagementService_HasNoReactivationPath_SoNoGuardIsNeededYet()
+    {
+        // Verified during CTX-3A: ConnectionState is one-way (Active -> Retired only).
+        // RetireConnectionAsync only ever sets State = Retired; UpdateConnectionAsync never touches State.
+        // There is no un-retire/reactivate method on IConnectionManagementService.
+        // If this enum ever gains a reverse transition, a reactivation guard analogous to
+        // IntegrationManagementService.UpdateIntegrationAsync's must be added at that time.
+        var connectionStateNames = Enum.GetNames<ConnectionState>();
+
+        connectionStateNames.Should().BeEquivalentTo(["Active", "Retired"],
+            "this test intentionally breaks if ConnectionState grows a reverse transition, " +
+            "as a prompt to add the CTX-3A reactivation guard for Connections");
     }
 }
