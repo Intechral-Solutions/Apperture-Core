@@ -26,6 +26,7 @@ public static class IntegrationServiceCollectionExtensions
         services.AddScoped<IAttentionContactGroupManagementService, AttentionContactGroupManagementService>();
         services.AddScoped<IOperationalTeamManagementService, OperationalTeamManagementService>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
+        services.AddScoped<IResourceContextManagementService, ResourceContextManagementService>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
         services.AddIntegrationDispatchReadiness();
