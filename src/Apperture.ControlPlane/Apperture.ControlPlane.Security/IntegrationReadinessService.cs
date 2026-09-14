@@ -3,6 +3,7 @@ using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ModuleSdk.Integration.Readiness;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
@@ -158,7 +159,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
         IntegrationFleetQuery query,
         CancellationToken cancellationToken = default)
     {
-        var integrations = await _integrationManagement.ListIntegrationsAsync(cancellationToken);
+        var resourceContextId = string.IsNullOrWhiteSpace(query.ResourceContextId) ? null : new ResourceContextId(query.ResourceContextId);
+        var integrations = await _integrationManagement.ListIntegrationsAsync(resourceContextId, cancellationToken);
         var activeExpectedRunMissing = await _attentionIncidentTracker
             .GetIntegrationIdsWithActiveConditionAsync(AttentionConditionKeys.ExpectedRunMissing, cancellationToken)
             .ConfigureAwait(false);
@@ -242,7 +244,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
                 expectedRuns,
                 tokens,
                 topCodes,
-                activeExpectedRunMissing.Contains(integration.Id.Value)));
+                activeExpectedRunMissing.Contains(integration.Id.Value),
+                ResourceContextId: integration.ResourceContextId.Value));
         }
 
         var filtered = ApplyFleetFilters(rows, query);

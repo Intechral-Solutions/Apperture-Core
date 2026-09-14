@@ -101,6 +101,7 @@ public sealed class IntegrationsController : ControllerBase
     /// </summary>
     [HttpGet("fleet")]
     public async Task<ActionResult<IReadOnlyList<Apperture.Management.Client.IntegrationFleetRowDto>>> Fleet(
+        [FromQuery] string? contextId,
         [FromQuery] string? state,
         [FromQuery] bool? runnable,
         [FromQuery] bool? hasBlocking,
@@ -115,6 +116,10 @@ public sealed class IntegrationsController : ControllerBase
     {
         try
         {
+            var (contextFilter, contextError) = await ResolveContextFilterAsync(contextId, cancellationToken);
+            if (contextError is not null)
+                return BadRequest(new { error = contextError });
+
             IReadOnlyList<string>? attentionTokens = null;
             if (!string.IsNullOrWhiteSpace(attention))
             {
@@ -132,7 +137,8 @@ public sealed class IntegrationsController : ControllerBase
                 HasOperationalFailure: hasOperationalFailure,
                 HasUnexpectedSilence: hasUnexpectedSilence,
                 AttentionTokens: attentionTokens,
-                Sort: sort);
+                Sort: sort,
+                ResourceContextId: contextFilter?.Value);
             var rows = await _readinessService.ListFleetAsync(query, cancellationToken);
             return Ok(rows.Select(ToFleetDto).ToList());
         }
@@ -592,7 +598,8 @@ public sealed class IntegrationsController : ControllerBase
                 r.ExpectedRuns.ExpectedRunGraceAnchorUtc),
             r.AttentionTokens.ToArray(),
             r.TopIssueCodes.ToArray(),
-            r.HasActiveExpectedRunMissingIncident);
+            r.HasActiveExpectedRunMissingIncident,
+            r.ResourceContextId);
 
     private static Apperture.Management.Client.IntegrationReadinessDto ToReadinessDto(IntegrationReadinessProjection p) =>
         new(

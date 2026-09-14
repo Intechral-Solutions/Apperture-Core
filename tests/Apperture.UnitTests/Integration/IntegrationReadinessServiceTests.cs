@@ -412,6 +412,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { inactive });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { inactive });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod")).Returns(new List<ICapabilitySlot>());
@@ -457,6 +458,7 @@ public sealed class IntegrationReadinessServiceTests
     {
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { ActiveIntegration() });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { ActiveIntegration() });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
@@ -563,6 +565,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
@@ -650,6 +653,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
@@ -752,6 +756,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
@@ -832,6 +837,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))
@@ -936,6 +942,7 @@ public sealed class IntegrationReadinessServiceTests
 
         var mgmt = new Mock<IIntegrationManagementService>();
         mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
+        mgmt.Setup(x => x.ListIntegrationsAsync(It.IsAny<ResourceContextId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new List<DomainIntegration> { integration });
 
         var slots = new Mock<IModuleSlotRegistry>();
         slots.Setup(x => x.GetSlotsForModule("Sample.Mod"))

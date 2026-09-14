@@ -41,7 +41,8 @@ public sealed record IntegrationFleetQuery(
     bool? HasOperationalFailure = null,
     bool? HasUnexpectedSilence = null,
     IReadOnlyList<string>? AttentionTokens = null,
-    string? Sort = null);
+    string? Sort = null,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Evidence-backed fleet attention flags. No scoring; derived from operational state and readiness issues only.
@@ -108,7 +109,8 @@ public sealed record IntegrationFleetRowProjection(
     IntegrationFleetExpectedRunAttention ExpectedRuns,
     IReadOnlyList<string> AttentionTokens,
     IReadOnlyList<string> TopIssueCodes,
-    bool HasActiveExpectedRunMissingIncident);
+    bool HasActiveExpectedRunMissingIncident,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Computes fleet attention from persisted-projection semantics (readiness issues + operational state).
