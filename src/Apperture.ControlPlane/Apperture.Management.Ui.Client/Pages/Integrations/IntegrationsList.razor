@@ -49,12 +49,14 @@
     }
     else if (_fleet.Count == 0)
     {
-        @if (FiltersActive)
+        @if (NarrowingFiltersActive)
         {
             @* The advanced fleet filters (State/Runnable/etc.) are a separate narrowing from context
                scoping -- "no rows match the filters" stays the actionable message (Clear filters) even
                when a context is also selected; R6's scoped empty state below is for the filters-off
-               case, where "in {context}" is itself the reason the list is empty. *@
+               case, where "in {context}" is itself the reason the list is empty. Sort is intentionally
+               excluded from NarrowingFiltersActive (see its declaration): it reorders, it never reduces
+               the result set, so selecting a sort alone must not hide R6's scoped empty state. *@
             <EmptyState Title="No matches"
                         Message="No integrations match the current filters. Clear filters or adjust criteria.">
                 <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
@@ -70,7 +72,7 @@
             <EmptyState Title="No integrations"
                         Message="@($"No integrations in {scopedContextName}.")">
                 <div class="mt-3 flex flex-wrap gap-2">
-                    <a href="?context=all" class="ui-toolbar-btn">View all</a>
+                    <a href="@ViewAllHref" class="ui-toolbar-btn">View all</a>
                     @if (!scopedContextIsArchived && _capabilities?.CanManageIntegrations == true)
                     {
                         <a href="@($"/integrations/new?context={Uri.EscapeDataString(_context.ApiFilter!)}")" class="ui-toolbar-btn">Create integration in @scopedContextName</a>
@@ -383,7 +385,14 @@
     private string _filterHasUnexpectedSilence = "";
     private string _sort = "";
 
-    private bool FiltersActive =>
+    /// <summary>
+    /// Any active narrowing (State/Runnable/blocking/advisory/verification/operational-failure/
+    /// unexpected-silence filters, or the "needs attention" toggle) that can reduce the result set to
+    /// zero rows. Deliberately excludes <see cref="_sort"/>: a sort choice reorders rows, it never
+    /// narrows them, so it must not suppress R6's scoped empty state (below) when a context is selected
+    /// and genuinely has zero integrations.
+    /// </summary>
+    private bool NarrowingFiltersActive =>
         !string.IsNullOrWhiteSpace(_filterState)
         || !string.IsNullOrWhiteSpace(_filterRunnable)
         || !string.IsNullOrWhiteSpace(_filterHasBlocking)
@@ -391,7 +400,6 @@
         || !string.IsNullOrWhiteSpace(_filterVerificationConcern)
         || !string.IsNullOrWhiteSpace(_filterHasOperationalFailure)
         || !string.IsNullOrWhiteSpace(_filterHasUnexpectedSilence)
-        || !string.IsNullOrWhiteSpace(_sort)
         || _showNeedsAttentionOnly;
 
     private bool _showNeedsAttentionOnly;
@@ -401,6 +409,14 @@
 
     private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
     private string? _loadedContextValue;
+
+    /// <summary>
+    /// Absolute-path-qualified "view all" link for this page. A bare "?context=all" href resolves
+    /// against the document's &lt;base href="/"&gt;, not the current path, so it would silently navigate
+    /// to "/" instead of staying on "/integrations" -- ResourceContextViewNotices.razor's ViewAllHref
+    /// uses the same construction for the same reason.
+    /// </summary>
+    private string ViewAllHref => new Uri(Nav.Uri).AbsolutePath + "?context=all";
 
     private IEnumerable<IntegrationFleetRowDto> DisplayFleet
     {
@@ -442,7 +458,22 @@
             _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
         }
 
-        if (_context.State != ScopedListContextState.Ready || _context.QueryValue == _loadedContextValue)
+        if (_context.State != ScopedListContextState.Ready)
+        {
+            // AwaitingContext (or still-UnknownContext after the retry): the URL is either mid-rewrite
+            // -- ResourceContextViewState.OnLocationChanged is still awaiting its JS call before it
+            // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
+            // previously-loaded context's rows on screen while this resolves; clear them so the existing
+            // loading state (or the UnknownContext branch, which renders nothing) is what's shown. Reset
+            // _loadedContextValue too, so the same context resolving again afterward is treated as a
+            // fresh load rather than skipped as "already loaded".
+            _fleet = null;
+            _error = null;
+            _loadedContextValue = null;
+            return;
+        }
+
+        if (_context.QueryValue == _loadedContextValue)
             return;
 
         _loadedContextValue = _context.QueryValue;
