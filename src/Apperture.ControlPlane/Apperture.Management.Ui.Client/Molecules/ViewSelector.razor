@@ -1,0 +1,184 @@
+@* CTX-3A Plan 3 (Task 7): the shell-wide "View" selector (design gate §3.1-§3.3). Structurally
+   modeled on ThemeMenu.razor's real trigger/panel/Changed-subscription wiring (button trigger +
+   @onclick:stopPropagation wrapper + MainLayout's outside-click CloseAll, no custom arrow-key
+   roving -- ThemeMenu has none either), adapted to role="listbox"/"option" per §3.2 instead of
+   ThemeMenu's role="menu"/"menuitemradio". Entirely absent from the DOM (not just hidden) when
+   ResourceContextViewState.SelectorVisible is false -- there is nothing to choose between. *@
+@implements IDisposable
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject ResourceContextViewState ViewState
+@inject TopBarMenuCoordinator Menus
+
+@if (ViewState.SelectorVisible)
+{
+    <div class="relative" @onclick:stopPropagation="true">
+        <button type="button"
+                class="rounded px-3 py-1.5 text-sm font-medium text-heading hover:bg-surface-muted"
+                aria-haspopup="listbox"
+                aria-expanded="@IsOpen"
+                aria-label="@($"View: {CurrentLabel()}")"
+                title="Choose which application's resource lists show. This organizes pages; it doesn't change what you have access to."
+                @ref="_trigger"
+                @onclick="Toggle">
+            View: @CurrentLabel()
+        </button>
+
+        @if (IsOpen)
+        {
+            <div class="ui-menu-panel" style="left:0; right:auto; min-width:16rem;" @onkeydown="OnKeyDownAsync">
+                <div role="listbox" aria-label="View">
+                    <button type="button"
+                            role="option"
+                            class="ui-menu-item"
+                            aria-selected="@ViewState.Current.IsAll"
+                            data-state="@(ViewState.Current.IsAll ? "on" : "off")"
+                            @onclick="() => SelectAsync(ResourceContextViewScope.All)">
+                        <span class="flex flex-1 flex-col items-start text-start">
+                            <span>All</span>
+                            <span class="text-xs text-muted">Everything you can see</span>
+                        </span>
+                    </button>
+
+                    @if (ViewState.SharedContext is { } shared)
+                    {
+                        <button type="button"
+                                role="option"
+                                class="ui-menu-item"
+                                aria-selected="@IsSharedSelected"
+                                data-state="@(IsSharedSelected ? "on" : "off")"
+                                @onclick="() => SelectAsync(ResourceContextViewScope.Of(shared.Id))">
+                            <span class="flex flex-1 flex-col items-start text-start">
+                                <span>@shared.Name</span>
+                                <span class="text-xs text-muted">Not specific to one application</span>
+                            </span>
+                        </button>
+                    }
+
+                    @if (ActiveApplications.Count <= 7)
+                    {
+                        @foreach (var app in ActiveApplications)
+                        {
+                            <button type="button"
+                                    role="option"
+                                    class="ui-menu-item"
+                                    @key="app.Id"
+                                    aria-selected="@IsAppSelected(app.Id)"
+                                    data-state="@(IsAppSelected(app.Id) ? "on" : "off")"
+                                    @onclick="() => SelectAsync(ResourceContextViewScope.Of(app.Id))">
+                                @app.Name
+                            </button>
+                        }
+                    }
+                </div>
+
+                @if (ActiveApplications.Count > 7)
+                {
+                    <hr class="my-1 border-default" />
+                    <SearchableList IdPrefix="view-selector-apps"
+                                    Label="Applications"
+                                    ListAriaLabel="Applications"
+                                    HeaderLabel="Applications"
+                                    IncludeNullOption="false"
+                                    AllOptions="AppOptions"
+                                    Value="SelectedAppId"
+                                    ValueChanged="OnAppSearchSelectAsync"
+                                    DescribeSelected="DescribeSelectedApp" />
+                }
+
+                <hr class="my-1 border-default" />
+                <a href="/config/applications" class="ui-menu-item">Manage applications</a>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private ElementReference _trigger;
+
+    private bool IsOpen => Menus.IsOpen(TopBarMenuCoordinator.Ids.View);
+
+    private IReadOnlyList<ResourceContextDto> ActiveApplications => ViewState.KnownActiveApplications;
+
+    private bool IsSharedSelected =>
+        !ViewState.Current.IsAll
+        && ViewState.SharedContext is { } shared
+        && string.Equals(ViewState.Current.ResourceContextId, shared.Id, StringComparison.Ordinal);
+
+    private IReadOnlyList<SearchableList.Option> AppOptions =>
+        ActiveApplications.Select(a => new SearchableList.Option(a.Id, a.Name)).ToList();
+
+    private string? SelectedAppId =>
+        ViewState.Current.IsAll || IsSharedSelected ? null : ViewState.Current.ResourceContextId;
+
+    protected override void OnInitialized()
+    {
+        ViewState.Changed += OnViewChanged;
+        Menus.Changed += OnMenusChanged;
+    }
+
+    private void OnViewChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnMenusChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Toggle() => Menus.Toggle(TopBarMenuCoordinator.Ids.View);
+
+    private bool IsAppSelected(string resourceContextId) =>
+        !ViewState.Current.IsAll && string.Equals(ViewState.Current.ResourceContextId, resourceContextId, StringComparison.Ordinal);
+
+    private string CurrentLabel()
+    {
+        if (ViewState.Current.IsAll)
+            return "All";
+
+        if (ViewState.SharedContext is { } shared && string.Equals(ViewState.Current.ResourceContextId, shared.Id, StringComparison.Ordinal))
+            return shared.Name;
+
+        var app = ActiveApplications.FirstOrDefault(a => string.Equals(a.Id, ViewState.Current.ResourceContextId, StringComparison.Ordinal));
+        // No public surface resolves an archived context's name from here (Task 6's
+        // ResourceContextViewState exposes only active Applications + Shared); fall back to the id.
+        return app?.Name ?? $"{ViewState.Current.ResourceContextId} (archived)";
+    }
+
+    private async Task SelectAsync(ResourceContextViewScope scope)
+    {
+        Menus.Close(TopBarMenuCoordinator.Ids.View);
+        await ViewState.SetExplicitAsync(scope);
+    }
+
+    private async Task OnAppSearchSelectAsync(string? resourceContextId)
+    {
+        if (string.IsNullOrWhiteSpace(resourceContextId))
+            return;
+
+        await SelectAsync(ResourceContextViewScope.Of(resourceContextId));
+    }
+
+    private string DescribeSelectedApp(string? resourceContextId) =>
+        resourceContextId is null
+            ? "No application selected"
+            : ActiveApplications.FirstOrDefault(a => a.Id == resourceContextId)?.Name ?? resourceContextId;
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Escape", StringComparison.Ordinal))
+            return;
+
+        Menus.Close(TopBarMenuCoordinator.Ids.View);
+        try
+        {
+            await _trigger.FocusAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // Renderer torn down mid-flight (e.g. navigation away already closed the menu).
+        }
+    }
+
+    public void Dispose()
+    {
+        ViewState.Changed -= OnViewChanged;
+        Menus.Changed -= OnMenusChanged;
+    }
+}

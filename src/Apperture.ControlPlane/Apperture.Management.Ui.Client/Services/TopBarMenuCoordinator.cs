@@ -10,6 +10,7 @@ public sealed class TopBarMenuCoordinator
         public const string Theme = "theme";
         public const string Notifications = "notifications";
         public const string Account = "account";
+        public const string View = "view";
     }
 
     public string? OpenMenuId { get; private set; }

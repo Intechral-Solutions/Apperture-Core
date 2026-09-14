@@ -14,9 +14,12 @@
                              OnToggle="OnHamburgerClick" />
         </div>
 
-        <div class="ui-topbar__orientation flex min-w-0 flex-1 flex-col justify-center">
-            @* UIX-2: orientation owns location-aware refresh; do not @key-remount this subtree. *@
-            <TopBarOrientation />
+        <div class="ui-topbar__orientation flex min-w-0 flex-1 items-center gap-3">
+            <ViewSelector />
+            <div class="flex min-w-0 flex-1 flex-col justify-center">
+                @* UIX-2: orientation owns location-aware refresh; do not @key-remount this subtree. *@
+                <TopBarOrientation />
+            </div>
         </div>
 
         <div class="ui-topbar__utilities flex shrink-0 items-center gap-6">
