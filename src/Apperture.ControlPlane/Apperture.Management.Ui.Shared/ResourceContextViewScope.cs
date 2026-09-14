@@ -6,24 +6,31 @@ public readonly record struct ResourceContextViewScope
 
     private readonly string? _resourceContextId;
 
-    private ResourceContextViewScope(bool isAll, string? resourceContextId)
+    private ResourceContextViewScope(string? resourceContextId)
     {
-        IsAll = isAll;
         _resourceContextId = resourceContextId;
     }
 
-    public bool IsAll { get; }
+    /// <summary>
+    /// True when no specific ResourceContext is selected. Computed from
+    /// <c>_resourceContextId is null</c> rather than stored separately (CTX-3A finding I5): a struct's
+    /// default constructor can't be suppressed, so a stored flag risks an internally inconsistent
+    /// default (a half-state that is neither a clean All nor a clean Of(id)). Deriving IsAll instead
+    /// means default(ResourceContextViewScope) -- which has _resourceContextId == null exactly like
+    /// All -- naturally and correctly equals <see cref="All"/>.
+    /// </summary>
+    public bool IsAll => _resourceContextId is null;
 
-    public string? ResourceContextId => IsAll ? null : _resourceContextId;
+    public string? ResourceContextId => _resourceContextId;
 
-    public static ResourceContextViewScope All { get; } = new(isAll: true, resourceContextId: null);
+    public static ResourceContextViewScope All { get; } = new(resourceContextId: null);
 
     public static ResourceContextViewScope Of(string resourceContextId)
     {
         if (string.IsNullOrWhiteSpace(resourceContextId))
             throw new ArgumentException("A specific view scope requires a non-empty ResourceContext id.", nameof(resourceContextId));
 
-        return new ResourceContextViewScope(isAll: false, resourceContextId: resourceContextId);
+        return new ResourceContextViewScope(resourceContextId);
     }
 
     public static ResourceContextViewScope? Parse(string? queryValue)
@@ -36,7 +43,7 @@ public readonly record struct ResourceContextViewScope
             : Of(queryValue);
     }
 
-    public string ToQueryValue() => IsAll ? AllToken : _resourceContextId!;
+    public string ToQueryValue() => _resourceContextId ?? AllToken;
 
-    public string? ToApiFilter() => IsAll ? null : _resourceContextId;
+    public string? ToApiFilter() => _resourceContextId;
 }

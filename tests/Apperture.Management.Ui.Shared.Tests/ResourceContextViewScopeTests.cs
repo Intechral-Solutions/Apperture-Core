@@ -84,4 +84,19 @@ public class ResourceContextViewScopeTests
         (ResourceContextViewScope.Of("x") == ResourceContextViewScope.Of("y")).Should().BeFalse();
         (ResourceContextViewScope.All == ResourceContextViewScope.Of("all")).Should().BeFalse();
     }
+
+    /// <summary>
+    /// I5: a struct's default constructor can't be suppressed, so default(ResourceContextViewScope)
+    /// is always reachable (e.g. an uninitialized field or array element). IsAll must be computed from
+    /// _resourceContextId being null rather than stored separately, so that state can never disagree
+    /// with itself -- and default naturally lands on it, since default(string) is null too.
+    /// </summary>
+    [Fact]
+    public void Default_EqualsAll()
+    {
+        default(ResourceContextViewScope).Should().Be(ResourceContextViewScope.All);
+        default(ResourceContextViewScope).IsAll.Should().BeTrue();
+        default(ResourceContextViewScope).ToQueryValue().Should().Be("all");
+        default(ResourceContextViewScope).ToApiFilter().Should().BeNull();
+    }
 }
