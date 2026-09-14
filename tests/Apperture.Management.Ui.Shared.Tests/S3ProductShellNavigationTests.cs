@@ -43,6 +43,20 @@ public sealed class S3ProductShellNavigationTests
     }
 
     [Fact]
+    public void ConfigMenu_HasApplicationsDirectlyAfterInventory()
+    {
+        var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
+        var configItems = menus[SectionOwnerConstants.Config].Items;
+
+        var inventoryIndex = configItems.FindIndex(i => i.Text == "Inventory");
+        var applicationsIndex = configItems.FindIndex(i => i.Text == "Applications");
+
+        applicationsIndex.Should().Be(inventoryIndex + 1);
+        configItems[applicationsIndex].Href.Should().Be("/config/applications");
+        configItems[applicationsIndex].RequiredCapability.Should().BeNull();
+    }
+
+    [Fact]
     public void NotificationsMenu_IncludesDiagnostics_UnderAttention()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();

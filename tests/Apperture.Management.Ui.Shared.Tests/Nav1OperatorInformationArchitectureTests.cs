@@ -53,7 +53,7 @@ public sealed class Nav1OperatorInformationArchitectureTests
     public void Config_hierarchy_is_inventory_governance_attention_system()
     {
         var config = Menus()[SectionOwnerConstants.Config].Items;
-        config.Select(i => i.Text).Should().Equal("Overview", "Inventory", "Governance", "Attention", "System");
+        config.Select(i => i.Text).Should().Equal("Overview", "Inventory", "Applications", "Governance", "Attention", "System");
         config.Should().NotContain(i => i.Text == "Platform maintenance");
         config.Should().NotContain(i => i.Text == "Authentication" && i.Href == "/config/auth");
     }

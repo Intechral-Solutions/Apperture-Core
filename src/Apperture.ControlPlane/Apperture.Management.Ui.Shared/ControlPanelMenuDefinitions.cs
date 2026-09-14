@@ -63,6 +63,7 @@ public static class ControlPanelMenuDefinitions
                 {
                     new DomainMenuItem { Text = "Overview", Href = ShellSectionRoutes.ConfigHome },
                     new DomainMenuItem { Text = "Inventory", Href = ShellSectionRoutes.Inventory },
+                    new DomainMenuItem { Text = "Applications", Href = "/config/applications" },
                     new DomainMenuItem
                     {
                         Text = "Governance",

@@ -87,6 +87,9 @@ public static class ManagementBreadcrumbResolver
         MatchBusinessDataCustomerDetail,
         MatchBusinessDataCustomersList,
         MatchBusinessDataLanding,
+        MatchConfigApplicationNew,
+        MatchConfigApplicationDetail,
+        MatchConfigApplicationsList,
         MatchConfigInventory,
         MatchConfigLanding,
         MatchIntegrationsList,
@@ -1185,6 +1188,39 @@ public static class ManagementBreadcrumbResolver
         if (!Matches(s, "config", "inventory"))
             return false;
         c = Config(("Inventory", null));
+        return true;
+    }
+
+    // --- Config / applications ---
+
+    private static bool MatchConfigApplicationNew(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "applications", "new"))
+            return false;
+        c = Config(
+            ("Applications", "/config/applications"),
+            ("New", null));
+        return true;
+    }
+
+    private static bool MatchConfigApplicationDetail(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "applications", "{id}"))
+            return false;
+        c = Config(
+            ("Applications", "/config/applications"),
+            ("Application", null));
+        return true;
+    }
+
+    private static bool MatchConfigApplicationsList(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "config", "applications"))
+            return false;
+        c = Config(("Applications", null));
         return true;
     }
 
