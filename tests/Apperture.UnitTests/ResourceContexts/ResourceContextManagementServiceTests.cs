@@ -96,6 +96,22 @@ public sealed class ResourceContextManagementServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_WithSlugThatNormalizesToTheStoredValue_WritesNoAuditRecord()
+    {
+        // Reviewer finding (Important #1): UpdateAsync's slug branch compared the caller's RAW input
+        // against the NORMALIZED stored slug, so a raw value that only *normalizes* to the same slug
+        // (e.g. "My Slug" over a stored "my-slug") slipped past the pre-call check. ChangeSlugAsync then
+        // normalizes, sees no real change, and returns the existing entity with NO save at all -- yet the
+        // wrapper still recorded "slug" as changed. Must compare actual before/after state, not raw input.
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Canvas", slug: "my-slug", description: null, CancellationToken.None);
+
+        await harness.Service.UpdateAsync(created.Id, name: null, slug: "My Slug", description: null, CancellationToken.None);
+
+        harness.AuditRecords.Should().NotContain(r => r.Action == "resource_context.updated");
+    }
+
+    [Fact]
     public async Task UpdateAsync_WhenRenameCommitsButSlugChangeThenFails_StillAuditsTheRename()
     {
         // Reviewer finding (Important #1): RenameAsync and ChangeSlugAsync each commit independently

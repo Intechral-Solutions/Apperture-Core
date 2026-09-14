@@ -63,6 +63,7 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
 
     /// <inheritdoc />
     /// <remarks>
+    /// <para>
     /// Each delegate call below (<see cref="IResourceContextService.RenameAsync"/>,
     /// <see cref="IResourceContextService.ChangeSlugAsync"/>,
     /// <see cref="IResourceContextService.UpdateDescriptionAsync"/>) commits independently -- so if, say,
@@ -70,6 +71,18 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
     /// already durable by the time the exception propagates. The <c>finally</c> block below still appends
     /// an audit record for whatever actually changed before the exception escapes, so a partially-applied
     /// update is never silently unaudited.
+    /// </para>
+    /// <para>
+    /// The pre-call guards above compare the caller's raw input to the current in-memory field, purely to
+    /// decide whether it is worth calling the delegate at all -- they cannot be trusted to prove a change
+    /// actually happened, because the delegates normalize/trim their input before comparing against the
+    /// stored value (e.g. <see cref="IResourceContextService.ChangeSlugAsync"/> normalizes "My Slug" to
+    /// "my-slug" and, finding that equal to the stored slug, returns the existing entity with NO save at
+    /// all). So each branch below additionally captures the specific field's value immediately before the
+    /// delegate call and compares it to that same field on the delegate's result, adding to
+    /// <c>changedFields</c> only when the field actually differs afterward -- the same before/after
+    /// pattern <see cref="ArchiveAsync"/> and <see cref="UnarchiveAsync"/> already use.
+    /// </para>
     /// </remarks>
     public async ValueTask<ResourceContext> UpdateAsync(ResourceContextId id, string? name, string? slug, string? description, CancellationToken cancellationToken = default)
     {
@@ -83,20 +96,26 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
         {
             if (name is not null && !string.Equals(name, current.Name, StringComparison.Ordinal))
             {
+                var beforeName = current.Name;
                 current = await _resourceContexts.RenameAsync(id, name, cancellationToken).ConfigureAwait(false);
-                changedFields.Add("name");
+                if (!string.Equals(current.Name, beforeName, StringComparison.Ordinal))
+                    changedFields.Add("name");
             }
 
             if (slug is not null && !string.Equals(slug, current.Slug, StringComparison.Ordinal))
             {
+                var beforeSlug = current.Slug;
                 current = await _resourceContexts.ChangeSlugAsync(id, slug, cancellationToken).ConfigureAwait(false);
-                changedFields.Add("slug");
+                if (!string.Equals(current.Slug, beforeSlug, StringComparison.Ordinal))
+                    changedFields.Add("slug");
             }
 
             if (description is not null && !string.Equals(description, current.Description, StringComparison.Ordinal))
             {
+                var beforeDescription = current.Description;
                 current = await _resourceContexts.UpdateDescriptionAsync(id, description, cancellationToken).ConfigureAwait(false);
-                changedFields.Add("description");
+                if (!string.Equals(current.Description, beforeDescription, StringComparison.Ordinal))
+                    changedFields.Add("description");
             }
 
             return current;
