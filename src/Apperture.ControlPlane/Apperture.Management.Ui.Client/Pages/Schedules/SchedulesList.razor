@@ -7,6 +7,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config"
@@ -226,10 +227,47 @@
         }
     }
 
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
+    private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
+    private string? _loadedContextValue;
+
     protected override async Task OnInitializedAsync()
     {
         try { _capabilities = await Capabilities.GetCapabilitiesAsync(); }
         catch { _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false); }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        if (_context.State == ScopedListContextState.UnknownContext)
+        {
+            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
+            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        }
+
+        if (_context.State != ScopedListContextState.Ready)
+        {
+            // AwaitingContext (or still-UnknownContext after the retry): the URL is either mid-rewrite
+            // -- ResourceContextViewState.OnLocationChanged is still awaiting its JS call before it
+            // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
+            // previously-loaded context's rows on screen while this resolves; clear them so the existing
+            // LoadingState markup is what's shown (this page has no dedicated UnknownContext branch --
+            // the "that context doesn't exist" notice is surfaced globally by ResourceContextViewNotices
+            // in MainLayout). Reset _loadedContextValue too, so the same context resolving again
+            // afterward is treated as a fresh load rather than skipped as "already loaded".
+            _schedules = null;
+            _error = null;
+            _loadedContextValue = null;
+            return;
+        }
+
+        if (_context.QueryValue == _loadedContextValue)
+            return;
+
+        _loadedContextValue = _context.QueryValue;
         await LoadAsync();
     }
 
@@ -241,7 +279,7 @@
         _error = null;
         try
         {
-            _schedules = await Client.GetSchedulesAsync();
+            _schedules = await Client.GetSchedulesAsync(_context.ApiFilter);
             await LoadIntegrationReadinessCacheAsync();
         }
         catch (HttpRequestException ex)
