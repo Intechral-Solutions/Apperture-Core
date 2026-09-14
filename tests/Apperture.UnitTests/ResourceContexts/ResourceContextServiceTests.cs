@@ -261,6 +261,6 @@ public sealed class ResourceContextServiceTests
 
         var act = async () => await service.ResolveForNewOwnershipAsync(created.Id);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*archived*");
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*archived*");
     }
 }

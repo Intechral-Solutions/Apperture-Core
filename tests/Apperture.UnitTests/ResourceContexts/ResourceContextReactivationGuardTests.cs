@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using FluentAssertions;
 using Xunit;

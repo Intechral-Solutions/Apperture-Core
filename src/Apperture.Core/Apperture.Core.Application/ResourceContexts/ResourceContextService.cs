@@ -149,7 +149,12 @@ public sealed class ResourceContextService : IResourceContextService
             ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found.");
 
         if (!resolved.IsActive)
-            throw new InvalidOperationException($"ResourceContext '{resolved.Name}' ({resolved.Id.Value}) is archived and cannot own new resources.");
+        {
+            throw new ResourceContextArchivedException(
+                resolved.Id,
+                resolved.Name,
+                $"ResourceContext '{resolved.Name}' ({resolved.Id.Value}) is archived and cannot own new resources.");
+        }
 
         return resolved;
     }

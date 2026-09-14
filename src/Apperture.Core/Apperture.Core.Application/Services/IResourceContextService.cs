@@ -61,7 +61,8 @@ public interface IResourceContextService
     /// The context supplied by the caller, or null to default to the reserved Shared context.
     /// </param>
     /// <returns>The resolved, Active ResourceContext.</returns>
-    /// <exception cref="InvalidOperationException">The context does not exist or is not Active.</exception>
+    /// <exception cref="InvalidOperationException">The context does not exist.</exception>
+    /// <exception cref="ResourceContextArchivedException">The context exists but is archived.</exception>
     ValueTask<ResourceContext> ResolveForNewOwnershipAsync(
         ResourceContextId? requestedResourceContextId,
         CancellationToken cancellationToken = default);
