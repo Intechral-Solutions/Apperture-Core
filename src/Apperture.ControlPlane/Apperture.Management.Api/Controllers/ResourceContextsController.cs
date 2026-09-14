@@ -165,6 +165,12 @@ public sealed class ResourceContextsController(
     /// holds that family's own read permission (§9.2). No <c>resource_context.manage</c> requirement --
     /// masking is the only gate.
     /// </summary>
+    /// <remarks>
+    /// A ResourceContext that owns no Integration, Connection, or Schedule of any state is OMITTED from
+    /// the response entirely -- it is not present with all-zero counts. This includes every
+    /// freshly-created Application, which by definition owns nothing yet. Callers (Plan 3's UI included)
+    /// must treat a missing key as "no resources, no restrictions," not as an error or as zero.
+    /// </remarks>
     [HttpGet("summary")]
     [ProducesResponseType(typeof(IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>>> Summary(CancellationToken cancellationToken = default)

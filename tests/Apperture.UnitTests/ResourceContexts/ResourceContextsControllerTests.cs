@@ -335,6 +335,32 @@ public sealed class ResourceContextsControllerTests
         summary.EnabledSchedules.Should().BeNull("the caller does not hold schedule.manage");
     }
 
+    /// <summary>
+    /// Reviewer finding (Important #3): <c>GetOwnershipSummariesAsync</c> builds its result dictionary
+    /// only from ResourceContext ids that appear in at least one of the three ownership GROUP BY
+    /// results -- a context owning NOTHING is omitted entirely, not present with all-zero counts. A
+    /// freshly-created Application (which by definition owns nothing yet) is exactly this case, and
+    /// Plan 3's UI must treat a missing key as "no resources, no restrictions" rather than an error.
+    /// </summary>
+    [Fact]
+    public async Task Summary_OmitsContextsOwningNothing()
+    {
+        await using var harness = ManagementServiceTestHarness.WithPermission(ActionConstants.ResourceContextManage, ResourceTypeConstants.ResourceContext);
+        var created = await harness.Service.CreateAsync("Canvas", slug: null, description: null, CancellationToken.None);
+        // Deliberately no SeedLiveIntegration/Connection/Schedule -- this context owns nothing.
+        var controller = NewController(harness.Service, grantedReadPermissions:
+        [
+            (ActionConstants.IntegrationRead, ResourceTypeConstants.Integration),
+            (ActionConstants.ConnectionRead, ResourceTypeConstants.Connection),
+            (ActionConstants.ScheduleManage, ResourceTypeConstants.Schedule)
+        ]);
+
+        var result = await controller.Summary(CancellationToken.None);
+
+        var body = OkValue<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>>(result.Result);
+        body.Should().NotContainKey(created.Id.Value, "a context owning nothing is omitted, not present with zero counts");
+    }
+
     // -------------------------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------------------------
