@@ -1,0 +1,463 @@
+@* CTX-3A Plan 3 (Task 5): Applications detail page (design gate §6.4-§6.6). The reserved Shared
+   context has the literal id "shared" (ResourceContextIds.SharedValue) and is reachable through this
+   same route ("/config/applications/shared", per ApplicationsList's Shared card href) -- it is loaded
+   through the identical GetResourceContextAsync call as any Application, then branches into a
+   read-only variant via ResourceContextDto.IsReserved (the DTO field built exactly for this check;
+   the "Id == shared" special-case the brief sketches is equivalent but IsReserved is the cleaner,
+   forward-compatible test if a second reserved context is ever added).
+   Edit fields (Name/Description/Slug) are each saved independently -- UpdateResourceContextRequest's
+   three fields are a partial-update contract server-side (ResourceContextsController.Update / any
+   subset of the three, §6.5's lifecycle table), so each field's own ActionButton sends a request with
+   only that field non-null. *@
+@page "/config/applications/{Id}"
+@layout ConfigLayout
+@using Apperture.Core.Domain.ResourceContexts
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject ResourceContextViewState ViewState
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="@(_context?.Name ?? "Application")"
+                Subtitle="@(_context is null ? null : DetailSubtitle())">
+        <Toolbar>
+            <a href="/config/applications" class="ui-toolbar-btn">Back to applications</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (_loading)
+    {
+        <LoadingState Message="Loading application…" />
+    }
+    else if (_notFound)
+    {
+        <ErrorState Message="That application could not be found. It may have been removed." />
+    }
+    else if (_context is not null)
+    {
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        @if (_context.IsReserved)
+        {
+            <ManagementSection Title="Overview" Layer="ManagementSection.UiLayer.Detail">
+                <div class="space-y-3 text-sm text-body">
+                    <p>
+                        Shared holds resources that aren't specific to one application. Integrations in any
+                        application can use Shared connections.
+                    </p>
+                    <p class="text-xs text-muted">Shared can't be renamed or archived.</p>
+                    <p class="text-xs text-muted">@CountsLabel()</p>
+                </div>
+            </ManagementSection>
+        }
+        else
+        {
+            <ManagementSection Title="Application details" Layer="ManagementSection.UiLayer.Detail">
+                <div class="space-y-4 text-sm text-body">
+                    <div>
+                        <label class="block text-xs text-muted" for="application-name">Name</label>
+                        <div class="mt-1 flex gap-2">
+                            <input id="application-name"
+                                   class="ui-input flex-1"
+                                   @bind="_name"
+                                   @bind:event="oninput"
+                                   disabled="@(!_canManage)" />
+                            @if (_canManage)
+                            {
+                                <ActionButton @ref="_saveNameButton"
+                                              Variant="ActionButtonVariant.Secondary"
+                                              DefaultText="Save"
+                                              ActiveText="Saving…"
+                                              SuccessText="Saved"
+                                              ErrorText="Failed"
+                                              IsInactive="@(!NameDirty)"
+                                              OnClick="SaveNameAsync" />
+                            }
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-muted" for="application-description">Description</label>
+                        <div class="mt-1 flex gap-2">
+                            <textarea id="application-description"
+                                      class="ui-input flex-1"
+                                      @bind="_description"
+                                      disabled="@(!_canManage)"></textarea>
+                            @if (_canManage)
+                            {
+                                <ActionButton @ref="_saveDescriptionButton"
+                                              Variant="ActionButtonVariant.Secondary"
+                                              DefaultText="Save"
+                                              ActiveText="Saving…"
+                                              SuccessText="Saved"
+                                              ErrorText="Failed"
+                                              IsInactive="@(!DescriptionDirty)"
+                                              OnClick="SaveDescriptionAsync" />
+                            }
+                        </div>
+                    </div>
+
+                    <ManagementAdvancedSection Title="Advanced">
+                        <div>
+                            <label class="block text-xs text-muted" for="application-slug">Slug</label>
+                            <div class="mt-1 flex gap-2">
+                                <input id="application-slug"
+                                       class="ui-input flex-1 font-mono text-sm"
+                                       @bind="_slug"
+                                       @bind:event="oninput"
+                                       disabled="@(!_canManage)" />
+                                @if (_canManage)
+                                {
+                                    <ActionButton @ref="_saveSlugButton"
+                                                  Variant="ActionButtonVariant.Secondary"
+                                                  DefaultText="Save"
+                                                  ActiveText="Saving…"
+                                                  SuccessText="Saved"
+                                                  ErrorText="Failed"
+                                                  IsInactive="@(!SlugDirty)"
+                                                  OnClick="SaveSlugAsync" />
+                                }
+                            </div>
+                            <p class="mt-1 text-xs text-muted">Used only in future slug-addressed routes.</p>
+                        </div>
+                    </ManagementAdvancedSection>
+
+                    <p class="text-xs text-muted">@CountsLabel()</p>
+                </div>
+            </ManagementSection>
+
+            @if (_canManage)
+            {
+                <ManagementSection Title="Lifecycle" Layer="ManagementSection.UiLayer.Detail">
+                    <div class="space-y-3">
+                        @if (_archiveBlocker is not null)
+                        {
+                            <PageMessage Kind="PageMessageKind.Warning"
+                                         Title="@($"{_context.Name} can't be archived yet.")"
+                                         Message="@($"It still has {DescribeBlocker(_archiveBlocker)}. Retire or disable them first.")">
+                                <div class="mt-2 flex flex-wrap gap-3">
+                                    @if (_archiveBlocker.LiveIntegrations is > 0)
+                                    {
+                                        <a href="@($"/integrations?context={Id}")" class="underline text-sm">View active integrations</a>
+                                    }
+                                    @if (_archiveBlocker.ActiveConnections is > 0)
+                                    {
+                                        <a href="@($"/connections?context={Id}")" class="underline text-sm">View connections</a>
+                                    }
+                                    @if (_archiveBlocker.EnabledSchedules is > 0)
+                                    {
+                                        <a href="@($"/schedules?context={Id}")" class="underline text-sm">View schedules</a>
+                                    }
+                                </div>
+                            </PageMessage>
+                        }
+                        else if (!string.IsNullOrEmpty(_archiveError))
+                        {
+                            <PageMessage Kind="PageMessageKind.Error" Message="@_archiveError" />
+                        }
+
+                        <div class="flex gap-2">
+                            @if (IsActive)
+                            {
+                                <ActionButton @ref="_archiveButton"
+                                              Variant="ActionButtonVariant.Danger"
+                                              DefaultText="Archive"
+                                              ActiveText="Archiving…"
+                                              SuccessText="Archived"
+                                              ErrorText="Failed"
+                                              OnClick="ArchiveAsync" />
+                            }
+                            @if (IsArchived)
+                            {
+                                <ActionButton @ref="_unarchiveButton"
+                                              Variant="ActionButtonVariant.Secondary"
+                                              DefaultText="Unarchive"
+                                              ActiveText="Unarchiving…"
+                                              SuccessText="Unarchived"
+                                              ErrorText="Failed"
+                                              OnClick="UnarchiveAsync" />
+                            }
+                        </div>
+                    </div>
+                </ManagementSection>
+            }
+
+            @if (IsActive)
+            {
+                <ManagementSection Title="Actions" Layer="ManagementSection.UiLayer.Detail">
+                    <div class="flex flex-wrap gap-2">
+                        <a href="@($"/integrations/new?context={Id}")" class="ui-toolbar-btn">
+                            Create an integration in @_context.Name
+                        </a>
+                        <button type="button" class="ui-toolbar-btn" @onclick="SwitchViewAsync">
+                            Switch view to @_context.Name
+                        </button>
+                    </div>
+                </ManagementSection>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private bool _loading = true;
+    private bool _notFound;
+    private string? _error;
+    private bool _canManage;
+    private string? _loadedId;
+
+    private ResourceContextDto? _context;
+    private ResourceContextOwnershipSummaryDto? _summary;
+
+    private string _name = "";
+    private string _description = "";
+    private string _slug = "";
+
+    private ResourceContextOwnershipSummaryDto? _archiveBlocker;
+    private string? _archiveError;
+
+    private ActionButton? _saveNameButton;
+    private ActionButton? _saveDescriptionButton;
+    private ActionButton? _saveSlugButton;
+    private ActionButton? _archiveButton;
+    private ActionButton? _unarchiveButton;
+
+    private bool IsActive => _context is not null && string.Equals(_context.State, ResourceContextStates.Active, StringComparison.Ordinal);
+    private bool IsArchived => _context is not null && string.Equals(_context.State, ResourceContextStates.Archived, StringComparison.Ordinal);
+
+    private bool NameDirty => _context is not null && !string.IsNullOrWhiteSpace(_name) && !string.Equals(_name.Trim(), _context.Name, StringComparison.Ordinal);
+    private bool DescriptionDirty => _context is not null && !string.Equals(_description.Trim(), _context.Description ?? "", StringComparison.Ordinal);
+    private bool SlugDirty => _context is not null && !string.IsNullOrWhiteSpace(_slug) && !string.Equals(_slug.Trim(), _context.Slug, StringComparison.Ordinal);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedId, Id, StringComparison.Ordinal))
+            return;
+
+        _loadedId = Id;
+        _loading = true;
+        _notFound = false;
+        _error = null;
+        _archiveBlocker = null;
+        _archiveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync();
+            _canManage = caps.CanManageResourceContexts;
+        }
+        catch
+        {
+            _canManage = false;
+        }
+
+        try
+        {
+            _context = await Client.GetResourceContextAsync(Id);
+            if (_context is null)
+            {
+                _notFound = true;
+            }
+            else
+            {
+                _name = _context.Name;
+                _description = _context.Description ?? "";
+                _slug = _context.Slug;
+
+                var summaries = await Client.GetResourceContextSummaryAsync();
+                _summary = summaries.TryGetValue(_context.Id, out var s) ? s : null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string DetailSubtitle() =>
+        _context!.IsReserved
+            ? "Resources that aren't specific to one application."
+            : $"{_context.Kind}{(IsArchived ? " · Archived" : "")}";
+
+    private string CountsLabel()
+    {
+        if (_summary is null)
+            return "—";
+        var parts = new List<string>();
+        if (_summary.LiveIntegrations is { } i) parts.Add($"{i} integration{(i == 1 ? "" : "s")}");
+        if (_summary.ActiveConnections is { } c) parts.Add($"{c} connection{(c == 1 ? "" : "s")}");
+        if (_summary.EnabledSchedules is { } sc) parts.Add($"{sc} schedule{(sc == 1 ? "" : "s")}");
+        return parts.Count == 0 ? "—" : string.Join(" · ", parts);
+    }
+
+    private static string DescribeBlocker(ResourceContextOwnershipSummaryDto s)
+    {
+        var parts = new List<string>();
+        if (s.LiveIntegrations is { } li && li > 0)
+            parts.Add($"{li} active integration{(li == 1 ? "" : "s")}");
+        if (s.ActiveConnections is { } ac && ac > 0)
+            parts.Add($"{ac} active connection{(ac == 1 ? "" : "s")}");
+        if (s.EnabledSchedules is { } es && es > 0)
+            parts.Add($"{es} enabled schedule{(es == 1 ? "" : "s")}");
+
+        return parts.Count switch
+        {
+            0 => "active resources",
+            1 => parts[0],
+            _ => string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1]
+        };
+    }
+
+    private async Task SaveNameAsync(MouseEventArgs _)
+    {
+        if (_context is null || !NameDirty)
+            return;
+        await SaveFieldAsync(_saveNameButton, new UpdateResourceContextRequest(_name.Trim(), null, null), "Name updated.");
+    }
+
+    private async Task SaveDescriptionAsync(MouseEventArgs _)
+    {
+        if (_context is null)
+            return;
+        var trimmed = _description.Trim();
+        await SaveFieldAsync(_saveDescriptionButton, new UpdateResourceContextRequest(null, null, string.IsNullOrEmpty(trimmed) ? "" : trimmed), "Description updated.");
+    }
+
+    private async Task SaveSlugAsync(MouseEventArgs _)
+    {
+        if (_context is null || !SlugDirty)
+            return;
+        await SaveFieldAsync(_saveSlugButton, new UpdateResourceContextRequest(null, _slug.Trim(), null), "Slug updated.");
+    }
+
+    private async Task SaveFieldAsync(ActionButton? button, UpdateResourceContextRequest request, string successMessage)
+    {
+        _error = null;
+        if (button is not null)
+            await button.SetStateAsync(ActionButtonState.Active);
+        try
+        {
+            _context = await Client.UpdateResourceContextAsync(Id, request);
+            _name = _context.Name;
+            _description = _context.Description ?? "";
+            _slug = _context.Slug;
+
+            Toasts.Show(ToastSeverity.Success, successMessage);
+            if (button is not null)
+                await button.SetStateAsync(ActionButtonState.Success);
+            await RefreshViewStateContextsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (button is not null)
+                await button.SetStateAsync(ActionButtonState.Error);
+        }
+    }
+
+    private async Task ArchiveAsync(MouseEventArgs _)
+    {
+        if (_context is null)
+            return;
+
+        _archiveBlocker = null;
+        _archiveError = null;
+        if (_archiveButton is not null)
+            await _archiveButton.SetStateAsync(ActionButtonState.Active);
+
+        try
+        {
+            _context = await Client.ArchiveResourceContextAsync(Id);
+            Toasts.Show(ToastSeverity.Success, $"Archived '{_context.Name}'.");
+            if (_archiveButton is not null)
+                await _archiveButton.SetStateAsync(ActionButtonState.Success);
+            await RefreshViewStateContextsAsync();
+        }
+        catch (ResourceContextArchiveConflictException ex)
+        {
+            if (ex.Reason == ResourceContextArchiveConflictReason.OwnershipBlocked && ex.OwnershipSummary is not null)
+                _archiveBlocker = ex.OwnershipSummary;
+            else
+                _archiveError = ex.Message;
+
+            if (_archiveButton is not null)
+                await _archiveButton.SetStateAsync(ActionButtonState.Error);
+        }
+        catch (HttpRequestException ex)
+        {
+            _archiveError = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_archiveButton is not null)
+                await _archiveButton.SetStateAsync(ActionButtonState.Error);
+        }
+    }
+
+    private async Task UnarchiveAsync(MouseEventArgs _)
+    {
+        if (_context is null)
+            return;
+
+        if (_unarchiveButton is not null)
+            await _unarchiveButton.SetStateAsync(ActionButtonState.Active);
+
+        try
+        {
+            _context = await Client.UnarchiveResourceContextAsync(Id);
+            Toasts.Show(ToastSeverity.Success, $"Unarchived '{_context.Name}'.");
+            if (_unarchiveButton is not null)
+                await _unarchiveButton.SetStateAsync(ActionButtonState.Success);
+            await RefreshViewStateContextsAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+            if (_unarchiveButton is not null)
+                await _unarchiveButton.SetStateAsync(ActionButtonState.Error);
+        }
+    }
+
+    /// <summary>
+    /// Design gate §3.5: the shell-wide ResourceContext list is refreshed after any management
+    /// mutation so the View selector (Task 6/7) and other tabs do not go stale for the life of the
+    /// tab. Best-effort -- a failure here must not surface as a page error since the mutation itself
+    /// already succeeded.
+    /// </summary>
+    private async Task RefreshViewStateContextsAsync()
+    {
+        try
+        {
+            await ViewState.RefreshContextsAsync();
+        }
+        catch
+        {
+            // Best-effort cache refresh; the mutation already succeeded.
+        }
+    }
+
+    /// <summary>
+    /// §6.6's second post-create action, now wireable for real since Task 6's
+    /// <see cref="ResourceContextViewState"/> is merged: applies the operator's explicit choice to
+    /// view this Application, exactly like the shell's View selector (<c>ViewSelector.razor</c>).
+    /// </summary>
+    private async Task SwitchViewAsync()
+    {
+        if (_context is null)
+            return;
+
+        await ViewState.SetExplicitAsync(ResourceContextViewScope.Of(Id));
+        Toasts.Show(ToastSeverity.Success, $"Now viewing {_context.Name}.");
+    }
+}
