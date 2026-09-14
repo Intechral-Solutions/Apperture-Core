@@ -440,6 +440,10 @@ public sealed class IntegrationsController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+        catch (ResourceContextArchivedException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return NotFound(new { error = ex.Message });
@@ -460,6 +464,10 @@ public sealed class IntegrationsController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (ResourceContextArchivedException ex)
+        {
+            return Conflict(new { error = ex.Message });
         }
         catch (InvalidOperationException ex)
         {

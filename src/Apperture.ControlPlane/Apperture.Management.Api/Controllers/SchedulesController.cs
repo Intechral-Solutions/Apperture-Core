@@ -192,7 +192,18 @@ public sealed class SchedulesController : ControllerBase
             TimeZone = body.TimeZone ?? def.TimeZone,
             Enabled = body.Enabled ?? def.Enabled
         };
-        await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
+        try
+        {
+            await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
+        }
+        catch (ResourceContextArchivedException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         return Ok(ToDto(updated, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
