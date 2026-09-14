@@ -63,12 +63,13 @@ public sealed class ResourceContextSlugTests
     /// route needs them.
     /// </summary>
     [Fact]
-    public void ReservedSlugs_AreExactlySharedAndSystem() =>
-        ResourceContextSlug.ReservedSlugs.Should().BeEquivalentTo(["shared", "system"]);
+    public void ReservedSlugs_AreExactlySharedSystemAndAll() =>
+        ResourceContextSlug.ReservedSlugs.Should().BeEquivalentTo(["shared", "system", "all"]);
 
     [Theory]
     [InlineData("shared", true)]
     [InlineData("system", true)]
+    [InlineData("all", true)]
     [InlineData("api", false)]
     [InlineData("apps", false)]
     [InlineData("new", false)]

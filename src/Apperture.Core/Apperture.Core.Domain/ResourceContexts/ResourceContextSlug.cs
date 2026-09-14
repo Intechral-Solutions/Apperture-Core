@@ -24,7 +24,7 @@ public static class ResourceContextSlug
     /// a slug-addressed route actually needs them.
     /// </remarks>
     public static IReadOnlySet<string> ReservedSlugs { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { "shared", "system" };
+        new HashSet<string>(StringComparer.Ordinal) { "shared", "system", "all" };
 
     /// <summary>
     /// Normalizes a candidate slug: lowercase, trim, whitespace and underscores to hyphens,
