@@ -1071,7 +1071,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<IntegrationDto> ActivateIntegrationAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/activate", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Unexpected null response from ActivateIntegration.");
     }
@@ -1079,7 +1079,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<IntegrationDto> DeactivateIntegrationAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/deactivate", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Unexpected null response from DeactivateIntegration.");
     }
@@ -1087,7 +1087,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task<IntegrationDto> RetireIntegrationAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/retire", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Unexpected null response from RetireIntegration.");
     }
