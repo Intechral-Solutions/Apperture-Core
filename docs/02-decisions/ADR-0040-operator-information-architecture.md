@@ -53,3 +53,4 @@ Live contract: [control-panel-ui.md](../01-architecture/control-panel-ui.md). De
 
 - Historical Epics 98–101 remain valid as prior steps; this ADR supersedes their rail/home orientation.
 - Later work (Integration Operations Hub, ResourceContext, Resource Catalog, final Business Data collections, Dashboard Panels, Applications/Services) is explicitly out of scope.
+- **2026-09-13 (CTX-3A):** Application workspaces (ResourceContext-backed) landed as an organizational *view* — a top-bar "View" selector plus a Config → Applications management page — with no change to this ADR's rail (still four domains) or Control Panel structure. The selector is shell chrome, not a fifth domain; see `docs/01-architecture/transitions/resource-contexts/ctx3-design-gate.md` §1 and §3.1, and the CTX-3A closure report.

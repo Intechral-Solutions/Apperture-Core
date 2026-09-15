@@ -14,6 +14,15 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 
 - **Top bar** — Hamburger, **orientation area** (breadcrumb trail; optional future title row), theme and account menus (right). Parent crumbs are navigable plain `<a href>` links; current crumb is text. See [Epic 101](../02-decisions/Epic101-Top-Bar-Breadcrumbs-and-Parent-Context-Links.md) and [UIX-2 stabilization](../audits/uix2-breadcrumb-shell-stabilization.md).
 
+## View selector
+
+- **Placement:** Top bar, leading edge of the orientation area — before the breadcrumb/title area.
+- **Label:** "View" (never "Workspace", "Application", or "Context").
+- **Persistence:** Three layers, in priority order — URL query string on scoped pages (`?context=`), tab state (in-memory, per browser tab), and per-user `localStorage`. There is no server-side preference.
+- **Visibility:** Hidden until the first active Application exists anywhere in the instance.
+
+Full behavioral spec: [CTX-3 design gate](transitions/resource-contexts/ctx3-design-gate.md) §3-§4.
+
 ## Terminology
 
 - **Domain** — A grouping of related menu items that maps to a rail icon (Control Center, Integrations, Business Data, Config). Replaces "Module" from IntegrationCenter.
@@ -39,7 +48,7 @@ Operations, Automation, Connections, and Dashboard are **not** rail domains.
 
 **Business Data:** collections landing `/business-data` and **Customers** `/business-data/customers` (demo/sandbox projection with a demo badge; `/demo/customers` redirects).
 
-**Config** (gear): **Overview**, **Inventory**, **Governance**, **Attention** (operational teams, routing defaults, managed contacts, Notifications including diagnostics), **System** (platform settings, modules, authentication, developer & internal). Create/detail routes stay off-menu.
+**Config** (gear): **Overview**, **Inventory**, **Applications**, **Governance**, **Attention** (operational teams, routing defaults, managed contacts, Notifications including diagnostics), **System** (platform settings, modules, authentication, developer & internal). Create/detail routes stay off-menu. **Applications** manages ResourceContexts — Application workspaces plus the read-only Shared context; see the [CTX-3 design gate](transitions/resource-contexts/ctx3-design-gate.md) §6.
 
 UI aggregation is not domain ownership: Connections, Schedules, Runs, and Business Data keep their own models. Inventory and Control Center discover them; they do not become Config or Integration entities.
 
