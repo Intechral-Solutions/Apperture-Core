@@ -1,4 +1,5 @@
 @page "/integrations/{IntegrationId}/connections"
+@using Apperture.Core.Domain.ResourceContexts
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
@@ -172,6 +173,28 @@
                                                                     ConfigValues="_inFlowConfigValues"
                                                                     SecretValues="_inFlowSecretValues" />
                                 }
+                                @if (ViewState.SelectorVisible)
+                                {
+                                    @if (ResourceContextIds.IsShared(_integration!.ResourceContextId))
+                                    {
+                                        <div class="text-sm text-muted">Context: Shared <span class="text-xs">(fixed — this integration is Shared)</span></div>
+                                    }
+                                    else
+                                    {
+                                        <div>
+                                            <label class="block text-xs text-muted">Context</label>
+                                            <select class="ui-input mt-1 w-full text-sm" @bind="_inFlowResourceContextId">
+                                                <option value="@_integration.ResourceContextId">@ViewState.DescribeContext(_integration.ResourceContextId!)</option>
+                                                <option value="@ResourceContextIds.SharedValue">Shared</option>
+                                            </select>
+                                            <div class="text-xs text-muted">
+                                                @(ResourceContextIds.IsShared(_inFlowResourceContextId)
+                                                    ? "Integrations in any application can use it."
+                                                    : "Only this application's integrations can use it.")
+                                            </div>
+                                        </div>
+                                    }
+                                }
                                 <div class="flex gap-2">
                                     <button type="button"
                                             class="btn btn-primary text-xs"
@@ -260,6 +283,7 @@
     private bool _inFlowCreateSaving;
     private string _inFlowConnectorDefinitionId = "";
     private string _inFlowConnectionName = "";
+    private string _inFlowResourceContextId = string.Empty;
     private string? _inFlowCreateError;
     private IReadOnlyList<ConnectorDefinitionCatalogDto> _connectorDefinitions = Array.Empty<ConnectorDefinitionCatalogDto>();
     private readonly Dictionary<string, string> _inFlowConfigValues = new(StringComparer.Ordinal);
@@ -439,6 +463,9 @@
     {
         _addingConnectionInFlow = true;
         _inFlowCreateError = null;
+        _inFlowResourceContextId = ViewState.SelectorVisible
+            ? (_integration!.ResourceContextId ?? ResourceContextIds.SharedValue)
+            : string.Empty;
         if (_connectorDefinitions.Count == 0)
         {
             try { _connectorDefinitions = await Client.GetConnectorDefinitionsAsync(); }
@@ -493,12 +520,18 @@
         try
         {
             var secrets = _inFlowSecretValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var resourceContextId = !ViewState.SelectorVisible
+                ? null
+                : ResourceContextIds.IsShared(_integration!.ResourceContextId)
+                    ? ResourceContextIds.SharedValue
+                    : _inFlowResourceContextId;
             var created = await Client.CreateConnectionAsync(new CreateConnectionRequest(
                 _inFlowConnectorDefinitionId,
                 _inFlowConnectionName.Trim(),
                 _inFlowConfigValues.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).ToDictionary(kv => kv.Key, kv => kv.Value),
                 SecretRefs: new Dictionary<string, string>(),
-                SecretValues: secrets.Count > 0 ? secrets : null));
+                SecretValues: secrets.Count > 0 ? secrets : null,
+                ResourceContextId: resourceContextId));
 
             var slot = _moduleSlots?.FirstOrDefault(s => string.Equals(s.SlotName, _bindingSlot, StringComparison.Ordinal));
             if (slot is not null)
