@@ -219,7 +219,7 @@
                 </div>
             </div>
 
-            @if (HasUrlFilters)
+            @if (HasUrlFilters || (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll))
             {
                 <div class="ui-detail-block mt-3 text-sm text-body space-y-1">
                     @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
@@ -257,9 +257,19 @@
                             <span class="ml-2 font-mono text-xs break-all">@QueryModuleId</span>
                         </div>
                     }
-                    <div>
-                        <a href="/runs" class="text-xs underline">Clear URL filters</a>
-                    </div>
+                    @if (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll)
+                    {
+                        <div>
+                            <span class="text-muted">Context</span>
+                            <span class="ml-2 text-xs">@ViewState.DescribeContext(_context.ApiFilter!)</span>
+                        </div>
+                    }
+                    @if (HasUrlFilters)
+                    {
+                        <div>
+                            <a href="/runs" class="text-xs underline">Clear URL filters</a>
+                        </div>
+                    }
                 </div>
             }
 

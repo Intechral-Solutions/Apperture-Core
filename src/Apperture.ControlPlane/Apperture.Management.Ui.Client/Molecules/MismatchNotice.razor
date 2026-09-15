@@ -39,7 +39,7 @@
     {
         get
         {
-            var owner = OwnerKnown ? ViewState.DescribeContext(OwnerResourceContextId!) : "an unknown context";
+            var owner = OwnerKnown ? ViewState.DescribeContext(OwnerResourceContextId!) : ResourceContextViewState.UnknownContextLabel;
             return Historical ? $"This {ResourceKindLabel} happened in {owner}." : $"This {ResourceKindLabel} belongs to {owner}.";
         }
     }
@@ -48,6 +48,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        _ready = false; // Reset when parameters change to avoid stale state if this instance is reused with a different OwnerResourceContextId
         await ViewState.EnsureContextsKnownAsync([OwnerResourceContextId, ViewState.Current.ResourceContextId]);
         _ready = true;
     }

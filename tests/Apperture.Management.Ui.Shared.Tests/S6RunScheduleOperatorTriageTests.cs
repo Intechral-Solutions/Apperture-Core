@@ -80,7 +80,7 @@ public sealed class S6RunScheduleOperatorTriageTests
         var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor");
         var content = File.ReadAllText(path);
         content.Should().Contain("RunScheduleOperatorUiHelpers.BuildRunDetailSubtitle");
-        content.Should().NotContain("ChildContent");
+        content.Should().Contain("<OwnershipChip"); // CTX-3A §4.6: every detail page's header carries a Context chip via ChildContent
         content.IndexOf("ManagementAdvancedSection Title=\"Investigation and forensics\"")
             .Should().BeLessThan(content.IndexOf("ManagementAdvancedSection Title=\"Action availability\""));
     }

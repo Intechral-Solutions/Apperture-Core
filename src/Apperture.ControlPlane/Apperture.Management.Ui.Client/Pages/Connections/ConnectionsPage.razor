@@ -59,7 +59,7 @@
 
         @if (_activeTab == "connections" && _capabilities?.CanViewConnections == true)
         {
-            @if (_context.State == ScopedListContextState.Ready && !_context.IsAll
+            @if (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll
                  && !ResourceContextIds.IsShared(_context.ApiFilter) && _sharedConnectionCount > 0)
             {
                 <PageMessage Kind="PageMessageKind.Info">
