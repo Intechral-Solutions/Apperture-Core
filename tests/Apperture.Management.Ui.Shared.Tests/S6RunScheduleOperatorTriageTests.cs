@@ -75,6 +75,19 @@ public sealed class S6RunScheduleOperatorTriageTests
     }
 
     [Fact]
+    public void RunsList_FiltersAndDiagnostics_auto_expands_for_an_active_context_filter_alone()
+    {
+        // CTX-3A Plan 4 final-review cleanup: a Context-only view (no other URL filters) must still
+        // open "Filters and diagnostics" by default, or the design-gate-§5.3 Context row goes unseen
+        // behind a collapsed disclosure. InitiallyOpen must not be keyed to HasUrlFilters alone.
+        var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor");
+        var content = File.ReadAllText(path);
+        content.Should().NotContain("InitiallyOpen=\"@HasUrlFilters\"");
+        content.Should().Contain("InitiallyOpen=\"@ShowFilterSummary\"");
+        content.Should().Contain("private bool ShowFilterSummary => HasUrlFilters || HasActiveContextFilter;");
+    }
+
+    [Fact]
     public void RunDetail_moves_forensics_and_actions_behind_advanced()
     {
         var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunDetail.razor");

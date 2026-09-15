@@ -204,7 +204,7 @@
 
         <ManagementAdvancedSection Title="Filters and diagnostics"
                                    Subtitle="Execution kind, URL query filters, and row identifiers."
-                                   InitiallyOpen="@HasUrlFilters">
+                                   InitiallyOpen="@ShowFilterSummary">
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                     <label class="block text-xs text-muted">Execution kind</label>
@@ -219,7 +219,7 @@
                 </div>
             </div>
 
-            @if (HasUrlFilters || (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll))
+            @if (ShowFilterSummary)
             {
                 <div class="ui-detail-block mt-3 text-sm text-body space-y-1">
                     @if (!string.IsNullOrWhiteSpace(QueryCorrelationKey))
@@ -257,7 +257,7 @@
                             <span class="ml-2 font-mono text-xs break-all">@QueryModuleId</span>
                         </div>
                     }
-                    @if (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll)
+                    @if (HasActiveContextFilter)
                     {
                         <div>
                             <span class="text-muted">Context</span>
@@ -333,6 +333,16 @@
         || !string.IsNullOrWhiteSpace(QueryCreatedFromRaw)
         || !string.IsNullOrWhiteSpace(QueryIntegrationId)
         || !string.IsNullOrWhiteSpace(QueryModuleId);
+
+    /// <summary>Whether the URL names a real, resolved, non-All Context — the same validated
+    /// semantics <see cref="ScopedListContextFilter"/> already establishes elsewhere in this plan.</summary>
+    private bool HasActiveContextFilter =>
+        ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll;
+
+    /// <summary>Single source of truth for whether "Filters and diagnostics" has anything to summarize
+    /// and should therefore start open — a Context-only view (no other URL filters) must still expand it,
+    /// or the new Context row goes unseen behind a collapsed disclosure.</summary>
+    private bool ShowFilterSummary => HasUrlFilters || HasActiveContextFilter;
 
     private IEnumerable<RunSummaryDto> DisplayRuns
     {
