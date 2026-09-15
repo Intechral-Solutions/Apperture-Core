@@ -148,6 +148,7 @@ public interface IManagementClient
         string? outcome = null,
         int pageSize = 50,
         string? continuationToken = null,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

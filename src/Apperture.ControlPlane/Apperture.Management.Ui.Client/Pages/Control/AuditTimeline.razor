@@ -1,10 +1,12 @@
 @page "/control/audit"
 @using System.Net
 @using Microsoft.AspNetCore.Components.Web
+@using Apperture.Core.Domain.ResourceContexts
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Shared
 @inject IManagementClient Client
+@inject ResourceContextViewState ViewState
 
 <div class="p-4">
     <PageHeader Title="Audit Timeline"
@@ -76,6 +78,26 @@
                    @bind:event="oninput"
                    @onkeydown="OnActorKeyDown" />
         </div>
+        <div>
+            <label class="text-xs text-muted">Context</label>
+            <select class="ui-input text-sm ml-1"
+                    @bind="_resourceContextFilter"
+                    @bind:after="LoadAsync">
+                <option value="">All</option>
+                <option value="shared">Shared</option>
+                @foreach (var app in ViewState.KnownContexts.Where(c => c.Kind == ResourceContextKinds.Application))
+                {
+                    <option value="@app.Id">@ViewState.DescribeContext(app.Id)</option>
+                }
+            </select>
+            <div class="mt-0.5 text-xs text-muted">Only activity recorded against a context. Platform and account activity has no context.</div>
+        </div>
+        @if (!ViewState.Current.IsAll && _resourceContextFilter != ViewState.Current.ResourceContextId)
+        {
+            <button class="ui-link" @onclick="UseCurrentViewAsync">
+                Filter to @ViewState.DescribeContext(ViewState.Current.ResourceContextId!)
+            </button>
+        }
     </div>
 
     @if (_forbidden)
@@ -221,13 +243,14 @@
     private string _actionPrefix = "";
     private string _outcomeFilter = "";
     private string _actorFilter = "";
+    private string _resourceContextFilter = "";
     private string? _dataLoadKey;
 
     protected override async Task OnParametersSetAsync()
     {
         await base.OnParametersSetAsync();
         ApplyQueryHoursToTimeRange();
-        var key = $"{QueryModuleId}|{QueryScheduleId}|{QueryRunId}|{_timeRange}";
+        var key = $"{QueryModuleId}|{QueryScheduleId}|{QueryRunId}|{_timeRange}|{_resourceContextFilter}";
         if (key == _dataLoadKey)
             return;
         _dataLoadKey = key;
@@ -250,6 +273,12 @@
             await LoadAsync();
     }
 
+    private Task UseCurrentViewAsync()
+    {
+        _resourceContextFilter = ViewState.Current.ResourceContextId!;
+        return LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _loading = true;
@@ -268,6 +297,7 @@
                 moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
                 scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
                 runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
+                resourceContextId: string.IsNullOrWhiteSpace(_resourceContextFilter) ? null : _resourceContextFilter,
                 pageSize: 50,
                 cancellationToken: default);
         }
@@ -304,6 +334,7 @@
                 moduleId: string.IsNullOrWhiteSpace(QueryModuleId) ? null : QueryModuleId.Trim(),
                 scheduleId: string.IsNullOrWhiteSpace(QueryScheduleId) ? null : QueryScheduleId.Trim(),
                 runId: string.IsNullOrWhiteSpace(QueryRunId) ? null : QueryRunId.Trim(),
+                resourceContextId: string.IsNullOrWhiteSpace(_resourceContextFilter) ? null : _resourceContextFilter,
                 pageSize: 50,
                 continuationToken: _page.NextContinuationToken,
                 cancellationToken: default);

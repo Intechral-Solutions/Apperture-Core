@@ -103,6 +103,30 @@ public sealed class AuditControllerTests
         result.Result.Should().BeOfType<OkObjectResult>();
     }
 
+    [Fact]
+    public async Task List_WithResourceContextId_MapsToCriteria()
+    {
+        var svc = new StubAuditTimelineQueryService(new AuditTimelinePage([], null));
+        var controller = NewController(timeline: svc);
+
+        await controller.List(resourceContextId: "canvas-id", cancellationToken: CancellationToken.None);
+
+        svc.LastCriteria.Should().NotBeNull();
+        svc.LastCriteria!.ResourceContextId.Should().Be("canvas-id");
+    }
+
+    [Fact]
+    public async Task List_WithoutResourceContextId_MapsToNullCriteria()
+    {
+        var svc = new StubAuditTimelineQueryService(new AuditTimelinePage([], null));
+        var controller = NewController(timeline: svc);
+
+        await controller.List(cancellationToken: CancellationToken.None);
+
+        svc.LastCriteria.Should().NotBeNull();
+        svc.LastCriteria!.ResourceContextId.Should().BeNull();
+    }
+
     private sealed class StubPrincipalContext : IPrincipalContext
     {
         public ValueTask<Apperture.Shared.Kernel.IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
@@ -141,8 +165,13 @@ public sealed class AuditControllerTests
             _entry = entry;
         }
 
-        public ValueTask<AuditTimelinePage> QueryAsync(AuditFilterCriteria criteria, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_page);
+        public AuditFilterCriteria? LastCriteria { get; private set; }
+
+        public ValueTask<AuditTimelinePage> QueryAsync(AuditFilterCriteria criteria, CancellationToken cancellationToken = default)
+        {
+            LastCriteria = criteria;
+            return ValueTask.FromResult(_page);
+        }
 
         public ValueTask<AuditTimelineEntry?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_entry);

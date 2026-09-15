@@ -505,6 +505,7 @@ public sealed class ManagementClient : IManagementClient
         string? outcome = null,
         int pageSize = 50,
         string? continuationToken = null,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var pairs = new List<string>();
@@ -518,6 +519,7 @@ public sealed class ManagementClient : IManagementClient
         Add(pairs, "scheduleId", scheduleId);
         Add(pairs, "runId", runId);
         Add(pairs, "outcome", outcome);
+        Add(pairs, "resourceContextId", resourceContextId);
         pairs.Add($"pageSize={pageSize}");
         Add(pairs, "continuationToken", continuationToken);
 

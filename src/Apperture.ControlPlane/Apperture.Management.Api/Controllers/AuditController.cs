@@ -51,6 +51,7 @@ public sealed class AuditController : ControllerBase
         [FromQuery] string? scheduleId = null,
         [FromQuery] string? runId = null,
         [FromQuery] string? outcome = null,
+        [FromQuery] string? resourceContextId = null,
         [FromQuery] int pageSize = 50,
         [FromQuery] string? continuationToken = null,
         CancellationToken cancellationToken = default)
@@ -70,7 +71,8 @@ public sealed class AuditController : ControllerBase
             RunId: runId,
             Outcome: outcome,
             PageSize: pageSize,
-            ContinuationToken: continuationToken);
+            ContinuationToken: continuationToken,
+            ResourceContextId: resourceContextId);
 
         var page = await _auditTimeline.QueryAsync(criteria, cancellationToken).ConfigureAwait(false);
         return Ok(page);
