@@ -112,7 +112,7 @@ public interface IManagementClient
     Task<ExternalControlResult> ParkRunAsync(string runId, CancellationToken cancellationToken = default);
     Task<ExternalControlResult> ResumeRunAsync(string runId, CancellationToken cancellationToken = default);
 
-    Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default);
+    Task<ControlCenterDto> GetControlCenterAsync(string? resourceContextId = null, CancellationToken cancellationToken = default);
     Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

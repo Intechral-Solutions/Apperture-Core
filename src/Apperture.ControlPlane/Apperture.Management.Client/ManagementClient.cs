@@ -428,9 +428,10 @@ public sealed class ManagementClient : IManagementClient
         return await _http.GetFromJsonAsync<OperationDefinitionDto>($"operations/{operationDefinitionId}", cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<ControlCenterDto> GetControlCenterAsync(CancellationToken cancellationToken = default)
+    public async Task<ControlCenterDto> GetControlCenterAsync(string? resourceContextId = null, CancellationToken cancellationToken = default)
     {
-        using var response = await _http.GetAsync("control/center", cancellationToken).ConfigureAwait(false);
+        var path = string.IsNullOrWhiteSpace(resourceContextId) ? "control/center" : $"control/center?resourceContextId={Uri.EscapeDataString(resourceContextId)}";
+        using var response = await _http.GetAsync(path, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         var dto = await response.Content.ReadFromJsonAsync<ControlCenterDto>(cancellationToken: cancellationToken).ConfigureAwait(false);
         return dto ?? new ControlCenterDto([], [], []);
