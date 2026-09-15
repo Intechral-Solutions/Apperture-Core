@@ -1065,7 +1065,7 @@ public sealed class ManagementClient : IManagementClient
     public async Task DeleteIntegrationAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.DeleteAsync($"integrations/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IntegrationDto> ActivateIntegrationAsync(string id, CancellationToken cancellationToken = default)
