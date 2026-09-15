@@ -249,6 +249,11 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         return actor?.Id.Value;
     }
 
+    public ValueTask<IReadOnlyDictionary<string, string>> GetIntegrationOwnerContextIdsAsync(
+        IReadOnlyCollection<string> integrationIds,
+        CancellationToken cancellationToken = default) =>
+        _store.GetIntegrationOwnerContextIdsAsync(integrationIds, cancellationToken);
+
     private static string FormatValidationErrors(NotificationValidationResult result) =>
         string.Join("; ", result.Issues.Select(i => i.Message));
 }

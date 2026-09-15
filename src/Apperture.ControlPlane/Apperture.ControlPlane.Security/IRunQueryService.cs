@@ -65,7 +65,8 @@ public sealed record RunQueryFilter(
     string? CorrelationKey = null,
     string? IntegrationId = null,
     int? Take = null,
-    string? ResourceContextId = null);
+    string? ResourceContextId = null,
+    bool ResourceContextIdIsNull = false);
 
 public sealed record RunSummaryDto(
     string RunId,

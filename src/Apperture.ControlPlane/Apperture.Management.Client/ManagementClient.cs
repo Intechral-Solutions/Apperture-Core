@@ -443,6 +443,7 @@ public sealed class ManagementClient : IManagementClient
         string? status = null,
         string? sort = null,
         int take = 100,
+        string? context = null,
         CancellationToken cancellationToken = default)
     {
         var pairs = new List<string>
@@ -454,6 +455,7 @@ public sealed class ManagementClient : IManagementClient
         Add(pairs, "q", q);
         Add(pairs, "status", status);
         Add(pairs, "sort", sort);
+        Add(pairs, "context", context);
         var query = "?" + string.Join("&", pairs);
         var dto = await _http.GetFromJsonAsync<InventoryQueryResult>(
             $"inventory{query}",

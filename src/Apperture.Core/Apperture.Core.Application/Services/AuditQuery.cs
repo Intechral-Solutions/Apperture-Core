@@ -19,4 +19,5 @@ public sealed record AuditQuery(
     string? FilterByModuleId = null,
     string? FilterByScheduleId = null,
     string? FilterByRunId = null,
-    string? FilterByResourceContextId = null);
+    string? FilterByResourceContextId = null,
+    AuditContextClassificationFilter FilterByContextClassification = AuditContextClassificationFilter.None);

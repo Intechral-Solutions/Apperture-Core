@@ -1,7 +1,9 @@
 @page "/config/inventory"
 @layout ConfigLayout
+@using Apperture.Core.Domain.ResourceContexts
 @inject IManagementClient Client
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config"
@@ -58,12 +60,34 @@
                         <option value="status">Status</option>
                     </select>
                 </label>
+                <label class="flex flex-col gap-1">
+                    <span class="text-xs text-muted">Context</span>
+                    <select class="ui-input ui-input--narrow" @bind="_context" disabled="@_loading">
+                        <option value="">All</option>
+                        <option value="system">System</option>
+                        <option value="shared">Shared</option>
+                        @if (_mode == "activity")
+                        {
+                            <option value="notRecorded">Not recorded</option>
+                        }
+                        @foreach (var ctx in ApplicationContexts)
+                        {
+                            <option value="@ctx.Id">@ViewState.DescribeContext(ctx.Id)</option>
+                        }
+                    </select>
+                </label>
                 <button type="button" class="btn btn-secondary" disabled="@_loading" @onclick="LoadAsync">Apply</button>
             </div>
         </div>
     </ManagementSection>
 
-    @if (!string.IsNullOrEmpty(_error))
+    @if (_contextFilterInvalid)
+    {
+        <ErrorState Message="This Context filter is no longer valid.">
+            <button type="button" class="btn btn-secondary" @onclick="ResetContextFilterAsync">Reset to All</button>
+        </ErrorState>
+    }
+    else if (!string.IsNullOrEmpty(_error))
     {
         <ErrorState Message="@_error" />
     }
@@ -87,6 +111,7 @@
                             <th>Type</th>
                             <th>Name</th>
                             <th>Status</th>
+                            <th>Context</th>
                             <th>Updated</th>
                             <th></th>
                         </tr>
@@ -108,6 +133,7 @@
                                         <span class="text-muted">—</span>
                                     }
                                 </td>
+                                <td class="text-sm">@ContextLabel(item)</td>
                                 <td class="text-xs text-muted">@(item.UpdatedAtUtc?.UtcDateTime.ToString("u") ?? "—")</td>
                                 <td><a class="underline" href="@item.Href">Open</a></td>
                             </tr>
@@ -142,11 +168,24 @@
     private string _type = "";
     private string _status = "";
     private string _sort = "updated";
+    private string _context = "";
     private bool _loading = true;
     private string? _error;
+    private bool _contextFilterInvalid;
     private IReadOnlyList<InventoryItemDto> _items = [];
     private IReadOnlyList<string> _availableTypes = [];
     private IReadOnlyList<string> _statusOptions = [];
+
+    // Inventory's Context filter/column is one of the documented exceptions to the shell View's
+    // zero-Applications gate (design gate §3.3): it must render even when SelectorVisible is false, so
+    // this reads only ViewState.KnownContexts/DescribeContext/EnsureContextsKnownAsync -- never
+    // ViewState.Current, ViewState.SelectorVisible, or the shell's own "?context=" query parameter.
+    // Inventory's "context" query parameter below is local to this page.
+    private IReadOnlyList<ResourceContextDto> ApplicationContexts =>
+        ViewState.KnownContexts
+            .Where(c => string.Equals(c.Kind, ResourceContextKinds.Application, StringComparison.Ordinal))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -161,6 +200,8 @@
             _status = status;
         if (query.TryGetValue("sort", out var sort) && !string.IsNullOrWhiteSpace(sort))
             _sort = sort;
+        if (query.TryGetValue("context", out var context))
+            _context = context;
         await LoadAsync();
     }
 
@@ -171,6 +212,16 @@
         _mode = mode;
         _type = "";
         _status = "";
+        // Not recorded is Activity-only; switching to Resources with it selected must reset the filter
+        // rather than surface the server's 400 for an option the Resources select no longer even shows.
+        if (mode == "resources" && string.Equals(_context, "notRecorded", StringComparison.Ordinal))
+            _context = "";
+        await LoadAsync();
+    }
+
+    private async Task ResetContextFilterAsync()
+    {
+        _context = "";
         await LoadAsync();
     }
 
@@ -178,6 +229,7 @@
     {
         _loading = true;
         _error = null;
+        _contextFilterInvalid = false;
         try
         {
             var result = await Client.GetInventoryAsync(
@@ -185,7 +237,8 @@
                 string.IsNullOrWhiteSpace(_type) ? null : _type,
                 string.IsNullOrWhiteSpace(_q) ? null : _q.Trim(),
                 string.IsNullOrWhiteSpace(_status) ? null : _status,
-                _sort);
+                _sort,
+                context: string.IsNullOrWhiteSpace(_context) ? null : _context);
             _items = result.Items;
             _availableTypes = result.AvailableTypes;
             _statusOptions = result.Items
@@ -200,6 +253,14 @@
             {
                 _statusOptions = _statusOptions.Append(_status).OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
             }
+            await ViewState.EnsureContextsKnownAsync(result.Items.Select(i => i.ResourceContextId));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest && !string.IsNullOrWhiteSpace(_context))
+        {
+            _contextFilterInvalid = true;
+            _items = [];
+            _availableTypes = [];
+            _statusOptions = [];
         }
         catch (Exception ex)
         {
@@ -216,6 +277,14 @@
 
     private static string TypeLabel(string type) =>
         TypeLabels.TryGetValue(type, out var label) ? label : type;
+
+    private string ContextLabel(InventoryItemDto item) => item.ResourceContextClassification switch
+    {
+        "system" => "System",
+        "notRecorded" => "Not recorded",
+        "unknown" => "Unknown context",
+        _ => string.IsNullOrWhiteSpace(item.ResourceContextId) ? "Unknown context" : ViewState.DescribeContext(item.ResourceContextId)
+    };
 
     private static ManagementStatusSemantic StatusSemantic(InventoryItemDto item)
     {

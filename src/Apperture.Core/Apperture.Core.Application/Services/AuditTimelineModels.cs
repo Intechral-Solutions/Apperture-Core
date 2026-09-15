@@ -12,7 +12,8 @@ public sealed record AuditTimelineEntry(
     string Outcome,
     string Summary,
     string? Details,
-    IReadOnlyList<AuditRelatedReference> RelatedReferences);
+    IReadOnlyList<AuditRelatedReference> RelatedReferences,
+    string? ResourceContextId = null);
 
 /// <summary>
 /// Related entity reference for drill-down from an audit entry.
@@ -43,4 +44,6 @@ public sealed record AuditFilterCriteria(
     string? RunId = null,
     string? Outcome = null,
     int PageSize = 50,
-    string? ContinuationToken = null);
+    string? ContinuationToken = null,
+    string? ResourceContextId = null,
+    AuditContextClassificationFilter ContextClassification = AuditContextClassificationFilter.None);

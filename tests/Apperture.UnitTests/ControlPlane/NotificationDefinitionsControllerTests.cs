@@ -121,5 +121,10 @@ public sealed class NotificationDefinitionsControllerTests
                 _previewSnapshot
                 ?? new RenderedNotificationSnapshot("S", "Su", "B", null, null, null, null, "hash"));
         }
+
+        public ValueTask<IReadOnlyDictionary<string, string>> GetIntegrationOwnerContextIdsAsync(
+            IReadOnlyCollection<string> integrationIds,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
     }
 }

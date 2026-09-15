@@ -2,6 +2,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -121,11 +122,41 @@ public sealed class SqlAuditService : IAuditService
         if (!string.IsNullOrEmpty(query.FilterByResourceContextId))
             q = q.Where(x => x.ResourceContextId != null && x.ResourceContextId == query.FilterByResourceContextId);
 
+        if (query.FilterByContextClassification != AuditContextClassificationFilter.None)
+        {
+            q = q.Where(x => x.ResourceContextId == null);
+            if (query.FilterByContextClassification == AuditContextClassificationFilter.System)
+            {
+                q = q.Where(AnyActionPrefix(AuditSystemActionPrefixes.All));
+            }
+            else
+            {
+                foreach (var prefix in AuditSystemActionPrefixes.All)
+                    q = q.Where(x => !x.Action.StartsWith(prefix));
+            }
+        }
+
         if (forPaging
             && !string.IsNullOrEmpty(query.ContinuationToken)
             && long.TryParse(query.ContinuationToken, out var lastId))
             q = q.Where(x => x.Id < lastId);
 
         return q;
+    }
+
+    /// <summary>
+    /// Builds an <c>OrElse</c> chain of <see cref="string.StartsWith(string)"/> calls that EF Core can
+    /// translate to SQL. A plain <c>IEnumerable.Any(p =&gt; x.Action.StartsWith(p))</c> closure does not
+    /// translate.
+    /// </summary>
+    private static Expression<Func<AuditLogEntity, bool>> AnyActionPrefix(IEnumerable<string> prefixes)
+    {
+        var x = Expression.Parameter(typeof(AuditLogEntity), "x");
+        var action = Expression.Property(x, nameof(AuditLogEntity.Action));
+        var startsWith = typeof(string).GetMethod(nameof(string.StartsWith), [typeof(string)])!;
+        Expression body = Expression.Constant(false);
+        foreach (var prefix in prefixes)
+            body = Expression.OrElse(body, Expression.Call(action, startsWith, Expression.Constant(prefix)));
+        return Expression.Lambda<Func<AuditLogEntity, bool>>(body, x);
     }
 }

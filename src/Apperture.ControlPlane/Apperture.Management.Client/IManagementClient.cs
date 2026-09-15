@@ -125,6 +125,7 @@ public interface IManagementClient
         string? status = null,
         string? sort = null,
         int take = 100,
+        string? context = null,
         CancellationToken cancellationToken = default);
 
     Task<HostEffectiveModuleSnapshotDto> GetRuntimeCompositionAsync(CancellationToken cancellationToken = default);
@@ -1282,7 +1283,8 @@ public sealed record AuditTimelineEntryDto(
     string Outcome,
     string Summary,
     string? Details,
-    IReadOnlyList<AuditRelatedReferenceDto> RelatedReferences);
+    IReadOnlyList<AuditRelatedReferenceDto> RelatedReferences,
+    string? ResourceContextId = null);
 
 public sealed record AuditRelatedReferenceDto(string Kind, string Id);
 
@@ -1321,7 +1323,8 @@ public sealed record RunQueryFilter(
     string? CorrelationKey = null,
     string? IntegrationId = null,
     int? Take = null,
-    string? ResourceContextId = null);
+    string? ResourceContextId = null,
+    bool ResourceContextIdIsNull = false);
 
 /// <summary>Epic 35: investigation navigation hint. Kind is stable; TargetId optional. UI must not link when TargetId is null.</summary>
 public sealed record RunInvestigationHintDto(string Kind, string? TargetId);

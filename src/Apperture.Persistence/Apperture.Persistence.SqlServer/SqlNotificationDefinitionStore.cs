@@ -38,6 +38,14 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             q = q.Where(x => x.IsEnabled == enabled);
         if (!string.IsNullOrWhiteSpace(query.Origin))
             q = q.Where(x => x.Origin == query.Origin);
+        if (!string.IsNullOrWhiteSpace(query.OwnerResourceContextId))
+        {
+            var owner = query.OwnerResourceContextId;
+            q = q.Where(x => x.Scope == NotificationDefinitionScopes.Integration
+                && _db.Integrations.Any(i => i.Id == x.IntegrationId && i.ResourceContextId == owner));
+        }
+        if (query.SystemScopedOnly)
+            q = q.Where(x => x.Scope != NotificationDefinitionScopes.Integration);
 
         var rows = await q
             .OrderBy(x => x.DisplayName)
@@ -164,6 +172,23 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
         if (excludingId is { } exclude)
             q = q.Where(x => x.Id != exclude.Value);
         return await q.AnyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyDictionary<string, string>> GetIntegrationOwnerContextIdsAsync(
+        IReadOnlyCollection<string> integrationIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (integrationIds.Count == 0)
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var ids = integrationIds.Distinct(StringComparer.Ordinal).ToList();
+        var rows = await _db.Integrations.AsNoTracking()
+            .Where(i => ids.Contains(i.Id))
+            .Select(i => new { i.Id, i.ResourceContextId })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows.ToDictionary(r => r.Id, r => r.ResourceContextId, StringComparer.Ordinal);
     }
 
     private static string? ExtractPrimaryEventType(string ruleJson)

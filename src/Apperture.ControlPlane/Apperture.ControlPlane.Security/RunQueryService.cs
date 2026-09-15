@@ -69,6 +69,8 @@ public sealed class RunQueryService : IRunQueryService
             query = query.Where(r => r.IntegrationId == filter.IntegrationId);
         if (!string.IsNullOrWhiteSpace(filter?.ResourceContextId))
             query = query.Where(r => r.ResourceContextId == filter.ResourceContextId);
+        if (filter?.ResourceContextIdIsNull == true)
+            query = query.Where(r => r.ResourceContextId == null);
         if (filter?.CreatedFrom is not null)
             query = query.Where(r => r.CreatedAt >= filter.CreatedFrom.Value);
         if (filter?.CreatedTo is not null)

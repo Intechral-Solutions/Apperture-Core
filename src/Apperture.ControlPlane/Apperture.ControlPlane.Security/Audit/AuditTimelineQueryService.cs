@@ -32,7 +32,9 @@ public sealed class AuditTimelineQueryService : IAuditTimelineQueryService
             FilterByOutcome: criteria.Outcome,
             FilterByModuleId: criteria.ModuleId,
             FilterByScheduleId: criteria.ScheduleId,
-            FilterByRunId: criteria.RunId);
+            FilterByRunId: criteria.RunId,
+            FilterByResourceContextId: criteria.ResourceContextId,
+            FilterByContextClassification: criteria.ContextClassification);
 
         var page = await _audit.QueryAsync(query, cancellationToken);
         var entries = page.Items.Select(r => MapToEntry(r)).ToList();
@@ -62,7 +64,8 @@ public sealed class AuditTimelineQueryService : IAuditTimelineQueryService
             outcome,
             summary,
             details.Length > 0 ? details : null,
-            refs);
+            refs,
+            r.ResourceContextId);
     }
 
     private static IReadOnlyList<AuditRelatedReference> MergeRelatedReferences(

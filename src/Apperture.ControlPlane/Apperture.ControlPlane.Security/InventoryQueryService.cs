@@ -5,6 +5,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ModuleSdk.Abstractions;
 
@@ -55,12 +56,13 @@ public sealed class InventoryQueryService : IInventoryQueryService
     {
         var caps = await _capabilities.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
         var mode = NormalizeMode(request.Mode);
+        var context = request.Context ?? InventoryContextFilter.All;
         var items = new List<InventoryItemDto>();
 
         if (mode == InventoryModes.Resources)
-            await CollectResourcesAsync(items, caps, cancellationToken).ConfigureAwait(false);
+            await CollectResourcesAsync(items, caps, context, cancellationToken).ConfigureAwait(false);
         else
-            await CollectActivityAsync(items, caps, cancellationToken).ConfigureAwait(false);
+            await CollectActivityAsync(items, caps, context, cancellationToken).ConfigureAwait(false);
 
         var availableTypes = items
             .Select(i => i.Type)
@@ -142,9 +144,12 @@ public sealed class InventoryQueryService : IInventoryQueryService
     private async Task CollectResourcesAsync(
         List<InventoryItemDto> items,
         OperatorCapabilitiesDto caps,
+        InventoryContextFilter context,
         CancellationToken cancellationToken)
     {
-        if (caps.CanManageModules)
+        // Modules are always System-classified: under a real-context filter, no Module can ever match,
+        // so the source is skipped entirely rather than fetched and filtered away in memory.
+        if (caps.CanManageModules && context.Kind != InventoryContextFilterKind.Context)
         {
             await TryCollectAsync(
                 items,
@@ -156,37 +161,48 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanViewIntegrations)
+        // Integrations/Connections/Schedules are never System-classified: under the System filter, none
+        // of them can ever match, so the source is skipped rather than fetched and filtered away.
+        if (caps.CanViewIntegrations && context.Kind != InventoryContextFilterKind.System)
         {
             await TryCollectAsync(
                 items,
                 async () =>
                 {
-                    var rows = await _integrations.ListIntegrationsAsync(cancellationToken).ConfigureAwait(false);
+                    // The unfiltered overload is used for All rather than always calling the filtered
+                    // overload with a null id: they are equivalent in production, but existing callers
+                    // (tests included) that only stub the unfiltered overload must keep working unchanged.
+                    var rows = context.Kind == InventoryContextFilterKind.Context
+                        ? await _integrations.ListIntegrationsAsync(new ResourceContextId(context.ResourceContextId!), cancellationToken).ConfigureAwait(false)
+                        : await _integrations.ListIntegrationsAsync(cancellationToken).ConfigureAwait(false);
                     foreach (var row in rows)
                         items.Add(MapIntegration(row));
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanViewConnections)
+        if (caps.CanViewConnections && context.Kind != InventoryContextFilterKind.System)
         {
             await TryCollectAsync(
                 items,
                 async () =>
                 {
-                    var rows = await _connections.ListConnectionsAsync(cancellationToken).ConfigureAwait(false);
+                    var rows = context.Kind == InventoryContextFilterKind.Context
+                        ? await _connections.ListConnectionsAsync(new ResourceContextId(context.ResourceContextId!), cancellationToken).ConfigureAwait(false)
+                        : await _connections.ListConnectionsAsync(cancellationToken).ConfigureAwait(false);
                     foreach (var row in rows)
                         items.Add(MapConnection(row));
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanManageSchedules)
+        if (caps.CanManageSchedules && context.Kind != InventoryContextFilterKind.System)
         {
             await TryCollectAsync(
                 items,
                 async () =>
                 {
-                    var rows = await _schedules.ListDefinitionsAsync(cancellationToken).ConfigureAwait(false);
+                    var rows = context.Kind == InventoryContextFilterKind.Context
+                        ? await _schedules.ListDefinitionsAsync(new ResourceContextId(context.ResourceContextId!), cancellationToken).ConfigureAwait(false)
+                        : await _schedules.ListDefinitionsAsync(cancellationToken).ConfigureAwait(false);
                     foreach (var row in rows)
                         items.Add(MapSchedule(row));
                 }).ConfigureAwait(false);
@@ -198,11 +214,30 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 items,
                 async () =>
                 {
-                    var rows = await _notificationDefinitions
-                        .ListAsync(new NotificationDefinitionListQuery(Take: SourceTake), cancellationToken)
-                        .ConfigureAwait(false);
+                    var query = context.Kind switch
+                    {
+                        InventoryContextFilterKind.System =>
+                            new NotificationDefinitionListQuery(Take: SourceTake, SystemScopedOnly: true),
+                        InventoryContextFilterKind.Context =>
+                            new NotificationDefinitionListQuery(Take: SourceTake, OwnerResourceContextId: context.ResourceContextId),
+                        _ => new NotificationDefinitionListQuery(Take: SourceTake)
+                    };
+                    var rows = await _notificationDefinitions.ListAsync(query, cancellationToken).ConfigureAwait(false);
+
+                    var integrationIds = rows
+                        .Where(r => string.Equals(r.Scope, NotificationDefinitionScopes.Integration, StringComparison.Ordinal)
+                            && !string.IsNullOrEmpty(r.IntegrationId))
+                        .Select(r => r.IntegrationId!)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToList();
+                    var owners = integrationIds.Count == 0
+                        ? EmptyOwners
+                        : await _notificationDefinitions
+                            .GetIntegrationOwnerContextIdsAsync(integrationIds, cancellationToken)
+                            .ConfigureAwait(false) ?? EmptyOwners;
+
                     foreach (var row in rows)
-                        items.Add(MapNotificationDefinition(row));
+                        items.Add(MapNotificationDefinition(row, owners));
                 }).ConfigureAwait(false);
         }
     }
@@ -210,18 +245,31 @@ public sealed class InventoryQueryService : IInventoryQueryService
     private async Task CollectActivityAsync(
         List<InventoryItemDto> items,
         OperatorCapabilitiesDto caps,
+        InventoryContextFilter context,
         CancellationToken cancellationToken)
     {
-        await TryCollectAsync(
-            items,
-            async () =>
-            {
-                var rows = await _runs
-                    .ListRunsAsync(new RunQueryFilter(Take: SourceTake), cancellationToken)
-                    .ConfigureAwait(false);
-                foreach (var row in rows)
-                    items.Add(MapRun(row));
-            }).ConfigureAwait(false);
+        // Runs are never System-classified: under the System filter, no Run can ever match, so the
+        // source is skipped rather than fetched and filtered away in memory (which would also defeat
+        // the discoverability guarantee for the other filter values on this capped source).
+        if (context.Kind != InventoryContextFilterKind.System)
+        {
+            await TryCollectAsync(
+                items,
+                async () =>
+                {
+                    var filter = context.Kind switch
+                    {
+                        InventoryContextFilterKind.NotRecorded =>
+                            new RunQueryFilter(Take: SourceTake, ResourceContextIdIsNull: true),
+                        InventoryContextFilterKind.Context =>
+                            new RunQueryFilter(Take: SourceTake, ResourceContextId: context.ResourceContextId),
+                        _ => new RunQueryFilter(Take: SourceTake)
+                    };
+                    var rows = await _runs.ListRunsAsync(filter, cancellationToken).ConfigureAwait(false);
+                    foreach (var row in rows)
+                        items.Add(MapRun(row));
+                }).ConfigureAwait(false);
+        }
 
         if (caps.CanViewAudit)
         {
@@ -229,18 +277,26 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 items,
                 async () =>
                 {
-                    var page = await _audit
-                        .QueryAsync(
-                            new AuditFilterCriteria(
-                                FromUtc: _clock.GetUtcNow().Subtract(AuditWindow),
-                                PageSize: SourceTake),
-                            cancellationToken)
-                        .ConfigureAwait(false);
+                    var fromUtc = _clock.GetUtcNow().Subtract(AuditWindow);
+                    var criteria = context.Kind switch
+                    {
+                        InventoryContextFilterKind.System => new AuditFilterCriteria(
+                            FromUtc: fromUtc, PageSize: SourceTake, ContextClassification: AuditContextClassificationFilter.System),
+                        InventoryContextFilterKind.NotRecorded => new AuditFilterCriteria(
+                            FromUtc: fromUtc, PageSize: SourceTake, ContextClassification: AuditContextClassificationFilter.NotRecorded),
+                        InventoryContextFilterKind.Context => new AuditFilterCriteria(
+                            FromUtc: fromUtc, PageSize: SourceTake, ResourceContextId: context.ResourceContextId),
+                        _ => new AuditFilterCriteria(FromUtc: fromUtc, PageSize: SourceTake)
+                    };
+                    var page = await _audit.QueryAsync(criteria, cancellationToken).ConfigureAwait(false);
                     foreach (var row in page.Items)
                         items.Add(MapAudit(row));
                 }).ConfigureAwait(false);
         }
     }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyOwners =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 
     private static async Task TryCollectAsync(List<InventoryItemDto> items, Func<Task> collect)
     {
@@ -258,6 +314,21 @@ public sealed class InventoryQueryService : IInventoryQueryService
 
     private static bool Matches(InventoryItemDto item, InventoryQuery request)
     {
+        // Cross-check only: the real filtering already happened at each source's query (see
+        // CollectResourcesAsync/CollectActivityAsync) so a capped source's discoverability guarantee
+        // holds. This re-derives the same predicate from the mapped item as a defense-in-depth check.
+        if (request.Context is { Kind: not InventoryContextFilterKind.All } filter)
+        {
+            var contextMatches = filter.Kind switch
+            {
+                InventoryContextFilterKind.System => item.ResourceContextClassification == InventoryContextClassifications.System,
+                InventoryContextFilterKind.NotRecorded => item.ResourceContextClassification == InventoryContextClassifications.NotRecorded,
+                _ => string.Equals(item.ResourceContextId, filter.ResourceContextId, StringComparison.Ordinal)
+            };
+            if (!contextMatches)
+                return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Type)
             && !string.Equals(item.Type, request.Type.Trim(), StringComparison.Ordinal))
             return false;
@@ -339,13 +410,16 @@ public sealed class InventoryQueryService : IInventoryQueryService
             label,
             $"/modules/{id}",
             UpdatedAtUtc: row.UpdatedAtUtc,
-            InventoryItemModes.Resource);
+            InventoryItemModes.Resource,
+            ResourceContextId: null,
+            ResourceContextClassification: InventoryContextClassifications.System);
     }
 
     private static InventoryItemDto MapIntegration(Integration row)
     {
         var id = row.Id.Value;
         var status = row.State.ToString();
+        var (contextId, classification) = ClassifyContextId(row.ResourceContextId.Value);
         return new InventoryItemDto(
             id,
             InventoryTypeTokens.Integration,
@@ -355,13 +429,16 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             $"/integrations/{id}",
             row.UpdatedAt,
-            InventoryItemModes.Resource);
+            InventoryItemModes.Resource,
+            contextId,
+            classification);
     }
 
     private static InventoryItemDto MapConnection(Connection row)
     {
         var id = row.Id.Value;
         var status = row.State.ToString();
+        var (contextId, classification) = ClassifyContextId(row.ResourceContextId.Value);
         return new InventoryItemDto(
             id,
             InventoryTypeTokens.Connection,
@@ -371,7 +448,9 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             $"/connections/{id}",
             row.LastVerificationAtUtc,
-            InventoryItemModes.Resource);
+            InventoryItemModes.Resource,
+            contextId,
+            classification);
     }
 
     private static InventoryItemDto MapSchedule(ScheduleDefinition row)
@@ -381,6 +460,10 @@ public sealed class InventoryQueryService : IInventoryQueryService
         var updated = row.Lifecycle?.MaterialScheduleSemanticsChangedAtUtc
             ?? row.Lifecycle?.LastScheduleEnabledAtUtc
             ?? row.Lifecycle?.LastScheduleDisabledAtUtc;
+        // ScheduleDefinition.ResourceContextId is nullable in the domain type even though creation
+        // always resolves an owner (design gate §5.5 assumes it is always populated); default to Shared
+        // defensively rather than throw for any pre-CTX-1 row that somehow slipped through unbackfilled.
+        var (contextId, classification) = ClassifyContextId(row.ResourceContextId?.Value ?? ResourceContextIds.SharedValue);
         return new InventoryItemDto(
             id,
             InventoryTypeTokens.Schedule,
@@ -390,13 +473,18 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             $"/schedules/{id}",
             updated,
-            InventoryItemModes.Resource);
+            InventoryItemModes.Resource,
+            contextId,
+            classification);
     }
 
-    private static InventoryItemDto MapNotificationDefinition(NotificationDefinition row)
+    private static InventoryItemDto MapNotificationDefinition(
+        NotificationDefinition row,
+        IReadOnlyDictionary<string, string> integrationOwners)
     {
         var id = row.Id.Value;
         var status = row.IsEnabled ? "Enabled" : "Disabled";
+        var (contextId, classification) = ClassifyNotificationDefinition(row, integrationOwners);
         return new InventoryItemDto(
             id,
             InventoryTypeTokens.NotificationDefinition,
@@ -406,7 +494,9 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             $"/config/notifications/definitions/{id}",
             row.UpdatedAtUtc,
-            InventoryItemModes.Resource);
+            InventoryItemModes.Resource,
+            contextId,
+            classification);
     }
 
     private static InventoryItemDto MapRun(RunSummaryDto row)
@@ -414,6 +504,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
         var name = string.IsNullOrWhiteSpace(row.ExecutionDefinitionId)
             ? row.RunId
             : row.ExecutionDefinitionId;
+        var (contextId, classification) = ClassifyRun(row.ResourceContextId);
         return new InventoryItemDto(
             row.RunId,
             InventoryTypeTokens.Run,
@@ -423,7 +514,9 @@ public sealed class InventoryQueryService : IInventoryQueryService
             row.Status,
             $"/runs/{row.RunId}",
             row.CompletedAt ?? row.CreatedAt,
-            InventoryItemModes.Activity);
+            InventoryItemModes.Activity,
+            contextId,
+            classification);
     }
 
     private static InventoryItemDto MapAudit(AuditTimelineEntry row)
@@ -435,6 +528,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
         var href = string.IsNullOrWhiteSpace(runId)
             ? "/control/audit"
             : $"/control/audit?runId={Uri.EscapeDataString(runId)}";
+        var (contextId, classification) = ClassifyAudit(row.ResourceContextId, row.Action);
         return new InventoryItemDto(
             row.Id,
             InventoryTypeTokens.AuditEvent,
@@ -444,6 +538,47 @@ public sealed class InventoryQueryService : IInventoryQueryService
             status,
             href,
             row.Timestamp,
-            InventoryItemModes.Activity);
+            InventoryItemModes.Activity,
+            contextId,
+            classification);
+    }
+
+    /// <summary>A real ResourceContext id classifies Shared (the reserved id) or Application (anything else).</summary>
+    private static (string? Id, string Classification) ClassifyContextId(string resourceContextId) =>
+        ResourceContextIds.IsShared(resourceContextId)
+            ? (resourceContextId, InventoryContextClassifications.Shared)
+            : (resourceContextId, InventoryContextClassifications.Application);
+
+    /// <summary>Runs are never System: a missing context is Not recorded, never inferred from anything else.</summary>
+    private static (string? Id, string Classification) ClassifyRun(string? resourceContextId) =>
+        resourceContextId is null ? (null, InventoryContextClassifications.NotRecorded) : ClassifyContextId(resourceContextId);
+
+    /// <summary>
+    /// Id-first: a non-null ResourceContextId always wins (this covers <c>resource_context.*</c> actions
+    /// regardless of prefix). Only a null id falls back to <see cref="AuditSystemActionPrefixes"/>.
+    /// <see cref="AuditCategoryResolver"/> is deliberately not used here (design gate §5.5: its "other"
+    /// category conflates a context-eligible family with System-shaped families it does not recognize).
+    /// </summary>
+    private static (string? Id, string Classification) ClassifyAudit(string? resourceContextId, string action) =>
+        resourceContextId is not null
+            ? ClassifyContextId(resourceContextId)
+            : (null, AuditSystemActionPrefixes.Matches(action) ? InventoryContextClassifications.System : InventoryContextClassifications.NotRecorded);
+
+    /// <summary>
+    /// Platform/Module scope is always System. Integration scope resolves through the batched owner
+    /// lookup; an id absent from it (a hard-deleted Integration -- a known, out-of-scope-to-fix orphan
+    /// condition, design gate §13) classifies Unknown rather than System or Not recorded.
+    /// </summary>
+    private static (string? Id, string Classification) ClassifyNotificationDefinition(
+        NotificationDefinition row,
+        IReadOnlyDictionary<string, string> integrationOwners)
+    {
+        if (!string.Equals(row.Scope, NotificationDefinitionScopes.Integration, StringComparison.Ordinal))
+            return (null, InventoryContextClassifications.System);
+
+        if (string.IsNullOrEmpty(row.IntegrationId) || !integrationOwners.TryGetValue(row.IntegrationId, out var owner))
+            return (null, InventoryContextClassifications.Unknown);
+
+        return ClassifyContextId(owner);
     }
 }

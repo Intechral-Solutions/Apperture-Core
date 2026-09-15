@@ -46,7 +46,8 @@ public sealed record InventoryQuery(
     string? Q = null,
     string? Status = null,
     string? Sort = null,
-    int Take = 100);
+    int Take = 100,
+    InventoryContextFilter? Context = null);
 
 public sealed record InventoryItemDto(
     string Id,
@@ -57,8 +58,37 @@ public sealed record InventoryItemDto(
     string? StatusLabel,
     string Href,
     DateTimeOffset? UpdatedAtUtc,
-    string Mode);
+    string Mode,
+    string? ResourceContextId = null,
+    string ResourceContextClassification = InventoryContextClassifications.NotRecorded);
 
 public sealed record InventoryQueryResult(
     IReadOnlyList<InventoryItemDto> Items,
     IReadOnlyList<string> AvailableTypes);
+
+/// <summary>Context classification tokens surfaced on <see cref="InventoryItemDto.ResourceContextClassification"/> (design gate §5.5).</summary>
+public static class InventoryContextClassifications
+{
+    public const string System = "system";
+    public const string Shared = "shared";
+    public const string Application = "application";
+    public const string NotRecorded = "notRecorded";
+
+    /// <summary>
+    /// An Integration-scoped NotificationDefinition whose owning Integration was hard-deleted (a known,
+    /// out-of-scope-to-fix orphan condition -- see design gate §13). Visible only under the "all" filter;
+    /// CTX-3A adds no Unknown filter option.
+    /// </summary>
+    public const string Unknown = "unknown";
+}
+
+/// <summary>Inventory's own local Context filter (independent of the shell's View selector; design gate §5.5).</summary>
+public enum InventoryContextFilterKind { All, System, NotRecorded, Context }
+
+public sealed record InventoryContextFilter(InventoryContextFilterKind Kind, string? ResourceContextId = null)
+{
+    public static InventoryContextFilter All { get; } = new(InventoryContextFilterKind.All);
+    public static InventoryContextFilter System { get; } = new(InventoryContextFilterKind.System);
+    public static InventoryContextFilter NotRecorded { get; } = new(InventoryContextFilterKind.NotRecorded);
+    public static InventoryContextFilter ForContext(string resourceContextId) => new(InventoryContextFilterKind.Context, resourceContextId);
+}

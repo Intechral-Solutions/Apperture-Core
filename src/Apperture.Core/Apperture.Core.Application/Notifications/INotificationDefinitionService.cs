@@ -63,4 +63,13 @@ public interface INotificationDefinitionService
         string? definitionId,
         NotificationDefinitionRenderPreviewRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pass-through to <see cref="INotificationDefinitionStore.GetIntegrationOwnerContextIdsAsync"/>: no
+    /// additional authorization is applied here beyond what already gated the caller's definition list,
+    /// since this only resolves ownership for Integration ids the caller can already see referenced.
+    /// </summary>
+    ValueTask<IReadOnlyDictionary<string, string>> GetIntegrationOwnerContextIdsAsync(
+        IReadOnlyCollection<string> integrationIds,
+        CancellationToken cancellationToken = default);
 }
