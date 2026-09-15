@@ -80,7 +80,7 @@ public sealed class IntegrationBindingsController : ControllerBase
     /// Gets connections eligible for binding to a slot of this Integration's module.
     /// </summary>
     [HttpGet("eligible-connections")]
-    public async Task<ActionResult<IReadOnlyList<object>>> GetEligibleConnections(
+    public async Task<ActionResult<IReadOnlyList<EligibleConnectionResponseRow>>> GetEligibleConnections(
         string integrationId,
         [FromQuery] string slotName,
         [FromQuery] string contractType,
@@ -99,7 +99,7 @@ public sealed class IntegrationBindingsController : ControllerBase
                 contractType,
                 integration.ResourceContextId,
                 cancellationToken);
-            return Ok(connections.Select(c => new { Id = c.Id.Value, c.Name, ConnectorDefinitionId = c.ConnectorDefinitionId.Value }).ToList());
+            return Ok(connections.Select(c => new EligibleConnectionResponseRow(c.Id.Value, c.Name, c.ConnectorDefinitionId.Value, c.ResourceContextId.Value)).ToList());
         }
         catch (UnauthorizedAccessException)
         {
@@ -180,3 +180,4 @@ public sealed class IntegrationBindingsController : ControllerBase
 
 public sealed record ModuleSlotDto(string ModuleId, string SlotName, string ContractType);
 public sealed record CreateIntegrationBindingRequestBody(string SlotName, string ContractType, string ConnectionId);
+public sealed record EligibleConnectionResponseRow(string Id, string Name, string ConnectorDefinitionId, string ResourceContextId);

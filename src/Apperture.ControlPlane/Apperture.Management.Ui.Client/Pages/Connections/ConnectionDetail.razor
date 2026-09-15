@@ -165,6 +165,10 @@
                                        class="underline text-sm hover:text-heading">
                                         @(u.IntegrationDisplayName ?? "Integration") (@u.ModuleId, Slot @u.SlotName)
                                     </a>
+                                    @if (ViewState.SelectorVisible && u.IntegrationResourceContextId is not null)
+                                    {
+                                        <span class="text-muted text-xs">(@ViewState.DescribeContext(u.IntegrationResourceContextId))</span>
+                                    }
                                 }
                                 else
                                 {
@@ -267,6 +271,8 @@
         try
         {
             _connection = await Client.GetConnectionAsync(ConnectionId);
+            if (_connection is not null)
+                await ViewState.EnsureContextsKnownAsync(_connection.UsedIn.Select(u => u.IntegrationResourceContextId));
         }
         catch (HttpRequestException ex)
         {

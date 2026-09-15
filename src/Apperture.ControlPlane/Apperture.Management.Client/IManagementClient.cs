@@ -1200,7 +1200,7 @@ public sealed record CreateIntegrationBindingRequest(
     string ConnectionId);
 
 /// <summary>Connection eligible for binding. Epic 50.</summary>
-public sealed record EligibleConnectionDto(string Id, string Name, string ConnectorDefinitionId);
+public sealed record EligibleConnectionDto(string Id, string Name, string ConnectorDefinitionId, string? ResourceContextId = null);
 
 /// <summary>Capability slot declared by a module. Epic 50.</summary>
 public sealed record ModuleSlotDto(string ModuleId, string SlotName, string ContractType);
@@ -1211,7 +1211,8 @@ public sealed record ConnectionUsedInEntry(
     string SlotName,
     string ContractType,
     string? IntegrationId = null,
-    string? IntegrationDisplayName = null);
+    string? IntegrationDisplayName = null,
+    string? IntegrationResourceContextId = null);
 
 /// <summary>Connection field shape for a connector definition (catalog). Epic 52.</summary>
 public sealed record ConnectionFieldCatalogDto(

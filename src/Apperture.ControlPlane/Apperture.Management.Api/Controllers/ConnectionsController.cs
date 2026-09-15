@@ -207,12 +207,14 @@ public sealed class ConnectionsController : ControllerBase
         foreach (var b in bindings)
         {
             string? integrationDisplayName = null;
+            string? integrationResourceContextId = null;
             if (b.IntegrationId is { } integrationId)
             {
                 var integration = await _integrationRepository.GetByIdAsync(integrationId, cancellationToken);
                 integrationDisplayName = integration?.DisplayName;
+                integrationResourceContextId = integration?.ResourceContextId.Value;
             }
-            usedIn.Add(new ConnectionUsedInEntry(b.ModuleId, b.SlotName, b.ContractType, b.IntegrationId?.Value, integrationDisplayName));
+            usedIn.Add(new ConnectionUsedInEntry(b.ModuleId, b.SlotName, b.ContractType, b.IntegrationId?.Value, integrationDisplayName, integrationResourceContextId));
         }
         var owning = resourceContexts.FirstOrDefault(rc => string.Equals(rc.Id.Value, c.ResourceContextId.Value, StringComparison.Ordinal));
         return new ConnectionDto(
@@ -248,7 +250,8 @@ public sealed record ConnectionUsedInEntry(
     string SlotName,
     string ContractType,
     string? IntegrationId = null,
-    string? IntegrationDisplayName = null);
+    string? IntegrationDisplayName = null,
+    string? IntegrationResourceContextId = null);
 
 public sealed record ConnectionDto(
     string Id,

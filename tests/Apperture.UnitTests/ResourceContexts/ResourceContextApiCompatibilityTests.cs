@@ -232,6 +232,79 @@ public sealed class ResourceContextApiCompatibilityTests
     }
 
     // -------------------------------------------------------------------------------------------
+    // Integration bindings controller (CTX-3A Plan 4, A8/A9: Context labels on the binding picker
+    // and "Used by" rows read these ids, via ResourceContextViewState.DescribeContext).
+    // -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetEligibleConnections_IncludesResourceContextIdOnEachRow()
+    {
+        const string expectedContextId = "app-a";
+
+        var integrationManagement = new Mock<IIntegrationManagementService>();
+        var integration = NewIntegration("i-1", new ResourceContextId(expectedContextId));
+        integrationManagement
+            .Setup(s => s.GetIntegrationAsync(It.Is<IntegrationId>(id => id.Value == "i-1"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(integration);
+
+        var bindingService = new Mock<IBindingService>();
+        bindingService
+            .Setup(s => s.GetEligibleConnectionsAsync(
+                integration.ModuleId,
+                "x",
+                "y",
+                It.Is<ResourceContextId?>(c => c!.Value == expectedContextId),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewConnection("c-1", new ResourceContextId(expectedContextId))]);
+
+        var controller = new IntegrationBindingsController(
+            integrationManagement.Object,
+            Mock.Of<IBindingRepository>(),
+            bindingService.Object,
+            Mock.Of<IModuleSlotRegistry>());
+
+        var result = await controller.GetEligibleConnections("i-1", "x", "y", CancellationToken.None);
+
+        var rows = OkValue<IReadOnlyList<EligibleConnectionResponseRow>>(result.Result);
+        rows.Should().ContainSingle(r => r.ResourceContextId == expectedContextId);
+    }
+
+    [Fact]
+    public async Task ConnectionUsedInEntry_IncludesIntegrationResourceContextId()
+    {
+        const string boundIntegrationContextId = "A-context-id";
+
+        var (service, resourceContexts, bindings, integrations, connectors) = NewConnectionMocks();
+        var connection = NewConnection("c-1", ResourceContextIds.Shared);
+        service
+            .Setup(s => s.GetConnectionAsync(It.Is<ConnectionId>(id => id.Value == "c-1"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(connection);
+
+        var binding = new Binding(
+            new BindingId("b-1"),
+            new IntegrationId("i-a"),
+            "Sample.Mod",
+            "slot-x",
+            "contract-y",
+            connection.Id,
+            null,
+            BindingState.Active);
+        bindings
+            .Setup(b => b.GetByConnectionIdAsync(It.Is<ConnectionId>(id => id.Value == "c-1"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([binding]);
+
+        integrations
+            .Setup(i => i.GetByIdAsync(It.Is<IntegrationId>(id => id.Value == "i-a"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(NewIntegration("i-a", new ResourceContextId(boundIntegrationContextId)));
+
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var result = await controller.Get("c-1", CancellationToken.None);
+
+        var connectionDto = OkValue<ConnectionDto>(result.Result);
+        connectionDto.UsedIn.Should().ContainSingle(e => e.IntegrationResourceContextId == boundIntegrationContextId);
+    }
+
+    // -------------------------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------------------------
 

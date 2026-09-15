@@ -6,6 +6,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
@@ -130,7 +131,7 @@
                                 {
                                     @foreach (var c in _eligibleConnections)
                                     {
-                                        <option value="@c.Id">@c.Name</option>
+                                        <option value="@c.Id">@c.Name@(ViewState.SelectorVisible && c.ResourceContextId is not null ? $" ({ViewState.DescribeContext(c.ResourceContextId)})" : "")</option>
                                     }
                                 }
                             </select>
@@ -397,7 +398,11 @@
         if (string.IsNullOrEmpty(_bindingSlot)) { _eligibleConnections = null; return; }
         var slot = _moduleSlots?.FirstOrDefault(s => s.SlotName == _bindingSlot);
         if (slot is null) { _eligibleConnections = null; return; }
-        try { _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType); }
+        try
+        {
+            _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType);
+            await ViewState.EnsureContextsKnownAsync(_eligibleConnections.Select(c => c.ResourceContextId));
+        }
         catch (HttpRequestException ex) { _eligibleConnections = null; Toasts.Show(ToastSeverity.Error, ex.Message); }
     }
 
@@ -497,7 +502,10 @@
 
             var slot = _moduleSlots?.FirstOrDefault(s => string.Equals(s.SlotName, _bindingSlot, StringComparison.Ordinal));
             if (slot is not null)
+            {
                 _eligibleConnections = await Client.GetIntegrationEligibleConnectionsAsync(IntegrationId, slot.SlotName, slot.ContractType);
+                await ViewState.EnsureContextsKnownAsync(_eligibleConnections.Select(c => c.ResourceContextId));
+            }
 
             var nowEligible = _eligibleConnections?.FirstOrDefault(c => string.Equals(c.Id, created.Id, StringComparison.Ordinal));
             if (nowEligible is not null)
