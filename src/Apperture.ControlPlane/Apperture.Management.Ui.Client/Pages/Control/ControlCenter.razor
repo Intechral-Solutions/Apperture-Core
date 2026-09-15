@@ -685,7 +685,18 @@
 
     private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
 
-    private void OnViewStateChanged() => _ = LoadAsync();
+    private void OnViewStateChanged()
+    {
+        // ViewState.Changed is a plain C# event, not a Blazor-bound EventCallback, so Blazor's
+        // automatic post-handler re-render never fires for it (unlike the Refresh button's @onclick,
+        // which calls LoadAsync directly and gets that render for free). InvokeAsync marshals onto the
+        // renderer's synchronization context so StateHasChanged actually takes effect after the reload.
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
 
     public void Dispose()
     {

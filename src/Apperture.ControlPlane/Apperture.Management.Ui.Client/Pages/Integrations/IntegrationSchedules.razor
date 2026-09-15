@@ -85,7 +85,7 @@
                     }
                 </EmptyState>
             }
-            @if (_canManage && _schedules is { Count: > 0 })
+            @if (_canManage && (_addingSchedule || _schedules is { Count: > 0 }))
             {
                 @if (_addingSchedule)
                 {
