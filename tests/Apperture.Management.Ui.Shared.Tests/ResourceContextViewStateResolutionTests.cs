@@ -146,4 +146,51 @@ public class ResourceContextViewStateResolutionTests
         r.Action.Should().Be(ResourceContextViewResolutionAction.RewriteUrl);
         r.WriteLocalStorage.Should().BeFalse();
     }
+
+    // --- Tab-state revalidation (Plan 5 stabilization, Issue 2) ---
+    //
+    // Unlike localStorage, a tab-state scope was previously returned as-is with no check against the
+    // current active/archived directory. That let a stale sequence persist for the rest of the tab:
+    // select Application A, then archive A (from another window/tab), then navigate within this tab --
+    // the unrevalidated tab state kept resolving to the now-archived A forever, with no notice.
+
+    [Fact]
+    public void TabState_NamesAnArchivedContext_FallsBackToAllWithNotice_WithoutWritingLocalStorage()
+    {
+        var r = ResourceContextViewResolver.Resolve(
+            null, tabState: ResourceContextViewScope.Of("retired-id"), localStorageValue: null, Active, Archived);
+
+        r.Scope.IsAll.Should().BeTrue();
+        r.Action.Should().Be(ResourceContextViewResolutionAction.RewriteUrl);
+        r.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedRemembered);
+        r.Notice.ResourceContextId.Should().Be("retired-id");
+        r.WriteLocalStorage.Should().BeFalse(
+            "tab state is in-memory only -- correcting it must not overwrite an unrelated, possibly still-valid localStorage entry");
+    }
+
+    [Fact]
+    public void TabState_NamesAnUnknownId_FallsBackToAllSilently()
+    {
+        var r = ResourceContextViewResolver.Resolve(
+            null, tabState: ResourceContextViewScope.Of("does-not-exist"), localStorageValue: null, Active, Archived);
+
+        r.Scope.IsAll.Should().BeTrue();
+        r.Notice.Should().Be(ResourceContextViewNotice.None);
+        r.WriteLocalStorage.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TabState_NamesShared_IsValid()
+    {
+        // "Shared" is a real, always-active ResourceContext id, so it must pass tab-state revalidation
+        // the same way an active Application id does -- not treated as archived/unknown.
+        var r = ResourceContextViewResolver.Resolve(
+            null, tabState: ResourceContextViewScope.Of("shared"), localStorageValue: null,
+            activeContextIds: ["shared", .. Active], Archived);
+
+        r.Scope.ResourceContextId.Should().Be("shared");
+        r.Action.Should().Be(ResourceContextViewResolutionAction.RewriteUrl);
+        r.WriteLocalStorage.Should().BeFalse();
+        r.Notice.Should().Be(ResourceContextViewNotice.None);
+    }
 }

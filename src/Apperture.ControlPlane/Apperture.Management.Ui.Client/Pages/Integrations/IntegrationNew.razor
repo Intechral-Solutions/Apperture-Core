@@ -75,7 +75,17 @@
                     <div class="text-sm font-semibold text-heading">Step 2: Integration metadata</div>
                     <div class="mt-1 text-xs text-muted">This creates the integration and routes you to configuration/remediation.</div>
                     <form class="mt-3 grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
-                        @if (ViewState.SelectorVisible)
+                        @if (ViewState.DirectoryUnavailable)
+                        {
+                            <div class="md:col-span-2">
+                                <PageMessage Kind="PageMessageKind.Warning"
+                                             Title="Application/Context information unavailable"
+                                             Message="Could not confirm whether this instance has any applications. Creating now could place this integration in the wrong Context.">
+                                    <button type="button" class="ui-link text-sm" @onclick="RetryDirectoryAsync">Retry</button>
+                                </PageMessage>
+                            </div>
+                        }
+                        else if (ViewState.SelectorVisible)
                         {
                             <div class="md:col-span-2">
                                 <label class="block text-sm font-medium text-heading">Context (required)</label>
@@ -258,7 +268,13 @@
         !string.IsNullOrWhiteSpace(_displayName)
         && !string.IsNullOrWhiteSpace(_moduleId)
         && _capabilities?.CanManageIntegrations == true
+        // Plan 5 stabilization (Issue 1): while the directory is unavailable, never allow a submit that
+        // would omit ResourceContextId merely because SelectorVisible also reads false in that state --
+        // that would look identical to "confirmed zero Applications" and silently land in Shared.
+        && !ViewState.DirectoryUnavailable
         && (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId));
+
+    private async Task RetryDirectoryAsync() => await ViewState.RefreshContextsAsync();
 
     private Task MoveNextAsync()
     {

@@ -8,6 +8,36 @@ using Microsoft.JSInterop;
 namespace Apperture.Management.Ui.Client.Services;
 
 /// <summary>
+/// Whether the ResourceContext directory (<see cref="ResourceContextViewState.KnownContexts"/> and
+/// everything derived from it, e.g. <see cref="ResourceContextViewState.SelectorVisible"/>) reflects a
+/// successful load. Plan 5 stabilization (Issue 1): a failed load previously left the directory
+/// indistinguishable from "successfully loaded, zero Applications exist" -- both left
+/// <c>KnownContexts</c> empty. That let a create flow gated on <c>SelectorVisible</c> silently omit
+/// <c>ResourceContextId</c> during a transient API outage, exactly like a genuine zero-Applications
+/// installation, and the CTX-1 API default would then silently place the new resource in Shared --
+/// the outcome design gate §7.1 forbids ("Never let the UI fall back to Shared silently"). Callers that
+/// need to tell the two apart (the Integration/Connection/in-flow-Connection create pages) check
+/// <see cref="ResourceContextViewState.DirectoryUnavailable"/> in addition to <c>SelectorVisible</c>.
+/// </summary>
+public enum ResourceContextDirectoryStatus
+{
+    /// <summary>No load has completed yet (the initial state, before <see cref="ResourceContextViewState.InitializeAsync"/> resolves).</summary>
+    Loading,
+
+    /// <summary>The directory has been loaded successfully at least once, and <see cref="ResourceContextViewState.KnownContexts"/> reflects that load (or a later successful refresh).</summary>
+    Loaded,
+
+    /// <summary>
+    /// The most recent load attempt failed, and no load has ever succeeded -- the directory's true
+    /// contents (including whether any Application exists) are unknown, not confirmed-empty. A later
+    /// refresh failing after an earlier success does NOT move the directory back to this state (see
+    /// <see cref="ResourceContextViewState.RefreshContextsAsync"/>): once-loaded data is served stale
+    /// rather than discarded.
+    /// </summary>
+    Unavailable
+}
+
+/// <summary>
 /// Shell-wide state for the ResourceContext ("Applications") view selector (design gate §3-§4).
 /// Thin stateful wrapper around the pure <see cref="ResourceContextViewResolver"/>: this class owns
 /// the JS interop, <see cref="NavigationManager"/>, and <see cref="IManagementClient"/> side effects,
@@ -91,6 +121,17 @@ public sealed class ResourceContextViewState(
     /// <summary>The selector is hidden when there are no Application contexts to choose between (design gate §3).</summary>
     public bool SelectorVisible => KnownActiveApplications.Count > 0;
 
+    /// <summary>Whether the directory has ever loaded successfully. See <see cref="ResourceContextDirectoryStatus"/>.</summary>
+    public ResourceContextDirectoryStatus DirectoryStatus { get; private set; } = ResourceContextDirectoryStatus.Loading;
+
+    /// <summary>
+    /// True only when the most recent load attempt failed and no load has ever succeeded -- distinct
+    /// from "loaded successfully, zero Applications exist" (see <see cref="ResourceContextDirectoryStatus"/>).
+    /// Context-sensitive create flows must check this before treating a hidden Context field as
+    /// confirmation that Shared is a safe default.
+    /// </summary>
+    public bool DirectoryUnavailable => DirectoryStatus == ResourceContextDirectoryStatus.Unavailable;
+
     /// <summary>
     /// Resolves any known ResourceContext id -- active, archived, or the reserved Shared context -- to
     /// its DTO, or null if <paramref name="id"/> is not (yet) known. Unlike
@@ -156,10 +197,29 @@ public sealed class ResourceContextViewState(
                 : context.Name
             : UnknownContextLabel;
 
-    /// <summary>Loads the known ResourceContexts and resolves the initial view. Call once during shell bootstrap.</summary>
+    /// <summary>
+    /// Loads the known ResourceContexts and resolves the initial view. Call once during shell bootstrap.
+    /// A failed fetch is caught here (not left to the caller) so <see cref="DirectoryStatus"/> is always
+    /// set correctly regardless of caller, and so resolution still runs and the LocationChanged
+    /// subscription still gets wired even when the fetch fails -- previously an uncaught exception from
+    /// this fetch skipped both for the rest of the tab's life (App.razor's own try/catch sat outside
+    /// this entire method).
+    /// </summary>
     public async ValueTask InitializeAsync()
     {
-        _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+        try
+        {
+            _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+            DirectoryStatus = ResourceContextDirectoryStatus.Loaded;
+        }
+        catch (HttpRequestException)
+        {
+            // The directory's true contents are unknown, not confirmed-empty (see
+            // ResourceContextDirectoryStatus). _knownContexts stays whatever it already was (empty, on
+            // a first-ever failed load).
+            DirectoryStatus = ResourceContextDirectoryStatus.Unavailable;
+        }
+
         await ResolveForCurrentPathAsync();
 
         if (!_locationChangedSubscribed)
@@ -185,7 +245,20 @@ public sealed class ResourceContextViewState(
         // counts (e.g. an archived context's resources move to Shared) -- drop the cached summary too so
         // GetOwnershipSummaryAsync re-fetches instead of serving stale counts for the rest of the tab.
         _ownershipSummary = null;
-        _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+        try
+        {
+            _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+            DirectoryStatus = ResourceContextDirectoryStatus.Loaded;
+        }
+        catch (HttpRequestException)
+        {
+            // A transient refresh failure after an earlier successful load must not erase that load --
+            // serving stale-but-known data is strictly safer than losing it and re-triggering the
+            // zero-Applications-indistinguishable-from-unavailable gap this state exists to close. Only
+            // move to Unavailable if the directory has never successfully loaded.
+            if (DirectoryStatus != ResourceContextDirectoryStatus.Loaded)
+                DirectoryStatus = ResourceContextDirectoryStatus.Unavailable;
+        }
         await ResolveForCurrentPathAsync();
         Changed?.Invoke();
     }

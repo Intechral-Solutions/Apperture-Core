@@ -110,31 +110,53 @@ public static class ResourceContextViewResolver
         }
 
         // 2. URL silent, tab state set -> rewrite the URL to the tab state; do NOT write localStorage.
+        // Revalidated against the current active/archived directory the same way localStorage is
+        // (§4.4) -- a tab-state scope can go stale within the same tab (e.g. select Application A,
+        // then A is archived from another window, then navigate again in this tab). Without
+        // revalidation here, the stale reference would keep resolving for the rest of the tab's life,
+        // since nothing else re-checks it.
         if (tabState is { } tab)
-            return new ResourceContextViewResolution(tab, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
+            return ResolveRememberedScope(tab, writeLocalStorageIfArchived: false, activeContextIds, archivedContextIds);
 
         // 3. URL silent, tab state unset -> read localStorage; validate (§4.4); set tab state; rewrite URL.
         var fromStorage = ResourceContextViewScope.Parse(localStorageValue);
         if (fromStorage is { } storedScope)
-        {
-            if (storedScope.IsAll || activeContextIds.Contains(storedScope.ResourceContextId!))
-                return new ResourceContextViewResolution(storedScope, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
-
-            if (archivedContextIds.Contains(storedScope.ResourceContextId!))
-            {
-                // §4.3 Q5, "From localStorage or tab state": fall back to All with a one-time notice,
-                // and rewrite the stored value to 'all' so the stale reference does not keep resurfacing.
-                return new ResourceContextViewResolution(
-                    ResourceContextViewScope.All, ResourceContextViewResolutionAction.RewriteUrl, true,
-                    new ResourceContextViewNotice(ResourceContextViewNoticeKind.ArchivedRemembered, storedScope.ResourceContextId));
-            }
-
-            // Unknown id remembered in localStorage: not information the operator explicitly asked
-            // for this visit, so fall back to All silently (no notice) -- unlike the explicit-URL case.
-            return new ResourceContextViewResolution(ResourceContextViewScope.All, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
-        }
+            return ResolveRememberedScope(storedScope, writeLocalStorageIfArchived: true, activeContextIds, archivedContextIds);
 
         // 4. Nothing valid anywhere -> All; rewrite URL to ?context=all.
+        return new ResourceContextViewResolution(ResourceContextViewScope.All, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
+    }
+
+    /// <summary>
+    /// Shared §4.4 validation for a "remembered" scope -- tab state (branch 2) or localStorage
+    /// (branch 3) -- against the current active/archived context directory. Both callers land here so
+    /// there is exactly one place that decides what a stale remembered scope resolves to; they differ
+    /// only in <paramref name="writeLocalStorageIfArchived"/>: localStorage is the actual persisted
+    /// source of a stale reference, so its branch corrects it (rewrites the stored value to "all" so it
+    /// stops resurfacing); tab state is in-memory only, so correcting it must never overwrite an
+    /// unrelated, possibly still-valid localStorage entry. Both branches always write <c>false</c> for
+    /// a merely-VALID scope -- only an explicit operator selector change writes localStorage
+    /// (<see cref="ResourceContextViewResolutionAction"/> callers, not this method).
+    /// </summary>
+    private static ResourceContextViewResolution ResolveRememberedScope(
+        ResourceContextViewScope scope,
+        bool writeLocalStorageIfArchived,
+        IReadOnlyCollection<string> activeContextIds,
+        IReadOnlyCollection<string> archivedContextIds)
+    {
+        if (scope.IsAll || activeContextIds.Contains(scope.ResourceContextId!))
+            return new ResourceContextViewResolution(scope, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
+
+        if (archivedContextIds.Contains(scope.ResourceContextId!))
+        {
+            // §4.3 Q5, "From localStorage or tab state": fall back to All with a one-time notice.
+            return new ResourceContextViewResolution(
+                ResourceContextViewScope.All, ResourceContextViewResolutionAction.RewriteUrl, writeLocalStorageIfArchived,
+                new ResourceContextViewNotice(ResourceContextViewNoticeKind.ArchivedRemembered, scope.ResourceContextId));
+        }
+
+        // Unknown id: not information the operator explicitly asked for this visit, so fall back to
+        // All silently (no notice) -- unlike the explicit-URL case.
         return new ResourceContextViewResolution(ResourceContextViewScope.All, ResourceContextViewResolutionAction.RewriteUrl, false, ResourceContextViewNotice.None);
     }
 }

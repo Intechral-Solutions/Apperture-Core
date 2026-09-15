@@ -34,7 +34,15 @@
     {
         <ManagementSection Title="Connection details" Layer="ManagementSection.UiLayer.Detail">
             <div class="space-y-4 text-sm text-body">
-            @if (ViewState.SelectorVisible)
+            @if (ViewState.DirectoryUnavailable)
+            {
+                <PageMessage Kind="PageMessageKind.Warning"
+                             Title="Application/Context information unavailable"
+                             Message="Could not confirm whether this instance has any applications. Creating now could place this connection in the wrong Context.">
+                    <button type="button" class="ui-link text-sm" @onclick="RetryDirectoryAsync">Retry</button>
+                </PageMessage>
+            }
+            else if (ViewState.SelectorVisible)
             {
                 <div>
                     <label class="block text-xs text-muted">Context (required)</label>
@@ -113,7 +121,13 @@
         !_saving &&
         !string.IsNullOrWhiteSpace(_connectorDefinitionId) &&
         !string.IsNullOrWhiteSpace(_connectionName) &&
+        // Plan 5 stabilization (Issue 1): never allow a submit that would omit ResourceContextId merely
+        // because SelectorVisible also reads false while the directory is unavailable -- that would look
+        // identical to "confirmed zero Applications" and silently land in Shared.
+        !ViewState.DirectoryUnavailable &&
         (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId));
+
+    private async Task RetryDirectoryAsync() => await ViewState.RefreshContextsAsync();
 
     [SupplyParameterFromQuery(Name = "context")]
     public string? QueryContext { get; set; }

@@ -173,7 +173,15 @@
                                                                     ConfigValues="_inFlowConfigValues"
                                                                     SecretValues="_inFlowSecretValues" />
                                 }
-                                @if (ViewState.SelectorVisible)
+                                @if (ViewState.DirectoryUnavailable)
+                                {
+                                    <PageMessage Kind="PageMessageKind.Warning"
+                                                 Title="Application/Context information unavailable"
+                                                 Message="Could not confirm this integration's application options. Creating now could place this connection in the wrong Context.">
+                                        <button type="button" class="ui-link text-xs" @onclick="RetryDirectoryAsync">Retry</button>
+                                    </PageMessage>
+                                }
+                                else if (ViewState.SelectorVisible)
                                 {
                                     @if (ResourceContextIds.IsShared(_integration!.ResourceContextId))
                                     {
@@ -198,7 +206,7 @@
                                 <div class="flex gap-2">
                                     <button type="button"
                                             class="btn btn-primary text-xs"
-                                            disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName))"
+                                            disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName) || (ViewState.DirectoryUnavailable && !ResourceContextIds.IsShared(_integration?.ResourceContextId)))"
                                             @onclick="CreateConnectionInFlowAsync">
                                         Create connection
                                     </button>
@@ -502,9 +510,19 @@
             ? (_inFlowSecretValues.TryGetValue(field.Key, out var secret) ? secret : "")
             : (_inFlowConfigValues.TryGetValue(field.Key, out var cfg) ? cfg : "");
 
+    private async Task RetryDirectoryAsync() => await ViewState.RefreshContextsAsync();
+
     private async Task CreateConnectionInFlowAsync()
     {
         if (SelectedInFlowConnectorDefinition is null) return;
+        // Plan 5 stabilization (Issue 1): mirrors the disabled-button guard as defense in depth -- never
+        // submit with an unconfirmed Context for a non-Shared integration while the directory is
+        // unavailable, which would otherwise omit ResourceContextId and silently land in Shared.
+        if (ViewState.DirectoryUnavailable && !ResourceContextIds.IsShared(_integration!.ResourceContextId))
+        {
+            _inFlowCreateError = "Application/Context information is unavailable. Retry before creating this connection.";
+            return;
+        }
         _inFlowCreateError = null;
         var missing = SelectedInFlowConnectorDefinition.Fields
             .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValueForValidation(f)))

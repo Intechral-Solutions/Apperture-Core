@@ -302,6 +302,115 @@ public class ResourceContextViewStateTests
         client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2)); // InitializeAsync + one refresh
     }
 
+    // --- Directory load state (Plan 5 stabilization, Issue 1) ---
+    //
+    // A failed context-list fetch previously left `_knownContexts` empty with no other signal,
+    // indistinguishable from "successfully loaded, zero Applications exist". That let create flows
+    // (which gate their Context field on SelectorVisible) silently omit ResourceContextId during a
+    // transient API outage, letting the CTX-1 API default silently place the resource in Shared --
+    // exactly what design gate §7.1 forbids. DirectoryStatus/DirectoryUnavailable give callers (in
+    // particular the Integration/Connection/in-flow-Connection create pages) a way to tell "confirmed
+    // zero Applications" apart from "unknown, ask before creating".
+
+    [Fact]
+    public async Task InitializeAsync_SuccessfulFetch_ZeroApplications_IsLoadedAndSelectorHidden()
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[]);
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Loaded);
+        state.DirectoryUnavailable.Should().BeFalse();
+        state.SelectorVisible.Should().BeFalse("legacy, pre-CTX-3A behavior for a genuinely empty directory is unchanged");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_SuccessfulFetch_WithApplications_IsLoadedAndSelectorVisible()
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A")]);
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Loaded);
+        state.DirectoryUnavailable.Should().BeFalse();
+        state.SelectorVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_FailedFetch_IsUnavailable_DistinctFromZeroApplications()
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("boom"));
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Unavailable);
+        state.DirectoryUnavailable.Should().BeTrue(
+            "a failed load must be distinguishable from a successful load that found zero Applications -- " +
+            "create flows must check this separately before relying on SelectorVisible alone");
+        // SelectorVisible also happens to be false here (no contexts are known either way) -- proving
+        // DirectoryUnavailable is the signal that actually distinguishes the two states.
+        state.SelectorVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InitializeAsync_FailedFetch_StillResolvesAndSubscribesToLocationChanged()
+    {
+        // A failed fetch must not abandon the rest of bootstrap: resolution must still run (a scoped
+        // page still gets rewritten to ?context=all) and the LocationChanged subscription must still be
+        // wired -- previously, an uncaught exception from the fetch skipped both for the rest of the
+        // tab's life, since App.razor's try/catch sat outside the whole InitializeAsync call.
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("boom"));
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        nav.Navigations.Should().ContainSingle("resolution must still run and rewrite the scoped page's URL to ?context=all");
+        nav.Uri.Should().Be("https://localhost/integrations?context=all");
+
+        nav.NavigateTo("https://localhost/runs");
+        nav.Uri.Should().Be("https://localhost/runs?context=all",
+            "the LocationChanged subscription must still be live after a failed initial fetch");
+    }
+
+    [Fact]
+    public async Task RefreshContextsAsync_FailedAfterAPriorSuccessfulLoad_StaysLoaded_ServesStaleData()
+    {
+        var client = new Mock<IManagementClient>();
+        client.SetupSequence(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A")])
+            .ThrowsAsync(new HttpRequestException("boom"));
+
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Loaded);
+
+        await state.RefreshContextsAsync();
+
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Loaded,
+            "a later transient refresh failure must not erase a previously successful load");
+        state.SelectorVisible.Should().BeTrue("stale-but-known data is served rather than losing the Applications list entirely");
+    }
+
     [Theory]
     [InlineData("/integrations")]
     [InlineData("/connections")]
