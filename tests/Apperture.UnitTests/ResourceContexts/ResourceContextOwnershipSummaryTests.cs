@@ -76,6 +76,25 @@ public sealed class ResourceContextOwnershipSummaryTests
         summary.BlocksArchive.Should().BeTrue();
     }
 
+    /// <summary>
+    /// The archive refusal must describe an Inactive Integration as "not retired," never as "active" --
+    /// Inactive blocks archive for the same reason Active does (neither is Retired), and calling it
+    /// "active" would mislead an operator into thinking Deactivate alone clears the blocker.
+    /// </summary>
+    [Fact]
+    public async Task ArchiveAsync_WithAnInactiveIntegration_RefusalDoesNotCallItActive()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Inactive);
+
+        var act = async () => await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("1 integration not retired");
+        ex.Which.Message.Should().NotContain("active integration");
+    }
+
     [Fact]
     public async Task GetOwnershipSummaryAsync_WithOnlyRetiredAndDisabled_DoesNotBlockArchive()
     {

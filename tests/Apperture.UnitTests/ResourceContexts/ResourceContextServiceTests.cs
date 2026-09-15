@@ -188,7 +188,7 @@ public sealed class ResourceContextServiceTests
         var act = async () => await service.ArchiveAsync(created.Id);
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
-            .WithMessage("*2 active integration*1 active connection*3 enabled schedule*");
+            .WithMessage("*2 integrations not retired*1 active connection*3 enabled schedule*");
     }
 
     /// <summary>

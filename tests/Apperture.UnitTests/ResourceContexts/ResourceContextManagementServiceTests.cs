@@ -43,7 +43,7 @@ public sealed class ResourceContextManagementServiceTests
 
         var act = () => harness.Service.ArchiveAsync(created.Id, CancellationToken.None).AsTask();
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*active integration*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*integration not retired*");
     }
 
     [Fact]

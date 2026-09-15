@@ -88,7 +88,7 @@ Run 2026-09-15, on the current `resource-contexts` HEAD (`f8bd3ad`):
 23. Attempt to archive an Application that still owns a live (non-retired) Integration, an active Connection, or an enabled Schedule; confirm the refusal names the counts and links to each.
 24. Retire/disable those live resources, then archive the Application successfully.
 25. Confirm the archived Application no longer appears in the View selector or any create-flow picker.
-26. In the same browser tab, select an Application, then archive it from a second window/tab, then navigate within the first tab; confirm it falls back to All with the archived-context notice rather than sticking to the now-archived reference (this exercises the post-Plan-5 tab-state revalidation fix).
+26. Select an Application in one tab, archive it from another tab, then refresh the first tab or navigate it to a scoped route (there are no cross-tab storage listeners or push updates by design, so an already-open tab does not update on its own — only the next view resolution corrects it); confirm it falls back to All with the archived-context notice rather than retaining the now-archived view (this exercises the post-Plan-5 tab-state revalidation fix).
 
 Also confirm dark and light appearance render correctly throughout, and that a narrow (mobile-width) layout does not break the selector, scoped list filters, or Control Center's pill groups.
 

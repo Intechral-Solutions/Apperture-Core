@@ -138,7 +138,7 @@
                         {
                             <PageMessage Kind="PageMessageKind.Warning"
                                          Title="@($"{_context.Name} can't be archived yet.")"
-                                         Message="@($"It still has {DescribeBlocker(_archiveBlocker)}. Retire or disable them first.")">
+                                         Message="@($"It still has {DescribeBlocker(_archiveBlocker)}. Retire the remaining integrations, retire active connections, and disable enabled schedules before archiving.")">
                                 <div class="mt-2 flex flex-wrap gap-3">
                                     @if (_archiveBlocker.LiveIntegrations is > 0)
                                     {
@@ -304,8 +304,11 @@
     private static string DescribeBlocker(ResourceContextOwnershipSummaryDto s)
     {
         var parts = new List<string>();
+        // LiveIntegrations counts Active AND Inactive (anything not Retired) -- calling it "active" would
+        // mislead an operator who has an Inactive Integration into thinking archive is blocked by something
+        // it isn't; "not retired" names the actual condition that must be satisfied.
         if (s.LiveIntegrations is { } li && li > 0)
-            parts.Add($"{li} active integration{(li == 1 ? "" : "s")}");
+            parts.Add($"{li} integration{(li == 1 ? "" : "s")} not retired");
         if (s.ActiveConnections is { } ac && ac > 0)
             parts.Add($"{ac} active connection{(ac == 1 ? "" : "s")}");
         if (s.EnabledSchedules is { } es && es > 0)

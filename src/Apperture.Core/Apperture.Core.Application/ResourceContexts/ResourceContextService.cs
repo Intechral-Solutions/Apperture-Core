@@ -122,10 +122,17 @@ public sealed class ResourceContextService : IResourceContextService
         var summary = await _repository.GetOwnershipSummaryAsync(existing.Id, cancellationToken).ConfigureAwait(false);
         if (summary.BlocksArchive)
         {
+            // §6.5's rule is "no Integration whose state is not Retired" -- LiveIntegrations counts Active
+            // AND Inactive (see ResourceContextOwnershipSummary), so it must never be described as "active"
+            // here: an Inactive Integration blocks archive exactly like an Active one, and calling it
+            // "active" would mislead an operator into archiving an Application whose Inactive Integrations
+            // are still blocking it.
+            var integrationsPhrase = $"{summary.LiveIntegrations} integration{(summary.LiveIntegrations == 1 ? "" : "s")} not retired";
             throw new InvalidOperationException(
                 $"Cannot archive ResourceContext '{existing.Name}' ({existing.Id.Value}): it still has " +
-                $"{summary.LiveIntegrations} active integration(s), {summary.ActiveConnections} active connection(s) " +
-                $"and {summary.EnabledSchedules} enabled schedule(s). Retire or disable them first.");
+                $"{integrationsPhrase}, {summary.ActiveConnections} active connection(s) " +
+                $"and {summary.EnabledSchedules} enabled schedule(s). Retire the remaining integrations, " +
+                $"retire active connections, and disable enabled schedules before archiving.");
         }
 
         return await SaveAsync(existing with { State = ResourceContextStates.Archived }, cancellationToken).ConfigureAwait(false);
