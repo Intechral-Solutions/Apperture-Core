@@ -8,6 +8,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 @inject IToastService Toasts
+@inject ResourceContextViewState ViewState
 @using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4 ui-page-stack">
@@ -33,6 +34,21 @@
     {
         <ManagementSection Title="Connection details" Layer="ManagementSection.UiLayer.Detail">
             <div class="space-y-4 text-sm text-body">
+            @if (ViewState.SelectorVisible)
+            {
+                <div>
+                    <label class="block text-xs text-muted">Context (required)</label>
+                    <div class="mt-0.5 text-xs text-muted">Choose the application this resource belongs to, or Shared.</div>
+                    <select class="ui-input mt-1" @bind="_selectedResourceContextId">
+                        <option value="" disabled selected="@(_selectedResourceContextId == "")">Choose…</option>
+                        <option value="shared">Shared</option>
+                        @foreach (var app in ViewState.KnownActiveApplications)
+                        {
+                            <option value="@app.Id">@app.Name</option>
+                        }
+                    </select>
+                </div>
+            }
             <div>
                 <label class="block text-xs text-muted">Connector definition</label>
                 <select class="ui-input mt-1"
@@ -56,6 +72,10 @@
                 <ConnectorConnectionFieldInputs Definition="SelectedDefinition"
                                                   ConfigValues="_configValues"
                                                   SecretValues="_secretValues" />
+            }
+            @if (!string.IsNullOrWhiteSpace(_selectedResourceContextId))
+            {
+                <div class="text-xs text-muted">Creates the connection in <strong>@DestinationLabel()</strong>.</div>
             }
             <div class="flex gap-2 pt-2">
                 <ActionButton @ref="_createButton"
@@ -83,6 +103,7 @@
     private IReadOnlyList<ConnectorDefinitionCatalogDto> _connectorDefinitions = Array.Empty<ConnectorDefinitionCatalogDto>();
     private string _connectorDefinitionId = "";
     private string _connectionName = "";
+    private string _selectedResourceContextId = "";
     private readonly Dictionary<string, string> _configValues = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _secretValues = new(StringComparer.Ordinal);
 
@@ -91,7 +112,49 @@
     private bool CanCreate =>
         !_saving &&
         !string.IsNullOrWhiteSpace(_connectorDefinitionId) &&
-        !string.IsNullOrWhiteSpace(_connectionName);
+        !string.IsNullOrWhiteSpace(_connectionName) &&
+        (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId));
+
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // With no active Application anywhere, the Context field is hidden entirely (ViewState.SelectorVisible
+        // is false) and today's behavior is unchanged byte-for-byte: the selection stays unset so the
+        // submit path omits ResourceContextId.
+        if (!ViewState.SelectorVisible)
+        {
+            _selectedResourceContextId = string.Empty;
+            return;
+        }
+
+        // Preselection order (design gate §7.2): ?context= from the create link, else the tab's
+        // current view, else nothing. /connections/new is Unscoped (ResourceContextViewRoutes), so
+        // it does not participate in the shell's URL-authoritative rewriting/tab-state resolution --
+        // the incoming query value is read here directly and validated against the known active
+        // Applications (or "shared") before being honoured, rather than trusted as-is.
+        if (IsKnownContextSelection(QueryContext))
+        {
+            _selectedResourceContextId = QueryContext!;
+        }
+        else if (!ViewState.Current.IsAll)
+        {
+            _selectedResourceContextId = ViewState.Current.ResourceContextId!;
+        }
+        else
+        {
+            _selectedResourceContextId = string.Empty; // "Choose…", submit disabled until set
+        }
+    }
+
+    private bool IsKnownContextSelection(string? candidate) =>
+        !string.IsNullOrWhiteSpace(candidate)
+        && (string.Equals(candidate, "shared", StringComparison.Ordinal)
+            || ViewState.KnownActiveApplications.Any(a => string.Equals(a.Id, candidate, StringComparison.Ordinal)));
+
+    private string DestinationLabel() =>
+        ViewState.DescribeContext(_selectedResourceContextId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -164,7 +227,8 @@
                     _connectionName.Trim(),
                     cfg,
                     SecretRefs: new Dictionary<string, string>(),
-                    SecretValues: secrets.Count > 0 ? secrets : null));
+                    SecretValues: secrets.Count > 0 ? secrets : null,
+                    ResourceContextId: string.IsNullOrWhiteSpace(_selectedResourceContextId) ? null : _selectedResourceContextId));
             Toasts.Show(ToastSeverity.Success, "Connection created.");
             if (_createButton is not null)
                 await _createButton.SetStateAsync(ActionButtonState.Success);
