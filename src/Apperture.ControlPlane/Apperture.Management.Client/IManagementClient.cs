@@ -383,6 +383,11 @@ public interface IManagementClient
     Task<IntegrationDto> DeactivateIntegrationAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retires an integration: deliberately removed from active service and retained for history.
+    /// </summary>
+    Task<IntegrationDto> RetireIntegrationAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists bindings for an integration. Epic 50.
     /// </summary>
     Task<IReadOnlyList<IntegrationBindingDto>> GetIntegrationBindingsAsync(string integrationId, CancellationToken cancellationToken = default);

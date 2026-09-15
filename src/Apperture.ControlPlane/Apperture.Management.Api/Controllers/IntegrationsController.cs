@@ -503,6 +503,27 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
+    /// Retires an integration: deliberately removed from active service and retained for history.
+    /// </summary>
+    [HttpPost("{id}/retire")]
+    public async Task<ActionResult<IntegrationDto>> Retire(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var integration = await _integrationService.RetireIntegrationAsync(new IntegrationId(id), cancellationToken);
+            return Ok(await ToDtoAsync(integration, cancellationToken));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Deletes an integration.
     /// </summary>
     [HttpDelete("{id}")]

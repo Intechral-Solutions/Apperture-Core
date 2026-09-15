@@ -1084,6 +1084,14 @@ public sealed class ManagementClient : IManagementClient
         return result ?? throw new InvalidOperationException("Unexpected null response from DeactivateIntegration.");
     }
 
+    public async Task<IntegrationDto> RetireIntegrationAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsync($"integrations/{Uri.EscapeDataString(id)}/retire", content: null, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<IntegrationDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Unexpected null response from RetireIntegration.");
+    }
+
     public async Task<IReadOnlyList<IntegrationBindingDto>> GetIntegrationBindingsAsync(string integrationId, CancellationToken cancellationToken = default)
     {
         var list = await _http.GetFromJsonAsync<IntegrationBindingDto[]>(

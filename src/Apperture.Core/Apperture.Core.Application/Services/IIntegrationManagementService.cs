@@ -61,6 +61,13 @@ public interface IIntegrationManagementService
     ValueTask<DomainIntegration> DeactivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets an integration to Retired operational state: deliberately removed from active service and
+    /// retained for history, distinct from a temporary Inactive pause. Satisfies the Application archive
+    /// rule (§6.5) once every owned Integration is Retired.
+    /// </summary>
+    ValueTask<DomainIntegration> RetireIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Deletes an integration. Fails if bindings or schedules reference it.
     /// </summary>
     ValueTask DeleteIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);

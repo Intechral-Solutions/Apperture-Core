@@ -34,6 +34,10 @@
                 {
                     <button type="button" class="btn btn-primary text-sm" disabled="@_loading" @onclick="ActivateIntegrationAsync">Activate</button>
                 }
+                @if (!string.Equals(_integration.State, "Retired", StringComparison.OrdinalIgnoreCase))
+                {
+                    <button type="button" id="integration-retire-trigger" class="ui-toolbar-btn ui-toolbar-btn--danger" disabled="@_loading" @onclick="RetireIntegrationAsync">Retire</button>
+                }
                 <button type="button" id="integration-delete-trigger" class="ui-toolbar-btn ui-toolbar-btn--danger" disabled="@_deleting" @onclick="() => _confirmDeleteOpen = true">Delete</button>
             }
         </Toolbar>
@@ -145,6 +149,12 @@
         {
             <PageMessage Kind="PageMessageKind.Warning"
                          Message="Integration is inactive. Configuration is preserved, but schedules and launches are operationally paused until re-activated." />
+        }
+
+        @if (string.Equals(_integration.State, "Retired", StringComparison.OrdinalIgnoreCase))
+        {
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Message="Integration is retired. It is kept for history and cannot run workflows until re-activated." />
         }
 
         @if (_wizardMode)
@@ -817,6 +827,24 @@
             _integration = await Client.DeactivateIntegrationAsync(IntegrationId);
             SetActionFeedback("Integration deactivated.");
             Toasts.Show(ToastSeverity.Success, "Integration deactivated.");
+            await ReloadAfterActionAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            SetActionFeedback(ex.Message, PageMessageKind.Error);
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+    }
+
+    private async Task RetireIntegrationAsync()
+    {
+        if (_integration is null || _capabilities?.CanManageIntegrations != true)
+            return;
+        try
+        {
+            _integration = await Client.RetireIntegrationAsync(IntegrationId);
+            SetActionFeedback("Integration retired.");
+            Toasts.Show(ToastSeverity.Success, "Integration retired.");
             await ReloadAfterActionAsync();
         }
         catch (HttpRequestException ex)
