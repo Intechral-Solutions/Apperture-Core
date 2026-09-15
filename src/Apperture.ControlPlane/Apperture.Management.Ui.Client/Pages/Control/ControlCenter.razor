@@ -7,12 +7,13 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 @inject IOperatorDisplayTimeZone DisplayTimeZone
+@inject ResourceContextViewState ViewState
 @implements IDisposable
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Control Center"
                 Title="Control Center"
-                Subtitle="What needs attention now — blocked runs, failures, and recent outcomes.">
+                Subtitle="@Subtitle()">
         <Toolbar>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -36,28 +37,37 @@
         <ManagementSection Title="Summary"
                            Layer="ManagementSection.UiLayer.Summary"
                            Help="Current operator posture from control center and optional runtime health snapshots.">
-            <div class="flex flex-wrap items-center gap-2">
-                <StatusPill Label="@($"Blocked work: {BlockedWorkCount}")" Semantic="@(BlockedWorkCount > 0 ? ManagementStatusSemantic.Blocking : ManagementStatusSemantic.Neutral)" />
-                <StatusPill Label="@($"Attention: {AttentionCount}")" Semantic="@(AttentionCount > 0 ? ManagementStatusSemantic.Warning : ManagementStatusSemantic.Success)" />
-                <StatusPill Label="@($"Recent activity: {RecentActivityCount}")" Semantic="@(RecentActivityCount > 0 ? ManagementStatusSemantic.Pending : ManagementStatusSemantic.Neutral)" />
-                @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
-                {
-                    <StatusPill Label="@($"Platform: {_health.OverallStatus}")" RuntimeHealthStatus="@_health.OverallStatus" />
-                }
-                else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
-                {
-                    <StatusPill Label="Platform health unavailable" Semantic="ManagementStatusSemantic.Forbidden" />
-                }
-                @if (_capabilities?.CanViewRuntimeHealth == true && _schedulerStatus is not null)
-                {
-                    var workerPill = _schedulerStatus.WorkerRuntime?.Status ?? _schedulerStatus.Status;
-                    <StatusPill Label="@($"Worker: {workerPill}")" Semantic="@MapSchedulerStatus(workerPill)" />
-                    <StatusPill Label="@($"Scheduler: {_schedulerStatus.Status}")" Semantic="@MapSchedulerStatus(_schedulerStatus.Status)" />
-                }
+            <div>
+                <div class="text-xs font-medium uppercase tracking-wide text-muted">In view</div>
+                <div class="flex flex-wrap items-center gap-2 mt-1">
+                    <StatusPill Label="@($"Attention: {AttentionCount}")" Semantic="@(AttentionCount > 0 ? ManagementStatusSemantic.Warning : ManagementStatusSemantic.Success)" />
+                    <StatusPill Label="@($"Recent activity: {RecentActivityCount}")" Semantic="@(RecentActivityCount > 0 ? ManagementStatusSemantic.Pending : ManagementStatusSemantic.Neutral)" />
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="text-xs font-medium uppercase tracking-wide text-muted">Platform — all applications</div>
+                <div class="flex flex-wrap items-center gap-2 mt-1">
+                    <StatusPill Label="@($"Blocked work (all applications): {BlockedWorkCount}")" Semantic="@(BlockedWorkCount > 0 ? ManagementStatusSemantic.Blocking : ManagementStatusSemantic.Neutral)" />
+                    @if (_capabilities?.CanViewRuntimeHealth == true && _health is not null)
+                    {
+                        <StatusPill Label="@($"Platform: {_health.OverallStatus}")" RuntimeHealthStatus="@_health.OverallStatus" />
+                    }
+                    else if (_capabilities?.CanViewRuntimeHealth == false || _healthForbidden)
+                    {
+                        <StatusPill Label="Platform health unavailable" Semantic="ManagementStatusSemantic.Forbidden" />
+                    }
+                    @if (_capabilities?.CanViewRuntimeHealth == true && _schedulerStatus is not null)
+                    {
+                        var workerPill = _schedulerStatus.WorkerRuntime?.Status ?? _schedulerStatus.Status;
+                        <StatusPill Label="@($"Worker: {workerPill}")" Semantic="@MapSchedulerStatus(workerPill)" />
+                        <StatusPill Label="@($"Scheduler: {_schedulerStatus.Status}")" Semantic="@MapSchedulerStatus(_schedulerStatus.Status)" />
+                    }
+                </div>
             </div>
 
             <div class="ui-summary-card-grid">
-                <ManagementSummaryCard Title="Blocked work"
+                <ManagementSummaryCard Title="Blocked work (all applications)"
                                        Description="Inspect deferred and retry-eligible work."
                                        Href="@RunStatusFacets.BlockedRunsHref"
                                        Attention="@(BlockedWorkCount > 0 ? "Warning" : null)" />
@@ -120,6 +130,10 @@
             <ManagementSection Title="Recent problems"
                                Layer="ManagementSection.UiLayer.Summary"
                                Help="Failed or rejected activity in the last 24 hours.">
+                @if (!ViewState.Current.IsAll)
+                {
+                    <div class="text-xs text-muted mb-2">Some older runs don't have a recorded context. Runs without a recorded context appear only under All.</div>
+                }
                 <div class="space-y-2">
                     @foreach (var a in ProblematicActivities.Take(5))
                     {
@@ -405,6 +419,10 @@
                            Layer="ManagementSection.UiLayer.Detail"
                            Help="Executions and durable runtime control requests."
                            Class="mt-4">
+            @if (!ViewState.Current.IsAll)
+            {
+                <div class="text-xs text-muted mb-2">Some older runs don't have a recorded context. Runs without a recorded context appear only under All.</div>
+            }
             @if (_dto.RecentActivity.Count == 0)
             {
                 <EmptyState Message="No activity in the last 24 hours. Runs and control requests will appear here after workflows execute." />
@@ -643,6 +661,7 @@
     protected override void OnInitialized()
     {
         DisplayTimeZone.Changed += OnDisplayZoneChanged;
+        ViewState.Changed += OnViewStateChanged;
     }
 
     // UIX-2: do not await HTTP in OnInitializedAsync — races MainLayout/TopBar LocationChanged SHC
@@ -666,9 +685,12 @@
 
     private void OnDisplayZoneChanged() => _ = InvokeAsync(StateHasChanged);
 
+    private void OnViewStateChanged() => _ = LoadAsync();
+
     public void Dispose()
     {
         DisplayTimeZone.Changed -= OnDisplayZoneChanged;
+        ViewState.Changed -= OnViewStateChanged;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
     }
@@ -706,7 +728,7 @@
             if (!_loadGuard.IsCurrent(generation))
                 return;
 
-            var center = await Client.GetControlCenterAsync(cancellationToken);
+            var center = await Client.GetControlCenterAsync(ViewState.Current.ToApiFilter(), cancellationToken);
             if (!_loadGuard.IsCurrent(generation))
                 return;
 
@@ -770,6 +792,11 @@
                 _loading = false;
         }
     }
+
+    private string Subtitle() =>
+        ViewState.Current.IsAll
+            ? "What needs attention now — blocked runs, failures, and recent outcomes."
+            : $"What needs attention in {ViewState.DescribeContext(ViewState.Current.ResourceContextId!)} — blocked runs, failures, and recent outcomes.";
 
     private string FmtWhen(string iso)
     {
