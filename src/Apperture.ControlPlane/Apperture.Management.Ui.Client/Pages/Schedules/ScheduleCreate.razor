@@ -8,6 +8,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config"
@@ -65,10 +66,16 @@
                             {
                                 @foreach (var integration in _integrations)
                                 {
-                                    <option value="@integration.Id">@integration.DisplayName (@integration.Id)</option>
+                                    <option value="@integration.Id">@integration.DisplayName (@integration.Id)@(ViewState.SelectorVisible && ViewState.Current.IsAll ? $" — {ViewState.DescribeContext(integration.ResourceContextId!)}" : "")</option>
                                 }
                             }
                         </select>
+                        @if (ViewState.SelectorVisible && !ViewState.Current.IsAll)
+                        {
+                            <label class="mt-1 flex items-center gap-1 text-xs text-muted">
+                                <input type="checkbox" @bind="_showAllIntegrations" @bind:after="LoadIntegrationsAsync" /> Show all integrations
+                            </label>
+                        }
                     </div>
 
                     <div>
@@ -167,6 +174,7 @@
     private string? _selectedIntegrationId;
     private string? _selectedWorkflowId;
     private string? _selectedOperationId;
+    private bool _showAllIntegrations;
     private int _targetKind; // 0 = Workflow, 1 = Operation
     private string _name = "";
     private string _recurrence = "";
@@ -214,7 +222,10 @@
     {
         try
         {
-            _integrations = await Client.GetIntegrationsAsync();
+            var contextFilter = !ViewState.SelectorVisible || ViewState.Current.IsAll || _showAllIntegrations
+                ? null
+                : ViewState.Current.ToApiFilter();
+            _integrations = await Client.GetIntegrationsAsync(contextFilter);
         }
         catch
         {

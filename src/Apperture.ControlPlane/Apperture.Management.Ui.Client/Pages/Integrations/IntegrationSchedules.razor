@@ -6,6 +6,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader @key="@IntegrationId"
@@ -89,6 +90,10 @@
                 @if (_addingSchedule)
                 {
                     <div class="ui-section-panel mt-3 space-y-3">
+                        @if (ViewState.SelectorVisible)
+                        {
+                            <div class="text-sm text-muted">Context: @ViewState.DescribeContext(_integration!.ResourceContextId!) <span class="text-xs">Inherited from the integration.</span></div>
+                        }
                         <div>
                             <label class="block text-xs text-muted">Name</label>
                             <input class="ui-input mt-1 w-full text-sm" @bind="_scheduleName" placeholder="e.g. Daily sync" />
