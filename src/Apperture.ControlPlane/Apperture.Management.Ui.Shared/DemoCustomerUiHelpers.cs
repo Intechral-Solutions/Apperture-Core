@@ -17,6 +17,9 @@ public static class DemoCustomerUiHelpers
     public const string DemoScopeBanner =
         "This collection uses sandbox sample data. It is not a production business-record store.";
 
+    public const string ApplicationScopeTransitionalNotice =
+        "Customers is a demo collection for the whole instance. It isn't organized by application yet, so your view doesn't filter it.";
+
     public const string EmptyTitle = "No customers yet";
 
     public const string EmptyMessage =

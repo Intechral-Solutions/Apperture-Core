@@ -2,6 +2,7 @@
 @layout ConfigLayout
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Title="@DemoCustomerUiHelpers.PageTitle"
@@ -20,6 +21,11 @@
     </PageHeader>
 
     <PageMessage Kind="PageMessageKind.Info" Message="@DemoCustomerUiHelpers.DemoScopeBanner" />
+
+    @if (!ViewState.Current.IsAll)
+    {
+        <PageMessage Kind="PageMessageKind.Info" Message="@DemoCustomerUiHelpers.ApplicationScopeTransitionalNotice" />
+    }
 
     @if (!_capabilitiesLoaded)
     {

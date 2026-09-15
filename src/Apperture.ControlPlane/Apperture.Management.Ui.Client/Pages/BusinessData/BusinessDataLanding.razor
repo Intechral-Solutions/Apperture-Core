@@ -1,10 +1,16 @@
 @page "/business-data"
 @layout ConfigLayout
+@inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
     <PageHeader Title="Business Data"
                 Eyebrow="Collections"
                 Subtitle="Records that operators work with across integrations. Collections are not owned by the integrations that process them." />
+
+    @if (!ViewState.Current.IsAll)
+    {
+        <PageMessage Kind="PageMessageKind.Info" Message="@DemoCustomerUiHelpers.ApplicationScopeTransitionalNotice" />
+    }
 
     <ManagementSection Title="Collections" Layer="@ManagementSection.UiLayer.Summary">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
