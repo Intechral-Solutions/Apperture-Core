@@ -23,10 +23,11 @@ public sealed class ControlCenterController : ControllerBase
         [FromQuery] DateTimeOffset? createdFromUtc,
         [FromQuery] int takeRecentActivity = 25,
         [FromQuery] int takeAttention = 10,
+        [FromQuery] string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var from = createdFromUtc ?? DateTimeOffset.UtcNow.AddHours(-24);
-        var dto = await _center.GetControlCenterAsync(from, takeRecentActivity, takeAttention, cancellationToken).ConfigureAwait(false);
+        var dto = await _center.GetControlCenterAsync(from, takeRecentActivity, takeAttention, resourceContextId, cancellationToken).ConfigureAwait(false);
         return Ok(dto);
     }
 }

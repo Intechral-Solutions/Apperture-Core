@@ -12,7 +12,7 @@ public sealed class AttentionDashboardCardProvider : IDashboardCardProvider
 
     public async ValueTask<DashboardCard?> BuildAsync(CancellationToken cancellationToken = default)
     {
-        var items = await _attention.ListAttentionAsync(DateTimeOffset.UtcNow.AddHours(-24), 20, cancellationToken).ConfigureAwait(false);
+        var items = await _attention.ListAttentionAsync(DateTimeOffset.UtcNow.AddHours(-24), 20, cancellationToken: cancellationToken).ConfigureAwait(false);
         var rawSeverity = DashboardCardAttentionConvention.MaxAttentionSeverityToken(items.Select(i => i.Severity));
         var attention = DashboardCardAttentionConvention.FromAttentionSeverityToken(rawSeverity);
 

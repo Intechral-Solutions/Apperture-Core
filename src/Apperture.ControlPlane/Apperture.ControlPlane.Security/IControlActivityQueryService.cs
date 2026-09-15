@@ -10,6 +10,7 @@ public interface IControlActivityQueryService
     ValueTask<IReadOnlyList<ControlActivitySummaryDto>> ListRecentActivityAsync(
         DateTimeOffset createdFromUtc,
         int take,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default);
 }
 

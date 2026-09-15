@@ -849,13 +849,13 @@ public sealed class UnifiedControlFacadeTests
 
     private sealed class StubControlActivityQueryService : IControlActivityQueryService
     {
-        public ValueTask<IReadOnlyList<ControlActivitySummaryDto>> ListRecentActivityAsync(DateTimeOffset createdFromUtc, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<ControlActivitySummaryDto>> ListRecentActivityAsync(DateTimeOffset createdFromUtc, int take, string? resourceContextId = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<ControlActivitySummaryDto>>(Array.Empty<ControlActivitySummaryDto>());
     }
 
     private sealed class StubControlAttentionQueryService : IControlAttentionQueryService
     {
-        public ValueTask<IReadOnlyList<ControlAttentionItemDto>> ListAttentionAsync(DateTimeOffset createdFromUtc, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<ControlAttentionItemDto>> ListAttentionAsync(DateTimeOffset createdFromUtc, int take, string? resourceContextId = null, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<ControlAttentionItemDto>>(Array.Empty<ControlAttentionItemDto>());
     }
 }

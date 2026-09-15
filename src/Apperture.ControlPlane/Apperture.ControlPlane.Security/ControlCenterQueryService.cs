@@ -46,6 +46,7 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
         DateTimeOffset createdFromUtc,
         int takeRecentActivity,
         int takeAttention,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
@@ -114,8 +115,8 @@ public sealed class ControlCenterQueryService : IControlCenterQueryService
         }
 
         // Recent activity and attention items.
-        var activity = await _activity.ListRecentActivityAsync(createdFromUtc, takeRecentActivity, cancellationToken).ConfigureAwait(false);
-        var attention = await _attention.ListAttentionAsync(createdFromUtc, takeAttention, cancellationToken).ConfigureAwait(false);
+        var activity = await _activity.ListRecentActivityAsync(createdFromUtc, takeRecentActivity, resourceContextId, cancellationToken).ConfigureAwait(false);
+        var attention = await _attention.ListAttentionAsync(createdFromUtc, takeAttention, resourceContextId, cancellationToken).ConfigureAwait(false);
 
         return new ControlCenterDto(
             Targets: targets,

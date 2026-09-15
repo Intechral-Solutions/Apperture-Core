@@ -10,6 +10,7 @@ public interface IControlAttentionQueryService
     ValueTask<IReadOnlyList<ControlAttentionItemDto>> ListAttentionAsync(
         DateTimeOffset createdFromUtc,
         int take,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default);
 }
 

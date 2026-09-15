@@ -37,6 +37,7 @@ public sealed class ControlAttentionQueryService : IControlAttentionQueryService
     public async ValueTask<IReadOnlyList<ControlAttentionItemDto>> ListAttentionAsync(
         DateTimeOffset createdFromUtc,
         int take,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principal.GetCurrentActorAsync(cancellationToken);
@@ -47,7 +48,7 @@ public sealed class ControlAttentionQueryService : IControlAttentionQueryService
 
         // 1) Failed executions (workflow + operations) within the window.
         var failedRuns = await _runs.ListRunsAsync(
-            new RunQueryFilter(Status: WorkflowLifecycleStatusNames.Failed, CreatedFrom: createdFromUtc),
+            new RunQueryFilter(Status: WorkflowLifecycleStatusNames.Failed, CreatedFrom: createdFromUtc, ResourceContextId: resourceContextId),
             cancellationToken).ConfigureAwait(false);
 
         foreach (var run in failedRuns)
@@ -76,6 +77,9 @@ public sealed class ControlAttentionQueryService : IControlAttentionQueryService
         }
 
         // 2) Stuck runtime shutdown requests (queued too long).
+        // Intentionally NOT filtered by resourceContextId: RuntimeControlRequestEntity has no
+        // ResourceContextId column (runtime instances are platform/instance-wide, not Context-scoped),
+        // and design gate §5.1 requires this attention item to always show regardless of scope.
         var queuedCutoff = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(15);
         var shutdownQueued = await _db.RuntimeControlRequests.AsNoTracking()
             .Where(x =>
@@ -122,18 +126,37 @@ public sealed class ControlAttentionQueryService : IControlAttentionQueryService
         }
 
         // 3) Rejected external control requests for workflow runs.
-        var rejectedControls = await _db.WorkflowExternalControlRequests.AsNoTracking()
+        var rejectedControlsQuery = _db.WorkflowExternalControlRequests.AsNoTracking()
             .Where(x =>
                 x.Status == WorkflowExternalControlStatusNames.Rejected &&
-                x.RequestedAt >= createdFromUtc)
-            .Select(x => new
-            {
-                x.Id,
-                x.RunId,
-                x.WorkflowDefinitionId,
-                x.ControlKind,
-                x.RequestedAt
-            })
+                x.RequestedAt >= createdFromUtc);
+
+        // No FK/navigation exists between WorkflowExternalControlRequests and OperationRuns, so the
+        // Context scope is applied via an explicit join -- but only when a filter is requested, so the
+        // unfiltered (All) path's query shape and performance are unchanged from today.
+        var rejectedControlsProjection = !string.IsNullOrWhiteSpace(resourceContextId)
+            ? rejectedControlsQuery
+                .Join(_db.OperationRuns.AsNoTracking(), c => c.RunId, r => r.Id, (c, r) => new { Control = c, Run = r })
+                .Where(x => x.Run.ResourceContextId == resourceContextId)
+                .Select(x => new
+                {
+                    x.Control.Id,
+                    x.Control.RunId,
+                    x.Control.WorkflowDefinitionId,
+                    x.Control.ControlKind,
+                    x.Control.RequestedAt
+                })
+            : rejectedControlsQuery
+                .Select(x => new
+                {
+                    x.Id,
+                    x.RunId,
+                    x.WorkflowDefinitionId,
+                    x.ControlKind,
+                    x.RequestedAt
+                });
+
+        var rejectedControls = await rejectedControlsProjection
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         // Permission-safe: include only definitions the actor can read.

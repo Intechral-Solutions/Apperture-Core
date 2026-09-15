@@ -13,7 +13,7 @@ public sealed class RecentActivityDashboardCardProvider : IDashboardCardProvider
 
     public async ValueTask<DashboardCard?> BuildAsync(CancellationToken cancellationToken = default)
     {
-        var items = await _activity.ListRecentActivityAsync(DateTimeOffset.UtcNow.AddHours(-24), 25, cancellationToken).ConfigureAwait(false);
+        var items = await _activity.ListRecentActivityAsync(DateTimeOffset.UtcNow.AddHours(-24), 25, cancellationToken: cancellationToken).ConfigureAwait(false);
         var latest = items.FirstOrDefault();
         return new DashboardCard(
             Id: "recent-activity",

@@ -28,7 +28,7 @@ public sealed class ControlAttentionController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var from = createdFromUtc ?? DateTimeOffset.UtcNow.AddHours(-24);
-        var items = await _attention.ListAttentionAsync(from, Math.Max(1, Math.Min(take, 100)), cancellationToken).ConfigureAwait(false);
+        var items = await _attention.ListAttentionAsync(from, Math.Max(1, Math.Min(take, 100)), cancellationToken: cancellationToken).ConfigureAwait(false);
         return Ok(items);
     }
 }

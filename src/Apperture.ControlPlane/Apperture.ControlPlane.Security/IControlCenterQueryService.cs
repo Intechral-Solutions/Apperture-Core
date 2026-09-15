@@ -8,6 +8,7 @@ public interface IControlCenterQueryService
         DateTimeOffset createdFromUtc,
         int takeRecentActivity,
         int takeAttention,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default);
 }
 

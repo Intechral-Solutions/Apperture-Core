@@ -29,7 +29,7 @@ public sealed class ControlActivityController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var createdFrom = createdFromUtc ?? DateTimeOffset.UtcNow.AddHours(-24);
-        var items = await _activity.ListRecentActivityAsync(createdFrom, Math.Max(1, Math.Min(take, 100)), cancellationToken);
+        var items = await _activity.ListRecentActivityAsync(createdFrom, Math.Max(1, Math.Min(take, 100)), cancellationToken: cancellationToken);
         return Ok(items);
     }
 }

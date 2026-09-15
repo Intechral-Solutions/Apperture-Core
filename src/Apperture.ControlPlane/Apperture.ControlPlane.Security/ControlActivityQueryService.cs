@@ -44,6 +44,7 @@ public sealed class ControlActivityQueryService : IControlActivityQueryService
     public async ValueTask<IReadOnlyList<ControlActivitySummaryDto>> ListRecentActivityAsync(
         DateTimeOffset createdFromUtc,
         int take,
+        string? resourceContextId = null,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principal.GetCurrentActorAsync(cancellationToken);
@@ -52,7 +53,7 @@ public sealed class ControlActivityQueryService : IControlActivityQueryService
 
         // Executions are already permission-filtered inside RunQueryService.
         var executionRuns = await _runs.ListRunsAsync(
-            new RunQueryFilter(CreatedFrom: createdFromUtc),
+            new RunQueryFilter(CreatedFrom: createdFromUtc, ResourceContextId: resourceContextId),
             cancellationToken);
 
         var activities = new List<(DateTimeOffset RequestedAt, ControlActivitySummaryDto Dto)>(executionRuns.Count + 8);

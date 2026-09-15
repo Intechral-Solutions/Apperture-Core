@@ -341,7 +341,7 @@ public sealed class DashboardExpansionTests
     public async Task AttentionProvider_UsesMaxSeverity_NotFirstItemOnly()
     {
         var attention = new Mock<IControlAttentionQueryService>();
-        attention.Setup(x => x.ListAttentionAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        attention.Setup(x => x.ListAttentionAsync(It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
             [
                 new ControlAttentionItemDto("k", "low", "t", "id", "a", DateTimeOffset.UtcNow.ToString("o"), null),
