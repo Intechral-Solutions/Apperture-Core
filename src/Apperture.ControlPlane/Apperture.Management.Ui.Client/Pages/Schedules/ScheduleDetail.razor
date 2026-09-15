@@ -14,6 +14,9 @@
                 Eyebrow="Schedules"
                 Title="@ScheduleHeaderTitle"
                 Subtitle="@ScheduleHeaderSubtitle">
+        <ChildContent>
+            <OwnershipChip ResourceContextId="@_detail?.ResourceContextId" />
+        </ChildContent>
         <Toolbar>
             <a href="/schedules" class="ui-toolbar-btn">Back to list</a>
             @if (_capabilities?.CanManageSchedules == true && !_editing)
@@ -60,6 +63,7 @@
             </button>
         </Toolbar>
     </PageHeader>
+    <MismatchNotice OwnerResourceContextId="@_detail?.ResourceContextId" ResourceKindLabel="schedule" />
 
     @if (!string.IsNullOrEmpty(_error))
     {

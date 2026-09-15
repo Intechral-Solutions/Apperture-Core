@@ -16,6 +16,9 @@
                 Eyebrow="Runs"
                 Title="@RunPageTitle"
                 Subtitle="@RunHeaderSubtitle">
+        <ChildContent>
+            <OwnershipChip ResourceContextId="@_detail?.ResourceContextId" ShowNotRecorded="true" />
+        </ChildContent>
         <Toolbar>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -57,6 +60,7 @@
             </button>
         </Toolbar>
     </PageHeader>
+    <MismatchNotice OwnerResourceContextId="@_detail?.ResourceContextId" ResourceKindLabel="run" Historical="true" />
 
     @if (_error is not null)
     {

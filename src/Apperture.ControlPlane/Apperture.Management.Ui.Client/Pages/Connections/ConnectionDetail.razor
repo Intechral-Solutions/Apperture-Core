@@ -1,4 +1,5 @@
 @page "/connections/{ConnectionId}"
+@using Apperture.Core.Domain.ResourceContexts
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Client.Molecules
@@ -9,6 +10,7 @@
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
 @inject IToastService Toasts
+@inject ResourceContextViewState ViewState
 @using Microsoft.AspNetCore.Components.Web
 
 <div class="p-4 ui-page-stack">
@@ -17,6 +19,7 @@
                 Subtitle="@ConnectionHeaderSubtitle">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@ConnectionId</div>
+            <OwnershipChip ResourceContextId="@_connection?.ResourceContextId" />
         </ChildContent>
         <Toolbar>
             <a href="/connections" class="ui-toolbar-btn">Back to list</a>
@@ -58,6 +61,9 @@
             }
         </Toolbar>
     </PageHeader>
+    <MismatchNotice OwnerResourceContextId="@_connection?.ResourceContextId"
+                    ResourceKindLabel="connection"
+                    ExtraCopy="@(ResourceContextIds.IsShared(_connection?.ResourceContextId) && !ViewState.Current.IsAll ? $"Integrations in {ViewState.DescribeContext(ViewState.Current.ResourceContextId!)} can use it." : null)" />
 
     @if (!_capabilitiesLoaded)
     {

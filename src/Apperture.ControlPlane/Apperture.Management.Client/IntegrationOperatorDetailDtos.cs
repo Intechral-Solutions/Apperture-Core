@@ -49,4 +49,8 @@ public sealed record IntegrationOperatorDetailDto(
     IntegrationReadinessDto Readiness,
     IntegrationModuleSlotSummaryDto[] RequiredSlots,
     IntegrationBindingSummaryDto[] Bindings,
-    IntegrationScheduleSummaryDto[] Schedules);
+    IntegrationScheduleSummaryDto[] Schedules,
+    /// <summary>CTX-1: Integration's current owning ResourceContext id. Backfilled here (CTX-3A Plan 4
+    /// Task 7) -- the API has exposed this since CTX-1 but this client-side DTO was silently dropping
+    /// it, same latent gap ScheduleDto/ScheduleDetailDto had before their CTX-1 backfill.</summary>
+    string? ResourceContextId = null);

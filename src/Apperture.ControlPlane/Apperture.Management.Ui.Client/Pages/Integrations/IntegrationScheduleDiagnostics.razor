@@ -15,6 +15,7 @@
                 Subtitle="Schedule diagnostics">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+            <OwnershipChip ResourceContextId="@_integrationResourceContextId" />
         </ChildContent>
         <Toolbar>
             <a href="/integrations" class="ui-toolbar-btn text-sm">Back to fleet</a>
@@ -27,6 +28,7 @@
         </Toolbar>
     </PageHeader>
     <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="true" />
+    <MismatchNotice OwnerResourceContextId="@_integrationResourceContextId" ResourceKindLabel="integration" />
     <p class="text-xs text-muted -mt-2">Diagnostics is a deep link, not a hub section — jump back to any tab above.</p>
 
     @if (!string.IsNullOrEmpty(_error))
@@ -394,6 +396,7 @@
 
     private string? _highlightIncidentId;
     private string? _integrationDisplayName;
+    private string? _integrationResourceContextId;
     private IntegrationScheduleDiagnosticsDto? _diagnostics;
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
@@ -448,6 +451,7 @@
         {
             var integration = await Client.GetIntegrationAsync(IntegrationId);
             _integrationDisplayName = integration?.DisplayName;
+            _integrationResourceContextId = integration?.ResourceContextId;
             _contactGroups = await Client.ListOperationalTeamsAsync(includeDisabled: false);
             _diagnostics = await Client.GetIntegrationScheduleDiagnosticsAsync(IntegrationId);
             SyncRoutingEditor();

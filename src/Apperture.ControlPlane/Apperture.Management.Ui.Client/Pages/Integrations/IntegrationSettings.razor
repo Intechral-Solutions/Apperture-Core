@@ -15,6 +15,7 @@
                 Subtitle="Configuration">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+            <OwnershipChip ResourceContextId="@_integrationResourceContextId" />
         </ChildContent>
         <Toolbar>
             <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn">Schedule diagnostics</a>
@@ -27,6 +28,7 @@
         </Toolbar>
     </PageHeader>
     <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+    <MismatchNotice OwnerResourceContextId="@_integrationResourceContextId" ResourceKindLabel="integration" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -138,6 +140,7 @@
   private bool _integrationMissing;
   private string? _loadError;
   private string? _integrationName;
+  private string? _integrationResourceContextId;
   private string? _savingKey;
   private string _activeCategory = string.Empty;
   private List<PlatformSettingResolvedDto> _rows = [];
@@ -175,11 +178,13 @@
       {
         _integrationMissing = true;
         _integrationName = null;
+        _integrationResourceContextId = null;
         _rows = [];
         return;
       }
 
       _integrationName = integration.DisplayName;
+      _integrationResourceContextId = integration.ResourceContextId;
 
       try
       {

@@ -16,6 +16,7 @@
                 Subtitle="Notifications">
         <ChildContent>
             <div class="mt-1 font-mono text-xs text-muted break-all">@IntegrationId</div>
+            <OwnershipChip ResourceContextId="@_integrationResourceContextId" />
         </ChildContent>
         <Toolbar>
             <a href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)" class="ui-toolbar-btn text-sm">Schedule diagnostics</a>
@@ -24,6 +25,7 @@
         </Toolbar>
     </PageHeader>
     <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="true" />
+    <MismatchNotice OwnerResourceContextId="@_integrationResourceContextId" ResourceKindLabel="integration" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -383,6 +385,7 @@
     private bool _busy;
     private string? _error;
     private string? _integrationName;
+    private string? _integrationResourceContextId;
     private List<DefinitionRow> _definitions = [];
     private List<NotificationSubscriptionDto> _explicitSubscriptions = [];
     private List<NotificationInstanceDiagnosticDto> _instances = [];
@@ -452,6 +455,7 @@
         {
             var integration = await Client.GetIntegrationAsync(IntegrationId);
             _integrationName = integration?.DisplayName;
+            _integrationResourceContextId = integration?.ResourceContextId;
 
             var scoped = await Client.ListNotificationDefinitionsAsync(integrationId: IntegrationId, take: 100);
             var builtIn = await Client.GetNotificationDefinitionAsync(BuiltInExpectedRunMissingDefinitionId);

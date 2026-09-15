@@ -151,7 +151,8 @@ public sealed class IntegrationReadinessService : IIntegrationReadinessService
             readiness,
             requiredSlots,
             bindingSummaries,
-            scheduleSummaries);
+            scheduleSummaries,
+            integration.ResourceContextId.Value);
     }
 
     /// <inheritdoc />

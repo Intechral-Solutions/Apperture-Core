@@ -80,4 +80,9 @@ public sealed record IntegrationOperatorDetailProjection(
     IntegrationReadinessProjection Readiness,
     IReadOnlyList<IntegrationModuleSlotInfo> RequiredSlots,
     IReadOnlyList<IntegrationBindingSummary> Bindings,
-    IReadOnlyList<IntegrationScheduleSummary> Schedules);
+    IReadOnlyList<IntegrationScheduleSummary> Schedules,
+    /// <summary>CTX-1: Integration's current owning ResourceContext id. Backfilled here (CTX-3A Plan 4
+    /// Task 7) -- the domain entity has carried this since CTX-1, but this operator-detail projection
+    /// was silently dropping it, same latent gap ScheduleDto/ScheduleDetailDto had before their CTX-1
+    /// backfill.</summary>
+    string? ResourceContextId = null);

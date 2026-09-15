@@ -18,6 +18,9 @@
                 Eyebrow="Integrations"
                 Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
                 Subtitle="@SummarySubtitle">
+        <ChildContent>
+            <OwnershipChip ResourceContextId="@_integration?.ResourceContextId" />
+        </ChildContent>
         <Toolbar>
             <a href="@($"/execute?integrationId={Uri.EscapeDataString(IntegrationId)}")" class="ui-toolbar-btn">Execute</a>
             <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="RefreshAsync">Refresh</button>
@@ -36,6 +39,7 @@
         </Toolbar>
     </PageHeader>
     <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@(_capabilities?.CanViewNotificationDefinitions == true)" />
+    <MismatchNotice OwnerResourceContextId="@_integration?.ResourceContextId" ResourceKindLabel="integration" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -555,7 +559,7 @@
             }
             else
             {
-                _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt);
+                _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt, detail.ResourceContextId);
                 _readiness = detail.Readiness;
                 _requiredSlots = detail.RequiredSlots;
                 _bindings = detail.Bindings;

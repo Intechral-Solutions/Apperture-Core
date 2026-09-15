@@ -12,11 +12,15 @@
                 Eyebrow="Integrations"
                 Title="@EntityShellTitles.Detail(_integration?.DisplayName, "Integration")"
                 Subtitle="Connections">
+        <ChildContent>
+            <OwnershipChip ResourceContextId="@_integration?.ResourceContextId" />
+        </ChildContent>
         <Toolbar>
             <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="LoadAsync">Refresh</button>
         </Toolbar>
     </PageHeader>
     <IntegrationHubNav IntegrationId="@IntegrationId" ShowNotificationsTab="@_showNotificationsTab" />
+    <MismatchNotice OwnerResourceContextId="@_integration?.ResourceContextId" ResourceKindLabel="integration" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -290,7 +294,7 @@
                 return;
             }
 
-            _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt);
+            _integration = new IntegrationDto(detail.Id, detail.DisplayName, detail.ModuleId, detail.ScopeKey, detail.State, detail.Settings, detail.CreatedAt, detail.UpdatedAt, detail.ResourceContextId);
             _readiness = detail.Readiness;
             _requiredSlots = detail.RequiredSlots;
             _bindingSummaries = detail.Bindings;

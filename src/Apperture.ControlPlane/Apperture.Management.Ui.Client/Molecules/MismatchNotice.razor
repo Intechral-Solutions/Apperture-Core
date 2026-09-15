@@ -1,0 +1,61 @@
+@implements IDisposable
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared
+@inject ResourceContextViewState ViewState
+
+@if (ShowMismatch)
+{
+    <PageMessage Kind="PageMessageKind.Info">
+        @OwnerSentence Your view is @ViewState.DescribeContext(ViewState.Current.ResourceContextId!).
+        @ExtraCopy
+        @if (OwnerKnown)
+        {
+            <button type="button" class="ui-link" @onclick="SwitchAsync">Switch view to @ViewState.DescribeContext(OwnerResourceContextId!)</button>
+        }
+    </PageMessage>
+}
+
+@code {
+    [Parameter] public string? OwnerResourceContextId { get; set; }
+    [Parameter] public string ResourceKindLabel { get; set; } = "resource";
+
+    /// <summary>Run detail: phrase the owner as where the run happened (historical snapshot).</summary>
+    [Parameter] public bool Historical { get; set; }
+
+    [Parameter] public string? ExtraCopy { get; set; }
+
+    private bool _ready;
+
+    private bool ShowMismatch =>
+        _ready
+        && ViewState.SelectorVisible
+        && !ViewState.Current.IsAll
+        && !string.IsNullOrWhiteSpace(OwnerResourceContextId)
+        && !string.Equals(ViewState.Current.ResourceContextId, OwnerResourceContextId, StringComparison.Ordinal);
+
+    private bool OwnerKnown => ViewState.FindContext(OwnerResourceContextId!) is not null;
+
+    private string OwnerSentence
+    {
+        get
+        {
+            var owner = OwnerKnown ? ViewState.DescribeContext(OwnerResourceContextId!) : "an unknown context";
+            return Historical ? $"This {ResourceKindLabel} happened in {owner}." : $"This {ResourceKindLabel} belongs to {owner}.";
+        }
+    }
+
+    protected override void OnInitialized() => ViewState.Changed += OnViewStateChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ViewState.EnsureContextsKnownAsync([OwnerResourceContextId, ViewState.Current.ResourceContextId]);
+        _ready = true;
+    }
+
+    private async Task SwitchAsync() =>
+        await ViewState.SetExplicitAsync(ResourceContextViewScope.Of(OwnerResourceContextId!));
+
+    private void OnViewStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ViewState.Changed -= OnViewStateChanged;
+}
