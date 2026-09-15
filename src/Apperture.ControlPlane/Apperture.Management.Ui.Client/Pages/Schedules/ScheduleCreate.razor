@@ -76,6 +76,10 @@
                                 <input type="checkbox" @bind="_showAllIntegrations" @bind:after="LoadIntegrationsAsync" /> Show all integrations
                             </label>
                         }
+                        @if (ViewState.SelectorVisible && SelectedIntegration is { } selectedIntegrationForContext)
+                        {
+                            <div class="mt-1 text-sm text-muted">Context: @ViewState.DescribeContext(selectedIntegrationForContext.ResourceContextId!) <span class="text-xs">Inherited from the integration.</span></div>
+                        }
                     </div>
 
                     <div>
@@ -196,6 +200,11 @@
             ? !string.IsNullOrWhiteSpace(_selectedWorkflowId)
             : !string.IsNullOrWhiteSpace(_selectedOperationId));
 
+    private IntegrationDto? SelectedIntegration =>
+        string.IsNullOrEmpty(_selectedIntegrationId)
+            ? null
+            : _integrations?.FirstOrDefault(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal));
+
     protected override async Task OnInitializedAsync()
     {
         await LoadCapabilitiesAsync();
@@ -230,6 +239,21 @@
         catch
         {
             _integrations = Array.Empty<IntegrationDto>();
+        }
+
+        await ViewState.EnsureContextsKnownAsync(_integrations.Select(i => i.ResourceContextId));
+
+        // If the previously-selected integration fell out of the reloaded list (e.g. "Show all
+        // integrations" was toggled off and the selection was from a different Context), it is no
+        // longer a valid choice -- clear it and its dependent selection state, mirroring the reset
+        // OnIntegrationChanged already performs when the integration changes.
+        if (!string.IsNullOrEmpty(_selectedIntegrationId) &&
+            !_integrations.Any(i => string.Equals(i.Id, _selectedIntegrationId, StringComparison.Ordinal)))
+        {
+            _selectedIntegrationId = null;
+            _selectedWorkflowId = null;
+            _workflows = null;
+            _selectedOperationId = null;
         }
     }
 
