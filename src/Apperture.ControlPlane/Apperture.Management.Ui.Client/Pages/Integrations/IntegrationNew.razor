@@ -6,6 +6,7 @@
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
+@inject ResourceContextViewState ViewState
 
 <div class="p-4">
     <PageHeader Title="Integration Authoring Wizard" Subtitle="Create an integration, then continue directly to bindings, readiness remediation, schedules, and procedures.">
@@ -74,6 +75,21 @@
                     <div class="text-sm font-semibold text-heading">Step 2: Integration metadata</div>
                     <div class="mt-1 text-xs text-muted">This creates the integration and routes you to configuration/remediation.</div>
                     <form class="mt-3 grid gap-4 md:grid-cols-2" @onsubmit="SubmitAsync" @onsubmit:preventDefault>
+                        @if (ViewState.SelectorVisible)
+                        {
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-medium text-heading">Context (required)</label>
+                                <div class="mt-0.5 text-xs text-muted">Choose the application this resource belongs to, or Shared.</div>
+                                <select class="ui-input mt-1 w-full" @bind="_selectedResourceContextId">
+                                    <option value="" disabled selected="@(_selectedResourceContextId == "")">Choose…</option>
+                                    <option value="shared">Shared</option>
+                                    @foreach (var app in ViewState.KnownActiveApplications)
+                                    {
+                                        <option value="@app.Id">@app.Name</option>
+                                    }
+                                </select>
+                            </div>
+                        }
                         <div>
                             <label class="block text-sm font-medium text-heading">Display Name (required)</label>
                             <input class="ui-input mt-1 w-full text-sm"
@@ -87,13 +103,19 @@
                                    readonly />
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-sm font-medium text-heading">Scope key (optional)</label>
-                            <input class="ui-input mt-1 w-full text-sm font-mono"
-                                   @bind="_scopeKey"
-                                   placeholder="instance (default if empty)" />
-                            <div class="mt-0.5 text-xs text-muted">Environment/context; leave empty for instance scope.</div>
+                            <ManagementAdvancedSection Title="Advanced" InitiallyOpen="false">
+                                <label class="block text-sm font-medium text-heading">Authorization scope key (optional)</label>
+                                <input class="ui-input mt-1 w-full text-sm font-mono"
+                                       @bind="_scopeKey"
+                                       placeholder="instance (default if empty)" />
+                                <div class="mt-0.5 text-xs text-muted">Advanced authorization scope, unrelated to the Context. Leave empty for instance scope.</div>
+                            </ManagementAdvancedSection>
                         </div>
                         <div class="md:col-span-2">
+                            @if (!string.IsNullOrWhiteSpace(_selectedResourceContextId))
+                            {
+                                <div class="mb-2 text-sm text-muted">Creates the integration in <strong>@DestinationLabel()</strong>.</div>
+                            }
                             <button type="submit"
                                     class="btn btn-primary"
                                     disabled="@(_submitting || !CanCreate())">
@@ -139,12 +161,54 @@
     private string _displayName = "";
     private string _moduleId = "";
     private string? _scopeKey;
+    private string _selectedResourceContextId = "";
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private bool _submitting;
     private string? _error;
     private string? SelectedModuleDescription =>
         _availableModules.FirstOrDefault(m => string.Equals(m.Id, _moduleId, StringComparison.Ordinal))?.Description;
+
+    [SupplyParameterFromQuery(Name = "context")]
+    public string? QueryContext { get; set; }
+
+    protected override void OnInitialized()
+    {
+        // With no active Application anywhere, the Context field is hidden entirely (ViewState.SelectorVisible
+        // is false) and today's behavior is unchanged byte-for-byte: the selection stays unset so the
+        // submit path omits ResourceContextId.
+        if (!ViewState.SelectorVisible)
+        {
+            _selectedResourceContextId = string.Empty;
+            return;
+        }
+
+        // Preselection order (design gate §7.2): ?context= from the create link, else the tab's
+        // current view, else nothing. /integrations/new is Unscoped (ResourceContextViewRoutes), so
+        // it does not participate in the shell's URL-authoritative rewriting/tab-state resolution --
+        // the incoming query value is read here directly and validated against the known active
+        // Applications (or "shared") before being honoured, rather than trusted as-is.
+        if (IsKnownContextSelection(QueryContext))
+        {
+            _selectedResourceContextId = QueryContext!;
+        }
+        else if (!ViewState.Current.IsAll)
+        {
+            _selectedResourceContextId = ViewState.Current.ResourceContextId!;
+        }
+        else
+        {
+            _selectedResourceContextId = string.Empty; // "Choose…", submit disabled until set
+        }
+    }
+
+    private bool IsKnownContextSelection(string? candidate) =>
+        !string.IsNullOrWhiteSpace(candidate)
+        && (string.Equals(candidate, "shared", StringComparison.Ordinal)
+            || ViewState.KnownActiveApplications.Any(a => string.Equals(a.Id, candidate, StringComparison.Ordinal)));
+
+    private string DestinationLabel() =>
+        ViewState.DescribeContext(_selectedResourceContextId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -193,7 +257,8 @@
     private bool CanCreate() =>
         !string.IsNullOrWhiteSpace(_displayName)
         && !string.IsNullOrWhiteSpace(_moduleId)
-        && _capabilities?.CanManageIntegrations == true;
+        && _capabilities?.CanManageIntegrations == true
+        && (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId));
 
     private Task MoveNextAsync()
     {
@@ -259,7 +324,10 @@
         _error = null;
         try
         {
-            var request = new CreateIntegrationRequest(_displayName.Trim(), _moduleId.Trim(), string.IsNullOrWhiteSpace(_scopeKey) ? null : _scopeKey.Trim());
+            var request = new CreateIntegrationRequest(
+                _displayName.Trim(), _moduleId.Trim(),
+                string.IsNullOrWhiteSpace(_scopeKey) ? null : _scopeKey.Trim(),
+                ResourceContextId: string.IsNullOrWhiteSpace(_selectedResourceContextId) ? null : _selectedResourceContextId);
             var integration = await Client.CreateIntegrationAsync(request);
             Nav.NavigateTo("/integrations/" + Uri.EscapeDataString(integration.Id) + "?wizard=1&step=bindings");
         }
