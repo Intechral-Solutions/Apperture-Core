@@ -79,6 +79,52 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<DomainIntegration?> GetByIdForUpdateAsync(IntegrationId id, CancellationToken cancellationToken = default)
+    {
+        List<IntegrationEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: see the interface remarks on execution-strategy retries.
+            // The UPDLOCK hint lives in the SQL text, so the lock is taken and held to end of transaction
+            // regardless of tracking behavior.
+            rows = await _db.Integrations
+                .FromSqlInterpolated($"SELECT * FROM [Integrations] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            rows = await _db.Integrations.AsNoTracking()
+                .Where(e => e.Id == id.Value)
+                .ToListAsync(cancellationToken);
+        }
+
+        var entity = rows.SingleOrDefault();
+        return entity is null ? null : ToDomain(entity);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask SetResourceContextIdAsync(IntegrationId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default)
+    {
+        if (_db.Database.IsRelational())
+        {
+            var affected = await _db.Integrations
+                .Where(e => e.Id == id.Value)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.ResourceContextId, resourceContextId.Value), cancellationToken);
+            if (affected == 0)
+                throw new InvalidOperationException($"Integration {id.Value} not found.");
+            return;
+        }
+
+        // InMemory fallback: ExecuteUpdateAsync is unsupported there. Same precedent as
+        // SqlScheduleRepository's existing ExecuteUpdateAsync/tracked-fallback pair.
+        var entity = await _db.Integrations.FirstOrDefaultAsync(e => e.Id == id.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
+        entity.ResourceContextId = resourceContextId.Value;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     private static DomainIntegration ToDomain(IntegrationEntity e) => new(
         new IntegrationId(e.Id),
         e.DisplayName,

@@ -8,6 +8,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -286,6 +287,12 @@ public sealed class NotificationPipelineTestServiceTests
             ValueTask.CompletedTask;
 
         public ValueTask UpdateAsync(DomainIntegration integration, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<DomainIntegration?> GetByIdForUpdateAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+            GetByIdAsync(id, cancellationToken);
+
+        public ValueTask SetResourceContextIdAsync(IntegrationId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
     }
 

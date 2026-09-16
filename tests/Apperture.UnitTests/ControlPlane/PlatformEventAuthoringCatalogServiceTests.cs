@@ -4,6 +4,7 @@ using Apperture.Core.Application.PlatformEvents;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.ModuleSdk.Abstractions.Signals;
 using Apperture.Shared.Kernel;
@@ -82,6 +83,12 @@ public sealed class PlatformEventAuthoringCatalogServiceTests
             ValueTask.CompletedTask;
 
         public ValueTask UpdateAsync(DomainIntegration integration, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<DomainIntegration?> GetByIdForUpdateAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<DomainIntegration?>(null);
+
+        public ValueTask SetResourceContextIdAsync(IntegrationId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
     }
 

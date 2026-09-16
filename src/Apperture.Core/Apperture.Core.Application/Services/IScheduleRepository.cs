@@ -97,6 +97,41 @@ public interface IScheduleRepository
     ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? outcomeReason, string? runId, CancellationToken cancellationToken = default);
     ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken cancellationToken = default);
     ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads a ScheduleDefinition for an ownership-sensitive write, taking a row-level update lock held for
+    /// the lifetime of the caller's ambient transaction on this same <c>AppertureDbContext</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Must be called inside an already-open transaction, <b>after</b>
+    /// <c>IResourceOwnershipMutationGate.AcquireAsync</c>. The gate is what makes the operation correct;
+    /// this row lock is defense in depth against a future path that skips the gate.
+    /// </para>
+    /// <para>
+    /// The result is <b>not tracked</b>. `EnableRetryOnFailure` is active in production, so a rolled-back
+    /// attempt must leave nothing in the change tracker for the retried attempt to read back as if it were
+    /// current state.
+    /// </para>
+    /// <para>
+    /// On the EF Core InMemory provider (unit tests) this degrades to a plain untracked read with no real
+    /// lock — serialization itself can only be proven against real SQL Server.
+    /// </para>
+    /// </remarks>
+    ValueTask<ScheduleDefinition?> GetByIdForUpdateAsync(ScheduleId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes only the owning <c>ResourceContextId</c> column. The only supported way to change a
+    /// ScheduleDefinition's ownership (CTX-3B); <see cref="UpdateDefinitionAsync"/> deliberately never
+    /// touches this column. Must be called inside the same gated transaction as the preceding
+    /// <see cref="GetByIdForUpdateAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Implemented with <c>ExecuteUpdateAsync</c> on relational providers, so it bypasses the change
+    /// tracker entirely: it writes exactly one column, never flushes unrelated pending changes on the
+    /// shared request-scoped context, and leaves no tracked state behind for an execution-strategy retry.
+    /// </remarks>
+    ValueTask SetResourceContextIdAsync(ScheduleId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

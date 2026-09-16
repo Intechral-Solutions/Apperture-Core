@@ -4,6 +4,7 @@ using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
@@ -225,5 +226,7 @@ public sealed class RuntimeHealthQueryServiceTests
         public ValueTask CompleteRunAsync(string scheduleId, DateTimeOffset fireTimeUtc, string outcome, string? reason, string? runId, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken ct = default) => ValueTask.FromResult<ScheduleState?>(null);
+        public ValueTask<ScheduleDefinition?> GetByIdForUpdateAsync(ScheduleId id, CancellationToken cancellationToken = default) => ValueTask.FromResult<ScheduleDefinition?>(null);
+        public ValueTask SetResourceContextIdAsync(ScheduleId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

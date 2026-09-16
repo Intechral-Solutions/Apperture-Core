@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.ControlPlane.Security;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -66,5 +67,10 @@ public sealed class NotificationLiveRenderContextResolverTests
         public ValueTask AddAsync(DomainIntegration integration, CancellationToken cancellationToken = default) => default;
 
         public ValueTask UpdateAsync(DomainIntegration integration, CancellationToken cancellationToken = default) => default;
+
+        public ValueTask<DomainIntegration?> GetByIdForUpdateAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+            new(integration);
+
+        public ValueTask SetResourceContextIdAsync(IntegrationId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default) => default;
     }
 }

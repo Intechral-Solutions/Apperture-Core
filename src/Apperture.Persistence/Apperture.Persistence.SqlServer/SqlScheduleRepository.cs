@@ -305,6 +305,52 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             e.LastSuccessfulDispatchUtc);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<ScheduleDefinition?> GetByIdForUpdateAsync(ScheduleId id, CancellationToken cancellationToken = default)
+    {
+        List<ScheduleDefinitionEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: see the interface remarks on execution-strategy retries.
+            // The UPDLOCK hint lives in the SQL text, so the lock is taken and held to end of transaction
+            // regardless of tracking behavior.
+            rows = await _db.ScheduleDefinitions
+                .FromSqlInterpolated($"SELECT * FROM [ScheduleDefinitions] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            rows = await _db.ScheduleDefinitions.AsNoTracking()
+                .Where(e => e.Id == id.Value)
+                .ToListAsync(cancellationToken);
+        }
+
+        var entity = rows.SingleOrDefault();
+        return entity is null ? null : ToDefinition(entity);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask SetResourceContextIdAsync(ScheduleId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default)
+    {
+        if (_db.Database.IsRelational())
+        {
+            var affected = await _db.ScheduleDefinitions
+                .Where(e => e.Id == id.Value)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.ResourceContextId, resourceContextId.Value), cancellationToken);
+            if (affected == 0)
+                throw new InvalidOperationException($"Schedule {id.Value} not found.");
+            return;
+        }
+
+        // InMemory fallback: ExecuteUpdateAsync is unsupported there. Same precedent as
+        // SqlScheduleRepository's existing ExecuteUpdateAsync/tracked-fallback pair (TryRecoverStaleClaimAsync).
+        var entity = await _db.ScheduleDefinitions.FirstOrDefaultAsync(e => e.Id == id.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
+        entity.ResourceContextId = resourceContextId.Value;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
     private static ScheduleDefinition ToDefinition(ScheduleDefinitionEntity e)
     {
         ScheduleLifecycleEvidence? life = null;
