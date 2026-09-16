@@ -20,8 +20,10 @@ namespace Apperture.UnitTests.ResourceContexts;
 /// <summary>
 /// Wires a real <see cref="ResourceOwnershipMoveService"/> over real management services and
 /// repositories (EF Core InMemory), following the shape of <see cref="ResourceContextOwnershipTestHarness"/>.
-/// Authorization is always-allow by default; use <see cref="WithAuthorization"/> to exercise the denied
-/// path with a specific granted permission (mirrors <c>ManagementServiceTestHarness</c>).
+/// Authorization is always-allow by default (constructor defaults <c>grantedAction</c>/<c>grantedResourceType</c>
+/// to <c>"any"</c>); pass <c>grantedAction: null</c> to exercise the denied path, or a specific
+/// action/resource-type pair to exercise the "wrong permission granted" path (mirrors
+/// <c>ManagementServiceTestHarness</c>).
 /// </summary>
 public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
 {

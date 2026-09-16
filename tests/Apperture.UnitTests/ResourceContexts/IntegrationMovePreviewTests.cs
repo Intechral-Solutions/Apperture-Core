@@ -1,4 +1,6 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ResourceContexts;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
 using FluentAssertions;
 using Xunit;
@@ -252,6 +254,34 @@ public sealed class IntegrationMovePreviewTests
     }
 
     [Fact]
+    public async Task Not_authorized_takes_priority_over_unknown_integration_id()
+    {
+        // Regression coverage for the actor-before-lookup ordering fix. ResourceOwnershipMoveTestHarness's
+        // own FixedPrincipalContext always returns a non-null actor (its grantedAction: null configures
+        // permission DENIAL, not the absence of an actor), so it cannot exercise the true "no authenticated
+        // actor" path that occurs in production before authentication middleware attaches one. This test
+        // therefore builds a second service instance directly over the harness's real repositories with a
+        // principal context that returns no actor at all, to prove the actor check now happens strictly
+        // before the integration lookup: an unauthenticated caller must not be able to distinguish a
+        // missing integration from an unauthorized one via exception type.
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var target = await h.CreateApplicationAsync("Canvas");
+        var service = new ResourceOwnershipMoveService(
+            new NoActorPrincipalContext(),
+            new DenyAllAuthorizationEvaluationService(),
+            h.IntegrationRepository,
+            h.ConnectionRepository,
+            h.ScheduleRepository,
+            h.BindingRepository,
+            h.ResourceContexts);
+
+        var act = async () => await service.PreviewIntegrationMoveAsync(new(Guid.NewGuid().ToString("N")), target.Id);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>(
+            "an unauthenticated caller must not be able to distinguish a missing integration from an unauthorized one");
+    }
+
+    [Fact]
     public async Task Integration_update_permission_is_required_not_resource_context_manage()
     {
         await using var h = new ResourceOwnershipMoveTestHarness(
@@ -265,6 +295,25 @@ public sealed class IntegrationMovePreviewTests
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>(
             "holding resource_context.manage must not be enough -- integration.update is the required permission (§9.3)");
+    }
+
+    [Fact]
+    public async Task Integration_update_permission_is_sufficient()
+    {
+        // Positive counterpart to Integration_update_permission_is_required_not_resource_context_manage:
+        // every other test in this file builds the harness with the default grantedAction: "any", which
+        // short-circuits permission matching entirely. This pins the ACTUAL action/resource-type the
+        // service requests, not merely that some unrelated permission is insufficient.
+        await using var h = new ResourceOwnershipMoveTestHarness(
+            grantedAction: Apperture.Core.Domain.Governance.ActionConstants.IntegrationUpdate,
+            grantedResourceType: Apperture.Core.Domain.Governance.ResourceTypeConstants.Integration);
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var integration = await h.CreateIntegrationAsync(source.Id);
+
+        var preview = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
+
+        preview.CanMove.Should().BeTrue();
     }
 
     [Fact]
@@ -302,18 +351,48 @@ public sealed class IntegrationMovePreviewTests
         var target = await h.CreateApplicationAsync("Canvas");
         var thirdParty = await h.CreateApplicationAsync("Workday");
         var integration = await h.CreateIntegrationAsync(source.Id);
+
+        // Capture each binding's own id alongside its connection's id, so the expected order below is
+        // derived from the real (ordinal, not insertion) binding-id sort rather than merely asserting the
+        // two preview calls agree with EACH OTHER -- EF InMemory returns rows in stable insertion order on
+        // every call, so a self-consistency-only assertion would stay green even if the service's OrderBy
+        // were deleted entirely.
+        var bindingToConnection = new List<(string BindingId, string ConnectionId)>();
         for (var i = 0; i < 5; i++)
         {
             var connection = await h.CreateConnectionAsync(thirdParty.Id);
-            await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+            var binding = await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+            bindingToConnection.Add((binding.Id.Value, connection.Id.Value));
         }
+
+        var expectedOrder = bindingToConnection
+            .OrderBy(p => p.BindingId, StringComparer.Ordinal)
+            .Select(p => p.ConnectionId)
+            .ToList();
 
         var first = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
         var second = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
 
         first.Blockers.Should().HaveCount(5);
+        first.Blockers.Select(b => b.RelatedResourceId).Should().Equal(expectedOrder,
+            "blockers must be reported in ordinal binding-id order, not database insertion order");
         first.Blockers.Select(b => b.RelatedResourceId)
             .Should().Equal(second.Blockers.Select(b => b.RelatedResourceId),
                 "blocker order must be stable so the API response and the UI dialog do not reshuffle between calls");
+    }
+
+    /// <summary>Simulates the pre-authentication state (no actor resolved yet), which
+    /// <see cref="ResourceOwnershipMoveTestHarness"/>'s own <c>FixedPrincipalContext</c> cannot produce.</summary>
+    private sealed class NoActorPrincipalContext : IPrincipalContext
+    {
+        public ValueTask<Apperture.Shared.Kernel.IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Apperture.Shared.Kernel.IActor?>(null);
+    }
+
+    private sealed class DenyAllAuthorizationEvaluationService : IAuthorizationEvaluationService
+    {
+        public ValueTask<bool> EvaluateAsync(
+            Apperture.Core.Domain.Governance.AuthorizationEvaluationContext context, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(false);
     }
 }

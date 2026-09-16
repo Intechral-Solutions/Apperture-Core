@@ -47,9 +47,13 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     public async ValueTask<ResourceMovePreview> PreviewIntegrationMoveAsync(
         IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
     {
-        var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken)
+        // House pattern (IntegrationManagementService.UpdateIntegrationAsync): resolve the actor before
+        // touching the repository, so an unauthenticated caller cannot use the not-found/unauthorized
+        // exception distinction as an existence oracle for ids it was never entitled to probe.
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
-        await AuthorizeAsync(ActionConstants.IntegrationUpdate, integration.GetIdentity(), cancellationToken).ConfigureAwait(false);
+        await AuthorizeAsync(actor, ActionConstants.IntegrationUpdate, integration.GetIdentity(), cancellationToken).ConfigureAwait(false);
         var validation = await ValidateIntegrationMoveAsync(integration, targetResourceContextId, cancellationToken).ConfigureAwait(false);
         return validation.Preview;
     }
@@ -83,7 +87,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             blockers.Add(new ResourceMoveBlocker(
                 ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.",
                 null, null, null, null));
-            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, await ResolveRefAsync(targetId, cancellationToken), blockers, effects), []);
+            // No second lookup here: target is already known to be null, so the ref is necessarily the
+            // synthetic fallback -- re-querying via ResolveRefAsync would only repeat the same null result.
+            var targetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
+            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, targetRef, blockers, effects), []);
         }
         if (!target.IsActive)
         {
@@ -167,12 +174,26 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), schedules);
     }
 
-    private async ValueTask AuthorizeAsync(string action, IGovernedResourceIdentity identity, CancellationToken cancellationToken)
+    /// <summary>
+    /// Resolves the current actor, failing fast if there is none. Shared by every <c>Preview*</c>/<c>Move*</c>
+    /// method (Tasks 5 and 6 reuse this for the Connection and Schedule families): callers must resolve the
+    /// actor <em>before</em> loading the target resource, matching the house pattern
+    /// (<c>IntegrationManagementService.UpdateIntegrationAsync</c>) -- otherwise an unauthenticated caller
+    /// could distinguish "not found" from "unauthorized" purely from exception type, which leaks resource
+    /// existence to callers who were never authenticated at all.
+    /// </summary>
+    private async ValueTask<IActor> RequireActorAsync(CancellationToken cancellationToken)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            throw new UnauthorizedAccessException("No authenticated actor.");
+        return actor ?? throw new UnauthorizedAccessException("No authenticated actor.");
+    }
 
+    /// <summary>
+    /// Evaluates whether <paramref name="actor"/> (already resolved via <see cref="RequireActorAsync"/>)
+    /// holds <paramref name="action"/> against <paramref name="identity"/>. Shared by every move family.
+    /// </summary>
+    private async ValueTask AuthorizeAsync(IActor actor, string action, IGovernedResourceIdentity identity, CancellationToken cancellationToken)
+    {
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
@@ -183,9 +204,6 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         if (!allowed)
             throw new UnauthorizedAccessException($"Not authorized to move this resource ({action}).");
     }
-
-    // AuthorizeScheduleAsync is added in Task 6, alongside PreviewScheduleMoveAsync -- the only member
-    // that needs it. Nothing unused is written ahead of its caller.
 
     private async ValueTask<ResourceContextRef> ResolveRefAsync(ResourceContextId id, CancellationToken cancellationToken)
     {
