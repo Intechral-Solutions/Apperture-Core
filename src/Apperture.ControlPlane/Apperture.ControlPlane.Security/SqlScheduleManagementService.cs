@@ -152,11 +152,11 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         // Enabled false -> true here is the exact same reactivation EnableAsync guards, so it gets the
         // same guard. Any other field update (rename, cron change, disabling, staying disabled, or
         // staying enabled) remains allowed regardless of the owning context's archived state, since
-        // none of those make anything newly live.
-        if (!previous.Enabled && definition.Enabled && previous.ResourceContextId is { } owningContextId)
+        // none of those make anything newly live, so it stays on the ordinary ungated write path below.
+        if (!previous.Enabled && definition.Enabled)
         {
-            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
-                owningContextId, _resourceContexts, "enabling this schedule", cancellationToken).ConfigureAwait(false);
+            await ApplyGatedScheduleTransitionAsync(previous, definition, "enabling this schedule", cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(
@@ -164,6 +164,45 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
             definition,
             _timeProvider.GetUtcNow());
         await _repo.UpdateDefinitionAsync(merged, cancellationToken);
+    }
+
+    /// <summary>
+    /// Applies a Schedule field update whose transition can make the owning ResourceContext newly
+    /// archive-blocking (Disabled -&gt; Enabled), gated against a concurrent Archive
+    /// (CTX-3B follow-on to Plan 2 Task 5). Callers that don't hit this transition should call
+    /// <c>_repo.UpdateDefinitionAsync</c> directly and skip this method entirely -- it exists only for
+    /// the reactivation-guarded path.
+    /// </summary>
+    private async ValueTask ApplyGatedScheduleTransitionAsync(
+        ScheduleDefinition previous,
+        ScheduleDefinition proposed,
+        string actionPhrase,
+        CancellationToken cancellationToken)
+    {
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            _db.ChangeTracker.Clear();
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Gate first: enabling a Schedule is an archive-blocking transition, so it must not interleave
+            // with a concurrent Archive evaluating the owning context's ownership summary.
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            if (proposed.ResourceContextId is { } owningContextId)
+            {
+                await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                    owningContextId, _resourceContexts, actionPhrase, cancellationToken).ConfigureAwait(false);
+            }
+
+            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(previous, proposed, _timeProvider.GetUtcNow());
+            await _repo.UpdateDefinitionAsync(merged, cancellationToken).ConfigureAwait(false);
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async ValueTask<ScheduleAssignment> AssignToRuntimePlaneAsync(ScheduleId scheduleId, RuntimePlaneId runtimePlaneId, string? policyOverrides, CancellationToken cancellationToken = default)
@@ -186,16 +225,10 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
             ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
 
         // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
-        // it owns may become live again.
-        if (def.ResourceContextId is { } owningContextId)
-        {
-            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
-                owningContextId, _resourceContexts, "enabling this schedule", cancellationToken).ConfigureAwait(false);
-        }
-
-        var proposed = def with { Enabled = true };
-        var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(def, proposed, _timeProvider.GetUtcNow());
-        await _repo.UpdateDefinitionAsync(merged, cancellationToken);
+        // it owns may become live again. Gated against a concurrent Archive (CTX-3B follow-on to
+        // Plan 2 Task 5): the authoritative check happens on proposed.ResourceContextId inside the
+        // gated helper (same value as def.ResourceContextId here, since this transition never changes it).
+        await ApplyGatedScheduleTransitionAsync(def, def with { Enabled = true }, "enabling this schedule", cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)

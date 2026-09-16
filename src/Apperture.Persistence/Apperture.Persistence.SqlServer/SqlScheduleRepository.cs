@@ -67,8 +67,9 @@ public sealed class SqlScheduleRepository : IScheduleRepository
         e.ExecutionPolicyRef = d.ExecutionPolicyRef;
         e.Version = d.Version;
         e.IntegrationId = d.IntegrationId?.Value;
-        // Ownership is established at create time. CTX-1 has no move operation, so UpdateDefinitionAsync
-        // deliberately does not rewrite ResourceContextId.
+        // Ownership changes ONLY through the narrow SetResourceContextIdAsync method (added in CTX-3B
+        // Plan 2 for ResourceOwnershipMoveService.MoveScheduleAsync), never through this general
+        // UpdateDefinitionAsync, which deliberately does not rewrite ResourceContextId.
         if (d.Lifecycle is { } life)
         {
             e.LastScheduleEnabledAtUtc = life.LastScheduleEnabledAtUtc;
