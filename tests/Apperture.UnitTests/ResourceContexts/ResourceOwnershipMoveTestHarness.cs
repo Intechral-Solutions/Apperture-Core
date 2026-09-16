@@ -255,6 +255,194 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Seeds one row per CTX-2 historical-provenance family (Task 7), all snapshotted to
+    /// <paramref name="contextId"/> and (where the family carries the column) <paramref name="integrationId"/>.
+    /// Every row uses a fresh id so repeated calls within one test accumulate rather than collide. No
+    /// family here declares a foreign key to Integrations/ResourceContexts/Schedules (see the "CTX-2:
+    /// ... No FK ..." comments on each entity in <c>AppertureDbContext.OnModelCreating</c>), so these can
+    /// be seeded directly without satisfying any other row's existence.
+    /// </summary>
+    public async Task SeedHistoricalProvenanceAsync(IntegrationId integrationId, ResourceContextId contextId, CancellationToken ct = default)
+    {
+        var seq = NextSequence();
+        var integrationValue = integrationId.Value;
+        var contextValue = contextId.Value;
+        var now = DateTimeOffset.UtcNow;
+
+        var runId = $"hist-run-{seq}";
+        var workflowInstanceId = $"hist-wi-{seq}";
+        var operationInstanceId = $"hist-oi-{seq}";
+        var operationStartRunId = $"hist-oprun-{seq}";
+        var notificationDefinitionId = $"hist-nd-{seq}";
+
+        _db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = workflowInstanceId,
+            DefinitionId = "hist.def",
+            Status = "succeeded",
+            CreatedAt = now,
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue
+        });
+
+        _db.WorkflowInstances.Add(new WorkflowInstanceEntity
+        {
+            Id = workflowInstanceId,
+            DefinitionId = "hist.def",
+            Status = "succeeded",
+            CreatedAt = now,
+            UpdatedAt = now,
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue
+        });
+
+        _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = runId,
+            WorkflowInstanceId = workflowInstanceId,
+            WorkflowDefinitionId = "hist.def",
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue,
+            CreatedAt = now
+        });
+
+        _db.OperationInstances.Add(new OperationInstanceEntity
+        {
+            Id = operationInstanceId,
+            DefinitionId = "hist.def",
+            Status = "succeeded",
+            CreatedAt = now,
+            UpdatedAt = now,
+            ResourceContextId = contextValue
+        });
+
+        _db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = operationStartRunId,
+            OperationInstanceId = operationInstanceId,
+            OperationDefinitionId = "hist.def",
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue,
+            CreatedAt = now
+        });
+
+        _db.OperationGroups.Add(new OperationGroupEntity
+        {
+            Id = $"hist-og-{seq}",
+            RunId = runId,
+            IntegrationId = integrationValue,
+            ModuleId = "hist.mod",
+            OperationKind = "sync",
+            Status = "succeeded",
+            ResourceContextId = contextValue,
+            StartedAtUtc = now,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        _db.PlatformEvents.Add(new PlatformEventEntity
+        {
+            Id = $"hist-pe-{seq}",
+            Type = "hist.event",
+            Source = "test",
+            DataJson = "{}",
+            OccurredAtUtc = now,
+            RecordedAtUtc = now,
+            Severity = "info",
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue
+        });
+
+        _db.NotificationInstances.Add(new NotificationInstanceEntity
+        {
+            Id = $"hist-ni-{seq}",
+            NotificationDefinitionId = notificationDefinitionId,
+            NotificationKind = "hist.kind",
+            Status = "sent",
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue,
+            InstanceDedupeKey = $"hist-dedupe-{seq}",
+            RenderedSubject = "subject",
+            RenderedSummary = "summary",
+            RenderedBodyText = "body",
+            TemplateVersionHash = "hash",
+            RenderContextJson = "{}",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        _db.AttentionIncidents.Add(new AttentionIncidentEntity
+        {
+            Id = $"hist-ai-{seq}",
+            IntegrationId = integrationValue,
+            ResourceContextId = contextValue,
+            ConditionKey = "hist.condition",
+            Status = "Active",
+            StartedAtUtc = now,
+            LastObservedAtUtc = now
+        });
+
+        _db.ScheduleRuns.Add(new ScheduleRunEntity
+        {
+            ScheduleId = $"hist-sched-{seq}",
+            AssignmentId = $"hist-assign-{seq}",
+            FireTimeUtc = now,
+            StartedAtUtc = now,
+            Outcome = "succeeded",
+            ResourceContextId = contextValue
+        });
+
+        _db.AuditLogs.Add(new AuditLogEntity
+        {
+            At = now,
+            Actor = "test-actor",
+            Action = "hist.action",
+            ResourceContextId = contextValue
+        });
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Ordered, comparable projection of every CTX-2 historical-provenance family (Task 7) so a single
+    /// <c>BeEquivalentTo</c> call can assert none of them were rewritten by a move. Adding a newly
+    /// discovered family only needs one more <c>rows.AddRange</c> line here.
+    /// </summary>
+    public async Task<IReadOnlyList<HistoricalProvenanceRow>> CaptureHistoricalProvenanceAsync(CancellationToken ct = default)
+    {
+        var rows = new List<HistoricalProvenanceRow>();
+
+        rows.AddRange((await _db.OperationRuns.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(OperationRunEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.WorkflowInstances.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(WorkflowInstanceEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.WorkflowStartRequests.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(WorkflowStartRequestEntity), x.RunId, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.OperationStartRequests.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(OperationStartRequestEntity), x.RunId, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.OperationInstances.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(OperationInstanceEntity), x.Id, null, x.ResourceContextId)));
+        rows.AddRange((await _db.OperationGroups.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(OperationGroupEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.PlatformEvents.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(PlatformEventEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.NotificationInstances.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(NotificationInstanceEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.AttentionIncidents.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(AttentionIncidentEntity), x.Id, x.IntegrationId, x.ResourceContextId)));
+        rows.AddRange((await _db.ScheduleRuns.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(ScheduleRunEntity), x.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), null, x.ResourceContextId)));
+        rows.AddRange((await _db.AuditLogs.AsNoTracking().ToListAsync(ct))
+            .Select(x => new HistoricalProvenanceRow(nameof(AuditLogEntity), x.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), null, x.ResourceContextId)));
+
+        return rows
+            .OrderBy(r => r.TableName, StringComparer.Ordinal)
+            .ThenBy(r => r.RowId, StringComparer.Ordinal)
+            .ToList();
+    }
+
     private int NextSequence() => System.Threading.Interlocked.Increment(ref _nextSequence);
 
     public async ValueTask DisposeAsync() => await _db.DisposeAsync();
@@ -341,3 +529,11 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
         }
     }
 }
+
+/// <summary>
+/// One row from a CTX-2 historical-provenance family, as captured by
+/// <see cref="ResourceOwnershipMoveTestHarness.CaptureHistoricalProvenanceAsync"/>. <see cref="TableName"/>
+/// plus <see cref="RowId"/> uniquely identify the row across every family in one flat, orderable list, so
+/// a single <c>BeEquivalentTo</c> over the whole collection proves no move rewrote anything, anywhere.
+/// </summary>
+public sealed record HistoricalProvenanceRow(string TableName, string RowId, string? IntegrationId, string? ResourceContextId);
