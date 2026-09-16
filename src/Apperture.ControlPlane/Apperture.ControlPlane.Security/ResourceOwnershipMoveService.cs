@@ -1,0 +1,200 @@
+using Apperture.Core.Application.ResourceContexts;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Integration;
+using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Core.Domain.Scheduling;
+using Apperture.Shared.Kernel;
+using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
+
+namespace Apperture.ControlPlane.Security;
+
+/// <summary>
+/// Validates and performs explicit resource-ownership moves (design gate §8). CTX-3B Plan 1: preview
+/// validation only. <c>Move*Async</c> mutation and locking land in Plan 2; both call the same
+/// <c>Validate*MoveAsync</c> methods this plan defines, so preview and move cannot drift (§8.2).
+/// </summary>
+public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
+{
+    private readonly IPrincipalContext _principalContext;
+    private readonly IAuthorizationEvaluationService _authorizationEvaluation;
+    private readonly IIntegrationRepository _integrationRepository;
+    private readonly IConnectionRepository _connectionRepository;
+    private readonly IScheduleRepository _scheduleRepository;
+    private readonly IBindingRepository _bindingRepository;
+    private readonly IResourceContextService _resourceContexts;
+
+    public ResourceOwnershipMoveService(
+        IPrincipalContext principalContext,
+        IAuthorizationEvaluationService authorizationEvaluation,
+        IIntegrationRepository integrationRepository,
+        IConnectionRepository connectionRepository,
+        IScheduleRepository scheduleRepository,
+        IBindingRepository bindingRepository,
+        IResourceContextService resourceContexts)
+    {
+        _principalContext = principalContext;
+        _authorizationEvaluation = authorizationEvaluation;
+        _integrationRepository = integrationRepository;
+        _connectionRepository = connectionRepository;
+        _scheduleRepository = scheduleRepository;
+        _bindingRepository = bindingRepository;
+        _resourceContexts = resourceContexts;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> PreviewIntegrationMoveAsync(
+        IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        var integration = await _integrationRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
+        await AuthorizeAsync(ActionConstants.IntegrationUpdate, integration.GetIdentity(), cancellationToken).ConfigureAwait(false);
+        var validation = await ValidateIntegrationMoveAsync(integration, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+        return validation.Preview;
+    }
+
+    /// <summary>
+    /// The Integration validator's full result: the operator-facing preview, plus the authoritative
+    /// attached-Schedule set it was computed from. Plan 2 mutates exactly this set and Plan 4 audits
+    /// exactly this set, so all three describe the same schedules from one read inside one transaction.
+    /// Private: never part of the API or client contract.
+    /// </summary>
+    private sealed record IntegrationMoveValidation(
+        ResourceMovePreview Preview,
+        IReadOnlyList<ScheduleDefinition> AttachedSchedules);
+
+    /// <summary>
+    /// Shared validator for Integration moves (§8.4). Called by preview here and, unchanged, by the
+    /// gated transaction in Plan 2 -- this is the mechanism that prevents preview/move drift (§8.2).
+    /// </summary>
+    private async ValueTask<IntegrationMoveValidation> ValidateIntegrationMoveAsync(
+        DomainIntegration integration, ResourceContextId targetId, CancellationToken cancellationToken)
+    {
+        var sourceId = integration.ResourceContextId;
+        var sourceRef = await ResolveRefAsync(sourceId, cancellationToken).ConfigureAwait(false);
+        var target = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+
+        var blockers = new List<ResourceMoveBlocker>();
+        var effects = new List<ResourceMoveEffect>();
+
+        if (target is null)
+        {
+            blockers.Add(new ResourceMoveBlocker(
+                ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.",
+                null, null, null, null));
+            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, await ResolveRefAsync(targetId, cancellationToken), blockers, effects), []);
+        }
+        if (!target.IsActive)
+        {
+            blockers.Add(new ResourceMoveBlocker(
+                ResourceMoveBlockerCodes.TargetArchived, $"'{target.Name}' is archived and cannot receive new ownership.",
+                ResourceMoveResourceTypes.ResourceContext, target.Id.Value, target.Name, target.Id.Value));
+            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), []);
+        }
+        if (string.Equals(sourceId.Value, targetId.Value, StringComparison.Ordinal))
+        {
+            blockers.Add(new ResourceMoveBlocker(
+                ResourceMoveBlockerCodes.AlreadyInTarget, "The integration is already owned by the requested context.",
+                null, null, null, null));
+            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), []);
+        }
+
+        // Deterministic ordering (Global Constraints): the repository methods below have no ORDER BY, so
+        // SQL Server row order is unspecified. Sorting here is what makes the blocker/effect lists stable
+        // for the API response, the UI dialog, and the audit payload.
+        var bindings = (await _bindingRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken).ConfigureAwait(false))
+            .OrderBy(b => b.Id.Value, StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var binding in bindings)
+        {
+            if (binding.ConnectionId is not { } connectionId)
+                continue; // capability binding: no Connection to check.
+
+            var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken).ConfigureAwait(false);
+            if (connection is null)
+            {
+                effects.Add(new ResourceMoveEffect(
+                    ResourceMoveEffectCodes.BindingReferencesMissingConnection,
+                    $"Binding for slot '{binding.SlotName}' references a missing connection; the move does not make this worse.",
+                    ResourceMoveResourceTypes.Binding, [binding.Id.Value]));
+                continue;
+            }
+
+            if (!ResourceContextReferenceRule.CanReference(targetId, connection.ResourceContextId))
+            {
+                blockers.Add(new ResourceMoveBlocker(
+                    ResourceMoveBlockerCodes.BindingConnectionUnreachable,
+                    $"Connection '{connection.Name}' is owned by '{connection.ResourceContextId.Value}' and would become unreachable if this integration moved to '{target.Name}'.",
+                    ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ResourceContextId.Value));
+            }
+        }
+
+        // The authoritative attached-Schedule set. Read exactly once; returned to the caller so Plan 2's
+        // mutation and Plan 4's audit describe the same schedules this preview described.
+        var schedules = (await _scheduleRepository.GetByIntegrationIdAsync(integration.Id, cancellationToken).ConfigureAwait(false))
+            .OrderBy(s => s.Id.Value, StringComparer.Ordinal)
+            .ToList();
+
+        // NOTE (verified at review time): SqlScheduleRepository.ToDefinition coalesces a null/whitespace
+        // ResourceContextId column to Shared, so `s.ResourceContextId` is never null coming out of the
+        // repository. The null test below is retained only as a defensive guard against a future mapper
+        // change -- it is not the mechanism that catches legacy NULL rows. Legacy NULL rows present as
+        // Shared and therefore land in the `!= sourceId` branch. See this plan's "Legacy schedule
+        // ownership drift" note and Plan 2's preflight (product decision P3).
+        var inconsistent = schedules
+            .Where(s => s.ResourceContextId is null || !string.Equals(s.ResourceContextId.Value, sourceId.Value, StringComparison.Ordinal))
+            .ToList();
+        if (inconsistent.Count > 0)
+        {
+            foreach (var s in inconsistent)
+            {
+                blockers.Add(new ResourceMoveBlocker(
+                    ResourceMoveBlockerCodes.ScheduleContextInconsistent,
+                    $"Schedule '{s.Name}' does not currently match this integration's context and must be corrected before it can move.",
+                    ResourceMoveResourceTypes.Schedule, s.Id.Value, s.Name, s.ResourceContextId?.Value));
+            }
+        }
+        else if (schedules.Count > 0)
+        {
+            effects.Add(new ResourceMoveEffect(
+                ResourceMoveEffectCodes.SchedulesMoveWithIntegration,
+                $"{schedules.Count} schedule(s) move with this integration.",
+                ResourceMoveResourceTypes.Schedule, schedules.Select(s => s.Id.Value).ToList()));
+        }
+
+        return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), schedules);
+    }
+
+    private async ValueTask AuthorizeAsync(string action, IGovernedResourceIdentity identity, CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(action, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
+            cancellationToken).ConfigureAwait(false);
+        if (!allowed)
+            throw new UnauthorizedAccessException($"Not authorized to move this resource ({action}).");
+    }
+
+    // AuthorizeScheduleAsync is added in Task 6, alongside PreviewScheduleMoveAsync -- the only member
+    // that needs it. Nothing unused is written ahead of its caller.
+
+    private async ValueTask<ResourceContextRef> ResolveRefAsync(ResourceContextId id, CancellationToken cancellationToken)
+    {
+        var ctx = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        return ctx?.ToRef() ?? new ResourceContextRef(id.Value, id.Value, id.Value);
+    }
+
+    private static ResourceMovePreview BuildIntegrationPreview(
+        string resourceId, ResourceContextRef source, ResourceContextRef target,
+        List<ResourceMoveBlocker> blockers, List<ResourceMoveEffect> effects) =>
+        new(ResourceMoveResourceTypes.Integration, resourceId, source, target, blockers.Count == 0, blockers, effects);
+}
