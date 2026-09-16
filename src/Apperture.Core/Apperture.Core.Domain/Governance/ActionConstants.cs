@@ -113,4 +113,15 @@ public static class ActionConstants
 
     /// <summary>Create, rename, re-slug, describe, archive, unarchive a ResourceContext (Application). CTX-3A.</summary>
     public const string ResourceContextManage = "resource_context.manage";
+
+    // Resource ownership movement (CTX-3B, design gate §8.8)
+    public const string IntegrationOwnershipMovedOut = "integration.ownership.moved_out";
+    public const string IntegrationOwnershipMovedIn = "integration.ownership.moved_in";
+    public const string IntegrationOwnershipMoveRejected = "integration.ownership.move_rejected";
+    public const string ConnectionOwnershipMovedOut = "connection.ownership.moved_out";
+    public const string ConnectionOwnershipMovedIn = "connection.ownership.moved_in";
+    public const string ConnectionOwnershipMoveRejected = "connection.ownership.move_rejected";
+    public const string ScheduleOwnershipMovedOut = "schedule.ownership.moved_out";
+    public const string ScheduleOwnershipMovedIn = "schedule.ownership.moved_in";
+    public const string ScheduleOwnershipMoveRejected = "schedule.ownership.move_rejected";
 }
