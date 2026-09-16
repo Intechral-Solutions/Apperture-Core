@@ -138,21 +138,35 @@ public sealed class ResourceMoveAuditTests
     /// audit sink must resolve the SAME scoped <see cref="AppertureDbContext"/> instance, or the audit
     /// append would run in a different connection/transaction than the mutation and the rollback proof in
     /// <see cref="Audit_failure_rolls_the_movement_back"/> (and its real-SQL companion in
-    /// <c>ResourceMoveAuditFilteringSqlServerTests</c>) would mean nothing. This test wires the SAME
-    /// production one-line registrations the Management host uses for these two services --
-    /// <c>services.AddScoped&lt;IResourceOwnershipMoveService, ResourceOwnershipMoveService&gt;()</c>
-    /// (<c>ServiceCollectionExtensions.Integration.cs:31</c>) and
-    /// <c>services.AddScoped&lt;IAuditService, SqlAuditService&gt;()</c>
-    /// (<c>ServiceCollectionExtensions.Governance.cs:96</c>, also <c>Program.cs:87</c> in WorkerHost) --
-    /// over one scoped <see cref="AppertureDbContext"/> (production registers it via
-    /// <c>AddDbContext&lt;AppertureDbContext&gt;</c>, whose default lifetime is Scoped; this test uses an
-    /// InMemory provider for speed, which does not change the lifetime/registration shape being proven).
-    /// Everything else the move service's constructor needs (repositories, gate, principal/authorization)
-    /// is wired with the same real Sql* repository classes and production registration helper
-    /// (<c>AddResourceContextPersistence</c>) the Management host uses; only <see cref="IPrincipalContext"/>
-    /// and <see cref="IAuthorizationEvaluationService"/> are minimal test doubles, since production's real
-    /// implementations (<c>HostPrincipalContext</c>/<c>AuthorizationEvaluationService</c>) pull in unrelated
-    /// ASP.NET Core authentication infrastructure that has nothing to do with DbContext sharing.
+    /// <c>ResourceMoveAuditFilteringSqlServerTests</c>) would mean nothing.
+    ///
+    /// FIX (review round 1, Important 2): the first version of this test hand-copied
+    /// <c>services.AddScoped&lt;IAuditService, SqlAuditService&gt;()</c> and
+    /// <c>services.AddScoped&lt;IResourceOwnershipMoveService, ResourceOwnershipMoveService&gt;()</c> into
+    /// a private <see cref="ServiceCollection"/> it built itself -- so a future change to the REAL
+    /// production registration (e.g. swapping <see cref="SqlAuditService"/> for a factory-based or
+    /// own-context sink) would never fail this test, since it never read production's actual registrations.
+    /// This version instead calls the REAL production composition, in the REAL order
+    /// <c>Apperture.Management.Host/Program.cs</c> uses (lines 49, 55, 66, 67):
+    /// <c>AddSchedulePersistence()</c>, <c>AddAppertureGovernance()</c> (registers
+    /// <c>IAuditService -&gt; SqlAuditService</c> at <c>ServiceCollectionExtensions.Governance.cs:96</c>),
+    /// <c>AddAppertureConnectorWorkflows()</c>, and <c>AddAppertureIntegrationWorkflows()</c> (registers
+    /// <c>IResourceOwnershipMoveService -&gt; ResourceOwnershipMoveService</c> at
+    /// <c>ServiceCollectionExtensions.Integration.cs:31</c>). If any of those four calls ever stops
+    /// registering either service the way production currently does, this test breaks -- exactly the
+    /// brief's own bar ("a future registration change fails a test"). Registering these methods does not
+    /// execute any of their bodies beyond adding <see cref="ServiceDescriptor"/> entries (no I/O, no
+    /// resolution) and <c>BuildServiceProvider(validateScopes: true)</c> does not eagerly construct
+    /// anything either -- only <see cref="IResourceOwnershipMoveService"/>/<see cref="IAuditService"/> and
+    /// their transitive graph are ever actually constructed below, so the hundreds of unrelated services
+    /// these four methods also register (dashboards, MFA, workflow control, etc.) are inert.
+    ///
+    /// Only <see cref="IPrincipalContext"/> and <see cref="IAuthorizationEvaluationService"/> are
+    /// overridden with minimal test doubles, registered AFTER the real calls above -- the built-in
+    /// container resolves the LAST registration for a given service type, so this does not change what
+    /// <see cref="IAuditService"/> or <see cref="IResourceOwnershipMoveService"/> themselves resolve to; it
+    /// only avoids needing production's real <c>HostPrincipalContext</c>/<c>AuthorizationEvaluationService</c>,
+    /// which pull in ASP.NET Core/Entra infrastructure that has nothing to do with DbContext sharing.
     /// </summary>
     [Fact]
     public void Move_service_and_audit_service_resolve_the_same_DbContext_instance_per_scope()
@@ -179,33 +193,24 @@ public sealed class ResourceMoveAuditTests
         // Matches AddDbContext<AppertureDbContext>'s default (Scoped) lifetime -- see
         // Apperture.Persistence.SqlServer/ServiceCollectionExtensions.cs:28. InMemory instead of SQL
         // Server: this test proves DI graph shape (one instance per scope), not transactional behavior --
-        // that proof lives in ResourceMoveAuditFilteringSqlServerTests against a real database.
+        // that proof lives in ResourceMoveAuditFilteringSqlServerTests against a real database. The real
+        // Program.cs uses AddApperturePersistence(...) here instead, which needs a real connection string;
+        // that is orthogonal to what this test (post-fix) is about, which is IAuditService/
+        // IResourceOwnershipMoveService's own registrations, not AppertureDbContext's.
         services.AddDbContext<AppertureDbContext>(o => o.UseInMemoryDatabase(Guid.NewGuid().ToString("N")));
 
-        // Real production registration helper (ServiceCollectionExtensions.cs:104), shared by every host
-        // that resolves IResourceOwnershipMoveService.
-        services.AddResourceContextPersistence();
-
-        // Real Sql* repository registrations, mirroring ServiceCollectionExtensions.Integration.cs:23 and
-        // ServiceCollectionExtensions.ConnectorWorkflows.cs:20-21.
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IConnectionRepository, SqlConnectionRepository>();
-        services.AddScoped<IBindingRepository, SqlBindingRepository>();
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
+        // The REAL production composition calls, in the REAL order Program.cs:49,55,66,67 uses.
+        services.AddSchedulePersistence();
+        services.AddAppertureGovernance();
+        services.AddAppertureConnectorWorkflows();
+        services.AddAppertureIntegrationWorkflows();
 
         // Minimal test doubles standing in for production's HostPrincipalContext/AuthorizationEvaluationService
         // (which require ASP.NET Core HttpContext/Entra infrastructure irrelevant to this test's claim).
+        // Registered LAST so they win the "last registration wins" resolution rule -- see the method's
+        // doc comment above for why this does not weaken what's being proven.
         services.AddScoped<IPrincipalContext, AlwaysAllowPrincipalContext>();
         services.AddScoped<IAuthorizationEvaluationService, AlwaysAllowAuthorizationEvaluationService>();
-
-        // The exact production one-liners under test -- see ServiceCollectionExtensions.Integration.cs:31
-        // and ServiceCollectionExtensions.Governance.cs:96 (also Program.cs:87 in WorkerHost, which does
-        // NOT also register IResourceOwnershipMoveService -- see the WorkerHost DI finding in the task
-        // report; that host never resolves this service at all, so this test needs only cover the
-        // Management host's registration, which it reaches).
-        services.AddScoped<IAuditService, SqlAuditService>();
-        services.AddScoped<IResourceOwnershipMoveService, ResourceOwnershipMoveService>();
 
         return services.BuildServiceProvider(validateScopes: true);
     }

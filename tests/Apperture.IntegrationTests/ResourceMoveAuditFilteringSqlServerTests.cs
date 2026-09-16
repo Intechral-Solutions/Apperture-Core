@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
@@ -6,6 +7,7 @@ using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Core.Domain.Scheduling;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -61,6 +63,17 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
         global.Items.Should().HaveCount(2);
         atSource.Items[0].CorrelationId.Value.Should().Be(atTarget.Items[0].CorrelationId.Value);
         atSource.Items[0].CorrelationId.Value.Should().NotBeNullOrEmpty();
+
+        // Finding 1 regression guard: SqlAuditService.AppendAsync appends "Resource={record.Resource}" as
+        // plain text onto Details when AuditRecord.Resource is non-null, which would corrupt this JSON
+        // payload. ResourceOwnershipMoveService now passes Resource: null on every append specifically so
+        // this stays valid JSON on a REAL persisted row (not merely in the in-memory AuditRecord before it
+        // ever reaches SqlAuditService) -- deserializing it here is what actually proves that.
+        var movedOutDetails = JsonSerializer.Deserialize<ResourceMoveAuditDetails>(atSource.Items[0].Details!);
+        movedOutDetails.Should().NotBeNull("the persisted Details column must still be valid, deserializable JSON");
+        movedOutDetails!.ResourceId.Should().Be(integration.Id.Value);
+        movedOutDetails.SourceResourceContextId.Should().Be(source.Id.Value);
+        movedOutDetails.TargetResourceContextId.Should().Be(target.Id.Value);
     }
 
     [Fact]
@@ -129,6 +142,49 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
             source.Id.Value, "an unauditable move must roll back the ownership write, not just fail to report success");
     }
 
+    /// <summary>
+    /// Finding 3 (review round 1, Important): none of this file's original three tests ever moved an
+    /// Integration with attached Schedules, so nothing exercised <c>movedScheduleIds</c> being populated,
+    /// or proved "exactly two audit records regardless of N attached schedules" in the N&gt;0 case -- a
+    /// future regression that appended audit rows inside
+    /// <c>foreach (var schedule in validation.AttachedSchedules)</c>
+    /// (<c>ResourceOwnershipMoveService.cs</c>, the schedule-mutation loop) would have broken nothing in
+    /// this suite. Real SQL Server, matching this file's required-test theme.
+    /// </summary>
+    [Fact]
+    public async Task Successful_move_with_attached_schedules_writes_exactly_two_records_and_lists_all_moved_schedule_ids()
+    {
+        await using var fixture = await RequireFixtureAsync("Apperture_MoveAuditFilter4_");
+        await using var db = fixture.NewDb();
+        var env = Env.Build(db);
+
+        var source = await env.ResourceContexts.CreateApplicationContextAsync("AuditFilter4-Source");
+        var target = await env.ResourceContexts.CreateApplicationContextAsync("AuditFilter4-Target");
+        var integration = await CreateIntegrationAsync(env, source.Id);
+        var scheduleOne = await CreateAttachedScheduleAsync(env, integration.Id, source.Id);
+        var scheduleTwo = await CreateAttachedScheduleAsync(env, integration.Id, source.Id);
+
+        await env.MoveService.MoveIntegrationAsync(integration.Id, target.Id);
+
+        // Exactly two -- not 2 + 2*schedules. This is the assertion a regression that audits inside the
+        // per-schedule mutation loop would break.
+        var global = await env.Audit.QueryAsync(new AuditQuery(PageSize: 10));
+        global.Items.Should().HaveCount(2, "attached schedules move silently with the Integration; they never get their own audit rows");
+
+        var movedOut = global.Items.Should().ContainSingle(r => r.Action == ActionConstants.IntegrationOwnershipMovedOut).Subject;
+        var movedIn = global.Items.Should().ContainSingle(r => r.Action == ActionConstants.IntegrationOwnershipMovedIn).Subject;
+        movedOut.CorrelationId.Value.Should().Be(movedIn.CorrelationId.Value);
+
+        var details = JsonSerializer.Deserialize<ResourceMoveAuditDetails>(movedOut.Details!);
+        details.Should().NotBeNull("Finding 1's fix must leave this Details column valid, deserializable JSON");
+        details!.MovedScheduleIds.Should().NotBeNull();
+        details.MovedScheduleIds.Should().BeEquivalentTo([scheduleOne.Id.Value, scheduleTwo.Id.Value]);
+
+        // Both schedules must have actually moved too, not just been listed.
+        (await env.ScheduleRepository.GetDefinitionAsync(scheduleOne.Id))!.ResourceContextId!.Value.Should().Be(target.Id.Value);
+        (await env.ScheduleRepository.GetDefinitionAsync(scheduleTwo.Id))!.ResourceContextId!.Value.Should().Be(target.Id.Value);
+    }
+
     // ================================================================================================
     // Fixture / environment plumbing
     // ================================================================================================
@@ -167,6 +223,18 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
         return connection;
     }
 
+    /// <summary>Direct repository insert of an Integration-attached ScheduleDefinition, for Finding 3's schedules test.</summary>
+    private static async Task<ScheduleDefinition> CreateAttachedScheduleAsync(Env env, IntegrationId integrationId, ResourceContextId contextId)
+    {
+        var schedule = new ScheduleDefinition(
+            new ScheduleId($"s-{Guid.NewGuid():N}"), $"Schedule-{Guid.NewGuid():N}", "0 0 * * *", "UTC",
+            Enabled: true, new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"), ExecutionPolicyRef: null,
+            Version: 1, integrationId)
+        { ResourceContextId = contextId };
+        await env.ScheduleRepository.AddDefinitionAsync(schedule);
+        return schedule;
+    }
+
     /// <summary>
     /// One real production-service wiring over one real <see cref="AppertureDbContext"/> (SQL Server) --
     /// the minimal slice of <c>ResourceOwnershipMoveConcurrencySqlServerTests</c>'s own <c>Env</c> that this
@@ -179,6 +247,7 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
         public required IIntegrationRepository IntegrationRepository { get; init; }
         public required IConnectionRepository ConnectionRepository { get; init; }
         public required IBindingRepository BindingRepository { get; init; }
+        public required IScheduleRepository ScheduleRepository { get; init; }
         public required IAuditService Audit { get; init; }
         public required ResourceOwnershipMoveService MoveService { get; init; }
 
@@ -211,6 +280,7 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
                 IntegrationRepository = integrationRepository,
                 ConnectionRepository = connectionRepository,
                 BindingRepository = bindingRepository,
+                ScheduleRepository = scheduleRepository,
                 Audit = auditService,
                 MoveService = moveService,
             };
