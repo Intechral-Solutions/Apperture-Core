@@ -3,6 +3,8 @@ using Apperture.Core.Application.Connector;
 using Apperture.Management.Api.Controllers;
 using FluentAssertions;
 using Xunit;
+using ClientUpdateIntegrationRequest = Apperture.Management.Client.UpdateIntegrationRequest;
+using ClientUpdateConnectionRequest = Apperture.Management.Client.UpdateConnectionRequest;
 
 namespace Apperture.UnitTests.ResourceContexts;
 
@@ -36,6 +38,33 @@ public sealed class ResourceMoveDtoImmutabilityTests
     public void UpdateConnectionRequestBody_has_no_ResourceContextId()
     {
         typeof(UpdateConnectionRequestBody).GetProperty("ResourceContextId").Should().BeNull();
+    }
+
+    /// <summary>
+    /// Fix 7 (CTX-3B Plan 1 final review): a third copy of the update-DTO shape --
+    /// <c>Apperture.Management.Client.UpdateIntegrationRequest</c>, the request body the client SDK itself
+    /// sends -- closes the last layer alongside the application-layer record and the API request body
+    /// above. An ownership field here is inert today (the server record and both request bodies already
+    /// lack it, so the value would be dropped at the boundary regardless), but this pins that the client
+    /// twin does not reintroduce one. <c>Apperture.Management.Client.UpdateIntegrationRequest</c> and
+    /// <c>Apperture.Core.Application.Integration.UpdateIntegrationRequest</c> share a name across layers, so
+    /// this uses the same explicit <c>using X = ...;</c> alias convention as
+    /// <see cref="ClientServerDtoParityTests"/> to keep the two unambiguous.
+    /// </summary>
+    [Fact]
+    public void ClientUpdateIntegrationRequest_has_no_ResourceContextId()
+    {
+        typeof(ClientUpdateIntegrationRequest).GetProperty("ResourceContextId").Should().BeNull();
+    }
+
+    /// <summary>
+    /// Client-side counterpart to <see cref="ClientUpdateIntegrationRequest_has_no_ResourceContextId"/> --
+    /// same rationale, for the Connection family's client request twin.
+    /// </summary>
+    [Fact]
+    public void ClientUpdateConnectionRequest_has_no_ResourceContextId()
+    {
+        typeof(ClientUpdateConnectionRequest).GetProperty("ResourceContextId").Should().BeNull();
     }
 
     /// <summary>

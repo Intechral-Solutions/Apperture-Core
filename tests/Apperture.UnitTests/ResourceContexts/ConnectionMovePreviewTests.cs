@@ -237,6 +237,7 @@ public sealed class ConnectionMovePreviewTests
         var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, ResourceContextIds.Shared);
 
         preview.CanMove.Should().BeTrue("every context can reach Shared, so moving to Shared is never blocked by bindings");
+        preview.Blockers.Should().BeEmpty();
     }
 
     [Fact]

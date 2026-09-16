@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
@@ -27,7 +28,7 @@ public static class IntegrationServiceCollectionExtensions
         services.AddScoped<IOperationalTeamManagementService, OperationalTeamManagementService>();
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
         services.AddScoped<IResourceContextManagementService, ResourceContextManagementService>();
-        services.AddScoped<Apperture.Core.Application.ResourceContexts.IResourceOwnershipMoveService, ResourceOwnershipMoveService>();
+        services.AddScoped<IResourceOwnershipMoveService, ResourceOwnershipMoveService>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
         services.AddIntegrationDispatchReadiness();

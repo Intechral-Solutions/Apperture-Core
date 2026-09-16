@@ -131,6 +131,7 @@ public sealed class IntegrationMovePreviewTests
         var preview = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
 
         preview.CanMove.Should().BeTrue();
+        preview.Blockers.Should().BeEmpty();
     }
 
     [Fact]

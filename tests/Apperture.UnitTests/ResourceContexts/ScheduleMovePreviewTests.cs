@@ -126,6 +126,26 @@ public sealed class ScheduleMovePreviewTests
     }
 
     [Fact]
+    public async Task Not_authorized_takes_priority_over_unknown_schedule_id()
+    {
+        // Regression coverage for Fix 1 (CTX-3B Plan 1 final review): Schedule authorization is
+        // instance-scoped (§9.3) and needs nothing from the loaded row, so -- unlike Integration/Connection,
+        // whose authorization depends on the loaded entity's governed identity and so cannot run first --
+        // it must run BEFORE the repository load. Mirrors
+        // IntegrationMovePreviewTests.Not_authorized_takes_priority_over_unknown_integration_id: an
+        // authenticated caller who lacks schedule.manage must get UnauthorizedAccessException for a
+        // nonexistent schedule id, never InvalidOperationException -- otherwise the exception type itself
+        // would function as a schedule-existence oracle for callers who were never entitled to probe it.
+        await using var h = new ResourceOwnershipMoveTestHarness(grantedAction: null);
+        var target = await h.CreateApplicationAsync("Canvas");
+
+        var act = async () => await h.Service.PreviewScheduleMoveAsync(new(Guid.NewGuid().ToString("N")), target.Id);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>(
+            "an authenticated caller without schedule.manage must not be able to distinguish a missing schedule from an unauthorized one");
+    }
+
+    [Fact]
     public async Task Schedule_manage_permission_is_required_not_resource_context_manage()
     {
         await using var h = new ResourceOwnershipMoveTestHarness(

@@ -81,21 +81,30 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         // before touching the repository, so an unauthenticated caller cannot use the not-found/unauthorized
         // exception distinction as an existence oracle for ids it was never entitled to probe.
         var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
-        var schedule = await _scheduleRepository.GetDefinitionAsync(id, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
         // Unlike Integration/Connection moves, Schedule authorization is instance-scoped (§9.3): there is
         // no per-Schedule governed identity to authorize against here -- this mirrors how `GET
         // api/schedules` is already gated, via schedule.manage against the Schedule resource type at
-        // Instance scope, never resource_context.manage.
+        // Instance scope, never resource_context.manage. Because this check needs nothing from the loaded
+        // row, it runs BEFORE the repository load (house pattern:
+        // OperationalTeamManagementService.RequireScheduleManageAsync /
+        // AttentionContactGroupManagementService's equivalent) -- unlike Integration/Connection, whose
+        // authorization is against the loaded entity's governed identity and so cannot run first. This
+        // keeps an unauthorized caller from using not-found vs. unauthorized as a schedule-existence oracle.
         await AuthorizeScheduleAsync(actor, cancellationToken).ConfigureAwait(false);
+        var schedule = await _scheduleRepository.GetDefinitionAsync(id, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
         return await ValidateScheduleMoveAsync(schedule, targetResourceContextId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// The Integration validator's full result: the operator-facing preview, plus the authoritative
-    /// attached-Schedule set it was computed from. Plan 2 mutates exactly this set and Plan 4 audits
-    /// exactly this set, so all three describe the same schedules from one read inside one transaction.
-    /// Private: never part of the API or client contract.
+    /// attached-Schedule set it was computed from. <see cref="AttachedSchedules"/> is authoritative only
+    /// when <c>Preview.CanMove</c> is <see langword="true"/> -- on the common-blocker early return
+    /// (<c>target_not_found</c>/<c>target_archived</c>/<c>already_in_target</c>) it is always <c>[]</c>,
+    /// even when the Integration does have Schedules, because that branch returns before the Schedule
+    /// read runs (Plan 2 must not mutate when <c>CanMove</c> is false). Plan 2 mutates exactly this set
+    /// and Plan 4 audits exactly this set when <c>CanMove</c> is true, so all three describe the same
+    /// schedules from one read inside one transaction. Private: never part of the API or client contract.
     /// </summary>
     private sealed record IntegrationMoveValidation(
         ResourceMovePreview Preview,
@@ -141,6 +150,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken).ConfigureAwait(false);
             if (connection is null)
             {
+                // Deliberately NOT de-duplicated per Connection (unlike the unreachable blocker below):
+                // this effect names the binding (`binding.SlotName`/`binding.Id`), not a resource, so two
+                // bindings that happen to reference the same missing Connection id are two distinct dangling
+                // edges, each with its own slot name -- collapsing them would hide one of the two broken
+                // slots from the operator. Do not "harmonize" this with the resource-level de-duplication.
                 effects.Add(new ResourceMoveEffect(
                     ResourceMoveEffectCodes.BindingReferencesMissingConnection,
                     $"Binding for slot '{binding.SlotName}' references a missing connection; the move does not make this worse.",
@@ -246,6 +260,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                 {
                     // Mirror of the Integration validator's missing-connection advisory: surface the
                     // dangling edge, never silently skip it. The move cannot make this worse.
+                    // Deliberately NOT de-duplicated per Integration (unlike the unreachable blocker below):
+                    // this effect names the binding, not a resource, so two bindings referencing the same
+                    // missing Integration id are two distinct dangling slots and must both be reported. Do
+                    // not "harmonize" this with the resource-level de-duplication.
                     effects.Add(new ResourceMoveEffect(
                         ResourceMoveEffectCodes.BindingReferencesMissingIntegration,
                         $"Binding for slot '{binding.SlotName}' references a missing integration; the move does not make this worse.",
@@ -320,6 +338,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             // synthetic ref is only a fallback for a genuinely nonexistent target, not a shortcut taken
             // just because this branch already knows the move is blocked.
             var attachedTarget = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+            // Synthetic fallback, only reached when the target ResourceContext does not exist: `Slug` is
+            // the raw 32-hex id, not a real slug. CanMove is always false here (attachment blocker), so
+            // nothing is submittable -- but Plan 5's move dialog builds routes from Target.Slug, so this
+            // value must never be used to construct a link. Do not change this shape; see IResourceContextService.
             var attachedTargetRef = attachedTarget?.ToRef() ?? new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
             return BuildPreview(ResourceMoveResourceTypes.Schedule, schedule.Id.Value, sourceRef, attachedTargetRef, attachedBlockers, []);
         }
@@ -422,6 +444,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             blockers.Add(new ResourceMoveBlocker(
                 ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.",
                 null, null, null, null));
+            // Synthetic fallback, only reached when the target ResourceContext does not exist: `Slug` is
+            // the raw 32-hex id, not a real slug. CanMove is false here, so nothing is submittable -- but
+            // Plan 5's move dialog builds routes from Target.Slug, so this value must never be used to
+            // construct a link. Do not change this shape.
             targetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
             resolvedTarget = null;
             return false;
