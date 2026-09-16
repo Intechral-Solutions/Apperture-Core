@@ -1,3 +1,4 @@
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
@@ -73,6 +74,22 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
     {
         var issues = new List<IntegrationReadinessIssue>();
 
+        // One read per distinct bound Connection, for the whole evaluation. Readiness is evaluated per
+        // Integration by the fleet list behind /integrations (design gate R21), so a per-binding repository
+        // call inside each branch multiplies across the whole fleet. This lookup replaces the existing
+        // per-binding read in EvaluateLegacySlotBindingsAsync as well, so the net query count goes DOWN.
+        var boundConnections = new Dictionary<string, Connection?>(StringComparer.Ordinal);
+        foreach (var connectionId in bindings
+                     .Select(b => b.ConnectionId)
+                     .Where(id => id is not null)
+                     .Select(id => id!.Value)
+                     .Distinct(StringComparer.Ordinal))
+        {
+            boundConnections[connectionId] = await _connectionRepository
+                .GetByIdAsync(new ConnectionId(connectionId), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (_configurationRegistry.TryGetModuleConfiguration(integration.ModuleId, out var moduleConfiguration))
         {
             var evidence = await _configurationEvidence
@@ -115,7 +132,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
                     null));
             }
 
-            await EvaluateLegacySlotBindingsAsync(integration, bindings, issues, cancellationToken).ConfigureAwait(false);
+            await EvaluateLegacySlotBindingsAsync(integration, bindings, boundConnections, issues, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var s in schedules)
@@ -128,6 +145,31 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
                     null,
                     null,
                     null));
+            }
+        }
+
+        // Design gate §8.7 "Defense in depth": applies uniformly regardless of which branch above
+        // produced the rest of the issues -- cross-context validity is a platform invariant, not a
+        // module-configuration concern. Ownership is read from persisted columns, so this fires on
+        // invalid data however it got there: old rows, a direct DB edit, or a future regression.
+        foreach (var binding in bindings.OrderBy(b => b.Id.Value, StringComparer.Ordinal))
+        {
+            if (binding.ConnectionId is not { } connectionId)
+                continue;
+
+            if (!boundConnections.TryGetValue(connectionId.Value, out var connection) || connection is null)
+                continue; // already covered by ConnectionMissing where applicable.
+
+            if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, connection.ResourceContextId))
+            {
+                issues.Add(NewBlockingIssue(
+                    IntegrationReadinessIssueCodes.BindingCrossContext,
+                    $"Binding for slot '{binding.SlotName}' references connection '{connection.Name}' in ResourceContext " +
+                    $"'{connection.ResourceContextId.Value}', which this integration (in '{integration.ResourceContextId.Value}') " +
+                    $"cannot reach. Remove this binding, or move the integration or the connection so they share a context.",
+                    binding.SlotName,
+                    binding.Id.Value,
+                    connectionId.Value));
             }
         }
 
@@ -148,6 +190,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
     private async Task EvaluateLegacySlotBindingsAsync(
         DomainIntegration integration,
         IReadOnlyList<Binding> bindings,
+        IReadOnlyDictionary<string, Connection?> boundConnections,
         List<IntegrationReadinessIssue> issues,
         CancellationToken cancellationToken)
     {
@@ -210,7 +253,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
 
             if (binding.ConnectionId is { } connId)
             {
-                var connection = await _connectionRepository.GetByIdAsync(connId, cancellationToken).ConfigureAwait(false);
+                boundConnections.TryGetValue(connId.Value, out var connection);
                 if (connection is null)
                 {
                     issues.Add(NewBlockingIssue(

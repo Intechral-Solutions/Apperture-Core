@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
@@ -9,6 +10,7 @@ using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Security.Secrets.Abstractions;
+using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
@@ -444,6 +446,47 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             .OrderBy(r => r.TableName, StringComparer.Ordinal)
             .ThenBy(r => r.RowId, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// Builds a real <see cref="IntegrationDispatchReadinessEvaluator"/> over this harness's own
+    /// repositories, wired with the same permissive stand-in collaborators
+    /// <c>BindingCrossContextReadinessTests</c> uses for its manually-constructed evaluator (empty slot
+    /// registry, always-advisory verification policy, an empty SDK-6C configuration registry so every
+    /// integration falls through to the legacy slot-binding branch, and inert evidence-builder
+    /// dependencies that are consequently never invoked). One factory here means CTX-3B's move tests and
+    /// the binding_cross_context backstop tests share one evaluator wiring instead of duplicating the
+    /// ten-argument constructor.
+    /// </summary>
+    public IntegrationDispatchReadinessEvaluator BuildReadinessEvaluator()
+    {
+        var slots = new Mock<IModuleSlotRegistry>();
+        slots.Setup(x => x.GetSlotsForModule(It.IsAny<string>())).Returns(Array.Empty<ICapabilitySlot>());
+
+        var settingsResolver = new Mock<IIntegrationSettingsResolver>();
+        settingsResolver.Setup(x => x.ListResolvedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<PlatformSettingResolvedValue>());
+        var moduleRegistry = new Mock<IModuleRegistryService>();
+        moduleRegistry.Setup(x => x.ListModulesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ModuleCatalogEntry>());
+        var eligibilityService = new BindingEligibilityService(ConnectionRepository, new PermissiveConnectorDefinitionRegistry());
+        var configurationEvidence = new IntegrationConfigurationEvidenceBuilder(
+            settingsResolver.Object,
+            ConnectionRepository,
+            eligibilityService,
+            moduleRegistry.Object);
+
+        return new IntegrationDispatchReadinessEvaluator(
+            IntegrationRepository,
+            BindingRepository,
+            ScheduleRepository,
+            slots.Object,
+            ConnectionRepository,
+            eligibilityService,
+            new AdvisoryConnectionVerificationReadinessPolicy(),
+            new IntegrationConfigurationRegistry(Array.Empty<ModuleIntegrationConfigurationBinding>()),
+            configurationEvidence,
+            TimeProvider.System);
     }
 
     private int NextSequence() => System.Threading.Interlocked.Increment(ref _nextSequence);

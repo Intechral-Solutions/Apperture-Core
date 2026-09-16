@@ -23,6 +23,13 @@ public static class IntegrationReadinessIssueCodes
     public const string ConnectionVerificationUnavailable = "connection_verification_unavailable";
     public const string OptionalDependencyUnavailable = "optional_dependency_unavailable";
     public const string ModuleCheckFailed = "module_check_failed";
+
+    /// <summary>
+    /// Design gate §8.7: a binding whose Connection is neither in the Integration's own ResourceContext
+    /// nor Shared. Unreachable through the supported move/bind/attach APIs after CTX-3B; this exists as
+    /// defense-in-depth against old data, direct DB edits, and future regressions.
+    /// </summary>
+    public const string BindingCrossContext = "binding_cross_context";
 }
 
 /// <summary>Evidence-based readiness projection for an integration.</summary>
