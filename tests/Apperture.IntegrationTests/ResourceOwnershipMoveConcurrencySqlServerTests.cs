@@ -437,8 +437,22 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         });
 
         // Wait for A to actually reach the checkpoint before starting B -- otherwise B might race A to the
-        // gate rather than deterministically arrive after A already holds it.
-        await aAtCheckpoint.Task;
+        // gate rather than deterministically arrive after A already holds it. Race this against aTask
+        // itself: if a regression makes operation A throw (not-found, unauthorized, gate-busy, ...) or
+        // otherwise return BEFORE ever reaching the checkpoint -- including a checkpoint-name typo here --
+        // aTask completes without aAtCheckpoint ever being signalled. Awaiting aAtCheckpoint.Task alone
+        // would then hang forever waiting for a checkpoint that will never come (a "red but mute" failure:
+        // the regression is real, but the test reports nothing and the CI job just hangs until killed).
+        // Detect that case and fail loudly with A's actual exception instead of hanging.
+        await Task.WhenAny(aAtCheckpoint.Task, aTask);
+        if (!aAtCheckpoint.Task.IsCompleted)
+        {
+            // aTask finished first, without ever reaching the checkpoint. `await aTask` never throws itself
+            // (the lambda above catches into aException) -- it is awaited only so the Task.Run's own
+            // completion is observed before returning. B is never started: there is nothing for it to race.
+            await aTask;
+            return new InterleavingResult<TA, TB>(aResult, aException, default, null, BCompletedWhileAHeld: false);
+        }
 
         TB? bResult = default;
         Exception? bException = null;
