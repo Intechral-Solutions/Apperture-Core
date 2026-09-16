@@ -34,7 +34,15 @@ public sealed class SqlAuditService : IAuditService
             ScheduleId = record.ScheduleId,
             RunId = record.RunId,
             ResourceContextId = record.ResourceContextId,
-            CorrelationId = record.CorrelationId.Value
+            // Whole-branch review Finding 1 (CRITICAL): CorrelationId is a non-nullable-typed reference
+            // that a class type still lets a caller pass null through (e.g. RecoveryController.cs:405's
+            // own convention is `new CorrelationId(null)`, never a bare `null` -- but nothing enforced
+            // that at the call site until now). `record.CorrelationId.Value` used to be safe only because
+            // nothing dereferenced it; once this line existed (Task 1), a bare-null CorrelationId argument
+            // became an NRE that silently dropped the whole audit append under any best-effort catch {}
+            // wrapper -- see SchedulerOperationsController.cs's TryAuditAsync, which was hit by exactly
+            // this. Null-conditional matches every other nullable field in this same initializer.
+            CorrelationId = record.CorrelationId?.Value
         });
         await _db.SaveChangesAsync(cancellationToken);
     }

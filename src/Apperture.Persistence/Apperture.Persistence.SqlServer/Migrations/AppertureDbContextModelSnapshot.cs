@@ -162,7 +162,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CorrelationId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Details")
                         .HasColumnType("nvarchar(max)");

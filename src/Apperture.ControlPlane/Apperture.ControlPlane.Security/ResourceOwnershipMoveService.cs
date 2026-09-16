@@ -160,7 +160,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                     Resource: null, // SqlAuditService.AppendAsync appends "Resource={record.Resource}" to Details as
                                     // plain text when non-null, which would corrupt this record's JSON Details payload
                                     // (see Finding 1). resourceType/resourceId already live in the JSON itself.
-                    Outcome: "",
+                    Outcome: "rejected",
                     DateTimeOffset.UtcNow,
                     new CorrelationId(Guid.NewGuid().ToString("N")),
                     System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
@@ -197,11 +197,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             // above: a non-null Resource would corrupt this JSON Details payload on persist.
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.IntegrationOwnershipMovedOut,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.IntegrationOwnershipMovedIn,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
             // Final control-flow shape (see Global Constraints): commit on both outcomes.
@@ -248,7 +248,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                     actor.Id,
                     ActionConstants.ConnectionOwnershipMoveRejected,
                     Resource: null, // see Finding 1 comment on MoveIntegrationAsync's rejected-path append.
-                    Outcome: "",
+                    Outcome: "rejected",
                     DateTimeOffset.UtcNow,
                     new CorrelationId(Guid.NewGuid().ToString("N")),
                     System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
@@ -277,11 +277,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             // above: a non-null Resource would corrupt this JSON Details payload on persist.
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ConnectionOwnershipMovedOut,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ConnectionOwnershipMovedIn,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
             // Final control-flow shape (see Global Constraints): commit on both outcomes.
@@ -343,7 +343,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                     actor.Id,
                     ActionConstants.ScheduleOwnershipMoveRejected,
                     Resource: null, // see Finding 1 comment on MoveIntegrationAsync's rejected-path append.
-                    Outcome: "",
+                    Outcome: "rejected",
                     DateTimeOffset.UtcNow,
                     new CorrelationId(Guid.NewGuid().ToString("N")),
                     System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
@@ -371,11 +371,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             // above: a non-null Resource would corrupt this JSON Details payload on persist.
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ScheduleOwnershipMovedOut,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
             await _audit.AppendAsync(new AuditRecord(
                 new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ScheduleOwnershipMovedIn,
-                Resource: null, Outcome: "",
+                Resource: null, Outcome: "succeeded",
                 DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
             // Final control-flow shape (see Global Constraints): commit on both outcomes.

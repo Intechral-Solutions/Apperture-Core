@@ -11,6 +11,7 @@ using Apperture.Core.Domain.Scheduling;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 
@@ -74,6 +75,13 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
         movedOutDetails!.ResourceId.Should().Be(integration.Id.Value);
         movedOutDetails.SourceResourceContextId.Should().Be(source.Id.Value);
         movedOutDetails.TargetResourceContextId.Should().Be(target.Id.Value);
+
+        // Finding 3 regression guard: Outcome: "" persists as SQL NULL and AuditTimelineQueryService falls
+        // back to AuditDetailParser.ParseOutcome(details) for any row with a null/empty Outcome column --
+        // that legacy parser was never designed for this plan's JSON Details payload and can split it
+        // mid-JSON. A real, non-empty Outcome column is what keeps these rows off that fallback path.
+        atSource.Items[0].Outcome.Should().Be("succeeded");
+        atTarget.Items[0].Outcome.Should().Be("succeeded");
     }
 
     [Fact]
@@ -103,6 +111,8 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
 
         atSource.Items.Should().ContainSingle().Which.Action.Should().Be(ActionConstants.IntegrationOwnershipMoveRejected);
         atTarget.Items.Should().BeEmpty("a rejection is the source's event; the target never heard about it");
+        // Finding 3 regression guard -- see the matching comment on the successful-move test above.
+        atSource.Items[0].Outcome.Should().Be("rejected");
 
         (await env.IntegrationRepository.GetByIdAsync(integration.Id))!.ResourceContextId.Value
             .Should().Be(source.Id.Value, "a blocked move must mutate nothing");
@@ -140,6 +150,63 @@ public sealed class ResourceMoveAuditFilteringSqlServerTests
         var reread = await new SqlIntegrationRepository(assertDb).GetByIdAsync(integration.Id);
         reread!.ResourceContextId.Value.Should().Be(
             source.Id.Value, "an unauditable move must roll back the ownership write, not just fail to report success");
+    }
+
+    /// <summary>
+    /// Whole-branch review Finding 4 (Important): Plan 2's pre-existing
+    /// <c>ResourceMoveHistoricalImmutabilityTests.Move_appends_to_audit_without_rewriting_any_pre_existing_audit_row</c>
+    /// runs against the InMemory harness, whose <c>Service</c> is wired to the in-memory
+    /// <c>RecordingAuditService</c> double, not a real <see cref="SqlAuditService"/> writing to
+    /// <c>AuditLogs</c> -- so a move there never adds any row to <c>h.Db.AuditLogs</c> at all, and that
+    /// test's "count didn't shrink" assertion passes trivially, not because append-only genuinely held
+    /// against real persisted movement-audit rows. This test closes that gap: seeds one pre-existing
+    /// <see cref="AuditLogEntity"/> row directly, runs a real move against real SQL Server, and proves (a)
+    /// the pre-existing row is field-identical afterward and (b) the table grew by EXACTLY 2 rows (the
+    /// move's own moved_out/moved_in pair) -- not merely "did not shrink."
+    /// </summary>
+    [Fact]
+    public async Task Move_appends_new_rows_without_rewriting_a_pre_existing_audit_row_on_real_sql_server()
+    {
+        await using var fixture = await RequireFixtureAsync("Apperture_MoveAuditFilter5_");
+        await using var db = fixture.NewDb();
+        var env = Env.Build(db);
+
+        var source = await env.ResourceContexts.CreateApplicationContextAsync("AuditFilter5-Source");
+        var target = await env.ResourceContexts.CreateApplicationContextAsync("AuditFilter5-Target");
+        var integration = await CreateIntegrationAsync(env, source.Id);
+
+        // A pre-existing row this move has nothing to do with -- an unrelated action, a fixed timestamp
+        // safely in the past, and no CorrelationId, exactly like ordinary non-movement audit rows.
+        var preExisting = new AuditLogEntity
+        {
+            At = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            Actor = "pre-existing-actor",
+            Action = "integration.create",
+            Details = "unrelated pre-existing row",
+            Outcome = "succeeded",
+            ModuleId = "Sample.Mod",
+            ScheduleId = null,
+            RunId = null,
+            ResourceContextId = source.Id.Value,
+            CorrelationId = null,
+        };
+        db.AuditLogs.Add(preExisting);
+        await db.SaveChangesAsync();
+        var preExistingId = preExisting.Id;
+
+        var beforeCount = await db.AuditLogs.CountAsync();
+
+        await env.MoveService.MoveIntegrationAsync(integration.Id, target.Id);
+
+        // A FRESH DbContext, not env.Db/db: proves what any other observer -- not just the same tracked
+        // instance -- would see.
+        await using var assertDb = fixture.NewDb();
+        var afterCount = await assertDb.AuditLogs.CountAsync();
+        afterCount.Should().Be(beforeCount + 2, "a successful Integration move appends exactly one moved_out and one moved_in row, never more, never fewer");
+
+        var rereadPreExisting = await assertDb.AuditLogs.AsNoTracking().SingleAsync(x => x.Id == preExistingId);
+        rereadPreExisting.Should().BeEquivalentTo(preExisting,
+            "an append-only audit log must never rewrite an existing row -- every field of the pre-existing row must be untouched by the move");
     }
 
     /// <summary>

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Apperture.Persistence.SqlServer.Migrations
 {
     [DbContext(typeof(AppertureDbContext))]
-    [Migration("20260916162157_Ctx3B_AuditCorrelationId")]
+    [Migration("20260916173420_Ctx3B_AuditCorrelationId")]
     partial class Ctx3B_AuditCorrelationId
     {
         /// <inheritdoc />
@@ -165,7 +165,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CorrelationId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Details")
                         .HasColumnType("nvarchar(max)");

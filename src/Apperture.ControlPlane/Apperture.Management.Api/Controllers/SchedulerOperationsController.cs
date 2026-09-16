@@ -148,7 +148,7 @@ public sealed class SchedulerOperationsController : ControllerBase
                         Resource: null,
                         Outcome: action.Contains("denied", StringComparison.OrdinalIgnoreCase) ? "denied" : "requested",
                         Timestamp: DateTimeOffset.UtcNow,
-                        CorrelationId: null,
+                        CorrelationId: new CorrelationId(null),
                         Details: details),
                     ct)
                 .ConfigureAwait(false);

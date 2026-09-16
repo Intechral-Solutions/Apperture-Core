@@ -64,6 +64,70 @@ public sealed class AuditCorrelationIdSqlServerTests
         }
     }
 
+    /// <summary>
+    /// Whole-branch review Finding 1 (CRITICAL) regression guard: <c>AuditRecord.CorrelationId</c> is
+    /// typed as the non-nullable reference <c>CorrelationId CorrelationId</c>, but callers can still pass
+    /// a <c>CorrelationId</c> instance wrapping a null <c>Value</c> (the documented convention -- see
+    /// <c>RecoveryController.cs</c>'s own <c>new CorrelationId(null)</c> -- for a caller with no real
+    /// correlation to report). Before this fix, <c>SqlAuditService.AppendAsync</c> dereferenced
+    /// <c>record.CorrelationId.Value</c> unconditionally, so any such append against a REAL
+    /// <see cref="AppertureDbContext"/> threw a <see cref="NullReferenceException"/> -- silently, in
+    /// production, wherever the append sat behind a best-effort <c>catch {}</c> (exactly
+    /// <c>SchedulerOperationsController.TryAuditAsync</c>'s shape, which is what this bug was actually
+    /// found in). This proves the fixed <c>record.CorrelationId?.Value</c> does not throw and reads back
+    /// with a null <c>CorrelationId.Value</c>.
+    /// </summary>
+    [Fact]
+    public async Task Null_correlation_id_does_not_throw_and_reads_back_null()
+    {
+        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        if (baseConnectionString is null)
+            return; // soft-skip
+
+        var catalog = "Apperture_AuditCorrelationNull_" + Guid.NewGuid().ToString("N")[..12];
+        var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
+
+        try
+        {
+            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+        }
+        catch (InvalidOperationException)
+        {
+            return; // soft-skip
+        }
+
+        try
+        {
+            await using var db = NewDb(connectionString);
+            if (!await db.Database.CanConnectAsync())
+                return; // soft-skip
+            await db.Database.MigrateAsync();
+
+            var service = new SqlAuditService(db);
+            var recordId = Guid.NewGuid().ToString("N");
+            var act = async () => await service.AppendAsync(new AuditRecord(
+                new AuditRecordId(recordId),
+                new ActorId("test-actor"),
+                "scheduler.run_cycle.requested",
+                Resource: null,
+                Outcome: "requested",
+                DateTimeOffset.UtcNow,
+                new CorrelationId(null),
+                Details: null,
+                ResourceContextId: "app-null-correlation"));
+
+            await act.Should().NotThrowAsync(
+                "a null-Value CorrelationId is a documented, legitimate append shape (see RecoveryController/SchedulerOperationsController), not an error");
+
+            var page = await service.QueryAsync(new AuditQuery(FilterByResourceContextId: "app-null-correlation", PageSize: 10));
+            page.Items.Should().ContainSingle().Which.CorrelationId.Value.Should().BeNull();
+        }
+        finally
+        {
+            await TryDropDatabaseAsync(baseConnectionString, catalog);
+        }
+    }
+
     private static AppertureDbContext NewDb(string connectionString) =>
         new(new DbContextOptionsBuilder<AppertureDbContext>()
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))

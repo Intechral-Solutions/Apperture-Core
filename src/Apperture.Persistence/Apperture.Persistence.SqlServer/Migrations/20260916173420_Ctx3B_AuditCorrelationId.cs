@@ -13,7 +13,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "CorrelationId",
                 table: "AuditLogs",
-                type: "nvarchar(max)",
+                type: "nvarchar(64)",
+                maxLength: 64,
                 nullable: true);
         }
 

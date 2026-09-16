@@ -309,6 +309,13 @@ public class AppertureDbContext : DbContext
             // CTX-2: context of the resource this entry concerns, populated only where the caller
             // already has it in hand. No FK, no backfill of pre-CTX-2 rows.
             e.Property(x => x.ResourceContextId).HasMaxLength(64);
+            // CTX-3B: whole-branch review Finding 2. Without an explicit length this column generates as
+            // nvarchar(max) -- an LOB type that can never participate in an index key -- foreclosing the
+            // plan's own deliberate "no index now, add one later if a query need emerges" position. 64
+            // fits the 32-hex ids Task 1/Plan 4 actually store, matching the sibling
+            // TelemetryEventEntity.CorrelationId's own HasMaxLength(64) immediately below. Still no index
+            // here -- only the column shape changes.
+            e.Property(x => x.CorrelationId).HasMaxLength(64);
             e.HasIndex(x => new { x.At, x.Id }).IsDescending(true, true);
             e.HasIndex(x => new { x.Outcome, x.At }).HasFilter("[Outcome] IS NOT NULL").IsDescending(false, true);
             e.HasIndex(x => new { x.ModuleId, x.At }).HasFilter("[ModuleId] IS NOT NULL").IsDescending(false, true);
