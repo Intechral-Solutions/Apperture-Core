@@ -63,7 +63,7 @@ public sealed class ConnectionMovePreviewTests
     }
 
     [Fact]
-    public async Task Inactive_and_retired_integration_bindings_still_count()
+    public async Task Retired_integration_bindings_still_count()
     {
         await using var h = new ResourceOwnershipMoveTestHarness();
         var source = await h.CreateApplicationAsync("CampusNexus");
@@ -91,6 +91,22 @@ public sealed class ConnectionMovePreviewTests
 
         preview.CanMove.Should().BeFalse();
         preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.UnownedBindingRequiresShared);
+    }
+
+    [Fact]
+    public async Task Unowned_binding_moving_to_shared_is_not_blocked()
+    {
+        // Only the true arm of `!ResourceContextIds.IsShared(targetId)` was covered before this fix
+        // (review fix round 1, Minor 4) -- inverting that condition would have left every other test green.
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var connection = await h.CreateConnectionAsync(source.Id);
+        await h.AddDirectBindingAsync(null, "Sample.Mod", connection.Id); // legacy global binding has no IntegrationId
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, ResourceContextIds.Shared);
+
+        preview.CanMove.Should().BeTrue("a legacy global binding is compatible with Shared, which is exactly where it must end up");
+        preview.Blockers.Should().NotContain(b => b.Code == ResourceMoveBlockerCodes.UnownedBindingRequiresShared);
     }
 
     [Fact]
@@ -122,6 +138,8 @@ public sealed class ConnectionMovePreviewTests
         preview.CanMove.Should().BeTrue();
         preview.Effects.Should().ContainSingle(e => e.Code == ResourceMoveEffectCodes.BindingReferencesMissingIntegration,
             "symmetric with the Integration validator's missing-connection advisory -- a dangling edge is surfaced, never silently skipped");
+        preview.Effects.Should().NotContain(e => e.Code == ResourceMoveEffectCodes.UsedByIntegration,
+            "a missing Integration is never counted in the blast radius -- naming a phantom in \"Used by\" would mislead the operator (review fix round 1, Minor 3)");
     }
 
     [Fact]
@@ -145,6 +163,52 @@ public sealed class ConnectionMovePreviewTests
             .ToList();
         unreachable.Should().HaveCount(2, "every affected Integration is listed -- this is the blast radius the operator must see");
         unreachable.Select(b => b.RelatedResourceId).Should().BeEquivalentTo([first.Id.Value, second.Id.Value]);
+    }
+
+    [Fact]
+    public async Task Same_integration_bound_twice_produces_one_blocker_and_one_used_by_entry()
+    {
+        // Review fix round 1, Important 2: a Connection bound into two slots of the SAME Integration (an
+        // ordinary configuration -- e.g. a source slot and a target slot sharing a connection) must be
+        // reported as ONE affected Integration, not two. Before the fix, this fixture produced
+        // RelatedResourceIds = [X, X] and "Used by 2 integration(s)" for a single Integration.
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var thirdParty = await h.CreateApplicationAsync("Workday");
+        var connection = await h.CreateConnectionAsync(source.Id);
+        var integration = await h.CreateIntegrationAsync(thirdParty.Id); // not source, not target
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id); // second slot, same Integration
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.BindingIntegrationUnreachable,
+            "one distinct Integration must produce exactly one blocker, no matter how many bindings reference it");
+    }
+
+    [Fact]
+    public async Task Repeated_integration_binding_still_reports_used_by_once()
+    {
+        // Companion to Same_integration_bound_twice_produces_one_blocker_and_one_used_by_entry, pinning the
+        // "Used by" payload specifically (a compatible Integration bound twice must not double-count).
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var connection = await h.CreateConnectionAsync(source.Id);
+        var integration = await h.CreateIntegrationAsync(source.Id);
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id); // second slot, same Integration
+        await h.MoveIntegrationDirectlyForFixtureAsync(integration.Id, target.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        preview.CanMove.Should().BeTrue();
+        var usedBy = preview.Effects.Should().ContainSingle(e => e.Code == ResourceMoveEffectCodes.UsedByIntegration).Subject;
+        usedBy.RelatedResourceIds.Should().ContainSingle().Which.Should().Be(integration.Id.Value,
+            "two bindings into the same Integration is one Integration in the blast radius, not two");
+        usedBy.Message.Should().Contain("Used by 1 integration");
     }
 
     [Fact]
@@ -174,5 +238,27 @@ public sealed class ConnectionMovePreviewTests
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>(
             "holding resource_context.manage must not be enough -- connection.update is the required permission (§9.3)");
+    }
+
+    [Fact]
+    public async Task Connection_update_permission_is_sufficient()
+    {
+        // Positive counterpart to Connection_update_permission_is_required_not_resource_context_manage
+        // (review fix round 1, Important 1; mirrors the Integration family's
+        // Integration_update_permission_is_sufficient from fix commit f7bc887): every other test in this
+        // file builds the harness with the default grantedAction: "any", which short-circuits permission
+        // matching entirely. This pins the ACTUAL action/resource-type the service requests -- if the
+        // service asked for the wrong action, or Connection.GetIdentity() returned the wrong resource
+        // type, this test (and only this test) would fail.
+        await using var h = new ResourceOwnershipMoveTestHarness(
+            grantedAction: Apperture.Core.Domain.Governance.ActionConstants.ConnectionUpdate,
+            grantedResourceType: Apperture.Core.Domain.Governance.ResourceTypeConstants.Connection);
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var connection = await h.CreateConnectionAsync(source.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        preview.CanMove.Should().BeTrue();
     }
 }

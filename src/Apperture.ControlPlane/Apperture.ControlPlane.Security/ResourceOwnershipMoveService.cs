@@ -115,12 +115,19 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             .OrderBy(b => b.Id.Value, StringComparer.Ordinal)
             .ToList();
 
+        // De-duplicated by Integration id (review fix round 1, Important 2/Minor 3): a Connection bound
+        // into two slots of the SAME Integration is an ordinary configuration, not two distinct blast-radius
+        // entries -- both the "Used by" count and the unreachable blocker must describe each distinct
+        // Integration once, never once per binding. A binding whose Integration row is missing is never
+        // counted as "used by" at all -- the dangling edge is already surfaced via the advisory effect below,
+        // and naming a phantom Integration in the blast-radius payload would mislead the operator.
         var usedByIntegrationIds = new List<string>();
+        var seenUsedByIntegrationIds = new HashSet<string>(StringComparer.Ordinal);
+        var blockedIntegrationIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var binding in bindings)
         {
             if (binding.IntegrationId is { } integrationId)
             {
-                usedByIntegrationIds.Add(integrationId.Value);
                 var integration = await _integrationRepository.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false);
                 if (integration is null)
                 {
@@ -130,8 +137,14 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                         ResourceMoveEffectCodes.BindingReferencesMissingIntegration,
                         $"Binding for slot '{binding.SlotName}' references a missing integration; the move does not make this worse.",
                         ResourceMoveResourceTypes.Binding, [binding.Id.Value]));
+                    continue;
                 }
-                else if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, targetId))
+
+                if (seenUsedByIntegrationIds.Add(integrationId.Value))
+                    usedByIntegrationIds.Add(integrationId.Value);
+
+                if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, targetId)
+                    && blockedIntegrationIds.Add(integrationId.Value))
                 {
                     blockers.Add(new ResourceMoveBlocker(
                         ResourceMoveBlockerCodes.BindingIntegrationUnreachable,
@@ -220,6 +233,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             .OrderBy(b => b.Id.Value, StringComparer.Ordinal)
             .ToList();
 
+        // De-duplicated by Connection id (review fix round 1, Important 2, mirror of the Connection
+        // validator's fix): an Integration bound to the SAME Connection across two slots must produce one
+        // blocker for that Connection, not one per binding. Distinct Connections still each keep their own
+        // blocker -- see Multiple_unreachable_connections_each_produce_their_own_blocker.
+        var blockedConnectionIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var binding in bindings)
         {
             if (binding.ConnectionId is not { } connectionId)
@@ -235,7 +253,8 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                 continue;
             }
 
-            if (!ResourceContextReferenceRule.CanReference(targetId, connection.ResourceContextId))
+            if (!ResourceContextReferenceRule.CanReference(targetId, connection.ResourceContextId)
+                && blockedConnectionIds.Add(connection.Id.Value))
             {
                 blockers.Add(new ResourceMoveBlocker(
                     ResourceMoveBlockerCodes.BindingConnectionUnreachable,

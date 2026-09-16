@@ -344,6 +344,29 @@ public sealed class IntegrationMovePreviewTests
     }
 
     [Fact]
+    public async Task Same_connection_bound_twice_produces_one_blocker()
+    {
+        // Review fix round 1, Important 2 (mirror of the Connection validator's fix): an Integration bound
+        // to the SAME Connection across two slots is an ordinary configuration, not two distinct
+        // blast-radius entries. Before the fix, this fixture produced two byte-identical
+        // binding_connection_unreachable blockers for one Connection.
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var thirdParty = await h.CreateApplicationAsync("Workday");
+        var integration = await h.CreateIntegrationAsync(source.Id);
+        var connection = await h.CreateConnectionAsync(thirdParty.Id); // neither source nor target
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id); // second slot, same Connection
+
+        var preview = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.BindingConnectionUnreachable,
+            "one distinct Connection must produce exactly one blocker, no matter how many bindings reference it");
+    }
+
+    [Fact]
     public async Task Blocker_order_is_deterministic_across_repeated_previews()
     {
         await using var h = new ResourceOwnershipMoveTestHarness();
