@@ -198,6 +198,29 @@ public sealed class IntegrationMovePreviewTests
     }
 
     [Fact]
+    public async Task Capability_binding_with_null_connection_id_previews_cleanly()
+    {
+        // Part E1: the validator's `if (binding.ConnectionId is not { } connectionId) continue;` branch
+        // (a capability binding with no Connection to check at all) had no test reaching it. This is
+        // distinct from Binding_with_missing_connection_is_advisory_not_a_blocker, where ConnectionId is
+        // set but the referenced Connection row does not exist -- conflating "no Connection" with "missing
+        // Connection" would be a real defect (a spurious advisory effect for a binding that was never
+        // supposed to have a Connection in the first place).
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var integration = await h.CreateIntegrationAsync(source.Id);
+        await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connectionId: null);
+
+        var preview = await h.Service.PreviewIntegrationMoveAsync(integration.Id, target.Id);
+
+        preview.CanMove.Should().BeTrue();
+        preview.Blockers.Should().BeEmpty();
+        preview.Effects.Should().NotContain(e => e.Code == ResourceMoveEffectCodes.BindingReferencesMissingConnection,
+            "a capability binding with no ConnectionId at all is a different case from one whose Connection row is missing -- the former is not even advisory-worthy");
+    }
+
+    [Fact]
     public async Task Attached_schedules_move_effect_lists_schedule_count()
     {
         await using var h = new ResourceOwnershipMoveTestHarness();

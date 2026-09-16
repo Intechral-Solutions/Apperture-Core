@@ -8,6 +8,117 @@ namespace Apperture.UnitTests.ResourceContexts;
 
 public sealed class ConnectionMovePreviewTests
 {
+    // --- Part A1: common blockers, own copies for the Connection family ---
+    // ValidateConnectionMoveAsync is a separate code path from ValidateIntegrationMoveAsync with its own
+    // copies of the three common branches (target_not_found, target_archived, already_in_target). Each
+    // needs its own coverage; the Integration family's coverage does not exercise this code path at all.
+
+    [Fact]
+    public async Task Target_not_found_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var connection = await h.CreateConnectionAsync(source.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, new(Guid.NewGuid().ToString("N")));
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.TargetNotFound);
+    }
+
+    [Fact]
+    public async Task Target_archived_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var connection = await h.CreateConnectionAsync(source.Id);
+        await h.ArchiveAsync(target.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.TargetArchived);
+    }
+
+    [Fact]
+    public async Task Same_target_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var connection = await h.CreateConnectionAsync(source.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, source.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.AlreadyInTarget);
+    }
+
+    // --- Part A2: Inactive bound Integration also blocks (design gate §8.5 step 2: "including those of
+    // Retired and Inactive Integrations"). Sibling to Retired_integration_bindings_still_count, which
+    // already correctly names only the Retired case it covers. ---
+
+    [Fact]
+    public async Task Inactive_integration_bindings_still_count()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var thirdParty = await h.CreateApplicationAsync("Workday");
+        var connection = await h.CreateConnectionAsync(source.Id);
+        var inactiveIntegration = await h.CreateIntegrationAsync(thirdParty.Id, IntegrationState.Inactive);
+        await h.AddDirectBindingAsync(inactiveIntegration.Id, inactiveIntegration.ModuleId, connection.Id);
+
+        var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        preview.CanMove.Should().BeFalse("an Inactive Integration's binding still counts toward blast radius (design gate §8.5 step 2: all bindings count, including those of Retired and Inactive Integrations)");
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.BindingIntegrationUnreachable);
+    }
+
+    // --- Part A3: deterministic "Used by" ordering, mirror of the Integration family's
+    // Blocker_order_is_deterministic_across_repeated_previews. ---
+
+    [Fact]
+    public async Task Used_by_effect_order_is_deterministic_across_repeated_previews()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var connection = await h.CreateConnectionAsync(source.Id);
+
+        // Bind five distinct Integrations, all already in the target context, so the preview succeeds and
+        // the "used by" effect (not a blocker) is the interesting output. Capture each binding's own id
+        // alongside its Integration's id so the expected order is derived from the real (ordinal, not
+        // insertion) binding-id sort, not merely self-consistency between the two preview calls -- EF
+        // InMemory returns rows in stable insertion order on every call, so a self-consistency-only
+        // assertion would stay green even if the service's OrderBy were deleted entirely.
+        var bindingToIntegration = new List<(string BindingId, string IntegrationId)>();
+        for (var i = 0; i < 5; i++)
+        {
+            var integration = await h.CreateIntegrationAsync(target.Id);
+            var binding = await h.AddDirectBindingAsync(integration.Id, integration.ModuleId, connection.Id);
+            bindingToIntegration.Add((binding.Id.Value, integration.Id.Value));
+        }
+
+        var expectedOrder = bindingToIntegration
+            .OrderBy(p => p.BindingId, StringComparer.Ordinal)
+            .Select(p => p.IntegrationId)
+            .ToList();
+
+        var first = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+        var second = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
+
+        first.CanMove.Should().BeTrue();
+        var usedByFirst = first.Effects.Should().ContainSingle(e => e.Code == ResourceMoveEffectCodes.UsedByIntegration).Subject;
+        usedByFirst.RelatedResourceIds.Should().HaveCount(5);
+        usedByFirst.RelatedResourceIds.Should().Equal(expectedOrder,
+            "used-by order must follow ordinal binding-id order, not database insertion order");
+
+        var usedBySecond = second.Effects.Should().ContainSingle(e => e.Code == ResourceMoveEffectCodes.UsedByIntegration).Subject;
+        usedByFirst.RelatedResourceIds.Should().Equal(usedBySecond.RelatedResourceIds,
+            "used-by order must be stable so the API response and the UI dialog do not reshuffle between calls");
+    }
+
     [Fact]
     public async Task No_bindings_moves_cleanly()
     {

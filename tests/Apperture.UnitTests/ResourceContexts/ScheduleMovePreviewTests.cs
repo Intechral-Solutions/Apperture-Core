@@ -6,6 +6,72 @@ namespace Apperture.UnitTests.ResourceContexts;
 
 public sealed class ScheduleMovePreviewTests
 {
+    // --- Part B1: common blockers, own copies for the Schedule family (same reasoning as the Connection
+    // family's A1: ValidateScheduleMoveAsync has its own copies of the three common branches). Every test
+    // here uses a standalone schedule -- an attached schedule short-circuits to
+    // schedule_attached_to_integration before the target is ever examined (deliberate, §8.6; see
+    // Attached_schedule_precedes_target_checks_even_for_a_nonexistent_target below). ---
+
+    [Fact]
+    public async Task Standalone_schedule_target_not_found_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var schedule = await h.CreateStandaloneScheduleAsync(source.Id);
+
+        var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, new(Guid.NewGuid().ToString("N")));
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.TargetNotFound);
+    }
+
+    [Fact]
+    public async Task Standalone_schedule_target_archived_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var target = await h.CreateApplicationAsync("Canvas");
+        var schedule = await h.CreateStandaloneScheduleAsync(source.Id);
+        await h.ArchiveAsync(target.Id);
+
+        var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, target.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.TargetArchived);
+    }
+
+    [Fact]
+    public async Task Standalone_schedule_same_target_is_a_blocker()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var schedule = await h.CreateStandaloneScheduleAsync(source.Id);
+
+        var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, source.Id);
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.AlreadyInTarget);
+    }
+
+    // --- Part B (precedence): the attachment check runs BEFORE the target checks, deliberately (§8.6) --
+    // this documents that ordering explicitly so it reads as intended behavior, not an oversight to "fix". ---
+
+    [Fact]
+    public async Task Attached_schedule_precedes_target_checks_even_for_a_nonexistent_target()
+    {
+        await using var h = new ResourceOwnershipMoveTestHarness();
+        var source = await h.CreateApplicationAsync("CampusNexus");
+        var integration = await h.CreateIntegrationAsync(source.Id);
+        var schedule = await h.CreateAttachedScheduleAsync(integration.Id);
+
+        var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, new(Guid.NewGuid().ToString("N")));
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.ScheduleAttachedToIntegration,
+            "an Integration-attached Schedule cannot move independently at all (§8.6) -- its preview reports only the attachment blocker, even when the requested target does not exist, because the operator's actionable next step is always \"move the integration instead\", never \"also fix the target\"");
+        preview.Blockers.Should().NotContain(b => b.Code == ResourceMoveBlockerCodes.TargetNotFound);
+    }
+
     [Fact]
     public async Task Attached_schedule_blocks_with_link_to_integration()
     {
