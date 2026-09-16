@@ -87,12 +87,15 @@ public sealed class InventoryTestHarness : IAsyncDisposable
         var connectionRepository = new SqlConnectionRepository(Db);
         var scheduleRepository = new SqlScheduleRepository(Db);
 
+        var ownershipGate = new SqlResourceOwnershipMutationGate(Db);
+
         _integrations = new IntegrationManagementService(
             new AlwaysActor(),
             new AlwaysAllow(),
             integrationRepository,
             ResourceContexts,
-            Db);
+            Db,
+            ownershipGate);
 
         _connections = new ConnectionManagementService(
             new AlwaysActor(),
@@ -101,7 +104,9 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             new PermissiveConnectorDefinitionRegistry(),
             new NoOpConnectionVerificationService(),
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
-            ResourceContexts);
+            ResourceContexts,
+            Db,
+            ownershipGate);
 
         var schedules = new SqlScheduleManagementService(
             scheduleRepository,
@@ -110,7 +115,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             ResourceContexts,
             integrationRepository,
             Db,
-            new SqlResourceOwnershipMutationGate(Db));
+            ownershipGate);
 
         var notificationStore = new SqlNotificationDefinitionStore(Db);
         var notificationAuth = new NotificationDefinitionAuthorization(

@@ -76,12 +76,15 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
         BindingRepository = new SqlBindingRepository(Db);
         ScheduleRepository = new SqlScheduleRepository(Db);
 
+        var ownershipGate = new SqlResourceOwnershipMutationGate(Db);
+
         Integrations = new IntegrationManagementService(
             new AlwaysActor(),
             new AlwaysAllow(),
             IntegrationRepository,
             ResourceContexts,
-            Db);
+            Db,
+            ownershipGate);
 
         ConnectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -93,9 +96,9 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             // Never exercised: these tests supply no secret values, which is itself the point --
             // ResourceContext ownership must not touch secret material.
             new ConnectionSecretMaterialProvisioner(SecretStore.Object),
-            ResourceContexts);
-
-        var ownershipGate = new SqlResourceOwnershipMutationGate(Db);
+            ResourceContexts,
+            Db,
+            ownershipGate);
 
         Eligibility = new BindingEligibilityService(ConnectionRepository, ConnectorRegistry);
         Bindings = new BindingService(

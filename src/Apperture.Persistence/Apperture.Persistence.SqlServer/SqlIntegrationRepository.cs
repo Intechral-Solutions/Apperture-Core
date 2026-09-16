@@ -68,8 +68,9 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         entity.DisplayName = integration.DisplayName;
         entity.ModuleId = integration.ModuleId;
         entity.ScopeKey = integration.ScopeKey;
-        // Ownership is established at create time. CTX-1 has no move operation, so UpdateAsync
-        // deliberately does not rewrite ResourceContextId.
+        // Ownership changes only through the narrow SetResourceContextIdAsync below (added CTX-3B Plan
+        // 2, exercised by ResourceOwnershipMoveService.MoveIntegrationAsync); this general UpdateAsync
+        // deliberately never rewrites ResourceContextId.
         entity.State = (int)integration.State;
         entity.SettingsJson = integration.Settings is { Count: > 0 }
             ? JsonSerializer.Serialize(integration.Settings)

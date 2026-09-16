@@ -665,7 +665,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
 
             var integrations = new IntegrationManagementService(
-                principal, authzAllow, integrationRepository, resourceContexts, db);
+                principal, authzAllow, integrationRepository, resourceContexts, db, gate);
 
             var connections = new ConnectionManagementService(
                 principal,
@@ -674,7 +674,9 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 connectorRegistry,
                 new NoOpConnectionVerificationService(),
                 new ConnectionSecretMaterialProvisioner(new NullSecretStore()),
-                resourceContexts);
+                resourceContexts,
+                db,
+                gate);
 
             var bindings = new BindingService(
                 principal,

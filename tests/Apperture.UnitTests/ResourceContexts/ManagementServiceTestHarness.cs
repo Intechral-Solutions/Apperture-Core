@@ -1,13 +1,17 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 
 namespace Apperture.UnitTests.ResourceContexts;
 
@@ -24,6 +28,7 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
 {
     private readonly AppertureDbContext _db;
     private readonly IIntegrationManagementService _integrations;
+    private readonly IConnectionManagementService _connections;
     private readonly RecordingAuditService _auditService;
     private int _nextSequence;
 
@@ -56,18 +61,6 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
         var resourceContexts = new ResourceContextService(resourceContextRepository, TimeProvider.System);
         var integrationRepository = new SqlIntegrationRepository(_db);
 
-        // Integration creation (used only by SeedLiveIntegration to make ArchiveAsync's "still owns a
-        // live resource" rule fire) is always permitted -- these tests are about the management
-        // service's own authorization/audit wrapper, not Integration authorization.
-        _integrations = new IntegrationManagementService(
-            new FixedPrincipalContext(new FixedActor()),
-            new AlwaysAllowAuthorizationEvaluationService(),
-            integrationRepository,
-            resourceContexts,
-            _db);
-
-        _auditService = new RecordingAuditService();
-
         // Real SqlResourceOwnershipMutationGate is a documented no-op on EF Core InMemory (no lock
         // manager, no transactions) -- the same gate BindingService/SqlScheduleManagementService harnesses
         // use. When recordingGate is set, a spy replaces it to pin call ORDER for a pure ordering
@@ -76,6 +69,38 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             ? new RecordingResourceOwnershipMutationGate(gateOrderTracker)
             : new SqlResourceOwnershipMutationGate(_db);
         Gate = ownershipGate as RecordingResourceOwnershipMutationGate;
+
+        // Integration creation (used only by SeedLiveIntegration to make ArchiveAsync's "still owns a
+        // live resource" rule fire) is always permitted -- these tests are about the management
+        // service's own authorization/audit wrapper, not Integration authorization. IntegrationManagementService
+        // is itself a gate consumer as of the CTX-3B follow-on, so it shares the same ownershipGate (and,
+        // via resourceContextRepository, the same GateOrderTracker) as Service below.
+        _integrations = new IntegrationManagementService(
+            new FixedPrincipalContext(new FixedActor()),
+            new AlwaysAllowAuthorizationEvaluationService(),
+            integrationRepository,
+            resourceContexts,
+            _db,
+            ownershipGate);
+
+        _auditService = new RecordingAuditService();
+
+        // CTX-3B follow-on (Connection creation gating): wired over the same resourceContexts (and thus,
+        // when recordingGate is set, the same RecordingResourceContextRepository) so
+        // Connections.CreateConnectionAsync's gate-ordering can be pinned the exact same way ArchiveAsync's
+        // is above -- ResolveForNewOwnershipAsync's IResourceContextRepository.GetByIdAsync call is the
+        // "first ownership-sensitive read" for Connection creation, same as it is for Archive.
+        _connections = new ConnectionManagementService(
+            new FixedPrincipalContext(new FixedActor()),
+            new AlwaysAllowAuthorizationEvaluationService(),
+            new SqlConnectionRepository(_db),
+            new PermissiveConnectorDefinitionRegistry(),
+            new NoOpConnectionVerificationService(),
+            // Never exercised: these tests supply no secret values.
+            new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
+            resourceContexts,
+            _db,
+            ownershipGate);
 
         // The actor is always authenticated; only the permission grant varies. This exercises the
         // "authenticated but not authorized" branch specifically (rather than short-circuiting on a
@@ -92,6 +117,10 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
     }
 
     public IResourceContextManagementService Service { get; }
+
+    public IConnectionManagementService Connections => _connections;
+
+    public IIntegrationManagementService Integrations => _integrations;
 
     public IReadOnlyList<AuditRecord> AuditRecords => _auditService.Records;
 
@@ -170,6 +199,36 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
                 && string.Equals(context.Permission.Action, _grantedAction, StringComparison.Ordinal)
                 && string.Equals(context.Permission.Resource?.ResourceType, _grantedResourceType, StringComparison.Ordinal);
             return ValueTask.FromResult(matches);
+        }
+    }
+
+    private sealed class NoOpConnectionVerificationService : IConnectionVerificationService
+    {
+        public ValueTask<ConnectionVerificationResult> VerifyAsync(Connection connection, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new ConnectionVerificationResult(
+                ConnectionVerificationStatus.NeverTested,
+                DateTimeOffset.UnixEpoch,
+                null));
+    }
+
+    /// <summary>Accepts any connector definition id. These tests are about ownership, not connector contracts.</summary>
+    private sealed class PermissiveConnectorDefinitionRegistry : IConnectorDefinitionRegistry
+    {
+        private readonly Dictionary<string, ConnectorDefinition> _definitions = new(StringComparer.Ordinal);
+
+        public void Register(ConnectorDefinition definition) => _definitions[definition.Id.Value] = definition;
+
+        public IReadOnlyList<ConnectorDefinition> GetAll(string? moduleId = null) => _definitions.Values.ToList();
+
+        public ConnectorDefinition? Get(ConnectorDefinitionId id)
+        {
+            if (!_definitions.TryGetValue(id.Value, out var definition))
+            {
+                definition = new ConnectorDefinition(id, id.Value, null, new Dictionary<string, string>());
+                _definitions[id.Value] = definition;
+            }
+
+            return definition;
         }
     }
 

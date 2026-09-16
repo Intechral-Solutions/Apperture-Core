@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
@@ -52,6 +53,39 @@ public sealed class ResourceContextReactivationGuardTests
             integration.Id, new UpdateIntegrationRequest(DisplayName: "Renamed"));
 
         updated.DisplayName.Should().Be("Renamed");
+    }
+
+    /// <summary>
+    /// CTX-3B follow-on: Retired -&gt; Inactive is not a "can dispatch" reactivation (which is why the
+    /// original CTX-3A guard above never covered it), but it IS an archive-blocking transition --
+    /// <see cref="ResourceContextOwnershipSummary.BlocksArchive"/> counts anything that is not Retired,
+    /// so Inactive counts exactly like Active. Widening the guard to also cover Retired -&gt; Inactive
+    /// closes the gap where an archived Application could be made to own a newly-blocking Integration.
+    /// </summary>
+    [Fact]
+    public async Task DeactivateIntegration_FromRetiredUnderAnArchivedContext_IsRejected()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var integration = await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Retired);
+        await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        var act = async () => await harness.Integrations.DeactivateIntegrationAsync(integration.Id);
+
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
+    }
+
+    /// <summary>Positive-path check for the widened guard above: Retired -&gt; Inactive under an active (never archived) context must succeed.</summary>
+    [Fact]
+    public async Task DeactivateIntegration_FromRetiredUnderAnActiveContext_Succeeds()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var integration = await harness.CreateIntegrationAsync(context.Id, state: IntegrationState.Retired);
+
+        var deactivated = await harness.Integrations.DeactivateIntegrationAsync(integration.Id);
+
+        deactivated.State.Should().Be(IntegrationState.Inactive);
     }
 
     /// <summary>

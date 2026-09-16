@@ -160,7 +160,8 @@ public sealed class IntegrationFleetContextFilterTests
                 new AlwaysAllow(),
                 integrationRepository,
                 resourceContexts,
-                db);
+                db,
+                new SqlResourceOwnershipMutationGate(db));
 
             var slots = new Mock<IModuleSlotRegistry>();
             slots.Setup(x => x.GetSlotsForModule(It.IsAny<string>())).Returns(new List<ICapabilitySlot>());

@@ -62,12 +62,15 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             ? (IAuthorizationEvaluationService)new DenyAllAuthorizationEvaluationService()
             : new PermissionMatchingAuthorizationEvaluationService(grantedAction, grantedResourceType);
 
+        var ownershipGate = new SqlResourceOwnershipMutationGate(_db);
+
         Integrations = new IntegrationManagementService(
             new FixedPrincipalContext(),
             new AlwaysAllowAuthorizationEvaluationService(),
             IntegrationRepository,
             ResourceContexts,
-            _db);
+            _db,
+            ownershipGate);
 
         var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -77,9 +80,9 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             connectorRegistry,
             new NoOpConnectionVerificationService(),
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
-            ResourceContexts);
-
-        var ownershipGate = new SqlResourceOwnershipMutationGate(_db);
+            ResourceContexts,
+            _db,
+            ownershipGate);
 
         Bindings = new BindingService(
             new FixedPrincipalContext(),
