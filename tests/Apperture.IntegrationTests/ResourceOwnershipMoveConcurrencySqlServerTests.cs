@@ -881,7 +881,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 bindingRepository,
                 resourceContexts,
                 db,
-                gate);
+                gate,
+                new SqlAuditService(db));
 
             return new Env
             {

@@ -304,7 +304,8 @@ public sealed class IntegrationMovePreviewTests
             h.BindingRepository,
             h.ResourceContexts,
             h.Db,
-            new SqlResourceOwnershipMutationGate(h.Db));
+            new SqlResourceOwnershipMutationGate(h.Db),
+            h.Audit);
 
         var act = async () => await service.PreviewIntegrationMoveAsync(new(Guid.NewGuid().ToString("N")), target.Id);
 

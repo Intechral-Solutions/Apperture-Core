@@ -4,6 +4,7 @@ using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
@@ -32,7 +33,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
     private readonly AppertureDbContext _db;
     private int _nextSequence;
 
-    public ResourceOwnershipMoveTestHarness(string? grantedAction = "any", string? grantedResourceType = "any")
+    public ResourceOwnershipMoveTestHarness(string? grantedAction = "any", string? grantedResourceType = "any", IAuditService? audit = null)
     {
         _db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
@@ -114,10 +115,36 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             BindingRepository,
             ResourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            audit ?? Audit);
     }
 
     public IResourceOwnershipMoveService Service { get; }
+
+    /// <summary>
+    /// The recording double most tests inspect via <c>.Records</c>. Always constructed, even when a test
+    /// substitutes a different <see cref="IAuditService"/> (e.g. <see cref="ThrowingAuditService"/>) into
+    /// the real <see cref="ResourceOwnershipMoveService"/> via the <c>audit:</c> constructor parameter --
+    /// in that case this property simply stays empty, since it was never wired into the service under test.
+    /// </summary>
+    public RecordingAuditService Audit { get; } = new();
+
+    public sealed class RecordingAuditService : IAuditService
+    {
+        private readonly List<AuditRecord> _records = new();
+        public IReadOnlyList<AuditRecord> Records => _records;
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+        {
+            _records.Add(record);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
+    }
 
     /// <summary>The harness's own <see cref="AppertureDbContext"/>, exposed so fixtures can seed state
     /// the management services deliberately refuse to write (pre-existing ownership drift, cross-context

@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
@@ -30,6 +31,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
+    private readonly IAuditService _audit;
 
     public ResourceOwnershipMoveService(
         IPrincipalContext principalContext,
@@ -40,7 +42,8 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         IBindingRepository bindingRepository,
         IResourceContextService resourceContexts,
         AppertureDbContext db,
-        IResourceOwnershipMutationGate ownershipGate)
+        IResourceOwnershipMutationGate ownershipGate,
+        IAuditService audit)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -51,6 +54,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
+        _audit = audit;
     }
 
     /// <summary>
@@ -143,26 +147,63 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
 
             // The identical validator preview uses (§8.2) -- now against state re-read inside the gate.
             var validation = await ValidateIntegrationMoveAsync(integration, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+            var preview = validation.Preview;
 
             await FireHookAsync("integration:validated", cancellationToken).ConfigureAwait(false);
 
-            if (validation.Preview.CanMove)
+            if (!preview.CanMove)
             {
-                await _integrationRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    actor.Id,
+                    ActionConstants.IntegrationOwnershipMoveRejected,
+                    new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value),
+                    Outcome: "",
+                    DateTimeOffset.UtcNow,
+                    new CorrelationId(Guid.NewGuid().ToString("N")),
+                    System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
+                        ResourceMoveResourceTypes.Integration, id.Value, integration.DisplayName,
+                        integration.ResourceContextId.Value, targetResourceContextId.Value,
+                        preview.Blockers.Select(b => b.Code).ToList())),
+                    ResourceContextId: integration.ResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
-                // The authoritative attached-Schedule set from the validator's single read -- never a
-                // second query, so preview effects, the mutation and Plan 4's audit all describe the
-                // same schedules.
-                foreach (var schedule in validation.AttachedSchedules)
-                    await _scheduleRepository.SetResourceContextIdAsync(schedule.Id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+                // Final control-flow shape (see Global Constraints): commit on both outcomes. On the
+                // rejected path the underlying resource was never mutated (SetResourceContextIdAsync is
+                // never called), so this commit persists exactly one move_rejected audit row and nothing
+                // else.
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false); // persists the rejection record
+                return preview;
             }
 
-            // Final control-flow shape (see Global Constraints): commit on both outcomes. On the rejected
-            // path nothing was written, so this commit is a no-op today -- and Plan 4 adds the single
-            // move_rejected audit row to it without rewriting any of this.
+            var sourceContextId = integration.ResourceContextId.Value;
+            await _integrationRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            // The validator's authoritative set from Plan 1/Plan 2 -- never a second query. The
+            // schedules_move_with_integration effect the operator saw, the rows actually mutated, and this
+            // audit payload all describe the same schedules from one read inside one transaction.
+            var movedScheduleIds = validation.AttachedSchedules.Select(s => s.Id.Value).ToList();
+            foreach (var schedule in validation.AttachedSchedules)
+                await _scheduleRepository.SetResourceContextIdAsync(schedule.Id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            var correlationId = new CorrelationId(Guid.NewGuid().ToString("N"));
+            var detailsJson = System.Text.Json.JsonSerializer.Serialize(new ResourceMoveAuditDetails(
+                ResourceMoveResourceTypes.Integration, id.Value, integration.DisplayName,
+                sourceContextId, targetResourceContextId.Value, movedScheduleIds));
+
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.IntegrationOwnershipMovedOut,
+                new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.IntegrationOwnershipMovedIn,
+                new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
+
+            // Final control-flow shape (see Global Constraints): commit on both outcomes.
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return validation.Preview;
+            return preview;
         }).ConfigureAwait(false);
     }
 
@@ -196,8 +237,46 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
 
             await FireHookAsync("connection:validated", cancellationToken).ConfigureAwait(false);
 
-            if (preview.CanMove)
-                await _connectionRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+            if (!preview.CanMove)
+            {
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    actor.Id,
+                    ActionConstants.ConnectionOwnershipMoveRejected,
+                    new ResourceDescriptor(ResourceTypeConstants.Connection, id.Value),
+                    Outcome: "",
+                    DateTimeOffset.UtcNow,
+                    new CorrelationId(Guid.NewGuid().ToString("N")),
+                    System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
+                        ResourceMoveResourceTypes.Connection, id.Value, connection.Name,
+                        connection.ResourceContextId.Value, targetResourceContextId.Value,
+                        preview.Blockers.Select(b => b.Code).ToList())),
+                    ResourceContextId: connection.ResourceContextId.Value), cancellationToken).ConfigureAwait(false);
+
+                // Final control-flow shape (see Global Constraints): commit on both outcomes. On the
+                // rejected path the underlying resource was never mutated, so this commit persists exactly
+                // one move_rejected audit row and nothing else.
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false); // persists the rejection record
+                return preview;
+            }
+
+            var sourceContextId = connection.ResourceContextId.Value;
+            await _connectionRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            var correlationId = new CorrelationId(Guid.NewGuid().ToString("N"));
+            var detailsJson = System.Text.Json.JsonSerializer.Serialize(new ResourceMoveAuditDetails(
+                ResourceMoveResourceTypes.Connection, id.Value, connection.Name,
+                sourceContextId, targetResourceContextId.Value));
+
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ConnectionOwnershipMovedOut,
+                new ResourceDescriptor(ResourceTypeConstants.Connection, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ConnectionOwnershipMovedIn,
+                new ResourceDescriptor(ResourceTypeConstants.Connection, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
             // Final control-flow shape (see Global Constraints): commit on both outcomes.
             if (tx is not null)
@@ -247,8 +326,49 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
 
             await FireHookAsync("schedule:validated", cancellationToken).ConfigureAwait(false);
 
-            if (preview.CanMove)
-                await _scheduleRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+            // schedule.ResourceContextId is non-null here: ValidateScheduleMoveAsync throws above (line
+            // "?? throw") were it ever null, so both branches below can dereference .Value directly.
+            var sourceContextId = schedule.ResourceContextId!.Value;
+
+            if (!preview.CanMove)
+            {
+                await _audit.AppendAsync(new AuditRecord(
+                    new AuditRecordId(Guid.NewGuid().ToString("N")),
+                    actor.Id,
+                    ActionConstants.ScheduleOwnershipMoveRejected,
+                    new ResourceDescriptor(ResourceTypeConstants.Schedule, id.Value),
+                    Outcome: "",
+                    DateTimeOffset.UtcNow,
+                    new CorrelationId(Guid.NewGuid().ToString("N")),
+                    System.Text.Json.JsonSerializer.Serialize(new ResourceMoveRejectedAuditDetails(
+                        ResourceMoveResourceTypes.Schedule, id.Value, schedule.Name,
+                        sourceContextId, targetResourceContextId.Value,
+                        preview.Blockers.Select(b => b.Code).ToList())),
+                    ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
+
+                // Final control-flow shape (see Global Constraints): commit on both outcomes. On the
+                // rejected path the underlying resource was never mutated, so this commit persists exactly
+                // one move_rejected audit row and nothing else.
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false); // persists the rejection record
+                return preview;
+            }
+
+            await _scheduleRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            var correlationId = new CorrelationId(Guid.NewGuid().ToString("N"));
+            var detailsJson = System.Text.Json.JsonSerializer.Serialize(new ResourceMoveAuditDetails(
+                ResourceMoveResourceTypes.Schedule, id.Value, schedule.Name,
+                sourceContextId, targetResourceContextId.Value));
+
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ScheduleOwnershipMovedOut,
+                new ResourceDescriptor(ResourceTypeConstants.Schedule, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: sourceContextId), cancellationToken).ConfigureAwait(false);
+            await _audit.AppendAsync(new AuditRecord(
+                new AuditRecordId(Guid.NewGuid().ToString("N")), actor.Id, ActionConstants.ScheduleOwnershipMovedIn,
+                new ResourceDescriptor(ResourceTypeConstants.Schedule, id.Value), Outcome: "",
+                DateTimeOffset.UtcNow, correlationId, detailsJson, ResourceContextId: targetResourceContextId.Value), cancellationToken).ConfigureAwait(false);
 
             // Final control-flow shape (see Global Constraints): commit on both outcomes.
             if (tx is not null)
