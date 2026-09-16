@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -58,7 +59,8 @@ public sealed class SchedulesControllerTests
             Mock.Of<IScheduleValidationService>(),
             Mock.Of<IScheduleCreateTimeZoneDefaults>(),
             Mock.Of<ISchedulerStatusQueryService>(),
-            resourceContexts.Object);
+            resourceContexts.Object,
+            Mock.Of<IResourceOwnershipMoveService>());
 
         var result = await controller.Get("s1", runtimePlaneId: "local", CancellationToken.None);
 

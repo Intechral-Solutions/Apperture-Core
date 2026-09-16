@@ -80,7 +80,8 @@ public sealed class IntegrationFleetContextFilterTests
             Mock.Of<IAttentionRoutingManagementService>(),
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
-            resourceContexts.Object);
+            resourceContexts.Object,
+            Mock.Of<IResourceOwnershipMoveService>());
 
         var result = await controller.Fleet(
             contextId: "does-not-exist",

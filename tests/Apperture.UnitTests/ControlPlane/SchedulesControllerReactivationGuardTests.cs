@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -51,7 +52,8 @@ public sealed class SchedulesControllerReactivationGuardTests
             validation.Object,
             Mock.Of<IScheduleCreateTimeZoneDefaults>(),
             Mock.Of<ISchedulerStatusQueryService>(),
-            Mock.Of<IResourceContextService>());
+            Mock.Of<IResourceContextService>(),
+            Mock.Of<IResourceOwnershipMoveService>());
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using Apperture.ControlPlane.Security.Models;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Environment;
@@ -13,6 +14,7 @@ using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 using Xunit;
 
 namespace Apperture.UnitTests.ControlPlane;
@@ -68,7 +70,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly(), Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }
@@ -79,7 +81,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: true);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly(), Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.Enable("s1", CancellationToken.None);
         result.Should().BeOfType<OkResult>();
     }
@@ -90,7 +92,7 @@ public sealed class Epic34CorrectivePassTests
         var gov = new StubScheduleGovernanceService(canManage: false);
         var mgmt = new StubScheduleManagementService();
         var validation = new ScheduleValidationService();
-        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly());
+        var controller = new SchedulesController(gov, mgmt, validation, PassthroughCreateTimeZoneDefaults.Instance, StubSchedulerStatus.Instance, ResourceContextTestFactory.SharedOnly(), Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.Disable("s1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
     }

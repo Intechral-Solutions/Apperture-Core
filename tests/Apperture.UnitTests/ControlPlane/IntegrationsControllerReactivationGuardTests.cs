@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
@@ -30,7 +31,8 @@ public sealed class IntegrationsControllerReactivationGuardTests
         Mock.Of<IAttentionRoutingManagementService>(),
         Mock.Of<IPrincipalContext>(),
         TimeProvider.System,
-        Mock.Of<IResourceContextService>());
+        Mock.Of<IResourceContextService>(),
+        Mock.Of<IResourceOwnershipMoveService>());
 
     private static ResourceContextArchivedException ArchivedException() => new(
         new ResourceContextId("app-a"),

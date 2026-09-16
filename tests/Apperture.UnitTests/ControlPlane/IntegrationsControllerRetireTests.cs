@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
 using Apperture.Management.Api.Controllers;
@@ -24,7 +25,8 @@ public sealed class IntegrationsControllerRetireTests
         Mock.Of<IAttentionRoutingManagementService>(),
         Mock.Of<IPrincipalContext>(),
         TimeProvider.System,
-        Mock.Of<IResourceContextService>());
+        Mock.Of<IResourceContextService>(),
+        Mock.Of<IResourceOwnershipMoveService>());
 
     [Fact]
     public async Task Retire_WhenPlainInvalidOperationException_Returns404()

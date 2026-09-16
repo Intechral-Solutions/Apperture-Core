@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
@@ -173,7 +174,7 @@ public sealed class ResourceContextApiCompatibilityTests
             .Setup(s => s.ListConnectionsAsync(null, It.IsAny<CancellationToken>()))
             .ReturnsAsync([NewConnection("c-1", ResourceContextIds.Shared), NewConnection("c-2", new ResourceContextId("app-a"))]);
 
-        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object, Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.List(contextId: null, CancellationToken.None);
 
         OkValue<IReadOnlyList<ConnectionDto>>(result.Result).Should().HaveCount(2);
@@ -188,7 +189,7 @@ public sealed class ResourceContextApiCompatibilityTests
             .Setup(s => s.ListConnectionsAsync(It.Is<ResourceContextId>(c => c.Value == "shared"), It.IsAny<CancellationToken>()))
             .ReturnsAsync([NewConnection("c-1", ResourceContextIds.Shared)]);
 
-        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object, Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.List("shared", CancellationToken.None);
 
         var dto = OkValue<IReadOnlyList<ConnectionDto>>(result.Result).Should().ContainSingle().Subject;
@@ -204,7 +205,7 @@ public sealed class ResourceContextApiCompatibilityTests
             .Setup(r => r.GetAsync(It.Is<ResourceContextId>(c => c.Value == "nope"), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ResourceContext?)null);
 
-        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object, Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.List("nope", CancellationToken.None);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
@@ -220,7 +221,7 @@ public sealed class ResourceContextApiCompatibilityTests
             .Callback<ApiCreateConnectionRequest, CancellationToken>((r, _) => captured = r)
             .ReturnsAsync(NewConnection("c-new", new ResourceContextId("app-a")));
 
-        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object, Mock.Of<IResourceOwnershipMoveService>());
 
         await controller.Create(new CreateConnectionRequestBody("platform.sql", "Ops", null, null, null, null), CancellationToken.None);
         captured!.ResourceContextId.Should().BeNull();
@@ -297,7 +298,7 @@ public sealed class ResourceContextApiCompatibilityTests
             .Setup(i => i.GetByIdAsync(It.Is<IntegrationId>(id => id.Value == "i-a"), It.IsAny<CancellationToken>()))
             .ReturnsAsync(NewIntegration("i-a", new ResourceContextId(boundIntegrationContextId)));
 
-        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object);
+        var controller = new ConnectionsController(service.Object, bindings.Object, integrations.Object, connectors.Object, resourceContexts.Object, Mock.Of<IResourceOwnershipMoveService>());
         var result = await controller.Get("c-1", CancellationToken.None);
 
         var connectionDto = OkValue<ConnectionDto>(result.Result);
@@ -359,7 +360,8 @@ public sealed class ResourceContextApiCompatibilityTests
             Mock.Of<IAttentionRoutingManagementService>(),
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
-            resourceContexts.Object);
+            resourceContexts.Object,
+            Mock.Of<IResourceOwnershipMoveService>());
 
     private static (
         Mock<IConnectionManagementService> Service,

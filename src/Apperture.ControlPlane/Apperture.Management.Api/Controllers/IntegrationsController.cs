@@ -1,9 +1,11 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Management.Api.Models;
 using Apperture.Management.Client;
+using Client = Apperture.Management.Client;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +29,7 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly TimeProvider _timeProvider;
     private readonly IResourceContextService _resourceContexts;
+    private readonly IResourceOwnershipMoveService _moveService;
 
     public IntegrationsController(
         IIntegrationManagementService integrationService,
@@ -37,7 +40,8 @@ public sealed class IntegrationsController : ControllerBase
         IAttentionRoutingManagementService attentionRoutingManagement,
         IPrincipalContext principalContext,
         TimeProvider timeProvider,
-        IResourceContextService resourceContexts)
+        IResourceContextService resourceContexts,
+        IResourceOwnershipMoveService moveService)
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
@@ -48,6 +52,7 @@ public sealed class IntegrationsController : ControllerBase
         _principalContext = principalContext;
         _timeProvider = timeProvider;
         _resourceContexts = resourceContexts;
+        _moveService = moveService;
     }
 
     /// <summary>
@@ -546,6 +551,37 @@ public sealed class IntegrationsController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    /// <summary>Advisory preview of moving this Integration to another ResourceContext (design gate §8.2).</summary>
+    [HttpGet("{id}/ownership/move-preview")]
+    public async Task<IActionResult> GetOwnershipMovePreview(
+        string id, [FromQuery] string targetResourceContextId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await _moveService.PreviewIntegrationMoveAsync(
+                new IntegrationId(id), new ResourceContextId(targetResourceContextId), cancellationToken);
+            return Ok(ResourceMoveHttpMapper.ToDto(preview));
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    /// <summary>Moves this Integration to another ResourceContext. Re-validates identically inside the gated transaction (§8.2).</summary>
+    [HttpPost("{id}/ownership/move")]
+    public async Task<IActionResult> PostOwnershipMove(
+        string id, [FromBody] Client.ResourceOwnershipMoveRequest body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await _moveService.MoveIntegrationAsync(
+                new IntegrationId(id), new ResourceContextId(body.TargetResourceContextId), cancellationToken);
+            return ResourceMoveHttpMapper.MapMoveResult(preview);
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (ResourceOwnershipBusyException ex) { return ResourceMoveHttpMapper.MapBusy(ex); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
     }
 
     /// <summary>

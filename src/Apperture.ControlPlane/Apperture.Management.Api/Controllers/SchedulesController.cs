@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -6,6 +7,7 @@ using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
+using Client = Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -24,6 +26,7 @@ public sealed class SchedulesController : ControllerBase
     private readonly IScheduleCreateTimeZoneDefaults _createTimeZoneDefaults;
     private readonly ISchedulerStatusQueryService _schedulerStatus;
     private readonly IResourceContextService _resourceContexts;
+    private readonly IResourceOwnershipMoveService _moveService;
 
     public SchedulesController(
         IScheduleGovernanceService scheduleGovernance,
@@ -31,7 +34,8 @@ public sealed class SchedulesController : ControllerBase
         IScheduleValidationService scheduleValidation,
         IScheduleCreateTimeZoneDefaults createTimeZoneDefaults,
         ISchedulerStatusQueryService schedulerStatus,
-        IResourceContextService resourceContexts)
+        IResourceContextService resourceContexts,
+        IResourceOwnershipMoveService moveService)
     {
         _scheduleGovernance = scheduleGovernance;
         _scheduleManagement = scheduleManagement;
@@ -39,6 +43,7 @@ public sealed class SchedulesController : ControllerBase
         _createTimeZoneDefaults = createTimeZoneDefaults;
         _schedulerStatus = schedulerStatus;
         _resourceContexts = resourceContexts;
+        _moveService = moveService;
     }
 
     [HttpGet("capabilities")]
@@ -246,6 +251,41 @@ public sealed class SchedulesController : ControllerBase
         {
             return NotFound();
         }
+    }
+
+    /// <summary>Advisory preview of moving this Schedule to another ResourceContext (design gate §8.2).</summary>
+    [HttpGet("{id}/ownership/move-preview")]
+    public async Task<IActionResult> GetOwnershipMovePreview(
+        string id, [FromQuery] string targetResourceContextId, CancellationToken cancellationToken)
+    {
+        if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
+            return Forbid();
+        try
+        {
+            var preview = await _moveService.PreviewScheduleMoveAsync(
+                new ScheduleId(id), new ResourceContextId(targetResourceContextId), cancellationToken);
+            return Ok(ResourceMoveHttpMapper.ToDto(preview));
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    /// <summary>Moves this Schedule to another ResourceContext. Re-validates identically inside the gated transaction (§8.2).</summary>
+    [HttpPost("{id}/ownership/move")]
+    public async Task<IActionResult> PostOwnershipMove(
+        string id, [FromBody] Client.ResourceOwnershipMoveRequest body, CancellationToken cancellationToken)
+    {
+        if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
+            return Forbid();
+        try
+        {
+            var preview = await _moveService.MoveScheduleAsync(
+                new ScheduleId(id), new ResourceContextId(body.TargetResourceContextId), cancellationToken);
+            return ResourceMoveHttpMapper.MapMoveResult(preview);
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (ResourceOwnershipBusyException ex) { return ResourceMoveHttpMapper.MapBusy(ex); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
     }
 
     private async Task<string?> TryGetWorkerRuntimeStatusAsync(CancellationToken cancellationToken)

@@ -1,7 +1,9 @@
 using Apperture.Core.Application.Connector;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.ResourceContexts;
+using Client = Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,19 +19,22 @@ public sealed class ConnectionsController : ControllerBase
     private readonly IIntegrationRepository _integrationRepository;
     private readonly IConnectorDefinitionRegistry _connectorDefinitions;
     private readonly IResourceContextService _resourceContexts;
+    private readonly IResourceOwnershipMoveService _moveService;
 
     public ConnectionsController(
         IConnectionManagementService connectionService,
         IBindingRepository bindingRepository,
         IIntegrationRepository integrationRepository,
         IConnectorDefinitionRegistry connectorDefinitions,
-        IResourceContextService resourceContexts)
+        IResourceContextService resourceContexts,
+        IResourceOwnershipMoveService moveService)
     {
         _connectionService = connectionService;
         _bindingRepository = bindingRepository;
         _integrationRepository = integrationRepository;
         _connectorDefinitions = connectorDefinitions;
         _resourceContexts = resourceContexts;
+        _moveService = moveService;
     }
 
     /// <summary>
@@ -186,6 +191,37 @@ public sealed class ConnectionsController : ControllerBase
         {
             return NotFound(new { error = ex.Message });
         }
+    }
+
+    /// <summary>Advisory preview of moving this Connection to another ResourceContext (design gate §8.2).</summary>
+    [HttpGet("{id}/ownership/move-preview")]
+    public async Task<IActionResult> GetOwnershipMovePreview(
+        string id, [FromQuery] string targetResourceContextId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await _moveService.PreviewConnectionMoveAsync(
+                new ConnectionId(id), new ResourceContextId(targetResourceContextId), cancellationToken);
+            return Ok(ResourceMoveHttpMapper.ToDto(preview));
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    /// <summary>Moves this Connection to another ResourceContext. Re-validates identically inside the gated transaction (§8.2).</summary>
+    [HttpPost("{id}/ownership/move")]
+    public async Task<IActionResult> PostOwnershipMove(
+        string id, [FromBody] Client.ResourceOwnershipMoveRequest body, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var preview = await _moveService.MoveConnectionAsync(
+                new ConnectionId(id), new ResourceContextId(body.TargetResourceContextId), cancellationToken);
+            return ResourceMoveHttpMapper.MapMoveResult(preview);
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (ResourceOwnershipBusyException ex) { return ResourceMoveHttpMapper.MapBusy(ex); }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
     }
 
     private async Task<ConnectionDto> ToDtoAsync(
