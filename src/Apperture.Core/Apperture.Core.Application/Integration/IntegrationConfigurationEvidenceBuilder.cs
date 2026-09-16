@@ -32,6 +32,7 @@ public sealed class IntegrationConfigurationEvidenceBuilder
         DomainIntegration integration,
         ModuleIntegrationConfiguration moduleConfiguration,
         IReadOnlyList<Binding> bindings,
+        IReadOnlyDictionary<string, Connection?> boundConnections,
         CancellationToken cancellationToken)
     {
         var settingKeys = moduleConfiguration.Settings
@@ -95,6 +96,7 @@ public sealed class IntegrationConfigurationEvidenceBuilder
                     integration,
                     requirement,
                     binding,
+                    boundConnections,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -118,6 +120,7 @@ public sealed class IntegrationConfigurationEvidenceBuilder
         DomainIntegration integration,
         ConnectionRequirementDefinition requirement,
         Binding binding,
+        IReadOnlyDictionary<string, Connection?> boundConnections,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(binding.ContractType, requirement.CapabilityContractType, StringComparison.Ordinal))
@@ -132,7 +135,7 @@ public sealed class IntegrationConfigurationEvidenceBuilder
             return new ConnectionEvidenceSnapshot(IsBound: false);
         }
 
-        var connection = await _connectionRepository.GetByIdAsync(connId, cancellationToken).ConfigureAwait(false);
+        boundConnections.TryGetValue(connId.Value, out var connection);
         if (connection is null)
         {
             return new ConnectionEvidenceSnapshot(IsBound: true, IsAvailable: false);

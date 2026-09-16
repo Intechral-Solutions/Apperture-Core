@@ -77,7 +77,9 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
         // One read per distinct bound Connection, for the whole evaluation. Readiness is evaluated per
         // Integration by the fleet list behind /integrations (design gate R21), so a per-binding repository
         // call inside each branch multiplies across the whole fleet. This lookup replaces the existing
-        // per-binding read in EvaluateLegacySlotBindingsAsync as well, so the net query count goes DOWN.
+        // per-binding read in EvaluateLegacySlotBindingsAsync, and the per-requirement read inside
+        // IntegrationConfigurationEvidenceBuilder.BuildConnectionEvidenceAsync on the SDK-6C configuration
+        // path, so the net query count goes DOWN on both branches, not just the legacy one.
         var boundConnections = new Dictionary<string, Connection?>(StringComparer.Ordinal);
         foreach (var connectionId in bindings
                      .Select(b => b.ConnectionId)
@@ -93,7 +95,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
         if (_configurationRegistry.TryGetModuleConfiguration(integration.ModuleId, out var moduleConfiguration))
         {
             var evidence = await _configurationEvidence
-                .BuildAsync(integration, moduleConfiguration, bindings, cancellationToken)
+                .BuildAsync(integration, moduleConfiguration, bindings, boundConnections, cancellationToken)
                 .ConfigureAwait(false);
             var evaluatedAt = _timeProvider.GetUtcNow();
             IReadOnlyList<ConfigurationReadinessReason> reasons;
