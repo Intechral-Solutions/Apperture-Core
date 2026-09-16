@@ -58,6 +58,112 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         return validation.Preview;
     }
 
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> PreviewConnectionMoveAsync(
+        ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        // Same house pattern as PreviewIntegrationMoveAsync: resolve the actor before touching the
+        // repository, so an unauthenticated caller cannot use the not-found/unauthorized exception
+        // distinction as an existence oracle for ids it was never entitled to probe.
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var connection = await _connectionRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+        await AuthorizeAsync(actor, ActionConstants.ConnectionUpdate, connection.GetIdentity(), cancellationToken).ConfigureAwait(false);
+        return await ValidateConnectionMoveAsync(connection, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shared validator for Connection moves (§8.5). Frozen signature: Plan 2 calls this unchanged inside
+    /// a locked transaction, so preview and move cannot drift (§8.2).
+    /// </summary>
+    /// <remarks>
+    /// Direction note (design gate §8.5 step 3): for a Connection move, the bound Integration is the
+    /// owner and stays put while the Connection becomes owned by the target, so the reference check is
+    /// <c>CanReference(integration.ResourceContextId, targetId)</c> -- the opposite argument order from
+    /// the Integration validator's <c>CanReference(targetId, connection.ResourceContextId)</c>, because in
+    /// each case the argument order reflects whichever resource is the one actually moving.
+    /// </remarks>
+    private async ValueTask<ResourceMovePreview> ValidateConnectionMoveAsync(
+        Connection connection, ResourceContextId targetId, CancellationToken cancellationToken)
+    {
+        var sourceId = connection.ResourceContextId;
+        var sourceRef = await ResolveRefAsync(sourceId, cancellationToken).ConfigureAwait(false);
+        var target = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+
+        var blockers = new List<ResourceMoveBlocker>();
+        var effects = new List<ResourceMoveEffect>();
+
+        if (target is null)
+        {
+            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.", null, null, null, null));
+            var targetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
+            return BuildConnectionPreview(connection.Id.Value, sourceRef, targetRef, blockers, effects);
+        }
+        if (!target.IsActive)
+        {
+            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.TargetArchived, $"'{target.Name}' is archived and cannot receive new ownership.", ResourceMoveResourceTypes.ResourceContext, target.Id.Value, target.Name, target.Id.Value));
+            return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
+        }
+        if (string.Equals(sourceId.Value, targetId.Value, StringComparison.Ordinal))
+        {
+            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.AlreadyInTarget, "The connection is already owned by the requested context.", null, null, null, null));
+            return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
+        }
+
+        // Deterministic ordering (Global Constraints): GetByConnectionIdAsync has no ORDER BY.
+        var bindings = (await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken).ConfigureAwait(false))
+            .OrderBy(b => b.Id.Value, StringComparer.Ordinal)
+            .ToList();
+
+        var usedByIntegrationIds = new List<string>();
+        foreach (var binding in bindings)
+        {
+            if (binding.IntegrationId is { } integrationId)
+            {
+                usedByIntegrationIds.Add(integrationId.Value);
+                var integration = await _integrationRepository.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false);
+                if (integration is null)
+                {
+                    // Mirror of the Integration validator's missing-connection advisory: surface the
+                    // dangling edge, never silently skip it. The move cannot make this worse.
+                    effects.Add(new ResourceMoveEffect(
+                        ResourceMoveEffectCodes.BindingReferencesMissingIntegration,
+                        $"Binding for slot '{binding.SlotName}' references a missing integration; the move does not make this worse.",
+                        ResourceMoveResourceTypes.Binding, [binding.Id.Value]));
+                }
+                else if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, targetId))
+                {
+                    blockers.Add(new ResourceMoveBlocker(
+                        ResourceMoveBlockerCodes.BindingIntegrationUnreachable,
+                        $"Integration '{integration.DisplayName}' (in '{integration.ResourceContextId.Value}') would no longer be able to reference this connection.",
+                        ResourceMoveResourceTypes.Integration, integration.Id.Value, integration.DisplayName, integration.ResourceContextId.Value));
+                }
+            }
+            else if (!ResourceContextIds.IsShared(targetId))
+            {
+                blockers.Add(new ResourceMoveBlocker(
+                    ResourceMoveBlockerCodes.UnownedBindingRequiresShared,
+                    "A platform-level binding uses this connection; it must stay in Shared.",
+                    ResourceMoveResourceTypes.Binding, binding.Id.Value, null, null));
+            }
+        }
+
+        if (usedByIntegrationIds.Count > 0)
+        {
+            effects.Add(new ResourceMoveEffect(
+                ResourceMoveEffectCodes.UsedByIntegration,
+                $"Used by {usedByIntegrationIds.Count} integration(s).",
+                ResourceMoveResourceTypes.Integration, usedByIntegrationIds));
+        }
+
+        return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
+    }
+
+    private static ResourceMovePreview BuildConnectionPreview(
+        string resourceId, ResourceContextRef source, ResourceContextRef target,
+        List<ResourceMoveBlocker> blockers, List<ResourceMoveEffect> effects) =>
+        new(ResourceMoveResourceTypes.Connection, resourceId, source, target, blockers.Count == 0, blockers, effects);
+
     /// <summary>
     /// The Integration validator's full result: the operator-facing preview, plus the authoritative
     /// attached-Schedule set it was computed from. Plan 2 mutates exactly this set and Plan 4 audits

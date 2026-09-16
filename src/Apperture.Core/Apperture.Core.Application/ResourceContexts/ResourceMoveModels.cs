@@ -89,4 +89,7 @@ public static class ResourceMoveEffectCodes
 
     /// <summary>Connection move (§8.5): "Used by" blast radius, shown even when CanMove is true.</summary>
     public const string UsedByIntegration = "used_by_integration";
+
+    /// <summary>Connection move (§8.5): a binding references an Integration row that no longer exists; advisory, never a blocker. Mirror of <see cref="BindingReferencesMissingConnection"/>.</summary>
+    public const string BindingReferencesMissingIntegration = "binding_references_missing_integration";
 }
