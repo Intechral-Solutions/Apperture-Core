@@ -41,10 +41,14 @@ public class ClientServerDtoParityTests
 {
     /// <summary>
     /// Each row is (serverType, clientType, isExactMirror). <c>isExactMirror</c> was determined
-    /// empirically (Task 7 Part D2): a pair started marked <see langword="true"/>, and was flipped to
-    /// <see langword="false"/> only when <see cref="ExactMirrorPairsExposeNoExtraClientProperties"/>
-    /// actually failed for it -- never guessed. Every <see langword="false"/> row below carries a comment
-    /// naming the specific extra client-side properties that were observed to cause the failure.
+    /// empirically (Task 7 Part D2): a pair started marked <see langword="true"/>, and was to be flipped to
+    /// <see langword="false"/> only if <see cref="ExactMirrorPairsExposeNoExtraClientProperties"/> actually
+    /// failed for it -- never guessed. As of this writing, all 8 rows below are exact mirrors: none needed
+    /// to be flipped. A future <see langword="false"/> row must carry a comment naming the specific extra
+    /// client-side properties that were observed to cause the failure -- and
+    /// <see cref="ExactMirrorPairsExposeNoExtraClientProperties"/> itself asserts that a row marked
+    /// <see langword="false"/> genuinely has at least one such extra property, so a stale or lazy
+    /// <see langword="false"/> marking on an actually-exact pair is caught rather than silently accepted.
     /// </summary>
     public static IEnumerable<object[]> DtoPairs()
     {
@@ -111,16 +115,20 @@ public class ClientServerDtoParityTests
     /// Part D2: for pairs marked as exact mirrors in <see cref="DtoPairs"/>, the client must expose no
     /// properties the server lacks. Combined with <see cref="ClientDtoHasEveryServerProperty"/> (which
     /// already covers the other direction), this pins an exactly-equal property set -- and hence an equal
-    /// count -- for those pairs. Non-exact pairs are intentionally not checked here; see the comment on
-    /// their <see cref="DtoPairs"/> row for why they carry extra client-side properties.
+    /// count -- for those pairs.
+    ///
+    /// Fix round 1, Minor 4: a non-exact pair is not silently skipped by returning without an assertion --
+    /// this project's xUnit version (2.9.3) predates <c>Assert.Skip</c>, and a bare early <c>return</c>
+    /// reads, in a test-run report, exactly like a pass, which is how a pair could quietly stop being
+    /// checked by anyone scanning results rather than reading this method's source. Instead, a
+    /// <see langword="false"/> row is held to a meaningful assertion of its own: it must genuinely have at
+    /// least one extra client-side property, proving the <see langword="false"/> marking in
+    /// <see cref="DtoPairs"/> is truthful and not a stale or lazy mark on a pair that is actually exact.
     /// </summary>
     [Theory]
     [MemberData(nameof(DtoPairs))]
     public void ExactMirrorPairsExposeNoExtraClientProperties(Type serverType, Type clientType, bool isExactMirror)
     {
-        if (!isExactMirror)
-            return;
-
         var serverProps = serverType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(p => p.Name)
             .ToHashSet(StringComparer.Ordinal);
@@ -129,6 +137,13 @@ public class ClientServerDtoParityTests
             .ToHashSet(StringComparer.Ordinal);
 
         var extra = clientProps.Except(serverProps).ToList();
+
+        if (!isExactMirror)
+        {
+            extra.Should().NotBeEmpty(
+                $"{clientType.FullName} is marked non-exact (isExactMirror: false) in DtoPairs() against {serverType.FullName}, so it must genuinely carry at least one extra client-side property -- if it turns out to have none, the row should be marked exact instead of left as a stale non-exact flag");
+            return;
+        }
 
         extra.Should().BeEmpty(
             $"{clientType.FullName} is declared an exact mirror of {serverType.FullName} in DtoPairs() but exposes properties the server does not: {string.Join(", ", extra)}");
@@ -172,6 +187,19 @@ public class ClientServerDtoParityTests
         AreCompatible(typeof(FakeWidgetProjection), typeof(FakeWidgetDto)).Should().BeTrue();
     }
 
+    /// <summary>
+    /// Fix round 1, Minor 3: the three guards above all use pairs whose names already match by convention,
+    /// so none of them exercise clause 4's naming half at all. This proves an unrelated pair -- one whose
+    /// base names genuinely differ even after stripping -- is rejected on the name check alone, before the
+    /// (irrelevant, in this case identical) properties are ever compared.
+    /// </summary>
+    [Fact]
+    public void HouseTwinNamingConvention_rejects_unrelated_names_even_with_matching_suffixes()
+    {
+        AreCompatible(typeof(FakeThingProjection), typeof(FakeOtherThingDto)).Should().BeFalse(
+            "FakeThingProjection strips to \"FakeThing\" and FakeOtherThingDto strips to \"FakeOtherThing\" -- both carry a recognized house suffix, but the base names do not correspond, so this must fail on the name check alone");
+    }
+
     private sealed record FakeWidgetProjection(int Count, string Name);
     private sealed record FakeWidgetDto(int Count, string Name);
 
@@ -180,6 +208,9 @@ public class ClientServerDtoParityTests
 
     private sealed record FakeGizmoProjection(int Count, string Name);
     private sealed record FakeGizmoDto(string Name);
+
+    private sealed record FakeThingProjection(int Count);
+    private sealed record FakeOtherThingDto(int Count);
 
     /// <summary>
     /// Two property types are compatible, after unwrapping <see cref="Nullable{T}"/> to <c>T</c> on both
@@ -190,12 +221,14 @@ public class ClientServerDtoParityTests
     /// <c>Apperture.Core.Domain</c>);</description></item>
     /// <item><description>both are collections (<see cref="IEnumerable"/> and not <see cref="string"/>)
     /// whose element types are compatible by this same rule;</description></item>
-    /// <item><description>the two types have the same <see cref="MemberInfo.Name"/> (hand-maintained
-    /// client twins of server types -- <c>Apperture.Management.Client</c> deliberately does not reference
-    /// <c>Apperture.Core.Application</c>, so twins are expected and legitimate);</description></item>
-    /// <item><description>the two names match after stripping a trailing house-convention twin suffix from
-    /// either side (see <see cref="AreHouseTwins"/>), <em>and</em> their properties correspond
-    /// recursively.</description></item>
+    /// <item><description>the two <see cref="Type"/>s' names correspond -- either identical, or matching
+    /// after stripping a trailing house-convention twin suffix from either side (see
+    /// <see cref="AreHouseTwins"/>) -- <em>and</em> their properties correspond recursively. Fix round 1,
+    /// Important 1: an identical-name match is deliberately routed through the exact same recursive check
+    /// as a suffix-normalized match. Accepting a bare identical-name match on its own (the original,
+    /// unfixed clause 3) was the actual rubber stamp: it let a same-named client type with a silently
+    /// drifted shape pass with zero verification, which is precisely the class of defect this rule exists
+    /// to catch.</description></item>
     /// </list>
     /// Anything else is incompatible.
     /// </summary>
@@ -213,23 +246,28 @@ public class ClientServerDtoParityTests
         if (TryGetElementType(server, out var serverElement) && TryGetElementType(client, out var clientElement))
             return AreCompatible(serverElement, clientElement, visited);
 
-        if (string.Equals(server.Name, client.Name, StringComparison.Ordinal))
-            return true;
-
+        // Fix round 1, Important 1: identically-named types are NOT accepted here on the bare name match
+        // alone -- that was the actual rubber stamp (clause 4 required a name to differ by convention and
+        // then still verified the shape; a same-named pair was, backwards, checked less strictly than a
+        // differently-named one). AreHouseTwins's suffix strip is a no-op when the names are already
+        // identical, so an identically-named pair still goes through the exact same recursive property
+        // check as a Dto/Projection twin -- there is no separate "same name" fast path any more.
         return AreHouseTwins(server, client, visited);
     }
 
     /// <summary>
-    /// Clause 4. <c>Apperture.Management.Client</c> deliberately does not reference the server-side
-    /// assemblies (<c>Apperture.Core.Application</c>, <c>Apperture.ControlPlane.Security</c>), so every
-    /// client type that mirrors a server type is a hand-maintained twin, not a shared type. The codebase's
-    /// naming convention for those twins is a trailing <c>Dto</c> on the client side and, for
-    /// application-layer projections, a trailing <c>Projection</c> on the server side (e.g.
-    /// <c>IntegrationReadinessProjection</c> / <c>IntegrationReadinessDto</c>). A bare name match after
-    /// stripping those suffixes is a naming convention, not proof of compatibility on its own -- two types
-    /// that merely happen to be named alike after stripping, but whose shapes have actually drifted apart,
-    /// must still fail. So once the normalized names match, this recurses into the properties using the
-    /// same server-properties-subset-of-client-properties containment rule
+    /// Clause 4 (and, after fix round 1 Important 1, the only path for a name match of any kind --
+    /// identical or convention-normalized). <c>Apperture.Management.Client</c> deliberately does not
+    /// reference the server-side assemblies (<c>Apperture.Core.Application</c>,
+    /// <c>Apperture.ControlPlane.Security</c>), so every client type that mirrors a server type is a
+    /// hand-maintained twin, not a shared type. The codebase's naming convention for those twins is a
+    /// trailing <c>Dto</c> on the client side and, for application-layer projections, a trailing
+    /// <c>Projection</c> on the server side (e.g. <c>IntegrationReadinessProjection</c> /
+    /// <c>IntegrationReadinessDto</c>) -- stripping is a no-op for a pair whose names already match without
+    /// any suffix. A name match, with or without stripping, is a naming convention, not proof of
+    /// compatibility on its own -- two types that merely happen to be named alike, but whose shapes have
+    /// actually drifted apart, must still fail. So once the normalized names match, this recurses into the
+    /// properties using the same server-properties-subset-of-client-properties containment rule
     /// <see cref="ClientDtoHasEveryServerProperty"/> applies at the top level, checking each shared
     /// property's type for compatibility in turn. <paramref name="visited"/> guards against infinite
     /// recursion on a self-referential or mutually-referential pair of DTOs: a pair already in progress
@@ -240,13 +278,31 @@ public class ClientServerDtoParityTests
         if (!string.Equals(StripTrailingTwinSuffix(server.Name), StripTrailingTwinSuffix(client.Name), StringComparison.Ordinal))
             return false;
 
+        // Fix round 1, Minor 2: an enum has no "public instance properties" for the loop below to walk, so
+        // without this arm a same-named-but-differently-membered enum pair would fall through to the
+        // empty-server-properties guard and correctly fail -- but a genuinely differently-membered enum
+        // pair deserves its own explicit, readable check rather than an incidental one.
+        if (server.IsEnum || client.IsEnum)
+        {
+            return server.IsEnum && client.IsEnum
+                && Enum.GetNames(server).ToHashSet(StringComparer.Ordinal).SetEquals(Enum.GetNames(client));
+        }
+
         if (!visited.Add((server, client)))
             return true; // already being checked higher up this recursion -- break the cycle, assume compatible
+
+        var serverProps = server.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        // Fix round 1, Minor 2: without this, a property-less type (a marker class, or a record with no
+        // public instance properties) would vacuously pass the loop below with zero iterations -- a name
+        // match alone is not proof of compatibility for a type with nothing to compare.
+        if (serverProps.Length == 0)
+            return false;
 
         var clientProps = client.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .ToDictionary(p => p.Name, StringComparer.Ordinal);
 
-        foreach (var serverProp in server.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        foreach (var serverProp in serverProps)
         {
             if (!clientProps.TryGetValue(serverProp.Name, out var clientProp))
                 return false;
