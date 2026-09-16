@@ -230,14 +230,22 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             // Gate first, before ANY ownership-sensitive read (product decision P1).
             await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
 
+            // Authorized before the locked read -- mirrors PreviewScheduleMoveAsync's existing order, and
+            // for the same reason: AuthorizeScheduleAsync (§9.3) needs only the actor, not the loaded
+            // entity's identity (it is an instance-scoped schedule.manage check against a fixed resource
+            // descriptor, unlike Integration/Connection's authorization, which is forced to run after the
+            // load because it needs GetIdentity() off the freshly-read row). Running this after the read
+            // instead would let exception type (UnauthorizedAccessException vs. InvalidOperationException)
+            // leak whether a Schedule id exists to a caller who was never entitled to probe it -- the exact
+            // oracle CTX-3B Plan 1's final review fixed for PreviewScheduleMoveAsync (see
+            // ScheduleMovePreviewTests.Not_authorized_takes_priority_over_unknown_schedule_id). Do not
+            // reorder this to "match" MoveIntegrationAsync/MoveConnectionAsync -- their order is forced by a
+            // real data dependency Schedule does not have.
+            await AuthorizeScheduleAsync(actor, cancellationToken).ConfigureAwait(false);
+
             // Defense in depth on the row we will mutate (§8.4 step 1).
             var schedule = await _scheduleRepository.GetByIdForUpdateAsync(id, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
-
-            // Authorized inside the transaction, after the locked read -- matching MoveIntegrationAsync
-            // and MoveConnectionAsync's order (unlike PreviewScheduleMoveAsync, which authorizes first
-            // because it never opens a transaction or takes a row lock at all).
-            await AuthorizeScheduleAsync(actor, cancellationToken).ConfigureAwait(false);
 
             // The identical validator preview uses (§8.2) -- now against state re-read inside the gate.
             var preview = await ValidateScheduleMoveAsync(schedule, targetResourceContextId, cancellationToken).ConfigureAwait(false);

@@ -133,6 +133,27 @@ public sealed class ResourceOwnershipMoveMutationTests
     }
 
     [Fact]
+    public async Task Not_authorized_schedule_move_takes_priority_over_unknown_schedule_id()
+    {
+        // Regression coverage for review round 1 finding 1 (Task 6): mirrors
+        // ScheduleMovePreviewTests.Not_authorized_takes_priority_over_unknown_schedule_id. Schedule
+        // authorization is instance-scoped (§9.3) and needs nothing from the loaded row, so
+        // MoveScheduleAsync must authorize BEFORE the locked repository read -- unlike
+        // MoveIntegrationAsync/MoveConnectionAsync, whose authorization is forced to run after the load
+        // because it needs GetIdentity() off the freshly-read row. An authenticated caller who lacks
+        // schedule.manage must get UnauthorizedAccessException for a nonexistent schedule id, never
+        // InvalidOperationException -- otherwise the exception type itself would function as a
+        // schedule-existence oracle for callers who were never entitled to probe it.
+        await using var h = new ResourceOwnershipMoveTestHarness(grantedAction: null);
+        var target = await h.CreateApplicationAsync("Canvas");
+
+        var act = async () => await h.Service.MoveScheduleAsync(new(Guid.NewGuid().ToString("N")), target.Id);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>(
+            "an authenticated caller without schedule.manage must not be able to distinguish a missing schedule from an unauthorized one");
+    }
+
+    [Fact]
     public async Task Move_requires_the_family_permission_not_resource_context_manage()
     {
         await using var h = new ResourceOwnershipMoveTestHarness(
