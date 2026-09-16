@@ -138,6 +138,17 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
         }
     }
 
+    /// <summary>
+    /// Test-only synchronization point, fired inside the archive transaction after the gate has been
+    /// acquired and the ownership summary evaluated, but before commit. Lets a concurrency test hold this
+    /// transaction open at a precisely known moment and observe what a concurrent blocker-creating operation
+    /// does. Never set in production.
+    /// </summary>
+    internal Func<string, CancellationToken, Task>? MidTransactionHook { get; set; }
+
+    private Task FireHookAsync(string checkpoint, CancellationToken cancellationToken) =>
+        MidTransactionHook?.Invoke(checkpoint, cancellationToken) ?? Task.CompletedTask;
+
     /// <inheritdoc />
     /// <remarks>
     /// <see cref="IResourceContextService.ArchiveAsync"/> is a no-op (no state change, no save) when the
@@ -165,6 +176,9 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
 
             var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
             var archived = await _resourceContexts.ArchiveAsync(id, cancellationToken).ConfigureAwait(false);
+
+            await FireHookAsync("archive:validated", cancellationToken).ConfigureAwait(false);
+
             if (before is not null && before.IsActive)
             {
                 await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);

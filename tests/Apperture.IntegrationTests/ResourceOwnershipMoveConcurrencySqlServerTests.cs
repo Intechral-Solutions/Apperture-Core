@@ -394,6 +394,139 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         await AssertBindingsAreContextValidAsync(fixture, connection.Id);
     }
 
+    // ----------------------------------------------------------------------------------------------
+    // Test 7
+    // ----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// CTX-3B archive-concurrency integrity pass: this suite's direction is reversed from Tests 1-6 --
+    /// ARCHIVE is the side that holds the gate (via <see cref="ResourceContextManagementService.MidTransactionHook"/>'s
+    /// <c>"archive:validated"</c> checkpoint), while the blocker-creating operation (here, an Integration's
+    /// Retired -&gt; Active reactivation) is the side that must block and then be rejected against the
+    /// now-archived context.
+    /// </summary>
+    [Fact]
+    public async Task Archive_and_integration_reactivation_are_serialized()
+    {
+        await using var fixture = await RequireFixtureAsync("Apperture_ArchiveRace1_");
+
+        await using var setup = Env.Build(fixture);
+        var source = await CreateApplicationAsync(setup, "ArchiveRace1-Source");
+        var integration = await CreateIntegrationAsync(setup, source.Id); // Active by default.
+        await setup.Integrations.UpdateIntegrationAsync(integration.Id, new UpdateIntegrationRequest(State: IntegrationState.Retired));
+
+        await using var envA = Env.Build(fixture);
+        await using var envB = Env.Build(fixture);
+
+        var result = await RaceAsync<ResourceContext, DomainIntegration>(
+            checkpoint: "archive:validated",
+            operationA: hook =>
+            {
+                envA.ResourceContextManagementConcrete.MidTransactionHook = hook;
+                return envA.ResourceContextManagement.ArchiveAsync(source.Id).AsTask();
+            },
+            operationB: () => envB.Integrations.UpdateIntegrationAsync(
+                integration.Id, new UpdateIntegrationRequest(State: IntegrationState.Active)).AsTask(),
+            observeWindow: ObserveWindow);
+
+        AssertNoDeadlock(result.AException, result.BException);
+        result.BCompletedWhileAHeld.Should().BeFalse("the reactivation attempt must block behind the archive's ownership gate, not race it");
+        result.AException.Should().BeNull();
+        result.AResult!.IsActive.Should().BeFalse("the Retired integration does not block archive, so the context must have archived");
+        result.BException.Should().BeOfType<ResourceContextArchivedException>(
+            "once the context has archived, reactivating the integration must see the now-archived context and refuse -- never silently succeed");
+
+        (await setup.ResourceContexts.GetAsync(source.Id))!.IsActive.Should().BeFalse();
+        (await setup.IntegrationRepository.GetByIdAsync(integration.Id))!.State.Should().Be(
+            IntegrationState.Retired, "the rejected reactivation must not have persisted anything -- the integration must remain Retired");
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Test 8
+    // ----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Archive_and_connection_creation_are_serialized()
+    {
+        await using var fixture = await RequireFixtureAsync("Apperture_ArchiveRace2_");
+
+        await using var setup = Env.Build(fixture);
+        var context = await CreateApplicationAsync(setup, "ArchiveRace2-Empty"); // Owns nothing: archivable immediately.
+
+        await using var envA = Env.Build(fixture);
+        await using var envB = Env.Build(fixture);
+
+        var result = await RaceAsync<ResourceContext, Connection>(
+            checkpoint: "archive:validated",
+            operationA: hook =>
+            {
+                envA.ResourceContextManagementConcrete.MidTransactionHook = hook;
+                return envA.ResourceContextManagement.ArchiveAsync(context.Id).AsTask();
+            },
+            operationB: () => envB.Connections.CreateConnectionAsync(new CreateConnectionRequest(
+                new ConnectorDefinitionId($"test.connector.{Guid.NewGuid():N}"),
+                $"Connection-{Guid.NewGuid():N}",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>(),
+                ResourceContextId: context.Id)).AsTask(),
+            observeWindow: ObserveWindow);
+
+        AssertNoDeadlock(result.AException, result.BException);
+        result.BCompletedWhileAHeld.Should().BeFalse("connection creation must block behind the archive's ownership gate, not race it");
+        result.AException.Should().BeNull();
+        result.AResult!.IsActive.Should().BeFalse("the empty context has nothing to block its archive");
+        result.BException.Should().BeOfType<ResourceContextArchivedException>(
+            "ResolveForNewOwnershipAsync must see the now-archived target inside the gated transaction and refuse -- never silently create into it");
+
+        (await setup.ResourceContexts.GetAsync(context.Id))!.IsActive.Should().BeFalse();
+        (await setup.ResourceContextManagement.GetOwnershipSummaryAsync(context.Id)).ActiveConnections.Should().Be(
+            0, "the rejected creation must not have persisted a Connection into the now-archived context");
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Test 9
+    // ----------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Archive_and_schedule_enable_are_serialized()
+    {
+        await using var fixture = await RequireFixtureAsync("Apperture_ArchiveRace3_");
+
+        await using var setup = Env.Build(fixture);
+        var context = await CreateApplicationAsync(setup, "ArchiveRace3-Context");
+        // Seeded before the race (standalone creation is the ungated path -- see
+        // CreateStandaloneScheduleAsync's remarks): a Disabled schedule does not block archive.
+        var schedule = await CreateStandaloneScheduleAsync(setup, context.Id);
+
+        await using var envA = Env.Build(fixture);
+        await using var envB = Env.Build(fixture);
+
+        var result = await RaceAsync<ResourceContext, bool>(
+            checkpoint: "archive:validated",
+            operationA: hook =>
+            {
+                envA.ResourceContextManagementConcrete.MidTransactionHook = hook;
+                return envA.ResourceContextManagement.ArchiveAsync(context.Id).AsTask();
+            },
+            operationB: async () =>
+            {
+                await envB.Schedules.EnableAsync(schedule.Id);
+                return true;
+            },
+            observeWindow: ObserveWindow);
+
+        AssertNoDeadlock(result.AException, result.BException);
+        result.BCompletedWhileAHeld.Should().BeFalse("the enable attempt must block behind the archive's ownership gate, not race it");
+        result.AException.Should().BeNull();
+        result.AResult!.IsActive.Should().BeFalse("the Disabled schedule does not block archive, so the context must have archived");
+        result.BException.Should().BeOfType<ResourceContextArchivedException>(
+            "the reactivation guard must see the now-archived owning context and refuse to enable -- never silently succeed");
+
+        (await setup.ResourceContexts.GetAsync(context.Id))!.IsActive.Should().BeFalse();
+        (await setup.ScheduleRepository.GetDefinitionAsync(schedule.Id))!.Enabled.Should().BeFalse(
+            "the rejected enable must not have persisted anything -- the schedule must remain Disabled");
+    }
+
     // ================================================================================================
     // Shared race harness
     // ================================================================================================
@@ -615,6 +748,31 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         Version: 1,
         integrationId);
 
+    /// <summary>
+    /// A standalone (non-Integration-attached), Disabled schedule directly owned by
+    /// <paramref name="contextId"/>. Standalone creation is the ungated path
+    /// (<see cref="SqlScheduleManagementService.CreateScheduleAsync"/>'s <c>IntegrationId is null</c>
+    /// branch), so this is seeded BEFORE any race begins -- the race under test in
+    /// <see cref="Archive_and_schedule_enable_are_serialized"/> is Archive vs. <c>EnableAsync</c> on this
+    /// already-persisted row, not Archive vs. schedule creation itself.
+    /// </summary>
+    private static Task<ScheduleDefinition> CreateStandaloneScheduleAsync(Env env, ResourceContextId contextId) =>
+        env.Schedules.CreateScheduleAsync(NewStandaloneScheduleDefinition(contextId)).AsTask();
+
+    private static ScheduleDefinition NewStandaloneScheduleDefinition(ResourceContextId contextId) => new ScheduleDefinition(
+        new ScheduleId(Guid.NewGuid().ToString("N")[..24]),
+        "Standalone-Nightly",
+        "0 0 * * *",
+        "UTC",
+        Enabled: false,
+        new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+        ExecutionPolicyRef: null,
+        Version: 1,
+        IntegrationId: null)
+    {
+        ResourceContextId = contextId
+    };
+
     // ================================================================================================
     // Environment: one full set of REAL production services wired against one AppertureDbContext.
     // ================================================================================================
@@ -647,6 +805,14 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         /// and is exactly the seam these tests need to control.
         /// </summary>
         public required ResourceOwnershipMoveService MoveService { get; init; }
+
+        /// <summary>
+        /// Same instance as <see cref="ResourceContextManagement"/>, exposed as its concrete type --
+        /// mirrors <see cref="MoveService"/>'s reason for existing: <see cref="ResourceContextManagementService.MidTransactionHook"/>
+        /// is internal on the concrete class, and is exactly the seam the Archive-vs-blocker-creation
+        /// races below need to control.
+        /// </summary>
+        public required ResourceContextManagementService ResourceContextManagementConcrete { get; init; }
 
         public static Env Build(SqlServerScratchDatabase fixture)
         {
@@ -730,6 +896,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 Bindings = bindings,
                 Schedules = schedules,
                 ResourceContextManagement = resourceContextManagement,
+                ResourceContextManagementConcrete = resourceContextManagement,
                 MoveService = moveService,
             };
         }
