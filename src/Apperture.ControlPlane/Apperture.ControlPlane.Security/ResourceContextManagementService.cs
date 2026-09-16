@@ -1,8 +1,11 @@
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -21,19 +24,25 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IAuditService _audit;
+    private readonly AppertureDbContext _db;
+    private readonly IResourceOwnershipMutationGate _ownershipGate;
 
     public ResourceContextManagementService(
         IResourceContextService resourceContexts,
         IResourceContextRepository resourceContextRepository,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
-        IAuditService audit)
+        IAuditService audit,
+        AppertureDbContext db,
+        IResourceOwnershipMutationGate ownershipGate)
     {
         _resourceContexts = resourceContexts;
         _resourceContextRepository = resourceContextRepository;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _audit = audit;
+        _db = db;
+        _ownershipGate = ownershipGate;
     }
 
     /// <inheritdoc />
@@ -138,13 +147,33 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
     public async ValueTask<ResourceContext> ArchiveAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
         var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
-        var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        var archived = await _resourceContexts.ArchiveAsync(id, cancellationToken).ConfigureAwait(false);
-        if (before is not null && before.IsActive)
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);
-        }
-        return archived;
+            _db.ChangeTracker.Clear();
+
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // The archive rule is a statement about ownership ("nothing live"), so evaluating it is an
+            // ownership-sensitive read and archiving is an ownership-sensitive mutation. Without the gate,
+            // a concurrent move into this context can add live ownership between the summary read and the
+            // state change, producing an archived Application that owns a live Integration.
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
+            var archived = await _resourceContexts.ArchiveAsync(id, cancellationToken).ConfigureAwait(false);
+            if (before is not null && before.IsActive)
+            {
+                await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);
+            }
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return archived;
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

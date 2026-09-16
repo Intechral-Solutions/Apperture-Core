@@ -226,6 +226,21 @@ public sealed class ResourceContextManagementServiceTests
     }
 
     [Fact]
+    public async Task Archive_reads_ownership_under_the_ownership_gate()
+    {
+        // Documents the contract at the unit level: ArchiveAsync must not evaluate the ownership summary
+        // before acquiring the gate. The observable proof is Task 8's
+        // Move_into_target_and_archive_target_are_serialized SQL Server test; this test pins the call
+        // order so a refactor cannot silently drop the gate.
+        await using var harness = ManagementServiceTestHarness.WithRecordingGate();
+        var app = await harness.Service.CreateAsync("CampusNexus", slug: null, description: null, CancellationToken.None);
+
+        await harness.Service.ArchiveAsync(app.Id, CancellationToken.None);
+
+        harness.Gate!.AcquiredBeforeFirstOwnershipRead.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ListAsync_RequiresNoPermission()
     {
         await using var harness = ManagementServiceTestHarness.WithNoPermissions();
