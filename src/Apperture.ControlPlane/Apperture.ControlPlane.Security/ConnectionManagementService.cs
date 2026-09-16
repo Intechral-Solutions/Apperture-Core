@@ -1,10 +1,13 @@
 using System.Linq;
 using Apperture.Core.Application.Connector;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -20,6 +23,8 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IConnectionVerificationService _connectionVerification;
     private readonly ConnectionSecretMaterialProvisioner _secretProvisioner;
     private readonly IResourceContextService _resourceContexts;
+    private readonly AppertureDbContext _db;
+    private readonly IResourceOwnershipMutationGate _ownershipGate;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
@@ -28,7 +33,9 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         IConnectorDefinitionRegistry connectorRegistry,
         IConnectionVerificationService connectionVerification,
         ConnectionSecretMaterialProvisioner secretProvisioner,
-        IResourceContextService resourceContexts)
+        IResourceContextService resourceContexts,
+        AppertureDbContext db,
+        IResourceOwnershipMutationGate ownershipGate)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -37,6 +44,8 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         _connectionVerification = connectionVerification;
         _secretProvisioner = secretProvisioner;
         _resourceContexts = resourceContexts;
+        _db = db;
+        _ownershipGate = ownershipGate;
     }
 
     /// <inheritdoc />
@@ -110,13 +119,6 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (def is null)
             throw new InvalidOperationException($"Connector definition {request.ConnectorDefinitionId.Value} not found.");
 
-        // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
-        // existing create clients stay compatible. A supplied context must exist and be Active.
-        // Ownership never affects secret provisioning below: secret refs are opaque and stay put.
-        var owningContext = await _resourceContexts
-            .ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken)
-            .ConfigureAwait(false);
-
         var id = new ConnectionId(Guid.NewGuid().ToString("N")[..24]);
 
         var normalizedConfig = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
@@ -144,21 +146,45 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         ApplyCampusNexusAuthModeDefault(def, normalizedConfig);
         ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, normalizedConfig, mergedSecretRefs);
 
-        var connection = new Connection(
-            id,
-            request.ConnectorDefinitionId,
-            request.Name,
-            normalizedConfig,
-            mergedSecretRefs,
-            request.ScopeKey,
-            request.OwnerId,
-            ConnectionState.Active)
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            ResourceContextId = owningContext.Id
-        };
+            _db.ChangeTracker.Clear();
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
 
-        await _connectionRepository.AddAsync(connection, cancellationToken);
-        return connection;
+            // Gate first: a new Active Connection is an archive-blocking resource entering a context, so
+            // this must not interleave with a concurrent Archive evaluating that same context's ownership
+            // summary (CTX-3B follow-on: closes the create-vs-archive race Plan 2's own final review flagged).
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
+            // existing create clients stay compatible. A supplied context must exist and be Active.
+            // Ownership never affects secret provisioning above: secret refs are opaque and stay put.
+            var owningContext = await _resourceContexts
+                .ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken)
+                .ConfigureAwait(false);
+
+            var connection = new Connection(
+                id,
+                request.ConnectorDefinitionId,
+                request.Name,
+                normalizedConfig,
+                mergedSecretRefs,
+                request.ScopeKey,
+                request.OwnerId,
+                ConnectionState.Active)
+            {
+                ResourceContextId = owningContext.Id
+            };
+
+            await _connectionRepository.AddAsync(connection, cancellationToken).ConfigureAwait(false);
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return connection;
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

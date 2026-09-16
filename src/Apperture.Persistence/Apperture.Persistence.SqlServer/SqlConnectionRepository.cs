@@ -77,8 +77,8 @@ public sealed class SqlConnectionRepository : IConnectionRepository
         entity.ConfigJson = JsonSerializer.Serialize(connection.Config);
         entity.SecretRefsJson = JsonSerializer.Serialize(connection.SecretRefs);
         entity.ScopeKey = connection.ScopeKey;
-        // Ownership is established at create time. CTX-1 has no move operation, so UpdateAsync
-        // deliberately does not rewrite ResourceContextId.
+        // Ownership only ever changes through the narrow SetResourceContextIdAsync method below (added
+        // in CTX-3B Plan 2 for ResourceOwnershipMoveService), never through this general UpdateAsync.
         entity.OwnerId = connection.OwnerId;
         entity.State = (int)connection.State;
         entity.LastVerificationStatus = (int)connection.LastVerificationStatus;
