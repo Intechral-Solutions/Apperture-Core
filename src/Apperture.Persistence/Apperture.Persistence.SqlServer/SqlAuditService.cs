@@ -33,7 +33,8 @@ public sealed class SqlAuditService : IAuditService
             ModuleId = record.ModuleId,
             ScheduleId = record.ScheduleId,
             RunId = record.RunId,
-            ResourceContextId = record.ResourceContextId
+            ResourceContextId = record.ResourceContextId,
+            CorrelationId = record.CorrelationId.Value
         });
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -58,7 +59,7 @@ public sealed class SqlAuditService : IAuditService
             Resource: null,
             Outcome: e.Outcome ?? "",
             e.At,
-            new CorrelationId(null),
+            new CorrelationId(e.CorrelationId),
             e.Details,
             ModuleId: e.ModuleId,
             ScheduleId: e.ScheduleId,
@@ -91,7 +92,7 @@ public sealed class SqlAuditService : IAuditService
             Resource: null,
             Outcome: entity.Outcome ?? "",
             entity.At,
-            new CorrelationId(null),
+            new CorrelationId(entity.CorrelationId),
             entity.Details,
             ModuleId: entity.ModuleId,
             ScheduleId: entity.ScheduleId,

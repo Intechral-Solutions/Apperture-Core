@@ -17,7 +17,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.7")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -160,6 +160,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Details")
                         .HasColumnType("nvarchar(max)");

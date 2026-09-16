@@ -26,4 +26,11 @@ public sealed class AuditLogEntity
     /// System/IAM/platform-settings audit and for pre-CTX-2 rows.
     /// </summary>
     public string? ResourceContextId { get; set; }
+
+    /// <summary>
+    /// CTX-3B: links two related audit records (e.g. a move's departure and arrival rows) that share
+    /// one operation. Null for every audit action that predates this column and for actions that are
+    /// not part of a multi-record operation.
+    /// </summary>
+    public string? CorrelationId { get; set; }
 }
