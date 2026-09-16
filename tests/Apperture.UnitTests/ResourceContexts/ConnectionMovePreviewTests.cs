@@ -19,6 +19,10 @@ public sealed class ConnectionMovePreviewTests
         var preview = await h.Service.PreviewConnectionMoveAsync(connection.Id, target.Id);
 
         preview.CanMove.Should().BeTrue();
+        // Fix round 1, Minor 2: pins that BuildPreview's now-parameterized resourceType argument was
+        // wired correctly -- the refactor made a family/resourceType transposition compile where it used
+        // to be impossible (each family previously had its own hard-coded Build*Preview helper).
+        preview.ResourceType.Should().Be(ResourceMoveResourceTypes.Connection);
     }
 
     [Fact]

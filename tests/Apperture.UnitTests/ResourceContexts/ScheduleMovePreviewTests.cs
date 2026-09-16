@@ -18,9 +18,15 @@ public sealed class ScheduleMovePreviewTests
         var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, target.Id);
 
         preview.CanMove.Should().BeFalse();
+        preview.ResourceType.Should().Be(ResourceMoveResourceTypes.Schedule);
         var blocker = preview.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.ScheduleAttachedToIntegration).Subject;
         blocker.RelatedResourceType.Should().Be(ResourceMoveResourceTypes.Integration);
         blocker.RelatedResourceId.Should().Be(integration.Id.Value);
+        // Fix round 1, Important 1: an attached Schedule's preview still fetches and reports the real
+        // target ref -- the attachment blocker fires regardless, but preview.Target is part of the
+        // API/UI contract and an operator must see the actual destination, not the target's raw id.
+        preview.Target.Id.Should().Be(target.Id.Value);
+        preview.Target.Name.Should().Be("Canvas");
     }
 
     [Fact]
@@ -34,6 +40,10 @@ public sealed class ScheduleMovePreviewTests
         var preview = await h.Service.PreviewScheduleMoveAsync(schedule.Id, target.Id);
 
         preview.CanMove.Should().BeTrue();
+        preview.ResourceType.Should().Be(ResourceMoveResourceTypes.Schedule);
+        preview.Blockers.Should().BeEmpty();
+        preview.Source.Id.Should().Be(source.Id.Value);
+        preview.Target.Id.Should().Be(target.Id.Value);
     }
 
     [Fact]
