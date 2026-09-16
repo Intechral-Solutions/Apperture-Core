@@ -49,6 +49,10 @@ public sealed class SqlResourceOwnershipMutationGate : IResourceOwnershipMutatio
         var connection = _db.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction.GetDbTransaction();
+        // Must exceed the server-side @LockTimeout below so the app-lock timeout always wins the race;
+        // otherwise ADO.NET's own 30s default command timeout could fire first and leak a raw, unwrapped
+        // SqlException instead of the documented ResourceOwnershipBusyException.
+        command.CommandTimeout = Math.Max((int)_timeout.TotalSeconds + 5, 30);
         command.CommandText =
             "EXEC @result = sp_getapplock @Resource = @resource, @LockMode = N'Exclusive', " +
             "@LockOwner = N'Transaction', @LockTimeout = @lockTimeout;";
