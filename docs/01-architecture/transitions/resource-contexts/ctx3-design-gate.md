@@ -395,7 +395,14 @@ Counts are per family, using live counts only; retired or disabled resources app
 
 Retired Integrations, retired Connections and disabled Schedules stay owned by the archived context. They remain visible under `?context=<id>` and keep their history.
 
-**Guard while archived.** Any transition that would make an owned resource live again is rejected with 409: "{Application} is archived. Unarchive it first." This covers Integration activate, Connection un-retire if such a path exists, and Schedule enable. Sonnet must enumerate the actual transitions that exist in `IntegrationManagementService`, `ConnectionManagementService` and `SqlScheduleManagementService`, and guard each one. Integration reactivation paths were not fully enumerated in this pass.
+**Guard while archived.** Any transition that would make an owned resource live again is rejected with 409: "{Application} is archived. Unarchive it first." This covers Integration activate, Connection un-retire if such a path exists, and Schedule enable.
+
+**Enumeration completed (CTX-3B archive-concurrency integrity pass, post-Plan-2).** The full set of guarded, blocker-producing transitions, confirmed against `BlocksArchive` (`LiveIntegrations` counts Active **and** Inactive, since only `Retired` doesn't block):
+- Integration: Retired → Active, **and Retired → Inactive** (the guard originally only covered the former; widened because `BlocksArchive` treats Inactive identically to Active, so this transition also flips a context from archivable to non-archivable). Active ↔ Inactive is unguarded — both already block, so neither transition changes archive eligibility.
+- Connection: confirmed no un-retire/reactivate path exists anywhere (`ConnectionState` is a 2-value enum, `Active`/`Retired`; locked in by a dedicated test that intentionally breaks if this ever changes).
+- Schedule: Disabled → Enabled, via both `EnableAsync` and the generic update path (`UpdateScheduleAsync`), guarded identically.
+
+All of the above are additionally serialized against a concurrent Archive via `IResourceOwnershipMutationGate` (the same transaction-owned SQL Server application lock `ResourceContextManagementService.ArchiveAsync` itself acquires before evaluating the ownership summary), closing the race where a concurrent reactivation/creation could commit between Archive's summary read and its commit. Standalone Schedule creation is excluded from this gate: it has no operator/API-reachable path in the current system (`POST /api/schedules` requires a non-empty `IntegrationId`; the Integration-scoped route always supplies one), so there is no live concurrency risk to close, only a latent one if that surface is ever added.
 
 Why this refinement is required rather than optional:
 
