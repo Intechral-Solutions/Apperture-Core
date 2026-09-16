@@ -1,8 +1,8 @@
 # CTX-3A closure — Application Workspaces
 
-Date: 2026-09-15
+Date: 2026-09-15 (post-closure stabilization addendum added same day — see §8)
 Status: **Complete as an internal engineering milestone. CTX-3B may begin.**
-Branch: `resource-contexts` — CTX-3A landed as a sequence of 71 commits between `94b19bfb` (design gate + plan) and `f8bd3ad` (this closure's last content commit).
+Branch: `resource-contexts` — CTX-3A landed as a sequence of 71 commits between `94b19bfb` (design gate + plan) and `f8bd3ad` (this closure's last content commit). Six real defects were then found via the manual smoke checklist this closure itself mandated (§7) and fixed in four further commits, `a123896`..`a8f098a` — see §8.
 Design basis: [`ctx3-design-gate.md`](./ctx3-design-gate.md)
 
 ---
@@ -92,7 +92,33 @@ Run 2026-09-15, on the current `resource-contexts` HEAD (`f8bd3ad`):
 
 Also confirm dark and light appearance render correctly throughout, and that a narrow (mobile-width) layout does not break the selector, scoped list filters, or Control Center's pill groups.
 
-## 8. Deferred
+## 8. Post-closure stabilization (same day, commits `a123896`..`a8f098a`)
+
+The manual browser smoke checklist mandated in §7 was subsequently performed and found six real, fixable defects, addressed in four commits on top of this closure's `f8bd3ad` baseline:
+
+1. **First-schedule creation dead button** (`a123896`) — on an Integration with zero existing schedules, the empty-state's "Add schedule" button set internal state but the create form couldn't render, so the button did nothing. Widened the render gate to include the in-progress-adding state.
+2. **Control Center not live-updating on View switch** (`a123896`) — the View-change event handler called `LoadAsync()` directly from a plain C# event, which never triggers Blazor's post-handler re-render; wrapped it in `InvokeAsync` with an explicit `StateHasChanged()`.
+3. **Integration `Retired` state unreachable** (`e3cb98e`) — `IntegrationState.Retired` was real and already load-bearing (archive-blocking math, the reactivation guard) but no operator path could ever produce it: no dedicated service method, API route, client method, or UI control existed. Added `RetireIntegrationAsync` end-to-end (service → controller `POST /integrations/{id}/retire` → client → a Retire button/banner on the Integration detail page), reusing the existing `integration.update` authorization check. Reactivating a Retired Integration already worked via the existing Activate path and archived-context guard, so nothing there needed to change.
+4. **Lifecycle conflict errors showed raw framework text** (`ac9fee8`) — `ActivateIntegrationAsync`/`DeactivateIntegrationAsync`/`RetireIntegrationAsync` on the management client called the bare `HttpResponseMessage.EnsureSuccessStatusCode()`, whose message strings are trimmed under Blazor WASM, so a 409 from the archived-Application reactivation guard rendered to the operator as the literal untranslated resource key (`net_http_message_not_success_statuscode_reason, 409, Conflict`) instead of the server's actual domain message. Switched all three to the file's own established `EnsureSuccessOrThrowAsync` convention, which was already used by ~30 other client methods and parses the API's `{ "error": ... }` body into the thrown exception's message. Confirmed by browser re-smoke: an archived Application's Retired Integration now shows the real domain message (e.g. "*... is archived. Unarchive it first before activating this integration.*") and remains correctly unactivated.
+5. **Archive-blocker copy mislabeled Inactive Integrations as "active"** (`a8f098a`) — both the server exception message and the `ApplicationDetail.razor` blocker banner described the count of Integrations blocking archive as "N active integration(s)," but §6.5's rule is "no Integration whose state is not Retired" — an Inactive Integration blocks archive exactly like an Active one. Reworded to "N integration(s) not retired" in both places (no change to the archive rule itself), and the closing instruction now names the actual required actions instead of the vaguer "Retire or disable them first."
+6. **Cross-tab archive smoke wording implied an automatic live update** — item 26 of the checklist below previously read as if an already-open tab flips to All immediately when another tab archives its selected Application. There are no cross-tab storage listeners or push updates by design (§4.3 of the design gate); a stale view is only corrected the next time it's resolved (refresh, or navigating to a scoped route). Reworded the step accordingly (already reflected in §7's checklist above).
+
+Also recovered during this pass, unrelated to CTX-3A code: the dedicated `apperture-test-sql` integration-test SQL Server container (separate by design from Aspire's dev SQL Server, so tests can freely migrate/recreate schema without touching manually-curated dev data) had drifted to an unrecoverable local password and stale leftover data from a prior run. Recovered its real password via `docker inspect`, updated the local (gitignored) `.env`, documented it outside the repo, and dropped its three stale test databases so migrations recreate them fresh.
+
+**Updated validation** (re-run after all six fixes, same day):
+
+| Check | Result |
+|---|---|
+| `Apperture.UnitTests` (full, unfiltered) | ✅ 2170/2170 passed (+11 over this closure's original 2159: +1 pre-existing in `5f49ae7`, +10 new regression tests across the four stabilization commits) |
+| `Apperture.Management.Ui.Shared.Tests` (full) | ✅ 831/831 passed (unchanged) |
+| `Apperture.Management.Ui.Client.Tests` (full) | ✅ 19/19 passed (unchanged) |
+| `Apperture.ArchTests` (full) | ✅ 38/38 passed (unchanged) |
+| `Apperture.IntegrationTests` (full) | ✅ 204/204 passed (unchanged count; required recovering the local test-SQL environment described above first) |
+| `dotnet build Apperture.slnx` (full solution) | ✅ 0 errors |
+
+**Browser smoke, updated:** the six defects above were each confirmed fixed via targeted browser re-smoke (the specific broken flow, re-tested until it worked). The full 26-step checklist in §7 has not been separately re-walked end-to-end as one sitting since these fixes landed; nothing in the fixes above touches steps other than 23/26 (archive-blocker wording, cross-tab wording), so the rest of the checklist's original standing (never executed as a single pass) is unchanged. No further blocker is known.
+
+## 9. Deferred
 
 - **CTX-3B resource movement** — preview/move endpoints, `IResourceOwnershipMoveService`, row-lock serialization against concurrent binding creation, the two-sided move audit model, and the `binding_cross_context` readiness code. This is the epic's next and final phase; the Application feature does not ship until it lands.
 - **Integration hard-delete referential-lifecycle audit** — confirmed, reproducible gap: `DeleteIntegrationAsync` blocks only on existing bindings and schedules, and `NotificationDefinitions.IntegrationId` carries no foreign key, so a hard delete can silently orphan Integration-scoped `NotificationDefinition`/subscription rows. Config Inventory already classifies these as "Unknown context" as an interim mitigation. The design gate requires a full referential-lifecycle inventory and a deliberate per-dependent decision (block vs. clean up) before CTX-3B can be considered closed — not before CTX-3A, and CTX-3A introduced no one-off guard for it, per the design gate's explicit instruction not to.
@@ -103,7 +129,7 @@ Also confirm dark and light appearance render correctly throughout, and that a n
 - **Dashboard Panels** — deferred, unaffected.
 - No task in Plan 6 was cut to the design gate's own "Unscoped banner" escape hatch — the rejected-external-controls join (the one piece explicitly flagged as cuttable) was implemented in full and is covered by a passing test (`ListAttentionAsync_RejectedControls_FilterThroughJoinToOperationRunsResourceContextId`).
 
-## 9. Acceptance criteria
+## 10. Acceptance criteria
 
 | Criterion (design gate §14, CTX-3A) | Status |
 |---|---|
@@ -137,7 +163,7 @@ Also confirm dark and light appearance render correctly throughout, and that a n
 | No `context:` scope key/role/grant/capability exists; CTX-1 non-change tests green except the one deliberately updated assertion | ✅ |
 | ResourceContext lifecycle ops write audit with `ResourceContextId` = that context | ✅ |
 | Client/server DTO parity test passes for all Plan-1 types | ✅ |
-| Full unfiltered `Apperture.UnitTests`, `Ui.Shared.Tests`, `ArchTests`, `IntegrationTests` green; browser smoke performed | ⚠️ — all four suites ✅ (§7); browser smoke **not performed this session** (manual checklist provided above; environment could not be safely confirmed) |
+| Full unfiltered `Apperture.UnitTests`, `Ui.Shared.Tests`, `ArchTests`, `IntegrationTests` green; browser smoke performed | ✅ — all four suites ✅ (§7, reconfirmed §8); the manual checklist's execution surfaced six real defects (§8), all fixed and each individually reconfirmed by re-smoke. No known blocker remains. |
 
 ---
 
