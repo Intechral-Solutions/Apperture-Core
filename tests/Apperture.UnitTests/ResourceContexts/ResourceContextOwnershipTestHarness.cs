@@ -102,7 +102,9 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             BindingRepository,
             ConnectionRepository,
             Eligibility,
-            IntegrationRepository);
+            IntegrationRepository,
+            Db,
+            new SqlResourceOwnershipMutationGate(Db));
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,

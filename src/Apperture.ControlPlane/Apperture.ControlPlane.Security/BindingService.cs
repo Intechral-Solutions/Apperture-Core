@@ -4,7 +4,9 @@ using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -19,6 +21,8 @@ public sealed class BindingService : IBindingService
     private readonly IConnectionRepository _connectionRepository;
     private readonly IBindingEligibilityService _eligibilityService;
     private readonly IIntegrationRepository _integrationRepository;
+    private readonly AppertureDbContext _db;
+    private readonly IResourceOwnershipMutationGate _ownershipGate;
 
     public BindingService(
         IPrincipalContext principalContext,
@@ -26,7 +30,9 @@ public sealed class BindingService : IBindingService
         IBindingRepository bindingRepository,
         IConnectionRepository connectionRepository,
         IBindingEligibilityService eligibilityService,
-        IIntegrationRepository integrationRepository)
+        IIntegrationRepository integrationRepository,
+        AppertureDbContext db,
+        IResourceOwnershipMutationGate ownershipGate)
     {
         _principalContext = principalContext;
         _auth = auth;
@@ -34,6 +40,8 @@ public sealed class BindingService : IBindingService
         _connectionRepository = connectionRepository;
         _eligibilityService = eligibilityService;
         _integrationRepository = integrationRepository;
+        _db = db;
+        _ownershipGate = ownershipGate;
     }
 
     /// <inheritdoc />
@@ -49,61 +57,73 @@ public sealed class BindingService : IBindingService
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var integrationIdVal = integrationId;
-        var integration = await _integrationRepository.GetByIdAsync(integrationIdVal, cancellationToken)
-            ?? throw new InvalidOperationException($"Integration {integrationIdVal.Value} not found.");
-        if (integration.ModuleId != moduleId)
-            throw new InvalidOperationException($"Integration module {integration.ModuleId} does not match binding module {moduleId}.");
-
-        var identity = integration.GetIdentity();
-        var allowedIntegration = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.IntegrationUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
-            GovernedResourceDescriptor.FromIdentity(identity),
-            identity,
-            cancellationToken);
-        if (!allowedIntegration)
-            throw new UnauthorizedAccessException("Not authorized to manage bindings for this integration.");
-
-        var existing = await _bindingRepository.GetBySlotAndIntegrationAsync(moduleId, slotName, integrationIdVal, cancellationToken);
-        if (existing is not null && existing.State == BindingState.Active)
-            throw new InvalidOperationException($"Slot {slotName} is already bound for this integration.");
-
-        var slotScopeKey = ScopeKeyConstants.Slot(moduleId, slotName);
-        var allowed = await _auth.EvaluateAsync(
-            actor,
-            new PermissionDescriptor(ActionConstants.BindingAssign, new ResourceDescriptor(ResourceTypeConstants.Binding, slotScopeKey)),
-            null,
-            null,
-            cancellationToken);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Not authorized to assign bindings to this slot.");
-
-        // Authoritative ResourceContext reference check. Eligibility below also applies the rule, but
-        // integrity must not depend on a discovery query: an Integration may only bind a Connection in
-        // its own ResourceContext or in Shared.
-        var connection = await _connectionRepository.GetByIdAsync(connectionId, cancellationToken)
-            ?? throw new InvalidOperationException($"Connection {connectionId.Value} not found.");
-        if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, connection.ResourceContextId))
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            throw new InvalidOperationException(
-                $"Connection {connectionId.Value} belongs to ResourceContext '{connection.ResourceContextId.Value}', which is neither this Integration's ResourceContext ('{integration.ResourceContextId.Value}') nor Shared.");
-        }
+            // EnableRetryOnFailure is active: every attempt must be self-contained.
+            _db.ChangeTracker.Clear();
 
-        var eligible = await _eligibilityService.GetEligibleConnectionsAsync(
-            moduleId,
-            slotName,
-            contractType,
-            integration.ResourceContextId,
-            cancellationToken);
-        if (!eligible.Any(c => c.Id.Value == connectionId.Value))
-            throw new InvalidOperationException($"Connection {connectionId.Value} is not eligible for binding to slot {moduleId}:{slotName}.");
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
 
-        var bindingId = new BindingId(Guid.NewGuid().ToString("N")[..24]);
-        var binding = new Binding(bindingId, integrationIdVal, moduleId, slotName, contractType, connectionId, null, BindingState.Active);
+            // Design gate §8.7 / product decision P1: creating a binding asserts a cross-context
+            // relationship, so it is an ownership-sensitive mutation and takes the gate FIRST -- before
+            // reading either row. A concurrent Integration move, Connection move or archive is therefore
+            // either entirely before or entirely after this transaction, never interleaved with it.
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
 
-        await _bindingRepository.AddAsync(binding, cancellationToken);
-        return binding;
+            var integration = await _integrationRepository.GetByIdForUpdateAsync(integrationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Integration {integrationId.Value} not found.");
+            if (integration.ModuleId != moduleId)
+                throw new InvalidOperationException($"Integration module {integration.ModuleId} does not match binding module {moduleId}.");
+
+            var identity = integration.GetIdentity();
+            var allowedIntegration = await _auth.EvaluateAsync(
+                actor,
+                new PermissionDescriptor(ActionConstants.IntegrationUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity,
+                cancellationToken).ConfigureAwait(false);
+            if (!allowedIntegration)
+                throw new UnauthorizedAccessException("Not authorized to manage bindings for this integration.");
+
+            var existing = await _bindingRepository.GetBySlotAndIntegrationAsync(moduleId, slotName, integrationId, cancellationToken).ConfigureAwait(false);
+            if (existing is not null && existing.State == BindingState.Active)
+                throw new InvalidOperationException($"Slot {slotName} is already bound for this integration.");
+
+            var slotScopeKey = ScopeKeyConstants.Slot(moduleId, slotName);
+            var allowed = await _auth.EvaluateAsync(
+                actor,
+                new PermissionDescriptor(ActionConstants.BindingAssign, new ResourceDescriptor(ResourceTypeConstants.Binding, slotScopeKey)),
+                null, null, cancellationToken).ConfigureAwait(false);
+            if (!allowed)
+                throw new UnauthorizedAccessException("Not authorized to assign bindings to this slot.");
+
+            // Authoritative ResourceContext reference check against a fresh, locked read of the Connection
+            // row, inside the gate. No concurrent move can have committed between this read and this
+            // transaction's own commit.
+            var connection = await _connectionRepository.GetByIdForUpdateAsync(connectionId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Connection {connectionId.Value} not found.");
+            if (!ResourceContextReferenceRule.CanReference(integration.ResourceContextId, connection.ResourceContextId))
+            {
+                throw new InvalidOperationException(
+                    $"Connection {connectionId.Value} belongs to ResourceContext '{connection.ResourceContextId.Value}', which is neither this Integration's ResourceContext ('{integration.ResourceContextId.Value}') nor Shared.");
+            }
+
+            var eligible = await _eligibilityService.GetEligibleConnectionsAsync(
+                moduleId, slotName, contractType, integration.ResourceContextId, cancellationToken).ConfigureAwait(false);
+            if (!eligible.Any(c => c.Id.Value == connectionId.Value))
+                throw new InvalidOperationException($"Connection {connectionId.Value} is not eligible for binding to slot {moduleId}:{slotName}.");
+
+            var bindingId = new BindingId(Guid.NewGuid().ToString("N")[..24]);
+            var created = new Binding(bindingId, integrationId, moduleId, slotName, contractType, connectionId, null, BindingState.Active);
+            await _bindingRepository.AddAsync(created, cancellationToken).ConfigureAwait(false);
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return created;
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

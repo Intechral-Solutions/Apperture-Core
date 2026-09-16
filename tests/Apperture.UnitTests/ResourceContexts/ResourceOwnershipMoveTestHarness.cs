@@ -85,7 +85,9 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             BindingRepository,
             ConnectionRepository,
             new BindingEligibilityService(ConnectionRepository, connectorRegistry),
-            IntegrationRepository);
+            IntegrationRepository,
+            _db,
+            new SqlResourceOwnershipMutationGate(_db));
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
