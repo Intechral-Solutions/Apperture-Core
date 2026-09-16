@@ -14,9 +14,10 @@ using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Validates and performs explicit resource-ownership moves (design gate §8). CTX-3B Plan 1: preview
-/// validation only. <c>Move*Async</c> mutation and locking land in Plan 2; both call the same
-/// <c>Validate*MoveAsync</c> methods this plan defines, so preview and move cannot drift (§8.2).
+/// Validates and performs explicit resource-ownership moves (design gate §8). CTX-3B Plan 1 implemented
+/// preview validation (<c>Preview*Async</c>); Plan 2 implemented the real transactional move and locking
+/// (<c>Move*Async</c>). Both call the same <c>Validate*MoveAsync</c> methods this plan defines, so preview
+/// and move cannot drift (§8.2).
 /// </summary>
 public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
 {
@@ -119,9 +120,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     public async ValueTask<ResourceMovePreview> MoveIntegrationAsync(
         IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
     {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            throw new UnauthorizedAccessException("No authenticated actor.");
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
 
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -171,9 +170,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     public async ValueTask<ResourceMovePreview> MoveConnectionAsync(
         ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
     {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            throw new UnauthorizedAccessException("No authenticated actor.");
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
 
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -213,9 +210,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     public async ValueTask<ResourceMovePreview> MoveScheduleAsync(
         ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
     {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            throw new UnauthorizedAccessException("No authenticated actor.");
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
 
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>

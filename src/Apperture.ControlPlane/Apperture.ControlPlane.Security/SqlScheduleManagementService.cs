@@ -56,8 +56,14 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     {
         if (definition.IntegrationId is null)
         {
-            // Standalone: inherits from nothing, so it asserts no cross-context relationship and is not
-            // an ownership-sensitive mutation. Unchanged, ungated.
+            // Standalone: inherits from nothing, so it asserts no cross-context relationship with respect
+            // to the BINDING invariant, and this path is unchanged and ungated with respect to that
+            // invariant. This is not a blanket proof that no gate is ever needed here: a concurrent
+            // standalone-schedule-creation-into-context-T race against archiving T is a real, pre-existing
+            // gap in the ARCHIVE invariant ("Application owns nothing live"), since an Enabled: true
+            // standalone schedule created into T does count toward what blocks T's archive. That race is
+            // out of scope for this plan; leaving it unfixed here is a known gap for a future plan, not an
+            // oversight.
             var owningContextId = await ResolveOwningResourceContextAsync(definition, integration: null, cancellationToken).ConfigureAwait(false);
             var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(null, definition with { ResourceContextId = owningContextId }, _timeProvider.GetUtcNow());
             await _repo.AddDefinitionAsync(merged, cancellationToken);

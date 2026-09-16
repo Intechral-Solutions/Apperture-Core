@@ -90,12 +90,12 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 "Sample.Mod", "slot-b", "test.contract", raceConnection.Id, raceIntegration.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("binding creation must block behind the move's ownership gate, not race it");
         result.AException.Should().BeNull();
         result.AResult!.CanMove.Should().BeTrue("the raced integration had no bindings yet, so its move is unblocked");
         result.BException.Should().BeOfType<InvalidOperationException>(
             "once the integration has moved, the still-source-owned connection is no longer reachable from it");
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.IntegrationRepository.GetByIdAsync(raceIntegration.Id))!.ResourceContextId.Value.Should().Be(target.Id.Value);
         (await setup.BindingRepository.GetByConnectionIdAsync(raceConnection.Id)).Should().BeEmpty(
@@ -149,12 +149,12 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 "Sample.Mod", "slot-b", "test.contract", raceConnection.Id, raceIntegration.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("binding creation must block behind the connection move's ownership gate");
         result.AException.Should().BeNull();
         result.AResult!.CanMove.Should().BeTrue("the raced connection had no bindings yet, so its move is unblocked");
         result.BException.Should().BeOfType<InvalidOperationException>(
             "once the connection has moved, the still-source-owned integration can no longer reach it");
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.ConnectionRepository.GetByIdAsync(raceConnection.Id))!.ResourceContextId.Value.Should().Be(target.Id.Value);
         (await setup.BindingRepository.GetByConnectionIdAsync(raceConnection.Id)).Should().BeEmpty(
@@ -200,6 +200,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             operationB: () => envB.MoveService.MoveConnectionAsync(connection.Id, integrationHome.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("the connection move must block behind the integration move's ownership gate");
         result.AException.Should().BeNull();
         result.BException.Should().BeNull("a business-rule block returns CanMove=false, it does not throw");
@@ -207,7 +208,6 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         result.BResult!.CanMove.Should().BeFalse(
             "re-validated against the MOVED integration, the connection can no longer move into the integration's old home");
         result.BResult!.Blockers.Should().Contain(b => b.Code == ResourceMoveBlockerCodes.BindingIntegrationUnreachable);
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.IntegrationRepository.GetByIdAsync(integration.Id))!.ResourceContextId.Value.Should().Be(integrationTarget.Id.Value);
         (await setup.ConnectionRepository.GetByIdAsync(connection.Id))!.ResourceContextId.Value.Should().Be(
@@ -249,6 +249,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             operationB: () => envB.MoveService.MoveIntegrationAsync(integration.Id, integrationTarget.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("the integration move must block behind the connection move's ownership gate");
         result.AException.Should().BeNull();
         result.BException.Should().BeNull("a business-rule block returns CanMove=false, it does not throw");
@@ -256,7 +257,6 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
         result.BResult!.CanMove.Should().BeFalse(
             "re-validated against the MOVED connection, the integration can no longer move away from the connection's new home");
         result.BResult!.Blockers.Should().Contain(b => b.Code == ResourceMoveBlockerCodes.BindingConnectionUnreachable);
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.ConnectionRepository.GetByIdAsync(connection.Id))!.ResourceContextId.Value.Should().Be(integrationHome.Id.Value);
         (await setup.IntegrationRepository.GetByIdAsync(integration.Id))!.ResourceContextId.Value.Should().Be(
@@ -299,11 +299,11 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             operationB: () => envB.Schedules.CreateScheduleAsync(NewAttachedScheduleDefinition(integration.Id)).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("attached schedule creation must block behind the integration move's ownership gate");
         result.AException.Should().BeNull();
         result.BException.Should().BeNull();
         result.AResult!.CanMove.Should().BeTrue();
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.IntegrationRepository.GetByIdAsync(integration.Id))!.ResourceContextId.Value.Should().Be(target.Id.Value);
         result.BResult!.ResourceContextId!.Value.Should().Be(
@@ -339,13 +339,13 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             operationB: () => envB.ResourceContextManagement.ArchiveAsync(target.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("archive must block behind the move's ownership gate");
         result.AException.Should().BeNull();
         result.AResult!.CanMove.Should().BeTrue("the empty target has nothing to block the move into it");
         result.BException.Should().BeOfType<InvalidOperationException>(
             "archive must see the newly-moved, still-live integration and refuse")
-            .Which.Message.Should().Contain("integration", "the refusal must explain what is still blocking archive");
-        AssertNoDeadlock(result.AException, result.BException);
+            .Which.Message.Should().Contain("1 integration not retired", "the refusal must explain what is still blocking archive");
 
         (await setup.IntegrationRepository.GetByIdAsync(integration.Id))!.ResourceContextId.Value.Should().Be(target.Id.Value);
         (await setup.ResourceContexts.GetAsync(target.Id))!.IsActive.Should().BeTrue(
@@ -381,13 +381,13 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             operationB: () => envB.MoveService.MoveConnectionAsync(connection.Id, target.Id).AsTask(),
             observeWindow: ObserveWindow);
 
+        AssertNoDeadlock(result.AException, result.BException);
         result.BCompletedWhileAHeld.Should().BeFalse("the second move must block behind the first's ownership gate, same-type or not");
         result.AException.Should().BeNull();
         result.BException.Should().BeNull("a business-rule block returns CanMove=false, it does not throw");
         result.AResult!.CanMove.Should().BeTrue("exactly one of the two identical moves must win");
         result.BResult!.CanMove.Should().BeFalse("the second move re-validates against the already-moved connection");
         result.BResult!.Blockers.Should().ContainSingle(b => b.Code == ResourceMoveBlockerCodes.AlreadyInTarget);
-        AssertNoDeadlock(result.AException, result.BException);
 
         (await setup.ConnectionRepository.GetByIdAsync(connection.Id))!.ResourceContextId.Value.Should().Be(target.Id.Value);
 
