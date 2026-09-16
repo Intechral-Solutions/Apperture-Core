@@ -6,10 +6,17 @@ namespace Apperture.Core.Application.ResourceContexts;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Six paths participate, and every one of them acquires this gate as the first thing it does after
+/// Eleven paths participate, and every one of them acquires this gate as the first thing it does after
 /// opening its transaction, before any ownership-sensitive read, any row lock, and any mutation:
 /// Integration move, Connection move, standalone Schedule move, binding creation, Integration-attached
-/// Schedule creation, and ResourceContext archive.
+/// Schedule creation, and ResourceContext archive (the original six), plus five added by the CTX-3B
+/// archive-concurrency integrity pass to close create/reactivate-vs-archive races the original six
+/// didn't cover: <c>IntegrationManagementService.CreateIntegrationAsync</c>,
+/// <c>IntegrationManagementService.UpdateIntegrationAsync</c>'s Retired-exit branch (Retired -&gt;
+/// {Active, Inactive}), <c>ConnectionManagementService.CreateConnectionAsync</c>,
+/// <c>SqlScheduleManagementService.EnableAsync</c>, and
+/// <c>SqlScheduleManagementService.UpdateScheduleAsync</c>'s enable branch. Ordinary resource creation
+/// (Integration, Connection) is therefore now in scope too, not just moves, binding, and archive.
 /// </para>
 /// <para>
 /// <b>Why one gate rather than ordered row locks.</b> Ownership validity is a property of a *pair* of
@@ -26,9 +33,9 @@ namespace Apperture.Core.Application.ResourceContexts;
 /// anywhere else.
 /// </para>
 /// <para>
-/// <b>Scope and cost.</b> The lock is database-scoped and intentionally serializes these six low-frequency
-/// operator mutations instance-wide. No runtime path — scheduler claim, dispatch, run writes, readiness
-/// evaluation — acquires it, so throughput is unaffected.
+/// <b>Scope and cost.</b> The lock is database-scoped and intentionally serializes these eleven
+/// low-frequency operator mutations instance-wide. No runtime path — scheduler claim, dispatch, run
+/// writes, readiness evaluation — acquires it, so throughput is unaffected.
 /// </para>
 /// </remarks>
 public interface IResourceOwnershipMutationGate

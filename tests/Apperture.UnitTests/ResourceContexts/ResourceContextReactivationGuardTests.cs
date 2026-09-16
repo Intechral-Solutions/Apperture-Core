@@ -239,6 +239,56 @@ public sealed class ResourceContextReactivationGuardTests
         updated.Enabled.Should().BeFalse();
     }
 
+    /// <summary>
+    /// CTX-3B combined review, finding C1 (Critical): <c>ApplyGatedScheduleTransitionAsync</c> used to
+    /// decide which owning context to guard by reading <c>proposed.ResourceContextId</c> straight off
+    /// the caller-supplied <see cref="ScheduleDefinition"/> -- a freely-settable <c>init</c> property
+    /// (<see cref="ResourceMoveDtoImmutabilityTests.UpdateScheduleAsync_does_not_move_ownership_even_when_the_definition_carries_a_different_ResourceContextId"/>
+    /// already proves callers do pass tampered values through this exact method). A caller pointing
+    /// <c>ResourceContextId</c> at a different, still-Active context could make the guard validate the
+    /// WRONG context, bypassing the archived-context guard entirely for the schedule's real owner. The
+    /// fix re-reads the schedule fresh, inside the gate, and checks THAT definition's
+    /// <c>ResourceContextId</c>, never the caller-supplied one.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSchedule_FlippingEnabledToTrueWithTamperedResourceContextIdPointingAtAnActiveContext_StillGuardsTheRealOwningContext()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var otherActiveContext = await harness.ResourceContexts.CreateApplicationContextAsync("Other");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+        await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        // Tamper with ResourceContextId as if a hostile/careless caller pointed the guard at a
+        // different, still-Active context, hoping the guard would validate that one instead of the
+        // schedule's real (archived) owner.
+        var tampered = schedule with { Enabled = true, ResourceContextId = otherActiveContext.Id };
+
+        var act = async () => await harness.Schedules.UpdateScheduleAsync(tampered);
+
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
+    }
+
+    /// <summary>
+    /// Same finding C1, the other tamper shape: a null <c>ResourceContextId</c> used to make the old
+    /// <c>proposed.ResourceContextId is {{ }}</c> pattern false, skipping the guard entirely rather than
+    /// merely mis-targeting it.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSchedule_FlippingEnabledToTrueWithNullResourceContextId_StillGuardsTheRealOwningContext()
+    {
+        await using var harness = new ResourceContextOwnershipTestHarness();
+        var context = await harness.ResourceContexts.CreateApplicationContextAsync("Canvas");
+        var schedule = await harness.CreateStandaloneScheduleAsync(context.Id, enabled: false);
+        await harness.ResourceContexts.ArchiveAsync(context.Id);
+
+        var tampered = schedule with { Enabled = true, ResourceContextId = null };
+
+        var act = async () => await harness.Schedules.UpdateScheduleAsync(tampered);
+
+        (await act.Should().ThrowAsync<ResourceContextArchivedException>()).WithMessage("*Canvas*archived*");
+    }
+
     [Fact]
     public void ConnectionManagementService_HasNoReactivationPath_SoNoGuardIsNeededYet()
     {

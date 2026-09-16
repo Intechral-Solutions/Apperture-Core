@@ -13,14 +13,18 @@ namespace Apperture.ControlPlane.Security;
 /// transitions that exist ... and guard each one":
 /// <list type="bullet">
 /// <item><description>Integration: any state -&gt; Active. <see cref="IntegrationManagementService.UpdateIntegrationAsync"/> (also reached by <c>ActivateIntegrationAsync</c>).</description></item>
+/// <item><description>Integration: Retired -&gt; Inactive. <see cref="IntegrationManagementService.UpdateIntegrationAsync"/> (also reached by <c>DeactivateIntegrationAsync</c>). Added by the CTX-3B archive-concurrency integrity pass: Retired -&gt; Inactive does not make the Integration able to dispatch, but it DOES flip it from non-archive-blocking to archive-blocking (see the remarks on <see cref="ResourceContextOwnershipSummary.BlocksArchive"/>), so it must be guarded the same as a transition into Active.</description></item>
 /// <item><description>Schedule: Enabled false -&gt; true via <see cref="SqlScheduleManagementService.EnableAsync"/>.</description></item>
 /// <item><description>Schedule: Enabled false -&gt; true via <see cref="SqlScheduleManagementService.UpdateScheduleAsync"/> (PATCH). Added for CTX-3A finding C2: this path previously bypassed the EnableAsync-only guard entirely.</description></item>
 /// <item><description>Schedule: creating a new enabled, Integration-attached schedule that inherits its Integration's (possibly archived) ResourceContext. <see cref="SqlScheduleManagementService.CreateScheduleAsync"/>.</description></item>
 /// </list>
-/// Not guarded, and not expected to be: Integration Retired&lt;-&gt;Inactive (neither transition produces
-/// a resource that can dispatch -- see the remarks on
-/// <see cref="ResourceContextOwnershipSummary.BlocksArchive"/>), and Connections, which have no
-/// reactivation path today (<c>ResourceContextReactivationGuardTests.ConnectionManagementService_HasNoReactivationPath_SoNoGuardIsNeededYet</c>
+/// Not guarded, and not expected to be: Integration Active&lt;-&gt;Inactive (both states already block
+/// archive, so neither direction changes archive-blocking status, and neither is a "starts dispatching
+/// again" transition either). Integration Retired-&gt;Inactive, by contrast, IS guarded (see the list
+/// above) precisely because it changes archive-blocking status even though it is not a "can dispatch"
+/// transition -- the guard's scope is "can this transition make the owning context newly
+/// archive-blocking", not literally "can this resource now dispatch". Connections have no reactivation
+/// path today (<c>ResourceContextReactivationGuardTests.ConnectionManagementService_HasNoReactivationPath_SoNoGuardIsNeededYet</c>
 /// intentionally breaks if that ever changes).
 /// </remarks>
 internal static class ResourceContextReactivationGuard

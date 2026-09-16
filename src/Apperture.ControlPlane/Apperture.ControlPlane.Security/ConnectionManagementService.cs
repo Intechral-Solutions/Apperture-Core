@@ -136,6 +136,18 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
         if (normalizedSecretValues is { Count: > 0 })
         {
+            // Advisory, non-authoritative pre-check (CTX-3B review finding I2). ProvisionForCreateAsync
+            // writes secret material to an external store and cannot participate in the SQL
+            // transaction below, so without this check an archived/nonexistent target context would
+            // let this write happen and then throw once the REAL check below runs -- orphaning that
+            // secret material, since the Connection row it would belong to is never created. This call
+            // is purely to avoid that common-case wasted external write on the failure path; it is NOT
+            // the correctness mechanism (it runs outside the ownership gate and can theoretically race
+            // a concurrent Archive). The authoritative, race-safe check is the
+            // ResolveForNewOwnershipAsync call inside the gated transaction further below, which alone
+            // is what prevents the create-vs-archive race.
+            await _resourceContexts.ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken).ConfigureAwait(false);
+
             var provisioned = await _secretProvisioner
                 .ProvisionForCreateAsync(id, def, normalizedSecretValues, cancellationToken)
                 .ConfigureAwait(false);

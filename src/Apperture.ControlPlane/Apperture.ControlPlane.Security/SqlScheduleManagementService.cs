@@ -153,9 +153,14 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         // same guard. Any other field update (rename, cron change, disabling, staying disabled, or
         // staying enabled) remains allowed regardless of the owning context's archived state, since
         // none of those make anything newly live, so it stays on the ordinary ungated write path below.
+        //
+        // `definition` is caller-supplied and its ResourceContextId is a freely-settable `init`
+        // property (see ResourceMoveDtoImmutabilityTests), so it must never be trusted for the guard
+        // check or the persistence merge -- ApplyGatedScheduleTransitionAsync re-reads the schedule
+        // fresh, inside the gate, and uses THAT for both (CTX-3B review findings C1/I3).
         if (!previous.Enabled && definition.Enabled)
         {
-            await ApplyGatedScheduleTransitionAsync(previous, definition, "enabling this schedule", cancellationToken).ConfigureAwait(false);
+            await ApplyGatedScheduleTransitionAsync(definition.Id, _ => definition, "enabling this schedule", cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -173,9 +178,16 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     /// <c>_repo.UpdateDefinitionAsync</c> directly and skip this method entirely -- it exists only for
     /// the reactivation-guarded path.
     /// </summary>
+    /// <param name="scheduleId">The schedule to transition. Re-read fresh inside the gate -- see below.</param>
+    /// <param name="applyChange">
+    /// Produces the proposed <see cref="ScheduleDefinition"/> from the freshly re-read definition (e.g.
+    /// <c>fresh =&gt; fresh with { Enabled = true }</c> for <see cref="EnableAsync"/>, or <c>_ =&gt;
+    /// definition</c> for <see cref="UpdateScheduleAsync"/>, which already has the caller's whole
+    /// proposed record). Receives the fresh read, never a pre-gate snapshot.
+    /// </param>
     private async ValueTask ApplyGatedScheduleTransitionAsync(
-        ScheduleDefinition previous,
-        ScheduleDefinition proposed,
+        ScheduleId scheduleId,
+        Func<ScheduleDefinition, ScheduleDefinition> applyChange,
         string actionPhrase,
         CancellationToken cancellationToken)
     {
@@ -191,13 +203,24 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
             // with a concurrent Archive evaluating the owning context's ownership summary.
             await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
 
-            if (proposed.ResourceContextId is { } owningContextId)
+            // Re-read fresh, inside the gate (CTX-3B review findings C1/I3): a pre-gate snapshot, or a
+            // caller-supplied ScheduleDefinition's ResourceContextId (a freely-settable `init` property
+            // that a hostile or careless caller could tamper with -- see
+            // ResourceMoveDtoImmutabilityTests), must never drive the guard check. And the schedule can
+            // genuinely have moved between a pre-gate read and gate acquisition (e.g. a concurrent
+            // ResourceOwnershipMoveService.MoveScheduleAsync), so only a read taken AFTER the gate is
+            // trustworthy. Both the guard below and the persistence merge use this fresh definition.
+            var fresh = await _repo.GetDefinitionAsync(scheduleId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+
+            if (fresh.ResourceContextId is { } owningContextId)
             {
                 await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
                     owningContextId, _resourceContexts, actionPhrase, cancellationToken).ConfigureAwait(false);
             }
 
-            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(previous, proposed, _timeProvider.GetUtcNow());
+            var proposed = applyChange(fresh);
+            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(fresh, proposed, _timeProvider.GetUtcNow());
             await _repo.UpdateDefinitionAsync(merged, cancellationToken).ConfigureAwait(false);
 
             if (tx is not null)
@@ -221,14 +244,12 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
 
     public async ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
     {
-        var def = await _repo.GetDefinitionAsync(scheduleId, cancellationToken)
-            ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
-
         // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
         // it owns may become live again. Gated against a concurrent Archive (CTX-3B follow-on to
-        // Plan 2 Task 5): the authoritative check happens on proposed.ResourceContextId inside the
-        // gated helper (same value as def.ResourceContextId here, since this transition never changes it).
-        await ApplyGatedScheduleTransitionAsync(def, def with { Enabled = true }, "enabling this schedule", cancellationToken).ConfigureAwait(false);
+        // Plan 2 Task 5): the existence check, the authoritative context check, and the actual field
+        // change all happen inside the gated helper, against a definition re-read fresh after the gate
+        // is acquired (CTX-3B review findings C1/I3).
+        await ApplyGatedScheduleTransitionAsync(scheduleId, fresh => fresh with { Enabled = true }, "enabling this schedule", cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)

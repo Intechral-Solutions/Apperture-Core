@@ -13,13 +13,24 @@ public sealed record ResourceContextOwnershipSummary(
     /// </summary>
     /// <remarks>
     /// <see cref="LiveIntegrations"/> is "count(State != Retired)" (Active AND Inactive), per §6.5's
-    /// literal wording: "no Integration whose state is not Retired". This is intentionally a different
-    /// predicate shape from the reactivation guard elsewhere (which fires on transitions *into* Active
-    /// specifically) -- both encode the same true test, "can this resource dispatch/run", just applied
-    /// to a current state here versus a transition target there. An Inactive integration cannot
-    /// dispatch, exactly like a Retired one, so it must block archive the same way; but moving between
-    /// Retired and Inactive makes nothing live, so neither of those transitions needs a guard -- only a
-    /// transition that lands on Active does.
+    /// literal wording: "no Integration whose state is not Retired". This is a genuinely different
+    /// predicate from the reactivation guard (<c>ResourceContextReactivationGuard</c>, in
+    /// Apperture.ControlPlane.Security) -- they serve two different purposes, not one shared test. This
+    /// rule (archive-blocking) exists so an operator must explicitly retire every remaining Integration
+    /// before archiving its context: a cleanup/visibility gate over CURRENT state, where Inactive counts
+    /// exactly like Active because neither is Retired. The reactivation guard is a narrower, separate
+    /// concern: it originally fired only on transitions *landing on* Active ("can this resource dispatch
+    /// again"), which is a statement about a TRANSITION, not current state.
+    /// <para>
+    /// The CTX-3B archive-concurrency integrity pass discovered these two predicates can disagree:
+    /// Retired -&gt; Inactive is not a "can dispatch" transition (so the original reactivation guard
+    /// never covered it), but it DOES flip <see cref="BlocksArchive"/> from false to true for the owning
+    /// context, exactly like a transition into Active would. Left unguarded, that transition could race
+    /// a concurrent Archive the same way an Active reactivation could. The reactivation guard was
+    /// therefore widened to also cover Retired -&gt; Inactive, closing that gap -- see
+    /// <c>ResourceContextReactivationGuard</c>'s own remarks for the full enumerated list of guarded
+    /// transitions.
+    /// </para>
     /// </remarks>
     public bool BlocksArchive => LiveIntegrations + ActiveConnections + EnabledSchedules > 0;
 }

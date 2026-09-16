@@ -496,6 +496,10 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Forbid();
         }
+        catch (ResourceContextArchivedException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return NotFound(new { error = ex.Message });
