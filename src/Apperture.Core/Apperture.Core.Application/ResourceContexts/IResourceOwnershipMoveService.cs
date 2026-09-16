@@ -1,6 +1,7 @@
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
+using Apperture.Core.Domain.Scheduling;
 
 namespace Apperture.Core.Application.ResourceContexts;
 
@@ -27,4 +28,6 @@ public interface IResourceOwnershipMoveService
     ValueTask<ResourceMovePreview> PreviewIntegrationMoveAsync(IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
 
     ValueTask<ResourceMovePreview> PreviewConnectionMoveAsync(ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
+
+    ValueTask<ResourceMovePreview> PreviewScheduleMoveAsync(ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
 }

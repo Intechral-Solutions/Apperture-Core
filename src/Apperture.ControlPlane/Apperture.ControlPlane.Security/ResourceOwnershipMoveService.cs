@@ -72,6 +72,24 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         return await ValidateConnectionMoveAsync(connection, targetResourceContextId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> PreviewScheduleMoveAsync(
+        ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        // Same house pattern as PreviewIntegrationMoveAsync/PreviewConnectionMoveAsync: resolve the actor
+        // before touching the repository, so an unauthenticated caller cannot use the not-found/unauthorized
+        // exception distinction as an existence oracle for ids it was never entitled to probe.
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var schedule = await _scheduleRepository.GetDefinitionAsync(id, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
+        // Unlike Integration/Connection moves, Schedule authorization is instance-scoped (§9.3): there is
+        // no per-Schedule governed identity to authorize against here -- this mirrors how `GET
+        // api/schedules` is already gated, via schedule.manage against the Schedule resource type at
+        // Instance scope, never resource_context.manage.
+        await AuthorizeScheduleAsync(actor, cancellationToken).ConfigureAwait(false);
+        return await ValidateScheduleMoveAsync(schedule, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Shared validator for Connection moves (§8.5). Frozen signature: Plan 2 calls this unchanged inside
     /// a locked transaction, so preview and move cannot drift (§8.2).
@@ -90,25 +108,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         var sourceRef = await ResolveRefAsync(sourceId, cancellationToken).ConfigureAwait(false);
         var target = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
 
-        var blockers = new List<ResourceMoveBlocker>();
+        var (targetRef, blockers) = TryBuildCommonBlockers(sourceId, targetId, target, "The connection is already owned by the requested context.");
         var effects = new List<ResourceMoveEffect>();
-
-        if (target is null)
-        {
-            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.", null, null, null, null));
-            var targetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
-            return BuildConnectionPreview(connection.Id.Value, sourceRef, targetRef, blockers, effects);
-        }
-        if (!target.IsActive)
-        {
-            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.TargetArchived, $"'{target.Name}' is archived and cannot receive new ownership.", ResourceMoveResourceTypes.ResourceContext, target.Id.Value, target.Name, target.Id.Value));
-            return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
-        }
-        if (string.Equals(sourceId.Value, targetId.Value, StringComparison.Ordinal))
-        {
-            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.AlreadyInTarget, "The connection is already owned by the requested context.", null, null, null, null));
-            return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
-        }
+        if (blockers.Count > 0)
+            return BuildPreview(ResourceMoveResourceTypes.Connection, connection.Id.Value, sourceRef, targetRef, blockers, effects);
 
         // Deterministic ordering (Global Constraints): GetByConnectionIdAsync has no ORDER BY.
         var bindings = (await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken).ConfigureAwait(false))
@@ -169,13 +172,8 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                 ResourceMoveResourceTypes.Integration, usedByIntegrationIds));
         }
 
-        return BuildConnectionPreview(connection.Id.Value, sourceRef, target.ToRef(), blockers, effects);
+        return BuildPreview(ResourceMoveResourceTypes.Connection, connection.Id.Value, sourceRef, targetRef, blockers, effects);
     }
-
-    private static ResourceMovePreview BuildConnectionPreview(
-        string resourceId, ResourceContextRef source, ResourceContextRef target,
-        List<ResourceMoveBlocker> blockers, List<ResourceMoveEffect> effects) =>
-        new(ResourceMoveResourceTypes.Connection, resourceId, source, target, blockers.Count == 0, blockers, effects);
 
     /// <summary>
     /// The Integration validator's full result: the operator-facing preview, plus the authoritative
@@ -198,33 +196,10 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         var sourceRef = await ResolveRefAsync(sourceId, cancellationToken).ConfigureAwait(false);
         var target = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
 
-        var blockers = new List<ResourceMoveBlocker>();
+        var (targetRef, blockers) = TryBuildCommonBlockers(sourceId, targetId, target, "The integration is already owned by the requested context.");
         var effects = new List<ResourceMoveEffect>();
-
-        if (target is null)
-        {
-            blockers.Add(new ResourceMoveBlocker(
-                ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.",
-                null, null, null, null));
-            // No second lookup here: target is already known to be null, so the ref is necessarily the
-            // synthetic fallback -- re-querying via ResolveRefAsync would only repeat the same null result.
-            var targetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
-            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, targetRef, blockers, effects), []);
-        }
-        if (!target.IsActive)
-        {
-            blockers.Add(new ResourceMoveBlocker(
-                ResourceMoveBlockerCodes.TargetArchived, $"'{target.Name}' is archived and cannot receive new ownership.",
-                ResourceMoveResourceTypes.ResourceContext, target.Id.Value, target.Name, target.Id.Value));
-            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), []);
-        }
-        if (string.Equals(sourceId.Value, targetId.Value, StringComparison.Ordinal))
-        {
-            blockers.Add(new ResourceMoveBlocker(
-                ResourceMoveBlockerCodes.AlreadyInTarget, "The integration is already owned by the requested context.",
-                null, null, null, null));
-            return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), []);
-        }
+        if (blockers.Count > 0)
+            return new(BuildPreview(ResourceMoveResourceTypes.Integration, integration.Id.Value, sourceRef, targetRef, blockers, effects), []);
 
         // Deterministic ordering (Global Constraints): the repository methods below have no ORDER BY, so
         // SQL Server row order is unspecified. Sorting here is what makes the blocker/effect lists stable
@@ -256,9 +231,11 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             if (!ResourceContextReferenceRule.CanReference(targetId, connection.ResourceContextId)
                 && blockedConnectionIds.Add(connection.Id.Value))
             {
+                // target is guaranteed non-null here: TryBuildCommonBlockers already short-circuited above
+                // for the null/archived/same-target cases, so reaching this point means target resolved.
                 blockers.Add(new ResourceMoveBlocker(
                     ResourceMoveBlockerCodes.BindingConnectionUnreachable,
-                    $"Connection '{connection.Name}' is owned by '{connection.ResourceContextId.Value}' and would become unreachable if this integration moved to '{target.Name}'.",
+                    $"Connection '{connection.Name}' is owned by '{connection.ResourceContextId.Value}' and would become unreachable if this integration moved to '{target!.Name}'.",
                     ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ResourceContextId.Value));
             }
         }
@@ -296,7 +273,48 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
                 ResourceMoveResourceTypes.Schedule, schedules.Select(s => s.Id.Value).ToList()));
         }
 
-        return new(BuildIntegrationPreview(integration.Id.Value, sourceRef, target.ToRef(), blockers, effects), schedules);
+        return new(BuildPreview(ResourceMoveResourceTypes.Integration, integration.Id.Value, sourceRef, targetRef, blockers, effects), schedules);
+    }
+
+    /// <summary>
+    /// Shared validator for Schedule moves (§8.6). Frozen signature (this task's interface contract for
+    /// Plan 2): Plan 2 calls this unchanged inside a locked transaction, so preview and move cannot drift
+    /// (§8.2).
+    /// </summary>
+    /// <remarks>
+    /// The attachment check runs <em>before</em> the target checks, deliberately: an Integration-attached
+    /// Schedule cannot move independently at all (§8.6), so its preview reports only the attachment
+    /// blocker even when the requested target does not exist or is archived -- the operator's actionable
+    /// next step is always "move the integration instead," never "also fix the target." A standalone
+    /// (legacy) Schedule falls through to the same common target/already-in-target checks every other
+    /// family uses.
+    /// </remarks>
+    private async ValueTask<ResourceMovePreview> ValidateScheduleMoveAsync(
+        ScheduleDefinition schedule, ResourceContextId targetId, CancellationToken cancellationToken)
+    {
+        var sourceId = schedule.ResourceContextId
+            ?? throw new InvalidOperationException($"Schedule {schedule.Id.Value} has no resolved ResourceContext.");
+        var sourceRef = await ResolveRefAsync(sourceId, cancellationToken).ConfigureAwait(false);
+
+        if (schedule.IntegrationId is { } integrationId)
+        {
+            var integration = await _integrationRepository.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false);
+            var attachedBlockers = new List<ResourceMoveBlocker>
+            {
+                new(ResourceMoveBlockerCodes.ScheduleAttachedToIntegration,
+                    "Move the integration instead; its schedules move with it.",
+                    ResourceMoveResourceTypes.Integration, integrationId.Value, integration?.DisplayName, integration?.ResourceContextId.Value)
+            };
+            // No target lookup here: the attachment blocker fires regardless of whether the requested
+            // target exists, so the ref is the synthetic fallback, matching the Integration/Connection
+            // validators' "no second lookup when we already know the answer" idiom.
+            var attachedTargetRef = new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value);
+            return BuildPreview(ResourceMoveResourceTypes.Schedule, schedule.Id.Value, sourceRef, attachedTargetRef, attachedBlockers, []);
+        }
+
+        var target = await _resourceContexts.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+        var (targetRef, blockers) = TryBuildCommonBlockers(sourceId, targetId, target, "The schedule is already owned by the requested context.");
+        return BuildPreview(ResourceMoveResourceTypes.Schedule, schedule.Id.Value, sourceRef, targetRef, blockers, []);
     }
 
     /// <summary>
@@ -330,14 +348,76 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
             throw new UnauthorizedAccessException($"Not authorized to move this resource ({action}).");
     }
 
+    /// <summary>
+    /// Schedule-specific authorization (§9.3): unlike <see cref="AuthorizeAsync"/>, this evaluates
+    /// <see cref="ActionConstants.ScheduleManage"/> against an instance-scoped
+    /// <see cref="ResourceDescriptor"/> (<see cref="ResourceTypeConstants.Schedule"/> /
+    /// <see cref="ScopeKeyConstants.Instance"/>) rather than a per-resource governed identity, because
+    /// that is how <c>GET api/schedules</c> is already gated. Never <c>resource_context.manage</c>.
+    /// </summary>
+    private async ValueTask AuthorizeScheduleAsync(IActor actor, CancellationToken cancellationToken)
+    {
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ScheduleManage, new ResourceDescriptor(ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance)),
+                null),
+            cancellationToken).ConfigureAwait(false);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to move schedules.");
+    }
+
     private async ValueTask<ResourceContextRef> ResolveRefAsync(ResourceContextId id, CancellationToken cancellationToken)
     {
         var ctx = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
         return ctx?.ToRef() ?? new ResourceContextRef(id.Value, id.Value, id.Value);
     }
 
-    private static ResourceMovePreview BuildIntegrationPreview(
-        string resourceId, ResourceContextRef source, ResourceContextRef target,
+    /// <summary>
+    /// The three common blockers shared by every move family (§8.3): target not found, target archived,
+    /// already in target. These are mutually exclusive and each short-circuits the family-specific checks
+    /// that follow, so at most one is ever returned. Returns the resolved target ref -- the synthetic
+    /// fallback when the target does not exist, otherwise <c>target.ToRef()</c> -- so callers never repeat
+    /// the lookup. <paramref name="alreadyInTargetMessage"/> is family-specific (it must still name the
+    /// right resource noun -- "The integration/connection/schedule is already owned...") so this helper
+    /// cannot flatten the three families' messages to one generic string.
+    /// </summary>
+    private static (ResourceContextRef TargetRef, List<ResourceMoveBlocker> Blockers) TryBuildCommonBlockers(
+        ResourceContextId sourceId, ResourceContextId targetId, ResourceContext? target, string alreadyInTargetMessage)
+    {
+        var blockers = new List<ResourceMoveBlocker>();
+
+        if (target is null)
+        {
+            blockers.Add(new ResourceMoveBlocker(
+                ResourceMoveBlockerCodes.TargetNotFound, $"ResourceContext '{targetId.Value}' does not exist.",
+                null, null, null, null));
+            return (new ResourceContextRef(targetId.Value, targetId.Value, targetId.Value), blockers);
+        }
+        if (!target.IsActive)
+        {
+            blockers.Add(new ResourceMoveBlocker(
+                ResourceMoveBlockerCodes.TargetArchived, $"'{target.Name}' is archived and cannot receive new ownership.",
+                ResourceMoveResourceTypes.ResourceContext, target.Id.Value, target.Name, target.Id.Value));
+            return (target.ToRef(), blockers);
+        }
+        if (string.Equals(sourceId.Value, targetId.Value, StringComparison.Ordinal))
+        {
+            blockers.Add(new ResourceMoveBlocker(ResourceMoveBlockerCodes.AlreadyInTarget, alreadyInTargetMessage, null, null, null, null));
+            return (target.ToRef(), blockers);
+        }
+
+        return (target.ToRef(), blockers);
+    }
+
+    /// <summary>
+    /// Assembles the final <see cref="ResourceMovePreview"/> for any move family. Replaces the three
+    /// near-identical <c>Build*Preview</c> helpers this plan started with (one per family) -- extracted
+    /// once a third copy (Schedule) would have made it three, per review guidance that two near-duplicates
+    /// are acceptable but three are not.
+    /// </summary>
+    private static ResourceMovePreview BuildPreview(
+        string resourceType, string resourceId, ResourceContextRef source, ResourceContextRef target,
         List<ResourceMoveBlocker> blockers, List<ResourceMoveEffect> effects) =>
-        new(ResourceMoveResourceTypes.Integration, resourceId, source, target, blockers.Count == 0, blockers, effects);
+        new(resourceType, resourceId, source, target, blockers.Count == 0, blockers, effects);
 }
