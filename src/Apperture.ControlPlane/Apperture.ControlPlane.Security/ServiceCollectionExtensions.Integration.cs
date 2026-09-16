@@ -29,6 +29,8 @@ public static class IntegrationServiceCollectionExtensions
         services.AddScoped<IIntegrationManagementService, IntegrationManagementService>();
         services.AddScoped<IResourceContextManagementService, ResourceContextManagementService>();
         services.AddScoped<IResourceOwnershipMoveService, ResourceOwnershipMoveService>();
+        services.AddScoped<Apperture.Core.Application.ResourceContexts.IResourceOwnershipMutationGate,
+                           Apperture.Persistence.SqlServer.SqlResourceOwnershipMutationGate>();
         services.AddSingleton<IScheduleExpectationEvaluator, ScheduleExpectationEvaluator>();
         services.AddScoped<IIntegrationScheduleDiagnosticsService, IntegrationScheduleDiagnosticsService>();
         services.AddIntegrationDispatchReadiness();
