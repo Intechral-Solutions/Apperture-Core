@@ -107,7 +107,9 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             ConnectionRepository,
             ScheduleRepository,
             BindingRepository,
-            ResourceContexts);
+            ResourceContexts,
+            _db,
+            ownershipGate);
     }
 
     public IResourceOwnershipMoveService Service { get; }

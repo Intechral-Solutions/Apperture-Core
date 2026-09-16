@@ -46,5 +46,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Apperture.UnitTests" />
+    <InternalsVisibleTo Include="Apperture.IntegrationTests" />
   </ItemGroup>
 </Project>

@@ -6,7 +6,9 @@ using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
+using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Microsoft.EntityFrameworkCore;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 
 namespace Apperture.ControlPlane.Security;
@@ -25,6 +27,8 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
     private readonly IScheduleRepository _scheduleRepository;
     private readonly IBindingRepository _bindingRepository;
     private readonly IResourceContextService _resourceContexts;
+    private readonly AppertureDbContext _db;
+    private readonly IResourceOwnershipMutationGate _ownershipGate;
 
     public ResourceOwnershipMoveService(
         IPrincipalContext principalContext,
@@ -33,7 +37,9 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         IConnectionRepository connectionRepository,
         IScheduleRepository scheduleRepository,
         IBindingRepository bindingRepository,
-        IResourceContextService resourceContexts)
+        IResourceContextService resourceContexts,
+        AppertureDbContext db,
+        IResourceOwnershipMutationGate ownershipGate)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -42,7 +48,20 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         _scheduleRepository = scheduleRepository;
         _bindingRepository = bindingRepository;
         _resourceContexts = resourceContexts;
+        _db = db;
+        _ownershipGate = ownershipGate;
     }
+
+    /// <summary>
+    /// Test-only synchronization point, fired inside the move transaction after the gate has been
+    /// acquired and validation has run, but before commit. Lets a concurrency test hold one transaction
+    /// open at a precisely known moment and observe what a second operation does. Never set in production
+    /// (nothing outside the test assemblies can see it).
+    /// </summary>
+    internal Func<string, CancellationToken, Task>? MidTransactionHook { get; set; }
+
+    private Task FireHookAsync(string checkpoint, CancellationToken cancellationToken) =>
+        MidTransactionHook?.Invoke(checkpoint, cancellationToken) ?? Task.CompletedTask;
 
     /// <inheritdoc />
     public async ValueTask<ResourceMovePreview> PreviewIntegrationMoveAsync(
@@ -94,6 +113,145 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         var schedule = await _scheduleRepository.GetDefinitionAsync(id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
         return await ValidateScheduleMoveAsync(schedule, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> MoveIntegrationAsync(
+        IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            // EnableRetryOnFailure is active: every attempt must be self-contained.
+            _db.ChangeTracker.Clear();
+
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Gate first, before ANY ownership-sensitive read (product decision P1).
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            // Defense in depth on the row we will mutate (§8.4 step 1).
+            var integration = await _integrationRepository.GetByIdForUpdateAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
+
+            await AuthorizeAsync(actor, ActionConstants.IntegrationUpdate, integration.GetIdentity(), cancellationToken).ConfigureAwait(false);
+
+            // The identical validator preview uses (§8.2) -- now against state re-read inside the gate.
+            var validation = await ValidateIntegrationMoveAsync(integration, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            await FireHookAsync("integration:validated", cancellationToken).ConfigureAwait(false);
+
+            if (validation.Preview.CanMove)
+            {
+                await _integrationRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+                // The authoritative attached-Schedule set from the validator's single read -- never a
+                // second query, so preview effects, the mutation and Plan 4's audit all describe the
+                // same schedules.
+                foreach (var schedule in validation.AttachedSchedules)
+                    await _scheduleRepository.SetResourceContextIdAsync(schedule.Id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Final control-flow shape (see Global Constraints): commit on both outcomes. On the rejected
+            // path nothing was written, so this commit is a no-op today -- and Plan 4 adds the single
+            // move_rejected audit row to it without rewriting any of this.
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return validation.Preview;
+        }).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> MoveConnectionAsync(
+        ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            // EnableRetryOnFailure is active: every attempt must be self-contained.
+            _db.ChangeTracker.Clear();
+
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Gate first, before ANY ownership-sensitive read (product decision P1).
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            // Defense in depth on the row we will mutate (§8.4 step 1).
+            var connection = await _connectionRepository.GetByIdForUpdateAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+
+            await AuthorizeAsync(actor, ActionConstants.ConnectionUpdate, connection.GetIdentity(), cancellationToken).ConfigureAwait(false);
+
+            // The identical validator preview uses (§8.2) -- now against state re-read inside the gate.
+            var preview = await ValidateConnectionMoveAsync(connection, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            await FireHookAsync("connection:validated", cancellationToken).ConfigureAwait(false);
+
+            if (preview.CanMove)
+                await _connectionRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            // Final control-flow shape (see Global Constraints): commit on both outcomes.
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return preview;
+        }).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<ResourceMovePreview> MoveScheduleAsync(
+        ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            // EnableRetryOnFailure is active: every attempt must be self-contained.
+            _db.ChangeTracker.Clear();
+
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Gate first, before ANY ownership-sensitive read (product decision P1).
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            // Defense in depth on the row we will mutate (§8.4 step 1).
+            var schedule = await _scheduleRepository.GetByIdForUpdateAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
+
+            // Authorized inside the transaction, after the locked read -- matching MoveIntegrationAsync
+            // and MoveConnectionAsync's order (unlike PreviewScheduleMoveAsync, which authorizes first
+            // because it never opens a transaction or takes a row lock at all).
+            await AuthorizeScheduleAsync(actor, cancellationToken).ConfigureAwait(false);
+
+            // The identical validator preview uses (§8.2) -- now against state re-read inside the gate.
+            var preview = await ValidateScheduleMoveAsync(schedule, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            await FireHookAsync("schedule:validated", cancellationToken).ConfigureAwait(false);
+
+            if (preview.CanMove)
+                await _scheduleRepository.SetResourceContextIdAsync(id, targetResourceContextId, cancellationToken).ConfigureAwait(false);
+
+            // Final control-flow shape (see Global Constraints): commit on both outcomes.
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return preview;
+        }).ConfigureAwait(false);
     }
 
     /// <summary>

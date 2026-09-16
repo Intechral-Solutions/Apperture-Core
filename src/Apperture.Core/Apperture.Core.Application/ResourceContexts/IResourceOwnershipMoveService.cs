@@ -30,4 +30,10 @@ public interface IResourceOwnershipMoveService
     ValueTask<ResourceMovePreview> PreviewConnectionMoveAsync(ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
 
     ValueTask<ResourceMovePreview> PreviewScheduleMoveAsync(ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
+
+    ValueTask<ResourceMovePreview> MoveIntegrationAsync(IntegrationId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
+
+    ValueTask<ResourceMovePreview> MoveConnectionAsync(ConnectionId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
+
+    ValueTask<ResourceMovePreview> MoveScheduleAsync(ScheduleId id, ResourceContextId targetResourceContextId, CancellationToken cancellationToken = default);
 }

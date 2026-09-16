@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
+using Apperture.Persistence.SqlServer;
 using FluentAssertions;
 using Xunit;
 
@@ -301,7 +302,9 @@ public sealed class IntegrationMovePreviewTests
             h.ConnectionRepository,
             h.ScheduleRepository,
             h.BindingRepository,
-            h.ResourceContexts);
+            h.ResourceContexts,
+            h.Db,
+            new SqlResourceOwnershipMutationGate(h.Db));
 
         var act = async () => await service.PreviewIntegrationMoveAsync(new(Guid.NewGuid().ToString("N")), target.Id);
 
