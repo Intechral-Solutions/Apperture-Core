@@ -79,6 +79,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
             ResourceContexts);
 
+        var ownershipGate = new SqlResourceOwnershipMutationGate(_db);
+
         Bindings = new BindingService(
             new FixedPrincipalContext(),
             new AlwaysAllowResourceAuthorizationService(),
@@ -87,14 +89,16 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             new BindingEligibilityService(ConnectionRepository, connectorRegistry),
             IntegrationRepository,
             _db,
-            new SqlResourceOwnershipMutationGate(_db));
+            ownershipGate);
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
             new StubClaimOptions(),
             TimeProvider.System,
             ResourceContexts,
-            IntegrationRepository);
+            IntegrationRepository,
+            _db,
+            ownershipGate);
 
         Service = new ResourceOwnershipMoveService(
             new FixedPrincipalContext(),

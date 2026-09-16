@@ -108,7 +108,9 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             new StubClaimOptions(),
             TimeProvider.System,
             ResourceContexts,
-            integrationRepository);
+            integrationRepository,
+            Db,
+            new SqlResourceOwnershipMutationGate(Db));
 
         var notificationStore = new SqlNotificationDefinitionStore(Db);
         var notificationAuth = new NotificationDefinitionAuthorization(

@@ -195,6 +195,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
         services.AddScoped<IResourceContextService, ResourceContextService>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -256,6 +257,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
         services.AddScoped<IResourceContextService, ResourceContextService>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var detail = await scope.ServiceProvider.GetRequiredService<IScheduleManagementService>()
@@ -290,6 +292,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
         services.AddScoped<IResourceContextService, ResourceContextService>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
@@ -325,6 +328,7 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
         services.AddScoped<IResourceContextService, ResourceContextService>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
+        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();

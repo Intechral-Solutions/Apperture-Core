@@ -95,6 +95,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(SecretStore.Object),
             ResourceContexts);
 
+        var ownershipGate = new SqlResourceOwnershipMutationGate(Db);
+
         Eligibility = new BindingEligibilityService(ConnectionRepository, ConnectorRegistry);
         Bindings = new BindingService(
             new AlwaysActor(),
@@ -104,14 +106,16 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             Eligibility,
             IntegrationRepository,
             Db,
-            new SqlResourceOwnershipMutationGate(Db));
+            ownershipGate);
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
             new StubClaimOptions(),
             TimeProvider.System,
             ResourceContexts,
-            IntegrationRepository);
+            IntegrationRepository,
+            Db,
+            ownershipGate);
 
         // Task 5 (CTX-3A Plan 4, §5.3): RunQueryService over the same DbContext, so
         // RunHistoricalSnapshotFilteringTests exercises the production server-side filter
