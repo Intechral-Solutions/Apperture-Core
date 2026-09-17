@@ -19,10 +19,15 @@ This closure session (2026-09-17) ran the full validation the plan requires: all
 
 - Explicit `ownership/move-preview` / `ownership/move` endpoints for Integration, Connection and Schedule (§8.2), backed by one shared validator per family so preview and move cannot drift.
 - **One ownership mutation gate.** A single transaction-owned SQL Server application lock
-  (`apperture:resource-ownership`) acquired first by all six ownership-sensitive mutation paths:
-  Integration move, Connection move, standalone Schedule move, binding creation, attached-Schedule
-  creation, and Application archive. Row-level `UPDLOCK, ROWLOCK` is retained on mutated rows as defense
-  in depth, but correctness does not depend on cross-entity lock ordering.
+  (`apperture:resource-ownership`) acquired first by all 11 operator/API-reachable ownership-sensitive
+  mutation entry points — Plan 2's original six (Integration move, Connection move, Schedule move,
+  binding creation, attached-Schedule creation, Application archive) plus five more closed by a
+  post-Plan-2 archive-integrity completion pass (Integration creation, blocker-producing Integration
+  update/reactivation, Connection creation, Schedule enable, and blocker-producing Schedule update) —
+  see §3 for the full inventory. Row-level `UPDLOCK, ROWLOCK` is retained on mutated rows as defense in
+  depth, but correctness does not depend on cross-entity lock ordering. Standalone Schedule creation
+  remains deliberately ungated because it is not operator/API reachable today; the design gate records
+  that it must join the gate if that ever changes.
 - `binding_cross_context` readiness defense-in-depth.
 - A two-sided movement audit (`moved_out`/`moved_in` sharing one `CorrelationId`, or a single
   `move_rejected`), with `CorrelationId` now genuinely persisted (previously domain-only, never written).
@@ -39,12 +44,48 @@ This closure session (2026-09-17) ran the full validation the plan requires: all
 
 The gate is one database-scoped SQL Server application lock (`sp_getapplock` on resource name
 `apperture:resource-ownership`), acquired inside the caller's own transaction, before any ownership-sensitive
-read, by all six participating paths: Integration move, Connection move, standalone Schedule move, binding
-creation, attached-Schedule creation, and Application archive. A bounded acquisition timeout means a second
-holder waits briefly and then fails with `ResourceOwnershipBusyException` (carrying a `BusyCode`), surfaced to
-the operator as `ownership_operation_busy` rather than a raw SQL Server error or a timeout that looks like a
-hang — `Gate_timeout_surfaces_as_a_human_readable_busy_conflict` proves the thrown message never leaks
-`sp_getapplock`. Because the lock is a single named resource rather than per-row, the six paths are
+read. **11 operator/API-reachable mutation entry points participate** — re-audited against current
+production code in this closure session, not carried forward from the original Plan 2 count:
+
+1. `ResourceOwnershipMoveService.MoveIntegrationAsync`
+2. `ResourceOwnershipMoveService.MoveConnectionAsync`
+3. `ResourceOwnershipMoveService.MoveScheduleAsync`
+4. `BindingService.CreateBindingAsync`
+5. Integration-attached Schedule creation (`SqlScheduleManagementService.CreateScheduleAsync`, attach path)
+6. ResourceContext/Application archive (`ResourceContextManagementService`)
+7. Integration creation (`IntegrationManagementService.CreateIntegrationAsync`)
+8. Blocker-producing Integration update/reactivation — Retired → Active, Retired → Inactive
+   (`IntegrationManagementService.UpdateIntegrationAsync`)
+9. Connection creation (`ConnectionManagementService.CreateConnectionAsync`)
+10. Schedule enable (`SqlScheduleManagementService.EnableAsync`)
+11. Blocker-producing Schedule update — Disabled → Enabled (`SqlScheduleManagementService.UpdateScheduleAsync`)
+
+Participants 1–6 are Plan 2's original set. Participants 7–11 were closed by a **post-Plan-2
+archive-integrity completion pass**: a new Active Integration or Connection, a Schedule transitioning
+Disabled → Enabled, or an Integration transitioning Retired → {Active, Inactive} is an archive-blocking
+resource entering or newly blocking a context, and each of these can race a concurrent Archive evaluating
+that same context's ownership summary without seeing the incoming or newly-live resource. Each of the five
+added call sites carries an in-code comment naming itself a "CTX-3B follow-on" closing that specific
+create-vs-archive or reactivation-vs-archive race that Plan 2's own final review flagged but did not fix.
+Participants 10 and 11 share one physical `AcquireAsync` call site inside a private helper
+(`SqlScheduleManagementService.ApplyGatedScheduleTransitionAsync`), because both are the same underlying
+Disabled → Enabled transition reached through two different public entry points (`EnableAsync` and
+`UpdateScheduleAsync`); they are counted separately here as two distinct operator/API-reachable entry
+points, not as two physical gate-acquisition call sites.
+
+**Standalone Schedule creation remains deliberately ungated.** It has no owning Integration, so it does not
+participate in the binding cross-context invariant the gate primarily protects — but an `Enabled: true`
+standalone Schedule created into a context does count toward that context's `BlocksArchive` calculation, so
+a concurrent standalone-create-into-T race against archiving T is a real, named, pre-existing gap, not a
+closed one. It is left ungated because it is not operator/API reachable today (no production path creates a
+standalone Schedule); the design gate records that it must join the gate if that path is ever exposed. This
+closure does not widen scope to fix it.
+
+A bounded acquisition timeout means a second holder waits briefly and then fails with
+`ResourceOwnershipBusyException` (carrying a `BusyCode`), surfaced to the operator as
+`ownership_operation_busy` rather than a raw SQL Server error or a timeout that looks like a hang —
+`Gate_timeout_surfaces_as_a_human_readable_busy_conflict` proves the thrown message never leaks
+`sp_getapplock`. Because the lock is a single named resource rather than per-row, all 11 participants are
 serialized against each other pairwise and globally, not just against themselves.
 
 **Single-row locking was rejected** because it does not actually serialize the two paths that matter most
@@ -58,11 +99,12 @@ row-level lock on its counterparty's rows before proceeding — produces a class
 Integration move can lock Integration-then-Connection rows while a concurrent Connection move locks
 Connection-then-Integration rows, and SQL Server's deadlock monitor would have to arbitrate a victim on every
 such interleaving instead of the operation simply queuing. A single database-scoped gate sidesteps this by
-giving all six paths one shared choke point with one lock order (there is only one lock), at the cost of
-serializing these operations against each other even when they don't logically conflict — an accepted
-trade-off given movement and archive are low-frequency operator actions, not a hot path. Row-level `UPDLOCK,
-ROWLOCK` is kept as defense in depth for anything that reads or writes ownership outside the gate's own six
-call sites, but correctness no longer depends on it or on any cross-entity lock ordering.
+giving all 11 participants one shared choke point with one lock order (there is only one lock), at the cost
+of serializing these operations against each other even when they don't logically conflict — an accepted
+trade-off given movement, creation, reactivation and archive are low-frequency operator actions, not a hot
+path. Row-level `UPDLOCK, ROWLOCK` is kept as defense in depth for anything that reads or writes ownership
+outside the gate's own eleven call sites, but correctness no longer depends on it or on any cross-entity
+lock ordering.
 
 The design was validated, not just argued: `ResourceOwnershipMoveConcurrencySqlServerTests` drives 10 real
 interleavings against a real SQL Server scratch database (six required by the design gate's "move vs. bind"
@@ -232,10 +274,12 @@ that plan's own stabilization note — these cover the delete-blocker-clearing U
 - **P1 — one ownership mutation gate** rather than ordered row locks. Per-row locking alone leaves Integration
   move and Connection move entirely unserialized against each other (they never touch the same row), and the
   naive repair — each path additionally locking its counterparty's rows — produces an ABBA deadlock between
-  the two moves. A single database-scoped application lock, acquired first by all six ownership-sensitive
-  paths, gives correctness a single lock order at the cost of serializing low-frequency operator mutations
-  against each other even when they don't logically conflict. Validated by 10 real SQL Server interleaving
-  tests, all passing, no deadlock observed on any interleaving (§3, §5).
+  the two moves. A single database-scoped application lock, acquired first by all 11 operator/API-reachable
+  ownership-sensitive mutation entry points (§3) — Plan 2's original six plus five more closed by a
+  post-Plan-2 archive-integrity completion pass — gives correctness a single lock order at the cost of
+  serializing low-frequency operator mutations against each other even when they don't logically conflict.
+  Validated by 10 real SQL Server interleaving tests, all passing, no deadlock observed on any interleaving
+  (§3, §5).
 - **P2 — `integration.deleted` audit**, narrow by design. Only the Integration hard-delete lifecycle action is
   audited by CTX-3B; create, update, activate, deactivate and retire remain unaudited, pre-existing and
   deliberately not broadened here (see §7).
