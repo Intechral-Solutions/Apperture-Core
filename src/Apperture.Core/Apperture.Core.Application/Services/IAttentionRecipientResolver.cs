@@ -33,4 +33,18 @@ public interface IAttentionRoutingManagementService
         string conditionKey,
         AttentionRoutingUpsertCommand command,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes an Integration's attention-routing override for one condition, reverting it to the instance
+    /// default. Returns false when no override existed.
+    /// </summary>
+    /// <remarks>
+    /// CTX-3B Plan 6a: Integration hard-delete blocks on attention-routing overrides, and before this
+    /// operation existed there was no way for an operator to clear that blocker. The service previously
+    /// exposed upsert only.
+    /// </remarks>
+    ValueTask<bool> ClearIntegrationRoutingAsync(
+        IntegrationId integrationId,
+        string conditionKey,
+        CancellationToken cancellationToken = default);
 }

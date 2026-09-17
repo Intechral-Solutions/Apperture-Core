@@ -82,6 +82,36 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Removes an Integration's attention-routing override for one condition, reverting it to the instance
+    /// default. Returns false when no override existed.
+    /// </summary>
+    /// <remarks>
+    /// CTX-3B Plan 6a: Integration hard-delete blocks on attention-routing overrides, and before this
+    /// operation existed there was no way for an operator to clear that blocker. The service previously
+    /// exposed upsert only.
+    /// </remarks>
+    public async ValueTask<bool> ClearIntegrationRoutingAsync(
+        IntegrationId integrationId,
+        string conditionKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (await _integrations.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
+            throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
+
+        var row = await _db.IntegrationAttentionRoutings
+            .FirstOrDefaultAsync(
+                x => x.IntegrationId == integrationId.Value && x.ConditionKey == conditionKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null)
+            return false;
+
+        _db.IntegrationAttentionRoutings.Remove(row);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     private static void ApplyCommand(IntegrationAttentionRoutingEntity row, AttentionRoutingUpsertCommand command)
     {
         row.IsEnabled = command.IsEnabled;

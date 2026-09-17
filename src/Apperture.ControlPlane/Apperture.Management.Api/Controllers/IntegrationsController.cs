@@ -344,6 +344,41 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
+    /// CTX-3B: clears an integration-level attention routing override, reverting to the instance default.
+    /// </summary>
+    [HttpDelete("{id}/attention-routing")]
+    public async Task<IActionResult> DeleteAttentionRouting(
+        string id, [FromQuery] string? conditionKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var intId = new IntegrationId(id);
+            if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
+                return NotFound();
+
+            var key = string.IsNullOrWhiteSpace(conditionKey)
+                ? AttentionConditionKeys.ExpectedRunMissing
+                : conditionKey.Trim();
+            try
+            {
+                await _attentionRoutingManagement
+                    .ClearIntegrationRoutingAsync(intId, key, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return NotFound(new { error = ex.Message });
+            }
+
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    /// <summary>
     /// Epic 68: operator acknowledgement of a persisted attention incident (e.g. expected run missing).
     /// </summary>
     [HttpPost("{id}/attention-incidents/{incidentId}/acknowledge")]

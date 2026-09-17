@@ -728,6 +728,26 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>
+    /// CTX-3B: clears an integration-level attention routing override for one condition, reverting to the
+    /// instance default.
+    /// </summary>
+    public async Task ClearIntegrationAttentionRoutingAsync(
+        string integrationId,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        var q = string.IsNullOrWhiteSpace(conditionKey)
+            ? ""
+            : $"?conditionKey={Uri.EscapeDataString(conditionKey)}";
+        var response = await _http
+            .DeleteAsync(
+                $"integrations/{Uri.EscapeDataString(integrationId)}/attention-routing{q}",
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <inheritdoc />
     public async Task<AttentionRoutingEffectiveDto?> GetAttentionRoutingDefaultsAsync(
         string? conditionKey = null,

@@ -256,6 +256,15 @@ public interface IManagementClient
         string? conditionKey = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// CTX-3B: clears an integration-level attention routing override for one condition, reverting to the
+    /// instance default.
+    /// </summary>
+    Task ClearIntegrationAttentionRoutingAsync(
+        string integrationId,
+        string? conditionKey = null,
+        CancellationToken cancellationToken = default);
+
     Task<AttentionRoutingEffectiveDto?> GetAttentionRoutingDefaultsAsync(
         string? conditionKey = null,
         CancellationToken cancellationToken = default);
