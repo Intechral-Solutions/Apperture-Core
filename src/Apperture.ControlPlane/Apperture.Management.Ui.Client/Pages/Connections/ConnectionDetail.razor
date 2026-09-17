@@ -48,6 +48,12 @@
                         @onclick="StartEditAsync">
                     Edit
                 </button>
+                <button type="button"
+                        class="ui-toolbar-btn"
+                        disabled="@_loading"
+                        @onclick="() => _moveDialogOpen = true">
+                    Move to another context…
+                </button>
             }
             @if (_capabilities?.CanRetireConnections == true && _connection is not null && !_editing && string.Equals(_connection.State, "Active", StringComparison.OrdinalIgnoreCase))
             {
@@ -64,6 +70,12 @@
     <MismatchNotice OwnerResourceContextId="@_connection?.ResourceContextId"
                     ResourceKindLabel="connection"
                     ExtraCopy="@(ResourceContextIds.IsShared(_connection?.ResourceContextId) && !ViewState.Current.IsAll ? $"Integrations in {ViewState.DescribeContext(ViewState.Current.ResourceContextId!)} can use it." : null)" />
+    <MoveOwnershipDialog IsOpen="@_moveDialogOpen"
+                         Kind="MoveOwnershipDialog.ResourceKind.Connection"
+                         ResourceId="@ConnectionId"
+                         CurrentResourceContextId="@_connection?.ResourceContextId"
+                         OnCancelled="() => _moveDialogOpen = false"
+                         OnMoved="OnMovedAsync" />
 
     @if (!_capabilitiesLoaded)
     {
@@ -209,6 +221,7 @@
     [Parameter] public string ConnectionId { get; set; } = "";
 
     private bool _confirmRetireOpen;
+    private bool _moveDialogOpen;
 
     private string ConnectionHeaderSubtitle =>
         _connection is null
@@ -352,6 +365,16 @@
         {
             _saveEditLoading = false;
         }
+    }
+
+    private async Task OnMovedAsync()
+    {
+        _moveDialogOpen = false;
+        // Re-fetch only. The page never navigates, and it never switches the shell View: OwnershipChip
+        // re-renders from the fresh _connection, and MismatchNotice appears on its own if the current
+        // View now differs from the new owner (§4.6, §8.9).
+        await LoadAsync();
+        Toasts.Show(ToastSeverity.Success, "Connection moved.");
     }
 
     // UIX-6: failures propagate so the confirmation dialog stays open with the reason.

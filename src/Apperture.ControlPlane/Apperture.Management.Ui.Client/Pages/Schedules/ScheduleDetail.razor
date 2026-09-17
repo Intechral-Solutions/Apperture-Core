@@ -8,6 +8,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
+@inject IToastService Toasts
 
 <div class="p-4 ui-page-stack">
     <PageHeader @key="@ScheduleId"
@@ -55,6 +56,28 @@
                     @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
                 </button>
             }
+            @if (_capabilities?.CanManageSchedules == true)
+            {
+                @if (_detail?.IntegrationId is { } attachedIntegrationId)
+                {
+                    <button type="button"
+                            class="ui-toolbar-btn"
+                            disabled
+                            title="This schedule moves with its integration.">
+                        Move to another context…
+                    </button>
+                    <a href="@($"/integrations/{Uri.EscapeDataString(attachedIntegrationId)}")">Go to integration</a>
+                }
+                else
+                {
+                    <button type="button"
+                            class="ui-toolbar-btn"
+                            disabled="@_loading"
+                            @onclick="() => _moveDialogOpen = true">
+                        Move to another context…
+                    </button>
+                }
+            }
             <button type="button"
                     class="ui-toolbar-btn"
                     disabled="@_loading"
@@ -64,6 +87,15 @@
         </Toolbar>
     </PageHeader>
     <MismatchNotice OwnerResourceContextId="@_detail?.ResourceContextId" ResourceKindLabel="schedule" />
+    @if (_detail?.IntegrationId is null)
+    {
+        <MoveOwnershipDialog IsOpen="@_moveDialogOpen"
+                             Kind="MoveOwnershipDialog.ResourceKind.Schedule"
+                             ResourceId="@ScheduleId"
+                             CurrentResourceContextId="@_detail?.ResourceContextId"
+                             OnCancelled="() => _moveDialogOpen = false"
+                             OnMoved="OnMovedAsync" />
+    }
 
     @if (!string.IsNullOrEmpty(_error))
     {
@@ -370,6 +402,7 @@
     private string _editTimeZone = "";
     private bool _editEnabled;
     private string? _dataLoadKey;
+    private bool _moveDialogOpen;
 
     private string ScheduleHeaderTitle =>
         string.IsNullOrWhiteSpace(_detail?.Name) ? "Schedule" : _detail!.Name;
@@ -555,6 +588,16 @@
             _loading = false;
         }
         await LoadAsync(preserveActionFeedback: true);
+    }
+
+    private async Task OnMovedAsync()
+    {
+        _moveDialogOpen = false;
+        // Re-fetch only. The page never navigates, and it never switches the shell View: OwnershipChip
+        // re-renders from the fresh _detail, and MismatchNotice appears on its own if the current
+        // View now differs from the new owner (§4.6, §8.9).
+        await RefreshAsync();
+        Toasts.Show(ToastSeverity.Success, "Schedule moved.");
     }
 
     private static string GetTargetKind(int targetJobType) =>
