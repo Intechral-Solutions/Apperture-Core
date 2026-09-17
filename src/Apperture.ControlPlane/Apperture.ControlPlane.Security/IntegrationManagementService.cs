@@ -1,6 +1,8 @@
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
@@ -22,6 +24,8 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
+    private readonly IAuditService _audit;
+    private readonly IIntegrationSettingsService _integrationSettings;
 
     public IntegrationManagementService(
         IPrincipalContext principalContext,
@@ -29,7 +33,9 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         IIntegrationRepository integrationRepository,
         IResourceContextService resourceContexts,
         AppertureDbContext db,
-        IResourceOwnershipMutationGate ownershipGate)
+        IResourceOwnershipMutationGate ownershipGate,
+        IAuditService audit,
+        IIntegrationSettingsService integrationSettings)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -37,6 +43,10 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
+        _audit = audit;
+        // CTX-3B Plan 6a Task 5: no DI cycle -- IntegrationSettingsService depends on IIntegrationRepository,
+        // not on IIntegrationManagementService.
+        _integrationSettings = integrationSettings;
     }
 
     /// <inheritdoc />
@@ -271,11 +281,77 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         if (scheduleCount > 0)
             throw new InvalidOperationException($"Cannot delete integration: {scheduleCount} schedule(s) reference it.");
 
+        // CTX-3B referential-lifecycle inventory (docs/.../ctx3b-integration-delete-referential-inventory.md):
+        // none of these three has a foreign key, so nothing enforced them before. Block, matching the
+        // existing Binding/Schedule precedent, rather than silently orphaning operator configuration.
+        // Each blocker is clearable by an operator: definitions via DELETE api/notification-definitions/{id}
+        // (Plan 6a Task 2), subscriptions via the existing subscription removal, and routing overrides via
+        // DELETE api/integrations/{id}/attention-routing (Plan 6a Task 3).
+        //
+        // Every blocker runs -- and must pass -- before any cleanup or removal below: a refused delete
+        // destroys nothing, least of all a setting value whose only pointer to an Active secret it holds.
+        var notificationDefinitionCount = await _db.NotificationDefinitions.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        if (notificationDefinitionCount > 0)
+            throw new InvalidOperationException(
+                $"Cannot delete integration: {notificationDefinitionCount} notification definition(s) reference it. Delete them first.");
+
+        // Subscriptions carry their own nullable IntegrationId independently of NotificationDefinitionId,
+        // so an Integration-scoped subscription can exist under a Platform- or Module-scoped definition and
+        // is NOT covered by the blocker above. See the inventory's Decisions section.
+        var notificationSubscriptionCount = await _db.NotificationSubscriptions.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        if (notificationSubscriptionCount > 0)
+            throw new InvalidOperationException(
+                $"Cannot delete integration: {notificationSubscriptionCount} notification subscription(s) reference it. Remove them first.");
+
+        var attentionRoutingCount = await _db.IntegrationAttentionRoutings.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        if (attentionRoutingCount > 0)
+            throw new InvalidOperationException(
+                $"Cannot delete integration: {attentionRoutingCount} attention routing override(s) reference it. Clear them first.");
+
         var entity = await _db.Integrations.FirstOrDefaultAsync(e => e.Id == id.Value, cancellationToken);
-        if (entity is not null)
-        {
-            _db.Integrations.Remove(entity);
-            await _db.SaveChangesAsync(cancellationToken);
-        }
+        if (entity is null)
+            return;
+
+        // Integration-scoped PlatformSettingValues have no independent meaning without the Integration
+        // (unlike NotificationDefinitions/AttentionRoutings above, which are independently meaningful
+        // operator configuration) -- clean them up rather than requiring separate manual deletion first.
+        //
+        // Delegated to IIntegrationSettingsService.ResetAsync rather than removing rows directly, because
+        // a sensitive setting's row holds only an opaque ISecretStore reference: deleting the row alone
+        // would orphan an Active secret permanently. ResetAsync is the established lifecycle -- delete the
+        // scoped value, disable the owned secret via TryDisableOwnedSecretAsync, write the per-key audit --
+        // and reusing it keeps secret disposal in the one place that owns it.
+        //
+        // Runs before the Integration row is removed, so ResetAsync's own audit can still resolve the
+        // owning ResourceContext from the still-present Integration.
+        //
+        // Deliberately not atomic with the row delete below: the SQL store and ISecretStore are different
+        // stores and do not share a transaction. This follows IntegrationSettingsService's existing reset
+        // failure behavior rather than inventing new semantics; see the inventory doc.
+        var scopedSettingKeys = await _db.PlatformSettingValues
+            .Where(v => v.ScopeKind == PlatformSettingScopeConstants.IntegrationKind && v.ScopeId == id.Value)
+            .Select(v => v.Key)
+            .ToListAsync(cancellationToken);
+
+        foreach (var key in scopedSettingKeys)
+            await _integrationSettings.ResetAsync(id.Value, key, cancellationToken).ConfigureAwait(false);
+
+        _db.Integrations.Remove(entity);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        // Product decision P2: one audit record for the destructive operation itself. Records the owning
+        // Context, the identity, and what was deliberately cleaned up alongside it. Appended after the
+        // delete has committed and deliberately outside any transaction, matching this method's existing
+        // shape: a lost audit row for a completed delete is strictly better than refusing the delete.
+        await _audit.AppendAsync(new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor.Id,
+            ActionConstants.IntegrationDeleted,
+            new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value),
+            Outcome: "",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            Details: $"Deleted integration '{existing.DisplayName}' ({id.Value}); cleaned up {scopedSettingKeys.Count} integration-scoped setting value(s).",
+            ResourceContextId: existing.ResourceContextId.Value), cancellationToken).ConfigureAwait(false);
     }
 }

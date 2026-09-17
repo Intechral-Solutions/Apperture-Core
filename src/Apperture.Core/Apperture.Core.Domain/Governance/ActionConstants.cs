@@ -12,6 +12,13 @@ public static class ActionConstants
     public const string IntegrationUpdate = "integration.update";
     public const string IntegrationDelete = "integration.delete";
 
+    /// <summary>
+    /// CTX-3B (product decision P2): audit action for a completed Integration hard delete. Deliberately
+    /// narrow. Integration create/update/activate/deactivate/retire remain unaudited today; broadening
+    /// that is recorded as explicit later debt in the CTX-3B closure, not done here.
+    /// </summary>
+    public const string IntegrationDeleted = "integration.deleted";
+
     // Connection
     public const string ConnectionCreate = "connection.create";
     public const string ConnectionRead = "connection.read";

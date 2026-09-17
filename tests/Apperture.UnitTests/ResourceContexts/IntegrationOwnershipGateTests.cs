@@ -98,7 +98,9 @@ public sealed class IntegrationUpdateGateOrderingTests : IAsyncDisposable
             integrationRepository,
             _setupResourceContexts,
             _db,
-            new SqlResourceOwnershipMutationGate(_db));
+            new SqlResourceOwnershipMutationGate(_db),
+            new IntegrationManagementServiceTestDependencies.RecordingAuditService(),
+            IntegrationManagementServiceTestDependencies.CreateSettingsService(_db, integrationRepository));
 
         var recordingResourceContextRepository = new RecordingResourceContextRepository(new SqlResourceContextRepository(_db), _tracker);
         var recordingResourceContexts = new ResourceContextService(recordingResourceContextRepository, TimeProvider.System);
@@ -110,7 +112,9 @@ public sealed class IntegrationUpdateGateOrderingTests : IAsyncDisposable
             integrationRepository,
             recordingResourceContexts,
             _db,
-            Gate);
+            Gate,
+            new IntegrationManagementServiceTestDependencies.RecordingAuditService(),
+            IntegrationManagementServiceTestDependencies.CreateSettingsService(_db, integrationRepository));
     }
 
     private ManagementServiceTestHarness.RecordingResourceOwnershipMutationGate Gate { get; }

@@ -24,6 +24,12 @@ internal static class PlatformSettingTestDefinitions
 
     public const string IntegrationScopedMultiSelectKey = "Test.IntegrationScoped.MultiSelect.Sample";
 
+    /// <summary>CTX-3B Plan 6a Task 5: a plain (non-provider-backed, non-sensitive) integration-scoped key, so the Integration hard-delete cleanup test can set a value without dragging an option provider in.</summary>
+    public const string IntegrationScopedTextKey = "Test.IntegrationScoped.Text.Sample";
+
+    /// <summary>CTX-3B Plan 6a Task 5: the first sensitive integration-scoped definition anywhere in the fixtures. Required to prove Integration hard-delete disposes of the backing secret instead of orphaning it.</summary>
+    public const string IntegrationScopedSecretKey = "Test.IntegrationScoped.Secret.Sample";
+
     private static readonly PlatformSettingValueScopeKind[] IntegrationValueScopes =
         [PlatformSettingValueScopeKind.Integration];
 
@@ -116,6 +122,43 @@ internal static class PlatformSettingTestDefinitions
         AllowedValueScopes = IntegrationValueScopes,
         ConfigurationPath = "Test:IntegrationScoped:Select:Sample",
         DefaultValue = "int-test:alpha"
+    };
+
+    /// <summary>
+    /// Ordinary (non-sensitive) integration-scoped string setting with no option provider, mirroring
+    /// <see cref="IntegrationScopedSelectSample"/>'s value scope but validating nothing beyond its type.
+    /// </summary>
+    public static PlatformSettingDefinition IntegrationScopedTextSample => new()
+    {
+        Key = IntegrationScopedTextKey,
+        DisplayName = "Integration-scoped text (test-only)",
+        Description = "Test-only plain integration-scoped string setting for CTX-3B delete cleanup.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.String,
+        InputKind = PlatformSettingInputKind.Text,
+        AllowedValueScopes = IntegrationValueScopes,
+        ConfigurationPath = "Test:IntegrationScoped:Text:Sample",
+        DefaultValue = string.Empty
+    };
+
+    /// <summary>
+    /// Sensitive integration-scoped setting: the shape of <see cref="IntegrationScopedSelectSample"/>'s
+    /// value scope combined with the shape of the real sensitive SMTP-password definition
+    /// (<c>IsSensitive</c> + <see cref="PlatformSettingInputKind.Secret"/>), so the stored row holds only
+    /// an opaque <c>ISecretStore</c> reference.
+    /// </summary>
+    public static PlatformSettingDefinition IntegrationScopedSecretSample => new()
+    {
+        Key = IntegrationScopedSecretKey,
+        DisplayName = "Integration-scoped secret (test-only)",
+        Description = "Test-only sensitive integration-scoped setting for CTX-3B delete secret disposal.",
+        Category = PlatformSettingCategory.PlatformEvents,
+        ValueType = PlatformSettingValueType.String,
+        InputKind = PlatformSettingInputKind.Secret,
+        IsSensitive = true,
+        AllowedValueScopes = IntegrationValueScopes,
+        ConfigurationPath = "Test:IntegrationScoped:Secret:Sample",
+        DefaultValue = string.Empty
     };
 
     public static PlatformSettingDefinition IntegrationScopedMultiSelectSample => new()

@@ -1,8 +1,10 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
@@ -830,8 +832,29 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             var authzAllow = new AlwaysAllowAuthorizationEvaluationService();
             var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
 
+            // CTX-3B Plan 6a Task 5: IntegrationManagementService now also takes IAuditService (for the
+            // integration.deleted record) and IIntegrationSettingsService (for secret-safe Integration-scoped
+            // setting cleanup on delete). These tests never delete Integrations, but the settings service is
+            // still the real one over the same DbContext rather than a no-op double, so a future orphaned-secret
+            // regression could not hide behind a stub here.
+            var settingRegistry = new IntegrationSettingDefinitionRegistry();
+            var settingRepository = new SqlPlatformSettingValueRepository(db);
+            var integrationSettings = new IntegrationSettingsService(
+                settingRegistry,
+                settingRepository,
+                new IntegrationSettingsResolver(settingRegistry, settingRepository),
+                new PlatformSettingOptionProviderCoordinator(
+                    new PlatformSettingOptionProviderRegistry([]),
+                    new PlatformSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository),
+                    new IntegrationSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository)),
+                new PlatformSettingSecretMaterialProvisioner(new NullSecretStore()),
+                principal,
+                new NullAuditService(),
+                integrationRepository);
+
             var integrations = new IntegrationManagementService(
-                principal, authzAllow, integrationRepository, resourceContexts, db, gate);
+                principal, authzAllow, integrationRepository, resourceContexts, db, gate,
+                new NullAuditService(), integrationSettings);
 
             var connections = new ConnectionManagementService(
                 principal,
@@ -909,6 +932,22 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
     // Minimal test doubles (this project cannot see Apperture.UnitTests' private harness types, and Moq
     // is not referenced here -- see task-8-report.md).
     // ================================================================================================
+
+    /// <summary>Swallows appended records; no test in this file asserts on audit output.</summary>
+    private sealed class NullAuditService : IAuditService
+    {
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by these tests.");
+
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by these tests.");
+
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by these tests.");
+    }
 
     private sealed class FixedPrincipalContext : IPrincipalContext
     {
