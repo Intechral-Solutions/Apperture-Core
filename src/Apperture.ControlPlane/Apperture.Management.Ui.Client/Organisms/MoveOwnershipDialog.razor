@@ -12,7 +12,7 @@
 
 <ManagementDialog IsOpen="@IsOpen"
                   Title="Move to another context…"
-                  IsBusy="@(_model.IsLoadingPreview || _model.IsSubmitting)"
+                  IsBusy="@_model.IsSubmitting"
                   Size="sm"
                   OnClose="Cancel">
     <ChildContent>
@@ -133,6 +133,16 @@
         {
             _model.FailPreview(generation, ex.Message);
         }
+        catch (HttpRequestException)
+        {
+            // Covers 401/403/404/5xx/network failures from ManagementClient's EnsureSuccessOrThrowAsync.
+            // Unlike InvalidOperationException (a parsed {error} string), ex.Message here can be a raw
+            // status-code string with no operator-facing meaning, so use a uniform fallback. Routing
+            // through FailPreview (same as the InvalidOperationException case) guarantees IsLoadingPreview
+            // is reset even on this failure path -- the bug that otherwise permanently disabled the
+            // dialog's close controls (IsBusy was wired to IsLoadingPreview; see Fix 2).
+            _model.FailPreview(generation, "The preview could not be loaded. Try again.");
+        }
     }
 
     private async Task SubmitAsync()
@@ -170,6 +180,13 @@
         {
             // Covers the 400 common blockers and the transient ownership_operation_busy 409.
             _model.SetSubmitError(ex.Message);
+        }
+        catch (HttpRequestException)
+        {
+            // Covers 401/403/404/5xx/network failures from ManagementClient's EnsureSuccessOrThrowAsync.
+            // Same uniform-fallback treatment as LoadPreviewAsync's HttpRequestException catch, for
+            // consistency -- EndSubmit() below already resets IsSubmitting regardless.
+            _model.SetSubmitError("The move could not be completed. Try again.");
         }
         finally
         {

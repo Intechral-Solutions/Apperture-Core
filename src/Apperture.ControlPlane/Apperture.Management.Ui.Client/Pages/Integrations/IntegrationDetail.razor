@@ -39,7 +39,7 @@
                     <button type="button" id="integration-retire-trigger" class="ui-toolbar-btn ui-toolbar-btn--danger" disabled="@_loading" @onclick="RetireIntegrationAsync">Retire</button>
                 }
                 <button type="button" id="integration-delete-trigger" class="ui-toolbar-btn ui-toolbar-btn--danger" disabled="@_deleting" @onclick="() => _confirmDeleteOpen = true">Delete</button>
-                <button type="button" class="ui-toolbar-btn" disabled="@_loading" @onclick="() => _moveDialogOpen = true">Move to another context…</button>
+                <button type="button" id="integration-move-trigger" class="ui-toolbar-btn" disabled="@_loading" @onclick="() => _moveDialogOpen = true">Move to another context…</button>
             }
         </Toolbar>
     </PageHeader>

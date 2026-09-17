@@ -56,11 +56,12 @@
                     @Epic33UiDisplayHelpers.ScheduleActionButtonLabel
                 </button>
             }
-            @if (_capabilities?.CanManageSchedules == true)
+            @if (_capabilities?.CanManageSchedules == true && _detail is not null)
             {
-                @if (_detail?.IntegrationId is { } attachedIntegrationId)
+                @if (_detail.IntegrationId is { } attachedIntegrationId)
                 {
                     <button type="button"
+                            id="schedule-move-trigger"
                             class="ui-toolbar-btn"
                             disabled
                             title="This schedule moves with its integration.">
@@ -71,6 +72,7 @@
                 else
                 {
                     <button type="button"
+                            id="schedule-move-trigger"
                             class="ui-toolbar-btn"
                             disabled="@_loading"
                             @onclick="() => _moveDialogOpen = true">
@@ -87,7 +89,7 @@
         </Toolbar>
     </PageHeader>
     <MismatchNotice OwnerResourceContextId="@_detail?.ResourceContextId" ResourceKindLabel="schedule" />
-    @if (_detail?.IntegrationId is null)
+    @if (_detail is not null && _detail.IntegrationId is null)
     {
         <MoveOwnershipDialog IsOpen="@_moveDialogOpen"
                              Kind="MoveOwnershipDialog.ResourceKind.Schedule"

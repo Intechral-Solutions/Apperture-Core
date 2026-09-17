@@ -143,6 +143,45 @@ public sealed class MoveOwnershipDialogModelTests
     }
 
     [Fact]
+    public void FailPreview_clears_the_loading_flag_and_sets_the_error()
+    {
+        // Regression coverage for the MoveOwnershipDialog.razor bug where an HttpRequestException escaped
+        // LoadPreviewAsync uncaught: IsLoadingPreview never returned to false, and since ManagementDialog's
+        // IsBusy is derived from it, the dialog's close controls stayed permanently disabled. The razor
+        // component now routes HttpRequestException into FailPreview (the same path InvalidOperationException
+        // already used), so this proves FailPreview itself resets IsLoadingPreview regardless of which
+        // exception type triggered the call.
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+
+        model.FailPreview(generation, "The preview could not be loaded. Try again.");
+
+        model.IsLoadingPreview.Should().BeFalse();
+        model.SubmitError.Should().Be("The preview could not be loaded. Try again.");
+        model.CanSubmit.Should().BeFalse("a failed preview must never leave the move submittable");
+    }
+
+    [Fact]
+    public void A_stale_preview_failure_is_discarded()
+    {
+        // Mirrors A_stale_preview_response_is_discarded for the failure path: a late failure from a
+        // superseded request must not clobber the current (possibly successful) preview state.
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var first = model.BeginPreview();
+        model.SelectTarget("app-campus");
+        var second = model.BeginPreview();
+        model.ApplyPreview(second, Preview(canMove: true));
+
+        model.FailPreview(first, "stale failure");
+
+        model.IsLoadingPreview.Should().BeFalse();
+        model.SubmitError.Should().BeNull();
+        model.CanSubmit.Should().BeTrue("the stale failure must be dropped, not applied over the current success");
+    }
+
+    [Fact]
     public void Changing_the_target_clears_the_previous_preview_and_error()
     {
         var model = new MoveOwnershipDialogModel();
