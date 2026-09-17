@@ -12,7 +12,7 @@
 
 <ManagementDialog IsOpen="@IsOpen"
                   Title="Move to another context…"
-                  IsBusy="@_model.IsLoadingPreview"
+                  IsBusy="@(_model.IsLoadingPreview || _model.IsSubmitting)"
                   Size="sm"
                   OnClose="Cancel">
     <ChildContent>
@@ -78,7 +78,7 @@
     <Footer>
         <button type="button"
                 class="ui-toolbar-btn"
-                disabled="@_model.IsLoadingPreview"
+                disabled="@(_model.IsLoadingPreview || _model.IsSubmitting)"
                 @onclick="Cancel">
             Cancel
         </button>
@@ -141,6 +141,7 @@
             return;
 
         _model.SetSubmitError(null);
+        _model.BeginSubmit();
         try
         {
             var result = Kind switch
@@ -159,6 +160,10 @@
                 return;
             }
 
+            // A successful move must not leave this resource's target/preview/error behind for the next
+            // open -- a host page reusing this component instance for a different resource would
+            // otherwise see the previous resource's stale selection (Task 5 wires this dialog in).
+            ResetDialogState();
             await OnMoved.InvokeAsync();
         }
         catch (InvalidOperationException ex)
@@ -166,12 +171,21 @@
             // Covers the 400 common blockers and the transient ownership_operation_busy 409.
             _model.SetSubmitError(ex.Message);
         }
+        finally
+        {
+            _model.EndSubmit();
+        }
     }
 
     private async Task Cancel()
     {
+        ResetDialogState();
+        await OnCancelled.InvokeAsync();
+    }
+
+    private void ResetDialogState()
+    {
         _selectedTargetId = "";
         _model.Reset();
-        await OnCancelled.InvokeAsync();
     }
 }

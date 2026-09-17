@@ -31,6 +31,15 @@ public sealed class MoveOwnershipDialogModel
     public string? SubmitError { get; private set; }
 
     /// <summary>
+    /// True from <see cref="BeginSubmit"/> until <see cref="EndSubmit"/> -- the move request is in
+    /// flight. Blocks <see cref="CanSubmit"/> (no double-submit via rapid clicks) and is combined with
+    /// <see cref="IsLoadingPreview"/> by the razor component's <c>ManagementDialog.IsBusy</c> so
+    /// Escape/scrim/Cancel are also blocked mid-request, mirroring <c>ConfirmActionDialog</c>'s
+    /// <c>_busy</c> guarantee.
+    /// </summary>
+    public bool IsSubmitting { get; private set; }
+
+    /// <summary>
     /// The generation of the most recently started preview request. Used by the razor component to
     /// force-apply a fresh preview-shaped result obtained outside <see cref="BeginPreview"/> (e.g. the
     /// move endpoint's own response when a concurrent change blocks the move at submit time) without
@@ -46,6 +55,7 @@ public sealed class MoveOwnershipDialogModel
     public bool CanSubmit =>
         !string.IsNullOrEmpty(SelectedTargetId)
         && !IsLoadingPreview
+        && !IsSubmitting
         && Preview is { CanMove: true };
 
     /// <summary>
@@ -121,12 +131,19 @@ public sealed class MoveOwnershipDialogModel
 
     public void SetSubmitError(string? message) => SubmitError = message;
 
-    /// <summary>Returns the dialog to its initial, no-selection state (e.g. on cancel).</summary>
+    /// <summary>Marks a move request as in flight. Pair with <see cref="EndSubmit"/> (e.g. in a <c>finally</c>).</summary>
+    public void BeginSubmit() => IsSubmitting = true;
+
+    /// <summary>Clears the in-flight flag set by <see cref="BeginSubmit"/>.</summary>
+    public void EndSubmit() => IsSubmitting = false;
+
+    /// <summary>Returns the dialog to its initial, no-selection state (e.g. on cancel or after a successful move).</summary>
     public void Reset()
     {
         TargetOptions = [];
         SelectedTargetId = "";
         IsLoadingPreview = false;
+        IsSubmitting = false;
         Preview = null;
         SubmitError = null;
     }

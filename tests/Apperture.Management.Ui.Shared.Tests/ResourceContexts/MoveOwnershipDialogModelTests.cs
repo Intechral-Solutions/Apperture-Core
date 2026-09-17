@@ -53,6 +53,55 @@ public sealed class MoveOwnershipDialogModelTests
     }
 
     [Fact]
+    public void Submit_is_blocked_while_a_submit_is_in_flight()
+    {
+        // Rapid double-clicks on "Move" must not fire a second request while the first is still in
+        // flight -- ConfirmActionDialog's `_busy` field exists for the exact same reason.
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+        model.ApplyPreview(generation, Preview(canMove: true));
+
+        model.BeginSubmit();
+
+        model.CanSubmit.Should().BeFalse("a move request already in flight must not be submitted again");
+    }
+
+    [Fact]
+    public void Submit_is_allowed_again_once_a_submit_completes()
+    {
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+        model.ApplyPreview(generation, Preview(canMove: true));
+
+        model.BeginSubmit();
+        model.EndSubmit();
+
+        model.CanSubmit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Reset_clears_the_target_preview_error_and_in_flight_state()
+    {
+        // Covers the post-successful-move reset: a host page reusing the same dialog instance for a
+        // different resource must not see the previous resource's stale selection/preview.
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+        model.ApplyPreview(generation, Preview(canMove: true));
+        model.BeginSubmit();
+
+        model.Reset();
+
+        model.SelectedTargetId.Should().BeEmpty();
+        model.Preview.Should().BeNull();
+        model.SubmitError.Should().BeNull();
+        model.IsSubmitting.Should().BeFalse();
+        model.CanSubmit.Should().BeFalse();
+    }
+
+    [Fact]
     public void Submit_is_blocked_when_the_preview_says_CanMove_is_false()
     {
         var model = new MoveOwnershipDialogModel();
