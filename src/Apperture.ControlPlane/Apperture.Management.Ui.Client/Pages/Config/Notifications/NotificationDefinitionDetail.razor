@@ -27,6 +27,14 @@
                 <a href="@EditHref"
                    class="ui-toolbar-btn">Edit definition</a>
             }
+            @if (_canDeleteDefinition)
+            {
+                <button type="button"
+                        id="notification-definition-delete-trigger"
+                        class="ui-toolbar-btn ui-toolbar-btn--danger"
+                        disabled="@_busy"
+                        @onclick="() => _confirmDeleteOpen = true">Delete</button>
+            }
         </Toolbar>
     </PageHeader>
 
@@ -383,6 +391,21 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmDeleteOpen"
+                     Title="Delete notification definition?"
+                     ConfirmLabel="Delete definition"
+                     Emphasis="ConfirmActionEmphasis.Destructive"
+                     OnConfirm="DeleteDefinitionAsync"
+                     OnConfirmed="NavigateToDefinitionsList"
+                     OnCancel="() => _confirmDeleteOpen = false">
+    <ChildContent>
+        Deleting <strong>@(_detail?.DisplayName ?? "this notification definition")</strong> permanently removes it. This cannot be undone.
+    </ChildContent>
+    <Details>
+        Subscriptions and per-user overrides for this definition are removed with it. Historical notification instances already sent are preserved.
+    </Details>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string DefinitionId { get; set; } = "";
 
@@ -400,6 +423,7 @@
     private bool _canManageContacts;
     private bool _loading = true;
     private bool _busy;
+    private bool _confirmDeleteOpen;
     private string? _error;
     private NotificationDefinitionDetailDto? _detail;
     private IReadOnlyList<NotificationSubscriptionDto>? _subscriptions;
@@ -459,6 +483,11 @@
         _canManage
         && _detail is not null
         && string.Equals(_detail.Mutability, "fullyEditable", StringComparison.Ordinal);
+
+    private bool _canDeleteDefinition =>
+        _canManage
+        && _detail is not null
+        && string.Equals(_detail.Origin, "userCreated", StringComparison.OrdinalIgnoreCase);
 
     private bool HasAttentionRoutingRecipients =>
         _attentionRouting is not null
@@ -592,6 +621,16 @@
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
+    }
+
+    private async Task DeleteDefinitionAsync()
+    {
+        await Client.DeleteNotificationDefinitionAsync(_detail!.Id);
+    }
+
+    private void NavigateToDefinitionsList()
+    {
+        Nav.NavigateTo("/config/notifications/definitions");
     }
 
     private async Task RenderPreviewAsync()
