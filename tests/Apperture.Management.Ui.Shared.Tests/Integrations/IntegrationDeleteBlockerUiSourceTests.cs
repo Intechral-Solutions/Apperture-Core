@@ -53,9 +53,13 @@ public sealed class IntegrationDeleteBlockerUiSourceTests
         var details = ExtractDetailsFragment(content);
 
         // The existing NotificationSubscription removal surface already has its own correct
-        // authorization; this dialog must not add new copy guessing at who can act.
+        // authorization; this dialog must not add new copy guessing at who can act (e.g. "you may
+        // need a platform administrator"). Guard on the whole word "admin" (word-boundary, so this
+        // still catches "an admin", "admin required", etc.) rather than a bare substring, so this
+        // doesn't false-fail against innocuous future copy like "administrative" or "administrator".
         details.Should().NotContain("platform administrator");
-        details.Should().NotContain("admin");
+        details.Should().NotMatchRegex(@"(?i)\badmin\b",
+            "the dialog must not speculate about needing an admin to clear the blocker");
     }
 
     [Fact]

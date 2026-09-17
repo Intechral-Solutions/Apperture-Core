@@ -79,8 +79,12 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
 
         // This clear operation is safe/idempotent (the backend returns 204 whether or not an
         // override row existed), so it must not gain a confirmation dialog -- that would be
-        // scope creep into Task 1's destructive-delete territory.
-        content.Should().NotContain("ConfirmActionDialog");
+        // scope creep into Task 1's destructive-delete territory. Scoped to the Clear button's
+        // own enclosing markup block (not the whole 700+ line file), so this can't false-positive
+        // against a ConfirmActionDialog legitimately added elsewhere on this page for an unrelated
+        // action.
+        var clearButtonBlock = ExtractClearButtonBlock(content);
+        clearButtonBlock.Should().NotContain("ConfirmActionDialog");
     }
 
     [Fact]
@@ -131,6 +135,29 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
         }
 
         return content[nameIndex..i];
+    }
+
+    /// <summary>
+    /// Extracts the Clear override button's own enclosing markup block (the surrounding
+    /// <c>&lt;div class="flex flex-wrap gap-2 items-center"&gt;...&lt;/div&gt;</c>) so assertions
+    /// about that button's own markup can't false-positive against unrelated markup elsewhere in
+    /// this large page -- the same "find the nearest preceding boundary from the button's index"
+    /// scoping technique used above for the CanManageSchedules guard check.
+    /// </summary>
+    private static string ExtractClearButtonBlock(string content)
+    {
+        var clearIndex = content.IndexOf("id=\"integration-attention-routing-clear-trigger\"", StringComparison.Ordinal);
+        clearIndex.Should().BeGreaterThanOrEqualTo(0, "expected to find the Clear override button");
+
+        const string blockOpenTag = "<div class=\"flex flex-wrap gap-2 items-center\">";
+        var blockStart = content.LastIndexOf(blockOpenTag, clearIndex, StringComparison.Ordinal);
+        blockStart.Should().BeGreaterThanOrEqualTo(0, "expected to find the Clear button's enclosing markup block");
+
+        const string closeTag = "</div>";
+        var blockEnd = content.IndexOf(closeTag, clearIndex, StringComparison.Ordinal);
+        blockEnd.Should().BeGreaterThanOrEqualTo(0, "expected a closing </div> for the Clear button's block");
+
+        return content[blockStart..(blockEnd + closeTag.Length)];
     }
 
     private static string ReadRazor(string folder, string file)
