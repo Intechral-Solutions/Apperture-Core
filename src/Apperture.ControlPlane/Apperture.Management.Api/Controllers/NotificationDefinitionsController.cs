@@ -125,6 +125,18 @@ public sealed class NotificationDefinitionsController : ControllerBase
         }
     }
 
+    /// <summary>Deletes a user-created notification definition and its subscriptions (CTX-3B Plan 6a).</summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _definitions.DeleteAsync(id, cancellationToken).ConfigureAwait(false) ? NoContent() : NotFound();
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+    }
+
     [HttpPatch("{id}/enabled")]
     [ProducesResponseType(typeof(NotificationDefinitionDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

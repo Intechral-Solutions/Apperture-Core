@@ -72,6 +72,10 @@ A raw `RemoveRange` on the setting rows would delete the **only pointer** to an 
 
 **Not atomic, and deliberately so.** The SQL row deletion and the external `ISecretStore` mutation are two different stores; they do not form one transaction and this plan does not pretend otherwise. It follows whatever failure behavior `IntegrationSettingsService` already has for reset, and tests that behavior rather than inventing a new one.
 
+## Task 2 Audit Convention Note
+
+`NotificationDefinitionService` had no pre-existing audit convention to mirror -- `CreateAsync`, `UpdateAsync`, and `SetEnabledAsync` do not audit today, and no other notification-module service does either. `DeleteAsync` (Task 2) therefore follows the general house `AuditRecord` pattern used elsewhere for "one audit record per destructive/mutating operation" (`ResourceContextManagementService`, `IntegrationSettingsService`), appending a single record per successful delete under the new `ActionConstants.NotificationDefinitionDeleted` (`notification.definition.deleted`) action, rather than inventing a new scheme.
+
 ## Follow-ups
 
 - **`ScheduleDefinitions` blocks Integration delete and has no delete path either.** This is a pre-existing CTX-1 blocker, not one CTX-3B adds, and CTX-3A's closure already records "Schedules have no delete path at all" as deferred roadmap work. It is called out here because it is the one remaining Integration-delete blocker whose remediation path is missing, and because the reachability rule above should be applied to it when Schedule lifecycle work happens. CTX-3B deliberately does not widen into Schedule lifecycle.

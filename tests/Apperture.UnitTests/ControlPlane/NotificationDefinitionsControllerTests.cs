@@ -106,6 +106,11 @@ public sealed class NotificationDefinitionsControllerTests
             CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
+        public ValueTask<bool> DeleteAsync(
+            string id,
+            CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+
         public ValueTask<NotificationValidationResult> ValidateAsync(
             NotificationDefinitionValidateRequest request,
             CancellationToken cancellationToken = default) =>

@@ -56,6 +56,18 @@ public interface INotificationDefinitionStore
         string? updatedByActorId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes a user-created definition and its subordinate current-state data (subscriptions and
+    /// subscription user overrides). Returns false when no such definition exists.
+    /// </summary>
+    /// <remarks>
+    /// Refuses built-in definitions, mirroring <see cref="UpdateAsync"/>'s existing immutability rule for
+    /// built-in rule/template JSON. Historical rows -- <c>NotificationInstances</c> above all -- keep their
+    /// now-dangling <c>NotificationDefinitionId</c>, exactly as CTX-2 established for every other kind of
+    /// current-state removal.
+    /// </remarks>
+    ValueTask<bool> DeleteAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default);
+
     ValueTask<bool> ExistsDisplayNameAsync(
         string scope,
         string? integrationId,

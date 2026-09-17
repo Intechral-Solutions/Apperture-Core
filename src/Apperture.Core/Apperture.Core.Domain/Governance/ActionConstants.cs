@@ -105,6 +105,9 @@ public static class ActionConstants
     /// <summary>Create/update/enable notification definitions. Epic 77.</summary>
     public const string NotificationDefinitionManage = "notification.definition.manage";
 
+    /// <summary>Delete a user-created notification definition (CTX-3B Plan 6a, the Integration-delete blocker's remediation path).</summary>
+    public const string NotificationDefinitionDeleted = "notification.definition.deleted";
+
     /// <summary>Read instance platform settings registry (Phase 1). Epic 109.</summary>
     public const string PlatformSettingsRead = "platform.settings.read";
 

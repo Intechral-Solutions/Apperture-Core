@@ -1,5 +1,7 @@
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Shared.Kernel;
@@ -16,6 +18,7 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
     private readonly NotificationDefinitionAuthorization _authorization;
     private readonly IPrincipalContext _principalContext;
     private readonly IIntegrationRepository _integrations;
+    private readonly IAuditService _audit;
 
     public NotificationDefinitionService(
         INotificationDefinitionStore store,
@@ -25,7 +28,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         INotificationRenderContextFactory contextFactory,
         NotificationDefinitionAuthorization authorization,
         IPrincipalContext principalContext,
-        IIntegrationRepository integrations)
+        IIntegrationRepository integrations,
+        IAuditService audit)
     {
         _store = store;
         _ruleValidator = ruleValidator;
@@ -35,6 +39,7 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
         _authorization = authorization;
         _principalContext = principalContext;
         _integrations = integrations;
+        _audit = audit;
     }
 
     public async ValueTask<IReadOnlyList<NotificationDefinition>> ListAsync(
@@ -167,6 +172,29 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var existing = await _store.GetAsync(NotificationDefinitionId.From(id), cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+            return false;
+
+        // Same gate as create/update. No new permission is introduced by CTX-3B.
+        await _authorization.RequireDefinitionAccessAsync(existing.IntegrationId, manage: true, cancellationToken)
+            .ConfigureAwait(false);
+
+        var deleted = await _store.DeleteAsync(NotificationDefinitionId.From(id), cancellationToken).ConfigureAwait(false);
+        if (deleted)
+        {
+            // NotificationDefinitionService has no pre-existing audit convention (CreateAsync/UpdateAsync/
+            // SetEnabledAsync do not audit), so deletion follows the general house AuditRecord pattern used
+            // elsewhere for "one audit record per destructive/mutating operation" (e.g.
+            // ResourceContextManagementService, IntegrationSettingsService) rather than inventing one.
+            await AppendDeleteAuditAsync(id, existing, cancellationToken).ConfigureAwait(false);
+        }
+        return deleted;
+    }
+
     public async ValueTask<NotificationValidationResult> ValidateAsync(
         NotificationDefinitionValidateRequest request,
         CancellationToken cancellationToken = default)
@@ -247,6 +275,31 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         return actor?.Id.Value;
+    }
+
+    private async ValueTask AppendDeleteAuditAsync(string id, NotificationDefinition existing, CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+
+        string? resourceContextId = null;
+        if (!string.IsNullOrWhiteSpace(existing.IntegrationId))
+        {
+            var integration = await _integrations.GetByIdAsync(new IntegrationId(existing.IntegrationId), cancellationToken)
+                .ConfigureAwait(false);
+            resourceContextId = integration?.ResourceContextId.Value;
+        }
+
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor?.Id ?? new ActorId("system"),
+            ActionConstants.NotificationDefinitionDeleted,
+            new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, id),
+            Outcome: "",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            Details: $"Deleted notification definition '{existing.DisplayName}' ({id})",
+            ResourceContextId: resourceContextId);
+        await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask<IReadOnlyDictionary<string, string>> GetIntegrationOwnerContextIdsAsync(

@@ -158,6 +158,36 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
         return ToDomain(entity);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<bool> DeleteAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.NotificationDefinitions
+            .FirstOrDefaultAsync(x => x.Id == id.Value, cancellationToken)
+            .ConfigureAwait(false);
+        if (entity is null)
+            return false;
+
+        if (entity.Origin is NotificationDefinitionOrigins.PlatformBuiltIn or NotificationDefinitionOrigins.ModuleBuiltIn)
+            throw new InvalidOperationException("Built-in notification definitions cannot be deleted.");
+
+        // Subordinate current-state data, per the CTX-3B referential inventory: both are meaningless once
+        // the definition is gone and neither is reachable by any other route.
+        var subscriptions = await _db.NotificationSubscriptions
+            .Where(s => s.NotificationDefinitionId == id.Value)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var overrides = await _db.NotificationSubscriptionUserOverrides
+            .Where(o => o.NotificationDefinitionId == id.Value)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        _db.NotificationSubscriptions.RemoveRange(subscriptions);
+        _db.NotificationSubscriptionUserOverrides.RemoveRange(overrides);
+        _db.NotificationDefinitions.Remove(entity);
+
+        // Historical NotificationInstances are deliberately NOT touched.
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public async ValueTask<bool> ExistsDisplayNameAsync(
         string scope,
         string? integrationId,

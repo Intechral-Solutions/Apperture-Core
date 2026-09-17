@@ -2701,6 +2701,12 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<NotificationDefinitionDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task DeleteNotificationDefinitionAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.DeleteAsync($"notification-definitions/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false); // house convention; never bare EnsureSuccessStatusCode
+    }
+
     public async Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
         string definitionId,
         CancellationToken cancellationToken = default)

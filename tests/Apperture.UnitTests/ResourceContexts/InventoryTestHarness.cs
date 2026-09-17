@@ -117,6 +117,8 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             Db,
             ownershipGate);
 
+        _auditService = new SqlAuditService(Db);
+
         var notificationStore = new SqlNotificationDefinitionStore(Db);
         var notificationAuth = new NotificationDefinitionAuthorization(
             new AlwaysActor(),
@@ -131,7 +133,8 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             Mock.Of<INotificationRenderContextFactory>(),
             notificationAuth,
             new AlwaysActor(),
-            integrationRepository);
+            integrationRepository,
+            _auditService);
 
         var runQueryService = new RunQueryService(
             Db,
@@ -142,7 +145,6 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             new StubWorkflowDefinitionResolver(),
             new StubComposition());
 
-        _auditService = new SqlAuditService(Db);
         var auditTimeline = new AuditTimelineQueryService(_auditService);
 
         var modules = new Mock<IModuleRegistryService>();

@@ -55,6 +55,13 @@ public interface INotificationDefinitionService
         bool isEnabled,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes a user-created notification definition. Authorized exactly as create and update are:
+    /// <c>notification_definition.manage</c> at instance scope, plus <c>integration.update</c> on the
+    /// owning Integration for an Integration-scoped definition.
+    /// </summary>
+    ValueTask<bool> DeleteAsync(string id, CancellationToken cancellationToken = default);
+
     ValueTask<NotificationValidationResult> ValidateAsync(
         NotificationDefinitionValidateRequest request,
         CancellationToken cancellationToken = default);

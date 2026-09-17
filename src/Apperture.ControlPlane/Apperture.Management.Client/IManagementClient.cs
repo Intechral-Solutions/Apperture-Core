@@ -755,6 +755,14 @@ public interface IManagementClient
         UpdateNotificationDefinitionRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes a user-created notification definition and its subscriptions (CTX-3B Plan 6a). Throws
+    /// <see cref="HttpRequestException"/> (via the house <c>EnsureSuccessOrThrowAsync</c> convention) for
+    /// any non-success response, including a 409 for a built-in definition, so the operator sees the real
+    /// server message rather than a swallowed status code.
+    /// </summary>
+    Task DeleteNotificationDefinitionAsync(string id, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<NotificationSubscriptionDto>> ListNotificationSubscriptionsByDefinitionAsync(
         string definitionId,
         CancellationToken cancellationToken = default);
