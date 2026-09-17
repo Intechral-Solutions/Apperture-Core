@@ -1,0 +1,177 @@
+@*
+    CTX-3B Plan 5 (Task 4) -- shared ownership-move dialog for Integrations, Connections and Schedules.
+    Wraps ManagementDialog (the same modal chrome ConfirmActionDialog.razor reuses) rather than
+    inventing a second modal style; decision logic lives in the extracted, unit-tested
+    MoveOwnershipDialogModel, so this component's @code holds only I/O and the parameter surface.
+*@
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Shared
+@using Apperture.Management.Ui.Client.Services
+@inject IManagementClient Client
+@inject ResourceContextViewState ViewState
+
+<ManagementDialog IsOpen="@IsOpen"
+                  Title="Move to another context…"
+                  IsBusy="@_model.IsLoadingPreview"
+                  Size="sm"
+                  OnClose="Cancel">
+    <ChildContent>
+        <label for="move-target-select">Target context</label>
+        <select id="move-target-select" @bind="_selectedTargetId" @bind:after="LoadPreviewAsync">
+            <option value="">Choose a context…</option>
+            @foreach (var option in _model.TargetOptions)
+            {
+                <option value="@option.Id">@option.Name</option>
+            }
+        </select>
+
+        @if (_model.IsLoadingPreview)
+        {
+            <p class="ui-dialog__supporting">Loading preview…</p>
+        }
+        else if (_model.Preview is { } preview)
+        {
+            @if (preview.Effects.Count > 0)
+            {
+                <ul class="move-effects">
+                    @foreach (var effect in preview.Effects)
+                    {
+                        <li>@effect.Message</li>
+                    }
+                </ul>
+            }
+            @if (preview.Blockers.Count > 0)
+            {
+                <ul class="move-blockers">
+                    @foreach (var blocker in preview.Blockers)
+                    {
+                        <li>
+                            @blocker.Message
+                            @if (blocker.Code == ResourceMoveBlockerCodes.ScheduleAttachedToIntegration && blocker.RelatedResourceId is not null)
+                            {
+                                <a href="@($"/integrations/{blocker.RelatedResourceId}")">Go to integration</a>
+                            }
+                            else if (blocker.Code == ResourceMoveBlockerCodes.BindingIntegrationUnreachable && blocker.RelatedResourceId is not null)
+                            {
+                                <a href="@($"/integrations/{blocker.RelatedResourceId}")">@blocker.RelatedDisplayName</a>
+                            }
+                            else if (blocker.Code == ResourceMoveBlockerCodes.BindingConnectionUnreachable && blocker.RelatedResourceId is not null)
+                            {
+                                <a href="@($"/connections/{blocker.RelatedResourceId}")">@blocker.RelatedDisplayName</a>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        }
+
+        @if (_model.SubmitError is not null)
+        {
+            <PageMessage Kind="PageMessageKind.Error"
+                         Title="Action failed"
+                         Message="@_model.SubmitError"
+                         Class="ui-dialog__error" />
+        }
+
+        <p class="ui-help-text">History stays with @SourceContextName.</p>
+    </ChildContent>
+    <Footer>
+        <button type="button"
+                class="ui-toolbar-btn"
+                disabled="@_model.IsLoadingPreview"
+                @onclick="Cancel">
+            Cancel
+        </button>
+        <button type="button"
+                class="ui-toolbar-btn"
+                disabled="@(!_model.CanSubmit)"
+                @onclick="SubmitAsync">
+            Move
+        </button>
+    </Footer>
+</ManagementDialog>
+
+@code {
+    /// <summary>Which resource family this instance moves. Selects which of the client's six methods it calls.</summary>
+    public enum ResourceKind { Integration, Connection, Schedule }
+
+    [Parameter, EditorRequired] public bool IsOpen { get; set; }
+    [Parameter, EditorRequired] public ResourceKind Kind { get; set; }
+    [Parameter, EditorRequired] public string ResourceId { get; set; } = "";
+    [Parameter, EditorRequired] public string? CurrentResourceContextId { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+    [Parameter] public EventCallback OnMoved { get; set; }
+
+    private readonly MoveOwnershipDialogModel _model = new();
+    private string _selectedTargetId = "";
+
+    private string SourceContextName =>
+        CurrentResourceContextId is null ? "Shared" : ViewState.DescribeContext(CurrentResourceContextId);
+
+    protected override void OnParametersSet() =>
+        _model.SetTargetOptions(ViewState.SharedContext, ViewState.KnownActiveApplications, CurrentResourceContextId);
+
+    private async Task LoadPreviewAsync()
+    {
+        _model.SelectTarget(_selectedTargetId);
+        if (string.IsNullOrEmpty(_selectedTargetId))
+            return;
+
+        var generation = _model.BeginPreview();
+        try
+        {
+            var preview = Kind switch
+            {
+                ResourceKind.Integration => await Client.GetIntegrationOwnershipMovePreviewAsync(ResourceId, _selectedTargetId),
+                ResourceKind.Connection  => await Client.GetConnectionOwnershipMovePreviewAsync(ResourceId, _selectedTargetId),
+                ResourceKind.Schedule    => await Client.GetScheduleOwnershipMovePreviewAsync(ResourceId, _selectedTargetId),
+                _ => throw new NotSupportedException()
+            };
+            _model.ApplyPreview(generation, preview); // no-ops if a newer request superseded this one
+        }
+        catch (InvalidOperationException ex)
+        {
+            _model.FailPreview(generation, ex.Message);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (!_model.CanSubmit)
+            return;
+
+        _model.SetSubmitError(null);
+        try
+        {
+            var result = Kind switch
+            {
+                ResourceKind.Integration => await Client.MoveIntegrationOwnershipAsync(ResourceId, _selectedTargetId),
+                ResourceKind.Connection  => await Client.MoveConnectionOwnershipAsync(ResourceId, _selectedTargetId),
+                ResourceKind.Schedule    => await Client.MoveScheduleOwnershipAsync(ResourceId, _selectedTargetId),
+                _ => throw new NotSupportedException()
+            };
+
+            if (!result.CanMove)
+            {
+                // A concurrent change blocked the move between preview and submit (§8.2: move never
+                // trusts a prior preview). Show the fresh blockers instead of a generic error.
+                _model.ApplyPreview(_model.CurrentGeneration, result);
+                return;
+            }
+
+            await OnMoved.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Covers the 400 common blockers and the transient ownership_operation_busy 409.
+            _model.SetSubmitError(ex.Message);
+        }
+    }
+
+    private async Task Cancel()
+    {
+        _selectedTargetId = "";
+        _model.Reset();
+        await OnCancelled.InvokeAsync();
+    }
+}
