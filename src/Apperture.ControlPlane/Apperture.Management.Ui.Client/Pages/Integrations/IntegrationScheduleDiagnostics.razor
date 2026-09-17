@@ -346,14 +346,9 @@
                                 <button type="button"
                                         id="integration-attention-routing-clear-trigger"
                                         class="ui-toolbar-btn text-sm disabled:opacity-50"
-                                        disabled="@_routingClearBusy"
-                                        @onclick="ClearRoutingAsync">
+                                        @onclick="() => _confirmClearOpen = true">
                                     Clear override
                                 </button>
-                                @if (!string.IsNullOrEmpty(_routingClearError))
-                                {
-                                    <span class="text-xs text-muted">@_routingClearError</span>
-                                }
                             </div>
                         </div>
                     }
@@ -401,6 +396,18 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmClearOpen"
+                     Title="Clear routing override?"
+                     ConfirmLabel="Clear override"
+                     Emphasis="ConfirmActionEmphasis.Standard"
+                     OnConfirm="ClearRoutingAsync"
+                     OnConfirmed="OnRoutingClearConfirmedAsync"
+                     OnCancel="() => _confirmClearOpen = false">
+    <ChildContent>
+        This integration will stop using its custom Attention routing and fall back to the default routing configuration.
+    </ChildContent>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string IntegrationId { get; set; } = "";
 
@@ -420,8 +427,7 @@
     private string _routingEscalationGroupId = "";
     private bool _routingSaveBusy;
     private string? _routingSaveError;
-    private bool _routingClearBusy;
-    private string? _routingClearError;
+    private bool _confirmClearOpen;
 
     private string? _dataLoadKey;
 
@@ -559,21 +565,13 @@
     {
         if (string.IsNullOrWhiteSpace(IntegrationId))
             return;
-        _routingClearBusy = true;
-        _routingClearError = null;
-        try
-        {
-            await Client.ClearIntegrationAttentionRoutingAsync(IntegrationId);
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            _routingClearError = ex.Message;
-        }
-        finally
-        {
-            _routingClearBusy = false;
-        }
+        await Client.ClearIntegrationAttentionRoutingAsync(IntegrationId);
+    }
+
+    private async Task OnRoutingClearConfirmedAsync()
+    {
+        _confirmClearOpen = false;
+        await LoadAsync();
     }
 
     private async Task AcknowledgeIncidentAsync(string incidentId)

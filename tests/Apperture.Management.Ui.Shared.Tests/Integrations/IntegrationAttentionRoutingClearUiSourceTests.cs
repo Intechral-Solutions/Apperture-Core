@@ -16,11 +16,15 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
     private const string CanManageSchedulesGuard = "@if (_capabilities?.CanManageSchedules == true)";
 
     [Fact]
-    public void Clear_button_exists_in_attention_routing_section()
+    public void Clear_button_exists_in_attention_routing_section_and_opens_the_confirm_dialog()
     {
         var content = ReadRazor(Folder, TargetFile);
         content.Should().Contain("id=\"integration-attention-routing-clear-trigger\"");
-        content.Should().Contain("@onclick=\"ClearRoutingAsync\"");
+
+        // The trigger button no longer calls ClearRoutingAsync directly -- it opens the confirm
+        // dialog, which is the one that invokes ClearRoutingAsync via OnConfirm (see
+        // A_ConfirmActionDialog_gates_the_clear_operation below).
+        content.Should().Contain("@onclick=\"() => _confirmClearOpen = true\"");
     }
 
     [Fact]
@@ -63,28 +67,60 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
         handlerBody.Should().NotContain("PutIntegrationAttentionRoutingAsync",
             "Clear must call the dedicated clear endpoint, not the upsert/save endpoint");
 
-        // Refreshes the effective-routing display the same way Save does, rather than hand-patching
-        // local state.
-        handlerBody.Should().Contain("await LoadAsync()");
+        // Task 5: ClearRoutingAsync is now the ConfirmActionDialog's OnConfirm target, so it must
+        // not locally catch -- a local catch here would suppress the real server error text that
+        // ConfirmActionDialog is responsible for surfacing verbatim (same no-local-catch convention
+        // as NotificationDefinitionDetail's DeleteDefinitionAsync from Task 1).
+        handlerBody.Should().NotContain("catch",
+            "ConfirmActionDialog itself catches and surfaces the real server error text; a local catch here would suppress it");
 
-        // Uses its own scoped error field, independent from Save's.
-        handlerBody.Should().Contain("_routingClearError");
-        handlerBody.Should().Contain("catch (HttpRequestException ex)");
+        // Refreshing the effective-routing display now happens post-confirmation (see
+        // OnRoutingClearConfirmedAsync_refreshes_via_LoadAsync_and_closes_the_dialog below), not
+        // inside the OnConfirm handler itself.
+        handlerBody.Should().NotContain("LoadAsync",
+            "refresh-on-success now belongs to OnConfirmed, not to the OnConfirm handler itself");
     }
 
     [Fact]
-    public void No_ConfirmActionDialog_was_added_for_the_clear_operation()
+    public void A_ConfirmActionDialog_gates_the_clear_operation()
     {
         var content = ReadRazor(Folder, TargetFile);
 
-        // This clear operation is safe/idempotent (the backend returns 204 whether or not an
-        // override row existed), so it must not gain a confirmation dialog -- that would be
-        // scope creep into Task 1's destructive-delete territory. Scoped to the Clear button's
-        // own enclosing markup block (not the whole 700+ line file), so this can't false-positive
-        // against a ConfirmActionDialog legitimately added elsewhere on this page for an unrelated
-        // action.
+        // Task 5 addendum: clicking Clear immediately changes the Integration's effective attention
+        // routing (who gets notified), with no on-screen record of the prior configuration -- so it
+        // now requires confirmation, scoped to the Clear button's own enclosing markup block (not
+        // the whole 700+ line file), so this can't false-positive against a ConfirmActionDialog
+        // legitimately added elsewhere on this page for an unrelated action. Since the dialog itself
+        // is rendered as a sibling of the button (not nested inside its markup block), this looks for
+        // the dialog wiring anywhere in the file but pins its content precisely below.
         var clearButtonBlock = ExtractClearButtonBlock(content);
-        clearButtonBlock.Should().NotContain("ConfirmActionDialog");
+        clearButtonBlock.Should().Contain("@onclick=\"() => _confirmClearOpen = true\"",
+            "the trigger button must open the dialog rather than call the clear method directly");
+        clearButtonBlock.Should().NotContain("@onclick=\"ClearRoutingAsync\"",
+            "the button must no longer call the clear method directly -- confirmation is required first");
+
+        content.Should().Contain("ConfirmActionDialog IsOpen=\"@_confirmClearOpen\"");
+
+        var dialogBlock = ExtractConfirmActionDialogBlock(content);
+        dialogBlock.Should().Contain("Title=\"Clear routing override?\"");
+        dialogBlock.Should().Contain("ConfirmLabel=\"Clear override\"");
+        dialogBlock.Should().Contain("Emphasis=\"ConfirmActionEmphasis.Standard\"",
+            "clearing an override reverts to a default -- it is not a destructive/unrecoverable action");
+        dialogBlock.Should().Contain("OnConfirm=\"ClearRoutingAsync\"",
+            "the dialog must invoke the same clear method the direct-click handler used to call");
+        dialogBlock.Should().Contain(
+            "This integration will stop using its custom Attention routing and fall back to the default routing configuration.");
+    }
+
+    [Fact]
+    public void OnRoutingClearConfirmedAsync_refreshes_via_LoadAsync_and_closes_the_dialog()
+    {
+        var content = ReadRazor(Folder, TargetFile);
+        content.Should().Contain("OnConfirmed=\"OnRoutingClearConfirmedAsync\"");
+
+        var handlerBody = ExtractMethodBody(content, "OnRoutingClearConfirmedAsync");
+        handlerBody.Should().Contain("_confirmClearOpen = false");
+        handlerBody.Should().Contain("await LoadAsync()");
     }
 
     [Fact]
@@ -156,6 +192,25 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
         const string closeTag = "</div>";
         var blockEnd = content.IndexOf(closeTag, clearIndex, StringComparison.Ordinal);
         blockEnd.Should().BeGreaterThanOrEqualTo(0, "expected a closing </div> for the Clear button's block");
+
+        return content[blockStart..(blockEnd + closeTag.Length)];
+    }
+
+    /// <summary>
+    /// Extracts the &lt;ConfirmActionDialog ...&gt;...&lt;/ConfirmActionDialog&gt; element that gates
+    /// the clear operation, from its opening tag to its matching closing tag, so assertions about its
+    /// parameters/copy can't false-positive against some other ConfirmActionDialog usage elsewhere on
+    /// this page.
+    /// </summary>
+    private static string ExtractConfirmActionDialogBlock(string content)
+    {
+        const string openTag = "<ConfirmActionDialog IsOpen=\"@_confirmClearOpen\"";
+        var blockStart = content.IndexOf(openTag, StringComparison.Ordinal);
+        blockStart.Should().BeGreaterThanOrEqualTo(0, "expected to find the Clear confirm dialog's opening tag");
+
+        const string closeTag = "</ConfirmActionDialog>";
+        var blockEnd = content.IndexOf(closeTag, blockStart, StringComparison.Ordinal);
+        blockEnd.Should().BeGreaterThanOrEqualTo(0, "expected a closing </ConfirmActionDialog> tag");
 
         return content[blockStart..(blockEnd + closeTag.Length)];
     }
