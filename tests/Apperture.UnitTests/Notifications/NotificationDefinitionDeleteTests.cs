@@ -94,6 +94,7 @@ public sealed class NotificationDefinitionDeleteTests
 
         h.Audit.Records.Take(auditBefore.Count).Should().BeEquivalentTo(auditBefore, "audit is append-only");
         h.Audit.Records.Should().HaveCount(auditBefore.Count + 1);
+        h.Audit.Records.Last().Outcome.Should().Be("succeeded");
     }
 
     [Fact]

@@ -294,7 +294,7 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
             actor?.Id ?? new ActorId("system"),
             ActionConstants.NotificationDefinitionDeleted,
             new ResourceDescriptor(ResourceTypeConstants.NotificationDefinition, id),
-            Outcome: "",
+            Outcome: "succeeded",
             DateTimeOffset.UtcNow,
             new CorrelationId(null),
             Details: $"Deleted notification definition '{existing.DisplayName}' ({id})",

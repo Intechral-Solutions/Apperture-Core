@@ -163,6 +163,7 @@ public sealed class IntegrationDeleteReferentialLifecycleTests
             "the delete is attributable to the Context that owned the Integration");
         record.Details.Should().Contain(integration.Id.Value);
         record.Details.Should().Contain(integration.DisplayName);
+        record.Outcome.Should().Be("succeeded");
     }
 
     [Fact]

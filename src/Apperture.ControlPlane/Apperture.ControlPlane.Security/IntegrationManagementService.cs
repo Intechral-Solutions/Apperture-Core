@@ -348,7 +348,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
             actor.Id,
             ActionConstants.IntegrationDeleted,
             new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value),
-            Outcome: "",
+            Outcome: "succeeded",
             DateTimeOffset.UtcNow,
             new CorrelationId(null),
             Details: $"Deleted integration '{existing.DisplayName}' ({id.Value}); cleaned up {scopedSettingKeys.Count} integration-scoped setting value(s).",
