@@ -359,7 +359,11 @@
         Deleting <strong>@(_integration?.DisplayName ?? "this integration")</strong> permanently removes its configuration. This cannot be undone.
     </ChildContent>
     <Details>
-        Bindings, schedules, and settings that belong to this integration are removed with it.
+        <p>Integration-scoped settings are cleaned up automatically. Bindings, schedules, notification definitions, notification subscriptions, and attention-routing overrides must be removed first — this delete is blocked while any exist.</p>
+        <p class="mt-2 flex flex-wrap gap-3">
+            <DrillInLink Href="@IntegrationUiRoutes.Notifications(IntegrationId)">Manage notifications</DrillInLink>
+            <DrillInLink Href="@IntegrationUiRoutes.ScheduleDiagnostics(IntegrationId)">Schedule diagnostics</DrillInLink>
+        </p>
     </Details>
 </ConfirmActionDialog>
 
