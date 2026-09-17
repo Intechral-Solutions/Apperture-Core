@@ -76,6 +76,25 @@ The server error text itself (`"Cannot delete integration: N notification defini
 
 ---
 
+### Task 5 (addendum, requested after this plan's initial 4 tasks closed): confirm before clearing an attention-routing override
+
+The final whole-branch review of this stabilization pass flagged that Task 2's "Clear override" button executes immediately with no confirmation. Idempotence at the API layer (the backend returns 204 whether or not a row existed) is not the same claim as "safe to skip confirmation" — clicking Clear immediately changes the Integration's effective attention routing, i.e. who gets notified, with no on-screen record of the prior configuration. The review recommended shipping as-is but explicitly flagged the reasoning should not become house precedent. This addendum fixes it properly: add confirmation.
+
+**File:** `src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationScheduleDiagnostics.razor`
+**Test:** `tests/Apperture.Management.Ui.Shared.Tests/Integrations/IntegrationAttentionRoutingClearUiSourceTests.cs` (update, don't replace)
+
+- [ ] Wrap the Clear action in the same `ConfirmActionDialog` house pattern Task 1 used for NotificationDefinition delete (`IntegrationDetail.razor`'s Integration-delete dialog is the other live precedent — same parameter shape: `IsOpen`, `Title`, `ConfirmLabel`, `Emphasis`, `OnConfirm`, `OnConfirmed`, `OnCancel`, `ChildContent`). Use `Emphasis="ConfirmActionEmphasis.Standard"` (not `.Destructive` — this reverts to a default, it does not destroy anything the operator can't immediately re-configure, unlike a hard delete).
+- [ ] Title: `Clear routing override?`
+- [ ] Body (`ChildContent`): `This integration will stop using its custom Attention routing and fall back to the default routing configuration.` — adapt wording to house style if needed, but it must communicate: (a) the Integration-specific override is removed, (b) default/instance routing takes effect, (c) this does not delete teams or default routing.
+- [ ] Confirm button label: `Clear override`.
+- [ ] `OnConfirm` calls the existing `ClearRoutingAsync()`/`Client.ClearIntegrationAttentionRoutingAsync(...)` call with no new try/catch wrapping it (same no-local-catch convention as Task 1, so `ConfirmActionDialog` surfaces any real server error verbatim) — do not change `ClearIntegrationRoutingAsync`'s behavior, authorization, or the existing `CanManageSchedules` gate.
+- [ ] `OnConfirmed` does what the button's direct-click handler used to do on success (refresh via `LoadAsync()`).
+- [ ] Do NOT add: undo infrastructure, previous-value persistence/display, notification-history changes, or any additional audit record beyond what Plan 6a already writes (the existing per-call backend behavior is unchanged — this is a UI-only confirmation gate).
+- [ ] Update the existing test file: the test that previously asserted "no `ConfirmActionDialog` was added for the clear operation" (`No_ConfirmActionDialog_was_added_for_the_clear_operation` or similar) must be updated to reflect the new, correct requirement — a `ConfirmActionDialog` now SHOULD exist scoped to the Clear button, with `OnConfirm` calling the clear method with no local catch. Add/adjust assertions for the dialog's title/confirm-label copy. Keep the sibling test asserting the button/gate exists.
+- [ ] Run the affected test file, run the full `Apperture.Management.Ui.Shared.Tests` suite, build the affected project, commit as `CTX-3B: confirm attention routing override clear`.
+
+---
+
 ## Validation for this plan
 
 - Targeted: the four new/updated test files above, plus the two updated backend test files.
