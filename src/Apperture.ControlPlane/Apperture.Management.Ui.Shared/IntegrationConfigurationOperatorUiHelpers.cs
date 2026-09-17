@@ -160,9 +160,15 @@ public static class IntegrationConfigurationOperatorUiHelpers
         IEnumerable<IntegrationReadinessIssueDto> issues,
         string integrationId)
     {
+        var materialized = issues as IReadOnlyCollection<IntegrationReadinessIssueDto> ?? issues.ToList();
+        var crossContextBindingIds = GetCrossContextBindingIds(materialized);
+
         var grouped = new Dictionary<string, List<ReadinessIssueOperatorView>>(StringComparer.Ordinal);
-        foreach (var issue in issues)
+        foreach (var issue in materialized)
         {
+            if (IsRedundantBindingNotEligible(issue, crossContextBindingIds))
+                continue;
+
             var view = MapReadinessIssue(issue, integrationId);
             if (!grouped.TryGetValue(view.Category, out var list))
             {
@@ -175,6 +181,20 @@ public static class IntegrationConfigurationOperatorUiHelpers
 
         return grouped.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<ReadinessIssueOperatorView>)kv.Value, StringComparer.Ordinal);
     }
+
+    private static HashSet<string> GetCrossContextBindingIds(IEnumerable<IntegrationReadinessIssueDto> issues) =>
+        issues
+            .Where(i => string.Equals(i.Code, "binding_cross_context", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrEmpty(i.BindingId))
+            .Select(i => i.BindingId!)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static bool IsRedundantBindingNotEligible(
+        IntegrationReadinessIssueDto issue,
+        HashSet<string> crossContextBindingIds) =>
+        string.Equals(issue.Code, "binding_not_eligible", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrEmpty(issue.BindingId)
+        && crossContextBindingIds.Contains(issue.BindingId);
 
     public static ReadinessIssueOperatorView MapReadinessIssue(
         IntegrationReadinessIssueDto issue,
@@ -345,7 +365,7 @@ public static class IntegrationConfigurationOperatorUiHelpers
                 when !string.IsNullOrWhiteSpace(affectedKey) =>
                 BuildSettingsRemediationHref(integrationId, affectedKey),
             "missing_slot_binding" or "inactive_binding" or "binding_contract_mismatch"
-                or "binding_not_eligible" or "binding_missing_connection_or_capability"
+                or "binding_not_eligible" or "binding_cross_context" or "binding_missing_connection_or_capability"
                 or "duplicate_active_binding_for_slot"
                 when !string.IsNullOrWhiteSpace(slotName) =>
                 BuildConnectionRequirementAnchorHref(integrationId, slotName),
@@ -366,7 +386,7 @@ public static class IntegrationConfigurationOperatorUiHelpers
         "missing_secret" or "invalid_secret_reference" => CategorySecrets,
         "missing_slot_binding" or "inactive_binding" or "duplicate_active_binding_for_slot"
             or "binding_contract_mismatch" or "binding_missing_connection_or_capability"
-            or "binding_not_eligible" or "connection_missing" or "connection_inactive"
+            or "binding_not_eligible" or "binding_cross_context" or "connection_missing" or "connection_inactive"
             or "incompatible_connection_type" => CategoryBindings,
         "connection_unverified" or "connection_verification_failed"
             or "connection_verification_unavailable" => CategoryVerification,
@@ -407,6 +427,10 @@ public static class IntegrationConfigurationOperatorUiHelpers
                 "Connection not eligible",
                 message,
                 "Choose a connection compatible with this module slot."),
+            "binding_cross_context" => (
+                "Binding crosses contexts",
+                message,
+                "Move the integration or the connection so they share a context, or remove the binding."),
             "connection_missing" => (
                 "Connection missing",
                 message,

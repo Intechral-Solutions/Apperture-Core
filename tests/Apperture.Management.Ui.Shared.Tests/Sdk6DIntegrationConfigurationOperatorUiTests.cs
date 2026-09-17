@@ -56,6 +56,133 @@ public sealed class Sdk6DIntegrationConfigurationOperatorUiTests
     }
 
     [Fact]
+    public void BuildRemediationHref_routes_binding_cross_context_to_connection_requirement_anchor()
+    {
+        IntegrationConfigurationOperatorUiHelpers.BuildRemediationHref(
+                "int-1",
+                "binding_cross_context",
+                "CnsApi",
+                null)
+            .Should().Be("/integrations/int-1#requirement-CnsApi");
+    }
+
+    [Fact]
+    public void MapIssueCategory_puts_binding_cross_context_in_bindings_not_module()
+    {
+        var issue = new IntegrationReadinessIssueDto(
+            "binding_cross_context",
+            "Binding for slot 'CnsApi' references connection 'conn-1' in ResourceContext 'ctx-b', which this integration (in 'ctx-a') cannot reach. Remove this binding, or move the integration or the connection so they share a context.",
+            "CnsApi",
+            "binding-1",
+            "conn-1",
+            "Blocking");
+
+        var view = IntegrationConfigurationOperatorUiHelpers.MapReadinessIssue(issue, "int-1");
+
+        view.Category.Should().Be(IntegrationConfigurationOperatorUiHelpers.CategoryBindings);
+        view.Category.Should().NotBe(IntegrationConfigurationOperatorUiHelpers.CategoryModule);
+    }
+
+    [Fact]
+    public void MapIssueCopy_for_binding_cross_context_has_dedicated_title_and_hint()
+    {
+        var message = "Binding for slot 'CnsApi' references connection 'conn-1' in ResourceContext 'ctx-b', which this integration (in 'ctx-a') cannot reach. Remove this binding, or move the integration or the connection so they share a context.";
+        var issue = new IntegrationReadinessIssueDto(
+            "binding_cross_context",
+            message,
+            "CnsApi",
+            "binding-1",
+            "conn-1",
+            "Blocking");
+
+        var view = IntegrationConfigurationOperatorUiHelpers.MapReadinessIssue(issue, "int-1");
+
+        view.Title.Should().NotBe("Binding cross context");
+        view.Title.Should().Be("Binding crosses contexts");
+        view.Explanation.Should().Be(message);
+        view.RemediationHint.Should().Contain("Move").And.Contain("remove", "hint should point at moving or removing the binding");
+    }
+
+    [Fact]
+    public void GroupIssuesByCategory_suppresses_binding_not_eligible_when_cross_context_shares_binding_id()
+    {
+        var issues = new[]
+        {
+            new IntegrationReadinessIssueDto(
+                "binding_cross_context",
+                "Binding for slot 'CnsApi' references connection 'conn-1' in ResourceContext 'ctx-b', which this integration (in 'ctx-a') cannot reach.",
+                "CnsApi",
+                "binding-1",
+                "conn-1",
+                "Blocking"),
+            new IntegrationReadinessIssueDto(
+                "binding_not_eligible",
+                "Connection is not eligible for this slot.",
+                "CnsApi",
+                "binding-1",
+                "conn-1",
+                "Blocking"),
+        };
+
+        var grouped = IntegrationConfigurationOperatorUiHelpers.GroupIssuesByCategory(issues, "int-1");
+        var bindingViews = grouped[IntegrationConfigurationOperatorUiHelpers.CategoryBindings];
+
+        bindingViews.Should().ContainSingle();
+        bindingViews.Should().Contain(v => v.Code == "binding_cross_context");
+        bindingViews.Should().NotContain(v => v.Code == "binding_not_eligible");
+    }
+
+    [Fact]
+    public void GroupIssuesByCategory_does_not_suppress_binding_not_eligible_for_unrelated_binding()
+    {
+        var issues = new[]
+        {
+            new IntegrationReadinessIssueDto(
+                "binding_cross_context",
+                "Binding for slot 'CnsApi' references connection 'conn-1' in ResourceContext 'ctx-b', which this integration (in 'ctx-a') cannot reach.",
+                "CnsApi",
+                "binding-1",
+                "conn-1",
+                "Blocking"),
+            new IntegrationReadinessIssueDto(
+                "binding_not_eligible",
+                "Connection is not eligible for this slot.",
+                "Sftp",
+                "binding-2",
+                "conn-2",
+                "Blocking"),
+        };
+
+        var grouped = IntegrationConfigurationOperatorUiHelpers.GroupIssuesByCategory(issues, "int-1");
+        var bindingViews = grouped[IntegrationConfigurationOperatorUiHelpers.CategoryBindings];
+
+        bindingViews.Should().HaveCount(2);
+        bindingViews.Should().Contain(v => v.Code == "binding_cross_context");
+        bindingViews.Should().Contain(v => v.Code == "binding_not_eligible");
+    }
+
+    [Fact]
+    public void GroupIssuesByCategory_does_not_suppress_binding_not_eligible_when_no_cross_context_issue_present()
+    {
+        var issues = new[]
+        {
+            new IntegrationReadinessIssueDto(
+                "binding_not_eligible",
+                "Connection is not eligible for this slot.",
+                "Sftp",
+                "binding-2",
+                "conn-2",
+                "Blocking"),
+        };
+
+        var grouped = IntegrationConfigurationOperatorUiHelpers.GroupIssuesByCategory(issues, "int-1");
+        var bindingViews = grouped[IntegrationConfigurationOperatorUiHelpers.CategoryBindings];
+
+        bindingViews.Should().ContainSingle();
+        bindingViews.Should().Contain(v => v.Code == "binding_not_eligible");
+    }
+
+    [Fact]
     public void BuildScheduleExecutionPill_distinguishes_disabled_and_blocked()
     {
         IntegrationConfigurationOperatorUiHelpers.BuildScheduleExecutionPill(false, false, "int-1").Label
