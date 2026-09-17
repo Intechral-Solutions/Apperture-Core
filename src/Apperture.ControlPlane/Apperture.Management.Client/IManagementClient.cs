@@ -524,6 +524,36 @@ public interface IManagementClient
     Task<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetResourceContextSummaryAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Advisory preview of moving this Integration to another ResourceContext (CTX-3B design gate §8.2).
+    /// </summary>
+    Task<ResourceMovePreviewDto> GetIntegrationOwnershipMovePreviewAsync(string integrationId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves this Integration to another ResourceContext. A 409 with a full preview body is a normal,
+    /// renderable "blocked" outcome (see <see cref="ResourceMovePreviewDto.CanMove"/>); only a 409 gate
+    /// timeout throws <see cref="InvalidOperationException"/>.
+    /// </summary>
+    Task<ResourceMovePreviewDto> MoveIntegrationOwnershipAsync(string integrationId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>Advisory preview of moving this Connection to another ResourceContext (CTX-3B design gate §8.2).</summary>
+    Task<ResourceMovePreviewDto> GetConnectionOwnershipMovePreviewAsync(string connectionId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves this Connection to another ResourceContext. See <see cref="MoveIntegrationOwnershipAsync"/> for the
+    /// 409 shape distinction.
+    /// </summary>
+    Task<ResourceMovePreviewDto> MoveConnectionOwnershipAsync(string connectionId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>Advisory preview of moving this Schedule to another ResourceContext (CTX-3B design gate §8.2).</summary>
+    Task<ResourceMovePreviewDto> GetScheduleOwnershipMovePreviewAsync(string scheduleId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves this Schedule to another ResourceContext. See <see cref="MoveIntegrationOwnershipAsync"/> for the
+    /// 409 shape distinction.
+    /// </summary>
+    Task<ResourceMovePreviewDto> MoveScheduleOwnershipAsync(string scheduleId, string targetResourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets operator UI capabilities for permission-aware rendering. Epic 34.
     /// </summary>
     Task<OperatorCapabilitiesDto> GetOperatorCapabilitiesAsync(CancellationToken cancellationToken = default);

@@ -1448,6 +1448,120 @@ public sealed class ManagementClient : IManagementClient
             null);
     }
 
+    public Task<ResourceMovePreviewDto> GetIntegrationOwnershipMovePreviewAsync(string integrationId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        GetMovePreviewAsync(
+            $"integrations/{Uri.EscapeDataString(integrationId)}/ownership/move-preview?targetResourceContextId={Uri.EscapeDataString(targetResourceContextId)}",
+            cancellationToken);
+
+    public Task<ResourceMovePreviewDto> MoveIntegrationOwnershipAsync(string integrationId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        SendMoveAsync($"integrations/{Uri.EscapeDataString(integrationId)}/ownership/move", targetResourceContextId, cancellationToken);
+
+    public Task<ResourceMovePreviewDto> GetConnectionOwnershipMovePreviewAsync(string connectionId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        GetMovePreviewAsync(
+            $"connections/{Uri.EscapeDataString(connectionId)}/ownership/move-preview?targetResourceContextId={Uri.EscapeDataString(targetResourceContextId)}",
+            cancellationToken);
+
+    public Task<ResourceMovePreviewDto> MoveConnectionOwnershipAsync(string connectionId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        SendMoveAsync($"connections/{Uri.EscapeDataString(connectionId)}/ownership/move", targetResourceContextId, cancellationToken);
+
+    public Task<ResourceMovePreviewDto> GetScheduleOwnershipMovePreviewAsync(string scheduleId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        GetMovePreviewAsync(
+            $"schedules/{Uri.EscapeDataString(scheduleId)}/ownership/move-preview?targetResourceContextId={Uri.EscapeDataString(targetResourceContextId)}",
+            cancellationToken);
+
+    public Task<ResourceMovePreviewDto> MoveScheduleOwnershipAsync(string scheduleId, string targetResourceContextId, CancellationToken cancellationToken = default) =>
+        SendMoveAsync($"schedules/{Uri.EscapeDataString(scheduleId)}/ownership/move", targetResourceContextId, cancellationToken);
+
+    /// <summary>
+    /// Ownership move preview is a plain GET; every non-success status (including 403/404) routes through
+    /// the house <see cref="EnsureSuccessOrThrowAsync"/> convention -- the preview endpoint never itself
+    /// returns 409 (only the move POST distinguishes the two 409 shapes).
+    /// </summary>
+    private async Task<ResourceMovePreviewDto> GetMovePreviewAsync(string route, CancellationToken cancellationToken)
+    {
+        using var response = await _http.GetAsync(route, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return (await response.Content.ReadFromJsonAsync<ResourceMovePreviewDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// CTX-3B design gate §8.2/§8.3: a move POST can answer with five distinct shapes, and only two of
+    /// them are exceptional:
+    ///   200                                    -> moved; return the preview (CanMove == true).
+    ///   409 with a full preview body            -> blocked by a family-specific blocker; a normal,
+    ///                                              renderable outcome (CanMove == false) -- NOT thrown.
+    ///   409 with { error, code }                -> the ownership mutation gate timed out (transient);
+    ///                                              throw InvalidOperationException with the server's message.
+    ///   400 with { error }                      -> a common blocker (unknown/archived/same target);
+    ///                                              throw InvalidOperationException with the server's message.
+    ///   anything else (403, 404, 500, ...)      -> EnsureSuccessOrThrowAsync (house convention; never a
+    ///                                              bare EnsureSuccessStatusCode(), which is exactly the
+    ///                                              CTX-3A regression this task exists to avoid).
+    /// The two 409 shapes are told apart by presence of the "code" property (or absence of "resourceType"),
+    /// not by Content-Type, matching BuildArchiveConflictExceptionAsync's precedent above.
+    /// </summary>
+    private async Task<ResourceMovePreviewDto> SendMoveAsync(string route, string targetResourceContextId, CancellationToken cancellationToken)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            route, new ResourceOwnershipMoveRequest(targetResourceContextId), ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Conflict)
+        {
+            // Two distinct 409s: a blocked move (full preview body, a normal renderable outcome) and a
+            // transient ownership-gate timeout ({ error, code }). Only the latter is exceptional.
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (TryReadMoveBlockedPreview(payload, out var blocked))
+                return blocked;
+            throw new InvalidOperationException(
+                ParseManagementApiErrorPayload(payload) ?? "Another ownership change is in progress. Wait a moment and try again.");
+        }
+
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(ParseManagementApiErrorPayload(payload) ?? "The move request was rejected.");
+        }
+
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false); // house convention; never bare EnsureSuccessStatusCode
+        return (await response.Content.ReadFromJsonAsync<ResourceMovePreviewDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// Distinguishes the move endpoint's two 409 bodies by JSON shape: the full preview always carries
+    /// "resourceType"; the transient busy-gate error never does (it is only "error"/"code"). Checking
+    /// property presence -- not whether deserialization throws -- avoids a plain "{ error, code }" body
+    /// silently masquerading as a preview with every field null/default, mirroring
+    /// BuildArchiveConflictExceptionAsync's shape-detection idiom above.
+    /// </summary>
+    private static bool TryReadMoveBlockedPreview(string raw, out ResourceMovePreviewDto preview)
+    {
+        preview = null!;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return false;
+
+            if (TryGetPropertyIgnoreCase(root, "code", out _))
+                return false; // busy-gate shape: { error, code }
+
+            if (!TryGetPropertyIgnoreCase(root, "resourceType", out _))
+                return false; // not a preview shape at all
+
+            var deserialized = JsonSerializer.Deserialize<ResourceMovePreviewDto>(raw, ApiJsonReadOptions);
+            if (deserialized is null)
+                return false;
+
+            preview = deserialized;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public async Task<GovernanceDescriptorResponse> GetGovernanceDescriptorsAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<GovernanceDescriptorResponse>("governance/descriptors", cancellationToken).ConfigureAwait(false);
