@@ -23,6 +23,54 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
 
 ---
 
+## Near-term execution order (post-CTX roadmap reset, 2026-09-18)
+
+CTX-1 through CTX-3B (ResourceContext ownership, Applications, Shared, resource movement, archive integrity)
+are complete, manually smoke-tested, and merged to `master` — see
+[`ctx3b-closure.md`](../01-architecture/transitions/resource-contexts/ctx3b-closure.md). The tracks below
+remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
+reset, cutting across several of them.
+
+0. **Roadmap/documentation reset** — this reset (2026-09-18).
+1. **Operator UX housekeeping** — three parts:
+   - **1A** small polish: remove the View onboarding hint, Module-detail "Integrations using this Module"
+     (via a reusable query, not throwaway plumbing), live create-form validity, confirmed-trivial debt
+     cleanup.
+   - **1B** Resource movement dialog UX: structured sections (Will move / Used by / Blocked by / History),
+     target-select theming fix, Context display names instead of raw ids in operator-facing copy.
+   - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — see the identity policy
+     note below. Not a system-wide id migration.
+2. **Toast UX foundation** — presentation rewrite of the existing, already well-centralized toast system
+   (placement, responsive width, stacking, gestures, accessibility). No call-site changes.
+3. **Notification → Toast integration** — incoming platform Notifications optionally surface as Toasts;
+   per-user preference, not a new delivery channel.
+4. **Components design gate**
+5. **Services design gate** — immediately follows the Components design gate, before either
+   implementation begins. Services may reveal catalog/capability requirements Components needs to account
+   for; the two gates run back-to-back so the Component catalog isn't shipped before the Services contract
+   is decided.
+6. **Components implementation**
+7. **Services implementation**
+8. **Application-centric navigation redesign** — after Components and Services stabilize, so the rail
+   doesn't move twice.
+
+Full rulings on the Components/Resource-Catalog/Services boundary:
+[`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md).
+
+**Re-ranked below this sequence:** Connection/Schedule lifecycle cleanup (one combined item, scheduled
+*after* the Services design gate — Services will clarify Connection's future operator role first);
+Business Data final architecture (Track 5, gated — closed, no second entity type currently proposed);
+Dashboard Panels (indefinitely parked — no chart library exists anywhere in the repo, no owner); Shared
+Wizard foundation (Track 8, deferred, legitimate future value, not prioritized); Context-scoped IAM
+(deferred until a concrete security/product need appears — not merely because ResourceContexts now exist).
+
+**The visual workflow designer is not an active roadmap item.** It has only ever appeared as an
+engineering-side non-goal (ADR-0032, Epic-57, CTX-3B closures) — never as approved product scope. It stays
+out of this roadmap unless someone deliberately proposes it as real scope; the historical ADRs that name it
+as something they did *not* build remain accurate as written.
+
+---
+
 ## Track 1 — Product Experience & UI Overhaul
 
 - Navigation / product shell
@@ -106,24 +154,48 @@ quiet hours, and non-email channels — none of which the delivery pipeline impl
 
 ## Track 4 — Systems / Applications / Services Model
 
-- Application / system abstraction
-- Service abstraction
-- Integration relationships to systems / services
-- Service explorers
-- Metadata browsing
-- Connection grouping
+**Application ownership/view is delivered.** Reframed 2026-09-18 — this track originally bundled several
+concepts that the post-CTX reset now separates:
+
+- ~~Application / system abstraction~~ — **delivered**, via CTX-1 through CTX-3B: ResourceContext ownership,
+  Shared + Applications, operator View, resource movement, archive integrity. See
+  [`ctx3b-closure.md`](../01-architecture/transitions/resource-contexts/ctx3b-closure.md). Delivered as an
+  ownership/organizational-view layer, not the generic "system" grouping abstraction ADR-0034 separately
+  describes (see next line) — those are different shapes and CTX only delivered the former.
+- **Systems** (ADR-0034's "logical grouping layer above Integrations") — still deferred, no forcing
+  evidence, unaffected by CTX.
+- **Service abstraction / Service explorers / Metadata browsing** — still not started. Reframed 2026-09-18:
+  a Service is an operator-facing abstraction over a *configured Connection* (not a Systems-style grouping
+  of many Integrations); the live-browse/metadata-exploration idea folds into this, not into Components. See
+  the near-term execution order above and
+  [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
+  for the full hypothesis. Scheduled for its own design gate immediately after Components'.
+- **Connection grouping** — remains an open, unelaborated bullet; no evidence connects it to a specific
+  design yet.
+- **Resource Catalog** (referenced by ADR-0040 as a separate future concept, never actually a bullet in this
+  track) is **retired as a standalone roadmap concept** — its registry-unification half folds into
+  Components' catalog infrastructure, its live-Connection-browsing half folds into the Service abstraction
+  above. See the planning note for the full split.
 
 ---
 
 ## Track 5 — Business Data & Cross-Integration Records
 
-- Shared entity / record model *(deferred — demo projection first)*
+### Complete
+
 - **BDS-1** Design audit — complete (`docs/audits/bds1-business-data-surface-design-audit.md`)
 - **BDS-2** Business metadata alignment for sample modules — complete (`docs/audits/bds2-closure.md`)
 - **BDS-3** Demo business record projection — complete (`docs/audits/bds3-demo-business-record-projection.md`)
 - **BDS-4** Demo business record client & API polish — complete (`docs/audits/bds4-demo-business-record-client-api-polish.md`)
 - **BDS-5** Demo Customers business record surface — complete (`docs/audits/bds5-demo-customers-surface.md`)
 - **BDS-6** Cross-run business-record activity and lineage — complete (`docs/audits/bds6-cross-run-business-record-activity-lineage.md`); customer-first Demo Customer activity (not a generic Operation Item Explorer). Operator smoke complete (2026-08). Historical “Operation Item Explorer” wording in older notes refers to a deferred product idea, not the shipped BDS-6 surface.
+
+### Still open — gated on a second entity type proving reuse
+
+**2026-09-18: gate remains closed.** No second entity type has been proposed to trigger platform
+promotion; these stay deferred, not prioritized.
+
+- Shared entity / record model *(deferred — demo projection first)*
 - Integration-owned projections
 - Cross-integration lookup
 - Record detail pages
@@ -167,9 +239,11 @@ Do **not** start this track as a substitute for product completeness. On-prem/de
 
 ## Track 8 — Module UI / configuration / template foundations
 
-- Module-supplied UI patterns
+- Module-supplied UI patterns — closely related to the Components design gate (near-term order above),
+  since Module is expected to become the install/distribution boundary subordinate to Components.
 - Configuration / template foundations for integrations
-- Progressive wizard frameworks beyond current progressive steps
+- Progressive wizard frameworks beyond current progressive steps — the "shared platform Wizard subsystem"
+  named in CTX-3B's closure debt. Deferred, legitimate future value, not currently prioritized.
 
 (May interleave with Tracks 1 and 3.)
 

@@ -28,7 +28,7 @@ Worker process lifecycle remains **externally managed** (SWM-9/12). Do not resto
 2. **Solution skeleton** — Complete. Projects, boundaries, dependency rules; compilable solution with arch tests.
 3. **Golden path (on-prem / Aspire)** — Foundation delivered. HelloWorld module, DTFx adapter, WorkerHost, Management API/UI, settings, auth, integrations. Stabilization S1–S13 closed.
 4. **Scheduling & worker management foundation** — Complete (SWM-1–SWM-12). SQL claim-based schedule dispatch + Cronos (not Quartz), plane identity, fire-time/TZ semantics, display TZ, heartbeat multi-host observe, next-fire/readiness, scheduler recovery ops. Lifecycle adapters deferred; quarantine in place.
-5. **Notifications / email foundation** — Stabilized. Platform notification pipeline preferred; Epic 69 legacy retained until later cutover policy.
+5. **Notifications / email foundation** — Stabilized. Platform notification pipeline preferred; Epic 69 legacy removed (NTF-C, 2026-09-10).
 6. **CLI / ops scripts** — Partial. PowerShell module and operational commands exist; expansion continues with product needs.
 
 ## Pre-release product development (next)
@@ -53,7 +53,8 @@ Highlights:
 
 7. **Final Release Readiness** — Packaging/installers, smoke automation, security review, release docs, RC validation. **Not** the current phase.
 8. **Worker lifecycle productization** — Optional future epic; foundation explicitly deferred Management process control.
-9. **Epic 69 legacy removal** — After platform parity and cutover sign-off.
+
+Epic 69 legacy removal is **complete** (removed by NTF-C, 2026-09-10 — see `stabilization-closure-check.md`); it previously appeared here as still-deferred, which was stale.
 
 ## Historical note
 

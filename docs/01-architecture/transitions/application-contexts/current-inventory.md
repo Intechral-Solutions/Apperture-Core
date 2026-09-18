@@ -1,5 +1,20 @@
 # Current architecture inventory (Application / Context planning)
 
+> **Superseded — pre-CTX snapshot, 2026-09-18.** This inventory predates CTX-1 by one day (added 2026-09-10,
+> CTX-1's first commit is 2026-09-11) and was gathered to inform the planning that became CTX-1 through
+> CTX-3B, all of which are now complete and merged to `master`. Its "Confirmed absences" table below is now
+> **factually wrong in at least one row**: `ApplicationId`/Application ownership now exists (CTX-1/CTX-3A) —
+> see [`ctx1-closure.md`](../resource-contexts/ctx1-closure.md) and
+> [`ctx3a-closure.md`](../resource-contexts/ctx3a-closure.md). Other rows in the same table (Resource
+> Catalog, visual workflow designer, Services/Systems) remain accurate and still confirmed-absent as of
+> 2026-09-18 — see
+> [`ctx3b-closure.md`](../resource-contexts/ctx3b-closure.md) and
+> [`components-services-catalog/README.md`](../components-services-catalog/README.md) for their current,
+> living status. **Do not treat any row in this file as current architecture without cross-checking it
+> against those documents or the code.** The rest of this document is preserved as a point-in-time evidence
+> record, per this folder's own stated archival policy (`README.md`), and is not rewritten to look accurate
+> in hindsight.
+
 Evidence snapshot of Apperture Core as implemented. **No roadmap. No proposed design.** Items are **CONFIRMED** unless marked **SPECULATION**.
 
 How to read this file:

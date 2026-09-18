@@ -1,8 +1,8 @@
 # CTX-3B Closure — Resource Movement
 
-Date: 2026-09-17
-Status: **Engineering and automated-test validation complete. Manual browser smoke (11 scenarios, §5) not performed — remains open before general operator rollout confidence.**
-Branch: `resource-contexts`
+Date: 2026-09-17 (core closure); manual browser smoke, merge to `master`, and post-merge validation completed 2026-09-18 — see §9.
+Status: **Complete.** Engineering, automated-test validation, manual browser smoke (11 scenarios, §5), the fast-forward merge into `master`, and post-merge validation all finished. See §9.
+Branch: `resource-contexts` (this closure session); merged into `master` via fast-forward 2026-09-18, then deleted along with its obsolete safety branches — see §9.
 Design basis: [`ctx3-design-gate.md`](./ctx3-design-gate.md), building on [`ctx3a-closure.md`](./ctx3a-closure.md)
 
 ---
@@ -11,7 +11,7 @@ Design basis: [`ctx3-design-gate.md`](./ctx3-design-gate.md), building on [`ctx3
 
 CTX-3B delivers the movement capability that CTX-3A's own closure said the Application feature could not ship without: Integration, Connection and Schedule owners can now be moved between Applications and Shared through explicit `ownership/move-preview` / `ownership/move` endpoints, with a single shared validator per resource family so preview and the real mutation can never drift apart. A database-scoped application-lock gate (`apperture:resource-ownership`) now serializes every ownership-sensitive mutation — the two move families, standalone Schedule move, binding creation, attached-Schedule creation, and Application archive — closing the cross-entity races that per-row locking alone could not close without deadlocking the two move paths against each other. Every move is captured as a two-sided, correlated audit pair (or a single rejection record), and `binding_cross_context` readiness now backstops any binding that slips past the supported API. Separately, but required by the design gate before CTX-3B could be considered closed (§13 CTX-3B step 7), the Integration hard-delete referential-lifecycle gap CTX-3A's own closure flagged as open debt (§9 of that closure) has been inventoried and fixed: every current-state dependent Integration delete can orphan is now either a delete-blocking guard or a deliberate cleanup, every blocker CTX-3B itself adds has a real operator remediation path (two small new lifecycle operations — NotificationDefinition delete and attention-routing-override clear — exist specifically to make those blockers reachable), and historical rows survive a delete with a dangling `IntegrationId` by design.
 
-This closure session (2026-09-17) ran the full validation the plan requires: all five automated test suites green at counts equal to or above the CTX-3A baseline, all five CTX-3B SQL-Server-backed test classes individually confirmed as real executions (not soft-skips) by both duration evidence and, for two of the five, by design (they hard-fail rather than soft-skip when SQL Server is unreachable), both product-decision preflights re-run live against real Aspire dev data, and the CTX-era migration chain confirmed consistent end-to-end. It did **not** perform browser smoke — no browser-automation tool was available in this session, and this app requires real Entra ID sign-in with no local bypass, so eleven scenarios (seven from CTX-3B's own movement/archive-after-move flows, plus four carried forward from Plan 6a's UI work, which was automated-test-validated but never browser-smoked before this closure) remain an explicit, named open item rather than a claimed pass. See §5.
+This closure session (2026-09-17) ran the full validation the plan requires: all five automated test suites green at counts equal to or above the CTX-3A baseline, all five CTX-3B SQL-Server-backed test classes individually confirmed as real executions (not soft-skips) by both duration evidence and, for two of the five, by design (they hard-fail rather than soft-skip when SQL Server is unreachable), both product-decision preflights re-run live against real Aspire dev data, and the CTX-era migration chain confirmed consistent end-to-end. It did **not** perform browser smoke at the time — no browser-automation tool was available in that session, and this app requires real Entra ID sign-in with no local bypass, so eleven scenarios (seven from CTX-3B's own movement/archive-after-move flows, plus four carried forward from Plan 6a's UI work, which was automated-test-validated but never browser-smoked before this closure) were left as an explicit, named open item rather than a claimed pass. **That gap has since closed**: the operator completed all 11 scenarios manually on 2026-09-18, `resource-contexts` was fast-forward-merged into `master`, and post-merge validation plus a runtime sanity check both passed. See §9.
 
 **Per design gate §15 D1, CTX-1 + CTX-2 + CTX-3A + CTX-3B together complete the initial Application/ResourceContext rollout.** This closure does not claim Services, Resource Catalog, Business Data's final architecture, dashboard-panel/dashboard-builder work, or the workflow designer are complete — all remain future work, unaffected by CTX-3B, and are named again in §7 so this closure does not silently drop them.
 
@@ -229,13 +229,15 @@ secondary schema-validity check.
 the best evidence obtainable in this session, but not identical in strength to a production check. See §6,
 product decision P3.
 
-### Browser smoke — not performed
+### Browser smoke — not performed in this (2026-09-17) session; completed 2026-09-18, see §9
 
 No browser-automation tool was available in this session (`ToolSearch` for browser-automation tooling
 returned only `WebFetch`, a one-shot read-only fetch, unable to click, fill forms, or hold an authenticated
 Blazor session). The controller session independently confirmed no AppHost process is running and no local
-dev-auth bypass exists — this app requires real Entra ID OIDC sign-in. **Nothing below was performed.** All
-11 scenarios require a human with a browser against a running, authenticated AppHost instance.
+dev-auth bypass exists — this app requires real Entra ID OIDC sign-in. **Nothing below was performed as of
+this session.** All 11 scenarios required a human with a browser against a running, authenticated AppHost
+instance — the checklist below is preserved as the record of what was specified; **§9 records that all 11
+were subsequently completed successfully by the operator on 2026-09-18.**
 
 **CTX-3B's own movement/archive-after-move scenarios** (Plan 5 Task 5 Step 5 and Plan 5 Task 6 Step 2):
 
@@ -379,6 +381,78 @@ the framing of the "unchanged by a move" guarantee — see §4).
 | 11 | Integration hard-delete referential inventory complete; guarded-or-cleaned-up, tested, historical survives | ✅ Proven | `docs/01-architecture/transitions/resource-contexts/ctx3b-integration-delete-referential-inventory.md` — full table of every entity reachable via `IntegrationId`/`ScopeKind+ScopeId`, each with a Decision and a "Clearable by" entry. `IntegrationDeleteReferentialLifecycleTests.cs` (**12 facts**) proves each blocker fires, each is clearable through the real operator-facing service, the coincidence the inventory relies on holds, historical rows survive with a dangling `IntegrationId`, and the sensitive-settings secret-disposal cleanup actually disables the backing secret, not just deletes the row. |
 
 **11/11 acceptance criteria: proven.**
+
+## 9. Post-closure completion (2026-09-18) — browser smoke, merge to `master`, and validation
+
+The one item this closure named as genuinely open (§5) has since closed, in a separate session on
+`resource-contexts` immediately following this closure's own commit. Recorded here rather than by editing
+the §5 narrative above, per this document's own historical-note convention (§8's precedent in
+`ctx3a-closure.md`) — the original session's findings stand as written; this section adds what happened next.
+
+### Browser smoke — all 11 scenarios completed by the operator
+
+The operator (not this session) walked all 11 scenarios listed in §5 against a live, authenticated AppHost
+instance and reported success. Two items surfaced follow-up questions during the walkthrough, both resolved:
+
+- **Scenario 2** (blocked move): initially unclear how to construct a blocking condition; resolved once the
+  exact `binding_connection_unreachable` reproduction was explained (a Connection scoped to a specific,
+  non-Shared Application, with the target being a *different* Application — not Shared, not the Connection's
+  own). Confirmed working as designed once reproduced correctly.
+- **Scenario 8** (NotificationDefinition Delete visibility): the operator found Delete is reachable only from
+  the definition's own Detail page, not directly from the Integration Notifications panel. Confirmed this
+  matches the shipped code exactly (`NotificationDefinitionDetail.razor`'s `_canDeleteDefinition` gate) — not
+  a defect, just a different screen than a one-line summary implied. The operator accepted this as a future
+  UI-polish candidate, not blocking work.
+
+No other findings. All 11 scenarios pass as specified.
+
+### Merge to `master`
+
+A full Git topology audit (branch heads, merge-base, ancestor proof, unique-history check on every local
+branch) confirmed `master` was a true ancestor of `resource-contexts` with zero unique commits on `master`'s
+side, making a fast-forward safe. Executed:
+
+```
+git checkout master
+git merge --ff-only resource-contexts
+```
+
+Result: **fast-forward**, `master` moved from `20d4b1ce` to `8ed656fa` (`resource-contexts`'s tip),
+`git diff resource-contexts..master` empty, zero tree drift. No merge commit, no rebase, no history rewrite.
+
+### Post-merge validation (on `master`, commit `8ed656fa`)
+
+Re-run in full from `master`, not assumed to match the pre-merge numbers:
+
+| Check | Result |
+|---|---|
+| `dotnet build Apperture.slnx` | ✅ 0 errors, 31 warnings (pre-existing) |
+| `Apperture.UnitTests` | ✅ 2343/2343 |
+| `Apperture.Management.Ui.Shared.Tests` | ✅ 880/880 |
+| `Apperture.Management.Ui.Client.Tests` | ✅ 19/19 |
+| `Apperture.ArchTests` | ✅ 38/38 |
+| `Apperture.IntegrationTests` | ✅ 226/226 |
+| 5 named SQL Server test classes | ✅ 22/22 executed for real (6–13s durations each), 0 soft-skipped |
+
+Identical to the pre-merge baseline — no discrepancy. (The first build attempt failed only on stray locked
+processes left running from an earlier dev session; killing them, no repo/git state touched, produced a
+clean rebuild.)
+
+### Runtime sanity
+
+No browser-automation tool was available in the validation session either, so this final check was performed
+manually by the operator: AppHost/Aspire resources healthy, Entra authentication working, Control Center
+rendering, the View selector rendering, and the Integration hub loading — all confirmed.
+
+### Branch cleanup
+
+After the merge and validation, three branches were confirmed to have zero commits unreachable from `master`
+(`resource-contexts`, `backup/pre-resource-context-rebranch`, `nav1-stabilization`) and were deleted via safe
+`git branch -d` (which refuses any branch with unmerged unique commits — none did). `experimental/foundational-kernel-and-domain`
+was independently confirmed to hold one unrelated, unreachable commit (a 2026-03-09 scaffolding experiment
+predating this epic) and was left untouched. No remote is configured; nothing was pushed.
+
+**CTX-1 + CTX-2 + CTX-3A + CTX-3B are now fully landed on `master`, validated, and manually smoke-tested.**
 
 ---
 
