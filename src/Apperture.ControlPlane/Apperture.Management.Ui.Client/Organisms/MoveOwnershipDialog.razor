@@ -1,8 +1,14 @@
 @*
-    CTX-3B Plan 5 (Task 4) -- shared ownership-move dialog for Integrations, Connections and Schedules.
-    Wraps ManagementDialog (the same modal chrome ConfirmActionDialog.razor reuses) rather than
+    CTX-3B Plan 5 (Task 4) / HSK-B -- shared ownership-move dialog for Integrations, Connections and
+    Schedules. Wraps ManagementDialog (the same modal chrome ConfirmActionDialog.razor reuses) rather than
     inventing a second modal style; decision logic lives in the extracted, unit-tested
-    MoveOwnershipDialogModel, so this component's @code holds only I/O and the parameter surface.
+    MoveOwnershipDialogModel and every line of preview copy comes from MoveOwnershipPresenter, so this
+    component's @code holds only I/O and the parameter surface.
+
+    HSK-B structure: a route header (current context -> target select) is the visual anchor, the outcome
+    (a text-labelled StatusPill, never colour alone) sits directly beneath it, then the sections the
+    presenter produced. Blocked by carries the only negative treatment; Will move / Used by are neutral
+    surfaces; Notes and History are quiet muted text.
 *@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
@@ -11,69 +17,207 @@
 @inject ResourceContextViewState ViewState
 
 <ManagementDialog IsOpen="@IsOpen"
-                  Title="Move to another context…"
+                  Title="Move ownership"
+                  Description="@SubjectLine"
                   IsBusy="@_model.IsSubmitting"
-                  Size="sm"
+                  Size="md"
                   OnClose="Cancel">
     <ChildContent>
-        <label for="move-target-select">Target context</label>
-        <select id="move-target-select" @bind="_selectedTargetId" @bind:after="LoadPreviewAsync">
-            <option value="">Choose a context…</option>
-            @foreach (var option in _model.TargetOptions)
-            {
-                <option value="@option.Id">@option.Name</option>
-            }
-        </select>
-
-        @if (_model.IsLoadingPreview)
-        {
-            <p class="ui-dialog__supporting">Loading preview…</p>
+        @{
+            var phase = _model.Phase;
+            var view = _model.Preview is { } currentPreview
+                ? MoveOwnershipPresenter.Present(
+                    currentPreview,
+                    SourceContextName,
+                    TargetContextName,
+                    ResourceDisplayName,
+                    ViewState.DescribeContext,
+                    _relatedNames)
+                : null;
         }
-        else if (_model.Preview is { } preview)
-        {
-            @if (preview.Effects.Count > 0)
-            {
-                <ul class="move-effects">
-                    @foreach (var effect in preview.Effects)
+        <div class="move-dialog">
+            <div class="move-route">
+                <div class="move-route__end">
+                    <span class="move-route__label">Current context</span>
+                    <span class="move-route__value">@SourceContextName</span>
+                </div>
+                <span class="move-route__arrow" aria-hidden="true">→</span>
+                <div class="move-route__end">
+                    <label class="move-route__label" for="move-target-select">Move to</label>
+                    <select id="move-target-select"
+                            class="ui-input"
+                            disabled="@_model.IsSubmitting"
+                            @bind="_selectedTargetId"
+                            @bind:after="LoadPreviewAsync">
+                        <option value="">Choose a context…</option>
+                        @foreach (var option in _model.TargetOptions)
+                        {
+                            <option value="@option.Id">@option.Name</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="move-status" aria-live="polite">
+                @if (phase == MoveDialogPhase.NoTarget)
+                {
+                    <p class="move-hint">Choose a target context to see what will happen.</p>
+                }
+                else if (phase == MoveDialogPhase.Loading)
+                {
+                    <LoadingState Message="Checking what this move affects…" />
+                }
+                else if (phase == MoveDialogPhase.Failed)
+                {
+                    <PageMessage Kind="PageMessageKind.Error"
+                                 Title="Couldn't load the preview"
+                                 Message="@(_model.SubmitError ?? "The preview could not be loaded. Try again.")" />
+                    <div class="move-retry">
+                        <button type="button" class="ui-toolbar-btn" @onclick="LoadPreviewAsync">Try again</button>
+                    </div>
+                }
+                else if (view is not null)
+                {
+                    <div class="move-outcome">
+                        @if (phase == MoveDialogPhase.Allowed)
+                        {
+                            <StatusPill Label="Ready to move" Semantic="ManagementStatusSemantic.Success" />
+                        }
+                        else
+                        {
+                            <StatusPill Label="Can't move yet" Semantic="ManagementStatusSemantic.Error" />
+                        }
+                    </div>
+
+                    @if (phase == MoveDialogPhase.Blocked && _model.ChangedSincePreview)
                     {
-                        <li>@effect.Message</li>
+                        <PageMessage Kind="PageMessageKind.Warning"
+                                     Title="Things changed since this preview was loaded"
+                                     Message="Review the reasons below before trying again." />
                     }
-                </ul>
-            }
-            @if (preview.Blockers.Count > 0)
-            {
-                <ul class="move-blockers">
-                    @foreach (var blocker in preview.Blockers)
+
+                    @if (phase == MoveDialogPhase.Blocked || view.BlockedBy.Count > 0)
                     {
-                        <li>
-                            @blocker.Message
-                            @if (blocker.Code == ResourceMoveBlockerCodes.ScheduleAttachedToIntegration && blocker.RelatedResourceId is not null)
+                        <section class="move-section move-section--blocked">
+                            <h3 class="move-section__label">Blocked by</h3>
+                            @if (view.BlockedBy.Count > 0)
                             {
-                                <a href="@($"/integrations/{blocker.RelatedResourceId}")">Go to integration</a>
+                                <ul class="move-list">
+                                    @foreach (var item in view.BlockedBy)
+                                    {
+                                        <li class="move-item">
+                                            @if (!string.IsNullOrEmpty(item.Text))
+                                            {
+                                                <span class="move-item__text">@item.Text</span>
+                                            }
+                                            @if (item.LinkText is { } linkText && item.Href is { } href)
+                                            {
+                                                <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
                             }
-                            else if (blocker.Code == ResourceMoveBlockerCodes.BindingIntegrationUnreachable && blocker.RelatedResourceId is not null)
+                            else
                             {
-                                <a href="@($"/integrations/{blocker.RelatedResourceId}")">@blocker.RelatedDisplayName</a>
+                                <p class="move-section__empty">This move isn't allowed right now.</p>
                             }
-                            else if (blocker.Code == ResourceMoveBlockerCodes.BindingConnectionUnreachable && blocker.RelatedResourceId is not null)
-                            {
-                                <a href="@($"/connections/{blocker.RelatedResourceId}")">@blocker.RelatedDisplayName</a>
-                            }
-                        </li>
+                        </section>
                     }
-                </ul>
+
+                    @if (view.WillMove.Count > 0)
+                    {
+                        <section class="move-section move-section--panel">
+                            <h3 class="move-section__label">Will move</h3>
+                            <ul class="move-list">
+                                @foreach (var item in view.WillMove)
+                                {
+                                    <li class="move-item">
+                                        @if (!string.IsNullOrEmpty(item.Text))
+                                        {
+                                            <span class="move-item__text">@item.Text</span>
+                                        }
+                                        @if (item.LinkText is { } linkText && item.Href is { } href)
+                                        {
+                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </section>
+                    }
+
+                    @if (view.UsedBy.Count > 0)
+                    {
+                        <section class="move-section move-section--panel">
+                            <h3 class="move-section__label">Used by</h3>
+                            <ul class="move-list">
+                                @foreach (var item in view.UsedBy)
+                                {
+                                    <li class="move-item">
+                                        @if (!string.IsNullOrEmpty(item.Text))
+                                        {
+                                            <span class="move-item__text">@item.Text</span>
+                                        }
+                                        @if (item.LinkText is { } linkText && item.Href is { } href)
+                                        {
+                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </section>
+                    }
+
+                    @if (view.Notes.Count > 0)
+                    {
+                        <section class="move-section move-section--notes">
+                            <h3 class="move-section__label">Notes</h3>
+                            <ul class="move-list">
+                                @foreach (var item in view.Notes)
+                                {
+                                    <li class="move-item">
+                                        @if (!string.IsNullOrEmpty(item.Text))
+                                        {
+                                            <span class="move-item__text">@item.Text</span>
+                                        }
+                                        @if (item.LinkText is { } linkText && item.Href is { } href)
+                                        {
+                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </section>
+                    }
+
+                    <p class="move-history">@view.History</p>
+                }
+            </div>
+
+            @*
+                A submit error lives alongside a still-valid preview (the model keeps Phase Allowed/Blocked),
+                so it renders outside the phase chain -- and outside the aria-live region, since PageMessage
+                already announces itself (role=alert for Error, role=status otherwise).
+            *@
+            @if (view is not null && _model.SubmitError is { } submitError)
+            {
+                @if (_model.SubmitErrorKind == MoveSubmitErrorKind.Busy)
+                {
+                    <PageMessage Kind="PageMessageKind.Warning"
+                                 Title="Another change is in progress"
+                                 Message="@submitError">
+                        <div class="move-submit-hint">Nothing was moved. Wait a moment, then choose Move again.</div>
+                    </PageMessage>
+                }
+                else
+                {
+                    <PageMessage Kind="PageMessageKind.Error"
+                                 Title="The move didn't complete"
+                                 Message="@submitError" />
+                }
             }
-        }
-
-        @if (_model.SubmitError is not null)
-        {
-            <PageMessage Kind="PageMessageKind.Error"
-                         Title="Action failed"
-                         Message="@_model.SubmitError"
-                         Class="ui-dialog__error" />
-        }
-
-        <p class="ui-help-text">History stays with @SourceContextName.</p>
+        </div>
     </ChildContent>
     <Footer>
         <button type="button"
@@ -99,14 +243,54 @@
     [Parameter, EditorRequired] public ResourceKind Kind { get; set; }
     [Parameter, EditorRequired] public string ResourceId { get; set; } = "";
     [Parameter, EditorRequired] public string? CurrentResourceContextId { get; set; }
+
+    /// <summary>
+    /// HSK-B: the resource's own display name, when the host page knows it. Purely presentational -- it
+    /// names the subject under the dialog title and in the "Will move" line. Omitted safely.
+    /// </summary>
+    [Parameter] public string? ResourceDisplayName { get; set; }
+
     [Parameter] public EventCallback OnCancelled { get; set; }
     [Parameter] public EventCallback OnMoved { get; set; }
 
     private readonly MoveOwnershipDialogModel _model = new();
     private string _selectedTargetId = "";
 
+    /// <summary>
+    /// Best-effort display names for related resources the preview referenced only by id, keyed by
+    /// <see cref="MoveOwnershipPresenter.RelatedNameKey"/>. Always a superset-free snapshot of the current
+    /// preview: cleared whenever a new preview is applied or the dialog resets.
+    /// </summary>
+    private readonly Dictionary<string, string> _relatedNames = new(StringComparer.Ordinal);
+
     private string SourceContextName =>
         CurrentResourceContextId is null ? "Shared" : ViewState.DescribeContext(CurrentResourceContextId);
+
+    /// <summary>The selected option's own name; falls back to the view state for an id that is not an option.</summary>
+    private string TargetContextName
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_selectedTargetId))
+                return "";
+
+            var option = _model.TargetOptions
+                .FirstOrDefault(o => string.Equals(o.Id, _selectedTargetId, StringComparison.Ordinal));
+            return option?.Name ?? ViewState.DescribeContext(_selectedTargetId);
+        }
+    }
+
+    /// <summary>Quiet subject line under the title, e.g. <c>Integration 'Campus Sync'</c>. Null when unknown.</summary>
+    private string? SubjectLine =>
+        string.IsNullOrWhiteSpace(ResourceDisplayName) ? null : $"{KindNoun} '{ResourceDisplayName}'";
+
+    private string KindNoun => Kind switch
+    {
+        ResourceKind.Integration => "Integration",
+        ResourceKind.Connection => "Connection",
+        ResourceKind.Schedule => "Schedule",
+        _ => "Resource"
+    };
 
     protected override void OnParametersSet() =>
         _model.SetTargetOptions(ViewState.SharedContext, ViewState.KnownActiveApplications, CurrentResourceContextId);
@@ -114,10 +298,12 @@
     private async Task LoadPreviewAsync()
     {
         _model.SelectTarget(_selectedTargetId);
+        _relatedNames.Clear();
         if (string.IsNullOrEmpty(_selectedTargetId))
             return;
 
         var generation = _model.BeginPreview();
+        ResourceMovePreviewDto? applied = null;
         try
         {
             var preview = Kind switch
@@ -128,6 +314,7 @@
                 _ => throw new NotSupportedException()
             };
             _model.ApplyPreview(generation, preview); // no-ops if a newer request superseded this one
+            applied = preview;
         }
         catch (InvalidOperationException ex)
         {
@@ -143,6 +330,11 @@
             // dialog's close controls (IsBusy was wired to IsLoadingPreview; see Fix 2).
             _model.FailPreview(generation, "The preview could not be loaded. Try again.");
         }
+
+        // Outside the try: cosmetic name resolution must never be able to turn a good preview into a
+        // FailPreview.
+        if (applied is not null)
+            await AfterPreviewAppliedAsync(generation, applied);
     }
 
     private async Task SubmitAsync()
@@ -151,7 +343,12 @@
             return;
 
         _model.SetSubmitError(null);
+
+        // Captured before the request so a target change mid-flight discards the answer (same guard
+        // ApplyPreview uses); ApplySubmitConflict re-checks it.
+        var generation = _model.CurrentGeneration;
         _model.BeginSubmit();
+        ResourceMovePreviewDto? conflict = null;
         try
         {
             var result = Kind switch
@@ -165,20 +362,30 @@
             if (!result.CanMove)
             {
                 // A concurrent change blocked the move between preview and submit (§8.2: move never
-                // trusts a prior preview). Show the fresh blockers instead of a generic error.
-                _model.ApplyPreview(_model.CurrentGeneration, result);
-                return;
+                // trusts a prior preview). Show the fresh blockers instead of a generic error, flagged
+                // as changed-since-preview so the dialog can say why they appeared.
+                _model.ApplySubmitConflict(generation, result);
+                conflict = result;
             }
-
-            // A successful move must not leave this resource's target/preview/error behind for the next
-            // open -- a host page reusing this component instance for a different resource would
-            // otherwise see the previous resource's stale selection (Task 5 wires this dialog in).
-            ResetDialogState();
-            await OnMoved.InvokeAsync();
+            else
+            {
+                // A successful move must not leave this resource's target/preview/error behind for the next
+                // open -- a host page reusing this component instance for a different resource would
+                // otherwise see the previous resource's stale selection.
+                ResetDialogState();
+                await OnMoved.InvokeAsync();
+            }
+        }
+        catch (OwnershipMoveBusyException ex)
+        {
+            // The transient ownership_operation_busy 409: nothing moved and retrying shortly is expected
+            // to work, so it gets the retryable Warning treatment rather than a failure. Must precede the
+            // InvalidOperationException catch -- it derives from it.
+            _model.SetSubmitError(ex.Message, MoveSubmitErrorKind.Busy);
         }
         catch (InvalidOperationException ex)
         {
-            // Covers the 400 common blockers and the transient ownership_operation_busy 409.
+            // Covers the 400 common blockers and any other parsed {error} body.
             _model.SetSubmitError(ex.Message);
         }
         catch (HttpRequestException)
@@ -192,6 +399,91 @@
         {
             _model.EndSubmit();
         }
+
+        if (conflict is not null)
+            await AfterPreviewAppliedAsync(generation, conflict);
+    }
+
+    /// <summary>
+    /// Runs after a preview (fetched or returned by a blocked Move) has been handed to the model. Renders
+    /// it immediately, then fills in related display names in the background. Never throws: name
+    /// resolution is cosmetic and must not be able to fail or stall the dialog.
+    /// </summary>
+    private async Task AfterPreviewAppliedAsync(int generation, ResourceMovePreviewDto preview)
+    {
+        if (!ReferenceEquals(_model.Preview, preview))
+            return; // superseded before it was ever shown
+
+        _relatedNames.Clear();
+        StateHasChanged();
+        await ResolveRelatedNamesAsync(generation, preview);
+    }
+
+    private async Task ResolveRelatedNamesAsync(int generation, ResourceMovePreviewDto preview)
+    {
+        // The presenter describes context ids through ViewState.DescribeContext; make sure the two
+        // contexts this preview is actually about are in the known list before that runs.
+        await EnsureContextsKnownAsync(preview);
+        if (!IsStillCurrent(generation, preview))
+            return;
+
+        var references = MoveOwnershipPresenter.GetRelatedNamesToResolve(preview);
+        if (references.Count == 0)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        var lookups = references
+            .Select(async reference => (
+                Key: MoveOwnershipPresenter.RelatedNameKey(reference.ResourceType, reference.Id),
+                Name: await TryReadDisplayNameAsync(reference)))
+            .ToList();
+
+        var resolved = await Task.WhenAll(lookups);
+        if (!IsStillCurrent(generation, preview))
+            return;
+
+        foreach (var (key, name) in resolved)
+        {
+            if (!string.IsNullOrWhiteSpace(name))
+                _relatedNames[key] = name!;
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>True while <paramref name="preview"/> is still the preview on screen for generation <paramref name="generation"/>.</summary>
+    private bool IsStillCurrent(int generation, ResourceMovePreviewDto preview) =>
+        _model.CurrentGeneration == generation && ReferenceEquals(_model.Preview, preview);
+
+    private async Task EnsureContextsKnownAsync(ResourceMovePreviewDto preview)
+    {
+        try
+        {
+            await ViewState.EnsureContextsKnownAsync([preview.Source?.Id, preview.Target?.Id, CurrentResourceContextId]);
+        }
+        catch (InvalidOperationException) { /* names stay as ids/unknown; never blocks the dialog */ }
+        catch (HttpRequestException) { /* idem */ }
+        catch (TaskCanceledException) { /* idem */ }
+    }
+
+    /// <summary>One best-effort display-name read. Any failure (401/403/404/network) simply leaves it unresolved.</summary>
+    private async Task<string?> TryReadDisplayNameAsync(MoveRelatedRef reference)
+    {
+        try
+        {
+            if (string.Equals(reference.ResourceType, MoveOwnershipPresenter.IntegrationResourceType, StringComparison.Ordinal))
+                return (await Client.GetIntegrationAsync(reference.Id))?.DisplayName;
+
+            if (string.Equals(reference.ResourceType, MoveOwnershipPresenter.ScheduleResourceType, StringComparison.Ordinal))
+                return (await Client.GetScheduleAsync(reference.Id))?.Name;
+
+            return null;
+        }
+        catch (InvalidOperationException) { return null; }
+        catch (HttpRequestException) { return null; }
+        catch (TaskCanceledException) { return null; }
     }
 
     private async Task Cancel()
@@ -203,6 +495,7 @@
     private void ResetDialogState()
     {
         _selectedTargetId = "";
+        _relatedNames.Clear();
         _model.Reset();
     }
 }

@@ -95,6 +95,7 @@
                              Kind="MoveOwnershipDialog.ResourceKind.Schedule"
                              ResourceId="@ScheduleId"
                              CurrentResourceContextId="@_detail?.ResourceContextId"
+                             ResourceDisplayName="@_detail?.Name"
                              OnCancelled="() => _moveDialogOpen = false"
                              OnMoved="OnMovedAsync" />
     }

@@ -2351,3 +2351,186 @@ textarea.ui-input {
   margin-top: 1rem;
 }
 
+
+/* --- HSK-B movement dialog (MoveOwnershipDialog.razor) ---
+ * Scoped to that one dialog: no global <select>/<option> rule, no new colour values.
+ * Every colour is a token already declared for both themes in app.css (:root / .dark).
+ * Shape language reuses the existing primitives -- .ui-input's 40px control height and --r-md radius,
+ * the .ui-metadata-item__label uppercase micro-label, .ui-status-pill's error tint.
+ */
+
+.move-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+/* Route header: source -> target, with the real select as the target control. */
+.move-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 0.625rem;
+}
+
+.move-route__end {
+  min-width: 0;
+}
+
+.move-route__label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.move-route__value {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0.375rem 0.875rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-surface-muted);
+  color: var(--color-text-heading);
+  font-size: 13.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.move-route__arrow {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  color: var(--color-text-subtle);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Outcome + preview sections. */
+.move-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.move-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.move-retry {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.move-outcome {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.move-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.move-section__label {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Neutral evidence (Will move / Used by). */
+.move-section--panel {
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-surface-muted);
+}
+
+/* The one negative treatment in the dialog. */
+.move-section--blocked {
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--color-border-subtle);
+  border-inline-start: 3px solid var(--color-error);
+  background-color: var(--color-error-light);
+}
+
+.move-section--blocked .move-section__label {
+  color: var(--color-error-dark);
+}
+
+/* Quiet informational tail -- deliberately not a box. */
+.move-section--notes .move-item {
+  color: var(--color-text-muted);
+}
+
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.move-item {
+  margin: 0;
+  color: var(--color-text-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.move-item__text {
+  margin-inline-end: 0.375rem;
+}
+
+.move-item__link {
+  overflow-wrap: anywhere;
+}
+
+.move-section__empty {
+  margin: 0;
+  color: var(--color-text-body);
+  line-height: 1.5;
+}
+
+.move-history {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.move-submit-hint {
+  margin-top: 0.25rem;
+}
+
+/* Same breakpoint the dialog chrome stacks at: the route becomes one column and the arrow turns down. */
+@media (max-width: 30rem) {
+  .move-route {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.375rem;
+  }
+
+  .move-route__arrow {
+    justify-self: start;
+    min-height: 0;
+    transform: rotate(90deg);
+  }
+}

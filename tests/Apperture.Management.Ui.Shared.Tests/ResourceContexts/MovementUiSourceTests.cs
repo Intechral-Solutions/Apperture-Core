@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Xunit;
 
@@ -17,13 +18,157 @@ public sealed class MovementUiSourceTests
             .Should().Contain("disabled=\"@(!_model.CanSubmit)\"");
     }
 
+    /// <summary>
+    /// HSK-B moved every code-to-copy decision out of the razor and into <c>MoveOwnershipPresenter</c>, so
+    /// the original razor-scoped assertion is retargeted with the same intent: the presenter switches on
+    /// the mirrored constants, and the razor contains no blocker/effect code literal at all (it renders
+    /// only what the presenter returned).
+    /// </summary>
     [Fact]
-    public void Move_dialog_uses_mirrored_blocker_code_constants_not_string_literals()
+    public void Move_presenter_uses_mirrored_blocker_code_constants_not_string_literals()
+    {
+        var presenter = ReadShared("MoveOwnershipPresenter.cs");
+        presenter.Should().Contain("ResourceMoveBlockerCodes.ScheduleAttachedToIntegration");
+        presenter.Should().NotContain("\"schedule_attached_to_integration\"",
+            "blocker codes are mirrored constants, never literals");
+
+        var razor = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        foreach (var code in MoveCodeLiterals)
+        {
+            razor.Should().NotContain($"\"{code}\"",
+                "the dialog renders presenter output and never compares codes itself");
+        }
+    }
+
+    /// <summary>Every blocker and effect code the server can emit, as a raw literal.</summary>
+    private static readonly string[] MoveCodeLiterals =
+    [
+        "target_not_found",
+        "target_archived",
+        "already_in_target",
+        "binding_connection_unreachable",
+        "schedule_context_inconsistent",
+        "binding_integration_unreachable",
+        "unowned_binding_requires_shared",
+        "schedule_attached_to_integration",
+        "schedules_move_with_integration",
+        "binding_references_missing_connection",
+        "binding_references_missing_integration",
+        "used_by_integration"
+    ];
+
+    [Fact]
+    public void Move_dialog_renders_presenter_output_rather_than_raw_dto_fields()
     {
         var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
-        content.Should().Contain("ResourceMoveBlockerCodes.ScheduleAttachedToIntegration");
-        content.Should().NotContain("\"schedule_attached_to_integration\"",
-            "blocker codes are mirrored constants, never literals");
+        content.Should().Contain("MoveOwnershipPresenter",
+            "all operator copy for a preview comes from the presenter");
+        content.Should().NotContain("blocker.Message",
+            "server blocker messages embed raw ids; the presenter decides what is safe to show");
+        content.Should().NotContain("effect.Message",
+            "server effect messages are only a presenter fallback");
+        content.Should().NotContain("RelatedResourceContextId",
+            "context ids never reach the markup; names come from DescribeContext via the presenter");
+    }
+
+    [Fact]
+    public void Move_dialog_target_select_uses_the_shared_input_primitive_and_is_labelled()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("id=\"move-target-select\"");
+        content.Should().Contain("class=\"ui-input\"",
+            "the target select was the only select in the app without the shared input class -- that was the dark-theme bug");
+        content.Should().Contain("for=\"move-target-select\"",
+            "the select must keep an explicit label association");
+    }
+
+    [Fact]
+    public void Move_dialog_disables_the_target_select_while_a_move_is_in_flight()
+    {
+        ReadRazor("Organisms", "MoveOwnershipDialog.razor")
+            .Should().Contain("disabled=\"@_model.IsSubmitting\"");
+    }
+
+    [Fact]
+    public void Move_dialog_uses_the_medium_dialog_width()
+    {
+        ReadRazor("Organisms", "MoveOwnershipDialog.razor")
+            .Should().Contain("Size=\"md\"");
+    }
+
+    [Fact]
+    public void Move_dialog_treats_the_transient_busy_gate_as_its_own_retryable_case()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("catch (OwnershipMoveBusyException");
+
+        var submitBody = ExtractMethodBody(content, "SubmitAsync");
+        var busyIndex = submitBody.IndexOf("catch (OwnershipMoveBusyException", StringComparison.Ordinal);
+        var generalIndex = submitBody.IndexOf("catch (InvalidOperationException", StringComparison.Ordinal);
+        busyIndex.Should().BeGreaterThanOrEqualTo(0);
+        generalIndex.Should().BeGreaterThanOrEqualTo(0);
+        busyIndex.Should().BeLessThan(generalIndex,
+            "OwnershipMoveBusyException derives from InvalidOperationException, so it must be caught first");
+    }
+
+    [Fact]
+    public void Move_dialog_applies_a_submit_time_conflict_through_the_guarded_model_entry_point()
+    {
+        var submitBody = ExtractMethodBody(ReadRazor("Organisms", "MoveOwnershipDialog.razor"), "SubmitAsync");
+        submitBody.Should().Contain("ApplySubmitConflict",
+            "a blocked move response is a fresh preview flagged as changed-since-preview, not a generic error");
+    }
+
+    [Theory]
+    [InlineData("Pages/Integrations", "IntegrationDetail.razor")]
+    [InlineData("Pages/Connections", "ConnectionDetail.razor")]
+    [InlineData("Pages/Schedules", "ScheduleDetail.razor")]
+    public void Host_pages_tell_the_move_dialog_which_resource_it_is_moving(string folder, string file)
+    {
+        ReadRazor(folder, file).Should().Contain("ResourceDisplayName=",
+            "the dialog names its subject; only the host page knows the display name");
+    }
+
+    [Fact]
+    public void Move_dialog_only_uses_move_classes_that_the_primitives_stylesheet_defines()
+    {
+        var razor = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        var css = ReadPrimitivesCss();
+
+        var used = Regex.Matches(razor, @"\bmove-[a-z][a-z0-9_-]*")
+            .Select(m => m.Value)
+            .Where(name => !string.Equals(name, "move-target-select", StringComparison.Ordinal)) // element id, not a class
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        used.Should().NotBeEmpty("the dialog carries its own small move-* block");
+        foreach (var name in used)
+        {
+            css.Should().Contain($".{name}",
+                $"{name} is used by MoveOwnershipDialog.razor but has no rule in management-ui-primitives.css");
+        }
+    }
+
+    [Fact]
+    public void Move_route_header_stacks_at_the_dialogs_narrow_breakpoint()
+    {
+        var css = ReadPrimitivesCss();
+        const string marker = "@media (max-width: 30rem)";
+
+        var stacksRoute = false;
+        for (var index = css.IndexOf(marker, StringComparison.Ordinal);
+             index >= 0;
+             index = css.IndexOf(marker, index + marker.Length, StringComparison.Ordinal))
+        {
+            if (ExtractBraceBlock(css, index).Contains(".move-route", StringComparison.Ordinal))
+            {
+                stacksRoute = true;
+                break;
+            }
+        }
+
+        stacksRoute.Should().BeTrue(
+            "the route header must collapse to one column at the same width the dialog chrome stacks at");
     }
 
     [Fact]
@@ -147,14 +292,47 @@ public sealed class MovementUiSourceTests
         return content[nameIndex..i];
     }
 
-    private static string ReadRazor(string folder, string file)
+    /// <summary>Extracts the brace-delimited block that follows <paramref name="fromIndex"/> (e.g. an @media rule).</summary>
+    private static string ExtractBraceBlock(string content, int fromIndex)
+    {
+        var braceStart = content.IndexOf('{', fromIndex);
+        if (braceStart < 0)
+            return "";
+
+        var depth = 0;
+        for (var i = braceStart; i < content.Length; i++)
+        {
+            if (content[i] == '{') depth++;
+            else if (content[i] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                    return content[braceStart..(i + 1)];
+            }
+        }
+
+        return content[braceStart..];
+    }
+
+    private static string ReadRazor(string folder, string file) =>
+        ReadRepoFile(Path.Combine("src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client",
+            Path.Combine(folder.Split('/')), file));
+
+    /// <summary>Reads a source file from Apperture.Management.Ui.Shared (the presenter/model home).</summary>
+    private static string ReadShared(string file) =>
+        ReadRepoFile(Path.Combine("src", "Apperture.ControlPlane", "Apperture.Management.Ui.Shared", file));
+
+    private static string ReadPrimitivesCss() =>
+        ReadRepoFile(Path.Combine("src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client",
+            "wwwroot", "css", "management-ui-primitives.css"));
+
+    private static string ReadRepoFile(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
             dir = dir.Parent;
         dir.Should().NotBeNull();
-        var path = Path.Combine(dir!.FullName, "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client",
-            Path.Combine(folder.Split('/')), file);
+        var path = Path.Combine(dir!.FullName, relativePath);
         File.Exists(path).Should().BeTrue($"expected {path} to exist");
         return File.ReadAllText(path);
     }

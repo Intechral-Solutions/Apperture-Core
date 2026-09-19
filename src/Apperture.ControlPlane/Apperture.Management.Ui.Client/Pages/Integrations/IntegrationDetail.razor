@@ -49,6 +49,7 @@
                          Kind="MoveOwnershipDialog.ResourceKind.Integration"
                          ResourceId="@IntegrationId"
                          CurrentResourceContextId="@_integration?.ResourceContextId"
+                         ResourceDisplayName="@_integration?.DisplayName"
                          OnCancelled="() => _moveDialogOpen = false"
                          OnMoved="OnMovedAsync" />
 

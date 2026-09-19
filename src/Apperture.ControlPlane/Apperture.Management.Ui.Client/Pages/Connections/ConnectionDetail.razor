@@ -75,6 +75,7 @@
                          Kind="MoveOwnershipDialog.ResourceKind.Connection"
                          ResourceId="@ConnectionId"
                          CurrentResourceContextId="@_connection?.ResourceContextId"
+                         ResourceDisplayName="@_connection?.Name"
                          OnCancelled="() => _moveDialogOpen = false"
                          OnMoved="OnMovedAsync" />
 
