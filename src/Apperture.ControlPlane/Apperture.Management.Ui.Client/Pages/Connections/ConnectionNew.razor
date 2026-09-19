@@ -80,7 +80,8 @@
             {
                 <ConnectorConnectionFieldInputs Definition="SelectedDefinition"
                                                   ConfigValues="_configValues"
-                                                  SecretValues="_secretValues" />
+                                                  SecretValues="_secretValues"
+                                                  OnFieldValueChanged="StateHasChanged" />
             }
             @if (!string.IsNullOrWhiteSpace(_selectedResourceContextId))
             {
@@ -126,7 +127,8 @@
         // because SelectorVisible also reads false while the directory is unavailable -- that would look
         // identical to "confirmed zero Applications" and silently land in Shared.
         !ViewState.DirectoryUnavailable &&
-        (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId));
+        (!ViewState.SelectorVisible || !string.IsNullOrWhiteSpace(_selectedResourceContextId)) &&
+        ConnectorConnectionFieldValidation.AllRequiredFieldsFilled(SelectedDefinition, GetFieldValue);
 
     private async Task RetryDirectoryAsync() => await ViewState.RefreshContextsAsync();
 
@@ -218,8 +220,7 @@
         if (SelectedDefinition is null || string.IsNullOrWhiteSpace(_connectionName))
             return;
 
-        var missing = SelectedDefinition.Fields
-            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetFieldValue(f)))
+        var missing = ConnectorConnectionFieldValidation.GetMissingRequiredFields(SelectedDefinition, GetFieldValue)
             .Select(f => f.DisplayName)
             .ToArray();
         if (missing.Length > 0)

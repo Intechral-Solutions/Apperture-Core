@@ -36,16 +36,27 @@
 
     [Parameter] public Dictionary<string, string> SecretValues { get; set; } = null!;
 
+    // HSK-A: ConfigValues/SecretValues are the SAME dictionary instances owned by the parent page, so
+    // mutating them here does not by itself cause the parent to re-render (Blazor's automatic
+    // post-event re-render only applies to the component that owns the event handler -- this
+    // component -- not its ancestors). Parents that need live eligibility (e.g. a Create button that
+    // depends on these values) must pass OnFieldValueChanged (commonly "StateHasChanged") so they
+    // re-render on every keystroke.
+    [Parameter] public EventCallback OnFieldValueChanged { get; set; }
+
     private string GetValue(ConnectionFieldCatalogDto field) =>
         field.IsSecret
             ? (SecretValues.TryGetValue(field.Key, out var s) ? s : "")
             : (ConfigValues.TryGetValue(field.Key, out var c) ? c : "");
 
-    private void OnFieldChanged(ConnectionFieldCatalogDto field, string? value)
+    private async Task OnFieldChanged(ConnectionFieldCatalogDto field, string? value)
     {
         if (field.IsSecret)
             SecretValues[field.Key] = value ?? "";
         else
             ConfigValues[field.Key] = value ?? "";
+
+        if (OnFieldValueChanged.HasDelegate)
+            await OnFieldValueChanged.InvokeAsync();
     }
 }

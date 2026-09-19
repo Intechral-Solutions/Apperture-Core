@@ -172,7 +172,8 @@
                                 {
                                     <ConnectorConnectionFieldInputs Definition="SelectedInFlowConnectorDefinition"
                                                                     ConfigValues="_inFlowConfigValues"
-                                                                    SecretValues="_inFlowSecretValues" />
+                                                                    SecretValues="_inFlowSecretValues"
+                                                                    OnFieldValueChanged="StateHasChanged" />
                                 }
                                 @if (ViewState.DirectoryUnavailable)
                                 {
@@ -207,7 +208,7 @@
                                 <div class="flex gap-2">
                                     <button type="button"
                                             class="btn btn-primary text-xs"
-                                            disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName) || (ViewState.DirectoryUnavailable && !ResourceContextIds.IsShared(_integration?.ResourceContextId)))"
+                                            disabled="@(_inFlowCreateSaving || string.IsNullOrWhiteSpace(_inFlowConnectorDefinitionId) || string.IsNullOrWhiteSpace(_inFlowConnectionName) || (ViewState.DirectoryUnavailable && !ResourceContextIds.IsShared(_integration?.ResourceContextId)) || !ConnectorConnectionFieldValidation.AllRequiredFieldsFilled(SelectedInFlowConnectorDefinition, GetInFlowFieldValueForValidation))"
                                             @onclick="CreateConnectionInFlowAsync">
                                         Create connection
                                     </button>
@@ -525,8 +526,7 @@
             return;
         }
         _inFlowCreateError = null;
-        var missing = SelectedInFlowConnectorDefinition.Fields
-            .Where(f => f.IsRequired && string.IsNullOrWhiteSpace(GetInFlowFieldValueForValidation(f)))
+        var missing = ConnectorConnectionFieldValidation.GetMissingRequiredFields(SelectedInFlowConnectorDefinition, GetInFlowFieldValueForValidation)
             .Select(f => f.DisplayName)
             .ToArray();
         if (missing.Length > 0)
