@@ -1516,7 +1516,9 @@ public sealed class ManagementClient : IManagementClient
     ///   409 with a full preview body            -> blocked by a family-specific blocker; a normal,
     ///                                              renderable outcome (CanMove == false) -- NOT thrown.
     ///   409 with { error, code }                -> the ownership mutation gate timed out (transient);
-    ///                                              throw InvalidOperationException with the server's message.
+    ///                                              throw OwnershipMoveBusyException (an InvalidOperationException)
+    ///                                              with the server's message when code is the busy code, else a
+    ///                                              plain InvalidOperationException.
     ///   400 with { error }                      -> a common blocker (unknown/archived/same target);
     ///                                              throw InvalidOperationException with the server's message.
     ///   anything else (403, 404, 500, ...)      -> EnsureSuccessOrThrowAsync (house convention; never a
@@ -1537,8 +1539,10 @@ public sealed class ManagementClient : IManagementClient
             var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (TryReadMoveBlockedPreview(payload, out var blocked))
                 return blocked;
-            throw new InvalidOperationException(
-                ParseManagementApiErrorPayload(payload) ?? "Another ownership change is in progress. Wait a moment and try again.");
+            var message = ParseManagementApiErrorPayload(payload) ?? "Another ownership change is in progress. Wait a moment and try again.";
+            if (IsOwnershipBusyPayload(payload))
+                throw new OwnershipMoveBusyException(message);
+            throw new InvalidOperationException(message);
         }
 
         if (response.StatusCode == HttpStatusCode.BadRequest)
@@ -1549,6 +1553,27 @@ public sealed class ManagementClient : IManagementClient
 
         await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false); // house convention; never bare EnsureSuccessStatusCode
         return (await response.Content.ReadFromJsonAsync<ResourceMovePreviewDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false))!;
+    }
+
+    /// <summary>
+    /// True when a non-preview move 409 body carries the transient ownership-busy machine code
+    /// (<see cref="ResourceMoveErrorCodes.OwnershipOperationBusy"/>). Any other or unparseable body is false.
+    /// </summary>
+    private static bool IsOwnershipBusyPayload(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && TryGetPropertyIgnoreCase(root, "code", out var codeEl)
+                && codeEl.ValueKind == JsonValueKind.String
+                && string.Equals(codeEl.GetString(), ResourceMoveErrorCodes.OwnershipOperationBusy, StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

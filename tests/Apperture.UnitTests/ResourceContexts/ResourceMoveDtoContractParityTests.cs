@@ -65,6 +65,13 @@ public sealed class ResourceMoveDtoContractParityTests
             .Should().BeEquivalentTo(ConstantValues(typeof(Apperture.Management.Client.ResourceMoveEffectCodes)));
     }
 
+    [Fact]
+    public void Client_ownership_busy_code_mirrors_the_server_busy_code_exactly()
+    {
+        ResourceMoveErrorCodes.OwnershipOperationBusy.Should().Be(ResourceOwnershipBusyException.BusyCode,
+            "the client types the transient busy-gate 409 by this wire code -- drift would silently downgrade it to a generic error");
+    }
+
     private static IEnumerable<string> ConstantValues(Type type) =>
         type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
             .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string))

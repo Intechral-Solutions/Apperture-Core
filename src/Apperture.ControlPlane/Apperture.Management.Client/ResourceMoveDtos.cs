@@ -53,6 +53,28 @@ public static class ResourceMoveBlockerCodes
     public const string ScheduleAttachedToIntegration = "schedule_attached_to_integration";
 }
 
+/// <summary>
+/// Client-side mirror of the machine <c>code</c> the move endpoints put on non-preview error bodies
+/// (<c>{ error, code }</c>). Mirrors <c>ResourceOwnershipBusyException.BusyCode</c> (Core.Application),
+/// pinned by <c>ResourceMoveDtoContractParityTests</c>.
+/// </summary>
+public static class ResourceMoveErrorCodes
+{
+    /// <summary>The ownership mutation gate timed out: transient, retryable.</summary>
+    public const string OwnershipOperationBusy = "ownership_operation_busy";
+}
+
+/// <summary>
+/// Thrown by the move methods when the server rejects a move with the transient ownership-busy 409
+/// (<see cref="ResourceMoveErrorCodes.OwnershipOperationBusy"/>). Derives from
+/// <see cref="InvalidOperationException"/> so existing <c>catch (InvalidOperationException)</c> sites keep
+/// working; callers that want a retryable treatment catch this type first. The message is the server's.
+/// </summary>
+public sealed class OwnershipMoveBusyException : InvalidOperationException
+{
+    public OwnershipMoveBusyException(string message) : base(message) { }
+}
+
 /// <summary>Client-side mirror of the server's effect codes. See <see cref="ResourceMoveBlockerCodes"/>.</summary>
 public static class ResourceMoveEffectCodes
 {

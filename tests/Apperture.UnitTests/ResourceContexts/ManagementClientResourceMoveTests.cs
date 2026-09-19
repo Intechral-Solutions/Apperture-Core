@@ -182,6 +182,140 @@ public sealed class ManagementClientResourceMoveTests
     }
 
     [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409BusyShape_ThrowsTypedOwnershipMoveBusyException()
+    {
+        const string body = """{ "error": "Another ownership change is in progress. Wait a moment and try again.", "code": "ownership_operation_busy" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<OwnershipMoveBusyException>();
+        ex.Which.Should().BeAssignableTo<InvalidOperationException>();
+        ex.Which.Message.Should().Be("Another ownership change is in progress. Wait a moment and try again.");
+    }
+
+    [Fact]
+    public async Task MoveConnectionOwnershipAsync_On409BusyShape_ThrowsTypedOwnershipMoveBusyException()
+    {
+        const string body = """{ "error": "Another ownership change is in progress. Wait a moment and try again.", "code": "ownership_operation_busy" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveConnectionOwnershipAsync("conn-1", "app-2");
+
+        await act.Should().ThrowAsync<OwnershipMoveBusyException>();
+    }
+
+    [Fact]
+    public async Task MoveScheduleOwnershipAsync_On409BusyShape_ThrowsTypedOwnershipMoveBusyException()
+    {
+        const string body = """{ "error": "Another ownership change is in progress. Wait a moment and try again.", "code": "ownership_operation_busy" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveScheduleOwnershipAsync("sched-1", "app-2");
+
+        await act.Should().ThrowAsync<OwnershipMoveBusyException>();
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409BusyShape_MatchesCodeCaseInsensitivelyAndKeepsTheClientConstantInSync()
+    {
+        // Property name matching is case-insensitive (house helper); the value is the stable machine code.
+        var body = $$"""{ "Error": "Busy right now.", "Code": "{{ResourceMoveErrorCodes.OwnershipOperationBusy}}" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<OwnershipMoveBusyException>();
+        ex.Which.Message.Should().Be("Busy right now.");
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409BusyShapeWithoutErrorText_IsStillTypedBusy()
+    {
+        // The type keys off the machine code, never the message text.
+        var body = $$"""{ "code": "{{ResourceMoveErrorCodes.OwnershipOperationBusy}}" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<OwnershipMoveBusyException>();
+        ex.Which.Message.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409WithUnparseableBody_ThrowsPlainInvalidOperationException_NotTheBusyType()
+    {
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, "not json"));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Should().NotBeAssignableTo<OwnershipMoveBusyException>();
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409WithOtherCode_ThrowsPlainInvalidOperationException_NotTheBusyType()
+    {
+        const string body = """{ "error": "Something else conflicted.", "code": "some_other_conflict" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Should().NotBeOfType<OwnershipMoveBusyException>();
+        ex.Which.Should().NotBeAssignableTo<OwnershipMoveBusyException>();
+        ex.Which.Message.Should().Be("Something else conflicted.");
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409WithoutCode_ThrowsPlainInvalidOperationException_NotTheBusyType()
+    {
+        const string body = """{ "error": "Conflict without a machine code." }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Should().NotBeAssignableTo<OwnershipMoveBusyException>();
+        ex.Which.Message.Should().Be("Conflict without a machine code.");
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On400_ThrowsPlainInvalidOperationException_NotTheBusyType()
+    {
+        // Even a (hypothetical) 400 carrying the busy code is not transient-busy: only the 409 branch types it.
+        var body = $$"""{ "error": "Rejected.", "code": "{{ResourceMoveErrorCodes.OwnershipOperationBusy}}" }""";
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.BadRequest, body));
+        var client = CreateClient(handler);
+
+        var act = () => client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Should().NotBeAssignableTo<OwnershipMoveBusyException>();
+        ex.Which.Message.Should().Be("Rejected.");
+    }
+
+    [Fact]
+    public async Task MoveIntegrationOwnershipAsync_On409WithPreviewBody_StillReturnsBlockedPreview_NotTheBusyType()
+    {
+        var handler = new FuncHandler(_ => JsonResponse(HttpStatusCode.Conflict, BlockedPreviewBody));
+        var client = CreateClient(handler);
+
+        var result = await client.MoveIntegrationOwnershipAsync("int-1", "app-2");
+
+        result.CanMove.Should().BeFalse();
+        result.Blockers.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task MoveIntegrationOwnershipAsync_On400_ThrowsInvalidOperationExceptionWithServerMessage()
     {
         const string body = """{ "error": "The target ResourceContext was not found." }""";
