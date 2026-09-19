@@ -130,7 +130,7 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
         // Fields that do NOT feed BuildRuleJson/BuildTemplateJson (and therefore do not
         // affect the Validate payload) must not be wired to MarkDirty — editing them alone
         // should not force re-validation before Create/Save is re-enabled.
-        string[] nonValidationFields = ["_model.Description", "_model.DefaultSeverity", "_model.IsEnabled"];
+        string[] nonValidationFields = ["_model.DisplayName", "_model.Description", "_model.DefaultSeverity", "_model.IsEnabled"];
         foreach (var field in nonValidationFields)
         {
             BindsWithMarkDirty(form, field).Should().BeFalse(
