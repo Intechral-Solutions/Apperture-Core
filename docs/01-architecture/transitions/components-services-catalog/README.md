@@ -82,6 +82,15 @@ filter, the same shape as the existing `resourceContextId` filter), since that q
 property-equality filter on `Integration`, unrelated to whatever Module→Component renaming eventually
 happens to the registry/lifecycle layer.
 
+**Ruling (post-HSK-A): the "Integrations using this Module" section is intentionally global with respect
+to the shell View/Context, not View-scoped.** It lists every Integration using the Module that the current
+operator is authorized to see, across all ResourceContexts — the shell View filter is deliberately not
+applied. Reasoning: Module is a system/catalog/distribution concept, not an Application-owned resource; the
+section answers "where is this Module in use," which the active View would make incomplete; and Modules are
+expected to live under the global Components area eventually, reinforcing this. Authorization/visibility
+still applies normally — "global" means unfiltered by View, not unfiltered by access control. Carry this
+forward as-is when Module detail is reshaped during Components implementation.
+
 ## Resource Catalog — retired as a standalone product/roadmap concept
 
 Historical ADR/docs are preserved as history; nothing is deleted or rewritten to look obvious in hindsight.

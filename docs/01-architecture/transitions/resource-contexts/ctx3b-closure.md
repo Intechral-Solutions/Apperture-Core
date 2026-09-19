@@ -349,12 +349,21 @@ closure session's broader mandate:**
   structured JSON payload in `Details` stays parseable — a correct workaround for this closure's own purposes,
   but the underlying behavior (that any non-null `Resource` corrupts `Details`' JSON shape for other callers)
   is unchanged and remains audit-system debt.
-- **Duplicate audit DI registration — confirmed still present in this session.** Plan 4 previously noted a
-  duplicate `services.AddScoped<IAuditService, SqlAuditService>()` registration in Governance composition. A
-  grep in this closure session confirms both registrations are still present, at
+- **Duplicate audit DI registration — re-investigated by HSK-A and closed as a false positive.** Plan 4
+  previously noted a duplicate `services.AddScoped<IAuditService, SqlAuditService>()` registration in
+  Governance composition, at
   `src/Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs:96`
-  and `:214`. Harmless (last registration wins; both resolve to the same implementation), but real,
-  unresolved cleanup debt.
+  and `:214`, and this closure session (at the time) characterized it as harmless last-registration-wins
+  cleanup debt. That characterization was **incorrect**: the two registrations live in two separate
+  extension methods (`AddAppertureGovernance` and `AddAppertureEmergencyOperatorServices`), each called from
+  a separate, non-overlapping composition root — the management host (`Apperture.Management.Host/Program.cs`)
+  and the emergency operator CLI (`Apperture.Cli.Host/EmergencyCli.cs`) respectively — plus a third,
+  independent registration in the Windows worker host
+  (`Apperture.RuntimeHost.Windows.WorkerHost/Program.cs:87`). No host ever calls more than one of these
+  paths, so "last registration wins" never applies within any single container, and removing either
+  registration would leave its own host's `IAuditService` unresolved. HSK-A verified this by grepping every
+  call site of both extension methods; no redundant registration remains to clean up. This debt item is
+  closed.
 - **General Integration update-vs-update concurrency remains separate, non-CTX debt, if still
   applicable.** Plan 2's review identified a generic same-Integration update lost-update class, unrelated to
   the ResourceContext archive invariant this epic protects. This closure did not re-verify whether it is

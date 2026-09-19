@@ -285,6 +285,12 @@
         _moduleIntegrations = null;
         try
         {
+            // contextId is intentionally always null here: this section answers "where is this Module in
+            // use," and Module is a system/catalog concept, not an Application-owned resource, so the
+            // answer must span every ResourceContext the operator can see, not just the active shell View.
+            // Do not apply the shell View/Context filter to this call (Components/Services boundary ruling,
+            // docs/01-architecture/transitions/components-services-catalog/README.md). Authorization still
+            // applies normally via the CanViewIntegrations guard above and the server-side IntegrationRead check.
             _moduleIntegrations = await Client.GetIntegrationsAsync(contextId: null, moduleId: ModuleId);
         }
         catch (HttpRequestException ex)

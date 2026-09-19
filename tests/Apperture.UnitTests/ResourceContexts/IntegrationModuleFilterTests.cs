@@ -10,6 +10,10 @@ namespace Apperture.UnitTests.ResourceContexts;
 /// <c>moduleId</c> filter, pushed to SQL and composable (AND) with the existing
 /// <c>resourceContextId</c> filter, exercised over the same production classes as
 /// <see cref="ResourceOwnershipTests"/> (<see cref="ResourceContextOwnershipTestHarness"/>).
+/// The <c>moduleId</c>-alone case here is the same shape the Module detail page's "Integrations using
+/// this module" section relies on — that call site deliberately passes <c>resourceContextId: null</c>
+/// (confirmed intentional: Module is a system/catalog concept, not View/Context-scoped). Do not
+/// "fix" that call site to consume the shell View/Context filter.
 /// </summary>
 public sealed class IntegrationModuleFilterTests
 {
