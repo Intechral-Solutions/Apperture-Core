@@ -9,6 +9,11 @@
     (a text-labelled StatusPill, never colour alone) sits directly beneath it, then the sections the
     presenter produced. Blocked by carries the only negative treatment; Will move / Used by are neutral
     surfaces; Notes and History are quiet muted text.
+
+    Live-region layout: only the outcome region is wrapped in aria-live="polite". Everything that is a
+    PageMessage brings its own role (alert for Error, status otherwise), and an alert nested inside a
+    polite region is commonly announced twice, so the preview-failure message and the submit error render
+    outside that wrapper.
 *@
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Shared
@@ -58,147 +63,57 @@
                 </div>
             </div>
 
-            <div class="move-status" aria-live="polite">
-                @if (phase == MoveDialogPhase.NoTarget)
-                {
-                    <p class="move-hint">Choose a target context to see what will happen.</p>
-                }
-                else if (phase == MoveDialogPhase.Loading)
-                {
-                    <LoadingState Message="Checking what this move affects…" />
-                }
-                else if (phase == MoveDialogPhase.Failed)
-                {
-                    <PageMessage Kind="PageMessageKind.Error"
-                                 Title="Couldn't load the preview"
-                                 Message="@(_model.SubmitError ?? "The preview could not be loaded. Try again.")" />
-                    <div class="move-retry">
-                        <button type="button" class="ui-toolbar-btn" @onclick="LoadPreviewAsync">Try again</button>
-                    </div>
-                }
-                else if (view is not null)
-                {
-                    <div class="move-outcome">
-                        @if (phase == MoveDialogPhase.Allowed)
-                        {
-                            <StatusPill Label="Ready to move" Semantic="ManagementStatusSemantic.Success" />
-                        }
-                        else
-                        {
-                            <StatusPill Label="Can't move yet" Semantic="ManagementStatusSemantic.Error" />
-                        }
-                    </div>
-
-                    @if (phase == MoveDialogPhase.Blocked && _model.ChangedSincePreview)
+            @*
+                The outcome region. Skipped in the Failed phase, whose PageMessage is a role=alert that
+                announces itself -- keeping it out avoids the nested-live-region double announcement.
+            *@
+            @if (phase != MoveDialogPhase.Failed)
+            {
+                <div class="move-status" aria-live="polite">
+                    @if (phase == MoveDialogPhase.NoTarget)
                     {
-                        <PageMessage Kind="PageMessageKind.Warning"
-                                     Title="Things changed since this preview was loaded"
-                                     Message="Review the reasons below before trying again." />
+                        <p class="move-hint">Choose a target context to see what will happen.</p>
                     }
-
-                    @if (phase == MoveDialogPhase.Blocked || view.BlockedBy.Count > 0)
+                    else if (phase == MoveDialogPhase.Loading)
                     {
-                        <section class="move-section move-section--blocked">
-                            <h3 class="move-section__label">Blocked by</h3>
-                            @if (view.BlockedBy.Count > 0)
+                        <LoadingState Message="Checking what this move affects…" />
+                    }
+                    else if (view is not null)
+                    {
+                        <div class="move-outcome">
+                            @if (phase == MoveDialogPhase.Allowed)
                             {
-                                <ul class="move-list">
-                                    @foreach (var item in view.BlockedBy)
-                                    {
-                                        <li class="move-item">
-                                            @if (!string.IsNullOrEmpty(item.Text))
-                                            {
-                                                <span class="move-item__text">@item.Text</span>
-                                            }
-                                            @if (item.LinkText is { } linkText && item.Href is { } href)
-                                            {
-                                                <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
-                                            }
-                                        </li>
-                                    }
-                                </ul>
+                                <StatusPill Label="Ready to move" Semantic="ManagementStatusSemantic.Success" />
                             }
                             else
                             {
-                                <p class="move-section__empty">This move isn't allowed right now.</p>
+                                <StatusPill Label="Can't move yet" Semantic="ManagementStatusSemantic.Error" />
                             }
-                        </section>
-                    }
+                        </div>
 
-                    @if (view.WillMove.Count > 0)
-                    {
-                        <section class="move-section move-section--panel">
-                            <h3 class="move-section__label">Will move</h3>
-                            <ul class="move-list">
-                                @foreach (var item in view.WillMove)
-                                {
-                                    <li class="move-item">
-                                        @if (!string.IsNullOrEmpty(item.Text))
-                                        {
-                                            <span class="move-item__text">@item.Text</span>
-                                        }
-                                        @if (item.LinkText is { } linkText && item.Href is { } href)
-                                        {
-                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        </section>
+                        @if (phase == MoveDialogPhase.Blocked && _model.ChangedSincePreview)
+                        {
+                            <PageMessage Kind="PageMessageKind.Warning"
+                                         Title="Things changed since this preview was loaded"
+                                         Message="Review the reasons below before trying again." />
+                        }
                     }
-
-                    @if (view.UsedBy.Count > 0)
-                    {
-                        <section class="move-section move-section--panel">
-                            <h3 class="move-section__label">Used by</h3>
-                            <ul class="move-list">
-                                @foreach (var item in view.UsedBy)
-                                {
-                                    <li class="move-item">
-                                        @if (!string.IsNullOrEmpty(item.Text))
-                                        {
-                                            <span class="move-item__text">@item.Text</span>
-                                        }
-                                        @if (item.LinkText is { } linkText && item.Href is { } href)
-                                        {
-                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        </section>
-                    }
-
-                    @if (view.Notes.Count > 0)
-                    {
-                        <section class="move-section move-section--notes">
-                            <h3 class="move-section__label">Notes</h3>
-                            <ul class="move-list">
-                                @foreach (var item in view.Notes)
-                                {
-                                    <li class="move-item">
-                                        @if (!string.IsNullOrEmpty(item.Text))
-                                        {
-                                            <span class="move-item__text">@item.Text</span>
-                                        }
-                                        @if (item.LinkText is { } linkText && item.Href is { } href)
-                                        {
-                                            <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        </section>
-                    }
-
-                    <p class="move-history">@view.History</p>
-                }
-            </div>
+                </div>
+            }
+            else
+            {
+                <PageMessage Kind="PageMessageKind.Error"
+                             Title="Couldn't load the preview"
+                             Message="@(_model.SubmitError ?? "The preview could not be loaded. Try again.")" />
+                <div class="move-retry">
+                    <button type="button" class="ui-toolbar-btn" @onclick="LoadPreviewAsync">Try again</button>
+                </div>
+            }
 
             @*
                 A submit error lives alongside a still-valid preview (the model keeps Phase Allowed/Blocked),
-                so it renders outside the phase chain -- and outside the aria-live region, since PageMessage
-                already announces itself (role=alert for Error, role=status otherwise).
+                so it renders independently of the phase chain -- and directly under the outcome rather than
+                after the sections, which in a scrolling body can put it below the fold.
             *@
             @if (view is not null && _model.SubmitError is { } submitError)
             {
@@ -216,6 +131,45 @@
                                  Title="The move didn't complete"
                                  Message="@submitError" />
                 }
+            }
+
+            @* A non-null view means the model holds a preview, i.e. the phase is Allowed or Blocked. *@
+            @if (view is not null)
+            {
+                <div class="move-sections">
+                    @if (phase == MoveDialogPhase.Blocked || view.BlockedBy.Count > 0)
+                    {
+                        <section class="move-section move-section--blocked">
+                            <h3 class="move-section__label">Blocked by</h3>
+                            @if (view.BlockedBy.Count > 0)
+                            {
+                                @MoveItemList(view.BlockedBy)
+                            }
+                            else
+                            {
+                                @* CanMove=false with no blockers should not happen; say something rather than show an empty panel. *@
+                                <p class="move-section__empty">This move isn't allowed right now.</p>
+                            }
+                        </section>
+                    }
+
+                    @if (view.WillMove.Count > 0)
+                    {
+                        @MoveSection("Will move", "move-section--panel", view.WillMove)
+                    }
+
+                    @if (view.UsedBy.Count > 0)
+                    {
+                        @MoveSection("Used by", "move-section--panel", view.UsedBy)
+                    }
+
+                    @if (view.Notes.Count > 0)
+                    {
+                        @MoveSection("Notes", "move-section--notes", view.Notes)
+                    }
+
+                    <p class="move-history">@view.History</p>
+                </div>
             }
         </div>
     </ChildContent>
@@ -257,11 +211,43 @@
     private string _selectedTargetId = "";
 
     /// <summary>
-    /// Best-effort display names for related resources the preview referenced only by id, keyed by
-    /// <see cref="MoveOwnershipPresenter.RelatedNameKey"/>. Always a superset-free snapshot of the current
-    /// preview: cleared whenever a new preview is applied or the dialog resets.
+    /// Display names looked up for resources the preview referenced only by id, keyed by
+    /// <see cref="MoveOwnershipPresenter.RelatedNameKey"/>. It only ever holds names for the preview that
+    /// is currently on screen: it is emptied whenever a new preview is applied and whenever the dialog is
+    /// reset. Ids that could not be read are simply absent, and the presenter falls back to counts.
     /// </summary>
     private readonly Dictionary<string, string> _relatedNames = new(StringComparer.Ordinal);
+
+    /// <summary>One presented list. Shared by all four sections so the item markup exists once.</summary>
+    private RenderFragment MoveItemList(IReadOnlyList<MoveItem> items) => __builder =>
+    {
+        @* role="list" restores the semantics that list-style:none removes in Safari/VoiceOver. *@
+        <ul class="move-list" role="list">
+            @foreach (var item in items)
+            {
+                <li class="move-item">
+                    @* An item with no Text (a Used-by row) must render the link alone -- no empty span. *@
+                    @if (!string.IsNullOrEmpty(item.Text))
+                    {
+                        <span class="move-item__text">@item.Text</span>
+                    }
+                    @if (item.LinkText is { } linkText && item.Href is { } href)
+                    {
+                        <DrillInLink Href="@href" Class="move-item__link">@linkText</DrillInLink>
+                    }
+                </li>
+            }
+        </ul>
+    };
+
+    /// <summary>A labelled section wrapping one presented list.</summary>
+    private RenderFragment MoveSection(string label, string modifierClass, IReadOnlyList<MoveItem> items) => __builder =>
+    {
+        <section class="move-section @modifierClass">
+            <h3 class="move-section__label">@label</h3>
+            @MoveItemList(items)
+        </section>
+    };
 
     private string SourceContextName =>
         CurrentResourceContextId is null ? "Shared" : ViewState.DescribeContext(CurrentResourceContextId);
@@ -303,7 +289,10 @@
             return;
 
         var generation = _model.BeginPreview();
-        ResourceMovePreviewDto? applied = null;
+
+        // Named "fetched", not "applied": ApplyPreview no-ops when a newer request has superseded this
+        // generation, and AfterPreviewAppliedAsync re-checks that before doing anything.
+        ResourceMovePreviewDto? fetched = null;
         try
         {
             var preview = Kind switch
@@ -314,7 +303,7 @@
                 _ => throw new NotSupportedException()
             };
             _model.ApplyPreview(generation, preview); // no-ops if a newer request superseded this one
-            applied = preview;
+            fetched = preview;
         }
         catch (InvalidOperationException ex)
         {
@@ -333,8 +322,8 @@
 
         // Outside the try: cosmetic name resolution must never be able to turn a good preview into a
         // FailPreview.
-        if (applied is not null)
-            await AfterPreviewAppliedAsync(generation, applied);
+        if (fetched is not null)
+            await AfterPreviewAppliedAsync(generation, fetched);
     }
 
     private async Task SubmitAsync()
@@ -405,25 +394,46 @@
     }
 
     /// <summary>
-    /// Runs after a preview (fetched or returned by a blocked Move) has been handed to the model. Renders
-    /// it immediately, then fills in related display names in the background. Never throws: name
-    /// resolution is cosmetic and must not be able to fail or stall the dialog.
+    /// Runs after a preview (fetched, or returned by a blocked Move) has been handed to the model. Renders
+    /// it immediately, then fills in related display names in the background.
     /// </summary>
+    /// <remarks>
+    /// Total by construction: every failure is swallowed. Name resolution is cosmetic enrichment of a
+    /// preview that is already correct and already on screen, so nothing it does may surface as an error,
+    /// and anything it throws would otherwise escape a Blazor event handler as an unhandled exception.
+    /// The reads go through GetFromJsonAsync, which can throw JsonException/NotSupportedException (e.g. a
+    /// sign-in page returned with a 200) on top of the transport exceptions, and ViewState.Changed
+    /// subscribers run inside EnsureContextsKnownAsync -- so the catch has to be open-ended, not a list.
+    /// </remarks>
     private async Task AfterPreviewAppliedAsync(int generation, ResourceMovePreviewDto preview)
     {
-        if (!ReferenceEquals(_model.Preview, preview))
-            return; // superseded before it was ever shown
+        try
+        {
+            if (!ReferenceEquals(_model.Preview, preview))
+                return; // superseded before it was ever shown
 
-        _relatedNames.Clear();
-        StateHasChanged();
-        await ResolveRelatedNamesAsync(generation, preview);
+            _relatedNames.Clear();
+            StateHasChanged();
+            await ResolveRelatedNamesAsync(generation, preview);
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed -- see the remarks above. The preview itself is unaffected; names
+            // simply stay unresolved and the presenter falls back to counts.
+        }
     }
 
     private async Task ResolveRelatedNamesAsync(int generation, ResourceMovePreviewDto preview)
     {
-        // The presenter describes context ids through ViewState.DescribeContext; make sure the two
-        // contexts this preview is actually about are in the known list before that runs.
-        await EnsureContextsKnownAsync(preview);
+        // The presenter turns context ids into names through ViewState.DescribeContext, so make sure every
+        // context this preview's copy will look up is in the known list first (otherwise an owner context
+        // outside the cached list renders as "Unknown context"). The id list comes from the presenter so
+        // this component never reads a blocker field itself.
+        var contextIds = new List<string?>(MoveOwnershipPresenter.GetContextIdsToResolve(preview))
+        {
+            CurrentResourceContextId
+        };
+        await ViewState.EnsureContextsKnownAsync(contextIds);
         if (!IsStillCurrent(generation, preview))
             return;
 
@@ -457,18 +467,11 @@
     private bool IsStillCurrent(int generation, ResourceMovePreviewDto preview) =>
         _model.CurrentGeneration == generation && ReferenceEquals(_model.Preview, preview);
 
-    private async Task EnsureContextsKnownAsync(ResourceMovePreviewDto preview)
-    {
-        try
-        {
-            await ViewState.EnsureContextsKnownAsync([preview.Source?.Id, preview.Target?.Id, CurrentResourceContextId]);
-        }
-        catch (InvalidOperationException) { /* names stay as ids/unknown; never blocks the dialog */ }
-        catch (HttpRequestException) { /* idem */ }
-        catch (TaskCanceledException) { /* idem */ }
-    }
-
-    /// <summary>One best-effort display-name read. Any failure (401/403/404/network) simply leaves it unresolved.</summary>
+    /// <summary>
+    /// One best-effort display-name read. Any failure (401/403/404, network, or a non-JSON body) simply
+    /// leaves that one name unresolved; a cancellation is left to propagate so the whole batch stops
+    /// rather than quietly finishing (<see cref="AfterPreviewAppliedAsync"/> absorbs it).
+    /// </summary>
     private async Task<string?> TryReadDisplayNameAsync(MoveRelatedRef reference)
     {
         try
@@ -481,9 +484,10 @@
 
             return null;
         }
-        catch (InvalidOperationException) { return null; }
-        catch (HttpRequestException) { return null; }
-        catch (TaskCanceledException) { return null; }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     private async Task Cancel()

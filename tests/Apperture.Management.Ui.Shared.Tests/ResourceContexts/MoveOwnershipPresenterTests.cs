@@ -851,4 +851,70 @@ public sealed class MoveOwnershipPresenterTests
     {
         MoveOwnershipPresenter.MaxResolvedNames.Should().Be(10);
     }
+
+    // ---- GetContextIdsToResolve ---------------------------------------------------------------------
+    // HSK-B fix round 1 (C): the razor must never name RelatedResourceContextId (pinned by
+    // MovementUiSourceTests), but the owner-context names the blocker copy prints come from
+    // describeContext, so the component needs the id list to pre-warm ResourceContextViewState.
+
+    [Fact]
+    public void GetContextIdsToResolve_returns_source_then_target_then_blocker_owners_in_order()
+    {
+        var preview = Preview(
+            target: Ref(RawTargetCtx, "Canvas"),
+            blockers:
+            [
+                Blocker(ResourceMoveBlockerCodes.BindingConnectionUnreachable, relatedCtx: "ctx-owner-1"),
+                Blocker(ResourceMoveBlockerCodes.BindingIntegrationUnreachable, relatedCtx: "ctx-owner-2"),
+            ]);
+
+        MoveOwnershipPresenter.GetContextIdsToResolve(preview)
+            .Should().Equal("ctx-src", RawTargetCtx, "ctx-owner-1", "ctx-owner-2");
+    }
+
+    [Fact]
+    public void GetContextIdsToResolve_deduplicates_ids()
+    {
+        var preview = Preview(
+            target: Ref("ctx-src", "Source"),
+            blockers:
+            [
+                Blocker(ResourceMoveBlockerCodes.BindingConnectionUnreachable, relatedCtx: "ctx-owner-1"),
+                Blocker(ResourceMoveBlockerCodes.BindingConnectionUnreachable, relatedCtx: "ctx-owner-1"),
+                Blocker(ResourceMoveBlockerCodes.BindingIntegrationUnreachable, relatedCtx: "ctx-src"),
+            ]);
+
+        MoveOwnershipPresenter.GetContextIdsToResolve(preview).Should().Equal("ctx-src", "ctx-owner-1");
+    }
+
+    [Fact]
+    public void GetContextIdsToResolve_skips_blank_and_null_ids()
+    {
+        var preview = Preview(blockers:
+        [
+            Blocker(ResourceMoveBlockerCodes.AlreadyInTarget),                                   // null context
+            Blocker(ResourceMoveBlockerCodes.BindingConnectionUnreachable, relatedCtx: "   "),   // whitespace
+            Blocker(ResourceMoveBlockerCodes.BindingIntegrationUnreachable, relatedCtx: "ctx-owner-1"),
+        ]);
+
+        MoveOwnershipPresenter.GetContextIdsToResolve(preview)
+            .Should().Equal("ctx-src", RawTargetCtx, "ctx-owner-1");
+    }
+
+    [Fact]
+    public void GetContextIdsToResolve_tolerates_null_source_target_and_blockers()
+    {
+        var preview = new ResourceMovePreviewDto("Integration", "int-1", null!, null!, false, null!, null!);
+
+        MoveOwnershipPresenter.GetContextIdsToResolve(preview).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetContextIdsToResolve_tolerates_null_blocker_entries()
+    {
+        var preview = Preview(blockers: [null!, Blocker(ResourceMoveBlockerCodes.BindingConnectionUnreachable, relatedCtx: "ctx-owner-1")]);
+
+        MoveOwnershipPresenter.GetContextIdsToResolve(preview)
+            .Should().Equal("ctx-src", RawTargetCtx, "ctx-owner-1");
+    }
 }

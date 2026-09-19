@@ -237,9 +237,16 @@ public sealed class MoveOwnershipDialogModel
     /// <summary>Clears the in-flight flag set by <see cref="BeginSubmit"/>.</summary>
     public void EndSubmit() => IsSubmitting = false;
 
-    /// <summary>Returns the dialog to its initial, no-selection state (e.g. on cancel or after a successful move).</summary>
+    /// <summary>
+    /// Returns the dialog to its initial, no-selection state (e.g. on cancel or after a successful move).
+    /// Also starts a new generation, so a preview response still in flight when the dialog closed is
+    /// discarded by <see cref="ApplyPreview"/>/<see cref="ApplySubmitConflict"/>/<see cref="FailPreview"/>
+    /// instead of resurfacing as a stale preview on the next open. (<c>IsBusy</c> only blocks closing
+    /// during a submit, not during a preview load, so this race is reachable.)
+    /// </summary>
     public void Reset()
     {
+        CurrentGeneration = _previewGuard.Begin();
         TargetOptions = [];
         SelectedTargetId = "";
         IsLoadingPreview = false;

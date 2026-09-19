@@ -259,6 +259,8 @@ public sealed class MoveOwnershipDialogModelStateTests
         model.SubmitError.Should().BeNull();
         model.Phase.Should().Be(MoveDialogPhase.Blocked);
         model.CanSubmit.Should().BeFalse();
+        model.IsSubmitting.Should().BeTrue(
+            "a submit-time conflict is not the end of the request -- only EndSubmit (the caller's finally) clears it");
     }
 
     [Fact]
@@ -352,6 +354,56 @@ public sealed class MoveOwnershipDialogModelStateTests
 
         model.ChangedSincePreview.Should().BeTrue();
         model.Preview!.CanMove.Should().BeFalse();
+    }
+
+    // ---- Reset invalidates in-flight preview requests -----------------------------------------------
+
+    [Fact]
+    public void Reset_discards_a_preview_response_that_lands_after_the_dialog_closed()
+    {
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+
+        model.Reset(); // operator cancelled / the dialog closed while the GET was still in flight
+
+        model.ApplyPreview(generation, Preview(canMove: true));
+
+        model.Preview.Should().BeNull("a response for a generation the reset superseded must not resurface");
+        model.Phase.Should().Be(MoveDialogPhase.NoTarget);
+    }
+
+    [Fact]
+    public void Reset_discards_a_late_submit_conflict_and_a_late_preview_failure()
+    {
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+        model.Reset();
+
+        model.ApplySubmitConflict(generation, Preview(canMove: false));
+        model.FailPreview(generation, "too late");
+
+        model.Preview.Should().BeNull();
+        model.ChangedSincePreview.Should().BeFalse();
+        model.SubmitError.Should().BeNull();
+        model.Phase.Should().Be(MoveDialogPhase.NoTarget);
+    }
+
+    [Fact]
+    public void Reset_still_starts_a_generation_that_a_fresh_preview_can_use()
+    {
+        var model = new MoveOwnershipDialogModel();
+        model.SelectTarget("app-canvas");
+        model.BeginPreview();
+        model.Reset();
+
+        model.SelectTarget("app-canvas");
+        var generation = model.BeginPreview();
+        model.ApplyPreview(generation, Preview(canMove: true));
+
+        model.Phase.Should().Be(MoveDialogPhase.Allowed);
+        model.CanSubmit.Should().BeTrue();
     }
 
     private static MoveOwnershipDialogModel ModelWithConflict()

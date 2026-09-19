@@ -83,6 +83,30 @@ public static class MoveOwnershipPresenter
         return refs;
     }
 
+    /// <summary>
+    /// The context ids whose display names <see cref="Present"/> will ask <c>describeContext</c> for: the
+    /// preview's source and target, plus every blocker's owning context. Distinct, non-blank, in that
+    /// order; null <c>Source</c>/<c>Target</c>/<c>Blockers</c> and null entries are tolerated.
+    /// </summary>
+    /// <remarks>
+    /// Exists so the razor can pre-warm <c>ResourceContextViewState</c> (otherwise an owner context that is
+    /// not yet in the known list renders as "Unknown context") without naming any blocker DTO field itself
+    /// -- the dialog renders presenter output only, which <c>MovementUiSourceTests</c> pins.
+    /// </remarks>
+    public static IReadOnlyList<string> GetContextIdsToResolve(ResourceMovePreviewDto preview)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+
+        var ids = new List<string?> { preview.Source?.Id, preview.Target?.Id };
+        ids.AddRange((preview.Blockers ?? []).Where(b => b is not null).Select(b => b.RelatedResourceContextId));
+
+        return ids
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
     /// <summary>Maps a preview to the dialog's sections. See the type remarks for the copy rules.</summary>
     /// <param name="preview">The server preview. <c>Source</c>/<c>Target</c> and the lists may be null.</param>
     /// <param name="sourceName">Display name of the current owner context.</param>

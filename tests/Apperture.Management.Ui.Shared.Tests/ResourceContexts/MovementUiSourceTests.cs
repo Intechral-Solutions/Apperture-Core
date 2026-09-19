@@ -144,9 +144,60 @@ public sealed class MovementUiSourceTests
         used.Should().NotBeEmpty("the dialog carries its own small move-* block");
         foreach (var name in used)
         {
-            css.Should().Contain($".{name}",
-                $"{name} is used by MoveOwnershipDialog.razor but has no rule in management-ui-primitives.css");
+            // A real selector occurrence, not a prefix of a longer class: plain Contain(".move-item")
+            // would be satisfied by ".move-item__text" and hide a missing base rule.
+            var selector = new Regex($@"\.{Regex.Escape(name)}(?![A-Za-z0-9_-])", RegexOptions.None);
+            selector.IsMatch(css).Should().BeTrue(
+                $"{name} is used by MoveOwnershipDialog.razor but has no rule of its own in management-ui-primitives.css");
         }
+    }
+
+    [Fact]
+    public void Move_dialog_keeps_the_accessibility_affordances_the_design_relies_on()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("<div class=\"move-status\" aria-live=\"polite\">",
+            "the outcome region announces phase changes politely");
+        content.Should().Contain("aria-hidden=\"true\">→",
+            "the route arrow is decoration -- the labels carry the meaning");
+        content.Should().Contain("role=\"list\"",
+            "list-style:none drops list semantics in Safari/VoiceOver");
+    }
+
+    [Fact]
+    public void Move_dialog_retry_button_reruns_the_whole_preview_load()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("@onclick=\"LoadPreviewAsync\"",
+            "Try again must go through LoadPreviewAsync (SelectTarget then BeginPreview), never BeginPreview alone");
+    }
+
+    [Fact]
+    public void Move_dialog_guards_late_name_lookups_by_generation_and_reference()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("_model.CurrentGeneration == generation && ReferenceEquals(_model.Preview, preview)",
+            "a lookup that returns after the operator picked another target must not mutate state");
+        content.Should().Contain("IsStillCurrent(generation, preview)");
+    }
+
+    [Fact]
+    public void Move_dialog_name_resolution_can_never_fail_the_dialog()
+    {
+        var body = ExtractMethodBody(
+            ReadRazor("Organisms", "MoveOwnershipDialog.razor"), "AfterPreviewAppliedAsync", "int generation");
+        body.Should().Contain("catch (Exception",
+            "the reads go through GetFromJsonAsync (JsonException/NotSupportedException) and run view-state "
+            + "subscribers, so cosmetic enrichment must be total or it escapes the Blazor event handler");
+    }
+
+    [Fact]
+    public void Move_dialog_pre_resolves_owner_contexts_through_the_presenter()
+    {
+        var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");
+        content.Should().Contain("MoveOwnershipPresenter.GetContextIdsToResolve(preview)",
+            "the razor may not name RelatedResourceContextId, so the presenter hands it the id list");
+        content.Should().Contain("ViewState.EnsureContextsKnownAsync");
     }
 
     [Fact]
@@ -264,9 +315,13 @@ public sealed class MovementUiSourceTests
     /// call-site form -- rather than the bare name, so it does not match the razor markup attribute usage
     /// (e.g. OnMoved="OnMovedAsync", which has no trailing parenthesis and appears earlier in the file).
     /// </summary>
-    private static string ExtractMethodBody(string content, string methodName)
+    /// <param name="argPrefix">
+    /// Text that follows the opening parenthesis of the declaration, so methods that take arguments can be
+    /// located too. Defaults to <c>")"</c>, i.e. the original parameterless <c>Name()</c> form.
+    /// </param>
+    private static string ExtractMethodBody(string content, string methodName, string argPrefix = ")")
     {
-        var declaration = methodName + "()";
+        var declaration = methodName + "(" + argPrefix;
         var nameIndex = content.IndexOf(declaration, StringComparison.Ordinal);
         nameIndex.Should().BeGreaterThanOrEqualTo(0, $"expected to find a method declared as {declaration}");
 

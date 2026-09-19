@@ -2369,7 +2369,9 @@ textarea.ui-input {
 .move-route {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
+  /* start, not end: both ends are label-over-control, so aligning at the top keeps the two micro-labels
+     on one line even when a long context name wraps the source value to two lines. */
+  align-items: start;
   gap: 0.625rem;
 }
 
@@ -2406,6 +2408,9 @@ textarea.ui-input {
   display: flex;
   align-items: center;
   min-height: 40px;
+  /* Skips the label row (1rem line-height + 0.25rem margin) so the arrow centres on the two controls,
+     not on the labels, now that the grid aligns to the top. */
+  margin-top: 1.25rem;
   color: var(--color-text-subtle);
   font-size: 1rem;
   line-height: 1;
@@ -2413,6 +2418,12 @@ textarea.ui-input {
 
 /* Outcome + preview sections. */
 .move-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.move-sections {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -2531,6 +2542,7 @@ textarea.ui-input {
   .move-route__arrow {
     justify-self: start;
     min-height: 0;
+    margin-top: 0;
     transform: rotate(90deg);
   }
 }
