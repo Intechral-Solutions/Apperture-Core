@@ -6,6 +6,38 @@ namespace Apperture.Management.Ui.Shared;
 public sealed record MoveOwnershipTargetOption(string Id, string Name);
 
 /// <summary>
+/// HSK-B: which body the dialog should render. Computed by <see cref="MoveOwnershipDialogModel.Phase"/>
+/// from the model's existing state -- it adds no state of its own.
+/// </summary>
+public enum MoveDialogPhase
+{
+    /// <summary>No target chosen yet.</summary>
+    NoTarget,
+
+    /// <summary>A target is chosen and its preview is loading (or about to start).</summary>
+    Loading,
+
+    /// <summary>The preview could not be loaded.</summary>
+    Failed,
+
+    /// <summary>The preview says the move is allowed.</summary>
+    Allowed,
+
+    /// <summary>The preview says the move is blocked.</summary>
+    Blocked
+}
+
+/// <summary>HSK-B: distinguishes the transient busy-gate rejection from any other submit failure.</summary>
+public enum MoveSubmitErrorKind
+{
+    /// <summary>Any ordinary failure.</summary>
+    Failed,
+
+    /// <summary>Another ownership operation held the gate; retrying shortly is expected to work.</summary>
+    Busy
+}
+
+/// <summary>
 /// CTX-3B Plan 5 (Task 4): pure decision logic behind <c>MoveOwnershipDialog.razor</c>. Owns the target
 /// option list, the selected target, the current preview and submit error, and <see cref="CanSubmit"/>.
 /// Performs no I/O -- the razor component calls <see cref="IManagementClient"/> and hands results back
@@ -29,6 +61,40 @@ public sealed class MoveOwnershipDialogModel
     public ResourceMovePreviewDto? Preview { get; private set; }
 
     public string? SubmitError { get; private set; }
+
+    /// <summary>
+    /// Kind of the current <see cref="SubmitError"/>. Always <see cref="MoveSubmitErrorKind.Failed"/> when
+    /// there is no error -- it is reset whenever the error is cleared.
+    /// </summary>
+    public MoveSubmitErrorKind SubmitErrorKind { get; private set; } = MoveSubmitErrorKind.Failed;
+
+    /// <summary>
+    /// True when the move endpoint answered with a fresh, blocked preview at submit time (the world changed
+    /// between preview and Move; see <see cref="ApplySubmitConflict"/>). Cleared as soon as the operator
+    /// picks another target or a new preview starts/applies.
+    /// </summary>
+    public bool ChangedSincePreview { get; private set; }
+
+    /// <summary>
+    /// Which body the dialog renders. Purely derived from existing state: no target selected is
+    /// <see cref="MoveDialogPhase.NoTarget"/>; an in-flight preview -- or a selected target still awaiting
+    /// its preview -- is <see cref="MoveDialogPhase.Loading"/>; a failed preview is
+    /// <see cref="MoveDialogPhase.Failed"/>; otherwise the preview decides Allowed vs Blocked. A submit
+    /// error alongside a valid preview does not change the phase (the preview stays on screen).
+    /// </summary>
+    public MoveDialogPhase Phase
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(SelectedTargetId))
+                return MoveDialogPhase.NoTarget;
+            if (IsLoadingPreview)
+                return MoveDialogPhase.Loading;
+            if (Preview is null)
+                return SubmitError is not null ? MoveDialogPhase.Failed : MoveDialogPhase.Loading;
+            return Preview.CanMove ? MoveDialogPhase.Allowed : MoveDialogPhase.Blocked;
+        }
+    }
 
     /// <summary>
     /// True from <see cref="BeginSubmit"/> until <see cref="EndSubmit"/> -- the move request is in
@@ -95,7 +161,8 @@ public sealed class MoveOwnershipDialogModel
     {
         SelectedTargetId = targetId;
         Preview = null;
-        SubmitError = null;
+        ClearSubmitError();
+        ChangedSincePreview = false;
         IsLoadingPreview = false;
     }
 
@@ -105,6 +172,7 @@ public sealed class MoveOwnershipDialogModel
         var generation = _previewGuard.Begin();
         CurrentGeneration = generation;
         IsLoadingPreview = true;
+        ChangedSincePreview = false;
         return generation;
     }
 
@@ -116,7 +184,25 @@ public sealed class MoveOwnershipDialogModel
 
         Preview = preview;
         IsLoadingPreview = false;
-        SubmitError = null;
+        ClearSubmitError();
+        ChangedSincePreview = false;
+    }
+
+    /// <summary>
+    /// Applies the fresh, preview-shaped result the move endpoint returned when a concurrent change blocked
+    /// the move at submit time, and flags it as <see cref="ChangedSincePreview"/> so the dialog can say so.
+    /// Guarded by the same generation as <see cref="ApplyPreview"/>: a result belonging to a superseded
+    /// request (the operator has since picked another target) is discarded.
+    /// </summary>
+    public void ApplySubmitConflict(int generation, ResourceMovePreviewDto result)
+    {
+        if (!_previewGuard.IsCurrent(generation))
+            return;
+
+        Preview = result;
+        ChangedSincePreview = true;
+        IsLoadingPreview = false;
+        ClearSubmitError();
     }
 
     /// <summary>Records a preview-fetch failure, unless a newer preview request has since started.</summary>
@@ -129,7 +215,21 @@ public sealed class MoveOwnershipDialogModel
         SubmitError = message;
     }
 
-    public void SetSubmitError(string? message) => SubmitError = message;
+    /// <summary>
+    /// Sets or clears the submit error. Passing <c>null</c> clears it and resets the kind to
+    /// <see cref="MoveSubmitErrorKind.Failed"/>.
+    /// </summary>
+    public void SetSubmitError(string? message, MoveSubmitErrorKind kind = MoveSubmitErrorKind.Failed)
+    {
+        SubmitError = message;
+        SubmitErrorKind = message is null ? MoveSubmitErrorKind.Failed : kind;
+    }
+
+    private void ClearSubmitError()
+    {
+        SubmitError = null;
+        SubmitErrorKind = MoveSubmitErrorKind.Failed;
+    }
 
     /// <summary>Marks a move request as in flight. Pair with <see cref="EndSubmit"/> (e.g. in a <c>finally</c>).</summary>
     public void BeginSubmit() => IsSubmitting = true;
@@ -145,6 +245,7 @@ public sealed class MoveOwnershipDialogModel
         IsLoadingPreview = false;
         IsSubmitting = false;
         Preview = null;
-        SubmitError = null;
+        ClearSubmitError();
+        ChangedSincePreview = false;
     }
 }
