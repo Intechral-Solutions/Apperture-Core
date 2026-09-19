@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Xunit;
 
@@ -66,6 +67,75 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
         detail.Should().Contain("_canManageDefinitions");
         integration.Should().Contain("notifications/definitions/new");
         integration.Should().Contain("NotificationUiRoutes.DefinitionEdit");
+    }
+
+    /// <summary>
+    /// True when the element containing <c>@bind="{bindTarget}"</c> also carries
+    /// <c>@bind:after="MarkDirty"</c> in the same opening tag, regardless of attribute
+    /// ordering or exact whitespace between attributes.
+    /// </summary>
+    private static bool BindsWithMarkDirty(string source, string bindTarget)
+    {
+        var pattern = "<[^<>]*?@bind=\"" + Regex.Escape(bindTarget) + "\"[^<>]*?>";
+        var match = Regex.Match(source, pattern, RegexOptions.Singleline);
+        return match.Success && match.Value.Contains("@bind:after=\"MarkDirty\"");
+    }
+
+    [Fact]
+    public void Validation_relevant_fields_mark_dirty_on_edit()
+    {
+        var root = RepoRoot();
+        var form = File.ReadAllText(Path.Combine(
+            root,
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Organisms/Notifications/NotificationDefinitionAuthoringForm.razor"));
+
+        // Fields that feed BuildRuleJson/BuildTemplateJson (and therefore the
+        // Validate payload sent to ValidateNotificationDefinitionAsync) must
+        // invalidate a prior successful Validate when edited.
+        string[] validationRelevantFields =
+        [
+            "_model.UseAdvancedRuleJson",
+            "_model.AdvancedRuleJson",
+            "_model.IndexSeverityOperator",
+            "_model.IndexSeverityValue",
+            "_model.IndexModuleId",
+            "row.DataField",
+            "row.Operator",
+            "_model.UseAdvancedTemplateJson",
+            "_model.AdvancedTemplateJson",
+            "_model.Subject",
+            "_model.Summary",
+            "_model.BodyText",
+            "_model.ActionText",
+            "_model.ActionUrl",
+        ];
+
+        foreach (var field in validationRelevantFields)
+        {
+            BindsWithMarkDirty(form, field).Should().BeTrue(
+                $"@bind=\"{field}\" feeds BuildRuleJson/BuildTemplateJson and must call MarkDirty() on change");
+        }
+
+        // PropertyFilters and ContentFields both bind a "row.Value" field (distinct rows,
+        // same identifier) so the regex above only finds the first occurrence — assert the
+        // element count separately: two "row.Value" bindings, both with MarkDirty.
+        var rowValueMatches = Regex.Matches(form, "<[^<>]*?@bind=\"row\\.Value\"[^<>]*?>", RegexOptions.Singleline);
+        rowValueMatches.Count.Should().Be(2, "PropertyFilters and ContentFields each bind a row.Value field");
+        foreach (Match m in rowValueMatches)
+            m.Value.Should().Contain("@bind:after=\"MarkDirty\"");
+
+        BindsWithMarkDirty(form, "row.Label").Should().BeTrue(
+            "ContentFields row.Label feeds BuildTemplateJson and must call MarkDirty() on change");
+
+        // Fields that do NOT feed BuildRuleJson/BuildTemplateJson (and therefore do not
+        // affect the Validate payload) must not be wired to MarkDirty — editing them alone
+        // should not force re-validation before Create/Save is re-enabled.
+        string[] nonValidationFields = ["_model.Description", "_model.DefaultSeverity", "_model.IsEnabled"];
+        foreach (var field in nonValidationFields)
+        {
+            BindsWithMarkDirty(form, field).Should().BeFalse(
+                $"@bind=\"{field}\" does not feed the Validate payload and must not force stale-validation invalidation");
+        }
     }
 
     [Fact]

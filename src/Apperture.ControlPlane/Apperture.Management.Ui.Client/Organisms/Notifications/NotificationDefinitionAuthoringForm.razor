@@ -137,7 +137,7 @@
     <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Rule (v1)</div>
         <label class="flex items-center gap-2 text-xs mb-2">
-            <input type="checkbox" @bind="_model.UseAdvancedRuleJson" disabled="@(!CanSave)" />
+            <input type="checkbox" @bind="_model.UseAdvancedRuleJson" @bind:after="MarkDirty" disabled="@(!CanSave)" />
             <span>Advanced rule JSON</span>
         </label>
         @if (_model.UseAdvancedRuleJson)
@@ -145,6 +145,7 @@
             <textarea class="ui-input font-mono text-xs"
                       rows="10"
                       @bind="_model.AdvancedRuleJson"
+                      @bind:after="MarkDirty"
                       disabled="@(!CanSave)"></textarea>
         }
         else
@@ -155,6 +156,7 @@
                     <span class="text-muted">Severity filter operator</span>
                     <select class="ui-input mt-1"
                             @bind="_model.IndexSeverityOperator"
+                            @bind:after="MarkDirty"
                             disabled="@(!CanSave)">
                         <option value="">None</option>
                         <option value="equals">equals</option>
@@ -165,6 +167,7 @@
                     <span class="text-muted">Severity value</span>
                     <input class="ui-input mt-1"
                            @bind="_model.IndexSeverityValue"
+                           @bind:after="MarkDirty"
                            placeholder="warning or warning,error"
                            disabled="@(!CanSave)" />
                 </label>
@@ -172,6 +175,7 @@
                     <span class="text-muted">Module id (equals)</span>
                     <input class="ui-input mt-1 font-mono"
                            @bind="_model.IndexModuleId"
+                           @bind:after="MarkDirty"
                            disabled="@(!CanSave)" />
                 </label>
             </div>
@@ -184,6 +188,7 @@
                             Field
                             <input class="ui-input mt-1 font-mono"
                                    @bind="row.DataField"
+                                   @bind:after="MarkDirty"
                                    placeholder="evaluationStatus"
                                    disabled="@(!CanSave)" />
                         </label>
@@ -191,6 +196,7 @@
                             Operator
                             <select class="ui-input ui-input--inline mt-1"
                                     @bind="row.Operator"
+                                    @bind:after="MarkDirty"
                                     disabled="@(!CanSave)">
                                 <option value="equals">equals</option>
                                 <option value="neq">neq</option>
@@ -203,6 +209,7 @@
                             Value
                             <input class="ui-input mt-1"
                                    @bind="row.Value"
+                                   @bind:after="MarkDirty"
                                    disabled="@(!CanSave)" />
                         </label>
                         <button type="button"
@@ -222,7 +229,7 @@
     <section class="ui-section-panel p-3 text-sm">
         <div class="font-semibold text-heading mb-2">Template (v1)</div>
         <label class="flex items-center gap-2 text-xs mb-2">
-            <input type="checkbox" @bind="_model.UseAdvancedTemplateJson" disabled="@(!CanSave)" />
+            <input type="checkbox" @bind="_model.UseAdvancedTemplateJson" @bind:after="MarkDirty" disabled="@(!CanSave)" />
             <span>Advanced template JSON</span>
         </label>
         @if (_model.UseAdvancedTemplateJson)
@@ -230,6 +237,7 @@
             <textarea class="ui-input font-mono text-xs"
                       rows="10"
                       @bind="_model.AdvancedTemplateJson"
+                      @bind:after="MarkDirty"
                       disabled="@(!CanSave)"></textarea>
         }
         else
@@ -239,6 +247,7 @@
                     <span class="text-muted">Subject (required)</span>
                     <input class="ui-input mt-1"
                            @bind="_model.Subject"
+                           @bind:after="MarkDirty"
                            @onfocus="() => _focusedTemplateField = TemplateField.Subject"
                            disabled="@(!CanSave)" />
                 </label>
@@ -246,6 +255,7 @@
                     <span class="text-muted">Summary (required)</span>
                     <input class="ui-input mt-1"
                            @bind="_model.Summary"
+                           @bind:after="MarkDirty"
                            @onfocus="() => _focusedTemplateField = TemplateField.Summary"
                            disabled="@(!CanSave)" />
                 </label>
@@ -254,6 +264,7 @@
                     <textarea class="ui-input mt-1"
                               rows="4"
                               @bind="_model.BodyText"
+                              @bind:after="MarkDirty"
                               @onfocus="() => _focusedTemplateField = TemplateField.BodyText"
                               disabled="@(!CanSave)"></textarea>
                 </label>
@@ -261,12 +272,14 @@
                     <span class="text-muted">Action text</span>
                     <input class="ui-input mt-1"
                            @bind="_model.ActionText"
+                           @bind:after="MarkDirty"
                            disabled="@(!CanSave)" />
                 </label>
                 <label class="text-xs">
                     <span class="text-muted">Action URL</span>
                     <input class="ui-input mt-1 font-mono"
                            @bind="_model.ActionUrl"
+                           @bind:after="MarkDirty"
                            placeholder="/path or {{instance.baseUrl}}/…"
                            disabled="@(!CanSave)" />
                 </label>
@@ -276,8 +289,8 @@
                 @foreach (var row in _model.ContentFields)
                 {
                     <div class="flex flex-wrap gap-2 mb-2">
-                        <input class="ui-input flex-1 text-xs" placeholder="Label" @bind="row.Label" disabled="@(!CanSave)" />
-                        <input class="ui-input flex-[2] text-xs font-mono" placeholder="Value" @bind="row.Value" disabled="@(!CanSave)" />
+                        <input class="ui-input flex-1 text-xs" placeholder="Label" @bind="row.Label" @bind:after="MarkDirty" disabled="@(!CanSave)" />
+                        <input class="ui-input flex-[2] text-xs font-mono" placeholder="Value" @bind="row.Value" @bind:after="MarkDirty" disabled="@(!CanSave)" />
                         <button type="button" class="btn btn-secondary text-xs" disabled="@(!CanSave)" @onclick="() => RemoveContentField(row)">Remove</button>
                     </div>
                 }
