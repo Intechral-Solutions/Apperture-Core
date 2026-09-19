@@ -192,6 +192,35 @@ public sealed class MovementUiSourceTests
     }
 
     [Fact]
+    public void Move_dialog_always_resolves_the_loading_phase_even_on_an_unexpected_failure()
+    {
+        var body = ExtractMethodBody(ReadRazor("Organisms", "MoveOwnershipDialog.razor"), "LoadPreviewAsync");
+        body.Should().Contain("catch (Exception",
+            "ReadFromJsonAsync throws NotSupportedException/JsonException for a non-JSON or malformed body, "
+            + "and an uncaught one leaves IsLoadingPreview true forever -- a spinner that never resolves with "
+            + "the footer Cancel disabled");
+        body.Should().Contain("FailPreview",
+            "every failure path must route through FailPreview so the Failed phase offers Try again");
+    }
+
+    [Fact]
+    public void Move_dialog_generic_submit_catch_cannot_mask_a_successful_move()
+    {
+        var body = ExtractMethodBody(ReadRazor("Organisms", "MoveOwnershipDialog.razor"), "SubmitAsync");
+        body.Should().Contain("catch (Exception) when (!moved)",
+            "the last-resort catch must never turn a host OnMoved failure into 'the move didn't complete' "
+            + "on an already-reset dialog");
+
+        var genericIndex = body.IndexOf("catch (Exception)", StringComparison.Ordinal);
+        var busyIndex = body.IndexOf("catch (OwnershipMoveBusyException", StringComparison.Ordinal);
+        var generalIndex = body.IndexOf("catch (InvalidOperationException", StringComparison.Ordinal);
+        var transportIndex = body.IndexOf("catch (HttpRequestException", StringComparison.Ordinal);
+        genericIndex.Should().BeGreaterThan(transportIndex, "the open-ended catch is the last one");
+        busyIndex.Should().BeLessThan(generalIndex, "the busy gate keeps its own retryable treatment");
+        generalIndex.Should().BeLessThan(transportIndex);
+    }
+
+    [Fact]
     public void Move_dialog_pre_resolves_owner_contexts_through_the_presenter()
     {
         var content = ReadRazor("Organisms", "MoveOwnershipDialog.razor");

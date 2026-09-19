@@ -319,6 +319,16 @@
             // dialog's close controls (IsBusy was wired to IsLoadingPreview; see Fix 2).
             _model.FailPreview(generation, "The preview could not be loaded. Try again.");
         }
+        catch (Exception)
+        {
+            // Last resort, and it has to be open-ended. The read bottoms out in ReadFromJsonAsync, which
+            // throws NotSupportedException for a non-JSON content type (a 200 sign-in or gateway page) and
+            // JsonException for a malformed body -- neither derives from the two types above. Without this
+            // catch, FailPreview never runs, IsLoadingPreview stays true forever, and the dialog freezes on
+            // a spinner with its footer Cancel disabled. Same operator-facing fallback as the transport
+            // case: the exception text is never meaningful to an operator here.
+            _model.FailPreview(generation, "The preview could not be loaded. Try again.");
+        }
 
         // Outside the try: cosmetic name resolution must never be able to turn a good preview into a
         // FailPreview.
@@ -338,6 +348,11 @@
         var generation = _model.CurrentGeneration;
         _model.BeginSubmit();
         ResourceMovePreviewDto? conflict = null;
+
+        // Set the instant the server has confirmed the move, before this component hands control to the
+        // host. It guards the generic catch below so a failure inside the host's OnMoved handler is never
+        // reported as "the move didn't complete" on an already-reset dialog.
+        var moved = false;
         try
         {
             var result = Kind switch
@@ -358,6 +373,8 @@
             }
             else
             {
+                moved = true;
+
                 // A successful move must not leave this resource's target/preview/error behind for the next
                 // open -- a host page reusing this component instance for a different resource would
                 // otherwise see the previous resource's stale selection.
@@ -382,6 +399,14 @@
             // Covers 401/403/404/5xx/network failures from ManagementClient's EnsureSuccessOrThrowAsync.
             // Same uniform-fallback treatment as LoadPreviewAsync's HttpRequestException catch, for
             // consistency -- EndSubmit() below already resets IsSubmitting regardless.
+            _model.SetSubmitError("The move could not be completed. Try again.");
+        }
+        catch (Exception) when (!moved)
+        {
+            // Mirrors LoadPreviewAsync's last-resort catch: the response body parse can throw
+            // NotSupportedException/JsonException, which would otherwise escape this event handler.
+            // Guarded by !moved so it can never swallow a failure raised by the host's OnMoved handler
+            // after the server already moved the resource -- that must not be reported as a failed move.
             _model.SetSubmitError("The move could not be completed. Try again.");
         }
         finally
@@ -468,9 +493,12 @@
         _model.CurrentGeneration == generation && ReferenceEquals(_model.Preview, preview);
 
     /// <summary>
-    /// One best-effort display-name read. Any failure (401/403/404, network, or a non-JSON body) simply
-    /// leaves that one name unresolved; a cancellation is left to propagate so the whole batch stops
-    /// rather than quietly finishing (<see cref="AfterPreviewAppliedAsync"/> absorbs it).
+    /// One best-effort display-name read. Every failure -- 401/403/404, network, an HttpClient timeout, or
+    /// a body that will not parse -- means exactly one thing: that name is unresolved (null), and the
+    /// presenter falls back to a count. The catch is deliberately unfiltered. No CancellationToken is
+    /// passed anywhere on this path, so the only cancellation reachable is an HttpClient timeout
+    /// (TaskCanceledException); letting it through would fault the <c>Task.WhenAll</c> over up to twenty
+    /// parallel lookups and throw away every name that had already resolved.
     /// </summary>
     private async Task<string?> TryReadDisplayNameAsync(MoveRelatedRef reference)
     {
@@ -484,7 +512,7 @@
 
             return null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception)
         {
             return null;
         }
