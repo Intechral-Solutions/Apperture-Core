@@ -46,7 +46,17 @@ existing descriptor/provenance models:
   pattern, though no persisted table (the SQL table was dropped in Epic 53; it's host-seeded in memory).
 - **NotificationDefinition** — the strongest existing precedent. Its `(Origin, Scope, ModuleId, SourceKind,
   Mutability)` tuple already cleanly distinguishes System built-in from Module-contributed from
-  user-created.
+  user-created. **Component eligibility follows `Origin`, not the presence of the model:**
+  - `Origin = PlatformBuiltIn` — may appear as a **System Component**.
+  - `Origin = ModuleBuiltIn` — may appear as a **Module-contributed Component**.
+  - `Origin = UserCreated` — **not** a Component catalog entry. A user-created NotificationDefinition is
+    operator-authored configuration/content, not a reusable platform capability, even though it shares the
+    same underlying `NotificationDefinition` model. Sharing a model does not imply sharing catalog
+    membership.
+
+  The Component catalog may adapt the existing `NotificationDefinition` model as an input, but eligibility
+  must respect this `Origin` boundary. The exact catalog adapter/schema is left to the Components design
+  gate — this note only fixes the eligibility rule, not the mechanism.
 
 The catalog architecture should be **extensible** to future kinds, but v1 ships with these two.
 
@@ -97,10 +107,12 @@ domain ownership") and repeatedly reaffirmed across every CTX/HUB/NAV closure do
 
 ## Services
 
-**Services are not Components.** A Service is an operator-facing abstraction over a *configured Connection*
-plus whatever reusable capabilities Components provide — structurally distinct from ADR-0034's "System"
-concept (a grouping layer *above* many Integrations; Service sits *on* one Connection, between Connection
-and Integration).
+**Services are not Components.** A Service is a **derived, operator-facing experience over one configured
+Connection**, plus whatever reusable capabilities Components provide — structurally distinct from
+ADR-0034's "System" concept (a grouping layer *above* many Integrations). Service lives conceptually
+*within* the existing Connection/Integration operational domain, not as a new layer physically inserted
+between them: it is a presentation/experience over a Connection, not a persistence or execution hop that
+requests pass through.
 
 Initial design hypothesis (subject to the Services design gate, not final):
 
@@ -108,13 +120,13 @@ Initial design hypothesis (subject to the Services design gate, not final):
 - One Service may expose multiple capabilities/tools (basic connection info/settings, health, diagnostics,
   browsing, querying, operational actions — e.g. a future SQL Server browser/query experience belongs here).
 - **Service is derived initially, not a separately persisted aggregate.** No independent Service lifecycle,
-  no independent ResourceContext ownership initially — Context/ownership follows the backing Connection
-  (the closest structural precedent is `ScheduleDefinition`'s inherit-with-enforcement rule for
-  Integration-attached Schedules: its own column for structural symmetry, but must equal the parent's
-  context, reject on mismatch — Service's relationship to its Connection is even more binding than a
-  Schedule's to its Integration, since a Service always has exactly one parent).
-- Integrations continue binding directly to Connections — Service is **not** inserted as a mandatory
-  persistence hop into runtime execution.
+  no independent ResourceContext ownership initially. The rule is simply that a derived Service's effective
+  ownership/security context is read from its backing Connection at the point of use — there is no separate
+  `Service.ResourceContextId` column to keep in sync, because there is no separate Service row.
+- **Integrations continue Binding directly to Connections, exactly as today.** Service is not inserted as a
+  mandatory intermediary in that relationship — it is an additional operator-facing view over a Connection
+  that already exists, not a new hop `Integration → Service → Connection` that execution or persistence
+  must pass through.
 - If a future concrete requirement demands independent Service lifecycle, identity, or permissions, *that*
   is the forcing function for giving Service its own persisted table — not a default assumption now.
 

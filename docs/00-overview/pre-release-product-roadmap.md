@@ -106,8 +106,9 @@ UIX-6  Interaction and progressive disclosure system
 until the UIX-5 trigger criteria are met. **Supersession (2026-08-05):** UIX-6 and BDS-6 operator
 smoke are complete; Track 6 closed via JOB-1 — see [`../audits/job1-failed-work-resolution-bulk-retry.md`](../audits/job1-failed-work-resolution-bulk-retry.md).
 **Supersession (2026-08-18):** **AUP-1** delivered Track 2 — see [`../audits/aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).
-Next product handoff: **UIX-7 — Visual Language and Theme Overhaul**, with the account area as its
-flagship reference surface.
+~~Next product handoff: **UIX-7 — Visual Language and Theme Overhaul**, with the account area as its
+flagship reference surface.~~ — **delivered** (`docs/audits/uix7-visual-language-theme-overhaul.md`);
+superseded as "next" by the 2026-09-18 post-CTX execution order above.
 
 ---
 
@@ -146,7 +147,9 @@ quiet hours, and non-email channels — none of which the delivery pipeline impl
 **Supersession (2026-08-05):** SDK-1 through SDK-6D are complete. Track 6 closed by JOB-1.  
 **Supersession (2026-08-06):** **SDK-7** shared-record identity + lookup delivered — [`sdk7-cross-integration-shared-record-identity-lookup.md`](../audits/sdk7-cross-integration-shared-record-identity-lookup.md). Platform `BusinessRecord` remains deferred.  
 ~~**Next product epic:** **AUP-1 — Account, Profile, and Personal Preferences**.~~ — **delivered 2026-08-18**, see [`aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).  
-**Next product epic:** **UIX-7 — Visual Language and Theme Overhaul**.
+~~**Next product epic:** **UIX-7 — Visual Language and Theme Overhaul**.~~ — **delivered**
+(`docs/audits/uix7-visual-language-theme-overhaul.md`); superseded as "next" by the 2026-09-18 post-CTX
+execution order above.
 
 ~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6*, SDK-7 delivered; JOB-1 closed Track 6.
 
@@ -170,12 +173,15 @@ concepts that the post-CTX reset now separates:
   the near-term execution order above and
   [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
   for the full hypothesis. Scheduled for its own design gate immediately after Components'.
-- **Connection grouping** — remains an open, unelaborated bullet; no evidence connects it to a specific
-  design yet.
+- **Connection grouping** — not currently an independent planned deliverable; reconsider during the
+  Services design gate if a concrete grouping requirement emerges.
 - **Resource Catalog** (referenced by ADR-0040 as a separate future concept, never actually a bullet in this
-  track) is **retired as a standalone roadmap concept** — its registry-unification half folds into
-  Components' catalog infrastructure, its live-Connection-browsing half folds into the Service abstraction
-  above. See the planning note for the full split.
+  track) is **retired as a standalone roadmap concept** — its metadata/discoverability responsibility moves
+  into Components (which may adapt and aggregate relevant operator-visible definitions behind a catalog
+  abstraction; specialized registries such as permission descriptors, setting definitions, and connector
+  definitions may remain specialized rather than being physically collapsed into one universal registry —
+  no such collapse is approved), and its live-Connection-browsing responsibility moves into the Service
+  abstraction above. See the planning note for the full split.
 
 ---
 

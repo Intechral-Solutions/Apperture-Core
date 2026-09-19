@@ -43,6 +43,13 @@ suitably unique, reasonably stable natural key exists:
    metadata surfaces may continue to show the canonical id where useful (e.g. a detail page's own identity
    field).
 
+This tier-3 rule generalizes beyond ResourceContext: even where an entity has no suitable natural routing
+key (tier 2 does not apply to it), operator-facing lists and messages should still prefer a meaningful
+display name or username over an opaque machine id whenever one is unambiguously available, with the
+canonical id remaining visible in technical/detail metadata. This is a presentation preference stated here
+for reference, not new implementation scope — this ADR's actual routing decision (tier 2) remains scoped to
+ResourceContext `?context=` URLs only.
+
 **Explicitly not built now:**
 
 - No slug alias/history subsystem. A slug rename is not tracked; an old slug in a stale bookmark, after an
