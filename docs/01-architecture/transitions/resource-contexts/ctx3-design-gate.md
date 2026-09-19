@@ -121,6 +121,7 @@ View
 | Operator's session not linked (`ForbiddenUnlinked`) | Hidden |
 
 When the first Application is created, show a one-time dismissible hint anchored to the selector: "Use View to focus lists on an application." Store the dismissal in local storage.
+> **HSK-A**: The one-time hint was removed after the discovery phase matured.
 
 Visibility depends **only** on the active-Application count, never on what the current page is displaying. With no active Application, the selector stays hidden even while an explicit URL naming an archived Application is honoured (§4.3 Q5); that page's own archived banner is the indication, and ownership labels stay hidden too. Config → Inventory's Context column and filter are the one exception to the ownership-label rule (§5.5), and they do not make the selector appear.
 
@@ -787,6 +788,7 @@ Each step is independently reviewable and green.
 4. **Management API:** A4, with controller tests for list, get, create, patch, reserved-409, archive-409 body, unarchive, and permission-masked summary.
 5. **Config → Applications UI:** menu item, list with Shared card, create, and detail/edit/archive/unarchive (§6).
 6. **Shell view state and selector:** `ResourceContextViewState`, localStorage per user, resolution algorithm, selector component, visibility rule, one-time hint (§3, §4). Bunit/unit tests for resolution cases §4.3.
+   > **HSK-A**: The one-time hint feature was removed after discovery matured.
 7. **Scoped lists:**
    1. Integrations: A3 fleet filter, Application column, scoped empty state.
    2. Connections: Shared-available notice.
@@ -894,3 +896,4 @@ The three open questions from the first draft of this gate were decided on 2026-
 **D3. The View selector is hidden until the first active Application exists (§3.3).**
 - This preserves today's experience for installations that never adopt Applications, and avoids a meaningless All/Shared choice before it matters.
 - Before the first Application, discoverability comes from Config → Applications. When the first Application is created, the selector appears together with the one-time hint.
+  > **HSK-A**: The one-time hint feature was removed after discovery matured.

@@ -32,14 +32,6 @@
         setViewPreference: function (userId, value) {
             try { localStorage.setItem('apperture.view.' + userId, value); } catch { /* ignore */ }
         },
-        /** CTX-3A Task 8: one-time View selector discovery hint (§3.3). Instance-wide (not
-         * user-keyed) -- the hint is about UI discovery, not a per-operator preference. */
-        isViewHintDismissed: function () {
-            try { return localStorage.getItem('apperture.view.hintDismissed') === 'true'; } catch { return true; }
-        },
-        dismissViewHint: function () {
-            try { localStorage.setItem('apperture.view.hintDismissed', 'true'); } catch { /* ignore */ }
-        },
         isSystemDark: isSystemDark,
         apply: apply,
         initFromStorage: function () {
