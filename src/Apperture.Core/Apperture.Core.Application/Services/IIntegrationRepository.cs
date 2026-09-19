@@ -61,7 +61,7 @@ public interface IIntegrationRepository
         CancellationToken cancellationToken = default)
     {
         var all = await GetVisibleAsync(scopeKey, resourceContextId, cancellationToken).ConfigureAwait(false);
-        if (moduleId is null)
+        if (string.IsNullOrWhiteSpace(moduleId))
             return all;
         return all.Where(i => string.Equals(i.ModuleId, moduleId, StringComparison.Ordinal)).ToList();
     }

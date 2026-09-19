@@ -133,35 +133,38 @@
                 </EntityRecentActivityPanel>
             </ManagementSection>
 
-            <ManagementSection Title="Integrations using this module"
-                               Layer="ManagementSection.UiLayer.Detail">
-                @if (_moduleIntegrationsError is not null)
-                {
-                    <ErrorState Message="@_moduleIntegrationsError" />
-                }
-                else if (_moduleIntegrationsLoading && _moduleIntegrations is null)
-                {
-                    <LoadingState Message="Loading…" />
-                }
-                else if (_moduleIntegrations is { Count: > 0 })
-                {
-                    <ul class="space-y-1">
-                        @foreach (var integration in _moduleIntegrations)
-                        {
-                            <li>
-                                <a href="@("/integrations/" + Uri.EscapeDataString(integration.Id))"
-                                   class="underline text-sm hover:text-heading">
-                                    @integration.DisplayName
-                                </a>
-                            </li>
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <EmptyState Message="No integrations currently use this module." />
-                }
-            </ManagementSection>
+            @if (_capabilities?.CanViewIntegrations == true)
+            {
+                <ManagementSection Title="Integrations using this module"
+                                   Layer="ManagementSection.UiLayer.Detail">
+                    @if (_moduleIntegrationsError is not null)
+                    {
+                        <ErrorState Message="@_moduleIntegrationsError" />
+                    }
+                    else if (_moduleIntegrationsLoading && _moduleIntegrations is null)
+                    {
+                        <LoadingState Message="Loading…" />
+                    }
+                    else if (_moduleIntegrations is { Count: > 0 })
+                    {
+                        <ul class="space-y-1">
+                            @foreach (var integration in _moduleIntegrations)
+                            {
+                                <li>
+                                    <a href="@("/integrations/" + Uri.EscapeDataString(integration.Id))"
+                                       class="underline text-sm hover:text-heading">
+                                        @integration.DisplayName
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <EmptyState Message="No integrations currently use this module." />
+                    }
+                </ManagementSection>
+            }
 
             <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading">Links</div>
@@ -274,6 +277,9 @@
 
     private async Task LoadModuleIntegrationsAsync()
     {
+        if (_capabilities?.CanViewIntegrations != true)
+            return;
+
         _moduleIntegrationsLoading = true;
         _moduleIntegrationsError = null;
         _moduleIntegrations = null;

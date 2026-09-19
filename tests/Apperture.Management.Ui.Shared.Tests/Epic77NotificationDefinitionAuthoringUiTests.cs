@@ -133,6 +133,8 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
         string[] nonValidationFields = ["_model.DisplayName", "_model.Description", "_model.DefaultSeverity", "_model.IsEnabled"];
         foreach (var field in nonValidationFields)
         {
+            Regex.IsMatch(form, "@bind=\"" + Regex.Escape(field) + "\"").Should().BeTrue(
+                $"@bind=\"{field}\" must still be present in the form for this negative assertion to be meaningful");
             BindsWithMarkDirty(form, field).Should().BeFalse(
                 $"@bind=\"{field}\" does not feed the Validate payload and must not force stale-validation invalidation");
         }

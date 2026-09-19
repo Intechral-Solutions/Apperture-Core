@@ -50,7 +50,7 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         // deliberately left as-is.
         if (resourceContextId is not null)
             query = query.Where(e => e.ResourceContextId == resourceContextId.Value);
-        if (moduleId is not null)
+        if (!string.IsNullOrWhiteSpace(moduleId))
             query = query.Where(e => e.ModuleId == moduleId);
 
         var entities = await query.ToListAsync(cancellationToken);
