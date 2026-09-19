@@ -10,7 +10,9 @@
             <label class="block text-xs">
                 <span class="text-muted">Display name (required)</span>
                 <input class="ui-input mt-1"
-                       @bind="_model.DisplayName" disabled="@(!CanSave)" />
+                       @bind="_model.DisplayName"
+                       @bind:event="oninput"
+                       disabled="@(!CanSave)" />
             </label>
             <label class="block text-xs">
                 <span class="text-muted">Integration (required)</span>

@@ -73,6 +73,7 @@
                 <label class="block text-xs text-muted">Connection name</label>
                 <input class="ui-input mt-1"
                        @bind="_connectionName"
+                       @bind:event="oninput"
                        placeholder="e.g. Campus Nexus Production" />
             </div>
             @if (SelectedDefinition is not null)

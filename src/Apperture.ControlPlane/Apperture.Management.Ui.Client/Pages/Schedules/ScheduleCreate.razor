@@ -53,6 +53,7 @@
                         <label class="block text-xs text-muted">Name (required)</label>
                         <input class="ui-input mt-1 w-full text-sm"
                                @bind="_name"
+                               @bind:event="oninput"
                                required />
                     </div>
 
@@ -137,6 +138,7 @@
                         <label class="block text-xs text-muted">Recurrence (cron expression, required)</label>
                         <input class="ui-input mt-1 w-full text-sm font-mono"
                                @bind="_recurrence"
+                               @bind:event="oninput"
                                placeholder="0 * * * *"
                                required />
                         <div class="mt-1 text-xs text-muted">Cron expression (e.g. 0 * * * * for hourly). Uses Cronos format.</div>

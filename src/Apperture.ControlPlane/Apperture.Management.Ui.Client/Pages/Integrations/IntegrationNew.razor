@@ -104,6 +104,7 @@
                             <label class="block text-sm font-medium text-heading">Display Name (required)</label>
                             <input class="ui-input mt-1 w-full text-sm"
                                    @bind="_displayName"
+                                   @bind:event="oninput"
                                    required />
                         </div>
                         <div>

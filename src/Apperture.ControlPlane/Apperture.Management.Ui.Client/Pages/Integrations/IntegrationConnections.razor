@@ -165,6 +165,7 @@
                                     <label class="block text-xs text-muted">Connection name</label>
                                     <input class="ui-input mt-1 w-full text-sm"
                                            @bind="_inFlowConnectionName"
+                                           @bind:event="oninput"
                                            placeholder="e.g. Campus Nexus Production" />
                                 </div>
                                 @if (SelectedInFlowConnectorDefinition is not null)
