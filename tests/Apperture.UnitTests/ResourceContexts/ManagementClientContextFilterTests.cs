@@ -35,6 +35,39 @@ public sealed class ManagementClientContextFilterTests
     }
 
     [Fact]
+    public async Task GetIntegrationsAsync_WithModuleId_AppendsModuleIdQueryParam()
+    {
+        var handler = new CaptureHandler(HttpStatusCode.OK, "[]");
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("http://localhost/api/") });
+
+        await client.GetIntegrationsAsync(moduleId: "Sample.Mod");
+
+        handler.LastUri!.ToString().Should().Contain("moduleId=Sample.Mod");
+    }
+
+    [Fact]
+    public async Task GetIntegrationsAsync_WithContextIdAndModuleId_AppendsBothQueryParams()
+    {
+        var handler = new CaptureHandler(HttpStatusCode.OK, "[]");
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("http://localhost/api/") });
+
+        await client.GetIntegrationsAsync(contextId: "canvas-id", moduleId: "Sample.Mod");
+
+        handler.LastUri!.ToString().Should().Contain("contextId=canvas-id").And.Contain("moduleId=Sample.Mod");
+    }
+
+    [Fact]
+    public async Task GetIntegrationsAsync_WithoutModuleId_SendsNoModuleIdQueryParam()
+    {
+        var handler = new CaptureHandler(HttpStatusCode.OK, "[]");
+        var client = new ManagementClient(new HttpClient(handler) { BaseAddress = new Uri("http://localhost/api/") });
+
+        await client.GetIntegrationsAsync();
+
+        handler.LastUri!.ToString().Should().NotContain("moduleId");
+    }
+
+    [Fact]
     public async Task GetConnectionsAsync_WithContextId_AppendsContextIdQueryParam()
     {
         var handler = new CaptureHandler(HttpStatusCode.OK, "[]");

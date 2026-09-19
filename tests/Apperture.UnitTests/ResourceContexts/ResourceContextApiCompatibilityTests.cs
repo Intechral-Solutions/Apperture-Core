@@ -83,14 +83,14 @@ public sealed class ResourceContextApiCompatibilityTests
     {
         var (service, resourceContexts) = NewIntegrationServiceMocks();
         service
-            .Setup(s => s.ListIntegrationsAsync(null, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ListIntegrationsAsync(null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync([NewIntegration("i-1", ResourceContextIds.Shared), NewIntegration("i-2", new ResourceContextId("app-a"))]);
 
-        var result = await NewIntegrationsController(service, resourceContexts).List(contextId: null, CancellationToken.None);
+        var result = await NewIntegrationsController(service, resourceContexts).List(contextId: null, moduleId: null, CancellationToken.None);
 
         var dtos = OkValue<IReadOnlyList<IntegrationDto>>(result.Result);
         dtos.Should().HaveCount(2);
-        service.Verify(s => s.ListIntegrationsAsync(null, It.IsAny<CancellationToken>()), Times.Once);
+        service.Verify(s => s.ListIntegrationsAsync(null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -98,10 +98,10 @@ public sealed class ResourceContextApiCompatibilityTests
     {
         var (service, resourceContexts) = NewIntegrationServiceMocks();
         service
-            .Setup(s => s.ListIntegrationsAsync(It.Is<ResourceContextId>(c => c.Value == "app-a"), It.IsAny<CancellationToken>()))
+            .Setup(s => s.ListIntegrationsAsync(It.Is<ResourceContextId>(c => c.Value == "app-a"), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync([NewIntegration("i-2", new ResourceContextId("app-a"))]);
 
-        var result = await NewIntegrationsController(service, resourceContexts).List("app-a", CancellationToken.None);
+        var result = await NewIntegrationsController(service, resourceContexts).List("app-a", moduleId: null, CancellationToken.None);
 
         OkValue<IReadOnlyList<IntegrationDto>>(result.Result).Should().ContainSingle()
             .Which.ResourceContextId.Should().Be("app-a");
@@ -115,9 +115,23 @@ public sealed class ResourceContextApiCompatibilityTests
             .Setup(r => r.GetAsync(It.Is<ResourceContextId>(c => c.Value == "nope"), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ResourceContext?)null);
 
-        var result = await NewIntegrationsController(service, resourceContexts).List("nope", CancellationToken.None);
+        var result = await NewIntegrationsController(service, resourceContexts).List("nope", moduleId: null, CancellationToken.None);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task IntegrationsList_WithModuleId_FiltersToThatModule()
+    {
+        var (service, resourceContexts) = NewIntegrationServiceMocks();
+        service
+            .Setup(s => s.ListIntegrationsAsync(null, "Sample.Mod", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([NewIntegration("i-1", ResourceContextIds.Shared)]);
+
+        var result = await NewIntegrationsController(service, resourceContexts).List(contextId: null, moduleId: "Sample.Mod", CancellationToken.None);
+
+        OkValue<IReadOnlyList<IntegrationDto>>(result.Result).Should().ContainSingle();
+        service.Verify(s => s.ListIntegrationsAsync(null, "Sample.Mod", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -125,10 +139,10 @@ public sealed class ResourceContextApiCompatibilityTests
     {
         var (service, resourceContexts) = NewIntegrationServiceMocks();
         service
-            .Setup(s => s.ListIntegrationsAsync(null, It.IsAny<CancellationToken>()))
+            .Setup(s => s.ListIntegrationsAsync(null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Range(0, 25).Select(i => NewIntegration($"i-{i}", ResourceContextIds.Shared)).ToList());
 
-        var result = await NewIntegrationsController(service, resourceContexts).List(contextId: null, CancellationToken.None);
+        var result = await NewIntegrationsController(service, resourceContexts).List(contextId: null, moduleId: null, CancellationToken.None);
 
         var dtos = OkValue<IReadOnlyList<IntegrationDto>>(result.Result);
         dtos.Should().HaveCount(25);

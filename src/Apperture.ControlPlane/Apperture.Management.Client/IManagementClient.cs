@@ -213,9 +213,10 @@ public interface IManagementClient
     Task<ConnectorDefinitionCatalogDto?> GetConnectorDefinitionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists integrations. Epic 49.
+    /// Lists integrations. Epic 49. Optionally filtered by owning ResourceContext and/or Module; both
+    /// filters apply together (AND) when both are supplied.
     /// </summary>
-    Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, string? moduleId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Fleet overview with readiness and attention signals. Epic 61.

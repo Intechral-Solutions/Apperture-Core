@@ -133,6 +133,36 @@
                 </EntityRecentActivityPanel>
             </ManagementSection>
 
+            <ManagementSection Title="Integrations using this module"
+                               Layer="ManagementSection.UiLayer.Detail">
+                @if (_moduleIntegrationsError is not null)
+                {
+                    <ErrorState Message="@_moduleIntegrationsError" />
+                }
+                else if (_moduleIntegrationsLoading && _moduleIntegrations is null)
+                {
+                    <LoadingState Message="Loading…" />
+                }
+                else if (_moduleIntegrations is { Count: > 0 })
+                {
+                    <ul class="space-y-1">
+                        @foreach (var integration in _moduleIntegrations)
+                        {
+                            <li>
+                                <a href="@("/integrations/" + Uri.EscapeDataString(integration.Id))"
+                                   class="underline text-sm hover:text-heading">
+                                    @integration.DisplayName
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <EmptyState Message="No integrations currently use this module." />
+                }
+            </ManagementSection>
+
             <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading">Links</div>
                 <div class="ui-action-row mt-2">
@@ -161,6 +191,9 @@
     private IReadOnlyList<EntityRecentActivityItem>? _recentActivity;
     private bool _activityLoading;
     private string? _activityError;
+    private IReadOnlyList<IntegrationDto>? _moduleIntegrations;
+    private bool _moduleIntegrationsLoading;
+    private string? _moduleIntegrationsError;
 
     private string RecentActivityHelp =>
         $"Merged from authorized runs (module definition) and audit (moduleId filter). Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
@@ -210,11 +243,16 @@
         {
             _module = await Client.GetModuleAsync(ModuleId);
             if (_module is not null)
+            {
                 await LoadRecentActivityAsync();
+                await LoadModuleIntegrationsAsync();
+            }
             else
             {
                 _recentActivity = null;
                 _activityError = null;
+                _moduleIntegrations = null;
+                _moduleIntegrationsError = null;
             }
         }
         catch (HttpRequestException ex)
@@ -233,6 +271,25 @@
             Nav,
             EntityShellTitles.Detail(_module?.Name, "Module"),
             ModuleHeaderSubtitle);
+
+    private async Task LoadModuleIntegrationsAsync()
+    {
+        _moduleIntegrationsLoading = true;
+        _moduleIntegrationsError = null;
+        _moduleIntegrations = null;
+        try
+        {
+            _moduleIntegrations = await Client.GetIntegrationsAsync(contextId: null, moduleId: ModuleId);
+        }
+        catch (HttpRequestException ex)
+        {
+            _moduleIntegrationsError = ex.Message;
+        }
+        finally
+        {
+            _moduleIntegrationsLoading = false;
+        }
+    }
 
     private async Task LoadRecentActivityAsync()
     {

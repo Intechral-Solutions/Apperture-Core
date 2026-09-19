@@ -41,6 +41,32 @@ public interface IIntegrationRepository
     }
 
     /// <summary>
+    /// Gets integrations visible within the given scope, optionally restricted to one owning ResourceContext
+    /// and/or one Module. Both filters apply together (AND) when both are supplied.
+    /// </summary>
+    /// <param name="resourceContextId">
+    /// Owning ResourceContext to filter by, or null for the default global behavior (no context filter).
+    /// </param>
+    /// <param name="moduleId">
+    /// Module id to filter by (matches <c>Integration.ModuleId</c>), or null for no Module filter.
+    /// </param>
+    /// <remarks>
+    /// A store-backed implementation must push both filters into the query. The default implementation
+    /// here exists only so in-memory test doubles keep working; it is not a query plan.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<DomainIntegration>> GetVisibleAsync(
+        string scopeKey,
+        ResourceContextId? resourceContextId,
+        string? moduleId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await GetVisibleAsync(scopeKey, resourceContextId, cancellationToken).ConfigureAwait(false);
+        if (moduleId is null)
+            return all;
+        return all.Where(i => string.Equals(i.ModuleId, moduleId, StringComparison.Ordinal)).ToList();
+    }
+
+    /// <summary>
     /// Adds a new integration.
     /// </summary>
     ValueTask AddAsync(DomainIntegration integration, CancellationToken cancellationToken = default);

@@ -54,8 +54,15 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         ListIntegrationsAsync(resourceContextId: null, cancellationToken);
 
     /// <inheritdoc />
+    public ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default) =>
+        ListIntegrationsAsync(resourceContextId, moduleId: null, cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<DomainIntegration>> ListIntegrationsAsync(
         ResourceContextId? resourceContextId,
+        string? moduleId,
         CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
@@ -72,7 +79,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
             throw new UnauthorizedAccessException("Not authorized to list integrations.");
 
         var scopeKey = ScopeKeyConstants.Instance;
-        return await _integrationRepository.GetVisibleAsync(scopeKey, resourceContextId, cancellationToken);
+        return await _integrationRepository.GetVisibleAsync(scopeKey, resourceContextId, moduleId, cancellationToken);
     }
 
     /// <inheritdoc />

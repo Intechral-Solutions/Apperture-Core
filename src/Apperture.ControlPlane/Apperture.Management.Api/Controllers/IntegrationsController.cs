@@ -63,9 +63,14 @@ public sealed class IntegrationsController : ControllerBase
     /// endpoint has always returned. An unknown ResourceContext is rejected with 400 rather than
     /// silently returning nothing.
     /// </param>
+    /// <param name="moduleId">
+    /// Optional Module filter (matches <c>Integration.ModuleId</c>). Composes with <paramref name="contextId"/>
+    /// (AND) when both are supplied. Omitted (the default) applies no Module filter.
+    /// </param>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<IntegrationDto>>> List(
         [FromQuery] string? contextId,
+        [FromQuery] string? moduleId,
         CancellationToken cancellationToken)
     {
         try
@@ -74,7 +79,7 @@ public sealed class IntegrationsController : ControllerBase
             if (contextError is not null)
                 return BadRequest(new { error = contextError });
 
-            var integrations = await _integrationService.ListIntegrationsAsync(contextFilter, cancellationToken);
+            var integrations = await _integrationService.ListIntegrationsAsync(contextFilter, moduleId, cancellationToken);
             var contexts = await _resourceContexts.ListAsync(includeArchived: true, cancellationToken);
             return Ok(integrations.Select(i => ToDto(i, contexts)).ToList());
         }

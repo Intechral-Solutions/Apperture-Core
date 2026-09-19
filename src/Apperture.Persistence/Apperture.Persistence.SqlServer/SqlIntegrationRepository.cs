@@ -30,17 +30,28 @@ public sealed class SqlIntegrationRepository : IIntegrationRepository
         GetVisibleAsync(scopeKey, resourceContextId: null, cancellationToken);
 
     /// <inheritdoc />
+    public ValueTask<IReadOnlyList<DomainIntegration>> GetVisibleAsync(
+        string scopeKey,
+        ResourceContextId? resourceContextId,
+        CancellationToken cancellationToken = default) =>
+        GetVisibleAsync(scopeKey, resourceContextId, moduleId: null, cancellationToken);
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<DomainIntegration>> GetVisibleAsync(
         string scopeKey,
         ResourceContextId? resourceContextId,
+        string? moduleId,
         CancellationToken cancellationToken = default)
     {
         var query = _db.Integrations.AsNoTracking().AsQueryable();
 
-        // Context filtering happens in SQL. The authorization scope filter below is the pre-existing
-        // in-memory containment evaluation and is deliberately left as-is.
+        // Context and Module filtering both happen in SQL, and compose (AND) when both are supplied. The
+        // authorization scope filter below is the pre-existing in-memory containment evaluation and is
+        // deliberately left as-is.
         if (resourceContextId is not null)
             query = query.Where(e => e.ResourceContextId == resourceContextId.Value);
+        if (moduleId is not null)
+            query = query.Where(e => e.ModuleId == moduleId);
 
         var entities = await query.ToListAsync(cancellationToken);
 

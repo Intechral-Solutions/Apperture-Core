@@ -631,9 +631,14 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<IntegrationDto>> GetIntegrationsAsync(string? contextId = null, string? moduleId = null, CancellationToken cancellationToken = default)
     {
-        var path = string.IsNullOrWhiteSpace(contextId) ? "integrations" : $"integrations?contextId={Uri.EscapeDataString(contextId)}";
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(contextId))
+            query.Add($"contextId={Uri.EscapeDataString(contextId)}");
+        if (!string.IsNullOrWhiteSpace(moduleId))
+            query.Add($"moduleId={Uri.EscapeDataString(moduleId)}");
+        var path = query.Count == 0 ? "integrations" : $"integrations?{string.Join("&", query)}";
         var list = await _http.GetFromJsonAsync<IntegrationDto[]>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return list ?? Array.Empty<IntegrationDto>();
     }
