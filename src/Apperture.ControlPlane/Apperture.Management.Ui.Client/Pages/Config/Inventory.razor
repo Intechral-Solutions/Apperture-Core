@@ -1,5 +1,6 @@
 @page "/config/inventory"
 @layout ConfigLayout
+@implements IDisposable
 @using Apperture.Core.Domain.ResourceContexts
 @inject IManagementClient Client
 @inject NavigationManager Nav
@@ -189,9 +190,16 @@
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    private bool _disposed;
+
+    public void Dispose() => _disposed = true;
+
     protected override async Task OnInitializedAsync()
     {
-        var query = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        // The Inventory URL this request was started for. The load below can be slow; the slug rewrite
+        // at the end may only touch this URL (see ContextUrlRewrite), never wherever the operator is by then.
+        var requestUri = Nav.Uri;
+        var query = NavigationQueryHelper.ParseQuery(Nav.ToAbsoluteUri(requestUri).Query);
         if (query.TryGetValue("mode", out var mode) && !string.IsNullOrWhiteSpace(mode))
             _mode = string.Equals(mode, "activity", StringComparison.OrdinalIgnoreCase) ? "activity" : "resources";
         if (query.TryGetValue("q", out var q))
@@ -224,9 +232,13 @@
         await LoadAsync();
 
         // A legacy id URL is rewritten to its slug -- a history replace, after the load, so the request
-        // above already used the canonical id. Other query parameters are preserved.
-        if (canonicalUrlToken is not null && !string.Equals(urlContextToken, canonicalUrlToken, StringComparison.Ordinal))
-            Nav.NavigateTo(ResourceContextViewState.BuildUriWithContext(new Uri(Nav.Uri), canonicalUrlToken), replace: true);
+        // above already used the canonical id. Other query parameters are preserved. Skipped entirely if
+        // this page was disposed or the operator has since navigated away from the request URL.
+        if (!_disposed
+            && canonicalUrlToken is not null
+            && !string.Equals(urlContextToken, canonicalUrlToken, StringComparison.Ordinal)
+            && ContextUrlRewrite.TryBuild(requestUri, Nav.Uri, canonicalUrlToken) is { } canonicalTarget)
+            Nav.NavigateTo(canonicalTarget, replace: true);
     }
 
     private async Task OnModeChangedAsync(string mode)

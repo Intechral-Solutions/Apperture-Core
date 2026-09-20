@@ -67,6 +67,34 @@ public sealed class ContextSlugRoutingUiSourceTests
     }
 
     [Fact]
+    public void RunsList_RecordsItsLoadKeyBeforeAwaitingTheLoad_ViaTheSharedGate()
+    {
+        var content = ReadRepoFile(Pages + "Runs/RunsList.razor");
+
+        content.Should().Contain("_loadGate.TryBegin(BuildLoadKey())");
+        content.Should().Contain("_loadGate.MarkBegun(BuildLoadKey());");
+        content.Should().Contain("_loadGate.Reset();");
+        content.Should().NotContain("_dataLoadKey",
+            "assigning the key only after the load finished let a legacy-id URL's slug rewrite start a second request");
+        content.IndexOf("_loadGate.MarkBegun(BuildLoadKey());", StringComparison.Ordinal)
+            .Should().BeLessThan(content.IndexOf("Client.GetRunsAsync(", StringComparison.Ordinal),
+                "the key must be recorded before the request is awaited");
+    }
+
+    [Fact]
+    public void Inventory_RewritesOnlyItsOwnRequestUrl_AndNeverAfterBeingDisposed()
+    {
+        var content = ReadRepoFile(Pages + "Config/Inventory.razor");
+
+        content.Should().Contain("@implements IDisposable");
+        content.Should().Contain("var requestUri = Nav.Uri;");
+        content.Should().Contain("ContextUrlRewrite.TryBuild(requestUri, Nav.Uri, canonicalUrlToken)");
+        content.Should().Contain("!_disposed");
+        content.Should().NotContain("BuildUriWithContext(new Uri(Nav.Uri)",
+            "rewriting from the location at continuation time is what let a late load rewrite another page");
+    }
+
+    [Fact]
     public void RunsStatusFacet_PreservesTheCanonicalUrlToken()
     {
         ReadRepoFile(Pages + "Runs/RunsList.razor").Should().Contain("context: _context.QueryValue");
