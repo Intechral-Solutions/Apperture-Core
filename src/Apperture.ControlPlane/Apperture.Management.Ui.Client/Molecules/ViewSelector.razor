@@ -143,7 +143,7 @@
         // via an explicit URL (§4.3 Q5) -- ResourceContextViewState.FindContext resolves its name from
         // the full known-context cache (Finding 2).
         var archived = ViewState.FindContext(ViewState.Current.ResourceContextId!);
-        return archived is not null ? $"{archived.Name} (archived)" : ViewState.Current.ResourceContextId!;
+        return archived is not null ? $"{archived.Name} (archived)" : ResourceContextViewState.UnknownContextLabel;
     }
 
     private async Task SelectAsync(ResourceContextViewScope scope)
@@ -163,7 +163,8 @@
     private string DescribeSelectedApp(string? resourceContextId) =>
         resourceContextId is null
             ? "No application selected"
-            : ActiveApplications.FirstOrDefault(a => string.Equals(a.Id, resourceContextId, StringComparison.Ordinal))?.Name ?? resourceContextId;
+            : ActiveApplications.FirstOrDefault(a => string.Equals(a.Id, resourceContextId, StringComparison.Ordinal))?.Name
+                ?? ViewState.DescribeContext(resourceContextId);
 
     private async Task OnKeyDownAsync(KeyboardEventArgs e)
     {

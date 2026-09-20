@@ -122,7 +122,7 @@
                                                   OnClick="SaveSlugAsync" />
                                 }
                             </div>
-                            <p class="mt-1 text-xs text-muted">Used only in future slug-addressed routes.</p>
+                            <p class="mt-1 text-xs text-muted">Appears in page addresses that show this application's view (for example <code class="ui-inline-code">/integrations?context=@(_context?.Slug)</code>). Changing it stops old bookmarks that use the previous slug from working; links that use the application's id keep working.</p>
                         </div>
                     </ManagementAdvancedSection>
 
@@ -142,15 +142,15 @@
                                 <div class="mt-2 flex flex-wrap gap-3">
                                     @if (_archiveBlocker.LiveIntegrations is > 0)
                                     {
-                                        <a href="@($"/integrations?context={Id}")" class="underline text-sm">View active integrations</a>
+                                        <a href="@($"/integrations?context={ContextUrlToken}")" class="underline text-sm">View active integrations</a>
                                     }
                                     @if (_archiveBlocker.ActiveConnections is > 0)
                                     {
-                                        <a href="@($"/connections?context={Id}")" class="underline text-sm">View connections</a>
+                                        <a href="@($"/connections?context={ContextUrlToken}")" class="underline text-sm">View connections</a>
                                     }
                                     @if (_archiveBlocker.EnabledSchedules is > 0)
                                     {
-                                        <a href="@($"/schedules?context={Id}")" class="underline text-sm">View schedules</a>
+                                        <a href="@($"/schedules?context={ContextUrlToken}")" class="underline text-sm">View schedules</a>
                                     }
                                 </div>
                             </PageMessage>
@@ -190,7 +190,7 @@
             {
                 <ManagementSection Title="Actions" Layer="ManagementSection.UiLayer.Detail">
                     <div class="flex flex-wrap gap-2">
-                        <a href="@($"/integrations/new?context={Id}")" class="ui-toolbar-btn">
+                        <a href="@($"/integrations/new?context={ContextUrlToken}")" class="ui-toolbar-btn">
                             Create an integration in @_context.Name
                         </a>
                         <button type="button" class="ui-toolbar-btn" @onclick="SwitchViewAsync">
@@ -205,6 +205,9 @@
 
 @code {
     [Parameter] public string Id { get; set; } = "";
+
+    /// <summary>Human-facing <c>?context=</c> token for this Application (its slug), URL-escaped for use in hrefs.</summary>
+    private string ContextUrlToken => Uri.EscapeDataString(ViewState.UrlTokenFor(Id));
 
     private bool _loading = true;
     private bool _notFound;
