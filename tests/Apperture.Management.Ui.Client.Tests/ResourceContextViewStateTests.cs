@@ -811,52 +811,114 @@ public class ResourceContextViewStateTests
         client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
-    private sealed class FakeJsRuntime : IJSRuntime
+    // --- HSK-C fix wave: a failed directory refresh must never escape into page lifecycle ---
+    //
+    // An unknown slug (typically a stale bookmark after a rename) legitimately triggers a one-off
+    // directory refresh. If that refresh hits a transport/API failure, the already-loaded directory
+    // must survive untouched and the token must simply stay unknown -- not crash the page.
+
+    private static Mock<IManagementClient> ClientWhoseSecondFetchFails(params ResourceContextDto[] initial)
     {
-        public Dictionary<string, string?> Stored { get; } = new();
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
-            InvokeAsync<TValue>(identifier, CancellationToken.None, args);
-
-        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
-        {
-            switch (identifier)
-            {
-                case "appertureShell.getViewPreference":
-                {
-                    var userId = (string)args![0]!;
-                    var value = Stored.TryGetValue(userId, out var v) ? v : null;
-                    return ValueTask.FromResult((TValue)(object?)value!);
-                }
-                case "appertureShell.setViewPreference":
-                {
-                    var userId = (string)args![0]!;
-                    var value = (string)args[1]!;
-                    Stored[userId] = value;
-                    return ValueTask.FromResult(default(TValue)!);
-                }
-                default:
-                    throw new InvalidOperationException($"Unexpected JS interop call in test: {identifier}");
-            }
-        }
+        var client = new Mock<IManagementClient>();
+        client.SetupSequence(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)initial)
+            .ThrowsAsync(new HttpRequestException("boom"));
+        return client;
     }
 
-    private sealed class TestNavigationManager : NavigationManager
+    [Fact]
+    public async Task EnsureUrlTokenKnownAsync_WhenTheRefreshFails_DoesNotThrow_KeepsTheDirectory_AndLeavesTheTokenUnresolved()
     {
-        public List<(string Uri, bool Replace)> Navigations { get; } = new();
+        var client = ClientWhoseSecondFetchFails(SharedContext(), Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
 
-        public TestNavigationManager(string baseUri, string uri) => Initialize(baseUri, uri);
+        var refresh = async () => await state.EnsureUrlTokenKnownAsync("no-such-slug");
 
-        /// <summary>Moves the simulated address bar without raising LocationChanged, mimicking a fresh page load/new tab.</summary>
-        public void SetLocationWithoutNotifying(string uri) => Uri = ToAbsoluteUri(uri).ToString();
+        await refresh.Should().NotThrowAsync();
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2), "the refresh was attempted");
+        state.ResolveUrlToken("no-such-slug").Kind.Should().Be(ResourceContextTokenKind.Unknown, "a failed refresh must not claim the slug exists");
+        state.ResolveUrlToken("development").ResourceContextId.Should().Be("dev-id", "a previously known Context must not be discarded");
+        state.ResolveUrlToken("shared").Kind.Should().Be(ResourceContextTokenKind.Context);
+        state.KnownContexts.Should().HaveCount(2);
+        state.DirectoryStatus.Should().Be(ResourceContextDirectoryStatus.Loaded);
+    }
 
-        protected override void NavigateToCore(string uri, NavigationOptions options)
+    [Fact]
+    public async Task EnsureUrlTokenKnownAsync_AfterAFailedRefresh_DoesNotHammerTheApiForTheSameToken()
+    {
+        var client = ClientWhoseSecondFetchFails(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.EnsureUrlTokenKnownAsync("no-such-slug");
+        await state.EnsureUrlTokenKnownAsync("no-such-slug");
+
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task EnsureContextsKnownAsync_WhenTheRefreshFails_DoesNotThrow_AndKeepsDescribingKnownContexts()
+    {
+        var client = ClientWhoseSecondFetchFails(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        var refresh = async () => await state.EnsureContextsKnownAsync(["missing-id"]);
+
+        await refresh.Should().NotThrowAsync();
+        state.DescribeContext("dev-id").Should().Be("Development");
+        state.DescribeContext("missing-id").Should().Be(ResourceContextViewState.UnknownContextLabel);
+    }
+
+    [Fact]
+    public async Task UnknownUrlToken_WhenTheRetryFetchFails_DoesNotEscapeInitialize_ReportsUnknown_AndStillSubscribes()
+    {
+        // The unknown-token retry inside a resolution pass also fetches the directory; a failure there
+        // used to escape InitializeAsync before LocationChanged was subscribed, leaving the shell View
+        // permanently un-re-resolved for the tab.
+        var client = ClientWhoseSecondFetchFails(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=no-such-slug");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        var initialize = async () => await state.InitializeAsync();
+
+        await initialize.Should().NotThrowAsync();
+        state.Current.IsAll.Should().BeTrue();
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.UnknownId);
+        state.Notice.ResourceContextId.Should().Be("no-such-slug");
+
+        nav.NavigateTo("https://localhost/runs?context=development");
+        state.Current.ResourceContextId.Should().Be("dev-id", "the LocationChanged subscription must still be live");
+    }
+
+    // --- HSK-C fix wave: a late resolution pass must not rewrite a page the operator already left ---
+
+    [Fact]
+    public async Task ALateResolutionPass_ForAPageTheOperatorAlreadyLeft_DoesNotRewriteTheNewPagesUrl()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+        await state.InitializeAsync();
+        nav.Navigations.Clear();
+
+        // While the resolution pass for the scoped legacy-id URL is suspended on its localStorage read,
+        // the operator navigates to an unscoped page.
+        js.DuringGetViewPreference = () =>
         {
-            Navigations.Add((uri, options.ReplaceHistoryEntry));
-            Uri = ToAbsoluteUri(uri).ToString();
-            // Blazor WebAssembly raises LocationChanged synchronously from inside NavigateTo -- this is
-            // exactly the reentrancy Critical #2's fix guards against.
-            NotifyLocationChanged(false);
-        }
+            js.DuringGetViewPreference = null;
+            nav.NavigateTo("https://localhost/config/applications");
+        };
+        nav.NavigateTo("https://localhost/integrations?context=dev-id");
+
+        nav.Uri.Should().Be("https://localhost/config/applications");
+        nav.Navigations.Should().NotContain(n => n.Replace, "a stale pass must never issue a replace against the operator's new location");
+        state.Current.IsAll.Should().BeTrue("a stale pass must not apply a scope for a page that is no longer showing");
     }
 }

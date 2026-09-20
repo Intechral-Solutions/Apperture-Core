@@ -321,7 +321,12 @@ public sealed class ResourceContextViewState(
     /// </param>
     private async Task ResolveForCurrentPathAsync(bool allowRetryOnUnknownId = true)
     {
-        var uri = new Uri(nav.Uri);
+        // The URL this pass is resolving. Every await below can let the operator navigate elsewhere; a pass
+        // whose URL is no longer current is stale and must neither apply its scope nor rewrite the address
+        // bar (it would otherwise replace the NEW page's URL with this one's). The location handler starts
+        // its own pass for the new URL.
+        var requestUri = nav.Uri;
+        var uri = new Uri(requestUri);
 
         // §4.2's algorithm is scoped-page-specific: on any other route the ?context= query parameter
         // is not meaningful and must not be read, and the URL must never be rewritten (Critical #1).
@@ -342,6 +347,9 @@ public sealed class ResourceContextViewState(
         var storedValue = userId is null
             ? null
             : await js.InvokeAsync<string?>("appertureShell.getViewPreference", userId);
+
+        if (!string.Equals(nav.Uri, requestUri, StringComparison.Ordinal))
+            return;
 
         var (activeIds, archivedIds) = SplitKnownContextIds();
 
@@ -372,7 +380,8 @@ public sealed class ResourceContextViewState(
             // §4.2: the rewrite is a silent URL normalization on arrival, not an operator-initiated
             // navigation -- replace:true keeps the browser history from ever holding an unscoped entry
             // for a scoped page (R4: "every history entry of a scoped page is self-describing").
-            NavigateInternally(BuildUriWithContext(uri, UrlTokenFor(resolution.Scope)), replace: true);
+            if (ContextUrlRewrite.TryBuild(requestUri, nav.Uri, UrlTokenFor(resolution.Scope)) is { } silentTarget)
+                NavigateInternally(silentTarget, replace: true);
         }
         else if (isScoped
                  && resolution.Action == ResourceContextViewResolutionAction.UseAsIs
@@ -383,7 +392,8 @@ public sealed class ResourceContextViewState(
             // An explicit URL that resolved to a known Context (active or archived) but spelled it as a
             // legacy id (or another non-canonical form): canonicalize to the slug. A replace, never a new
             // history entry, and done here -- after resolution -- so the page never sees a wrong scope.
-            NavigateInternally(BuildUriWithContext(uri, UrlTokenFor(resolution.Scope)), replace: true);
+            if (ContextUrlRewrite.TryBuild(requestUri, nav.Uri, UrlTokenFor(resolution.Scope)) is { } canonicalTarget)
+                NavigateInternally(canonicalTarget, replace: true);
         }
     }
 
@@ -427,9 +437,24 @@ public sealed class ResourceContextViewState(
         Changed?.Invoke();
     }
 
-    /// <summary>Re-fetches <see cref="_knownContexts"/> without resolving or navigating (used by the unknown-id retry).</summary>
-    private async Task RefreshKnownContextsOnlyAsync() =>
-        _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+    /// <summary>
+    /// Re-fetches <see cref="_knownContexts"/> without resolving or navigating (used by the unknown-token
+    /// retry and <see cref="EnsureContextsKnownAsync"/>). A transport/API failure keeps the directory that
+    /// is already loaded -- the token or id that triggered the refresh simply stays unknown -- instead of
+    /// escaping into page lifecycle or the <c>async void</c> location handler, matching how
+    /// <see cref="RefreshContextsAsync"/> serves stale-but-known data. Only the client's expected
+    /// <see cref="HttpRequestException"/> is absorbed.
+    /// </summary>
+    private async Task RefreshKnownContextsOnlyAsync()
+    {
+        try
+        {
+            _knownContexts = await client.GetResourceContextsAsync(includeArchived: true);
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
 
     private (List<string> ActiveIds, List<string> ArchivedIds) SplitKnownContextIds()
     {
