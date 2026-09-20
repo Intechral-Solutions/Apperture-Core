@@ -38,8 +38,11 @@ reset, cutting across several of them.
      cleanup.
    - **1B** Resource movement dialog UX: structured sections (Will move / Used by / Blocked by / History),
      target-select theming fix, Context display names instead of raw ids in operator-facing copy.
-   - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — see the identity policy
-     note below. Not a system-wide id migration.
+   - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — **complete (HSK-C,
+     2026-09-19)**: new links emit the slug, id URLs stay valid and canonicalize to the slug, the API and
+     localStorage keep the canonical id, no alias history. See
+     [`ADR-0041`](../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status).
+     Not a system-wide id migration.
 2. **Toast UX foundation** — presentation rewrite of the existing, already well-centralized toast system
    (placement, responsive width, stacking, gestures, accessibility). No call-site changes.
 3. **Notification → Toast integration** — incoming platform Notifications optionally surface as Toasts;

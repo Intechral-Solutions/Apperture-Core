@@ -192,6 +192,12 @@ Explicit selector changes **do** write localStorage. This is the principle "expl
 | New tab | Seeds from localStorage. A link opened in a new tab carries `?context=` on scoped pages, so it opens exactly as linked. |
 | Two windows wanting different views | Supported. Tab state is per tab. localStorage is only read at tab start, and the shell does not subscribe to `storage` events, so one window never retargets another. |
 
+> **HSK-C** (2026-09-19): superseded for the URL token in §4.2, §4.3 (Q4, unknown id) and §4.5. Scoped
+> pages now emit the ResourceContext **slug** (`?context=development`; `shared` for Shared; `all` unchanged)
+> and still accept the canonical id, which is rewritten to the slug with a history replace. The id stays
+> canonical everywhere else — API filters, localStorage and tab state, ownership. See
+> [ADR-0041 §Implementation status](../../../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status).
+
 ### 4.4 Validation
 
 The stored value must parse, and the id must be in the loaded list and Active. Otherwise it falls back to All. Validation runs after the context list loads. Until then scoped pages show their existing loading state, which avoids the unscoped-then-scoped flash.

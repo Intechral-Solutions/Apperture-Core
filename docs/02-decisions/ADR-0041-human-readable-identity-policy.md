@@ -93,3 +93,60 @@ ResourceContext `?context=` URLs only.
   today, and adding one is a separate future decision this ADR does not make.
 - This does not change how the ResourceContext id itself works, or any part of CTX's ownership/movement
   model — it is purely a routing/display-layer decision.
+
+## Implementation status
+
+**Tier 2 for ResourceContext `?context=` URLs — implemented by HSK-C (2026-09-19).** Tiers 1 and 3 needed no
+new mechanism (ids were already canonical; HSK-B moved the movement dialog to display names).
+
+### URL contract
+
+| `?context=` value | Meaning | Notes |
+|---|---|---|
+| a ResourceContext **slug** (`development`) | that Context | What new links emit. Matched case-insensitively against the *current* directory. |
+| a canonical **id** | that Context | Permanently accepted (old bookmarks). On a scoped page it is rewritten to the slug with a history *replace*. **An id match always beats a slug match.** |
+| `shared` | the persisted Shared Context | Shared's id and slug are both `shared`; nothing special-cased. |
+| `all` | the All *View* — not a ResourceContext | Reserved; never resolved as a slug. Unchanged. |
+| an archived Context's slug or id | that Context, honoured with the existing archived banner | Routing resolution is independent of picker eligibility: archived Contexts are still excluded from create/movement pickers. |
+| anything else | unknown Context | Existing "That context doesn't exist." flow (scoped pages) / "This Context filter is no longer valid." reset flow (Inventory). No alias lookup. |
+| `system`, `notRecorded` (Inventory only) | Inventory's own pseudo-filters — not ResourceContexts | Checked before any directory lookup and never resolved through it. |
+
+Resolution and emission live in one place — `ResourceContextUrlTokens` (`Ui.Shared`) — and run entirely
+client-side against the directory the shell already loads. There is no slug lookup endpoint and no new
+authorization surface; slug resolution is a routing convenience, not access control.
+
+### What stays canonical
+
+The API always receives the canonical id (`contextId=` / `resourceContextId=` / `context=` unchanged).
+localStorage and tab-state View persistence store the canonical id (`ResourceContextViewScope.ToQueryValue()`);
+the URL token is derived at emission time. Ownership, movement contracts, DTOs, audit and provenance are untouched.
+Detail routes (`/integrations/{id}`, `/config/applications/{id}`) still use ids.
+
+### Slug mutability
+
+Slugs stay mutable and there is still no alias/redirect history. After a rename, new links use the new
+slug, remembered Views (ids) stay valid, and id URLs keep working; an old-slug bookmark falls to the
+ordinary unknown-Context handling. If a slug is later reassigned to another Context, the old link resolves
+to the new holder — the same behaviour as any slug URL, and the accepted cost of this ADR.
+
+### Per-surface behaviour
+
+- **Scoped lists** (Integrations, Connections, Schedules, Runs): the URL token is resolved against the
+  loaded directory *before* any data request; loads are de-duplicated on the canonical id, so rewriting an
+  id URL to its slug never issues a second request.
+- **Create flows** (Integration, Connection): `?context=` accepts a slug or id and preselects only Shared or an
+  *active* Application; archived/unknown values fall through to the existing default.
+- **Config Inventory**: keeps its independent filter. Select values stay ids; URL input accepts slug, id,
+  `shared`, `system`, `notRecorded`. Inventory has never written its filter to the URL, so only inbound
+  legacy id URLs are canonicalized. An Application whose slug spells `system`/`notRecorded` (case-insensitively)
+  is addressed by id on that surface, because the pseudo values win.
+- **Audit**: its Context filter is component-local (a select of ids sent as `resourceContextId`) and never
+  appeared in the URL, so nothing changed.
+- **Control Center / Business Data / Movement**: emit no `?context=` links; unchanged.
+
+### Evidence
+
+`ResourceContextUrlTokensTests`, `ScopedListContextFilterTests`, `InventoryContextUrlFilterTests`
+(`Apperture.Management.Ui.Shared.Tests`); `ResourceContextViewStateTests` (`Apperture.Management.Ui.Client.Tests`,
+behavioural: canonicalization, back/forward, storage stays id, slug rename); `ContextSlugRoutingUiSourceTests`
+(page-wiring guards).
