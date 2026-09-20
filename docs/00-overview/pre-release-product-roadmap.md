@@ -32,18 +32,31 @@ remain the broad thematic map; this section is the concrete near-term execution 
 reset, cutting across several of them.
 
 0. **Roadmap/documentation reset** — this reset (2026-09-18).
-1. **Operator UX housekeeping** — three parts:
+1. **Operator UX housekeeping** — four parts:
    - **1A** small polish: remove the View onboarding hint, Module-detail "Integrations using this Module"
      (via a reusable query, not throwaway plumbing), live create-form validity, confirmed-trivial debt
      cleanup.
    - **1B** Resource movement dialog UX: structured sections (Will move / Used by / Blocked by / History),
      target-select theming fix, Context display names instead of raw ids in operator-facing copy.
-   - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — **implemented (HSK-C,
-     2026-09-19; manual browser smoke and merge still pending)**: new links emit the slug, id URLs stay
-     valid and canonicalize to the slug, the API and localStorage keep the canonical id, no alias
-     history. See
+   - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — **complete (HSK-C,
+     2026-09-20; operator smoke passed)**: new links emit the slug, id URLs stay valid and
+     canonicalize to the slug, the API and localStorage keep the canonical id, no alias history. See
      [`ADR-0041`](../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status).
      Not a system-wide id migration.
+   - **1D** Application Resource Explorer (**HSK-D**, not started) — carry-in from HSK-C smoke: Application
+     detail shows only resource *counts*; its links to the scoped lists appear solely inside the
+     archive-blocked warning. The always-visible Resources section that
+     [CTX-3 design gate §6.4](../01-architecture/transitions/resource-contexts/ctx3-design-gate.md) intended
+     never shipped, and HSK-D supersedes/completes that intent (the historical gate is not rewritten).
+     Intended surface: an Application-scoped explorer over Integrations, Connections and Schedules with
+     search, resource-type filtering, direct links, human-readable names, appropriate state/status
+     presentation, and archived-Application support. Shared resources merely *referenced* by
+     Application-owned resources are not owned resources and stay out of the primary list. HSK-D should
+     investigate whether Config Inventory / resource-read infrastructure is worth reusing, extracting or
+     adapting, but must not be required to depend on it if direct composition is cleaner. Also carried
+     forward: many Resources are manifestations of, or are enabled/enhanced by, Components, but there is
+     **no approved one-to-one Component→Resource invariant** and HSK-D must not introduce one (see the
+     [Components/Services/Catalog planning note](../01-architecture/transitions/components-services-catalog/README.md)).
 2. **Toast UX foundation** — presentation rewrite of the existing, already well-centralized toast system
    (placement, responsive width, stacking, gestures, accessibility). No call-site changes.
 3. **Notification → Toast integration** — incoming platform Notifications optionally surface as Toasts;

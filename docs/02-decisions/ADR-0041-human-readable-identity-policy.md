@@ -96,7 +96,7 @@ ResourceContext `?context=` URLs only.
 
 ## Implementation status
 
-**Tier 2 for ResourceContext `?context=` URLs — implemented by HSK-C (2026-09-19; manual browser smoke pending).** Tiers 1 and 3 needed no
+**Tier 2 for ResourceContext `?context=` URLs — implemented by HSK-C (2026-09-19; operator smoke passed 2026-09-20).** Tiers 1 and 3 needed no
 new mechanism (ids were already canonical; HSK-B moved the movement dialog to display names).
 
 ### URL contract
