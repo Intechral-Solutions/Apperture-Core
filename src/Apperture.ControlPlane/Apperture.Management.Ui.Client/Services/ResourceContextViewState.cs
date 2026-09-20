@@ -349,7 +349,14 @@ public sealed class ResourceContextViewState(
             : await js.InvokeAsync<string?>("appertureShell.getViewPreference", userId);
 
         if (!string.Equals(nav.Uri, requestUri, StringComparison.Ordinal))
+        {
+            // Once subscribed, OnLocationChanged runs its own pass for the new URL. Before that (the very
+            // first pass in InitializeAsync) nothing will, so resolve the now-current URL here instead of
+            // leaving the tab on the default scope for a scoped page it actually landed on.
+            if (!_locationChangedSubscribed)
+                await ResolveForCurrentPathAsync(allowRetryOnUnknownId);
             return;
+        }
 
         var (activeIds, archivedIds) = SplitKnownContextIds();
 

@@ -895,6 +895,29 @@ public class ResourceContextViewStateTests
         state.Current.ResourceContextId.Should().Be("dev-id", "the LocationChanged subscription must still be live");
     }
 
+    [Fact]
+    public async Task InitializeAsync_WhenTheUrlChangesDuringTheFirstPass_ResolvesTheNewUrlInsteadOfDroppingIt()
+    {
+        // LocationChanged is not subscribed until the first pass finishes, so a stale first pass has no
+        // handler to redo it: it must re-resolve the now-current URL itself, or the tab would keep
+        // Current = All for a scoped URL it actually landed on.
+        var client = ClientWith(Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+        js.DuringGetViewPreference = () =>
+        {
+            js.DuringGetViewPreference = null;
+            nav.NavigateTo("https://localhost/runs?context=dev-id");
+        };
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        nav.Uri.Should().Be("https://localhost/runs?context=development");
+    }
+
     // --- HSK-C fix wave: a late resolution pass must not rewrite a page the operator already left ---
 
     [Fact]
