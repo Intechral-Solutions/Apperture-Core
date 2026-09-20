@@ -310,7 +310,7 @@
     private bool _loading;
     private bool _showProblemsOnly;
     private string? _error;
-    private string? _dataLoadKey;
+    private readonly ScopedLoadGate _loadGate = new();
     private ScopedListContextResolution _context = new(ScopedListContextState.AwaitingContext, null, null);
 
     protected override async Task OnInitializedAsync()
@@ -377,16 +377,18 @@
             // settles on a resolved ?context= -- or names something invalid. Either way, do not leave a
             // previously-loaded context's rows on screen while this resolves; clear them so the existing
             // loading state (or the UnknownContext branch, which renders nothing) is what's shown. Reset
-            // _dataLoadKey too, so the same context resolving again afterward is treated as a fresh load
+            // the load gate too, so the same context resolving again afterward is treated as a fresh load
             // rather than skipped as "already loaded".
             _runs = null;
             _error = null;
-            _dataLoadKey = null;
+            _loadGate.Reset();
             return;
         }
 
-        var key = BuildLoadKey();
-        if (key == _dataLoadKey)
+        // The gate records the key BEFORE the load is awaited (as the other scoped lists do with
+        // _loadedContextValue): the shell rewriting a legacy-id URL to its slug while this load is still in
+        // flight re-runs this method with the same canonical key and must not start a second request.
+        if (!_loadGate.TryBegin(BuildLoadKey()))
             return;
         await LoadAsync();
     }
@@ -410,6 +412,7 @@
 
     private async Task LoadAsync()
     {
+        _loadGate.MarkBegun(BuildLoadKey());
         _loading = true;
         _error = null;
         try
@@ -447,7 +450,6 @@
         finally
         {
             _loading = false;
-            _dataLoadKey = BuildLoadKey();
         }
     }
 
