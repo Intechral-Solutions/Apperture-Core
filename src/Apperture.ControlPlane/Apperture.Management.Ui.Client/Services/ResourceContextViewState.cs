@@ -147,6 +147,37 @@ public sealed class ResourceContextViewState(
     public IReadOnlyList<ResourceContextDto> KnownContexts => _knownContexts;
 
     /// <summary>
+    /// Resolves a human-facing <c>?context=</c> token (slug or legacy canonical id) against the
+    /// already-loaded directory -- no API call, and no authorization implied (ADR-0041 tier 2).
+    /// </summary>
+    public ResourceContextTokenResolution ResolveUrlToken(string? token) =>
+        ResourceContextUrlTokens.Resolve(token, _knownContexts);
+
+    /// <summary>The token to emit in a human-facing <c>?context=</c> URL for a canonical id: its slug, or the id itself when no usable slug is known.</summary>
+    public string UrlTokenFor(string resourceContextId) =>
+        ResourceContextUrlTokens.TokenFor(resourceContextId, _knownContexts);
+
+    /// <summary>URL token for a View scope: <c>all</c>, or the specific Context's slug/id token. Never used for persisted state -- localStorage/tab state keep the canonical id.</summary>
+    public string UrlTokenFor(ResourceContextViewScope scope) =>
+        ResourceContextUrlTokens.TokenFor(scope, _knownContexts);
+
+    /// <summary>
+    /// Like <see cref="EnsureContextsKnownAsync"/> but for a URL token, which may be a slug: refreshes the
+    /// directory once if the token names nothing known (a Context created moments ago), and never again
+    /// for the same token in the life of the tab. Does not re-resolve the view or navigate.
+    /// </summary>
+    public async ValueTask EnsureUrlTokenKnownAsync(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token)
+            || ResolveUrlToken(token).Kind != ResourceContextTokenKind.Unknown
+            || !_refreshAttemptedFor.Add(token))
+            return;
+
+        await RefreshKnownContextsOnlyAsync();
+        Changed?.Invoke();
+    }
+
+    /// <summary>
     /// Refreshes the active+archived context list once if any id is missing from it, then raises
     /// <see cref="Changed"/>. An id that stays missing is not refreshed again for the life of the tab.
     /// Does not re-resolve the view or navigate.
@@ -297,7 +328,15 @@ public sealed class ResourceContextViewState(
         var isScoped = ResourceContextViewRoutes.Resolve(uri.AbsolutePath) == ResourceContextViewMode.Scoped;
 
         var query = NavigationQueryHelper.ParseQuery(uri.Query);
-        var urlValue = isScoped && query.TryGetValue(QueryParamName, out var v) ? v : null;
+        var urlToken = isScoped && query.TryGetValue(QueryParamName, out var v) ? v : null;
+
+        // HSK-C: the URL token may be a slug or a legacy id. Translate it to the canonical id BEFORE the
+        // pure resolver (which only knows ids) runs, so every downstream consumer -- Current, tab state,
+        // localStorage, notices -- only ever sees canonical ids. A token that names nothing passes through
+        // unchanged and resolves to the existing unknown-context notice.
+        var urlValue = urlToken;
+        if (ResourceContextUrlTokens.Resolve(urlToken, _knownContexts) is { Kind: ResourceContextTokenKind.Context } known)
+            urlValue = known.ResourceContextId;
 
         var userId = session.User?.UserId;
         var storedValue = userId is null
@@ -333,7 +372,18 @@ public sealed class ResourceContextViewState(
             // §4.2: the rewrite is a silent URL normalization on arrival, not an operator-initiated
             // navigation -- replace:true keeps the browser history from ever holding an unscoped entry
             // for a scoped page (R4: "every history entry of a scoped page is self-describing").
-            NavigateInternally(BuildUriWithContext(uri, resolution.Scope.ToQueryValue()), replace: true);
+            NavigateInternally(BuildUriWithContext(uri, UrlTokenFor(resolution.Scope)), replace: true);
+        }
+        else if (isScoped
+                 && resolution.Action == ResourceContextViewResolutionAction.UseAsIs
+                 && !resolution.Scope.IsAll
+                 && urlToken is not null
+                 && !string.Equals(urlToken, UrlTokenFor(resolution.Scope), StringComparison.Ordinal))
+        {
+            // An explicit URL that resolved to a known Context (active or archived) but spelled it as a
+            // legacy id (or another non-canonical form): canonicalize to the slug. A replace, never a new
+            // history entry, and done here -- after resolution -- so the page never sees a wrong scope.
+            NavigateInternally(BuildUriWithContext(uri, UrlTokenFor(resolution.Scope)), replace: true);
         }
     }
 
@@ -371,7 +421,7 @@ public sealed class ResourceContextViewState(
             // like this one, so that convention does not apply here. ConnectionsPage.SetTab -- an
             // existing explicit, operator-initiated tab switch -- likewise calls NavigateTo with the
             // default replace:false.
-            NavigateInternally(BuildUriWithContext(new Uri(nav.Uri), scope.ToQueryValue()), replace: false);
+            NavigateInternally(BuildUriWithContext(new Uri(nav.Uri), UrlTokenFor(scope)), replace: false);
         }
 
         Changed?.Invoke();
@@ -411,7 +461,7 @@ public sealed class ResourceContextViewState(
     }
 
     /// <summary>Rewrites the URL's <c>context</c> query parameter, preserving every other query parameter.</summary>
-    private static string BuildUriWithContext(Uri uri, string contextValue)
+    internal static string BuildUriWithContext(Uri uri, string contextValue)
     {
         var query = NavigationQueryHelper.ParseQuery(uri.Query);
         query[QueryParamName] = contextValue;

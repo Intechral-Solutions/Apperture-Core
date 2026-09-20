@@ -197,11 +197,12 @@
         // Preselection order (design gate §7.2): ?context= from the create link, else the tab's
         // current view, else nothing. /integrations/new is Unscoped (ResourceContextViewRoutes), so
         // it does not participate in the shell's URL-authoritative rewriting/tab-state resolution --
-        // the incoming query value is read here directly and validated against the known active
-        // Applications (or "shared") before being honoured, rather than trusted as-is.
-        if (IsKnownContextSelection(QueryContext))
+        // the incoming query value (slug or legacy id) is read here directly and resolved to a canonical
+        // id -- only for Shared or an active Application -- before being honoured, rather than trusted
+        // as-is. An archived, unknown or "all" value is not selectable and falls through.
+        if (ResourceContextUrlTokens.ResolveActiveCreateTarget(QueryContext, ViewState.KnownContexts) is { } createTarget)
         {
-            _selectedResourceContextId = QueryContext!;
+            _selectedResourceContextId = createTarget;
         }
         else if (!ViewState.Current.IsAll)
         {
@@ -212,11 +213,6 @@
             _selectedResourceContextId = string.Empty; // "Choose…", submit disabled until set
         }
     }
-
-    private bool IsKnownContextSelection(string? candidate) =>
-        !string.IsNullOrWhiteSpace(candidate)
-        && (string.Equals(candidate, "shared", StringComparison.Ordinal)
-            || ViewState.KnownActiveApplications.Any(a => string.Equals(a.Id, candidate, StringComparison.Ordinal)));
 
     private string DestinationLabel() =>
         ViewState.DescribeContext(_selectedResourceContextId);

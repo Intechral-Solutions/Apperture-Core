@@ -363,11 +363,11 @@
     {
         await base.OnParametersSetAsync();
 
-        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         if (_context.State == ScopedListContextState.UnknownContext)
         {
-            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
-            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+            await ViewState.EnsureUrlTokenKnownAsync(_context.QueryValue);
+            _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         }
 
         if (_context.State != ScopedListContextState.Ready)
@@ -392,7 +392,7 @@
     }
 
     private string BuildLoadKey() =>
-        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}\u001f{_context.QueryValue ?? ""}";
+        $"{QueryCorrelationKey ?? ""}\u001f{QueryStatus ?? ""}\u001f{QueryCreatedFromRaw ?? ""}\u001f{QueryIntegrationId ?? ""}\u001f{QueryModuleId ?? ""}\u001f{_executionKindFilter ?? ""}\u001f{_context.LoadKey ?? ""}";
 
     private void ShowAllRuns() => _showProblemsOnly = false;
 
@@ -405,7 +405,7 @@
             createdFrom: QueryCreatedFromRaw,
             integrationId: QueryIntegrationId,
             moduleId: QueryModuleId,
-            context: QueryContext));
+            context: _context.QueryValue));
     }
 
     private async Task LoadAsync()

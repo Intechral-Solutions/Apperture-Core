@@ -43,6 +43,11 @@ public readonly record struct ResourceContextViewScope
             : Of(queryValue);
     }
 
+    /// <summary>
+    /// The canonical-id serialization (<c>all</c> or the ResourceContext id) used for persisted View state
+    /// (localStorage/tab state). It is NOT the human-facing URL token: URLs carry the slug, produced by
+    /// <see cref="ResourceContextUrlTokens.TokenFor(ResourceContextViewScope, IReadOnlyList{Apperture.Management.Client.ResourceContextDto})"/>.
+    /// </summary>
     public string ToQueryValue() => _resourceContextId ?? AllToken;
 
     public string? ToApiFilter() => _resourceContextId;

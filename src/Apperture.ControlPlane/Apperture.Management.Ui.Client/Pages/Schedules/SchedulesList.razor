@@ -246,11 +246,11 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         if (_context.State == ScopedListContextState.UnknownContext)
         {
-            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
-            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+            await ViewState.EnsureUrlTokenKnownAsync(_context.QueryValue);
+            _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         }
 
         if (_context.State != ScopedListContextState.Ready)
@@ -268,10 +268,10 @@
             return;
         }
 
-        if (_context.QueryValue == _loadedContextValue)
+        if (_context.LoadKey == _loadedContextValue)
             return;
 
-        _loadedContextValue = _context.QueryValue;
+        _loadedContextValue = _context.LoadKey;
         await LoadAsync();
     }
 

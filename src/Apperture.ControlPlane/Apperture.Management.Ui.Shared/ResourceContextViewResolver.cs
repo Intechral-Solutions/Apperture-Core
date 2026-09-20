@@ -51,7 +51,9 @@ public enum ResourceContextViewNoticeKind
 /// <see cref="ResourceContextId"/> -- never a pre-rendered message. The resolver only knows ids, not
 /// names, so it cannot interpolate design gate §4.3 Q5's exact wording ("CampusNexus is archived");
 /// the caller (which holds the loaded <c>ResourceContextDto</c> list) resolves the id to a name and
-/// picks toast-vs-banner presentation per <see cref="Kind"/>.
+/// picks toast-vs-banner presentation per <see cref="Kind"/>. For <see cref="ResourceContextViewNoticeKind.UnknownId"/>
+/// the value is the raw URL token (an id or a slug -- HSK-C resolves slugs to canonical ids before this
+/// resolver runs), which must never be shown as though it were a display name.
 /// </summary>
 public readonly record struct ResourceContextViewNotice(ResourceContextViewNoticeKind Kind, string? ResourceContextId)
 {

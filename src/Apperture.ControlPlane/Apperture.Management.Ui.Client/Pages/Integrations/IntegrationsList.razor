@@ -75,7 +75,7 @@
                     <a href="@ViewAllHref" class="ui-toolbar-btn">View all</a>
                     @if (!scopedContextIsArchived && _capabilities?.CanManageIntegrations == true)
                     {
-                        <a href="@($"/integrations/new?context={Uri.EscapeDataString(_context.ApiFilter!)}")" class="ui-toolbar-btn">Create integration in @scopedContextName</a>
+                        <a href="@($"/integrations/new?context={Uri.EscapeDataString(_context.QueryValue!)}")" class="ui-toolbar-btn">Create integration in @scopedContextName</a>
                     }
                 </div>
             </EmptyState>
@@ -451,11 +451,11 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+        _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         if (_context.State == ScopedListContextState.UnknownContext)
         {
-            await ViewState.EnsureContextsKnownAsync([_context.QueryValue]);
-            _context = ScopedListContextFilter.Resolve(QueryContext, id => ViewState.FindContext(id) is not null);
+            await ViewState.EnsureUrlTokenKnownAsync(_context.QueryValue);
+            _context = ScopedListContextFilter.Resolve(QueryContext, ViewState.KnownContexts);
         }
 
         if (_context.State != ScopedListContextState.Ready)
@@ -473,10 +473,10 @@
             return;
         }
 
-        if (_context.QueryValue == _loadedContextValue)
+        if (_context.LoadKey == _loadedContextValue)
             return;
 
-        _loadedContextValue = _context.QueryValue;
+        _loadedContextValue = _context.LoadKey;
         await LoadAsync();
     }
 

@@ -20,10 +20,35 @@ namespace Apperture.Management.Ui.Client.Tests;
 /// </summary>
 public class ResourceContextViewStateTests
 {
-    private static ResourceContextDto Application(string id, string name, bool archived = false) =>
-        new(id, name, name.ToLowerInvariant(), ResourceContextKinds.Application,
+    // Slug defaults to the kebab-cased name ("Old App" -> "old-app"), deliberately different from the id
+    // ("old-app-id") so every test can tell an id URL from a slug URL.
+    private static ResourceContextDto Application(string id, string name, bool archived = false, string? slug = null) =>
+        new(id, name, slug ?? name.ToLowerInvariant().Replace(' ', '-'), ResourceContextKinds.Application,
             archived ? ResourceContextStates.Archived : ResourceContextStates.Active,
             IsReserved: false, Description: null, CreatedAtUtc: default, UpdatedAtUtc: default);
+
+    private static ResourceContextDto SharedContext() =>
+        new(ResourceContextIds.SharedValue, "Shared", "shared", ResourceContextKinds.Shared, ResourceContextStates.Active,
+            IsReserved: true, Description: null, CreatedAtUtc: default, UpdatedAtUtc: default);
+
+    private static async Task<SessionStateService> SignedInSessionAsync(Mock<IManagementClient> client)
+    {
+        client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+        client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((EntraAccessRequestSessionDto?)null);
+        var session = new SessionStateService(client.Object);
+        await session.RefreshAsync();
+        return session;
+    }
+
+    private static Mock<IManagementClient> ClientWith(params ResourceContextDto[] contexts)
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)contexts);
+        return client;
+    }
 
     private static SessionStateService AnonymousSession(Mock<IManagementClient> client) =>
         new(client.Object); // .User stays null unless RefreshAsync is called -- localStorage is skipped.
@@ -98,7 +123,7 @@ public class ResourceContextViewStateTests
         var js = new FakeJsRuntime();
         js.Stored["user-1"] = "old-app-id"; // remembered (localStorage), not tab state or URL
 
-        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=old-app-id");
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=old-app");
         var state = new ResourceContextViewState(js, nav, client.Object, session);
 
         await state.InitializeAsync();
@@ -419,7 +444,7 @@ public class ResourceContextViewStateTests
     {
         var client = new Mock<IManagementClient>();
         client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A")]);
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("app-a", "App A", slug: "app-a-slug")]);
         var nav = new TestNavigationManager("https://localhost/", $"https://localhost{path}?context=all");
         var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
         await state.InitializeAsync();
@@ -427,8 +452,363 @@ public class ResourceContextViewStateTests
 
         await state.SetExplicitAsync(ResourceContextViewScope.Of("app-a"));
 
-        nav.Uri.Should().Be($"https://localhost{path}?context=app-a");
+        nav.Uri.Should().Be($"https://localhost{path}?context=app-a-slug");
         nav.Navigations.Should().ContainSingle(n => n.Replace == false);
+    }
+
+    // --- HSK-C: human-readable Context routing (ADR-0041 tier 2) ---
+    //
+    // The URL carries the slug; the API, tab state and localStorage keep the canonical id. Old id URLs
+    // keep working and are canonicalized to the slug with a history *replace*. Slugs are mutable and
+    // there is no alias history.
+
+    [Fact]
+    public async Task LegacyIdUrl_OnScopedPage_ResolvesToTheCanonicalId_AndReplacesTheUrlWithTheSlug()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=dev-id");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.None);
+        nav.Navigations.Should().ContainSingle().Which.Should().Be(("https://localhost/integrations?context=development", true),
+            "canonicalizing an id URL must be a history replace, never a new entry");
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Once,
+            "resolving a URL token must reuse the loaded directory, not fetch again");
+    }
+
+    [Fact]
+    public async Task SlugUrl_OnScopedPage_ResolvesToTheCanonicalId_WithoutNavigating()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/connections?context=development");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.None);
+        nav.Navigations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SharedSlugUrl_ResolvesToTheSharedCanonicalId_WithoutNavigating()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/schedules?context=shared");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be(ResourceContextIds.SharedValue);
+        nav.Navigations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AllUrl_IsAllView_NotAResourceContext_AndIsNotRewritten()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/runs?context=all");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.IsAll.Should().BeTrue();
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.None);
+        nav.Navigations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LegacyIdUrl_Canonicalization_PreservesEveryOtherQueryParameter()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/runs?status=blocked&context=dev-id&integrationId=int%201");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        nav.Navigations.Should().ContainSingle();
+        var uri = new Uri(nav.Uri);
+        uri.AbsolutePath.Should().Be("/runs");
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        query["context"].Should().Be("development");
+        query["status"].Should().Be("blocked");
+        query["integrationId"].Should().Be("int 1");
+    }
+
+    [Fact]
+    public async Task ArchivedSlugUrl_IsHonoured_AsTheArchivedContext_WithoutNavigating()
+    {
+        var client = ClientWith(Application("old-app-id", "Old App", archived: true));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/runs?context=old-app");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("old-app-id");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedExplicit);
+        state.Notice.ResourceContextId.Should().Be("old-app-id");
+        nav.Navigations.Should().BeEmpty("an archived Context must not be replaced by All merely because it is archived");
+    }
+
+    [Fact]
+    public async Task ArchivedLegacyIdUrl_IsCanonicalizedToItsSlug_AndKeepsTheArchivedNotice()
+    {
+        var client = ClientWith(Application("old-app-id", "Old App", archived: true));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/runs?context=old-app-id");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("old-app-id");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.ArchivedExplicit);
+        nav.Navigations.Should().ContainSingle().Which.Should().Be(("https://localhost/runs?context=old-app", true));
+    }
+
+    [Fact]
+    public async Task UnknownSlugUrl_KeepsTheUrl_AndReportsTheUnknownNoticeWithTheRawToken()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=no-such-slug");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.IsAll.Should().BeTrue();
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.UnknownId);
+        state.Notice.ResourceContextId.Should().Be("no-such-slug");
+        nav.Navigations.Should().BeEmpty();
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2), "one retry, no loop");
+    }
+
+    [Fact]
+    public async Task SlugOfAnApplicationCreatedAfterTheDirectoryLoaded_ResolvesAfterTheSingleRetry()
+    {
+        var client = new Mock<IManagementClient>();
+        client.SetupSequence(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[])
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("new-id", "Brand New")]);
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=brand-new");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("new-id");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.None);
+    }
+
+    [Fact]
+    public async Task SetExplicitAsync_EmitsTheSlugInTheUrl_ButLocalStorageKeepsTheCanonicalId()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=all");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+        await state.InitializeAsync();
+        nav.Navigations.Clear();
+
+        await state.SetExplicitAsync(ResourceContextViewScope.Of("dev-id"));
+
+        nav.Uri.Should().Be("https://localhost/integrations?context=development");
+        js.Stored["user-1"].Should().Be("dev-id", "remembered View state is canonical-id based; slugs are mutable");
+    }
+
+    [Fact]
+    public async Task SetExplicitAsync_Shared_EmitsTheSharedToken_AndStoresTheSharedId()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/schedules?context=all");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+        await state.InitializeAsync();
+
+        await state.SetExplicitAsync(ResourceContextViewScope.Of(ResourceContextIds.SharedValue));
+
+        nav.Uri.Should().Be("https://localhost/schedules?context=shared");
+        js.Stored["user-1"].Should().Be(ResourceContextIds.SharedValue);
+    }
+
+    [Fact]
+    public async Task SetExplicitAsync_All_EmitsTheEstablishedAllToken()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/runs?context=development");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.SetExplicitAsync(ResourceContextViewScope.All);
+
+        nav.Uri.Should().Be("https://localhost/runs?context=all");
+    }
+
+    [Fact]
+    public async Task SilentUrl_WithRememberedCanonicalIdInLocalStorage_IsRewrittenToTheSlug_AndStorageStaysAnId()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        js.Stored["user-1"] = "dev-id";
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+
+        await state.InitializeAsync();
+
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        nav.Navigations.Should().ContainSingle().Which.Should().Be(("https://localhost/integrations?context=development", true));
+        js.Stored["user-1"].Should().Be("dev-id");
+    }
+
+    [Fact]
+    public async Task ExplicitUrlResolution_NeverWritesLocalStorage_EvenWhenTheUrlIsCanonicalized()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        js.Stored["user-1"] = "all";
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=dev-id");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+
+        await state.InitializeAsync();
+
+        js.Stored["user-1"].Should().Be("all", "links are not remembered; only explicit selector changes write localStorage");
+    }
+
+    [Fact]
+    public async Task TabState_RewritesASilentUrlOnAnotherScopedPage_ToTheSlug()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=development");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+        nav.Navigations.Clear();
+
+        nav.NavigateTo("https://localhost/schedules");
+
+        nav.Uri.Should().Be("https://localhost/schedules?context=development");
+        nav.Navigations.Should().HaveCount(2);
+        nav.Navigations[1].Replace.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task BackAndForward_BetweenSlugUrls_RestoreTheMatchingView_WithoutRewritingHistory()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/integrations?context=all");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+        nav.Navigations.Clear();
+
+        nav.NavigateTo("https://localhost/integrations?context=shared");
+        state.Current.ResourceContextId.Should().Be(ResourceContextIds.SharedValue);
+        nav.NavigateTo("https://localhost/integrations?context=development");
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        nav.NavigateTo("https://localhost/integrations?context=all");
+        state.Current.IsAll.Should().BeTrue();
+
+        // A browser Back/Forward is a LocationChanged with no NavigateTo from this class; every entry is
+        // already canonical, so nothing may be rewritten (no duplicate history entries, no loops).
+        nav.Navigations.Should().OnlyContain(n => !n.Replace);
+        nav.Navigations.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task NonScopedRoute_WithAnIdContextQuery_IsNeitherReadNorRewritten()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications?context=dev-id");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+
+        await state.InitializeAsync();
+
+        nav.Navigations.Should().BeEmpty();
+        state.Current.IsAll.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SlugRename_NewLinksUseTheNewSlug_TheIdKeepsWorking_AndTheOldSlugFallsToUnknown()
+    {
+        var client = new Mock<IManagementClient>();
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("dev-id", "Development", slug: "development")]);
+        var session = await SignedInSessionAsync(client);
+        var js = new FakeJsRuntime();
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications");
+        var state = new ResourceContextViewState(js, nav, client.Object, session);
+        await state.InitializeAsync();
+        await state.SetExplicitAsync(ResourceContextViewScope.Of("dev-id"));
+
+        // The operator renames the slug elsewhere; Config > Applications refreshes the directory.
+        client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("dev-id", "Development", slug: "dev-app")]);
+        await state.RefreshContextsAsync();
+
+        state.UrlTokenFor("dev-id").Should().Be("dev-app");
+        js.Stored["user-1"].Should().Be("dev-id", "ownership/remembered View is unaffected by the rename");
+
+        nav.NavigateTo("https://localhost/runs");
+        nav.Uri.Should().Be("https://localhost/runs?context=dev-app");
+
+        nav.NavigateTo("https://localhost/runs?context=dev-id");
+        state.Current.ResourceContextId.Should().Be("dev-id");
+        nav.Uri.Should().Be("https://localhost/runs?context=dev-app", "an id URL stays valid and canonicalizes to the new slug");
+
+        nav.NavigateTo("https://localhost/runs?context=development");
+        state.Current.IsAll.Should().BeTrue("there is no alias history: the old slug is an ordinary unknown Context");
+        state.Notice.Kind.Should().Be(ResourceContextViewNoticeKind.UnknownId);
+    }
+
+    [Fact]
+    public async Task UrlTokenFor_IsSlugForKnownContexts_AndIdOtherwise()
+    {
+        var client = ClientWith(SharedContext(), Application("dev-id", "Development"), Application("old-app-id", "Old App", archived: true));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/applications");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        state.UrlTokenFor("dev-id").Should().Be("development");
+        state.UrlTokenFor(ResourceContextIds.SharedValue).Should().Be("shared");
+        state.UrlTokenFor("old-app-id").Should().Be("old-app");
+        state.UrlTokenFor("not-in-directory").Should().Be("not-in-directory");
+        state.UrlTokenFor(ResourceContextViewScope.All).Should().Be("all");
+        state.UrlTokenFor(ResourceContextViewScope.Of("dev-id")).Should().Be("development");
+    }
+
+    [Fact]
+    public async Task EnsureUrlTokenKnownAsync_UnknownSlug_RefreshesOnce_ThenResolvesIt()
+    {
+        var client = new Mock<IManagementClient>();
+        client.SetupSequence(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[])
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("new-id", "Brand New")]);
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.EnsureUrlTokenKnownAsync("brand-new");
+        await state.EnsureUrlTokenKnownAsync("brand-new");
+
+        state.ResolveUrlToken("brand-new").ResourceContextId.Should().Be("new-id");
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task EnsureUrlTokenKnownAsync_StillUnknown_DoesNotRefreshAgain_AndKnownTokensNeverRefresh()
+    {
+        var client = ClientWith(Application("dev-id", "Development"));
+        var nav = new TestNavigationManager("https://localhost/", "https://localhost/config/inventory");
+        var state = new ResourceContextViewState(new FakeJsRuntime(), nav, client.Object, AnonymousSession(client));
+        await state.InitializeAsync();
+
+        await state.EnsureUrlTokenKnownAsync("development");
+        await state.EnsureUrlTokenKnownAsync("dev-id");
+        await state.EnsureUrlTokenKnownAsync("ghost");
+        await state.EnsureUrlTokenKnownAsync("ghost");
+
+        client.Verify(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     private sealed class FakeJsRuntime : IJSRuntime
