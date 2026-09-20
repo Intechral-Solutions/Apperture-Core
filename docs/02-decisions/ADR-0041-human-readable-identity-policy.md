@@ -96,7 +96,7 @@ ResourceContext `?context=` URLs only.
 
 ## Implementation status
 
-**Tier 2 for ResourceContext `?context=` URLs — implemented by HSK-C (2026-09-19).** Tiers 1 and 3 needed no
+**Tier 2 for ResourceContext `?context=` URLs — implemented by HSK-C (2026-09-19; manual browser smoke pending).** Tiers 1 and 3 needed no
 new mechanism (ids were already canonical; HSK-B moved the movement dialog to display names).
 
 ### URL contract
@@ -132,8 +132,14 @@ to the new holder — the same behaviour as any slug URL, and the accepted cost 
 ### Per-surface behaviour
 
 - **Scoped lists** (Integrations, Connections, Schedules, Runs): the URL token is resolved against the
-  loaded directory *before* any data request; loads are de-duplicated on the canonical id, so rewriting an
-  id URL to its slug never issues a second request.
+  loaded directory *before* any data request; loads are de-duplicated on the canonical id, recorded
+  *before* the load is awaited (`ScopedLoadGate` on Runs), so rewriting an id URL to its slug never issues a
+  second request even while the first load is in flight.
+- **Rewrite safety**: every URL rewrite (the shell's silent/canonicalizing rewrites and Inventory's) is
+  built from the URL the work was started for and is dropped if the operator has navigated elsewhere
+  (`ContextUrlRewrite`), so a late continuation can never replace another page's history entry. A failed
+  directory refresh triggered by an unknown token keeps the already-loaded directory and leaves the token
+  unknown; it never escapes into page lifecycle.
 - **Create flows** (Integration, Connection): `?context=` accepts a slug or id and preselects only Shared or an
   *active* Application; archived/unknown values fall through to the existing default.
 - **Config Inventory**: keeps its independent filter. Select values stay ids; URL input accepts slug, id,
@@ -146,7 +152,8 @@ to the new holder — the same behaviour as any slug URL, and the accepted cost 
 
 ### Evidence
 
-`ResourceContextUrlTokensTests`, `ScopedListContextFilterTests`, `InventoryContextUrlFilterTests`
-(`Apperture.Management.Ui.Shared.Tests`); `ResourceContextViewStateTests` (`Apperture.Management.Ui.Client.Tests`,
-behavioural: canonicalization, back/forward, storage stays id, slug rename); `ContextSlugRoutingUiSourceTests`
-(page-wiring guards).
+`ResourceContextUrlTokensTests`, `ScopedListContextFilterTests`, `InventoryContextUrlFilterTests`,
+`ScopedLoadGateTests` (`Apperture.Management.Ui.Shared.Tests`); `ResourceContextViewStateTests`,
+`ContextUrlRewriteTests` (`Apperture.Management.Ui.Client.Tests`, behavioural: canonicalization,
+back/forward, storage stays id, slug rename, refresh-failure resilience, stale-pass rewrite safety);
+`ContextSlugRoutingUiSourceTests` (page-wiring guards).
