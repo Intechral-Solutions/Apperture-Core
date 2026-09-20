@@ -178,9 +178,11 @@
 
     // Inventory's Context filter/column is one of the documented exceptions to the shell View's
     // zero-Applications gate (design gate §3.3): it must render even when SelectorVisible is false, so
-    // this reads only ViewState.KnownContexts/DescribeContext/EnsureContextsKnownAsync -- never
-    // ViewState.Current, ViewState.SelectorVisible, or the shell's own "?context=" query parameter.
-    // Inventory's "context" query parameter below is local to this page.
+    // this reads only ViewState.KnownContexts/DescribeContext/EnsureContextsKnownAsync/
+    // EnsureUrlTokenKnownAsync -- never ViewState.Current, ViewState.SelectorVisible, or the shell's own
+    // "?context=" query parameter. Inventory's "context" query parameter below is local to this page: it
+    // accepts a slug, a legacy id, or its own pseudo tokens (system / notRecorded -- see
+    // InventoryContextUrlFilter), and always sends the API a canonical id or pseudo token.
     private IReadOnlyList<ResourceContextDto> ApplicationContexts =>
         ViewState.KnownContexts
             .Where(c => string.Equals(c.Kind, ResourceContextKinds.Application, StringComparison.Ordinal))
@@ -200,9 +202,31 @@
             _status = status;
         if (query.TryGetValue("sort", out var sort) && !string.IsNullOrWhiteSpace(sort))
             _sort = sort;
+        string? canonicalUrlToken = null;
+        string? urlContextToken = null;
         if (query.TryGetValue("context", out var context))
-            _context = context;
+        {
+            urlContextToken = context;
+            var filter = InventoryContextUrlFilter.Resolve(context, ViewState.KnownContexts);
+            if (filter.Kind == InventoryContextFilterKind.Unknown)
+            {
+                // Possibly a Context created after this tab's directory loaded: refresh once, then decide.
+                await ViewState.EnsureUrlTokenKnownAsync(context);
+                filter = InventoryContextUrlFilter.Resolve(context, ViewState.KnownContexts);
+            }
+
+            // The URL may carry a slug, a legacy id, or a pseudo token; the API always gets the resolved
+            // canonical id (or the pseudo token / raw unknown token, exactly as before).
+            _context = filter.ApiValue;
+            if (filter.Kind == InventoryContextFilterKind.Context)
+                canonicalUrlToken = filter.CanonicalUrlToken;
+        }
         await LoadAsync();
+
+        // A legacy id URL is rewritten to its slug -- a history replace, after the load, so the request
+        // above already used the canonical id. Other query parameters are preserved.
+        if (canonicalUrlToken is not null && !string.Equals(urlContextToken, canonicalUrlToken, StringComparison.Ordinal))
+            Nav.NavigateTo(ResourceContextViewState.BuildUriWithContext(new Uri(Nav.Uri), canonicalUrlToken), replace: true);
     }
 
     private async Task OnModeChangedAsync(string mode)
