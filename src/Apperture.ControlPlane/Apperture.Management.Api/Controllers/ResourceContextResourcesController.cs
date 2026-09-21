@@ -47,9 +47,13 @@ public sealed class ResourceContextResourcesController(
             families = [requested];
         }
 
-        var contextId = ResourceContextIds.IsShared(id) ? ResourceContextIds.SharedValue : id;
-        if (await resourceContexts.GetAsync(new ResourceContextId(contextId), cancellationToken).ConfigureAwait(false) is null)
+        var requestedId = ResourceContextIds.IsShared(id) ? ResourceContextIds.SharedValue : id;
+        var context = await resourceContexts.GetAsync(new ResourceContextId(requestedId), cancellationToken).ConfigureAwait(false);
+        if (context is null)
             return NotFound();
+
+        // Filter by the stored canonical id, not the route text: the in-memory ownership re-check is ordinal.
+        var contextId = context.Id.Value;
 
         var result = await inventory
             .QueryAsync(

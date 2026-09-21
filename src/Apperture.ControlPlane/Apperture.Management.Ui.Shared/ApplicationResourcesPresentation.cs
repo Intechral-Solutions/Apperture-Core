@@ -83,6 +83,17 @@ public static class ApplicationResourcesPresentation
             ? $"Showing the first {shown} of {total} matching resources. Search or filter by type to narrow the list."
             : $"{total} resource{(total == 1 ? "" : "s")}";
 
+    /// <summary>
+    /// The current page URL with the Resources fragment. It must be a full URL: the client shell has
+    /// <c>&lt;base href="/"&gt;</c>, so a bare <c>#fragment</c> href resolves to the home route and would navigate away.
+    /// </summary>
+    public static string AnchorHref(string currentUri)
+    {
+        var fragmentStart = currentUri.IndexOf('#', StringComparison.Ordinal);
+        var withoutFragment = fragmentStart < 0 ? currentUri : currentUri[..fragmentStart];
+        return $"{withoutFragment}#application-resources";
+    }
+
     public static string EmptyMessage(string ownerLabel) => $"No resources belong to {ownerLabel} yet.";
 
     public static bool IsFiltered(string? query, string? type) =>

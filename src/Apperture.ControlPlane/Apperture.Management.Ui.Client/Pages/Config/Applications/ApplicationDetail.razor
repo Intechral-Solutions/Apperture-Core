@@ -16,6 +16,7 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject IToastService Toasts
 @inject ResourceContextViewState ViewState
+@inject NavigationManager Nav
 
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Config"
@@ -323,7 +324,7 @@
                     }
                     if (count.HasResources)
                     {
-                        <a class="ui-link" href="#application-resources" title="Show these in the Resources list below" @onclick="() => ShowResources(count.Type)">@count.Label</a>
+                        <a class="ui-link" href="@ResourcesAnchorHref" title="Show these in the Resources list below" @onclick="() => ShowResources(count.Type)">@count.Label</a>
                     }
                     else
                     {
@@ -347,6 +348,8 @@
             </ManagementSection>
         </div>
     };
+
+    private string ResourcesAnchorHref => ApplicationResourcesPresentation.AnchorHref(Nav.Uri);
 
     private void ShowResources(string type) => _resourcesType = type;
 

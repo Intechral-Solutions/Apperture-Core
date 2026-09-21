@@ -55,10 +55,13 @@ public sealed class InventoryTestHarness : IAsyncDisposable
     public IInventoryQueryService Inventory { get; }
     public TimeProvider Clock { get; }
 
-    public static Task<InventoryTestHarness> CreateAsync(bool canViewIntegrations = true) =>
-        Task.FromResult(new InventoryTestHarness(canViewIntegrations));
+    public static Task<InventoryTestHarness> CreateAsync(
+        bool canViewIntegrations = true,
+        bool canViewConnections = true,
+        bool canManageSchedules = true) =>
+        Task.FromResult(new InventoryTestHarness(canViewIntegrations, canViewConnections, canManageSchedules));
 
-    private InventoryTestHarness(bool canViewIntegrations)
+    private InventoryTestHarness(bool canViewIntegrations, bool canViewConnections, bool canManageSchedules)
     {
         Db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
@@ -158,12 +161,12 @@ public sealed class InventoryTestHarness : IAsyncDisposable
         var capabilities = new Mock<IOperatorCapabilitiesQueryService>();
         capabilities.Setup(x => x.GetCapabilitiesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OperatorCapabilitiesDto(
-                CanManageSchedules: true,
+                CanManageSchedules: canManageSchedules,
                 CanManageRecovery: false,
                 CanViewAudit: true,
                 CanViewRuntimeHealth: false,
                 CanManageModules: true,
-                CanViewConnections: true,
+                CanViewConnections: canViewConnections,
                 CanViewIntegrations: canViewIntegrations,
                 CanViewNotificationDefinitions: true));
 

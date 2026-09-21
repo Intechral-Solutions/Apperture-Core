@@ -106,6 +106,18 @@ public sealed class ApplicationResourcesPresentationTests
         ApplicationResourcesPresentation.ResultsSummary(shown, total).Should().Be(expected);
     }
 
+    // The client shell has <base href="/">, so a bare "#fragment" href would resolve to the home route and
+    // navigate away. The anchor must be the CURRENT page URL with the fragment replaced.
+    [Theory]
+    [InlineData("https://host/config/applications/abc", "https://host/config/applications/abc#application-resources")]
+    [InlineData("https://host/config/applications/abc?x=1", "https://host/config/applications/abc?x=1#application-resources")]
+    [InlineData("https://host/config/applications/abc#application-resources", "https://host/config/applications/abc#application-resources")]
+    [InlineData("https://host/config/applications/abc?x=1#other", "https://host/config/applications/abc?x=1#application-resources")]
+    public void AnchorHref_IsTheCurrentPageWithTheResourcesFragment(string currentUri, string expected)
+    {
+        ApplicationResourcesPresentation.AnchorHref(currentUri).Should().Be(expected);
+    }
+
     [Fact]
     public void EmptyMessage_NamesTheOwner()
     {

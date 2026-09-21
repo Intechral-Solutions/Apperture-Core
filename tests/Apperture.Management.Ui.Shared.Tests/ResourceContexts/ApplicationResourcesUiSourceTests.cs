@@ -106,7 +106,10 @@ public sealed class ApplicationResourcesUiSourceTests
         content.Should().Contain("@bind-TypeFilter=\"_resourcesType\"");
         content.Should().Contain("ResourcesSection(\"this application\")").And.Contain("ResourcesSection(\"Shared\")");
         content.Should().Contain("ApplicationResourcesPresentation.LiveCounts(_summary)");
-        content.Should().Contain("href=\"#application-resources\"").And.Contain("id=\"application-resources\"");
+        content.Should().Contain("id=\"application-resources\"");
+        content.Should().Contain("href=\"@ResourcesAnchorHref\"").And.Contain("ApplicationResourcesPresentation.AnchorHref(Nav.Uri)");
+        content.Should().NotContain("href=\"#application-resources\"",
+            "a bare fragment resolves against <base href=\"/\"> and would navigate to the home route");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Management.Api.Controllers;
@@ -6,6 +7,7 @@ using Apperture.Management.Client;
 using Apperture.UnitTests.ResourceContexts;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 using Xunit;
 
 namespace Apperture.UnitTests.ControlPlane;
@@ -93,6 +95,62 @@ public sealed class ResourceContextResourcesControllerTests
         var result = await OkAsync(controller.Get(ResourceContextIds.SharedValue));
 
         result.Items.Should().ContainSingle().Which.Name.Should().Be("Shared connection");
+    }
+
+    /// <summary>
+    /// Each family is gated by the same capability the ordinary family surface uses (integration.read,
+    /// connection.read, schedule.manage -- see OperatorCapabilitiesQueryService). A family the caller cannot
+    /// read yields no rows, no names, no ids, no states and no contribution to TotalMatching, whether it is
+    /// omitted from the whole list or asked for directly.
+    /// </summary>
+    [Theory]
+    [InlineData("integration")]
+    [InlineData("connection")]
+    [InlineData("schedule")]
+    public async Task Get_WithAFamilyTheCallerCannotRead_ExposesNothingAboutThatFamily(string hiddenType)
+    {
+        await using var harness = await InventoryTestHarness.CreateAsync(
+            canViewIntegrations: hiddenType != "integration",
+            canViewConnections: hiddenType != "connection",
+            canManageSchedules: hiddenType != "schedule");
+        var appA = await harness.CreateApplicationContextAsync("A");
+        await harness.CreateIntegrationAsync(appA.Id, "Hidden-or-visible integration");
+        await harness.CreateConnectionAsync(appA.Id, "Hidden-or-visible connection");
+        await harness.CreateScheduleAsync(appA.Id, "Hidden-or-visible schedule");
+        var controller = new ResourceContextResourcesController(harness.Inventory, harness.ResourceContexts);
+
+        var everything = await OkAsync(controller.Get(appA.Id.Value));
+        var asked = await OkAsync(controller.Get(appA.Id.Value, type: hiddenType));
+        var searched = await OkAsync(controller.Get(appA.Id.Value, q: "Hidden-or-visible"));
+
+        everything.Items.Select(i => i.Type).Should().BeEquivalentTo(
+            ResourceContextResourceTypes.All.Where(t => t != hiddenType));
+        everything.TotalMatching.Should().Be(2);
+        asked.Items.Should().BeEmpty();
+        asked.TotalMatching.Should().Be(0);
+        searched.Items.Should().NotContain(i => i.Type == hiddenType);
+        searched.TotalMatching.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Get_FiltersByTheResolvedContextsCanonicalId_NotTheRawRouteValue()
+    {
+        await using var harness = await InventoryTestHarness.CreateAsync();
+        var appA = await harness.CreateApplicationContextAsync("A");
+        var contexts = new Mock<IResourceContextService>();
+        contexts.Setup(c => c.GetAsync(It.IsAny<ResourceContextId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(appA);
+        var inventory = new Mock<IInventoryQueryService>();
+        InventoryQuery? captured = null;
+        inventory.Setup(i => i.QueryAsync(It.IsAny<InventoryQuery>(), It.IsAny<CancellationToken>()))
+            .Callback<InventoryQuery, CancellationToken>((query, _) => captured = query)
+            .ReturnsAsync(new Apperture.ControlPlane.Security.InventoryQueryResult([], []));
+        var controller = new ResourceContextResourcesController(inventory.Object, contexts.Object);
+
+        // A store with case-insensitive text comparison resolves this value to the same context.
+        await OkAsync(controller.Get(appA.Id.Value.ToUpperInvariant()));
+
+        captured!.Context!.ResourceContextId.Should().Be(appA.Id.Value);
     }
 
     [Fact]
