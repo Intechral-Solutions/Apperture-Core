@@ -50,9 +50,11 @@
                         application can use Shared connections.
                     </p>
                     <p class="text-xs text-muted">Shared can't be renamed or archived.</p>
-                    <p class="text-xs text-muted">@CountsLabel()</p>
+                    @CountsSummary()
                 </div>
             </ManagementSection>
+
+            @ResourcesSection("Shared")
         }
         else
         {
@@ -126,9 +128,11 @@
                         </div>
                     </ManagementAdvancedSection>
 
-                    <p class="text-xs text-muted">@CountsLabel()</p>
+                    @CountsSummary()
                 </div>
             </ManagementSection>
+
+            @ResourcesSection("this application")
 
             @if (_canManage)
             {
@@ -217,6 +221,7 @@
 
     private ResourceContextDto? _context;
     private ResourceContextOwnershipSummaryDto? _summary;
+    private string? _resourcesType;
 
     private string _name = "";
     private string _description = "";
@@ -293,16 +298,56 @@
             ? "Resources that aren't specific to one application."
             : $"{_context.Kind}{(IsArchived ? " · Archived" : "")}";
 
-    private string CountsLabel()
+    /// <summary>
+    /// The overview counts keep their existing meaning (integrations not retired, active connections, enabled
+    /// schedules); each non-zero count jumps to the Resources list below, preselecting that family. The list
+    /// shows every state, so a family can list more rows than its count.
+    /// </summary>
+    private RenderFragment CountsSummary() => __builder =>
     {
-        if (_summary is null)
-            return "—";
-        var parts = new List<string>();
-        if (_summary.LiveIntegrations is { } i) parts.Add($"{i} integration{(i == 1 ? "" : "s")}");
-        if (_summary.ActiveConnections is { } c) parts.Add($"{c} connection{(c == 1 ? "" : "s")}");
-        if (_summary.EnabledSchedules is { } sc) parts.Add($"{sc} schedule{(sc == 1 ? "" : "s")}");
-        return parts.Count == 0 ? "—" : string.Join(" · ", parts);
-    }
+        var counts = ApplicationResourcesPresentation.LiveCounts(_summary);
+        <p class="text-xs text-muted">
+            @if (_summary is null)
+            {
+                <span>No resources yet.</span>
+            }
+            else
+            {
+                for (var i = 0; i < counts.Count; i++)
+                {
+                    var count = counts[i];
+                    if (i > 0)
+                    {
+                        <span aria-hidden="true"> · </span>
+                    }
+                    if (count.HasResources)
+                    {
+                        <a class="ui-link" href="#application-resources" @onclick="() => ShowResources(count.Type)">@count.Label</a>
+                    }
+                    else
+                    {
+                        <span>@count.Label</span>
+                    }
+                }
+            }
+        </p>
+    };
+
+    private RenderFragment ResourcesSection(string ownerLabel) => __builder =>
+    {
+        <div id="application-resources">
+            <ManagementSection Title="Resources"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Subtitle="@($"Integrations, connections, and schedules that belong to {ownerLabel}, in every state.")"
+                               Help="@(_context!.IsReserved ? null : "Shared resources that these integrations use are not listed here; they belong to Shared.")">
+                <ApplicationResources ContextId="@_context.Id"
+                                      OwnerLabel="@ownerLabel"
+                                      @bind-TypeFilter="_resourcesType" />
+            </ManagementSection>
+        </div>
+    };
+
+    private void ShowResources(string type) => _resourcesType = type;
 
     private static string DescribeBlocker(ResourceContextOwnershipSummaryDto s)
     {

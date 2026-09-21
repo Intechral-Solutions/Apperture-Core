@@ -1,0 +1,267 @@
+@* The Resources a ResourceContext (an Application, or Shared) currently OWNS. The Context is fixed by the page
+   that hosts this, so there is no Context selector and no Context column. Shared resources merely referenced
+   by an owned resource are not owned and are not listed. Reads the normalized resource model behind
+   GET api/resource-contexts/{id}/resources; each family keeps its own state vocabulary. *@
+@implements IDisposable
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+@if (!_capabilitiesReady)
+{
+    <LoadingState Message="Loading resources…" />
+}
+else if (_capabilitiesError is not null)
+{
+    <ErrorState Message="@_capabilitiesError" />
+}
+else if (_typeOptions.Count == 0)
+{
+    <ForbiddenState Message="You do not have permission to view integrations, connections, or schedules." />
+}
+else
+{
+    @if (ShowControls)
+    {
+        <div class="flex flex-wrap items-end gap-3 text-sm">
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-muted" for="application-resources-search">Search resources</label>
+                <input id="application-resources-search"
+                       type="search"
+                       class="ui-input"
+                       autocomplete="off"
+                       placeholder="Name"
+                       value="@_query"
+                       @oninput="OnSearchInputAsync" />
+            </div>
+            @if (_typeOptions.Count > 2)
+            {
+                <div class="flex flex-col gap-1">
+                    <span class="text-xs text-muted" id="application-resources-type-label">Resource type</span>
+                    <SegmentedControl TValue="string"
+                                      Items="_typeItems"
+                                      Value="@(EffectiveType ?? AllValue)"
+                                      ValueChanged="OnTypeChangedAsync"
+                                      IdPrefix="application-resources-type"
+                                      aria-labelledby="application-resources-type-label" />
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error">
+            <button type="button" class="mt-3 ui-toolbar-btn" @onclick="RetryAsync">Try again</button>
+        </ErrorState>
+    }
+    else if (_loading)
+    {
+        <LoadingState Message="Loading resources…" />
+    }
+    else if (_result.Items.Count == 0)
+    {
+        @if (ApplicationResourcesPresentation.IsFiltered(_query, EffectiveType))
+        {
+            <EmptyState Title="No matching resources" Message="No resources match the current search or type filter.">
+                <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
+            </EmptyState>
+        }
+        else
+        {
+            <EmptyState Title="No resources" Message="@ApplicationResourcesPresentation.EmptyMessage(OwnerLabel)" />
+        }
+    }
+    else
+    {
+        <p class="mt-3 text-xs text-muted" role="status">@ApplicationResourcesPresentation.ResultsSummary(_result.Items.Count, _result.TotalMatching)</p>
+        <div class="ui-data-table overflow-x-auto">
+            <table class="ui-data-table__table min-w-full text-left text-body">
+                <caption class="sr-only">Resources that belong to @OwnerLabel</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Type</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _result.Items)
+                    {
+                        <tr @key="item.Href">
+                            <td>@item.TypeLabel</td>
+                            <td class="font-medium text-heading break-words">
+                                <a class="ui-link" href="@item.Href">@item.Name</a>
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(item.State))
+                                {
+                                    <StatusPill Label="@item.State"
+                                                Semantic="@ApplicationResourcesPresentation.StateSemantic(item.Type, item.State)" />
+                                }
+                                else
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private const string AllValue = "";
+    private const int SearchDebounceMilliseconds = 300;
+
+    /// <summary>The canonical ResourceContext id. Never a slug: it is sent to the API as-is.</summary>
+    [Parameter, EditorRequired] public string ContextId { get; set; } = "";
+
+    /// <summary>How the owner reads in copy, for example "this application" or "Shared".</summary>
+    [Parameter] public string OwnerLabel { get; set; } = "this application";
+
+    /// <summary>The selected resource family (null is All). Two-way so the host can preselect it from an overview count.</summary>
+    [Parameter] public string? TypeFilter { get; set; }
+    [Parameter] public EventCallback<string?> TypeFilterChanged { get; set; }
+
+    private readonly ScopedLoadGate _gate = new();
+    private IReadOnlyList<ApplicationResourceTypeOption> _typeOptions = [];
+    private IReadOnlyList<SegmentedControl<string>.Item> _typeItems = [];
+    private bool _capabilitiesReady;
+    private string? _capabilitiesError;
+    private bool _loading = true;
+    private bool _hasLoaded;
+    private string? _error;
+    private ResourceContextResourcesResult _result = new([], 0);
+    private string _query = "";
+    private int _requestSequence;
+    private CancellationTokenSource? _searchDelay;
+
+    private string? EffectiveType => ApplicationResourcesPresentation.NormalizeType(TypeFilter, _typeOptions);
+
+    private string LoadKey => $"{ContextId}|{EffectiveType}|{_query.Trim()}";
+
+    // The controls stay mounted through reloads (so typing keeps focus) but are pointless until we know
+    // there is something to search, unless a filter is already narrowing an otherwise non-empty set.
+    private bool ShowControls =>
+        _hasLoaded && (_result.TotalMatching > 0 || ApplicationResourcesPresentation.IsFiltered(_query, EffectiveType));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_capabilitiesReady)
+            await LoadCapabilitiesAsync();
+
+        if (_capabilitiesError is not null || _typeOptions.Count == 0)
+            return;
+
+        if (_gate.TryBegin(LoadKey))
+            await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync();
+            _typeOptions = ApplicationResourcesPresentation.TypeOptions(
+                caps.CanViewIntegrations, caps.CanViewConnections, caps.CanManageSchedules);
+            _typeItems = _typeOptions.Select(o => new SegmentedControl<string>.Item(o.Value ?? AllValue, o.Label)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _capabilitiesError = ex.Message;
+        }
+        finally
+        {
+            _capabilitiesReady = true;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        // Latest request wins: a slower earlier response must never overwrite a newer one.
+        var sequence = ++_requestSequence;
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetResourceContextResourcesAsync(
+                ContextId,
+                EffectiveType,
+                string.IsNullOrWhiteSpace(_query) ? null : _query.Trim());
+            if (sequence != _requestSequence)
+                return;
+            _result = result;
+            _hasLoaded = true;
+            _loading = false;
+        }
+        catch (Exception ex)
+        {
+            if (sequence != _requestSequence)
+                return;
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+
+        _searchDelay?.Cancel();
+        _searchDelay?.Dispose();
+        var delay = _searchDelay = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(SearchDebounceMilliseconds, delay.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_gate.TryBegin(LoadKey))
+            await LoadAsync();
+    }
+
+    private async Task OnTypeChangedAsync(string value)
+    {
+        var type = string.IsNullOrEmpty(value) ? null : value;
+        await SetTypeAsync(type);
+    }
+
+    private async Task SetTypeAsync(string? type)
+    {
+        TypeFilter = type;
+
+        // The key is recorded before the host is told, so the host echoing the same value back does not
+        // start a second load.
+        if (!_gate.TryBegin(LoadKey))
+            return;
+
+        await TypeFilterChanged.InvokeAsync(type);
+        await LoadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _searchDelay?.Cancel();
+        _query = "";
+        await SetTypeAsync(null);
+    }
+
+    private async Task RetryAsync()
+    {
+        _gate.MarkBegun(LoadKey);
+        await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _searchDelay?.Cancel();
+        _searchDelay?.Dispose();
+    }
+}

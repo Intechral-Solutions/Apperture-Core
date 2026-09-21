@@ -534,6 +534,20 @@ public interface IManagementClient
     Task<IReadOnlyDictionary<string, ResourceContextOwnershipSummaryDto>> GetResourceContextSummaryAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists the Integrations, Connections and Schedules a ResourceContext currently OWNS, optionally narrowed
+    /// to one family (<paramref name="type"/>, one of <see cref="ResourceContextResourceTypes"/>) and/or by a
+    /// search term. <paramref name="resourceContextId"/> is the canonical id (never a slug). Every state is
+    /// listed, including Retired/Disabled, so an archived Application still shows what it owns. A family the
+    /// caller cannot read is omitted. A 404 (unknown context) or 400 (unsupported type) surfaces as
+    /// <see cref="HttpRequestException"/>.
+    /// </summary>
+    Task<ResourceContextResourcesResult> GetResourceContextResourcesAsync(
+        string resourceContextId,
+        string? type = null,
+        string? q = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Advisory preview of moving this Integration to another ResourceContext (CTX-3B design gate §8.2).
     /// </summary>
     Task<ResourceMovePreviewDto> GetIntegrationOwnershipMovePreviewAsync(string integrationId, string targetResourceContextId, CancellationToken cancellationToken = default);

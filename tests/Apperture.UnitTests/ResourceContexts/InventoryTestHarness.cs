@@ -48,6 +48,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
     private readonly IAuditService _auditService;
     private readonly IIntegrationManagementService _integrations;
     private readonly IConnectionManagementService _connections;
+    private readonly IScheduleManagementService _schedules;
 
     public AppertureDbContext Db { get; }
     public IResourceContextService ResourceContexts { get; }
@@ -118,6 +119,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             integrationRepository,
             Db,
             ownershipGate);
+        _schedules = schedules;
 
         _auditService = new SqlAuditService(Db);
 
@@ -203,6 +205,48 @@ public sealed class InventoryTestHarness : IAsyncDisposable
                 new Dictionary<string, string>(),
                 ResourceContextId: contextId),
             cancellationToken);
+    }
+
+    public async Task<ScheduleDefinition> CreateScheduleAsync(
+        ResourceContextId contextId,
+        string name,
+        bool enabled = true,
+        CancellationToken cancellationToken = default)
+    {
+        var definition = new ScheduleDefinition(
+            new ScheduleId($"s-{NextSequence()}"),
+            name,
+            "0 0 * * *",
+            "UTC",
+            Enabled: enabled,
+            new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+            ExecutionPolicyRef: null,
+            Version: 1,
+            IntegrationId: null) with
+        { ResourceContextId = contextId };
+        return await _schedules.CreateScheduleAsync(definition, cancellationToken);
+    }
+
+    public async Task RetireIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default) =>
+        await _integrations.RetireIntegrationAsync(id, cancellationToken);
+
+    public async Task RetireConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default) =>
+        await _connections.RetireConnectionAsync(id, cancellationToken);
+
+    /// <summary>Plants an Integration -> Connection binding row directly (the reference relationship, not ownership).</summary>
+    public async Task BindConnectionAsync(IntegrationId integrationId, ConnectionId connectionId, CancellationToken cancellationToken = default)
+    {
+        Db.Bindings.Add(new BindingEntity
+        {
+            Id = $"b-{NextSequence()}",
+            IntegrationId = integrationId.Value,
+            ModuleId = "Sample.Mod",
+            SlotName = "primary",
+            ContractType = "test.contract",
+            ConnectionId = connectionId.Value,
+            State = 0
+        });
+        await Db.SaveChangesAsync(cancellationToken);
     }
 
     public Task CreateModuleAsync(string? moduleId = null)

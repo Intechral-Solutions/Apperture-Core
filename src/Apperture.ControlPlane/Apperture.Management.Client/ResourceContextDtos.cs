@@ -34,6 +34,39 @@ public sealed record ResourceContextOwnershipSummaryDto(
     int? ActiveConnections, int? RetiredConnections,
     int? EnabledSchedules, int? DisabledSchedules);
 
+/// <summary>
+/// One resource currently owned by a ResourceContext (<c>resource.ResourceContextId == context.Id</c>), as
+/// listed by <c>GET api/resource-contexts/{id}/resources</c>. <see cref="Type"/> is one of
+/// <see cref="ResourceContextResourceTypes"/>; <see cref="State"/> is the family's own state vocabulary
+/// (Integration: Active/Inactive/Retired, Connection: Active/Retired, Schedule: Enabled/Disabled) and is
+/// intentionally not normalized across families.
+/// </summary>
+public sealed record ResourceContextResourceDto(
+    string Id,
+    string Type,
+    string TypeLabel,
+    string Name,
+    string? State,
+    string Href);
+
+/// <summary>
+/// The owned resources matching a query. <see cref="TotalMatching"/> counts every match before the server's
+/// response cap, so a caller can say honestly when it is showing fewer rows than exist.
+/// </summary>
+public sealed record ResourceContextResourcesResult(
+    IReadOnlyList<ResourceContextResourceDto> Items,
+    int TotalMatching);
+
+/// <summary>The resource families an Application (ResourceContext) lists as currently owned.</summary>
+public static class ResourceContextResourceTypes
+{
+    public const string Integration = "integration";
+    public const string Connection = "connection";
+    public const string Schedule = "schedule";
+
+    public static IReadOnlyList<string> All { get; } = [Integration, Connection, Schedule];
+}
+
 /// <summary>Why <see cref="IManagementClient.ArchiveResourceContextAsync"/> received a 409.</summary>
 public enum ResourceContextArchiveConflictReason
 {

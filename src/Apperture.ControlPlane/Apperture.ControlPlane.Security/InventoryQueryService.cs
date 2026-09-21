@@ -60,7 +60,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
         var items = new List<InventoryItemDto>();
 
         if (mode == InventoryModes.Resources)
-            await CollectResourcesAsync(items, caps, context, cancellationToken).ConfigureAwait(false);
+            await CollectResourcesAsync(items, caps, context, request.Types, cancellationToken).ConfigureAwait(false);
         else
             await CollectActivityAsync(items, caps, context, cancellationToken).ConfigureAwait(false);
 
@@ -84,8 +84,15 @@ public sealed class InventoryQueryService : IInventoryQueryService
             ? EnsureTypeRepresentation(sorted, take)
             : sorted.Take(take).ToList();
 
-        return new InventoryQueryResult(page, availableTypes);
+        return new InventoryQueryResult(page, availableTypes, filtered.Count);
     }
+
+    /// <summary>
+    /// A null or empty <paramref name="types"/> restriction wants every source; otherwise only the listed
+    /// type tokens are collected, and the other sources are skipped rather than fetched and dropped.
+    /// </summary>
+    private static bool Wants(IReadOnlyList<string>? types, string typeToken) =>
+        types is null || types.Count == 0 || types.Contains(typeToken, StringComparer.Ordinal);
 
     /// <summary>
     /// Ensures every distinct type present in <paramref name="sorted"/> has at least one item in
@@ -145,11 +152,12 @@ public sealed class InventoryQueryService : IInventoryQueryService
         List<InventoryItemDto> items,
         OperatorCapabilitiesDto caps,
         InventoryContextFilter context,
+        IReadOnlyList<string>? types,
         CancellationToken cancellationToken)
     {
         // Modules are always System-classified: under a real-context filter, no Module can ever match,
         // so the source is skipped entirely rather than fetched and filtered away in memory.
-        if (caps.CanManageModules && context.Kind != InventoryContextFilterKind.Context)
+        if (caps.CanManageModules && context.Kind != InventoryContextFilterKind.Context && Wants(types, InventoryTypeTokens.Module))
         {
             await TryCollectAsync(
                 items,
@@ -163,7 +171,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
 
         // Integrations/Connections/Schedules are never System-classified: under the System filter, none
         // of them can ever match, so the source is skipped rather than fetched and filtered away.
-        if (caps.CanViewIntegrations && context.Kind != InventoryContextFilterKind.System)
+        if (caps.CanViewIntegrations && context.Kind != InventoryContextFilterKind.System && Wants(types, InventoryTypeTokens.Integration))
         {
             await TryCollectAsync(
                 items,
@@ -180,7 +188,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanViewConnections && context.Kind != InventoryContextFilterKind.System)
+        if (caps.CanViewConnections && context.Kind != InventoryContextFilterKind.System && Wants(types, InventoryTypeTokens.Connection))
         {
             await TryCollectAsync(
                 items,
@@ -194,7 +202,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanManageSchedules && context.Kind != InventoryContextFilterKind.System)
+        if (caps.CanManageSchedules && context.Kind != InventoryContextFilterKind.System && Wants(types, InventoryTypeTokens.Schedule))
         {
             await TryCollectAsync(
                 items,
@@ -208,7 +216,7 @@ public sealed class InventoryQueryService : IInventoryQueryService
                 }).ConfigureAwait(false);
         }
 
-        if (caps.CanViewNotificationDefinitions)
+        if (caps.CanViewNotificationDefinitions && Wants(types, InventoryTypeTokens.NotificationDefinition))
         {
             await TryCollectAsync(
                 items,

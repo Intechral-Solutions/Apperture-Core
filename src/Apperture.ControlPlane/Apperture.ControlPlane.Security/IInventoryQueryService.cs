@@ -47,7 +47,8 @@ public sealed record InventoryQuery(
     string? Status = null,
     string? Sort = null,
     int Take = 100,
-    InventoryContextFilter? Context = null);
+    InventoryContextFilter? Context = null,
+    IReadOnlyList<string>? Types = null);
 
 public sealed record InventoryItemDto(
     string Id,
@@ -64,7 +65,8 @@ public sealed record InventoryItemDto(
 
 public sealed record InventoryQueryResult(
     IReadOnlyList<InventoryItemDto> Items,
-    IReadOnlyList<string> AvailableTypes);
+    IReadOnlyList<string> AvailableTypes,
+    int TotalMatching = 0);
 
 /// <summary>Context classification tokens surfaced on <see cref="InventoryItemDto.ResourceContextClassification"/> (design gate §5.5).</summary>
 public static class InventoryContextClassifications

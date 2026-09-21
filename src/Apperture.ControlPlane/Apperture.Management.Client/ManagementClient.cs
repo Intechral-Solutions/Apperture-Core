@@ -1410,6 +1410,23 @@ public sealed class ManagementClient : IManagementClient
         return result ?? new Dictionary<string, ResourceContextOwnershipSummaryDto>();
     }
 
+    public async Task<ResourceContextResourcesResult> GetResourceContextResourcesAsync(
+        string resourceContextId,
+        string? type = null,
+        string? q = null,
+        CancellationToken cancellationToken = default)
+    {
+        var pairs = new List<string>();
+        Add(pairs, "type", type);
+        Add(pairs, "q", q);
+        var query = pairs.Count == 0 ? "" : "?" + string.Join("&", pairs);
+        var result = await _http.GetFromJsonAsync<ResourceContextResourcesResult>(
+            $"resource-contexts/{Uri.EscapeDataString(resourceContextId)}/resources{query}",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+        return result ?? new ResourceContextResourcesResult([], 0);
+    }
+
     private static readonly string[] OwnershipSummaryFieldNames =
     [
         "liveIntegrations", "retiredIntegrations", "activeConnections",
