@@ -615,37 +615,205 @@ details.text-muted[open] > summary {
   pointer-events: none;
 }
 
-/* --- Toast layer (uses the shared z token, not a local arbitrary value) --- */
+/* --- Toast stack ---
+ * A bottom-centred, upward-growing stack of floating placards (uses the shared z token).
+ *
+ *   .ui-toast-layer   fixed to the bottom edge, click-through, owns the safe-area bottom inset
+ *   .ui-toast-stack   viewport-wide scroll container: capped height, vertical scroll, bottom-anchored.
+ *                     Deliberately as wide as the viewport so a swiped placard is never clipped by an
+ *                     invisible wall; the scrollbar is hidden and a fade signals older toasts above.
+ *   .ui-toast-slot    one row (centred, width-bounded); collapses smoothly when its toast leaves
+ *   .ui-toast         the placard itself; drag, snap-back and exit are driven by custom properties
+ *                     set by js/toast-host.js (--toast-dx, --toast-opacity) so Blazor never renders them
+ *
+ * Timing: removal is timer-driven by ToastPolicy.ExitDuration, which must equal --ui-toast-exit-duration.
+ */
+
+:root {
+  --ui-toast-enter-duration: 220ms;
+  --ui-toast-exit-duration: 300ms;
+  --ui-toast-margin: 1rem;
+  --ui-toast-bottom: 1rem;
+  --ui-toast-width: clamp(28rem, 50vw, 42rem);
+  --ui-toast-max-height: min(36vh, 24rem);
+  --ui-toast-shadow:
+    0 10px 24px -14px color-mix(in oklch, var(--color-text-heading) 45%, transparent),
+    0 1px 2px color-mix(in oklch, var(--color-text-heading) 12%, transparent);
+}
 
 .ui-toast-layer {
   position: fixed;
-  top: 5rem;
-  inset-inline-end: 1rem;
+  inset-inline: 0;
+  bottom: 0;
   z-index: var(--z-toast);
   display: flex;
-  max-width: 24rem;
-  flex-direction: column;
-  gap: 0.5rem;
+  padding-bottom: calc(var(--ui-toast-bottom) + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 
-.ui-toast-region {
+.ui-toast-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  width: 100%;
+  max-height: var(--ui-toast-max-height);
+  padding-inline:
+    max(var(--ui-toast-margin), env(safe-area-inset-left, 0px))
+    max(var(--ui-toast-margin), env(safe-area-inset-right, 0px));
+  overflow-y: auto;
+  /* Contain scroll: chaining would only reach the viewport, where it triggers pull-to-refresh / rubber-banding on touch. */
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+@supports (height: 1dvh) {
+  .ui-toast-stack {
+    --ui-toast-max-height: min(36dvh, 24rem);
+  }
+}
+
+.ui-toast-stack::-webkit-scrollbar {
+  display: none;
+}
+
+/* Older toasts above / newer below the visible window fade out (set by js/toast-host.js). */
+.ui-toast-stack[data-fade-top] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 1.5rem);
+  mask-image: linear-gradient(to bottom, transparent 0, black 1.5rem);
+}
+
+.ui-toast-stack[data-fade-bottom] {
+  -webkit-mask-image: linear-gradient(to top, transparent 0, black 1.5rem);
+  mask-image: linear-gradient(to top, transparent 0, black 1.5rem);
+}
+
+.ui-toast-stack[data-fade-top][data-fade-bottom] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+}
+
+.ui-toast-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex: none;
+  width: min(var(--ui-toast-width), 100%);
+  margin-inline: auto;
+  pointer-events: auto;
+  /* Collapse starts a beat after the fade so the placard leads and the stack follows. */
+  transition: grid-template-rows calc(var(--ui-toast-exit-duration) - 80ms) var(--interaction-easing) 80ms;
+}
+
+/* Bottom-anchored: extra height is taken above the first toast, and this is safe when the stack overflows. */
+.ui-toast-slot:first-child {
+  margin-top: auto;
+}
+
+/* overflow-x stays visible so a dragged placard can leave its column; only the vertical collapse clips. */
+.ui-toast-slot__inner {
+  min-height: 0;
+  overflow-y: clip;
+}
+
+.ui-toast-slot[data-phase="exiting"] {
+  grid-template-rows: 0fr;
+  pointer-events: none;
+}
+
+.ui-toast-slot--enter {
+  animation: ui-toast-slot-in var(--ui-toast-enter-duration) var(--interaction-easing) backwards;
 }
 
 .ui-toast {
+  --ui-toast-accent: var(--color-border-strong);
   display: flex;
-  gap: 0.5rem;
-  border-radius: var(--r-md);
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-bottom: 0.5rem;
+  padding: 0.625rem 0.375rem 0.625rem 0.75rem;
   border: 1px solid var(--color-border);
-  background: var(--color-surface-elevated);
-  box-shadow: var(--shadow-card);
-  padding: 0.625rem 0.75rem;
+  border-inline-start: 4px solid var(--ui-toast-accent);
+  border-radius: var(--r-md);
+  /* Slightly translucent, never low-contrast: readability does not depend on the blur. */
+  background: color-mix(in srgb, var(--color-surface-elevated) 94%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--ui-toast-shadow);
   font-size: 13.5px;
+  line-height: 1.4;
   color: var(--color-text-body);
-  pointer-events: auto;
+  /* Vertical panning stays native (scrolls the stack); horizontal drags reach the pointer handlers. */
+  touch-action: pan-y;
+  translate: var(--toast-dx, 0px) 0;
+  opacity: var(--toast-opacity, 1);
+  transition:
+    translate var(--interaction-duration) var(--interaction-easing),
+    opacity var(--interaction-duration) var(--interaction-easing),
+    transform var(--ui-toast-exit-duration) var(--interaction-easing);
+}
+
+.ui-toast[data-dragging] {
+  transition: none;
+  cursor: grabbing;
+  user-select: none;
+}
+
+.ui-toast--enter {
+  animation: ui-toast-in var(--ui-toast-enter-duration) var(--interaction-easing) backwards;
+}
+
+.ui-toast[data-severity="success"] {
+  --ui-toast-accent: var(--color-success);
+}
+
+.ui-toast[data-severity="info"] {
+  --ui-toast-accent: var(--color-toast-info-accent);
+}
+
+.ui-toast[data-severity="warning"] {
+  --ui-toast-accent: var(--color-warning);
+}
+
+.ui-toast[data-severity="error"] {
+  --ui-toast-accent: var(--color-error);
+}
+
+/* Exit: auto-dismiss and the close button fade and drift up; a swipe keeps going the way it was dragged. */
+.ui-toast-slot[data-phase="exiting"] .ui-toast {
+  opacity: 0;
+  transition-duration: var(--ui-toast-exit-duration);
+}
+
+.ui-toast-slot[data-phase="exiting"][data-exit="fade"] .ui-toast {
+  transform: translateY(-0.5rem);
+}
+
+.ui-toast-slot[data-phase="exiting"][data-exit="left"] .ui-toast {
+  translate: -110% 0;
+}
+
+.ui-toast-slot[data-phase="exiting"][data-exit="right"] .ui-toast {
+  translate: 110% 0;
+}
+
+.ui-toast__icon {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.0625rem;
+  color: var(--ui-toast-accent);
+}
+
+.ui-toast__icon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ui-toast__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-block: 0.0625rem;
+  overflow-wrap: anywhere;
 }
 
 .ui-toast__title {
@@ -654,18 +822,90 @@ details.text-muted[open] > summary {
 }
 
 .ui-toast__dismiss {
-  flex-shrink: 0;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  margin-block: -0.25rem;
   border: 0;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  font-size: 1.125rem;
 }
 
 .ui-toast__dismiss:hover {
+  background: color-mix(in srgb, var(--color-text-heading) 8%, transparent);
   color: var(--color-text-heading);
+}
+
+.ui-toast__dismiss:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.ui-toast__dismiss svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (pointer: coarse) {
+  .ui-toast__dismiss {
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-block: -0.75rem;
+  }
+}
+
+/* Screen-reader-only text: live announcements and the severity word. */
+.ui-toast-live,
+.ui-toast__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+}
+
+@keyframes ui-toast-slot-in {
+  from {
+    grid-template-rows: 0fr;
+  }
+}
+
+@media (max-width: 40rem) {
+  :root {
+    --ui-toast-width: 100%;
+    --ui-toast-margin: 0.5rem;
+    --ui-toast-bottom: 0.5rem;
+  }
+}
+
+/* Reduced motion: no slide, no fade choreography, no snap-back animation. Dragging still follows the
+   pointer (direct manipulation) and every control keeps working; a leaving toast simply disappears. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast,
+  .ui-toast-slot {
+    animation: none;
+    transition: none;
+  }
+
+  .ui-toast-slot[data-phase="exiting"] {
+    display: none;
+  }
 }
 
 /* Modal owns scroll; body is outside the Blazor render root. */

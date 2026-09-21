@@ -281,7 +281,7 @@ public sealed class Uix6InteractionSystemTests
         content.Should().Contain("ui-toast-layer");
         content.Should().Contain("aria-live=\"assertive\"");
         content.Should().Contain("aria-live=\"polite\"");
-        content.Should().Contain("aria-label=\"Dismiss\"");
+        content.Should().Contain("aria-label=\"Dismiss notification\"");
         content.Should().NotContain("z-[100]");
     }
 

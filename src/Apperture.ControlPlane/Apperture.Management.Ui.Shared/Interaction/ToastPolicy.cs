@@ -22,9 +22,47 @@ public static class ToastPolicy
         return severity == ToastSeverity.Error ? null : DefaultDuration;
     }
 
+    /// <summary>
+    /// How long a leaving toast stays in the stack so its exit animation can play before it is removed.
+    /// Must equal <c>--ui-toast-exit-duration</c> in <c>management-ui-primitives.css</c> (guarded by a test);
+    /// removal is driven by this timer, never by animation events, so it cannot race the animation.
+    /// </summary>
+    public static readonly TimeSpan ExitDuration = TimeSpan.FromMilliseconds(300);
+
+    /// <summary>
+    /// Safety bound on toasts held in memory. Viewport height clips and scrolls the stack; this is a
+    /// separate, generous ceiling that only a runaway caller reaches. When exceeded the oldest
+    /// auto-dismissing toast is evicted first, and persistent (error) toasts are evicted last.
+    /// </summary>
+    public const int MaxToasts = 100;
+
+    /// <summary>How long a screen-reader announcement stays in the live region before it is cleared.</summary>
+    public static readonly TimeSpan AnnouncementLifetime = TimeSpan.FromSeconds(5);
+
     /// <summary>Errors are announced assertively; everything else politely.</summary>
     public static string ResolveAriaLive(ToastSeverity severity) =>
         severity == ToastSeverity.Error ? "assertive" : "polite";
+
+    /// <summary>Text cue for severity, so colour and icon are never the only signal.</summary>
+    public static string ResolveSeverityLabel(ToastSeverity severity) => severity switch
+    {
+        ToastSeverity.Success => "Success",
+        ToastSeverity.Info => "Information",
+        ToastSeverity.Warning => "Warning",
+        ToastSeverity.Error => "Error",
+        _ => "Notice"
+    };
+
+    /// <summary>The single string a screen reader hears when a toast appears.</summary>
+    public static string BuildAnnouncement(ToastSeverity severity, string message, string? title)
+    {
+        var label = ResolveSeverityLabel(severity);
+        var heading = title?.Trim();
+        var body = message?.Trim() ?? "";
+        return string.IsNullOrEmpty(heading)
+            ? $"{label}: {body}"
+            : $"{label}: {heading}. {body}";
+    }
 
     /// <summary>
     /// Identity used to suppress duplicate announcements. Repeating the same outcome

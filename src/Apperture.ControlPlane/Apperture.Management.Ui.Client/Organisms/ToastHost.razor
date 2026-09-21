@@ -1,69 +1,250 @@
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
-@implements IDisposable
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
 @inject IToastService Toasts
+@inject IJSRuntime Js
 
 @*
-    UIX-6 — transient outcome feedback.
-    Two live regions: errors are announced assertively and persist until dismissed;
-    everything else is polite and auto-dismisses (ToastPolicy).
+    Transient outcome feedback — one bottom-centred, upward-growing stack.
+    Presentation only: lifecycle (timers, pause/resume, exit, bounds) lives in ToastService and
+    gesture/hover/scroll behaviour in wwwroot/js/toast-host.js. Callers just use IToastService.Show.
+
+    Announcements: toasts are not live regions themselves. Each new toast is announced once, through a
+    persistent polite region (errors: assertive), so re-renders, reordering and removal stay silent.
+    The announcement is cleared after a few seconds; the visible toast remains reachable and dismissible.
 *@
 <div class="ui-toast-layer print:hidden">
-    <div class="ui-toast-region" aria-live="assertive" role="alert">
-        @foreach (var t in _snapshot.Where(t => t.Severity == ToastSeverity.Error))
-        {
-            @RenderToast(t)
-        }
+    <div class="ui-toast-live">
+        <div role="status" aria-live="polite" aria-atomic="false">
+            @foreach (var a in _announcements.Where(a => !a.Assertive))
+            {
+                <p @key="a.Id">@a.Text</p>
+            }
+        </div>
+        <div role="alert" aria-live="assertive" aria-atomic="false">
+            @foreach (var a in _announcements.Where(a => a.Assertive))
+            {
+                <p @key="a.Id">@a.Text</p>
+            }
+        </div>
     </div>
-    <div class="ui-toast-region" aria-live="polite">
-        @foreach (var t in _snapshot.Where(t => t.Severity != ToastSeverity.Error))
+
+    <section class="ui-toast-stack" aria-label="Notifications" @ref="_stack">
+        @foreach (var t in _snapshot)
         {
-            @RenderToast(t)
+            var fresh = IsFresh(t);
+            <div @key="t.Id"
+                 class="@(fresh ? "ui-toast-slot ui-toast-slot--enter" : "ui-toast-slot")"
+                 data-phase="@(t.Phase == ToastPhase.Exiting ? "exiting" : "visible")"
+                 data-exit="@ExitName(t.Exit)">
+                <div class="ui-toast-slot__inner">
+                    <div class="@(fresh ? "ui-toast ui-toast--enter" : "ui-toast")"
+                         data-severity="@SeverityName(t.Severity)"
+                         data-toast-id="@t.Id">
+                        <span class="ui-toast__icon" aria-hidden="true">@SeverityIcon(t.Severity)</span>
+                        <div class="ui-toast__body">
+                            <span class="ui-toast__sr-only">@ToastPolicy.ResolveSeverityLabel(t.Severity): </span>
+                            @if (!string.IsNullOrEmpty(t.Title))
+                            {
+                                <div class="ui-toast__title">@t.Title</div>
+                            }
+                            <div>@t.Message</div>
+                        </div>
+                        <button type="button"
+                                class="ui-toast__dismiss"
+                                aria-label="Dismiss notification"
+                                @onclick="() => Toasts.Dismiss(t.Id)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M6 6l12 12M18 6L6 18" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
         }
-    </div>
+    </section>
 </div>
 
 @code {
+    /// <summary>A toast younger than this plays its enter animation when rendered; older ones (e.g. after a layout swap) do not replay it.</summary>
+    private static readonly TimeSpan EnterWindow = TimeSpan.FromMilliseconds(500);
+
+    private sealed record Announcement(Guid Id, bool Assertive, string Text);
+
+    private readonly List<Announcement> _announcements = new();
+    private readonly HashSet<Guid> _announced = new();
+    private readonly CancellationTokenSource _lifetime = new();
+
     private ToastItem[] _snapshot = Array.Empty<ToastItem>();
+    private ElementReference _stack;
+    private DotNetObjectReference<ToastHost>? _self;
+    private bool _attached;
+    private bool _disposed;
 
-    private RenderFragment RenderToast(ToastItem t) =>
-        @<div class="@ToastClass(t.Severity) ui-toast">
-            <div class="min-w-0 flex-1">
-                @if (!string.IsNullOrEmpty(t.Title))
-                {
-                    <div class="ui-toast__title">@t.Title</div>
-                }
-                <div>@t.Message</div>
-            </div>
-            <button type="button"
-                    class="ui-toast__dismiss"
-                    aria-label="Dismiss"
-                    @onclick="() => Toasts.Dismiss(t.Id)">
-                ×
-            </button>
-        </div>;
-
-    protected override void OnInitialized() => Toasts.Changed += OnToastsChanged;
-
-    protected override void OnParametersSet()
+    protected override void OnInitialized()
     {
-        _snapshot = Toasts.Toasts.ToArray();
+        Toasts.Changed += OnToastsChanged;
+        Reconcile();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _disposed)
+            return;
+
+        _self = DotNetObjectReference.Create(this);
+        try
+        {
+            await Js.InvokeVoidAsync("appertureToast.attach", _stack, _self);
+            _attached = true;
+        }
+        catch (JSException) { /* script unavailable: toasts still show, time out and can be closed */ }
+        catch (InvalidOperationException) { /* renderer disposed */ }
+        catch (TaskCanceledException) { /* torn down */ }
+    }
+
+    /// <summary>Pause or resume the stack's countdowns (pointer over the stack, focus inside, drag, scroll, hidden tab).</summary>
+    [JSInvokable]
+    public void SetHold(string source, bool active)
+    {
+        if (Enum.TryParse<ToastHold>(source, ignoreCase: true, out var hold) && hold != ToastHold.None)
+            Toasts.SetHold(hold, active);
+    }
+
+    /// <summary>A horizontal swipe crossed the dismissal threshold.</summary>
+    [JSInvokable]
+    public void Swipe(string id, string direction)
+    {
+        if (Guid.TryParse(id, out var toastId))
+            Toasts.Dismiss(toastId, direction == "left" ? ToastExit.SwipeLeft : ToastExit.SwipeRight);
     }
 
     private void OnToastsChanged()
     {
-        _snapshot = Toasts.Toasts.ToArray();
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed)
+            return;
+
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed)
+                return;
+
+            Reconcile();
+            StateHasChanged();
+        });
     }
 
-    private static string ToastClass(ToastSeverity s) => s switch
+    private void Reconcile()
     {
-        ToastSeverity.Success => "toast-strip-success",
-        ToastSeverity.Info => "toast-strip-info",
-        ToastSeverity.Warning => "toast-strip-warning",
-        ToastSeverity.Error => "toast-strip-error",
-        _ => "toast-strip-neutral"
+        _snapshot = Toasts.Toasts.ToArray();
+
+        var live = _snapshot.Select(t => t.Id).ToHashSet();
+        _announced.RemoveWhere(id => !live.Contains(id));
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var t in _snapshot)
+        {
+            // Announce each toast once. One older than the announcement window was already announced
+            // (e.g. by the previous host instance before a layout swap), so it stays silent.
+            if (t.Phase != ToastPhase.Visible || !_announced.Add(t.Id))
+                continue;
+            if (now - t.CreatedAt > ToastPolicy.AnnouncementLifetime)
+                continue;
+
+            var announcement = new Announcement(
+                t.Id,
+                ToastPolicy.ResolveAriaLive(t.Severity) == "assertive",
+                ToastPolicy.BuildAnnouncement(t.Severity, t.Message, t.Title));
+            _announcements.Add(announcement);
+            _ = ExpireAnnouncementAsync(announcement.Id);
+        }
+    }
+
+    private async Task ExpireAnnouncementAsync(Guid id)
+    {
+        try
+        {
+            await Task.Delay(ToastPolicy.AnnouncementLifetime, _lifetime.Token);
+            await InvokeAsync(() =>
+            {
+                if (!_disposed && _announcements.RemoveAll(a => a.Id == id) > 0)
+                    StateHasChanged();
+            });
+        }
+        catch (OperationCanceledException) { /* host disposed */ }
+        catch (ObjectDisposedException) { /* renderer disposed */ }
+    }
+
+    private static bool IsFresh(ToastItem t) =>
+        t.Phase == ToastPhase.Visible && DateTimeOffset.UtcNow - t.CreatedAt < EnterWindow;
+
+    private static string SeverityName(ToastSeverity s) => s switch
+    {
+        ToastSeverity.Success => "success",
+        ToastSeverity.Info => "info",
+        ToastSeverity.Warning => "warning",
+        ToastSeverity.Error => "error",
+        _ => "neutral"
     };
 
-    public void Dispose() => Toasts.Changed -= OnToastsChanged;
+    private static string ExitName(ToastExit e) => e switch
+    {
+        ToastExit.SwipeLeft => "left",
+        ToastExit.SwipeRight => "right",
+        _ => "fade"
+    };
+
+    // Distinct silhouettes (check, info, triangle, octagon-x) so severity never rests on colour alone.
+    private static RenderFragment SeverityIcon(ToastSeverity s) => builder =>
+    {
+        var paths = s switch
+        {
+            ToastSeverity.Success => "M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3",
+            ToastSeverity.Warning => "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01",
+            ToastSeverity.Error => "M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86zM15 9l-6 6M9 9l6 6",
+            _ => "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01"
+        };
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", "0 0 24 24");
+        builder.AddAttribute(2, "fill", "none");
+        builder.AddAttribute(3, "stroke", "currentColor");
+        builder.AddAttribute(4, "stroke-width", "2");
+        builder.AddAttribute(5, "stroke-linecap", "round");
+        builder.AddAttribute(6, "stroke-linejoin", "round");
+        builder.OpenElement(7, "path");
+        builder.AddAttribute(8, "d", paths);
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        Toasts.Changed -= OnToastsChanged;
+        _lifetime.Cancel();
+
+        if (_attached)
+        {
+            try
+            {
+                await Js.InvokeVoidAsync("appertureToast.detach", _stack);
+            }
+            catch (JSException) { /* page unloading */ }
+            catch (InvalidOperationException) { /* renderer disposed */ }
+            catch (TaskCanceledException) { /* torn down */ }
+        }
+
+        // The element that would have reported the release is going away; do not leave the stack paused.
+        foreach (var hold in new[] { ToastHold.Pointer, ToastHold.Focus, ToastHold.Drag, ToastHold.Scroll })
+            Toasts.SetHold(hold, false);
+
+        _self?.Dispose();
+        _lifetime.Dispose();
+    }
 }
