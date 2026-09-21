@@ -52,6 +52,42 @@ public sealed class ApplicationResourcesUiSourceTests
     }
 
     [Fact]
+    public void Resources_KeepsControlsMountedThroughReloads_SoKeyboardFocusIsNotLost()
+    {
+        var content = ReadRepoFile(Pages + "ApplicationResources.razor");
+
+        Regex.IsMatch(content, @"ShowControls\s*=>\s*_hasLoaded\s*&&\s*_controlsShown\s*;").Should().BeTrue(
+            "the controls depend on a latch set when a load completes, never on the previous result while the next load is in flight");
+        content.Should().Contain("_controlsShown = ");
+    }
+
+    [Fact]
+    public void Resources_DebouncesSearchByLoadingOnlyTheAppliedQuery()
+    {
+        var content = ReadRepoFile(Pages + "ApplicationResources.razor");
+
+        content.Should().Contain("private string LoadKey => $\"{ContextId}|{EffectiveType}|{_appliedQuery.Trim()}\"",
+            "a parent re-render during the debounce window must not start an early load with the half-typed text");
+    }
+
+    [Fact]
+    public void Resources_KeepsOnePersistentStatusRegion_ForResultAnnouncements()
+    {
+        var content = ReadRepoFile(Pages + "ApplicationResources.razor");
+
+        Regex.Matches(content, "role=\"status\"").Count.Should().Be(1);
+        content.Should().Contain("@StatusText");
+    }
+
+    [Fact]
+    public void ApplicationDetail_ResetsTheResourceTypeFilter_WhenTheApplicationChanges()
+    {
+        var content = ReadRepoFile(Pages + "ApplicationDetail.razor");
+
+        content.Should().Contain("_resourcesType = null;");
+    }
+
+    [Fact]
     public void Resources_OffersNoCreateOrGenericOperationAffordances()
     {
         var content = ReadRepoFile(Pages + "ApplicationResources.razor");

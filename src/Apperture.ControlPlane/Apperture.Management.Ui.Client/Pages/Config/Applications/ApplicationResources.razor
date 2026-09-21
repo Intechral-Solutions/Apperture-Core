@@ -29,7 +29,7 @@ else
                        type="search"
                        class="ui-input"
                        autocomplete="off"
-                       placeholder="Name"
+                       placeholder="Name or type"
                        value="@_query"
                        @oninput="OnSearchInputAsync" />
             </div>
@@ -46,6 +46,8 @@ else
                 </div>
             }
         </div>
+        @* One persistent live region: it stays mounted so screen readers announce its text changes. *@
+        <p class="@StatusClass" role="status">@StatusText</p>
     }
 
     @if (!string.IsNullOrEmpty(_error))
@@ -60,7 +62,7 @@ else
     }
     else if (_result.Items.Count == 0)
     {
-        @if (ApplicationResourcesPresentation.IsFiltered(_query, EffectiveType))
+        @if (ApplicationResourcesPresentation.IsFiltered(_appliedQuery, EffectiveType))
         {
             <EmptyState Title="No matching resources" Message="No resources match the current search or type filter.">
                 <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
@@ -73,7 +75,6 @@ else
     }
     else
     {
-        <p class="mt-3 text-xs text-muted" role="status">@ApplicationResourcesPresentation.ResultsSummary(_result.Items.Count, _result.TotalMatching)</p>
         <div class="ui-data-table overflow-x-auto">
             <table class="ui-data-table__table min-w-full text-left text-body">
                 <caption class="sr-only">Resources that belong to @OwnerLabel</caption>
@@ -134,18 +135,30 @@ else
     private bool _hasLoaded;
     private string? _error;
     private ResourceContextResourcesResult _result = new([], 0);
+    private bool _controlsShown;
     private string _query = "";
+    private string _appliedQuery = "";
     private int _requestSequence;
     private CancellationTokenSource? _searchDelay;
 
     private string? EffectiveType => ApplicationResourcesPresentation.NormalizeType(TypeFilter, _typeOptions);
 
-    private string LoadKey => $"{ContextId}|{EffectiveType}|{_query.Trim()}";
+    // The typed text (_query) is only committed to _appliedQuery when the debounce fires, so nothing else
+    // that re-renders this component can start a load with half-typed text.
+    private string LoadKey => $"{ContextId}|{EffectiveType}|{_appliedQuery.Trim()}";
 
-    // The controls stay mounted through reloads (so typing keeps focus) but are pointless until we know
-    // there is something to search, unless a filter is already narrowing an otherwise non-empty set.
-    private bool ShowControls =>
-        _hasLoaded && (_result.TotalMatching > 0 || ApplicationResourcesPresentation.IsFiltered(_query, EffectiveType));
+    // Controls are pointless until there is something to search (or a filter is narrowing a non-empty
+    // set). That is decided once per COMPLETED load and latched, so they stay mounted while the next load
+    // is in flight -- unmounting them would drop keyboard focus from the input or the type control.
+    private bool ShowControls => _hasLoaded && _controlsShown;
+
+    private string StatusText =>
+        _loading || !string.IsNullOrEmpty(_error) ? ""
+        : _result.Items.Count > 0 ? ApplicationResourcesPresentation.ResultsSummary(_result.Items.Count, _result.TotalMatching)
+        : ApplicationResourcesPresentation.IsFiltered(_appliedQuery, EffectiveType) ? "No matching resources."
+        : "";
+
+    private string StatusClass => _result.Items.Count > 0 && !_loading ? "mt-3 text-xs text-muted" : "sr-only";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -182,6 +195,8 @@ else
     {
         // Latest request wins: a slower earlier response must never overwrite a newer one.
         var sequence = ++_requestSequence;
+        var type = EffectiveType;
+        var query = _appliedQuery.Trim();
         _loading = true;
         _error = null;
         StateHasChanged();
@@ -190,12 +205,13 @@ else
         {
             var result = await Client.GetResourceContextResourcesAsync(
                 ContextId,
-                EffectiveType,
-                string.IsNullOrWhiteSpace(_query) ? null : _query.Trim());
+                type,
+                query.Length == 0 ? null : query);
             if (sequence != _requestSequence)
                 return;
             _result = result;
             _hasLoaded = true;
+            _controlsShown = result.TotalMatching > 0 || ApplicationResourcesPresentation.IsFiltered(query, type);
             _loading = false;
         }
         catch (Exception ex)
@@ -223,6 +239,7 @@ else
             return;
         }
 
+        _appliedQuery = _query;
         if (_gate.TryBegin(LoadKey))
             await LoadAsync();
     }
@@ -250,6 +267,7 @@ else
     {
         _searchDelay?.Cancel();
         _query = "";
+        _appliedQuery = "";
         await SetTypeAsync(null);
     }
 

@@ -85,6 +85,11 @@ than its count; the state pill explains the difference.
 - **Unlabelled live counts.** The overview and Applications list show live/active/enabled counts without saying
   so. Left as-is to keep the two pages consistent.
 - **Inventory status filter is substring-based** (see §4). Reported, not changed.
+- **Superseded requests are ignored, not cancelled.** A slower earlier search response never overwrites a newer
+  one, but its server-side work still completes. Bounded by one Context's own resources; accepted for v1.
+- **Overview count links use an in-page `#application-resources` anchor**, the first hash-only link in the
+  app. Whether Blazor scrolls to the fragment is verified only by the browser smoke.
+- **`SegmentedControl` arrow keys select but do not move focus** (existing behavior, not changed here).
 - **Inventory hrefs are unescaped** (`/integrations/{id}`), as elsewhere; resource ids are not user text.
 
 ## 7. Validation and smoke

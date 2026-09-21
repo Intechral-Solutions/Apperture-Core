@@ -254,6 +254,7 @@
         _error = null;
         _archiveBlocker = null;
         _archiveError = null;
+        _resourcesType = null;
         StateHasChanged();
 
         try
@@ -322,7 +323,7 @@
                     }
                     if (count.HasResources)
                     {
-                        <a class="ui-link" href="#application-resources" @onclick="() => ShowResources(count.Type)">@count.Label</a>
+                        <a class="ui-link" href="#application-resources" title="Show these in the Resources list below" @onclick="() => ShowResources(count.Type)">@count.Label</a>
                     }
                     else
                     {
