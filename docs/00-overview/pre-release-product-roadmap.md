@@ -43,19 +43,22 @@ reset, cutting across several of them.
      canonicalize to the slug, the API and localStorage keep the canonical id, no alias history. See
      [`ADR-0041`](../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status).
      Not a system-wide id migration.
-   - **1D** Application Resource Explorer (**HSK-D**, not started) — carry-in from HSK-C smoke: Application
-     detail shows only resource *counts*; its links to the scoped lists appear solely inside the
-     archive-blocked warning. The always-visible Resources section that
+   - **1D** Application Resource Explorer (**HSK-D**) — **implemented (2026-09-21); operator browser smoke
+     pending.** Carry-in from HSK-C smoke: Application detail showed only resource *counts*, with links to
+     the scoped lists solely inside the archive-blocked warning. The always-visible Resources section that
      [CTX-3 design gate §6.4](../01-architecture/transitions/resource-contexts/ctx3-design-gate.md) intended
-     never shipped, and HSK-D supersedes/completes that intent (the historical gate is not rewritten).
-     Intended surface: an Application-scoped explorer over Integrations, Connections and Schedules with
-     search, resource-type filtering, direct links, human-readable names, appropriate state/status
-     presentation, and archived-Application support. Shared resources merely *referenced* by
-     Application-owned resources are not owned resources and stay out of the primary list. HSK-D should
-     investigate whether Config Inventory / resource-read infrastructure is worth reusing, extracting or
-     adapting, but must not be required to depend on it if direct composition is cleaner. Also carried
-     forward: many Resources are manifestations of, or are enabled/enhanced by, Components, but there is
-     **no approved one-to-one Component→Resource invariant** and HSK-D must not introduce one (see the
+     never shipped; HSK-D **supersedes/completes that intent** (the historical gate is not rewritten).
+     Delivered: an always-visible Resources section on Application detail listing the Integrations,
+     Connections and Schedules the Application currently **owns** (every state, archived Applications
+     included), with one debounced search, a resource-type filter, human-readable names, direct links, each
+     family's own state, and overview counts that link into the list. Shared resources merely *referenced* by
+     Application-owned resources are not owned and are not listed. It reuses Config Inventory's normalized
+     resource read model behind its own endpoint; it is not Config Inventory and does not embed it. State
+     filtering is deferred (family lifecycles differ). Details, semantics and findings:
+     [`hsk-d-application-resources.md`](../01-architecture/transitions/resource-contexts/hsk-d-application-resources.md).
+     Also carried forward: many Resources are manifestations of, or are enabled/enhanced by, Components, but
+     there is **no approved one-to-one Component→Resource invariant** and HSK-D introduced none (evidence
+     recorded in the
      [Components/Services/Catalog planning note](../01-architecture/transitions/components-services-catalog/README.md)).
 2. **Toast UX foundation** — presentation rewrite of the existing, already well-centralized toast system
    (placement, responsive width, stacking, gestures, accessibility). No call-site changes.

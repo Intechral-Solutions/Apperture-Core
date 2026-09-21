@@ -139,6 +139,45 @@ Initial design hypothesis (subject to the Services design gate, not final):
 - If a future concrete requirement demands independent Service lifecycle, identity, or permissions, *that*
   is the forcing function for giving Service its own persisted table — not a default assumption now.
 
+## Components and Resources (hypothesis, with HSK-D evidence)
+
+**Approved hypothesis (not a ruling that fixes a schema):** many operational Resources are concrete
+manifestations of, or are enabled/enhanced by, Components. This is not a one-to-one invariant. Components may
+produce, enable, or enhance Resources; some Components may have no persisted Resource, and some Resources may
+have no direct originating Component. **No universal Component-to-Resource foreign key or generic
+resource-operation framework is approved** — no `Resource.ComponentId`, no `IComponentResource`, no
+`Capabilities[]`/`Actions[]` framework, no generic Move/Delete/Retire command surface. HSK-D contributes
+evidence; the Components design gate will formalize the relationship.
+
+Evidence gathered while building the Application Resources surface (2026-09-21), from code as it stands:
+
+- **Connection — the strongest relationship.** A Connection carries a `ConnectorDefinitionId` and creation is
+  validated against a `ConnectorDefinition` from `IConnectorDefinitionRegistry` (platform- or module-provided,
+  with `ConnectionFields` authoring metadata and optional `ModuleId`). The Connection itself holds only the
+  instance data (`Config`, `SecretRefs`, state, ownership). It is reasonably described as a *configured
+  manifestation of a Connector capability* — the clearest candidate for "a Component produces a Resource".
+- **Integration — an instance of a Module, not of a Component.** An Integration carries a `ModuleId` and is
+  documented as an "operator-facing configured instance of a module"; it owns settings and Bindings. It
+  *consumes* connector capability indirectly: a `Binding` fills a Module-declared slot with a Connection (or a
+  `CapabilityId`), checked for connector/contract compatibility by `BindingEligibilityService`. Nothing catalog-like
+  is instantiated by an Integration today; whether the Module's integration surface becomes a Component is a
+  design-gate question. Here the relationship looks like "enabled/enhanced by", not "instance of".
+- **Schedule — subordinate operational configuration.** A Schedule has recurrence/time zone and a
+  `ScheduledTarget` (`ScheduledJobType`: workflow execution, module operation, connector sync/polling, and
+  others), an optional `IntegrationId` (standalone Schedules are legal), and its own direct
+  `ResourceContextId` (an Integration-attached Schedule must match its Integration's Context). No Component
+  origin exists; it configures *when* something runs. The most likely outcome is "Resource with no direct
+  originating Component".
+- **A Resource can be created without any Component-side involvement**, and the Component-side pieces
+  (`ConnectorDefinition`, Modules) are not persisted rows the Resource could reference (Connector definitions
+  are host-seeded in memory). A foreign key would therefore have nothing to point at today.
+- **Ownership is orthogonal.** ResourceContext ownership (`Shared` / Application) applies to the Resource and is
+  independent of where its originating definition came from.
+
+Repeated patterns noticed but deliberately not generalized: each family exposes its own list/detail/state
+vocabulary (Active/Inactive/Retired, Active/Retired, Enabled/Disabled) and its own move/retire operations. The
+Application Resources view lists them without normalizing state or adding generic actions.
+
 ## Sequencing
 
 **Components design gate → Services design gate → Components implementation → Services implementation.**
