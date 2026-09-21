@@ -14,7 +14,7 @@
     persistent polite region (errors: assertive), so re-renders, reordering and removal stay silent.
     The announcement is cleared after a few seconds; the visible toast remains reachable and dismissible.
 *@
-<div class="ui-toast-layer print:hidden">
+<div class="@(ClearNavRail ? "ui-toast-layer ui-toast-layer--clear-rail print:hidden" : "ui-toast-layer print:hidden")">
     <div class="ui-toast-live">
         <div role="status" aria-live="polite" aria-atomic="false">
             @foreach (var a in _announcements.Where(a => !a.Assertive))
@@ -70,6 +70,9 @@
 @code {
     /// <summary>A toast younger than this plays its enter animation when rendered; older ones (e.g. after a layout swap) do not replay it.</summary>
     private static readonly TimeSpan EnterWindow = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>The main shell pins a control at the bottom of its nav rail; on phones the stack then starts beside the rail instead of covering it.</summary>
+    [Parameter] public bool ClearNavRail { get; set; }
 
     private sealed record Announcement(Guid Id, bool Assertive, string Text);
 

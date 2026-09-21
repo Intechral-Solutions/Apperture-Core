@@ -634,6 +634,8 @@ details.text-muted[open] > summary {
   --ui-toast-exit-duration: 300ms;
   --ui-toast-margin: 1rem;
   --ui-toast-bottom: 1rem;
+  /* Width of the closed nav rail (NavRail's w-18 container); phones start the shell stack beside it. */
+  --ui-toast-rail-width: 4.5rem;
   --ui-toast-width: clamp(28rem, 50vw, 42rem);
   --ui-toast-max-height: min(36vh, 24rem);
   --ui-toast-shadow:
@@ -891,6 +893,11 @@ details.text-muted[open] > summary {
     --ui-toast-width: 100%;
     --ui-toast-margin: 0.5rem;
     --ui-toast-bottom: 0.5rem;
+  }
+
+  /* The rail is always shown and pins a control at its bottom; a full-width toast must not cover it. */
+  .ui-toast-layer--clear-rail {
+    inset-inline-start: var(--ui-toast-rail-width);
   }
 }
 

@@ -121,6 +121,37 @@ Rules:
   section result matters.
 - Vocabulary: success / info / warning / error. Do not invent additional severities.
 
+### Toast presentation and interaction
+
+Callers only ever use `IToastService.Show(severity, message, title?, duration?)`. Placement, animation,
+gestures, pausing and announcements are the toast subsystem's job; feature pages never manage them.
+
+| Aspect | Behavior |
+| --- | --- |
+| Placement | One stack, **bottom-centred**, floating above the page. Newest toast at the bottom; older toasts stack upward. Wide screens: `clamp(28rem, 50vw, 42rem)`. At ≤ 40rem: full width with small margins (safe-area aware). In the main shell on phones the stack starts beside the nav rail so the rail's bottom control stays reachable. |
+| Height | Capped at `min(36vh, 24rem)` (`dvh` where supported). Overflow scrolls vertically (wheel/touch); the scrollbar is hidden and a top/bottom edge fade signals clipped toasts. New toasts scroll into view unless the operator is mid-interaction higher up the stack. |
+| Motion | Enter: fade + rise from below while the row grows. Exit: fade + drift up while the row collapses; a swipe exit continues the way it was dragged. Tokens: `--ui-toast-enter-duration`, `--ui-toast-exit-duration`. |
+| Dwell | Starts at enqueue (`ToastPolicy` durations are unchanged: 6 s; errors persist). The countdown tracks **remaining** time. |
+| Pause | Stack-wide while the operator interacts: mouse over the stack, a touch on it, keyboard focus inside, a swipe in progress, scrolling (incl. touch momentum), or the tab hidden. Resumes with the remaining time, never a fresh full duration. A toast enqueued during a pause keeps its full duration until release. |
+| Dismiss | Explicit **Dismiss notification** button (keyboard reachable, visible focus, 44 px target on coarse pointers) **or** a horizontal swipe with mouse or touch. Swiping needs no more than 30% of the toast width (bounded 72–220 px); opacity falls with distance; releasing earlier snaps back. Vertical intent is left to scrolling (`touch-action: pan-y`). Text can still be selected with double/triple-click or keyboard; a horizontal mouse drag is a swipe. |
+| Lifecycle | `Visible` → (dismiss requested) `Exiting` → removed after `ToastPolicy.ExitDuration`. Removal is timer-driven, exactly once, and never waits on an animation event. |
+| Bound | At most `ToastPolicy.MaxToasts` (100) in memory. Beyond that the oldest auto-dismissing toast is evicted first; persistent errors last. This is a safety net for runaway callers, not a display limit. |
+| Duplicates | An identical outcome (same severity, title, message) re-arms the existing toast; it is not announced again. A toast that is already leaving is not revived. |
+
+Accessibility: toasts are **not** live regions themselves. Each new toast is announced **once** through
+a persistent polite region (errors: assertive) as `Severity: Title. Message`, cleared after a few
+seconds, so re-renders, reordering and removal are silent. The host never moves focus. Severity is
+carried by an icon shape and a screen-reader severity word as well as colour. When a focused toast is
+dismissed, focus moves to a neighbouring toast's close button, or back to where it was before entering
+the stack.
+
+Reduced motion (`prefers-reduced-motion: reduce`): no enter/exit/collapse animation and no snap-back
+animation; a leaving toast disappears at once. Dragging still follows the pointer and every control
+keeps working.
+
+Not a Notification delivery channel: incoming platform Notifications do not surface as toasts yet
+(a separate roadmap body builds on this API).
+
 ---
 
 ## 7. Confirmation and consequential actions
@@ -221,8 +252,9 @@ deterministic initial focus, focus contained while open, focus restored to the o
 Escape closes (blocked while busy), explicit close control, `aria-busy` during work,
 errors announced, no reliance on animation, reduced-motion respected.
 
-**Toast:** polite by default, assertive for errors, no announcement storms, dismiss control,
-critical errors persist.
+**Toast:** polite by default, assertive for errors, announced once (no announcement storms),
+never steals focus, named dismiss control, critical errors persist, reduced-motion respected.
+See *Toast presentation and interaction* above.
 
 **Tooltip:** keyboard-reachable trigger, available on focus, short, noninteractive.
 

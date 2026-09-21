@@ -62,10 +62,20 @@ reset, cutting across several of them.
      there is **no approved one-to-one Component→Resource invariant** and HSK-D introduced none (evidence
      recorded in the
      [Components/Services/Catalog planning note](../01-architecture/transitions/components-services-catalog/README.md)).
-2. **Toast UX foundation** — presentation rewrite of the existing, already well-centralized toast system
-   (placement, responsive width, stacking, gestures, accessibility). No call-site changes.
-3. **Notification → Toast integration** — incoming platform Notifications optionally surface as Toasts;
-   per-user preference, not a new delivery channel.
+2. **Toast UX foundation** (**Toast-A**) — **complete (2026-09-21); operator smoke in the real app is
+   still to be run** (the checklist is in the audit; automated tests and a real-Chrome harness against the
+   production CSS/JS passed). Presentation rewrite of the existing, already well-centralized toast system;
+   **no call-site changes**. Delivered: a bottom-centred, responsive, upward-growing stack capped to a
+   fraction of the viewport height that scrolls when it overflows; enter/exit motion with a timer-driven
+   `Visible → Exiting → removed` lifecycle; countdowns that pause stack-wide while the operator interacts
+   (hover, touch, focus, swipe, scroll, hidden tab) and resume with the remaining time; mouse/touch swipe
+   dismissal with an accessible close button; single-shot screen-reader announcements; reduced-motion
+   support; and a generous queue bound. Details, decisions and findings:
+   [`toast-a-toast-ux-foundation.md`](../audits/toast-a-toast-ux-foundation.md); behaviour reference:
+   [interaction patterns](../design-system/interaction-patterns.md#toast-presentation-and-interaction).
+3. **Notification → Toast integration** — **not started.** Incoming platform Notifications optionally
+   surface as Toasts; per-user preference, not a new delivery channel. Toast-A deliberately implements none
+   of it (no definition defaults, preferences, polling/push, or notification dedupe).
 4. **Components design gate**
 5. **Services design gate** — immediately follows the Components design gate, before either
    implementation begins. Services may reveal catalog/capability requirements Components needs to account

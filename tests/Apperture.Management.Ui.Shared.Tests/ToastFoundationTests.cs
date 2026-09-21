@@ -184,6 +184,28 @@ public sealed class ToastFoundationTests
     }
 
     [Fact]
+    public void On_phones_the_shell_stack_starts_beside_the_nav_rail_so_its_bottom_control_stays_reachable()
+    {
+        // The rail is always shown and pins a Config button at its bottom-left; a full-width toast would cover it.
+        var css = ReadCss();
+        var rail = ReadComponent("Organisms/NavRail.razor");
+        var token = Regex.Match(css, @"--ui-toast-rail-width:\s*(\d+(?:\.\d+)?)rem");
+
+        token.Success.Should().BeTrue();
+        rail.Should().Contain("w-18", "the token mirrors the closed rail container's w-18 (18 x 0.25rem); update both together");
+        double.Parse(token.Groups[1].Value, CultureInfo.InvariantCulture).Should().Be(18 * 0.25);
+
+        ReadComponent("Organisms/ToastHost.razor").Should().Contain("ClearNavRail");
+        ReadComponent("Layout/MainLayout.razor").Should().Contain("<ToastHost ClearNavRail=\"true\" />");
+        ReadComponent("Layout/AuthLayout.razor").Should().Contain("<ToastHost />", "the sign-in shell has no rail");
+
+        var narrow = Regex.Match(css, @"@media \(max-width: 40rem\)\s*\{(?<body>.*?)\n\}", RegexOptions.Singleline);
+        narrow.Success.Should().BeTrue();
+        narrow.Groups["body"].Value.Should().Contain(".ui-toast-layer--clear-rail");
+        narrow.Groups["body"].Value.Should().Contain("inset-inline-start: var(--ui-toast-rail-width)");
+    }
+
+    [Fact]
     public void Toast_styling_uses_theme_tokens_not_raw_colours()
     {
         var toastRules = string.Join("\n", Regex.Matches(ReadCss(), @"\.ui-toast[^{]*\{[^}]*\}").Select(m => m.Value));

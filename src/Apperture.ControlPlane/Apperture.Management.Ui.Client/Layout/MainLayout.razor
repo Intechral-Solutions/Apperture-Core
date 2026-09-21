@@ -27,7 +27,7 @@
         <TopBar IsControlPanelOpen="@isControlPanelOpen"
                 IsControlPanelLocked="@isControlPanelLocked"
                 OnHamburgerClick="HandleHamburgerClick" />
-        <ToastHost />
+        <ToastHost ClearNavRail="true" />
         <div id="content-wrapper" class="flex-1 overflow-y-auto">
             <main class="px-1">
                 @* UIX-2 option C: chrome-first. Do not invoke @Body until menus settle so

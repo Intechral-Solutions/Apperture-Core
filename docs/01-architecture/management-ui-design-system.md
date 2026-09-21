@@ -181,7 +181,7 @@ Account surfaces established the reference patterns below. Use on personal setti
 
 | Surface | Classes / components | Notes |
 |---------|---------------------|-------|
-| Toast | `ui-toast`, `toast-strip-*` | Elevated panel; assertive vs polite regions in `ToastHost` |
+| Toast | `ui-toast-layer`, `ui-toast-stack`, `ui-toast`, `data-severity` | Bottom-centred floating stack; announcements via persistent polite/assertive regions in `ToastHost`; behaviour in [interaction patterns §6](../design-system/interaction-patterns.md#toast-presentation-and-interaction) |
 | Menus | `ui-menu-panel`, `ui-menu-item` | Theme, account, notification footers |
 | Notification panel | `ui-menu-panel` + `ui-personal-notification-menu__*` | Anchored to bell |
 | Auth layout | `AuthLayout` (`bg-default`) + `ui-section-panel` on login card | Greige floor, white panel |
