@@ -43,12 +43,14 @@ reset, cutting across several of them.
      canonicalize to the slug, the API and localStorage keep the canonical id, no alias history. See
      [`ADR-0041`](../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status).
      Not a system-wide id migration.
-   - **1D** Application Resource Explorer (**HSK-D**) — **implemented (2026-09-21); operator browser smoke
-     pending.** Carry-in from HSK-C smoke: Application detail showed only resource *counts*, with links to
+   - **1D** Application Resource Explorer (**HSK-D**) — **complete (2026-09-21); operator browser smoke
+     passed for the exercised scenarios (restricted-operator authorization was not manually exercised and is
+     covered by automated tests).** Carry-in from HSK-C smoke: Application detail showed only resource *counts*, with links to
      the scoped lists solely inside the archive-blocked warning. The always-visible Resources section that
      [CTX-3 design gate §6.4](../01-architecture/transitions/resource-contexts/ctx3-design-gate.md) intended
      never shipped; HSK-D **supersedes/completes that intent** (the historical gate is not rewritten).
-     Delivered: an always-visible Resources section on Application detail listing the Integrations,
+     Delivered: an always-visible Resources section on Application detail (and, via the same explorer, on the
+     Shared context's page) listing the Integrations,
      Connections and Schedules the Application currently **owns** (every state, archived Applications
      included), with one debounced search, a resource-type filter, human-readable names, direct links, each
      family's own state, and overview counts that link into the list. Shared resources merely *referenced* by
