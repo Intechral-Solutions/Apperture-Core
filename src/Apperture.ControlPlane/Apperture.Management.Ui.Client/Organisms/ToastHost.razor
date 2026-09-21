@@ -30,7 +30,7 @@
         </div>
     </div>
 
-    <section class="ui-toast-stack" aria-label="Notifications" @ref="_stack">
+    <div class="ui-toast-stack" role="group" aria-label="Notifications" @ref="_stack">
         @foreach (var t in _snapshot)
         {
             var fresh = IsFresh(t);
@@ -43,7 +43,7 @@
                          data-severity="@SeverityName(t.Severity)"
                          data-toast-id="@t.Id">
                         <span class="ui-toast__icon" aria-hidden="true">@SeverityIcon(t.Severity)</span>
-                        <div class="ui-toast__body">
+                        <div class="ui-toast__body" id="@BodyId(t)">
                             <span class="ui-toast__sr-only">@ToastPolicy.ResolveSeverityLabel(t.Severity): </span>
                             @if (!string.IsNullOrEmpty(t.Title))
                             {
@@ -54,6 +54,7 @@
                         <button type="button"
                                 class="ui-toast__dismiss"
                                 aria-label="Dismiss notification"
+                                aria-describedby="@BodyId(t)"
                                 @onclick="() => Toasts.Dismiss(t.Id)">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -64,7 +65,7 @@
                 </div>
             </div>
         }
-    </section>
+    </div>
 </div>
 
 @code {
@@ -74,10 +75,8 @@
     /// <summary>The main shell pins a control at the bottom of its nav rail; on phones the stack then starts beside the rail instead of covering it.</summary>
     [Parameter] public bool ClearNavRail { get; set; }
 
-    private sealed record Announcement(Guid Id, bool Assertive, string Text);
-
-    private readonly List<Announcement> _announcements = new();
-    private readonly HashSet<Guid> _announced = new();
+    private readonly List<ToastAnnouncement> _announcements = new();
+    private readonly ToastAnnouncer _announcer = new();
     private readonly CancellationTokenSource _lifetime = new();
 
     private ToastItem[] _snapshot = Array.Empty<ToastItem>();
@@ -143,27 +142,16 @@
     {
         _snapshot = Toasts.Toasts.ToArray();
 
-        var live = _snapshot.Select(t => t.Id).ToHashSet();
-        _announced.RemoveWhere(id => !live.Contains(id));
-
-        var now = DateTimeOffset.UtcNow;
-        foreach (var t in _snapshot)
+        // Each toast is announced once (see ToastAnnouncer). A toast shown moments before a layout swap
+        // remounts the host can be announced again by the new instance; that window is rare and brief.
+        foreach (var announcement in _announcer.Reconcile(_snapshot, DateTimeOffset.UtcNow))
         {
-            // Announce each toast once. One older than the announcement window was already announced
-            // (e.g. by the previous host instance before a layout swap), so it stays silent.
-            if (t.Phase != ToastPhase.Visible || !_announced.Add(t.Id))
-                continue;
-            if (now - t.CreatedAt > ToastPolicy.AnnouncementLifetime)
-                continue;
-
-            var announcement = new Announcement(
-                t.Id,
-                ToastPolicy.ResolveAriaLive(t.Severity) == "assertive",
-                ToastPolicy.BuildAnnouncement(t.Severity, t.Message, t.Title));
             _announcements.Add(announcement);
             _ = ExpireAnnouncementAsync(announcement.Id);
         }
     }
+
+    private static string BodyId(ToastItem t) => $"toast-body-{t.Id:N}";
 
     private async Task ExpireAnnouncementAsync(Guid id)
     {
@@ -232,22 +220,23 @@
         Toasts.Changed -= OnToastsChanged;
         _lifetime.Cancel();
 
-        if (_attached)
+        try
         {
-            try
-            {
+            if (_attached)
                 await Js.InvokeVoidAsync("appertureToast.detach", _stack);
-            }
-            catch (JSException) { /* page unloading */ }
-            catch (InvalidOperationException) { /* renderer disposed */ }
-            catch (TaskCanceledException) { /* torn down */ }
         }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or OperationCanceledException or JSDisconnectedException)
+        {
+            // Page unloading or circuit torn down: nothing left to detach from.
+        }
+        finally
+        {
+            // The element that would have reported the release is going away; do not leave the stack paused.
+            foreach (var hold in new[] { ToastHold.Pointer, ToastHold.Focus, ToastHold.Drag, ToastHold.Scroll })
+                Toasts.SetHold(hold, false);
 
-        // The element that would have reported the release is going away; do not leave the stack paused.
-        foreach (var hold in new[] { ToastHold.Pointer, ToastHold.Focus, ToastHold.Drag, ToastHold.Scroll })
-            Toasts.SetHold(hold, false);
-
-        _self?.Dispose();
-        _lifetime.Dispose();
+            _self?.Dispose();
+            _lifetime.Dispose();
+        }
     }
 }

@@ -11,13 +11,19 @@ public static class ToastPolicy
     public static readonly TimeSpan DefaultDuration = TimeSpan.FromSeconds(6);
 
     /// <summary>
+    /// Ceiling for an explicit duration. Timers cannot be armed beyond ~49 days, so an absurd caller
+    /// value is clamped instead of throwing in the middle of an enqueue.
+    /// </summary>
+    public static readonly TimeSpan MaxDuration = TimeSpan.FromHours(24);
+
+    /// <summary>
     /// Resolves how long a toast stays visible. Errors return <c>null</c> (persist until
     /// dismissed) so a failure cannot disappear before it is read.
     /// </summary>
     public static TimeSpan? ResolveDuration(ToastSeverity severity, TimeSpan? requested)
     {
         if (requested is { } explicitDuration && explicitDuration > TimeSpan.Zero)
-            return explicitDuration;
+            return explicitDuration < MaxDuration ? explicitDuration : MaxDuration;
 
         return severity == ToastSeverity.Error ? null : DefaultDuration;
     }

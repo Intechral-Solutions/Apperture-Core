@@ -80,13 +80,14 @@ The caller → service → queue → host → items shape already existed and wa
   `TimeProvider`, so lifecycle is testable with a manual clock (no sleeps). `ToastItem` gained `Duration`,
   `Phase`, `Exit`, `CreatedAt` (and lost the wall-clock `ExpiresAt`, which cannot express "remaining").
 - **`IToastService`** gained `Dismiss(id, exit)` and `SetHold(source, active)` (additive; callers only use `Show`).
-- **`ToastHost`** renders one keyed stack and feeds announcements; it holds no timers except the
-  announcement-clear delay.
+- **`ToastHost`** renders one keyed stack; announce-once logic is the unit-tested `ToastAnnouncer`. It holds no
+  timers except the announcement-clear delay.
 - **`js/toast-host.js`** is the only place pointer/touch/scroll/focus behaviour lives. It owns no toast state
   and writes only CSS custom properties and `data-*` attributes Blazor never renders, so re-renders cannot
   fight a gesture.
 - **`ToastPolicy`** (shared) gained `ExitDuration`, `MaxToasts`, `AnnouncementLifetime`,
-  `ResolveSeverityLabel`, `BuildAnnouncement`. Existing durations and `ResolveAriaLive` are **unchanged**.
+  `ResolveSeverityLabel`, `BuildAnnouncement`, `MaxDuration` (24 h clamp on explicit durations). Existing default durations
+  and `ResolveAriaLive` are **unchanged**.
 
 ### Placement / responsive
 
@@ -180,8 +181,8 @@ wiring incl. exit-duration parity and nav-rail clearance); node tests for the pu
 DevTools Protocol: placement at 1024/1440/1920 and 390 wide, no horizontal overflow, ordering, height cap, wheel and
 touch scrolling, mouse and touch swipe (both directions, threshold, snap-back, opacity, vertical/diagonal intent),
 holds (hover, focus, drag, scroll, stuck-hold recovery), focus continuity, exit animation, reduced motion, contrast in
-both themes, nav-rail clearance, and detach. 81/81 checks passed. It found one real defect (below). It does **not**
-exercise Blazor rendering, `ToastService` in the browser, or JS interop.
+both themes, nav-rail clearance, lost mouse release, and detach. 83/83 checks passed. It found two real defects (below).
+It does **not** exercise Blazor rendering, `ToastService` in the browser, or JS interop.
 
 ### Operator smoke checklist (still to run in the real app)
 
@@ -208,7 +209,17 @@ Trigger toasts from a real page (e.g. save something on Account → Preferences;
 | Finding | Resolution |
 | --- | --- |
 | Nav rail pins a bottom-left control that a full-width phone toast would cover. | `ClearNavRail` on the main-shell host; guard test ties the CSS token to the rail width. |
+| **Critical (independent review):** the running app is served by `Ui.Server`'s `_Layout.cshtml`, not `Ui.Client/wwwroot/index.html`; only the latter loaded `toast-host.js`. In the real app `appertureToast` would have been undefined, the host's attach failure is swallowed by design, and swipe, hold-pausing, follow-newest scrolling and focus continuity would all have been silently missing (with the scrollbar hidden, newest toasts could land below the fold). | Script added to `_Layout.cshtml`; a guard now asserts **every** page that hosts the client loads it. |
 | Real defect found by the browser harness: pressing on already-selected toast text started a native drag-and-drop that cancelled the swipe. | `dragstart` is prevented inside the stack. |
+| Real defect found by the harness while fixing review items: reacting to `lostpointercapture` cancelled touch swipes (re-targeting implicit capture to the card reports a loss on the previous target). | Only the card losing its own capture ends a drag. |
+| Review: a mouse release lost outside the window / after alt-tab left the card following the cursor; a second finger lifting released the touch hold early. | Drag ends when a mouse move reports no buttons or capture is lost; touches are tracked per pointer. |
+| Review: .NET drops interaction holds when the stack empties, so JS could think a hold was still reported and never re-send it for the next toast. | Interaction holds are re-asserted whenever a toast is added; "never reported" means released. |
+| Review: `TimeProvider.CreateTimer` throws for durations beyond ~49 days, which an explicit `duration` could reach mid-enqueue. | `ToastPolicy.MaxDuration` (24 h) clamps explicit durations. |
+| Review: host disposal could skip releasing holds / disposing the .NET reference on an unexpected exception. | `try/finally`. |
+| Review: an always-present `region` landmark would be empty on most pages; all close buttons shared one name. | `role="group"` instead of a landmark; each close button is described by its own toast text. |
+| Review: `Reconcile`'s announce-once logic was only substring-tested in the Razor host. | Extracted into the unit-tested `ToastAnnouncer` (announce once, assertive only for errors, skip leaving/old toasts, forget removed ids). |
+| Review: generation-stamped timers were never exercised (the fake removed disposed timers). | `ManualTimeProvider` can replay callbacks of cancelled timers; tests cover pause, re-arm and dismiss races, plus re-arm-while-held, persistent↔timed re-arm, eviction order, `Hidden` surviving an empty stack, and no-`Changed` on hold changes. |
+| Known, accepted: a toast shown moments before a layout swap remounts the host may be announced again (or silently) by the new host. | Rare and brief; an app-level announced set would be the fix if it ever matters. |
 | Old design split toasts into an assertive and a polite *container*, which cannot be interleaved chronologically. | Replaced by per-toast one-shot announcements through persistent regions; toasts themselves are not live. |
 | Old service compared wall-clock expiry with a 250 ms fudge to recognise stale timers and raised `Changed` on no-op dismisses. | Generation-stamped timers; no-op dismisses are silent. |
 | Old host rendered unkeyed items, unsafe once elements carry animation state. | Keyed by toast id. |

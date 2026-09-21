@@ -70,8 +70,11 @@ public sealed class ToastFoundationTests
 
         host.Should().Contain("aria-live=\"polite\"");
         host.Should().Contain("aria-live=\"assertive\"");
-        host.Should().Contain("ToastPolicy.BuildAnnouncement");
-        host.Should().Contain("ToastPolicy.ResolveAriaLive");
+        host.Should().Contain("ToastAnnouncer", "announce-once logic lives in the unit-tested ToastAnnouncer");
+
+        var announcer = ReadComponent("Services/ToastAnnouncer.cs");
+        announcer.Should().Contain("ToastPolicy.BuildAnnouncement");
+        announcer.Should().Contain("ToastPolicy.ResolveAriaLive");
         host.Should().NotContain("FocusAsync");
         host.Should().NotContain("autofocus");
     }
@@ -218,10 +221,55 @@ public sealed class ToastFoundationTests
     // ---------- Script ----------
 
     [Fact]
-    public void The_toast_script_is_loaded_by_the_shell_page()
+    public void Every_page_that_hosts_the_client_loads_the_toast_script()
     {
-        File.ReadAllText(Path.Combine(ClientRoot(), "wwwroot", "index.html"))
-            .Should().Contain("js/toast-host.js");
+        // The Server-hosted _Layout.cshtml is what the running app uses; index.html is the standalone host.
+        // Without the script the host silently loses swipe, hold-pausing and follow-newest scrolling.
+        var hosts = new[]
+        {
+            Path.Combine(ClientRoot(), "wwwroot", "index.html"),
+            Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Server", "Pages", "_Layout.cshtml"),
+        };
+
+        foreach (var host in hosts)
+        {
+            var text = File.ReadAllText(host);
+            text.Should().Contain("js/toast-host.js", $"{Path.GetFileName(host)} must load the toast script");
+            text.Should().Contain("js/apperture-shell.js", "sanity: this is a page that loads the shell scripts");
+        }
+    }
+
+    [Fact]
+    public void Each_exit_direction_the_service_can_request_has_a_rendered_name_and_a_stylesheet_rule()
+    {
+        var host = ReadComponent("Organisms/ToastHost.razor");
+        var css = ReadCss();
+
+        host.Should().Contain("ToastExit.SwipeLeft => \"left\"");
+        host.Should().Contain("ToastExit.SwipeRight => \"right\"");
+        host.Should().Contain("_ => \"fade\"");
+        foreach (var exit in new[] { "fade", "left", "right" })
+            css.Should().Contain($".ui-toast-slot[data-phase=\"exiting\"][data-exit=\"{exit}\"] .ui-toast");
+    }
+
+    [Fact]
+    public void A_very_long_explicit_duration_is_clamped_so_it_can_always_be_scheduled()
+    {
+        // Timers cannot be armed beyond ~49 days; an absurd caller value must not throw mid-enqueue.
+        ToastPolicy.ResolveDuration(ToastSeverity.Success, TimeSpan.FromDays(365)).Should().Be(ToastPolicy.MaxDuration);
+        ToastPolicy.ResolveDuration(ToastSeverity.Error, TimeSpan.MaxValue).Should().Be(ToastPolicy.MaxDuration);
+        ToastPolicy.MaxDuration.Should().BeLessThan(TimeSpan.FromDays(49));
+        ToastPolicy.ResolveDuration(ToastSeverity.Info, TimeSpan.FromSeconds(2)).Should().Be(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public void The_close_button_is_described_by_its_toast_and_the_region_is_not_an_empty_landmark()
+    {
+        var host = ReadComponent("Organisms/ToastHost.razor");
+
+        host.Should().Contain("aria-describedby=");
+        host.Should().Contain("role=\"group\" aria-label=\"Notifications\"");
+        host.Should().NotContain("<section", "an always-present region landmark would be empty on most pages");
     }
 
     [Fact]
@@ -232,6 +280,7 @@ public sealed class ToastFoundationTests
         js.Should().Contain("pointerdown");
         js.Should().Contain("setPointerCapture");
         js.Should().Contain("pointercancel");
+        js.Should().Contain("lostpointercapture");
         js.Should().Contain("prefers-reduced-motion");
         js.Should().Contain("removeEventListener");
         js.Should().Contain("disconnect()");

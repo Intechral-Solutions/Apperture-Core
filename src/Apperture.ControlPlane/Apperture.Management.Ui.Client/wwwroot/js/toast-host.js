@@ -79,6 +79,7 @@
             dragging: false,
             hover: false,
             touching: false,
+            touchIds: {},
             momentum: false,
             momentumTimer: 0,
             lastPointerType: 'mouse',
@@ -120,13 +121,14 @@
             if (!registry.has(stack)) return;
             if (stack.querySelector('.ui-toast-slot') === null) {
                 // Nothing left to interact with: any recorded interaction is stale.
-                ctx.hover = false; ctx.touching = false; ctx.momentum = false; ctx.dragging = false;
+                ctx.hover = false; ctx.touching = false; ctx.touchIds = {}; ctx.momentum = false; ctx.dragging = false;
             } else {
                 try { ctx.hover = stack.matches(':hover'); } catch (e) { /* keep last */ }
             }
             var next = computeHolds();
             Object.keys(next).forEach(function (key) {
-                if (ctx.reported[key] === next[key]) return;
+                // .NET starts with every hold released, so "never reported" means false.
+                if ((ctx.reported[key] || false) === next[key]) return;
                 ctx.reported[key] = next[key];
                 if (ctx.dotNet) {
                     try {
@@ -213,12 +215,24 @@
             card.style.setProperty('--toast-opacity', '1');
         }
 
+        function beginTouch(e) {
+            ctx.touchIds[e.pointerId] = true;
+            ctx.touching = true;
+        }
+
+        // A second finger keeps the hold until it too lifts.
+        function endTouch(e) {
+            if (e.pointerType !== 'touch') return;
+            delete ctx.touchIds[e.pointerId];
+            ctx.touching = Object.keys(ctx.touchIds).length > 0;
+        }
+
         function onPointerDown(e) {
             var card = e.target.closest && e.target.closest('.ui-toast');
             if (!card || !stack.contains(card)) return;
 
             ctx.lastPointerType = e.pointerType || 'mouse';
-            if (e.pointerType === 'touch') { ctx.touching = true; sync(); }
+            if (e.pointerType === 'touch') { beginTouch(e); sync(); }
 
             if (!e.isPrimary) return;
             if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -244,6 +258,9 @@
         function onPointerMove(e) {
             var drag = ctx.drag;
             if (!drag || e.pointerId !== drag.pointerId) return;
+
+            // The button was released somewhere we never heard about (outside the window, after alt-tab).
+            if (e.pointerType === 'mouse' && e.buttons === 0) { releaseDrag(false); return; }
 
             var dx = e.clientX - drag.x0;
             var dy = e.clientY - drag.y0;
@@ -295,20 +312,28 @@
         }
 
         function onPointerUp(e) {
-            if (e.pointerType === 'touch') ctx.touching = false;
+            endTouch(e);
             if (ctx.drag && e.pointerId === ctx.drag.pointerId) releaseDrag(true);
             else sync();
         }
 
         function onPointerCancel(e) {
-            if (e.pointerType === 'touch') ctx.touching = false;
+            endTouch(e);
             if (ctx.drag && e.pointerId === ctx.drag.pointerId) releaseDrag(false);
             else sync();
         }
 
+        // Capture lost without a pointerup (element removed, browser took over): never leave the card mid-drag.
+        // Only the card losing its own capture counts: moving implicit touch capture onto the card also
+        // reports a loss, on the previous target.
+        function onLostPointerCapture(e) {
+            var drag = ctx.drag;
+            if (drag && drag.state === 'dragging' && e.pointerId === drag.pointerId && e.target === drag.card) releaseDrag(false);
+        }
+
         // A touch that never becomes a swipe (tap or vertical scroll) still has to release its hold.
         function onStackPointerEnd(e) {
-            if (e.pointerType === 'touch') { ctx.touching = false; syncSoon(); }
+            if (e.pointerType === 'touch') { endTouch(e); syncSoon(); }
         }
 
         // ---- Hover / focus / scroll / tab visibility ---------------------------------------
@@ -359,6 +384,7 @@
         on(stack, 'pointerdown', onPointerDown);
         on(stack, 'pointerup', onStackPointerEnd);
         on(stack, 'pointercancel', onStackPointerEnd);
+        on(stack, 'lostpointercapture', onLostPointerCapture);
         on(stack, 'pointerover', onPointerOver);
         on(stack, 'pointerleave', onPointerLeave);
         on(stack, 'focusin', onFocusIn);
@@ -377,7 +403,11 @@
                         return n.nodeType === 1 && n.classList.contains('ui-toast-slot');
                     });
                 });
-                if (added) revealNewest();
+                if (added) {
+                    // .NET drops interaction holds when the stack empties; re-assert whatever is true now.
+                    ['Pointer', 'Focus', 'Drag', 'Scroll'].forEach(function (k) { delete ctx.reported[k]; });
+                    revealNewest();
+                }
                 scheduleFades();
                 syncSoon();
             });

@@ -7,6 +7,7 @@ namespace Apperture.Management.Ui.Client.Tests;
 internal sealed class ManualTimeProvider : TimeProvider
 {
     private readonly List<ManualTimer> _timers = new();
+    private readonly List<ManualTimer> _cancelledWhileArmed = new();
     private DateTimeOffset _utcNow = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     public override DateTimeOffset GetUtcNow() => _utcNow;
@@ -45,7 +46,24 @@ internal sealed class ManualTimeProvider : TimeProvider
         _utcNow = target;
     }
 
-    private void Forget(ManualTimer timer) => _timers.Remove(timer);
+    /// <summary>
+    /// Invokes the callback of every timer that was disposed while still armed. A real timer can have
+    /// its callback already queued on the thread pool when it is disposed; this reproduces that race.
+    /// </summary>
+    public void FireCallbacksOfCancelledTimers()
+    {
+        var cancelled = _cancelledWhileArmed.ToArray();
+        _cancelledWhileArmed.Clear();
+        foreach (var timer in cancelled)
+            timer.InvokeCallback();
+    }
+
+    private void Forget(ManualTimer timer)
+    {
+        if (timer.Due is not null)
+            _cancelledWhileArmed.Add(timer);
+        _timers.Remove(timer);
+    }
 
     private sealed class ManualTimer : ITimer
     {
@@ -74,6 +92,8 @@ internal sealed class ManualTimeProvider : TimeProvider
             Due = null;
             _callback(_state);
         }
+
+        public void InvokeCallback() => _callback(_state);
 
         public void Dispose()
         {

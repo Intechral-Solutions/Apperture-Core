@@ -313,6 +313,158 @@ public sealed class ToastServiceTests : IDisposable
         _toasts.Toasts.Should().HaveCount(20);
     }
 
+    // ---------- Stale callbacks, re-arm and hold edge cases ----------
+
+    [Fact]
+    public void A_dwell_callback_already_queued_when_the_stack_is_held_is_ignored()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _clock.Advance(5.9 * Second);
+
+        _toasts.SetHold(ToastHold.Pointer, true);
+        _clock.FireCallbacksOfCancelledTimers();
+
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+    }
+
+    [Fact]
+    public void A_dwell_callback_already_queued_when_the_toast_is_rearmed_is_ignored()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _clock.Advance(5 * Second);
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+
+        _clock.FireCallbacksOfCancelledTimers();
+
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+    }
+
+    [Fact]
+    public void A_dwell_callback_already_queued_when_the_toast_is_dismissed_does_not_act_twice()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _toasts.Dismiss(_toasts.Toasts.Single().Id, ToastExit.SwipeLeft);
+        _changed = 0;
+
+        _clock.FireCallbacksOfCancelledTimers();
+
+        _changed.Should().Be(0);
+        _toasts.Toasts.Single().Exit.Should().Be(ToastExit.SwipeLeft);
+    }
+
+    [Fact]
+    public void Rearming_while_the_stack_is_held_keeps_the_countdown_paused_with_a_fresh_duration()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _clock.Advance(4 * Second);
+        _toasts.SetHold(ToastHold.Pointer, true);
+
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+
+        _toasts.SetHold(ToastHold.Pointer, false);
+        _clock.Advance(ToastPolicy.DefaultDuration - TimeSpan.FromMilliseconds(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+        _clock.Advance(TimeSpan.FromMilliseconds(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Exiting);
+    }
+
+    [Fact]
+    public void Rearming_a_persistent_toast_with_an_explicit_duration_makes_it_expire()
+    {
+        _toasts.Show(ToastSeverity.Error, "Failed.");
+        _toasts.Show(ToastSeverity.Error, "Failed.", duration: TimeSpan.FromSeconds(2));
+
+        _clock.Advance(2 * Second);
+
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Exiting);
+    }
+
+    [Fact]
+    public void Rearming_a_timed_toast_as_persistent_stops_its_countdown()
+    {
+        _toasts.Show(ToastSeverity.Error, "Failed.", duration: TimeSpan.FromSeconds(2));
+        _toasts.Show(ToastSeverity.Error, "Failed.");
+
+        _clock.Advance(TimeSpan.FromMinutes(1));
+
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+        _clock.ActiveTimerCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void The_hidden_tab_hold_survives_an_empty_stack_while_interaction_holds_do_not()
+    {
+        _toasts.SetHold(ToastHold.Hidden, true);
+        _toasts.SetHold(ToastHold.Pointer, true);
+        _toasts.Show(ToastSeverity.Success, "One.");
+        _toasts.Dismiss(_toasts.Toasts.Single().Id);
+        _clock.Advance(ToastPolicy.ExitDuration);
+        _toasts.Toasts.Should().BeEmpty();
+
+        _toasts.Show(ToastSeverity.Success, "Two.");
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible, "the tab is still hidden");
+
+        // Only Hidden needs releasing: the stale Pointer hold was dropped when the stack emptied.
+        _toasts.SetHold(ToastHold.Hidden, false);
+        _clock.Advance(ToastPolicy.DefaultDuration);
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Exiting);
+    }
+
+    [Fact]
+    public void Changing_a_hold_does_not_raise_Changed_because_nothing_visible_changed()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        _changed = 0;
+
+        _toasts.SetHold(ToastHold.Pointer, true);
+        _toasts.SetHold(ToastHold.Pointer, false);
+
+        _changed.Should().Be(0);
+    }
+
+    [Fact]
+    public void At_the_bound_a_toast_that_is_already_leaving_is_evicted_before_any_persistent_toast()
+    {
+        for (var i = 0; i < ToastPolicy.MaxToasts; i++)
+            _toasts.Show(ToastSeverity.Error, $"error {i}");
+        _toasts.Dismiss(_toasts.Toasts[50].Id);
+
+        _toasts.Show(ToastSeverity.Error, "one more");
+
+        var items = _toasts.Toasts;
+        items.Should().HaveCount(ToastPolicy.MaxToasts);
+        items.Should().NotContain(t => t.Phase == ToastPhase.Exiting);
+        items.Should().Contain(t => t.Message == "error 0", "no visible persistent toast was evicted");
+    }
+
+    [Fact]
+    public void At_the_bound_with_only_persistent_toasts_the_oldest_is_evicted()
+    {
+        for (var i = 0; i < ToastPolicy.MaxToasts; i++)
+            _toasts.Show(ToastSeverity.Error, $"error {i}");
+
+        _toasts.Show(ToastSeverity.Error, "one more");
+
+        var items = _toasts.Toasts;
+        items.Should().HaveCount(ToastPolicy.MaxToasts);
+        items.Should().NotContain(t => t.Message == "error 0");
+        items[^1].Message.Should().Be("one more");
+    }
+
+    [Fact]
+    public void Showing_after_disposal_does_nothing()
+    {
+        _toasts.Dispose();
+
+        _toasts.Show(ToastSeverity.Success, "Late.");
+
+        _toasts.Toasts.Should().BeEmpty();
+        _clock.ActiveTimerCount.Should().Be(0);
+    }
+
     // ---------- Disposal ----------
 
     [Fact]
