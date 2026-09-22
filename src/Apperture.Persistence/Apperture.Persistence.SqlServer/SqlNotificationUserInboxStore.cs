@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
+// Internal members below (the toast-delta scan-query seam) are visible to Apperture.UnitTests via the
+// assembly-level InternalsVisibleTo declared in SqlNotificationUserPreferenceStore.cs in this project.
+
 public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
 {
     private readonly AppertureDbContext _db;
@@ -42,9 +45,16 @@ public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
         return rows.Select(x => ToModel(x.inbox, x.inst)).ToList();
     }
 
+    // Filters on IsRead (not ReadAtUtc == null) so this runs against the existing
+    // (PrincipalUserId, IsRead, CreatedAtUtc) index instead of an unindexed column scan. Safe because
+    // every write path in this file (AppendAsync, MarkReadAsync, MarkUnreadAsync, MarkAllReadAsync) sets
+    // IsRead and ReadAtUtc together in lockstep -- IsRead=false always pairs with ReadAtUtc=null and vice
+    // versa -- so the two predicates are equivalent. This method is on the ~30-second toast-delta poll
+    // hot path (called from both GET api/me/notifications/unread-count and GET
+    // api/me/notifications/toast-delta), so the indexed predicate matters here.
     public async ValueTask<int> CountUnreadAsync(string principalUserId, CancellationToken cancellationToken = default) =>
         await _db.NotificationUserInboxItems.AsNoTracking()
-            .CountAsync(x => x.PrincipalUserId == principalUserId && x.ReadAtUtc == null, cancellationToken)
+            .CountAsync(x => x.PrincipalUserId == principalUserId && !x.IsRead, cancellationToken)
             .ConfigureAwait(false);
 
     public async ValueTask<bool> ExistsAsync(
@@ -221,68 +231,126 @@ public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
 
         var boundedTake = Math.Clamp(take, 1, 50);
 
-        var q = from inbox in _db.NotificationUserInboxItems.AsNoTracking()
-                join inst in _db.NotificationInstances.AsNoTracking()
-                    on inbox.NotificationInstanceId equals inst.Id
-                join def in _db.NotificationDefinitions.AsNoTracking()
-                    on inst.NotificationDefinitionId equals def.Id into defJoin
-                from def in defJoin.DefaultIfEmpty()
-                join pref in _db.NotificationUserPreferences.AsNoTracking()
-                    on new { UserId = inbox.PrincipalUserId, DefinitionId = inst.NotificationDefinitionId, Channel = NotificationChannels.Toast }
-                    equals new { UserId = pref.UserId, DefinitionId = pref.NotificationDefinitionId, Channel = pref.Channel }
-                    into prefJoin
-                from pref in prefJoin.DefaultIfEmpty()
-                where inbox.PrincipalUserId == principalUserId
-                select new { inbox, inst, def, pref };
+        var q = BuildToastDeltaScanQuery(_db, principalUserId);
 
         if (afterCreatedAtUtc is not null)
         {
             var cursorCreatedAtUtc = afterCreatedAtUtc.Value;
-            q = q.Where(x => x.inbox.CreatedAtUtc > cursorCreatedAtUtc
-                || (x.inbox.CreatedAtUtc == cursorCreatedAtUtc
-                    && x.inbox.Id.CompareTo(afterId) > 0));
+            // Rows backfilled by the repair path (NotificationUserInboxService.EnsureInboxRowsForUserAsync)
+            // -- or otherwise materialized out of wall-clock order -- stamp CreatedAtUtc to the historical
+            // instance's creation time, not the row's actual insert time. Such a row can land with a
+            // CreatedAtUtc earlier than a client's already-advanced cursor: it still increments the unread
+            // count (via CountUnreadAsync above), but it can never be toast-eligible via this feed, since
+            // the cursor has already moved past its timestamp. This is intentional -- consistent with
+            // "no historical replay" -- see the Toast-B closure ADR, not a bug to fix here.
+            q = q.Where(x => x.CreatedAtUtc > cursorCreatedAtUtc
+                || (x.CreatedAtUtc == cursorCreatedAtUtc
+                    // Must use the SAME comparison basis as the OrderBy/ThenBy tie-break below (both
+                    // .CompareTo, not StringComparison.Ordinal, which EF Core cannot translate to SQL).
+                    // Do not change one without the other -- keyset pagination correctness depends on the
+                    // WHERE tie-break and the ORDER BY using an identical comparison. Inbox IDs are
+                    // lowercase-hex-only, so .CompareTo's ordinal-equivalent default string comparison and
+                    // SQL Server's default collation happen to agree, which is what makes this safe.
+                    && x.Id.CompareTo(afterId) > 0));
         }
 
         if (afterCreatedAtUtc is null)
         {
             // Bootstrap: no cursor yet — establish the current tip, not the full history.
             var tipRows = await q
-                .OrderByDescending(x => x.inbox.CreatedAtUtc).ThenByDescending(x => x.inbox.Id)
+                .OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id)
                 .Take(boundedTake)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
             tipRows.Reverse(); // back to ascending order for the response
-            return tipRows.Select(x => ToToastDeltaRow(x.inbox, x.inst, x.def, x.pref)).ToList();
+            return tipRows.Select(ToToastDeltaRow).ToList();
         }
 
         var rows = await q
-            .OrderBy(x => x.inbox.CreatedAtUtc).ThenBy(x => x.inbox.Id)
+            .OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id)
             .Take(boundedTake)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return rows.Select(x => ToToastDeltaRow(x.inbox, x.inst, x.def, x.pref)).ToList();
+        return rows.Select(ToToastDeltaRow).ToList();
     }
 
-    private static NotificationToastDeltaRow ToToastDeltaRow(
-        NotificationUserInboxItemEntity inbox,
-        NotificationInstanceEntity inst,
-        NotificationDefinitionEntity? def,
-        NotificationUserPreferenceEntity? pref)
+    /// <summary>
+    /// Builds (but does not execute) the toast-delta scan query: the join shape and narrow projection
+    /// shared by <see cref="ListToastDeltaAsync"/> and its SQL-translation regression test. Extracted so
+    /// the test can call the exact production <see cref="IQueryable{T}"/> instead of re-declaring a copy
+    /// of the query that could silently drift from the real one. Internal (not private) for that test's
+    /// visibility -- see the assembly-level <c>InternalsVisibleTo</c> in
+    /// <c>SqlNotificationUserPreferenceStore.cs</c> in this project.
+    /// </summary>
+    /// <remarks>
+    /// Projects only the columns the toast delta feed needs (subject, summary, kind, severity, the two
+    /// eligibility flags, plus the cursor columns) instead of selecting the full <c>inbox</c>/<c>inst</c>/
+    /// <c>def</c>/<c>pref</c> entities. The unprojected entities carry several large
+    /// <c>HasMaxLength(65536)</c> JSON/body columns (e.g. <c>NotificationInstanceEntity.RenderedBodyHtml</c>,
+    /// <c>RenderedContentFieldsJson</c>, <c>RecipientSnapshotJson</c>; <c>NotificationDefinitionEntity.RuleJson</c>,
+    /// <c>TemplateJson</c>) that this feed never uses but EF Core would otherwise hydrate for every row on
+    /// every ~30-second poll. <see cref="ToastDeltaScanRow.ToastEnabledByDefault"/> and
+    /// <see cref="ToastDeltaScanRow.PreferenceIsEnabled"/> are nullable casts of non-nullable entity
+    /// columns: a null here means the LEFT JOIN found no matching row (missing definition / no explicit
+    /// preference row), not a genuine null value stored in that column.
+    /// </remarks>
+    internal static IQueryable<ToastDeltaScanRow> BuildToastDeltaScanQuery(AppertureDbContext db, string principalUserId) =>
+        from inbox in db.NotificationUserInboxItems.AsNoTracking()
+        join inst in db.NotificationInstances.AsNoTracking()
+            on inbox.NotificationInstanceId equals inst.Id
+        join def in db.NotificationDefinitions.AsNoTracking()
+            on inst.NotificationDefinitionId equals def.Id into defJoin
+        from def in defJoin.DefaultIfEmpty()
+        join pref in db.NotificationUserPreferences.AsNoTracking()
+            on new { UserId = inbox.PrincipalUserId, DefinitionId = inst.NotificationDefinitionId, Channel = NotificationChannels.Toast }
+            equals new { UserId = pref.UserId, DefinitionId = pref.NotificationDefinitionId, Channel = pref.Channel }
+            into prefJoin
+        from pref in prefJoin.DefaultIfEmpty()
+        where inbox.PrincipalUserId == principalUserId
+        select new ToastDeltaScanRow
+        {
+            Id = inbox.Id,
+            CreatedAtUtc = inbox.CreatedAtUtc,
+            RenderedSubject = inst.RenderedSubject,
+            RenderedSummary = inst.RenderedSummary,
+            NotificationKind = inst.NotificationKind,
+            DefaultSeverity = (string?)def.DefaultSeverity,
+            ToastEnabledByDefault = (bool?)def.ToastEnabledByDefault,
+            PreferenceIsEnabled = (bool?)pref.IsEnabled,
+        };
+
+    private static NotificationToastDeltaRow ToToastDeltaRow(ToastDeltaScanRow row)
     {
-        var isToastEligible = def is not null && (pref is not null ? pref.IsEnabled : def.ToastEnabledByDefault);
+        // ToastEnabledByDefault is null exactly when the LEFT JOIN found no NotificationDefinitions row
+        // (deleted/missing definition), which mirrors the previous entity-based "def is not null" check.
+        var isToastEligible = row.ToastEnabledByDefault is not null
+            && (row.PreferenceIsEnabled ?? row.ToastEnabledByDefault.Value);
 
         return new NotificationToastDeltaRow(
-            inbox.Id,
-            inbox.NotificationInstanceId,
-            inbox.CreatedAtUtc,
-            inst.RenderedSubject,
-            inst.RenderedSummary,
-            inst.NotificationKind,
-            inst.Status,
-            inst.IntegrationId,
-            def?.DefaultSeverity,
+            row.Id,
+            row.CreatedAtUtc,
+            row.RenderedSubject,
+            row.RenderedSummary,
+            row.NotificationKind,
+            row.DefaultSeverity,
             isToastEligible);
+    }
+
+    /// <summary>
+    /// Narrow, EF-projectable scan-query result shape for <see cref="BuildToastDeltaScanQuery"/>. Not a
+    /// public API -- an implementation-internal seam for query construction and its regression test.
+    /// </summary>
+    internal sealed class ToastDeltaScanRow
+    {
+        public string Id { get; set; } = null!;
+        public DateTimeOffset CreatedAtUtc { get; set; }
+        public string RenderedSubject { get; set; } = null!;
+        public string RenderedSummary { get; set; } = null!;
+        public string NotificationKind { get; set; } = null!;
+        public string? DefaultSeverity { get; set; }
+        public bool? ToastEnabledByDefault { get; set; }
+        public bool? PreferenceIsEnabled { get; set; }
     }
 
     private static NotificationUserInboxItem ToModel(

@@ -77,14 +77,18 @@ public sealed record NotificationUserInboxItemInsert(
 /// user's explicit Toast-channel preference if one exists, else the definition's
 /// <c>ToastEnabledByDefault</c>.
 /// </summary>
+/// <remarks>
+/// Deliberately narrow: this carries only what the Toast delta wire DTO needs. It previously also
+/// carried <c>NotificationInstanceId</c>, <c>InstanceStatus</c>, and <c>IntegrationId</c>, but nothing
+/// consumed them (no DTO, no test) so they were dropped rather than kept as untested dead weight. Re-add
+/// them (and the corresponding projected columns in
+/// <c>SqlNotificationUserInboxStore</c>) if a future phase needs them.
+/// </remarks>
 public sealed record NotificationToastDeltaRow(
     string Id,
-    string NotificationInstanceId,
     DateTimeOffset CreatedAtUtc,
     string RenderedSubject,
     string RenderedSummary,
     string NotificationKind,
-    string InstanceStatus,
-    string? IntegrationId,
     string? DefaultSeverity,
     bool IsToastEligible);

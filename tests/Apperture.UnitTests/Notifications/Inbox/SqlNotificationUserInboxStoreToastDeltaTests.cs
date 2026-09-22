@@ -174,6 +174,24 @@ public sealed class SqlNotificationUserInboxStoreToastDeltaTests
     }
 
     [Fact]
+    public async Task Present_definitions_actual_severity_token_reaches_the_row()
+    {
+        await using var db = CreateDb();
+        var now = DateTimeOffset.Parse("2026-06-01T10:00:00Z");
+
+        db.NotificationDefinitions.Add(NewDefinition("def-1", toastEnabledByDefault: true, defaultSeverity: "warning"));
+        db.NotificationInstances.Add(NewInstance("ninst-1", now, definitionId: "def-1"));
+        db.NotificationUserInboxItems.Add(NewInbox("inbox-1", "ninst-1", "user-a", now));
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationUserInboxStore(db);
+        var rows = await store.ListToastDeltaAsync("user-a", null, null, take: 10, CancellationToken.None);
+
+        rows.Should().ContainSingle().Which.DefaultSeverity.Should().Be("warning",
+            "a present definition's actual severity token must reach the row, not just the null case for a deleted definition");
+    }
+
+    [Fact]
     public async Task Explicit_preference_overrides_definition_default_both_directions()
     {
         await using var db = CreateDb();

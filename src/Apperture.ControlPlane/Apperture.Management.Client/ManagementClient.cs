@@ -2938,10 +2938,20 @@ public sealed class ManagementClient : IManagementClient
     public async Task<NotificationToastDeltaResponseDto> GetNotificationToastDeltaAsync(
         DateTimeOffset? afterCreatedAtUtc, string? afterId, CancellationToken cancellationToken = default)
     {
+        // The composite cursor is "both or neither" -- the server-side guard
+        // (SqlNotificationUserInboxStore.ListToastDeltaAsync) rejects a mismatched pair with a 400. Fail
+        // fast, client-side, on the same contract violation rather than silently building a URL with only
+        // one half of the pair and turning a local bug into a remote 400.
+        if ((afterCreatedAtUtc is null) != (afterId is null))
+            throw new ArgumentException(
+                $"{nameof(afterCreatedAtUtc)} and {nameof(afterId)} must both be provided or both be null; " +
+                "the composite cursor requires both or neither.",
+                nameof(afterId));
+
         var query = new List<string>();
         if (afterCreatedAtUtc is not null)
             query.Add($"afterCreatedAtUtc={Uri.EscapeDataString(afterCreatedAtUtc.Value.ToString("O"))}");
-        if (!string.IsNullOrWhiteSpace(afterId))
+        if (afterId is not null)
             query.Add($"afterId={Uri.EscapeDataString(afterId)}");
         var path = query.Count > 0 ? $"me/notifications/toast-delta?{string.Join("&", query)}" : "me/notifications/toast-delta";
         var dto = await _http.GetFromJsonAsync<NotificationToastDeltaResponseDto>(path, ApiJsonReadOptions, cancellationToken)

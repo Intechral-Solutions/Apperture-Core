@@ -1,4 +1,3 @@
-using Apperture.Core.Domain.Notifications;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -22,10 +21,11 @@ namespace Apperture.UnitTests.Notifications.Inbox;
 /// existing "configure SqlServer provider without connecting" pattern used by
 /// <c>AppertureDbContextModelConsistencyTests</c>.
 ///
-/// The query built here intentionally mirrors the shape <see cref="SqlNotificationUserInboxStore"/>
-/// builds internally (joins, DefaultIfEmpty, composite cursor predicate, composite ordering) rather than
-/// calling the production method directly, since <c>ListToastDeltaAsync</c> awaits
-/// <c>ToListAsync</c> internally rather than exposing an inspectable <see cref="IQueryable{T}"/>.
+/// This calls the actual production query-building seam,
+/// <see cref="SqlNotificationUserInboxStore.BuildToastDeltaScanQuery"/> (internal, exposed to this test
+/// project via <c>InternalsVisibleTo</c>), rather than re-declaring a copy of the query inline. That
+/// seam was extracted specifically so this regression test tracks the real query shape instead of a
+/// stale duplicate that could silently drift from production.
 /// </summary>
 public sealed class SqlNotificationUserInboxStoreToastDeltaSqlTranslationTests
 {
@@ -43,29 +43,17 @@ public sealed class SqlNotificationUserInboxStoreToastDeltaSqlTranslationTests
         var cursorCreatedAtUtc = DateTimeOffset.Parse("2026-06-01T10:00:00Z");
         const string afterId = "inbox-cursor";
 
-        var q = from inbox in db.NotificationUserInboxItems.AsNoTracking()
-                join inst in db.NotificationInstances.AsNoTracking()
-                    on inbox.NotificationInstanceId equals inst.Id
-                join def in db.NotificationDefinitions.AsNoTracking()
-                    on inst.NotificationDefinitionId equals def.Id into defJoin
-                from def in defJoin.DefaultIfEmpty()
-                join pref in db.NotificationUserPreferences.AsNoTracking()
-                    on new { UserId = inbox.PrincipalUserId, DefinitionId = inst.NotificationDefinitionId, Channel = NotificationChannels.Toast }
-                    equals new { UserId = pref.UserId, DefinitionId = pref.NotificationDefinitionId, Channel = pref.Channel }
-                    into prefJoin
-                from pref in prefJoin.DefaultIfEmpty()
-                where inbox.PrincipalUserId == principalUserId
-                select new { inbox, inst, def, pref };
+        var q = SqlNotificationUserInboxStore.BuildToastDeltaScanQuery(db, principalUserId);
 
         // Same composite-cursor predicate as SqlNotificationUserInboxStore.ListToastDeltaAsync: the
         // exact expression this test exists to protect. If this reverts to
-        // string.Compare(x.inbox.Id, afterId, StringComparison.Ordinal), ToQueryString() below throws
+        // string.Compare(x.Id, afterId, StringComparison.Ordinal), ToQueryString() below throws
         // InvalidOperationException instead of producing SQL.
-        q = q.Where(x => x.inbox.CreatedAtUtc > cursorCreatedAtUtc
-            || (x.inbox.CreatedAtUtc == cursorCreatedAtUtc
-                && x.inbox.Id.CompareTo(afterId) > 0));
+        q = q.Where(x => x.CreatedAtUtc > cursorCreatedAtUtc
+            || (x.CreatedAtUtc == cursorCreatedAtUtc
+                && x.Id.CompareTo(afterId) > 0));
 
-        var ordered = q.OrderBy(x => x.inbox.CreatedAtUtc).ThenBy(x => x.inbox.Id).Take(50);
+        var ordered = q.OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id).Take(50);
 
         // The primary assertion: translation does not throw. A genuinely untranslatable expression (like
         // the old string.Compare form) fails here with InvalidOperationException, not silently.

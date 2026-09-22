@@ -173,4 +173,25 @@ public sealed class NotificationTogglePreferenceResolverTests
 
         (await act.Should().NotThrowAsync()).Which.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Missing_definition_with_a_stale_enabled_preference_row_still_resolves_false()
+    {
+        // Simulates a preference row left behind for a definition id that no longer has a
+        // NotificationDefinitions row (e.g. a deletion that did not cascade the preference row away in
+        // the same transaction). The definition's existence must be checked before any preference is
+        // consulted, so this must resolve to false unconditionally -- matching
+        // SqlNotificationUserInboxStore.ListToastDeltaAsync's store-level query, which LEFT JOINs a
+        // possibly-deleted definition and treats a missing definition as ineligible regardless of any
+        // preference row. Before the fix, this method checked the preference first and would have
+        // incorrectly returned true here.
+        await using var db = CreateDb();
+        const string missingDefinitionId = "does-not-exist-with-stale-pref";
+        var preferences = new SqlNotificationUserPreferenceStore(db);
+        await preferences.SetAsync("user-1", missingDefinitionId, NotificationChannels.Toast, true, null);
+
+        var result = await CreateSut(db).ResolveEffectiveToastEnabledAsync("user-1", missingDefinitionId);
+
+        result.Should().BeFalse();
+    }
 }

@@ -16,6 +16,12 @@ public sealed class MeNotificationsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly INotificationUserInboxService _inbox;
+
+    // Used only by ToastDelta below. That action deliberately bypasses INotificationUserInboxService's
+    // repair/backfill logic (EnsureInboxRowsForUserAsync), which is unsuitable for a path polled roughly
+    // every 30 seconds by every active session -- it talks to the store directly instead. Do not
+    // "simplify" ToastDelta onto _inbox; that would reintroduce the expensive repair scan onto the hot
+    // path.
     private readonly INotificationUserInboxStore _inboxStore;
     private readonly NotificationDefinitionAuthorization _definitionAuth;
 
@@ -149,6 +155,7 @@ public sealed class MeNotificationsController : ControllerBase
     /// </summary>
     [HttpGet("toast-delta")]
     [ProducesResponseType(typeof(NotificationToastDeltaResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<NotificationToastDeltaResponseDto>> ToastDelta(
         [FromQuery] DateTimeOffset? afterCreatedAtUtc = null,
@@ -158,6 +165,10 @@ public sealed class MeNotificationsController : ControllerBase
         var userId = await ResolveUserIdAsync(cancellationToken).ConfigureAwait(false);
         if (userId is null)
             return Forbid();
+
+        // Captured before the store call below: the store's own ArgumentException guard can throw for a
+        // mismatched cursor pair, but IsBootstrap only cares what the caller sent, not whether it was valid.
+        var isBootstrap = afterCreatedAtUtc is null;
 
         var rows = await _inboxStore
             .ListToastDeltaAsync(userId, afterCreatedAtUtc, afterId, take: 50, cancellationToken)
@@ -185,6 +196,7 @@ public sealed class MeNotificationsController : ControllerBase
             NextAfterCreatedAtUtc = last?.CreatedAtUtc ?? afterCreatedAtUtc,
             NextAfterId = last?.Id ?? afterId,
             UnreadCount = unreadCount,
+            IsBootstrap = isBootstrap,
         });
     }
 

@@ -68,6 +68,26 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         result.UnreadCount.Should().Be(55, "all seeded items are unread and CountUnreadAsync counts the whole inbox, not just the scanned window");
         result.NextAfterCreatedAtUtc.Should().NotBeNull();
         result.NextAfterId.Should().NotBeNullOrEmpty();
+        result.Items[0].Severity.Should().Be("info", "SeedDefinitionAsync's default severity must reach the wire end-to-end, not just the null/deleted-definition case");
+        result.IsBootstrap.Should().BeTrue("this call carried no cursor, so it returned the tip rather than an incremental delta");
+    }
+
+    // --- 2b. Mismatched cursor pair rejected with 400 ---
+
+    [Fact]
+    public async Task Mismatched_cursor_pair_is_rejected_with_400()
+    {
+        AssertSqlAvailable();
+        var (client, _) = await CreateUserClientAsync();
+
+        // afterCreatedAtUtc set, afterId omitted: violates the "both or neither" composite cursor
+        // contract. The store's ArgumentException guard (SqlNotificationUserInboxStore.ListToastDeltaAsync)
+        // is expected to surface as HTTP 400 via ManagementHostExceptionHandler's ArgumentException mapping.
+        var path = $"{Route}?afterCreatedAtUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.ToString("O"))}";
+
+        var response = await client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     // --- 3. Cursor round trip ---
@@ -88,12 +108,14 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         first.Items.Should().HaveCount(3);
         first.NextAfterCreatedAtUtc.Should().NotBeNull();
         first.NextAfterId.Should().NotBeNullOrEmpty();
+        first.IsBootstrap.Should().BeTrue("the first call carried no cursor");
 
         var second = await GetToastDeltaAsync(client, first.NextAfterCreatedAtUtc, first.NextAfterId);
 
         second.Items.Should().BeEmpty("nothing new has landed since the first poll");
         second.NextAfterCreatedAtUtc.Should().Be(first.NextAfterCreatedAtUtc, "the cursor must not regress when no rows are scanned");
         second.NextAfterId.Should().Be(first.NextAfterId);
+        second.IsBootstrap.Should().BeFalse("the second call carried a cursor, so this is an incremental poll, not a bootstrap");
 
         // No duplicates across the two polls' item sets.
         var firstIds = first.Items.Select(i => i.Id).ToHashSet();
