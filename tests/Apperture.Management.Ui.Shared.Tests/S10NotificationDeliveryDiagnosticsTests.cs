@@ -116,7 +116,7 @@ public sealed class S10NotificationDiagnosticsUiTests
         content.Should().Contain("appear in your");
         content.Should().Contain("turning email off suppresses your email only");
         content.Should().Contain("Administrators decide which notifications exist");
-        content.Should().Contain("Digest summaries, quiet hours");
+        content.Should().Contain("Digest summaries and quiet hours");
     }
 
     private static string ReadRepoFile(string relativePath)
