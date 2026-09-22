@@ -1,7 +1,8 @@
 # Toast-A — Toast UX foundation
 
-**Status:** implemented and validated; **operator smoke in the real app still to run** (checklist below).
-Notification → Toast integration is a **separate, later** roadmap body and is **not started**.
+**Status:** implemented and automatically validated, but **not merge-ready**: the first real-app smoke failed
+(see *Real-app smoke failure*), the cause is fixed and guarded, and a short operator re-smoke on a **restarted** app is
+still required. Notification → Toast integration is a **separate, later** roadmap body and is **not started**.
 
 Scope: redesign and harden the *presentation* of the existing in-app Toast system. No persistent
 platform Notification is connected to Toasts by this body.
@@ -168,6 +169,60 @@ feature code starts touching `SetHold`/`ToastHold`. Layout files: `MainLayout` p
 
 ---
 
+## Real-app smoke failure (first operator smoke) — root cause
+
+**Reported:** toasts against the very left edge of the viewport; no mouse response; swipe dead; the X dead.
+
+**Root cause: a hybrid of old compiled code and new live-served assets — not a defect in the branch's own markup/CSS/JS.**
+Evidence gathered read-only against the operator's running stack (nothing on it was touched or restarted):
+
+| Evidence | Finding |
+| --- | --- |
+| Served `js/toast-host.js` and `css/management-ui-primitives.css` vs the branch | Byte-identical: static assets are read live from disk, so the **new** CSS/JS were being served. |
+| Rendered DOM of the running app's toast host | The **old** markup: `.ui-toast-layer > .ui-toast-region(aria-live) > .ui-toast`, no `.ui-toast-stack`/slot/live regions. |
+| Served HTML of the running app | No `toast-host.js` tag: `_Layout.cshtml` is compiled into the Server binary, which was old. |
+| Build timestamps | The served client `.wasm` and `Ui.Server.dll` were built **14:01**; the process started 14:02; Toast-A's first commit is 15:42. |
+
+Why every symptom follows: the new `.ui-toast-layer` is `left/right: 0; display: flex; pointer-events: none`. The old
+markup's cards sit directly inside it with **no slot restoring `pointer-events: auto`** (the old `.ui-toast` rule that
+did was replaced), so nothing centred them (left edge) and they inherited `pointer-events: none` — inert, X
+included — and the script was not loaded at all.
+
+**Proof the new build is correct in a real Blazor runtime:** the freshly built client, run standalone with a temporary
+(uncommitted, since reverted) probe that fires real `IToastService.Show` calls, passed **29/29** end-to-end checks driven with
+real mouse events: real ToastHost markup, centred (x=384, w=672 at 1440), layer click-through but slot and card
+`pointer-events: auto`, card and close button hit-testable, real X click → `Exiting` → removed through Blazor and the
+service, short-drag snap-back, long-drag dismissal through the real .NET `Swipe`, real hover pause (a toast held to 9 s,
+then gone 3.0 s after leaving — remaining time, not a fresh 6 s), assertive/polite announcements, keyboard Enter on the
+close button, burst overflow (height-capped, pinned to newest, wheel-scrollable) and 390 px width. With `toast-host.js`
+**blocked**, a further **5/5**: still centred, X still dismisses through Blazor alone, auto-dismiss still works — the
+close button does not depend on the gesture script.
+
+**Why the first harness passed while the real app failed:** it built its toast DOM by hand in a `<script>`, so it always
+had the *new* structure regardless of what the compiled app rendered, and it never used the app's real `_Layout`. It could
+not detect markup/CSS/script disagreement, which is exactly this bug class.
+
+**Fixes (narrow):**
+1. `.ui-toast` now also sets `pointer-events: auto` (defence in depth: the click-through layer must not depend on a
+   wrapper to make the card interactive).
+2. The test gap: `ToastHostRenderTests` renders the **real** `ToastHost` (Blazor `HtmlRenderer`, real `ToastService`) and
+   asserts the layer → stack → slot → inner → card → button hierarchy, ids/severities/order, live regions, the nav-rail class and
+   no legacy markup — plus **two-way coupling**: every `.ui-toast*` class in the stylesheet must be rendered by the host, and
+   every class/attribute `toast-host.js` selects must exist in the rendered markup.
+3. `browser/toast-browser-harness.mjs` now consumes markup **exported from that real render** (real slots are cloned to make
+   more toasts; nothing is hand-written) and checks centring, `pointer-events` through the hierarchy, hit-testing of every
+   card and close button, pointerdown, drag transform, snap-back, threshold dismissal, a real mouse click on the close button,
+   fade-mask hit-testing and nav-rail clearance (with the rail control still clickable), plus the earlier scenarios: **58/58**.
+   Its own failure cases were demonstrated: legacy markup under the new CSS fails on the first check; removing
+   `pointer-events: auto` fails hit-testing, pointerdown, drag and close; removing slot centring fails with `x=16` (the
+   reported left-edge symptom).
+
+**Runtime caveat:** static CSS/JS refresh live but compiled Razor and `_Layout.cshtml` do not. After taking this branch the
+Aspire stack (Ui.Server and its client build) must be **rebuilt and restarted**, then the browser hard-refreshed. A partial
+refresh reproduces the reported symptoms.
+
+---
+
 ## Verification
 
 **Automated (exact totals are in the completion report):** `ToastServiceTests` (manual-clock lifecycle: order, dwell,
@@ -176,15 +231,26 @@ dismiss, swipe direction, bound + eviction order, disposal); `ToastFoundationTes
 wiring incl. exit-duration parity and nav-rail clearance); node tests for the pure gesture math
 (`node --test tests/Apperture.Management.Ui.Client.Tests/js/toast-gesture.test.mjs`, not part of the dotnet gates).
 
-**Real-Chrome harness (not the real application):** a standalone page loading the *production* `app.css`,
-`management-ui-primitives.css` and `toast-host.js` with a stub in place of the .NET side, driven through the Chrome
-DevTools Protocol: placement at 1024/1440/1920 and 390 wide, no horizontal overflow, ordering, height cap, wheel and
+**Real-Chrome harness (fixture from the real component; .NET side stubbed):** `tests/.../browser/toast-browser-harness.mjs`
+(usage in its header; not part of the dotnet gates) loads the *production* `app.css`, `management-ui-primitives.css` and
+`toast-host.js` with markup exported from the real `ToastHost`, driven through the Chrome DevTools Protocol: placement at 1024/1440/1920 and 390 wide, no horizontal overflow, ordering, height cap, wheel and
 touch scrolling, mouse and touch swipe (both directions, threshold, snap-back, opacity, vertical/diagonal intent),
 holds (hover, focus, drag, scroll, stuck-hold recovery), focus continuity, exit animation, reduced motion, contrast in
-both themes, nav-rail clearance, lost mouse release, and detach. 83/83 checks passed. It found two real defects (below).
-It does **not** exercise Blazor rendering, `ToastService` in the browser, or JS interop.
+both themes, nav-rail clearance, lost mouse release, and detach. 58/58 checks passed. It found two real defects (below).
+It still does **not** exercise Blazor's live renderer, `ToastService` in the browser, or JS interop; those were covered by the
+one-off real-runtime probe described above (29/29 + 5/5) and are the subject of the operator re-smoke.
 
-### Operator smoke checklist (still to run in the real app)
+### Operator re-smoke (short; required before merge) — on a rebuilt, restarted app with a hard refresh
+
+1. A toast is bottom-centre on desktop (not at the left edge).
+2. The X dismisses it.
+3. A short horizontal mouse drag moves it and it snaps back.
+4. A long horizontal drag dismisses it.
+5. Hovering pauses the timer (it stays past 6 s; leaving resumes the remaining time).
+6. Narrow layout still clears the nav rail (its bottom Config button stays clickable).
+7. An overflowing stack (trigger many toasts) is capped and scrolls.
+
+### Full operator smoke checklist
 
 Trigger toasts from a real page (e.g. save something on Account → Preferences; force an error on Connections).
 

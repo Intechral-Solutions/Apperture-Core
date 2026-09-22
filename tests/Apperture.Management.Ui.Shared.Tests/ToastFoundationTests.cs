@@ -159,6 +159,7 @@ public sealed class ToastFoundationTests
         var card = Rule(".ui-toast");
 
         card.Should().Contain("touch-action: pan-y");
+        card.Should().Contain("pointer-events: auto", "the layer is click-through, so the card must opt in to receiving input itself");
         card.Should().Contain("var(--toast-dx");
         card.Should().Contain("var(--toast-opacity");
         Rule(".ui-toast[data-dragging]").Should().Contain("transition: none");

@@ -62,9 +62,9 @@ reset, cutting across several of them.
      there is **no approved one-to-one Component→Resource invariant** and HSK-D introduced none (evidence
      recorded in the
      [Components/Services/Catalog planning note](../01-architecture/transitions/components-services-catalog/README.md)).
-2. **Toast UX foundation** (**Toast-A**) — **complete (2026-09-21); operator smoke in the real app is
-   still to be run** (the checklist is in the audit; automated tests and a real-Chrome harness against the
-   production CSS/JS passed). Presentation rewrite of the existing, already well-centralized toast system;
+2. **Toast UX foundation** (**Toast-A**) — **implemented (2026-09-21); not merge-ready until a short operator
+   re-smoke passes on a rebuilt, restarted app** (the first real-app smoke failed because the running stack held
+   pre-change compiled code alongside new live-served CSS/JS; cause, fix and guards are in the audit). Presentation rewrite of the existing, already well-centralized toast system;
    **no call-site changes**. Delivered: a bottom-centred, responsive, upward-growing stack capped to a
    fraction of the viewport height that scrolls when it overflows; enter/exit motion with a timer-driven
    `Visible → Exiting → removed` lifecycle; countdowns that pause stack-wide while the operator interacts

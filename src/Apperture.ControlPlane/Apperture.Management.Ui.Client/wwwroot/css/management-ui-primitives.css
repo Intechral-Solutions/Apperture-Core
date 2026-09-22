@@ -745,6 +745,9 @@ details.text-muted[open] > summary {
   color: var(--color-text-body);
   /* Vertical panning stays native (scrolls the stack); horizontal drags reach the pointer handlers. */
   touch-action: pan-y;
+  /* The layer is click-through; the card (and its close button) must be interactive on its own, */
+  /* not merely by inheriting it from the slot. */
+  pointer-events: auto;
   translate: var(--toast-dx, 0px) 0;
   opacity: var(--toast-opacity, 1);
   transition:
