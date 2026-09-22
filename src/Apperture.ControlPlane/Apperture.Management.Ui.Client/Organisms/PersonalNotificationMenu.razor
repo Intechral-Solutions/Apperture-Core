@@ -122,6 +122,16 @@
         });
     }
 
+    // Deliberate, accepted source divergence (see NotificationToastDeltaResponseDto.UnreadCount's doc
+    // comment): the ambient badge intentionally tracks the watcher's cheap, no-repair count on every
+    // ~30s poll tick, while first-paint (RefreshCountAndRenderAsync), session change (OnSessionChanged),
+    // and dropdown-open (LoadMenuAsync/RefreshCountAsync) intentionally still call the more expensive
+    // repair-wrapped GetMyUnreadNotificationCountAsync for those lower-frequency, user-initiated moments
+    // -- matching the DTO comment's own recommendation to reserve the repair-triggering endpoint for
+    // when the user actually opens the inbox/bell. Any brief mismatch between the two numbers self-heals
+    // within one watcher poll cycle, because the repair path only ever adds rows, which the watcher's
+    // next tick will pick up. Do not "fix" this by making the two paths share one source without
+    // re-reading that DTO comment first.
     private async void OnWatcherChanged() => await InvokeAsync(() =>
     {
         _unreadCount = Watcher.UnreadCount;

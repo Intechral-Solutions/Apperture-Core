@@ -447,6 +447,15 @@ public sealed class AccountController : ControllerBase
 
         try
         {
+            // Known, accepted limitation: these two writes are sequential and not transaction-wrapped.
+            // If a caller sends both EmailEnabled and ToastEnabled in one request and the second write
+            // throws (e.g. KeyNotFoundException for an invalid/non-subscribable definitionId), the first
+            // write has already been committed and audited while this action returns an error overall --
+            // a partial-apply outcome the caller wouldn't expect from a single request. This is not
+            // reachable from the shipped client today: AccountNotifications.razor's ToggleEmailAsync and
+            // ToggleToastAsync each always pass null for the other channel, so only one of these two
+            // branches ever runs per request in practice. A future caller that wants atomic multi-channel
+            // writes would need this wrapped in a transaction (or the two service calls merged into one).
             AccountNotificationPreference? updated = null;
             if (request.EmailEnabled.HasValue)
             {
