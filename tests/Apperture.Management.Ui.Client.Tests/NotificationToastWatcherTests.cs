@@ -668,6 +668,7 @@ public sealed class NotificationToastWatcherTests : IDisposable
         var t0 = _clock.GetUtcNow();
         _watcher = await StartPastBootstrapAsync(t0, "bootstrap-1");
         var callsBefore = _requestedCursors.Count;
+        var cursorBeforeMalformedPoll = ((DateTimeOffset?)t0, (string?)"bootstrap-1");
 
         // Items = null! throws NullReferenceException on the `foreach` inside PollCoreAsync -- a stand-in
         // for any malformed/unexpected response shape.
@@ -692,6 +693,12 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _requestedCursors.Should().HaveCount(callsBefore + 1, "the recovery poll must not fire before the doubled 60s backoff elapses");
         _clock.Advance(Millisecond);
         _requestedCursors.Should().HaveCount(callsBefore + 2, "the watcher recovered and polled again at the backoff interval -- it did not go permanently dark");
+
+        // Prove no partial state committed from the malformed response: the recovery poll must have been
+        // sent with the SAME cursor as before the malformed poll (t0/"bootstrap-1"), not the malformed
+        // response's own NextAfterCreatedAtUtc/NextAfterId (t0+1s/"n-1"), which must never have been
+        // written to the watcher's cursor fields.
+        _requestedCursors[^1].Should().Be(cursorBeforeMalformedPoll, "the malformed response's cursor must never have been committed -- the recovery poll re-sends the pre-malformed-poll cursor unchanged");
     }
 
     // ---------- Test doubles ----------

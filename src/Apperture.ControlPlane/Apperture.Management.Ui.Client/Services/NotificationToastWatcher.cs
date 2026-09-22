@@ -220,15 +220,21 @@ public sealed class NotificationToastWatcher : INotificationToastWatcher
                 // OWN _baselineEstablished flag, not response.IsBootstrap (see the class doc for why
                 // those two are not equivalent). Everything below this "if" can still throw (a
                 // malformed response, e.g. a null Items array) without ANY field having been committed
-                // yet -- the actual field writes are deferred to the bottom of this block precisely so
-                // a mid-processing exception leaves no partial state applied (falls through to the
-                // catch below instead, which backs off and re-arms like any other failure).
+                // yet -- collected into LOCALS only (deliveredThisPoll below, alongside pending), never
+                // written into _dedupeSet/_dedupeOrder directly here, so a mid-processing exception
+                // (e.g. partway through a malformed Items array) cannot leave some items marked
+                // "delivered" while the cursor never actually advanced past them -- which would silently
+                // and permanently suppress their toast on the retry. The actual field/structure writes
+                // are deferred to the bottom of this block precisely so a mid-processing exception falls
+                // through to the catch below instead, exactly like any other failure: no partial state
+                // applied anywhere, dedupe included.
+                List<string>? deliveredThisPoll = null;
                 if (_baselineEstablished)
                 {
                     var shown = 0;
                     foreach (var item in response.Items)
                     {
-                        if (_dedupeSet.Contains(item.Id))
+                        if (_dedupeSet.Contains(item.Id) || deliveredThisPoll?.Contains(item.Id) == true)
                             continue;
 
                         if (shown < MaxToastsPerPoll)
@@ -242,7 +248,7 @@ public sealed class NotificationToastWatcher : INotificationToastWatcher
                         // item (below) already keeps it from being re-fetched, but this keeps the dedupe
                         // set's meaning consistent -- "already delivered to the resolved-set, whether
                         // displayed or not" -- rather than depending solely on cursor bookkeeping.
-                        RecordDelivered(item.Id);
+                        (deliveredThisPoll ??= new List<string>()).Add(item.Id);
                     }
                 }
 
@@ -258,6 +264,11 @@ public sealed class NotificationToastWatcher : INotificationToastWatcher
                 // Nothing above this point can throw again -- commit.
                 _unreadCount = response.UnreadCount;
                 _baselineEstablished = true;
+                if (deliveredThisPoll is not null)
+                {
+                    foreach (var id in deliveredThisPoll)
+                        RecordDelivered(id);
+                }
                 if (cursorIsWellFormed)
                 {
                     _cursorCreatedAtUtc = response.NextAfterCreatedAtUtc;

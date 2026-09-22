@@ -58,9 +58,9 @@ internal sealed class ManualTimeProvider : TimeProvider
             timer.InvokeCallback();
     }
 
-    private void Forget(ManualTimer timer)
+    private void Forget(ManualTimer timer, bool wasArmed)
     {
-        if (timer.Due is not null)
+        if (wasArmed)
             _cancelledWhileArmed.Add(timer);
         _timers.Remove(timer);
     }
@@ -97,8 +97,11 @@ internal sealed class ManualTimeProvider : TimeProvider
 
         public void Dispose()
         {
+            // Capture "was this timer still armed" BEFORE clearing Due -- Forget needs to know whether
+            // disposal cancelled a pending fire, and it can no longer tell once Due has been nulled.
+            var wasArmed = Due is not null;
             Due = null;
-            _owner.Forget(this);
+            _owner.Forget(this, wasArmed);
         }
 
         public ValueTask DisposeAsync()
