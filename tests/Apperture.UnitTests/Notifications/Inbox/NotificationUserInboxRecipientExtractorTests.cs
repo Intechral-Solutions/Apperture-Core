@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Domain.Notifications;
 using FluentAssertions;
 using Xunit;
 
@@ -43,6 +44,29 @@ public sealed class NotificationUserInboxRecipientExtractorTests
 
         recipients.Should().ContainSingle();
         recipients[0].UserId.Should().Be("user-a");
+    }
+
+    [Fact]
+    public void ManagedContact_entry_in_InApp_resolves_kind_and_ref_from_ManagedContactId()
+    {
+        var json = """
+            {
+              "deliverable": [
+                { "email": "linked-vendor@test.com", "userId": "user-linked", "managedContactId": "mc-linked", "recipientKind": "managedContact", "source": "directSubscription" }
+              ],
+              "skipped": [],
+              "inApp": [
+                { "email": "linked-vendor@test.com", "userId": "user-linked", "managedContactId": "mc-linked", "recipientKind": "managedContact", "source": "directSubscription" }
+              ]
+            }
+            """;
+
+        var recipients = NotificationUserInboxRecipientExtractor.ExtractPrincipalRecipients(json);
+
+        recipients.Should().ContainSingle();
+        recipients[0].UserId.Should().Be("user-linked");
+        recipients[0].SourceRecipientKind.Should().Be(NotificationRecipientKinds.ManagedContact);
+        recipients[0].SourceRecipientRef.Should().Be("mc-linked");
     }
 
     [Fact]

@@ -441,6 +441,48 @@ public sealed class SqlNotificationRecipientResolverTests
     }
 
     [Fact]
+    public async Task Linked_managed_contact_InApp_entry_carries_ManagedContactId()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mc-linked",
+            DisplayName = "Linked Vendor",
+            EmailAddress = "linked-vendor@test.com",
+            Source = "Custom",
+            IsEnabled = true,
+            LinkedUserId = "user-linked",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.ManagedContact,
+                "mc-linked",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().ContainSingle(r =>
+            r.Email == "linked-vendor@test.com" && r.ManagedContactId == "mc-linked");
+        preview.InApp.Should().ContainSingle(r =>
+            r.UserId == "user-linked"
+            && r.ManagedContactId == "mc-linked"
+            && r.RecipientKind == NotificationRecipientKinds.ManagedContact);
+    }
+
+    [Fact]
     public async Task Two_users_sharing_email_both_InApp_eligible_but_only_one_email_deliverable()
     {
         await using var db = CreateDb();

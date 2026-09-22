@@ -375,6 +375,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
                 member.UserId,
                 member.DisplayName,
                 member.Email,
+                member.ManagedContactId,
                 source,
                 subscriptionId,
                 recipientKind));

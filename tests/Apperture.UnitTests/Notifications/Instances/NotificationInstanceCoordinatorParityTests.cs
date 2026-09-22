@@ -178,6 +178,14 @@ public sealed class NotificationInstanceCoordinatorParityTests
         instance.Status.Should().Be(NotificationInstanceStatuses.Pending);
         instance.SuppressionReason.Should().BeNull();
         (await db.NotificationDeliveryOutbox.CountAsync()).Should().Be(0);
+
+        // End-to-end JSON round-trip: real resolver -> real coordinator serialization -> real extractor
+        // deserialization. This proves the "inApp" property name and camelCase naming policy actually
+        // line up between SerializeRecipientSnapshot and ExtractPrincipalRecipients, not just that each
+        // stage behaves correctly in isolation against handcrafted JSON.
+        instance.RecipientSnapshotJson.Should().Contain("\"inApp\"");
+        var extracted = NotificationUserInboxRecipientExtractor.ExtractPrincipalRecipients(instance.RecipientSnapshotJson);
+        extracted.Should().ContainSingle(r => r.UserId == "user-1");
     }
 
     [Fact]

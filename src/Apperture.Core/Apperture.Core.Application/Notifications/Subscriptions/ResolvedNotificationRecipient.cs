@@ -24,6 +24,7 @@ public sealed record InAppEligibleRecipient(
     string UserId,
     string? DisplayName,
     string? Email,
+    string? ManagedContactId,
     string Source,
     string? SubscriptionId,
     string RecipientKind);

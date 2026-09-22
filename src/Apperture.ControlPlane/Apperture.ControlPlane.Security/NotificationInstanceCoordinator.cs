@@ -676,6 +676,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             Email = r.Email,
             DisplayName = r.DisplayName,
             UserId = r.UserId,
+            ManagedContactId = r.ManagedContactId,
             Source = r.Source,
             SubscriptionId = r.SubscriptionId,
             RecipientKind = r.RecipientKind,
