@@ -92,10 +92,23 @@
                                             <input type="checkbox"
                                                    class="h-4 w-4"
                                                    checked="@preference.EmailEnabled"
-                                                   disabled="@IsBusy(preference.DefinitionId)"
+                                                   disabled="@IsBusy(preference.DefinitionId, "email")"
                                                    aria-label="@($"Email me about {preference.DisplayName}")"
                                                    @onchange="e => ToggleEmailAsync(preference, e)" />
                                             <span class="text-heading">@(preference.EmailEnabled ? "On" : "Off")</span>
+                                        </label>
+                                    </div>
+
+                                    <div>
+                                        <span class="block text-xs font-medium uppercase tracking-wide text-muted">Show as toast</span>
+                                        <label class="mt-1 inline-flex items-center gap-2 text-sm">
+                                            <input type="checkbox"
+                                                   class="h-4 w-4"
+                                                   checked="@preference.ToastEnabled"
+                                                   disabled="@IsBusy(preference.DefinitionId, "toast")"
+                                                   aria-label="@($"Show a toast for {preference.DisplayName}")"
+                                                   @onchange="e => ToggleToastAsync(preference, e)" />
+                                            <span class="text-heading">@(preference.ToastEnabled ? "On" : "Off")</span>
                                         </label>
                                     </div>
                                 </div>
@@ -144,7 +157,7 @@
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private bool IsBusy(string definitionId) => _busy.Contains(definitionId);
+    private bool IsBusy(string definitionId, string channel) => _busy.Contains($"{definitionId}:{channel}");
 
     private async Task LoadAsync()
     {
@@ -168,10 +181,11 @@
     private async Task ToggleEmailAsync(NotificationPreferenceDto preference, ChangeEventArgs args)
     {
         var enabled = args.Value is bool value && value;
-        _busy.Add(preference.DefinitionId);
+        var busyKey = $"{preference.DefinitionId}:email";
+        _busy.Add(busyKey);
         try
         {
-            var updated = await Client.SetAccountNotificationPreferenceAsync(preference.DefinitionId, enabled);
+            var updated = await Client.SetAccountNotificationPreferenceAsync(preference.DefinitionId, emailEnabled: enabled, toastEnabled: null);
             var index = _preferences.FindIndex(p => string.Equals(p.DefinitionId, preference.DefinitionId, StringComparison.Ordinal));
             if (index >= 0)
                 _preferences[index] = updated;
@@ -190,7 +204,37 @@
         }
         finally
         {
-            _busy.Remove(preference.DefinitionId);
+            _busy.Remove(busyKey);
+        }
+    }
+
+    private async Task ToggleToastAsync(NotificationPreferenceDto preference, ChangeEventArgs args)
+    {
+        var enabled = args.Value is bool value && value;
+        var busyKey = $"{preference.DefinitionId}:toast";
+        _busy.Add(busyKey);
+        try
+        {
+            var updated = await Client.SetAccountNotificationPreferenceAsync(preference.DefinitionId, emailEnabled: null, toastEnabled: enabled);
+            var index = _preferences.FindIndex(p => string.Equals(p.DefinitionId, preference.DefinitionId, StringComparison.Ordinal));
+            if (index >= 0)
+                _preferences[index] = updated;
+
+            Toasts.Show(
+                ToastSeverity.Success,
+                updated.ToastEnabled
+                    ? $"Toast is on for “{updated.DisplayName}”."
+                    : $"Toast is off for “{updated.DisplayName}”.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message, "Could not save notification preference");
+            // Re-read so the checkbox reflects stored state rather than the failed click.
+            await LoadAsync();
+        }
+        finally
+        {
+            _busy.Remove(busyKey);
         }
     }
 }

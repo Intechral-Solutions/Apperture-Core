@@ -47,6 +47,33 @@ public sealed class S9PersonalNotificationPreferencesUiTests
         content.Should().NotContain("disabled=\"@(!preference.PlatformEditable)\"");
     }
 
+    [Fact]
+    public void Account_notification_preferences_page_renders_a_toast_toggle_alongside_email()
+    {
+        var content = ReadRepoFile("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Account/AccountNotifications.razor");
+
+        // Toast-B P5 Task 2: the Toast column mirrors the existing Email column's per-row autosave shape.
+        content.Should().Contain("ToggleToastAsync");
+        content.Should().Contain("Show as toast");
+        content.Should().Contain("aria-label=\"@($\"Show a toast for {preference.DisplayName}\")\"");
+
+        // Regression: the email-focused controls are still present alongside the new toast column.
+        content.Should().Contain("ToggleEmailAsync");
+        content.Should().Contain("aria-label=\"@($\"Email me about {preference.DisplayName}\")\"");
+    }
+
+    [Fact]
+    public void Account_notification_preferences_page_scopes_busy_state_per_channel()
+    {
+        var content = ReadRepoFile("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Account/AccountNotifications.razor");
+
+        // Busy state must be scoped per (definitionId, channel), not per row, so toggling Email doesn't
+        // disable the Toast control for the same notification and vice versa.
+        content.Should().Contain("IsBusy(string definitionId, string channel)");
+        content.Should().Contain(":email\"");
+        content.Should().Contain(":toast\"");
+    }
+
     private static string ReadRepoFile(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
