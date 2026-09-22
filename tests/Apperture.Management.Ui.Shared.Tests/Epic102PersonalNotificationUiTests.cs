@@ -122,6 +122,69 @@ public sealed class Epic102PersonalNotificationUiTests
     }
 
     [Fact]
+    public void Personal_notification_menu_subscribes_to_watcher_changed_and_unsubscribes_on_dispose()
+    {
+        // No bUnit (or any other Razor-component render harness) exists anywhere in this repo -- see
+        // tests/Apperture.Management.Ui.Client.Tests/ResourceContextViewStateTests.cs's doc comment --
+        // and OnWatcherChanged's body (InvokeAsync/StateHasChanged) requires a live RenderHandle to
+        // execute, which only a real or fake Blazor renderer can provide. Source-text assertion is the
+        // established pattern for this exact component (see the other tests in this file and
+        // Uix2ManagementBreadcrumbStabilizationTests.cs's "Session.Changed -=" assertion), so this test
+        // follows suit rather than introducing new test infrastructure as a side effect of this task.
+        var path = Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "Apperture.ControlPlane",
+            "Apperture.Management.Ui.Client",
+            "Organisms",
+            "PersonalNotificationMenu.razor");
+        var content = File.ReadAllText(path);
+
+        content.Should().Contain("@inject INotificationToastWatcher Watcher");
+        content.Should().Contain("Watcher.Changed += OnWatcherChanged;");
+        content.Should().Contain("Watcher.Changed -= OnWatcherChanged;");
+        content.Should().Contain("_unreadCount = Watcher.UnreadCount;");
+
+        // The subscribe must sit alongside the existing Session.Changed/Menus.Changed subscriptions in
+        // OnInitialized, and the unsubscribe alongside their Dispose() counterparts -- not off on its own.
+        var onInitializedIdx = content.IndexOf("protected override void OnInitialized()", StringComparison.Ordinal);
+        var disposeIdx = content.IndexOf("public void Dispose()", StringComparison.Ordinal);
+        onInitializedIdx.Should().BeGreaterThan(-1);
+        disposeIdx.Should().BeGreaterThan(-1);
+
+        var onInitializedBody = content[onInitializedIdx..content.IndexOf('}', onInitializedIdx)];
+        onInitializedBody.Should().Contain("Session.Changed += OnSessionChanged;");
+        onInitializedBody.Should().Contain("Watcher.Changed += OnWatcherChanged;");
+
+        var disposeBody = content[disposeIdx..content.IndexOf('}', disposeIdx)];
+        disposeBody.Should().Contain("Session.Changed -= OnSessionChanged;");
+        disposeBody.Should().Contain("Watcher.Changed -= OnWatcherChanged;");
+    }
+
+    [Fact]
+    public void Personal_notification_menu_footer_links_to_notification_settings()
+    {
+        var path = Path.Combine(
+            FindRepoRoot(),
+            "src",
+            "Apperture.ControlPlane",
+            "Apperture.Management.Ui.Client",
+            "Organisms",
+            "PersonalNotificationMenu.razor");
+        var content = File.ReadAllText(path);
+
+        content.Should().Contain("<a href=\"@AccountUiRoutes.Notifications\" class=\"ui-menu-item\" @onclick=\"Close\">Notification settings</a>");
+
+        // The settings link belongs in the same footer as "View all notifications", after it.
+        var footerIdx = content.IndexOf("ui-personal-notification-menu__footer", StringComparison.Ordinal);
+        var viewAllIdx = content.IndexOf("View all notifications", StringComparison.Ordinal);
+        var settingsIdx = content.IndexOf("Notification settings", StringComparison.Ordinal);
+        footerIdx.Should().BeGreaterThan(-1);
+        viewAllIdx.Should().BeGreaterThan(footerIdx);
+        settingsIdx.Should().BeGreaterThan(viewAllIdx);
+    }
+
+    [Fact]
     public void Me_notifications_controller_does_not_require_definition_read_permission()
     {
         var path = Path.Combine(

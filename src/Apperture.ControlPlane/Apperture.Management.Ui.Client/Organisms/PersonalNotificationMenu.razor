@@ -7,6 +7,7 @@
 @inject SessionStateService Session
 @inject DomainMenuService DomainMenuService
 @inject TopBarMenuCoordinator Menus
+@inject INotificationToastWatcher Watcher
 @implements IDisposable
 
 <div class="relative" @onclick:stopPropagation="true">
@@ -66,6 +67,7 @@
                    @onclick="Close">
                     View all notifications
                 </a>
+                <a href="@AccountUiRoutes.Notifications" class="ui-menu-item" @onclick="Close">Notification settings</a>
             </div>
         </div>
     }
@@ -84,6 +86,7 @@
     {
         Session.Changed += OnSessionChanged;
         Menus.Changed += OnMenusChanged;
+        Watcher.Changed += OnWatcherChanged;
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -118,6 +121,12 @@
             StateHasChanged();
         });
     }
+
+    private async void OnWatcherChanged() => await InvokeAsync(() =>
+    {
+        _unreadCount = Watcher.UnreadCount;
+        StateHasChanged();
+    });
 
     private async Task ToggleAsync()
     {
@@ -208,5 +217,6 @@
     {
         Session.Changed -= OnSessionChanged;
         Menus.Changed -= OnMenusChanged;
+        Watcher.Changed -= OnWatcherChanged;
     }
 }
