@@ -29,7 +29,8 @@ public static class NotificationUserInboxRecipientExtractor
 
         var byUser = new Dictionary<string, InboxPrincipalRecipient>(StringComparer.Ordinal);
 
-        foreach (var entry in doc.Deliverable)
+        var source = doc.InApp is { Count: > 0 } ? doc.InApp : doc.Deliverable;
+        foreach (var entry in source)
         {
             if (string.IsNullOrWhiteSpace(entry.UserId))
                 continue;

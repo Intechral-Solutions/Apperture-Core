@@ -151,6 +151,36 @@ public sealed class NotificationInstanceCoordinatorParityTests
     }
 
     [Fact]
+    public async Task Activation_not_suppressed_when_InApp_eligible_recipient_exists_without_email()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "No Email", EmailAddress = null });
+        await db.SaveChangesAsync();
+        await new SqlNotificationSubscriptionStore(db).AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var sut = NotificationInstanceCoordinatorTestsHelper.CreateCoordinator(db);
+
+        await sut.TryCreateFromMatchAsync(
+            Matched(NotificationKinds.Activation),
+            Context(NotificationEvaluationTestHelpers.SampleMissingEvent("int-1", "inc-1")));
+
+        var instance = await db.NotificationInstances.SingleAsync();
+        instance.Status.Should().Be(NotificationInstanceStatuses.Pending);
+        instance.SuppressionReason.Should().BeNull();
+        (await db.NotificationDeliveryOutbox.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Reminder_requires_prior_successful_send_for_interval()
     {
         await using var db = CreateDb();

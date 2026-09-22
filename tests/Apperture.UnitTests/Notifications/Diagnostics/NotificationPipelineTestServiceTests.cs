@@ -92,6 +92,7 @@ public sealed class NotificationPipelineTestServiceTests
                     NotificationRecipientSources.DirectSubscription,
                     "sub_1",
                     NotificationRecipientKinds.Principal)],
+                [],
                 []));
 
         var sut = CreateSut(
@@ -162,7 +163,7 @@ public sealed class NotificationPipelineTestServiceTests
                 definition.Id.Value,
                 "int_test",
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new NotificationRecipientResolutionPreview([], []));
+            .ReturnsAsync(new NotificationRecipientResolutionPreview([], [], []));
 
         var instances = new Mock<INotificationInstanceStore>();
         instances.Setup(i => i.ListAsync(It.IsAny<NotificationInstanceListQuery>(), It.IsAny<CancellationToken>()))

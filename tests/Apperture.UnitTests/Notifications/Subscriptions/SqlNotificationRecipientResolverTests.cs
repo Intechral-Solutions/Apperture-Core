@@ -412,6 +412,212 @@ public sealed class SqlNotificationRecipientResolverTests
     }
 
     [Fact]
+    public async Task Principal_with_missing_email_is_still_InApp_eligible()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "No Email", EmailAddress = null });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.MissingEmail);
+        preview.InApp.Should().ContainSingle(r => r.UserId == "user-1");
+    }
+
+    [Fact]
+    public async Task Two_users_sharing_email_both_InApp_eligible_but_only_one_email_deliverable()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "First", EmailAddress = "shared@test.com" });
+        db.Users.Add(new UserEntity { Id = "user-2", DisplayName = "Second", EmailAddress = "shared@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-2",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().HaveCount(1);
+        preview.InApp.Should().HaveCount(2);
+        preview.InApp.Select(r => r.UserId).Should().BeEquivalentTo(["user-1", "user-2"]);
+    }
+
+    [Fact]
+    public async Task Global_opt_out_suppresses_InApp_too()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, null, "user-1"));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            "int-1");
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.UserOptOut);
+        preview.InApp.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Team_scoped_opt_out_keeps_InApp_route_scoped()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        const string teamId = "team-1";
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Member", EmailAddress = "member@test.com" });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = teamId,
+            Name = "Ops",
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "m1",
+            OperationalTeamId = teamId,
+            MemberKind = "Principal",
+            PrincipalUserId = "user-1",
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.OperationalTeam,
+                teamId,
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand(
+                "user-1",
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                teamId,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().ContainSingle(r => r.Email == "member@test.com");
+        preview.Skipped.Should().Contain(s =>
+            s.Reason == NotificationRecipientSkipReasons.UserOptOut
+            && s.Source == NotificationRecipientSources.OperationalTeamMembership);
+        preview.InApp.Should().Contain(r => r.UserId == "user-1");
+    }
+
+    [Fact]
+    public async Task Disabled_managed_contact_is_not_InApp_eligible()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Linked", EmailAddress = "linked@test.com" });
+        db.ManagedContacts.Add(new ManagedContactEntity
+        {
+            Id = "mc-1",
+            DisplayName = "Vendor",
+            EmailAddress = "vendor@test.com",
+            Source = "Custom",
+            IsEnabled = false,
+            LinkedUserId = "user-1",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.ManagedContact,
+                "mc-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.ContactDisabled);
+        preview.InApp.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Team_empty_is_skipped_with_team_empty_reason()
     {
         await using var db = CreateDb();

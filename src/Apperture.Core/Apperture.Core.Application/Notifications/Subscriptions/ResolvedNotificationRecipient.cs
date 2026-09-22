@@ -20,6 +20,15 @@ public sealed record SkippedNotificationRecipient(
     string? RecipientKind,
     string Reason);
 
+public sealed record InAppEligibleRecipient(
+    string UserId,
+    string? DisplayName,
+    string? Email,
+    string Source,
+    string? SubscriptionId,
+    string RecipientKind);
+
 public sealed record NotificationRecipientResolutionPreview(
     IReadOnlyList<ResolvedNotificationRecipient> Deliverable,
-    IReadOnlyList<SkippedNotificationRecipient> Skipped);
+    IReadOnlyList<SkippedNotificationRecipient> Skipped,
+    IReadOnlyList<InAppEligibleRecipient> InApp);

@@ -4,6 +4,7 @@ public sealed class RecipientSnapshotDocument
 {
     public List<RecipientSnapshotEntry> Deliverable { get; set; } = [];
     public List<RecipientSnapshotEntry> Skipped { get; set; } = [];
+    public List<RecipientSnapshotEntry> InApp { get; set; } = [];
 }
 
 public sealed class RecipientSnapshotEntry

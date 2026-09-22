@@ -235,10 +235,14 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
 
         if (isBuiltInExpectedRunMissing)
         {
-            if (kind == NotificationKinds.Reminder && recipientPreview.Deliverable.Count == 0)
+            if (kind == NotificationKinds.Reminder
+                && recipientPreview.Deliverable.Count == 0
+                && recipientPreview.InApp.Count == 0)
                 return;
 
-            if (kind == NotificationKinds.Escalation && recipientPreview.Deliverable.Count == 0)
+            if (kind == NotificationKinds.Escalation
+                && recipientPreview.Deliverable.Count == 0
+                && recipientPreview.InApp.Count == 0)
             {
                 await CreateSuppressedInstanceAsync(
                     match,
@@ -256,7 +260,8 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             }
 
             if ((kind == NotificationKinds.Activation || kind == NotificationKinds.Resolved)
-                && recipientPreview.Deliverable.Count == 0)
+                && recipientPreview.Deliverable.Count == 0
+                && recipientPreview.InApp.Count == 0)
             {
                 await CreateSuppressedInstanceAsync(
                     match,
@@ -275,7 +280,8 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
         }
         else if (isModuleBuiltIn
                  && kind == NotificationKinds.Activation
-                 && recipientPreview.Deliverable.Count == 0)
+                 && recipientPreview.Deliverable.Count == 0
+                 && recipientPreview.InApp.Count == 0)
         {
             await CreateSuppressedInstanceAsync(
                 match,
@@ -617,7 +623,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 SubscriptionId: null,
                 NotificationRecipientKinds.OperationalTeam))
             .ToList();
-        return new NotificationRecipientResolutionPreview(deliverable, []);
+        return new NotificationRecipientResolutionPreview(deliverable, [], []);
     }
 
     private static string? ResolveIncidentId(
@@ -646,6 +652,7 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
                 RecipientKind = s.RecipientKind,
                 Reason = s.Reason,
             }).ToList(),
+            InApp = preview.InApp.Select(ToInAppSnapshotEntry).ToList(),
         };
         return JsonSerializer.Serialize(doc, JsonOptions);
     }
@@ -658,6 +665,17 @@ public sealed class NotificationInstanceCoordinator : INotificationInstanceCoord
             UserId = r.UserId,
             ManagedContactId = r.ManagedContactId,
             Usability = r.Usability,
+            Source = r.Source,
+            SubscriptionId = r.SubscriptionId,
+            RecipientKind = r.RecipientKind,
+        };
+
+    private static RecipientSnapshotEntry ToInAppSnapshotEntry(InAppEligibleRecipient r) =>
+        new()
+        {
+            Email = r.Email,
+            DisplayName = r.DisplayName,
+            UserId = r.UserId,
             Source = r.Source,
             SubscriptionId = r.SubscriptionId,
             RecipientKind = r.RecipientKind,
