@@ -5,7 +5,12 @@ using Apperture.Management.Ui.Shared.Auth;
 
 namespace Apperture.Management.Ui.Client.Services;
 
-/// <summary>Loads <see cref="MeResponse"/> from the API for shell presence. Scoped per WASM circuit.</summary>
+/// <summary>
+/// Loads <see cref="MeResponse"/> from the API for shell presence. Registered <c>AddScoped</c>; the only
+/// host that actually creates a DI scope around it is the WASM client, where that scope spans the whole
+/// browser tab's lifetime, not a per-request scope -- so consumers with their own longer-lived state
+/// (e.g. <see cref="NotificationToastWatcher"/>) can safely also be <c>AddScoped</c> against it.
+/// </summary>
 public sealed class SessionStateService
 {
     private readonly IManagementClient _client;

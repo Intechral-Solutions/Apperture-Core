@@ -1,3 +1,4 @@
+using System.Reflection;
 using Apperture.Management.Client;
 using Apperture.Management.Ui.Client.Services;
 using Apperture.Management.Ui.Shared;
@@ -104,6 +105,22 @@ public sealed class NotificationToastWatcherTests : IDisposable
         };
 
     /// <summary>
+    /// Number of delegates in <see cref="SessionStateService.Changed"/>'s invocation list, via reflection
+    /// on the compiler-generated field-like event backing field. Used only to prove <c>Start()</c>
+    /// idempotency directly (a non-idempotent <c>Start()</c> would double-subscribe), because
+    /// <c>OnSessionChanged</c>'s own internal <c>_polling</c>-state guard happens to make a duplicate
+    /// subscription's SECOND invocation a no-op through most session transitions -- so asserting on
+    /// downstream behavior alone (timer count, poll count) is not sufficient to catch a missing
+    /// <c>Start()</c> guard, as the earlier, weaker version of this test demonstrated.
+    /// </summary>
+    private static int CountSessionChangedSubscribers(SessionStateService session)
+    {
+        var field = typeof(SessionStateService).GetField(nameof(SessionStateService.Changed), BindingFlags.Instance | BindingFlags.NonPublic);
+        var subscribers = (Action?)field!.GetValue(session);
+        return subscribers?.GetInvocationList().Length ?? 0;
+    }
+
+    /// <summary>
     /// Starts a watcher on an Authenticated session and drives it through one bootstrap poll (which
     /// carries a throwaway item, so the resulting cursor is a known non-null value), asserting the
     /// bootstrap itself never toasts. Returns the started watcher.
@@ -146,11 +163,13 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _watcher.Start();
         _clock.Advance(TimeSpan.Zero);
 
-        _toasts.Calls.Should().BeEmpty("IsBootstrap:true must never toast, regardless of how many items the response carries");
+        _toasts.Calls.Should().BeEmpty("the first poll of the epoch must never toast, regardless of how many items the response carries");
         _requestedCursors.Should().ContainSingle().Which.Should().Be(((DateTimeOffset?)null, (string?)null), "the very first poll must request with no cursor");
 
-        // The cursor and dedupe bookkeeping still advanced: the next poll only toasts a genuinely-new
-        // item, proving the bootstrap set (n-1/n-2/n-3) was not silently re-surfaced.
+        // The cursor bookkeeping advanced (the dedupe set is deliberately left untouched on the
+        // baseline poll -- see NotificationToastWatcher's class doc -- so it is the cursor advancing
+        // past n-1/n-2/n-3, not dedupe, that keeps the next poll from re-fetching the bootstrap set):
+        // the next poll only toasts a genuinely-new item.
         _responses.Enqueue(() => Task.FromResult(Response(
             items: [Item("n-4")],
             nextCreatedAtUtc: bootstrapTime.AddSeconds(1),
@@ -161,6 +180,47 @@ public sealed class NotificationToastWatcherTests : IDisposable
 
         _toasts.Calls.Should().ContainSingle().Which.DedupeKey.Should().Be("n-4");
         _requestedCursors[1].Should().Be(((DateTimeOffset?)bootstrapTime, (string?)"n-3"), "the cursor must have advanced past the bootstrap set");
+    }
+
+    // ---------- Critical regression: baseline suppression must be driven by the watcher's OWN state, not the server's IsBootstrap flag ----------
+
+    /// <summary>
+    /// A brand-new operator, a fresh single-tenant Instance, or the demo path can all start with a
+    /// genuinely empty inbox. The endpoint's own contract (<c>MeNotificationsController.ToastDelta</c>)
+    /// then echoes the incoming (null) cursor straight back as <c>NextAfterCreatedAtUtc</c>/
+    /// <c>NextAfterId</c> when nothing was scanned, so the watcher's second poll still sends no cursor --
+    /// which means the SERVER classifies that second poll as bootstrap too
+    /// (<c>isBootstrap = afterCreatedAtUtc is null</c>, computed purely from what the caller sent, with
+    /// no notion of "this is actually poll #2 of the epoch"). A watcher that suppressed toasting based on
+    /// <c>response.IsBootstrap</c> would therefore silently and PERMANENTLY drop the first real
+    /// notification(s) that ever arrive for that operator. This test proves the fix: suppression must
+    /// track the watcher's own baseline state, not the server's per-request flag.
+    /// </summary>
+    [Fact]
+    public async Task Empty_inbox_on_first_poll_still_toasts_new_items_on_the_second_poll_even_though_the_server_still_reports_bootstrap()
+    {
+        var session = await AuthenticatedSessionAsync();
+        _watcher = new NotificationToastWatcher(_client.Object, _toasts, session, _clock);
+
+        // First poll: genuinely empty inbox. No rows scanned -> the server's own fallback echoes the
+        // incoming null cursor straight back.
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
+        _watcher.Start();
+        _clock.Advance(TimeSpan.Zero);
+
+        _toasts.Calls.Should().BeEmpty();
+        _requestedCursors[0].Should().Be(((DateTimeOffset?)null, (string?)null));
+
+        // Second poll: real content has since arrived, but the watcher still has no cursor to send (the
+        // first poll never advanced it), so the server reports IsBootstrap:true YET AGAIN for this
+        // request -- purely a function of the empty request, unrelated to this being the epoch's second
+        // poll. The watcher's own _baselineEstablished (already true after poll #1) must still toast.
+        var t1 = _clock.GetUtcNow();
+        _responses.Enqueue(() => Task.FromResult(Response(items: [Item("n-1")], nextCreatedAtUtc: t1, nextId: "n-1", unreadCount: 1, isBootstrap: true)));
+        _clock.Advance(30 * Second);
+
+        _requestedCursors[1].Should().Be(((DateTimeOffset?)null, (string?)null), "the watcher genuinely had no cursor to send -- this is the real-world trigger for the bug, not a contrived response");
+        _toasts.Calls.Should().ContainSingle("the watcher's own baseline tracking, not the server's per-request IsBootstrap flag, must gate suppression").Which.DedupeKey.Should().Be("n-1");
     }
 
     // ---------- 2. New item after baseline ----------
@@ -321,6 +381,31 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _requestedCursors.Should().HaveCount(1, "double-Start must not double-poll");
     }
 
+    /// <summary>
+    /// Strengthens the idempotency proof above with a discriminator that a non-idempotent
+    /// <c>Start()</c> cannot pass by coincidence: <c>ActiveTimerCount</c>/poll-count alone do not catch
+    /// a missing <c>_started</c> guard, because <c>BeginPolling()</c> always disposes-and-replaces the
+    /// previous timer regardless of whether it's the guard or genuine no-op skipping the second call --
+    /// so a double-<c>BeginPolling()</c> still leaves exactly one live timer and one eventual poll.
+    /// Verified by temporarily deleting the <c>if (_started || _disposed) return;</c> guard in
+    /// <c>NotificationToastWatcher.Start()</c> and confirming this specific test (and only this one)
+    /// fails, before restoring the guard.
+    /// </summary>
+    [Fact]
+    public async Task Start_called_twice_subscribes_to_session_Changed_exactly_once()
+    {
+        var session = await AuthenticatedSessionAsync();
+        var watcher = new NotificationToastWatcher(_client.Object, _toasts, session, _clock);
+        _watcher = watcher;
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
+
+        watcher.Start();
+        watcher.Start();
+        _clock.Advance(TimeSpan.Zero);
+
+        CountSessionChangedSubscribers(session).Should().Be(1, "a second Start() call must not add a second subscription to session.Changed");
+    }
+
     // ---------- 9. Session lifecycle ----------
 
     [Fact]
@@ -394,12 +479,13 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _toasts.Calls.Should().HaveCount(5, "at most 5 toasts per poll");
         _toasts.Calls.Select(c => c.DedupeKey).Should().Equal("n-1", "n-2", "n-3", "n-4", "n-5");
 
-        // The next poll must not re-consider any of the 3 skipped items (n-6..n-8): the cursor advanced
-        // fully past the whole batch, and the dedupe set already recorded all 8 as delivered.
-        _responses.Enqueue(() => Task.FromResult(Response(items: [Item("n-9")], nextCreatedAtUtc: t0.AddSeconds(2), nextId: "n-9", unreadCount: 9, isBootstrap: false)));
+        // Prove the skipped items (n-6..n-8) are suppressed by dedupe, not merely never re-served by the
+        // cursor: explicitly re-serve one of them (n-6) alongside a genuinely new item (n-9). Only n-9
+        // must toast.
+        _responses.Enqueue(() => Task.FromResult(Response(items: [Item("n-6"), Item("n-9")], nextCreatedAtUtc: t0.AddSeconds(2), nextId: "n-9", unreadCount: 9, isBootstrap: false)));
         _clock.Advance(30 * Second);
 
-        _toasts.Calls.Should().HaveCount(6, "only the genuinely new n-9 item toasts; the 3 skipped items are never retroactively shown");
+        _toasts.Calls.Should().HaveCount(6, "n-6 was already recorded as delivered past the per-poll cap, so it must not toast even when re-served; only n-9 is genuinely new");
         _toasts.Calls[^1].DedupeKey.Should().Be("n-9");
     }
 
@@ -427,6 +513,15 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _watcher.UnreadCount.Should().Be(7, "a failed poll must not touch UnreadCount");
         changedCount.Should().Be(1, "a failed poll alone does not raise Changed");
         _toasts.Calls.Should().BeEmpty("a polling failure never surfaces an error Toast, and neither poll in this test carried any items");
+
+        // A successful poll that changes nothing observable (same UnreadCount, no items) must not raise
+        // Changed either -- Changed is gated on an actual change, not fired unconditionally every cycle.
+        // The preceding failure doubled the backoff to 60s, so that's exactly when this next poll is due.
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: t0.AddSeconds(2), nextId: "bootstrap-2", unreadCount: 7, isBootstrap: false)));
+        _clock.Advance(60 * Second);
+
+        _watcher.UnreadCount.Should().Be(7);
+        changedCount.Should().Be(1, "a successful poll that changed nothing observable must not raise Changed");
     }
 
     // ---------- Bonus: bounded dedupe eviction (self-review property, not one of the 11 required tests) ----------
@@ -464,6 +559,139 @@ public sealed class NotificationToastWatcherTests : IDisposable
 
         _toasts.Calls.Should().HaveCount(6, "n-1 was evicted from the bounded dedupe set so it toasts again");
         _toasts.Calls[^1].DedupeKey.Should().Be("n-1");
+    }
+
+    // ---------- Bonus: the _generation stale-poll-race guard (self-review property, not one of the 11 required tests) ----------
+
+    /// <summary>
+    /// Every other test's fake response completes synchronously, so <c>PollCoreAsync</c> never actually
+    /// has an in-flight poll when a session stop/resume happens -- the exact race the <c>_generation</c>
+    /// counter exists to guard is otherwise never exercised. This test uses a
+    /// <see cref="TaskCompletionSource{TResult}"/> to genuinely suspend a poll mid-flight, transitions
+    /// the session out of and back into Authenticated while it's still pending (starting a brand new
+    /// polling epoch), and only then completes the stale poll -- with content that would corrupt the new
+    /// epoch's state if the watcher failed to recognize it as stale.
+    /// </summary>
+    [Fact]
+    public async Task A_stale_poll_completing_after_a_session_stop_and_resume_does_not_corrupt_the_new_epoch()
+    {
+        var session = await AuthenticatedSessionAsync();
+        var watcher = new NotificationToastWatcher(_client.Object, _toasts, session, _clock);
+        _watcher = watcher;
+
+        var stalePollTcs = new TaskCompletionSource<NotificationToastDeltaResponseDto>();
+        _responses.Enqueue(() => stalePollTcs.Task);
+
+        watcher.Start();
+        _clock.Advance(TimeSpan.Zero); // fires epoch 1's baseline poll, which now suspends awaiting stalePollTcs
+
+        _requestedCursors.Should().ContainSingle("epoch 1's baseline poll was sent and is still in flight");
+        _clock.ActiveTimerCount.Should().Be(0, "no re-arm can have happened yet -- the in-flight poll hasn't completed");
+
+        // Session leaves Authenticated while epoch 1's poll is still pending.
+        _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>())).ReturnsAsync((MeResponse?)null);
+        _client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>())).ReturnsAsync((EntraAccessRequestSessionDto?)null);
+        await session.RefreshAsync();
+        _clock.ActiveTimerCount.Should().Be(0);
+
+        // ...and returns, starting a fresh epoch (epoch 2) with its own baseline.
+        _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
+        await session.RefreshAsync();
+        _clock.Advance(TimeSpan.Zero); // fires epoch 2's own baseline poll
+
+        _requestedCursors.Should().HaveCount(2, "epoch 2's own baseline poll has now been sent");
+        _clock.ActiveTimerCount.Should().Be(1, "epoch 2's baseline poll succeeded and re-armed");
+        _toasts.Calls.Should().BeEmpty();
+
+        // NOW the stale epoch-1 poll finally completes, with an eligible item and an UnreadCount that
+        // would corrupt epoch 2's freshly-established state if it were allowed to commit.
+        var staleCursorTime = _clock.GetUtcNow();
+        stalePollTcs.SetResult(Response(items: [Item("stale-1")], nextCreatedAtUtc: staleCursorTime, nextId: "stale-1", unreadCount: 99, isBootstrap: false));
+
+        _toasts.Calls.Should().BeEmpty("the stale epoch-1 response must never toast into the live epoch 2");
+        watcher.UnreadCount.Should().Be(0, "the stale response's UnreadCount (99) must never overwrite epoch 2's own value");
+        _clock.ActiveTimerCount.Should().Be(1, "the stale poll completing must not arm a second, competing timer");
+
+        // Epoch 2's own next poll must still use ITS OWN cursor (null/null, its fresh baseline), never
+        // the stale response's.
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
+        _clock.Advance(30 * Second);
+        _requestedCursors[^1].Should().Be(((DateTimeOffset?)null, (string?)null), "epoch 2's cursor was never touched by the stale epoch-1 response");
+    }
+
+    /// <summary>
+    /// Reproduces the exact race <c>ToastServiceTests.cs</c> already covers three times for
+    /// <see cref="ToastService"/> (see e.g. its
+    /// <c>A_dwell_callback_already_queued_when_the_stack_is_held_is_ignored</c>): a real timer can have
+    /// its callback already queued on the thread pool at the moment something disposes it.
+    /// <see cref="ManualTimeProvider.FireCallbacksOfCancelledTimers"/> replays exactly that queued
+    /// callback after disposal.
+    /// </summary>
+    [Fact]
+    public async Task A_poll_callback_already_queued_when_the_watcher_is_disposed_is_ignored()
+    {
+        var session = await AuthenticatedSessionAsync();
+        var watcher = new NotificationToastWatcher(_client.Object, _toasts, session, _clock);
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
+        watcher.Start();
+        _clock.Advance(TimeSpan.Zero); // baseline poll succeeds and re-arms a 30s timer
+
+        _clock.ActiveTimerCount.Should().Be(1);
+        var callsBeforeDispose = _requestedCursors.Count;
+
+        watcher.Dispose();
+
+        // Reproduces the real-world race: the re-armed timer's callback had already been queued (e.g. on
+        // the real thread pool) at the moment Dispose() cancelled it.
+        _clock.FireCallbacksOfCancelledTimers();
+
+        _requestedCursors.Should().HaveCount(callsBeforeDispose, "a callback that fires after disposal must not start another poll");
+        _toasts.Calls.Should().BeEmpty();
+        _clock.ActiveTimerCount.Should().Be(0, "the stray callback must not re-arm a timer on a disposed watcher");
+    }
+
+    // ---------- Bonus: an exception mid-poll-processing must not permanently kill the poll loop ----------
+
+    /// <summary>
+    /// Only the HTTP call itself used to be wrapped in a try/catch. A malformed response (e.g. a
+    /// <c>null</c> <c>Items</c> array) thrown while processing an otherwise-successful HTTP response,
+    /// after the lock was acquired, would previously escape <c>PollCoreAsync</c> into the discarded,
+    /// unobserved <c>Task</c> that <c>OnTick</c> fires-and-forgets, leaving the timer never re-armed and
+    /// the watcher permanently dark for the rest of the session. This proves the fix: the timer must
+    /// still re-arm at the backoff interval, exactly like an HTTP failure.
+    /// </summary>
+    [Fact]
+    public async Task A_malformed_response_still_backs_off_and_rearms_instead_of_going_permanently_dark()
+    {
+        var t0 = _clock.GetUtcNow();
+        _watcher = await StartPastBootstrapAsync(t0, "bootstrap-1");
+        var callsBefore = _requestedCursors.Count;
+
+        // Items = null! throws NullReferenceException on the `foreach` inside PollCoreAsync -- a stand-in
+        // for any malformed/unexpected response shape.
+        _responses.Enqueue(() => Task.FromResult(new NotificationToastDeltaResponseDto
+        {
+            Items = null!,
+            NextAfterCreatedAtUtc = t0.AddSeconds(1),
+            NextAfterId = "n-1",
+            UnreadCount = 1,
+            IsBootstrap = false,
+        }));
+        _clock.Advance(30 * Second - Millisecond);
+        _requestedCursors.Should().HaveCount(callsBefore, "the malformed-response poll hasn't fired yet");
+        _clock.Advance(Millisecond);
+        _requestedCursors.Should().HaveCount(callsBefore + 1, "the malformed-response poll fired");
+
+        _toasts.Calls.Should().BeEmpty("no toast, error or otherwise, is shown for a poll that threw while processing");
+
+        // The timer must have re-armed at the 60s failure-backoff interval (30s doubled), not gone dark.
+        _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: t0.AddSeconds(2), nextId: "n-2", unreadCount: 0, isBootstrap: false)));
+        _clock.Advance(60 * Second - Millisecond);
+        _requestedCursors.Should().HaveCount(callsBefore + 1, "the recovery poll must not fire before the doubled 60s backoff elapses");
+        _clock.Advance(Millisecond);
+        _requestedCursors.Should().HaveCount(callsBefore + 2, "the watcher recovered and polled again at the backoff interval -- it did not go permanently dark");
     }
 
     // ---------- Test doubles ----------
