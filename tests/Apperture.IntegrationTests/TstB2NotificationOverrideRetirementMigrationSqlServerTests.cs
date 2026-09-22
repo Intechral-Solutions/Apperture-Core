@@ -65,12 +65,19 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
         try
         {
             // ----------------------------------------------------------------------------------
-            // Arrange: migrate up to (and including) TstB1 -- the resolver's read side and the
-            // self-service switch's write side are Toast-B P2 code, not schema, so nothing further
-            // is required here to make the scenario realistic -- then insert three override rows
-            // directly against the still-live NotificationSubscriptionUserOverrides table:
+            // Arrange: seed the self-service override row FIRST, THEN migrate up to (and including)
+            // TstB1, so TstB1's own conversion logic actually processes it -- this is what proves the
+            // handoff is gapless: TstB1 must convert this row into a NotificationUserPreferences
+            // "email=false" row BEFORE TstB2 ever runs, so that when TstB2 later deletes the
+            // now-redundant override row, the converted preference row is what's left standing (not
+            // proven merely by the predicate matching -- the preference row must genuinely have been
+            // created by TstB1's own conversion pass against this exact row).
+            //
+            // The team-scoped and admin-set rows are seeded afterward as before: neither ever matches
+            // the self-service conversion predicate regardless of seeding order, so they are not part
+            // of the handoff-continuity property under test here.
             //   1. selfServiceUserId: OperationalTeamId IS NULL and CreatedByActorId = UserId
-            //      -> matches the retirement predicate, must be deleted by TstB2.
+            //      -> converted by TstB1, then the now-redundant override row deleted by TstB2.
             //   2. teamOverrideUserId: OperationalTeamId set -> a team-scoped opt-out, a separate,
             //      still-fully-functional mechanism untouched by this whole phase.
             //   3. adminSetUserId: CreatedByActorId != UserId (an admin set it) -> a global opt-out
@@ -81,19 +88,34 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
                 if (!await preDb.Database.CanConnectAsync())
                     return; // soft-skip
 
+                await ExecuteAsync(connectionString, $"""
+                    INSERT INTO [NotificationSubscriptionUserOverrides]
+                        ([Id],[UserId],[NotificationDefinitionId],[OperationalTeamId],[CreatedAtUtc],[CreatedByActorId])
+                    VALUES
+                        (N'noverride_tstb2_selfservice', N'{selfServiceUserId}', N'{ExpectedRunMissingDefinitionId}', NULL,
+                         SYSUTCDATETIME(), N'{selfServiceUserId}');
+                    """);
+
                 await preDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(TstB1Migration);
 
                 await ExecuteAsync(connectionString, $"""
                     INSERT INTO [NotificationSubscriptionUserOverrides]
                         ([Id],[UserId],[NotificationDefinitionId],[OperationalTeamId],[CreatedAtUtc],[CreatedByActorId])
                     VALUES
-                        (N'noverride_tstb2_selfservice', N'{selfServiceUserId}', N'{ExpectedRunMissingDefinitionId}', NULL,
-                         SYSUTCDATETIME(), N'{selfServiceUserId}'),
                         (N'noverride_tstb2_team', N'{teamOverrideUserId}', N'{ExpectedRunMissingDefinitionId}', N'tstb2-team-1',
                          SYSUTCDATETIME(), N'{teamOverrideUserId}'),
                         (N'noverride_tstb2_adminset', N'{adminSetUserId}', N'{ExpectedRunMissingDefinitionId}', NULL,
                          SYSUTCDATETIME(), N'tstb2-admin-actor');
                     """);
+
+                // Confirm TstB1's own conversion pass actually processed the self-service row seeded
+                // above -- not a precondition inherited from some other test's data -- before TstB2 runs.
+                (await preDb.NotificationUserPreferences.AsNoTracking()
+                    .CountAsync(p => p.UserId == selfServiceUserId
+                                      && p.NotificationDefinitionId == ExpectedRunMissingDefinitionId
+                                      && p.Channel == "email" && !p.IsEnabled)).Should().Be(
+                    1, "TstB1 must have converted the self-service override into an email=false preference " +
+                       "row before TstB2 ever runs, or the handoff-continuity property this test proves is untested");
             }
 
             // ----------------------------------------------------------------------------------
@@ -124,6 +146,17 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
                 (await db.NotificationSubscriptionUserOverrides.AsNoTracking()
                     .CountAsync(o => o.Id == "noverride_tstb2_adminset")).Should().Be(
                         1, "an admin-set global override is not a self-service opt-out and must survive untouched");
+
+                // Handoff-continuity: the email=false preference row TstB1 created from the self-service
+                // override (asserted above, before TstB2 ran) must still be present and unaffected now that
+                // TstB2 has deleted the now-redundant override row -- proving the suppression signal was
+                // never dropped in the handoff from override row to preference row.
+                (await db.NotificationUserPreferences.AsNoTracking()
+                    .CountAsync(p => p.UserId == selfServiceUserId
+                                      && p.NotificationDefinitionId == ExpectedRunMissingDefinitionId
+                                      && p.Channel == "email" && !p.IsEnabled)).Should().Be(
+                    1, "the preference row TstB1 converted this user's suppression into must survive TstB2's " +
+                       "deletion of the now-redundant override row untouched -- the handoff must be gapless");
             }
 
             // ----------------------------------------------------------------------------------

@@ -27,6 +27,22 @@ matches and deletes zero rows), and, being data-only, its `Down()` cannot restor
 more than TstB1's `Down()` could restore the preference rows it created -- take a backup before
 applying it, the same as any migration that deletes data.
 
+**Deployment sequencing: TstB1 and TstB2 must be applied together, in the same deployment, with no
+window in which pre-P2 application code runs against a database that has TstB1 applied but not
+TstB2.** If that window existed, pre-P2 code (which still only writes the legacy override table, not
+the new preference table) would keep writing new predicate-matching override rows that TstB1 never
+converted, and TstB2 would then delete them with no replacement preference row -- silently resuming
+email delivery to a person who had opted out. This is not a live risk on this repo's actual deployment
+path: both migrations ship together as part of this same body of work and are never applied
+independently. It is worth stating explicitly, though, for anyone who might cherry-pick or split this
+deployment later. A one-line post-deploy check confirms no such gap occurred -- run this after both
+migrations have applied and expect `0`:
+
+```sql
+SELECT COUNT(*) FROM [NotificationSubscriptionUserOverrides]
+WHERE [OperationalTeamId] IS NULL AND [CreatedByActorId] = [UserId]
+```
+
 ## What this migration does
 
 This migration adds the storage a person needs to turn individual notifications on or off for
@@ -60,7 +76,7 @@ deleted or otherwise put at risk by this migration — see the next section — 
 data this migration creates only exists once, in the new table, and a backup is the only way to get
 it back if something goes wrong.)
 
-## Legacy override rows are intentionally left in place
+## (Historical — as of phase P1, before TstB2) Legacy override rows are intentionally left in place
 
 As of this migration, the legacy `NotificationSubscriptionUserOverrides` rows that match the
 self-service conversion predicate (`OperationalTeamId IS NULL AND CreatedByActorId = UserId`) are
