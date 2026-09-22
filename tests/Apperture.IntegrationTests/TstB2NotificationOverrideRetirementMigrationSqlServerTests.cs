@@ -29,6 +29,7 @@ namespace Apperture.IntegrationTests;
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
 {
+    private const string PreTstB1Migration = "20260916173420_Ctx3B_AuditCorrelationId";
     private const string TstB1Migration = "20260922075738_TstB1_NotificationTogglePreferences";
     private const string TstB2Migration = "20260922102920_TstB2_RetireLegacyEmailOptOutOverrides";
 
@@ -87,6 +88,11 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
             {
                 if (!await preDb.Database.CanConnectAsync())
                     return; // soft-skip
+
+                // NotificationSubscriptionUserOverrides is a legacy table that predates Toast-B; on this
+                // brand-new throwaway catalog it does not exist until migrations run up through the point
+                // immediately before TstB1, matching the sibling TstB1 test's own setup order.
+                await preDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreTstB1Migration);
 
                 await ExecuteAsync(connectionString, $"""
                     INSERT INTO [NotificationSubscriptionUserOverrides]
