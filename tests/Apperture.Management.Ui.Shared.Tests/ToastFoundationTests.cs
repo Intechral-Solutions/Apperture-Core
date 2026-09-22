@@ -166,6 +166,35 @@ public sealed class ToastFoundationTests
     }
 
     [Fact]
+    public void The_card_reuses_the_shared_dialog_elevation_token_instead_of_a_bespoke_shadow()
+    {
+        // A bespoke shadow tied to --color-text-heading is near-white in dark theme (that token IS the heading
+        // colour, which is light-on-dark) and reads as a glow rather than a shadow. --shadow-elevated is the
+        // same token .ui-dialog uses and is tuned per theme to a dark, restrained shadow in both.
+        var css = ReadCss();
+        var card = Rule(".ui-toast");
+
+        card.Should().Contain("box-shadow: var(--shadow-elevated)");
+        Rule(".ui-dialog").Should().Contain("box-shadow: var(--shadow-elevated)", "the toast should match the dialog's own elevation");
+        css.Should().NotContain("--ui-toast-shadow:", "no bespoke toast-only shadow token should exist");
+        Regex.IsMatch(card, @"box-shadow:\s*[^;]*color-mix").Should().BeFalse(
+            "the shadow itself must not be ad-hoc tinted math (the translucent background is a separate, intentional color-mix)");
+    }
+
+    [Fact]
+    public void Only_the_newest_toast_gets_room_for_its_shadow_so_other_gaps_are_unaffected()
+    {
+        // The newest (bottom-most, last in DOM) toast has nothing below it to blend its shadow into, so its own
+        // clipping wrapper needs padding. Every other toast is unaffected, so the gap between stacked cards
+        // (an unrelated concern, driven by .ui-toast's own margin-bottom) does not change.
+        var css = ReadCss();
+
+        Regex.IsMatch(css, @"--ui-toast-shadow-room:\s*[\d.]+rem").Should().BeTrue();
+        Rule(".ui-toast-slot:last-child .ui-toast-slot__inner").Should().Contain("padding-bottom: var(--ui-toast-shadow-room)");
+        Rule(".ui-toast-slot__inner").Should().NotContain("padding", "only the last child's inner should carry the shadow-room padding");
+    }
+
+    [Fact]
     public void A_leaving_toast_is_click_through_even_though_the_card_opts_in_to_input_itself()
     {
         // The slot's pointer-events: none only reached the card by inheritance; the card now sets auto explicitly,

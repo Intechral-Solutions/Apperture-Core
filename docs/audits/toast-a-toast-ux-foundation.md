@@ -169,6 +169,44 @@ feature code starts touching `SetHold`/`ToastHold`. Layout files: `MainLayout` p
 
 ---
 
+## Visual polish pass (second real-app re-smoke)
+
+After the interaction fixes, the operator's re-smoke was functionally successful (position, close, drag/snap-back,
+swipe all worked) but flagged two visual issues:
+
+1. **Shadow too intense/broad — a "luminous halo" in dark theme.** `--ui-toast-shadow` was a bespoke shadow tinted
+   with `color-mix(in oklch, var(--color-text-heading) 45%, transparent)`. `--color-text-heading` is a *light* colour
+   in dark theme (it is the heading-text colour, made light-on-dark for contrast), so a shadow built from it at 45%
+   opacity is a light/white glow around every card, not a shadow. **Fix:** the card now uses `var(--shadow-elevated)`
+   — the same token `.ui-dialog` (the modal) uses — instead of a toast-only shadow. It is already tuned per theme: a
+   restrained dark shadow in light theme, a tighter black shadow plus a 4%-white inset top highlight in dark theme
+   (no light-coloured glow). The bespoke `--ui-toast-shadow` token was removed.
+2. **The bottom toast's shadow was visibly clipped flat.** Root cause: `.ui-toast-slot__inner` (the wrapper each
+   card sits in, needed so a slot can animate its grid row to `0fr` on exit) has `overflow-y: clip`, and in the
+   steady state its box is sized exactly to the card's own border box — so the downward box-shadow is clipped flush
+   against the card's own edge for *every* toast. For a middle toast this is invisible (the very next card sits
+   right there, ~0.5rem below); for the bottom-most toast there is nothing below it, so the flat cut is obvious.
+   **Fix:** `.ui-toast-slot:last-child .ui-toast-slot__inner` (the newest, bottom-most toast — DOM order is oldest
+   → newest, confirmed by the existing ordering test) gets `padding-bottom: var(--ui-toast-shadow-room)` (1.25rem),
+   scoped to that one slot only so the gap between *other* stacked cards is unaffected. `--ui-toast-bottom` (the
+   outer margin from the layer to the viewport edge) was reduced from 1rem to 0.5rem to compensate, since that
+   outer margin was never actually reachable by the shadow (it was clipped before ever getting there) — the fix
+   moves the "breathing room" to where the shadow can use it instead of adding it on top.
+
+Both fixes are pure CSS/layout: no change to `ToastService`, `toast-host.js`'s interop, ARIA/announcement
+architecture, reduced-motion logic, responsive width rules, nav-rail clearance, or overflow/scroll semantics.
+
+**New regression coverage** (`ToastFoundationTests`, structural; harness, geometric — no pixel/screenshot
+comparison, per instruction): the card's `box-shadow` is `var(--shadow-elevated)`, matches `.ui-dialog`'s own
+shadow, and carries no bespoke `color-mix` shadow; `--ui-toast-shadow-room` exists and is applied only to
+`.ui-toast-slot:last-child .ui-toast-slot__inner`, never the base rule (so other gaps are provably unaffected); in
+the harness, the newest toast's inner wrapper has ≥15px more room below its card than an earlier toast's (which has
+only its normal ~8px inter-card margin), and that room is not itself clipped away by the scroll container's own
+bottom edge. The full harness (including every prior check — position, order, overflow scroll, hit-testing, swipe,
+exiting-toast click-through, contrast in both themes) was rerun and confirmed unaffected: **64/64**.
+
+---
+
 ## Real-app smoke failure (first operator smoke) — root cause
 
 **Reported:** toasts against the very left edge of the viewport; no mouse response; swipe dead; the X dead.

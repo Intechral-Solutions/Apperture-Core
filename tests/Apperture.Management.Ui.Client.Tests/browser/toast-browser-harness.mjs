@@ -216,6 +216,25 @@ try {
   {
     const ys = []; for (let i = 0; i < 4; i++) ys.push((await rect('.ui-toast', i)).y);
     check('several toasts: oldest at the top, newest nearest the bottom', ys.every((y, i) => i === 0 || y > ys[i - 1]), ys.map(Math.round).join('<'));
+
+    // Geometric proof the newest toast's shadow has room before its own clipping wrapper, and that nothing
+    // further out (the scroll container) clips that room away — without depending on pixel/screenshot sampling.
+    const geo = await js(`(() => {
+      const slots = document.querySelectorAll('.ui-toast-slot');
+      const last = slots[slots.length - 1], earlier = slots[slots.length - 2];
+      const room = (slot) => { const inner = slot.querySelector('.ui-toast-slot__inner'); const card = slot.querySelector('.ui-toast');
+        return inner.getBoundingClientRect().height - card.getBoundingClientRect().height; };
+      const innerRect = last.querySelector('.ui-toast-slot__inner').getBoundingClientRect();
+      const stackRect = document.querySelector('.ui-toast-stack').getBoundingClientRect();
+      return { lastRoom: room(last), earlierRoom: room(earlier), innerBottom: innerRect.bottom, stackBottom: stackRect.bottom };
+    })()`);
+    // Every card's own margin-bottom (the inter-card gap) counts toward "room" too, so compare the newest
+    // toast's room against an earlier one's rather than against zero.
+    check('the newest toast has meaningfully more room below it (its shadow) than an earlier one (just the card gap)',
+      geo.lastRoom - geo.earlierRoom >= 15, JSON.stringify(geo));
+    check("that room is not itself clipped away by the scroll container's own edge",
+      geo.stackBottom >= geo.innerBottom - 1, JSON.stringify(geo));
+
     await js(`for (let i = 0; i < 16; i++) addToast('info', 'Import ' + i, 'Batch ' + i + ' completed with 3 warnings that need review.')`); await sleep(700);
     const s = await js(`(() => { const s = document.querySelector('.ui-toast-stack'); return { h: s.getBoundingClientRect().height, sh: s.scrollHeight, ch: s.clientHeight, top: s.scrollTop, max: s.scrollHeight - s.clientHeight, ft: s.hasAttribute('data-fade-top'), fb: s.hasAttribute('data-fade-bottom') }; })()`);
     check('overflow: capped at 36vh, scrollable, pinned to the newest, top fade only', s.h <= 900 * 0.36 + 1 && s.sh > s.ch + 50 && near(s.top, s.max, 2) && s.ft && !s.fb, JSON.stringify(s));

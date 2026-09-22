@@ -633,14 +633,20 @@ details.text-muted[open] > summary {
   --ui-toast-enter-duration: 220ms;
   --ui-toast-exit-duration: 300ms;
   --ui-toast-margin: 1rem;
-  --ui-toast-bottom: 1rem;
+  --ui-toast-bottom: 0.5rem;
   /* Width of the closed nav rail (NavRail's w-18 container); phones start the shell stack beside it. */
   --ui-toast-rail-width: 4.5rem;
   --ui-toast-width: clamp(28rem, 50vw, 42rem);
   --ui-toast-max-height: min(36vh, 24rem);
-  --ui-toast-shadow:
-    0 10px 24px -14px color-mix(in oklch, var(--color-text-heading) 45%, transparent),
-    0 1px 2px color-mix(in oklch, var(--color-text-heading) 12%, transparent);
+  /*
+   * Room below the newest (bottom-most, last in DOM) toast for its box-shadow to render before
+   * .ui-toast-slot__inner's overflow-y:clip cuts it off. Without this, the shadow is clipped flush
+   * against the card's own edge — invisible for every toast except the last, where there is nothing
+   * below to blend into, so the flat cut reads as a clipped shadow. Scoped to :last-child only so it
+   * does not add space between other stacked cards. --ui-toast-bottom is reduced by a matching amount
+   * so the card does not end up floating materially farther from the viewport edge than before.
+   */
+  --ui-toast-shadow-room: 1.25rem;
 }
 
 .ui-toast-layer {
@@ -716,6 +722,11 @@ details.text-muted[open] > summary {
   overflow-y: clip;
 }
 
+/* The newest toast has nothing below it to blend its shadow into; give it room to render (see --ui-toast-shadow-room above). */
+.ui-toast-slot:last-child .ui-toast-slot__inner {
+  padding-bottom: var(--ui-toast-shadow-room);
+}
+
 .ui-toast-slot[data-phase="exiting"] {
   grid-template-rows: 0fr;
   pointer-events: none;
@@ -739,7 +750,8 @@ details.text-muted[open] > summary {
   background: color-mix(in srgb, var(--color-surface-elevated) 94%, transparent);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  box-shadow: var(--ui-toast-shadow);
+  /* Same elevation token as the modal dialog (.ui-dialog) — restrained, theme-tuned, no bespoke shadow system. */
+  box-shadow: var(--shadow-elevated);
   font-size: 13.5px;
   line-height: 1.4;
   color: var(--color-text-body);
