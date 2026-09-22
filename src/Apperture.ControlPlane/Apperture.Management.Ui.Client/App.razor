@@ -7,6 +7,7 @@
 @inject IOperatorDisplayTimeZone OperatorDisplayTimeZone
 @inject ShellBootstrapState ShellBootstrap
 @inject ResourceContextViewState ViewState
+@inject INotificationToastWatcher Watcher
 @inject IJSRuntime Js
 
 <AuthRouteGate>
@@ -57,6 +58,10 @@
 
         // SWM-5: Me (preference) before display-TZ resolve so stored DisplayTimeZoneId can win.
         await SessionStateService.RefreshAsync();
+        // Not awaited: Start() only arms state and a timer, it does not block on the first poll
+        // completing. Safe to call before the session is known -- the watcher itself waits for
+        // Authenticated.
+        Watcher.Start();
         // AUP-1: the account appearance preference outranks the browser value the theme service
         // booted with, so reconcile once the session is known.
         await AppearancePreferences.ReconcileAsync();

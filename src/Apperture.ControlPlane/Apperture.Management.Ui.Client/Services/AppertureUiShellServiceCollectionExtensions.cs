@@ -12,6 +12,7 @@ public static class AppertureUiShellServiceCollectionExtensions
     {
         services.AddScoped<ThemeService>();
         services.AddSingleton<IToastService, ToastService>();
+        services.AddSingleton<INotificationToastWatcher, NotificationToastWatcher>();
         services.AddScoped<SessionStateService>();
         services.AddScoped<AuthSignInOptionsService>();
         services.AddScoped<ShellBootstrapState>();
