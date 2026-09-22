@@ -371,6 +371,27 @@ public sealed class ToastServiceTests : IDisposable
     }
 
     [Fact]
+    public void Rearming_a_keyed_toast_while_the_stack_is_held_keeps_the_countdown_paused_with_a_fresh_duration()
+    {
+        // Keyed analogue of Rearming_while_the_stack_is_held_keeps_the_countdown_paused_with_a_fresh_duration
+        // above: same structure and assertions, routed through a dedupeKey instead of relying on
+        // content-signature matching for the re-arm.
+        _toasts.Show(ToastSeverity.Success, "Import started.", dedupeKey: "inbox-42");
+        _clock.Advance(4 * Second);
+        _toasts.SetHold(ToastHold.Pointer, true);
+
+        _toasts.Show(ToastSeverity.Success, "Import started.", dedupeKey: "inbox-42");
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+
+        _toasts.SetHold(ToastHold.Pointer, false);
+        _clock.Advance(ToastPolicy.DefaultDuration - TimeSpan.FromMilliseconds(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Visible);
+        _clock.Advance(TimeSpan.FromMilliseconds(1));
+        _toasts.Toasts.Single().Phase.Should().Be(ToastPhase.Exiting);
+    }
+
+    [Fact]
     public void Rearming_a_persistent_toast_with_an_explicit_duration_makes_it_expire()
     {
         _toasts.Show(ToastSeverity.Error, "Failed.");
@@ -468,18 +489,6 @@ public sealed class ToastServiceTests : IDisposable
     // ---------- Dedupe key ----------
 
     [Fact]
-    public void Call_with_no_dedupe_key_behaves_exactly_as_before()
-    {
-        _toasts.Show(ToastSeverity.Success, "Saved.");
-        var id = _toasts.Toasts.Single().Id;
-
-        _clock.Advance(4 * Second);
-        _toasts.Show(ToastSeverity.Success, " Saved. ");
-
-        _toasts.Toasts.Should().ContainSingle().Which.Id.Should().Be(id);
-    }
-
-    [Fact]
     public void Same_dedupe_key_rearms_one_toast_even_with_different_content()
     {
         _toasts.Show(ToastSeverity.Info, "Import started.", dedupeKey: "inbox-42");
@@ -535,6 +544,29 @@ public sealed class ToastServiceTests : IDisposable
         _toasts.Show(ToastSeverity.Info, "Import finished.");
 
         _toasts.Toasts.Should().ContainSingle("the no-key call matched the keyed entry by Signature alone, the same predicate as before this change").Which.Id.Should().Be(keyedId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Blank_dedupe_key_behaves_like_no_key_was_passed_falling_back_to_signature_matching(string blankKey)
+    {
+        _toasts.Show(ToastSeverity.Info, "Import finished.", dedupeKey: blankKey);
+        var id = _toasts.Toasts.Single().Id;
+
+        // Different content, same blank key: if the blank key were still treated as a real key, this
+        // would re-arm the first toast (like Dedupe_key_call_ignores_content_signature_for_rearm
+        // proves for a real key). Instead it must fall back to signature matching, and since the
+        // content differs, that produces a second toast.
+        _toasts.Show(ToastSeverity.Error, "Import failed.", "Error", dedupeKey: blankKey);
+
+        _toasts.Toasts.Should().HaveCount(2, "a blank dedupeKey is treated as no key, not as a shared empty key");
+        _toasts.Toasts[0].Id.Should().Be(id);
+
+        // And, mirroring Call_with_no_dedupe_key semantics: showing the exact same content again with
+        // the same blank key re-arms by signature, not by the blank "key".
+        _toasts.Show(ToastSeverity.Error, "Import failed.", "Error", dedupeKey: blankKey);
+        _toasts.Toasts.Should().HaveCount(2, "the repeat call re-armed the matching-signature toast instead of stacking a third");
     }
 
     // ---------- Disposal ----------

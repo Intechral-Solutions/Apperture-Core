@@ -12,7 +12,10 @@ public interface IToastService
     /// When non-null, identifies the toast for re-arm matching by stable identity rather than by
     /// content signature: a repeat call with the same <paramref name="dedupeKey"/> re-arms the existing
     /// toast regardless of whether its content matches, and takes precedence over the default
-    /// signature-based matching used when this is null.
+    /// signature-based matching used when this is null. A repeat call with the same key re-arms only
+    /// the existing toast's dwell countdown; its displayed severity, message, and title are NOT
+    /// updated to match this call's arguments, and no <see cref="Changed"/> event is raised for the
+    /// re-arm — the visible toast does not change.
     /// </param>
     void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null, string? dedupeKey = null);
 

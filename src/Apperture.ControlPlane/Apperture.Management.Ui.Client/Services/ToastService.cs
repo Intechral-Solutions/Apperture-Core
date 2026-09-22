@@ -47,6 +47,11 @@ public sealed class ToastService : IToastService, IDisposable
         var signature = ToastPolicy.BuildSignature(severity, message, title);
         var notify = false;
 
+        // Blank/whitespace-only keys are treated as "no key": a caller passing "" almost certainly
+        // meant "no key", not "a key that happens to be empty", and every such call would otherwise
+        // collapse into one shared toast under the empty/whitespace "key".
+        var normalizedDedupeKey = string.IsNullOrWhiteSpace(dedupeKey) ? null : dedupeKey;
+
         lock (_gate)
         {
             if (_disposed)
@@ -55,8 +60,8 @@ public sealed class ToastService : IToastService, IDisposable
             // UIX-6: repeating an identical outcome re-arms the existing toast rather than stacking
             // another announcement. A toast that is already leaving is not revived. When a dedupeKey is
             // supplied it takes precedence over content signature for identifying the existing toast.
-            var existing = dedupeKey is not null
-                ? _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.DedupeKey == dedupeKey)
+            var existing = normalizedDedupeKey is not null
+                ? _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.DedupeKey == normalizedDedupeKey)
                 : _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.Signature == signature);
             if (existing is not null)
             {
@@ -72,7 +77,7 @@ public sealed class ToastService : IToastService, IDisposable
 
                 var entry = new Entry(
                     signature,
-                    dedupeKey,
+                    normalizedDedupeKey,
                     new ToastItem(Guid.NewGuid(), severity, message, title, ttl, ToastPhase.Visible, ToastExit.Fade, _time.GetUtcNow()))
                 {
                     Remaining = ttl

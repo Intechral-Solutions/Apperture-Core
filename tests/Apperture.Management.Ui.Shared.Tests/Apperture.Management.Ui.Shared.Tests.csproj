@@ -16,6 +16,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
+    <!-- Ui.Shared production code deliberately does NOT reference Apperture.Core.Application (see
+         NotificationToastSeverityMapper's <remarks>); this test-only reference exists so
+         NotificationToastSeverityMapperTests can reflect over PlatformEventSeverities to detect
+         drift between it and the mapper's local literal constants. Mirrors this project's existing
+         practice of referencing Apperture.Core.Domain directly even though the production project
+         it tests only gets that transitively. -->
+    <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Client\Apperture.Management.Client.csproj" />
     <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Shared\Apperture.Management.Ui.Shared.csproj" />
   </ItemGroup>
