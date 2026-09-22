@@ -8,13 +8,16 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
 {
     private readonly INotificationDefinitionStore _definitions;
     private readonly INotificationSubscriptionStore _subscriptions;
+    private readonly INotificationUserPreferenceStore _preferences;
 
     public OperatorNotificationSubscriptionService(
         INotificationDefinitionStore definitions,
-        INotificationSubscriptionStore subscriptions)
+        INotificationSubscriptionStore subscriptions,
+        INotificationUserPreferenceStore preferences)
     {
         _definitions = definitions;
         _subscriptions = subscriptions;
+        _preferences = preferences;
     }
 
     public async ValueTask<IReadOnlyList<OperatorEmailSubscriptionPreference>> ListEmailPreferencesAsync(
@@ -44,10 +47,6 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
 
         if (emailEnabled)
         {
-            await _subscriptions
-                .RemoveUserOptOutAsync(userId, definitionId, operationalTeamId: null, cancellationToken)
-                .ConfigureAwait(false);
-
             var existing = await _subscriptions
                 .FindUserSelfSubscriptionAsync(userId, definitionId, cancellationToken)
                 .ConfigureAwait(false);
@@ -72,26 +71,15 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
                     .SetEnabledAsync(existing.Id, true, userId, cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            await _preferences
+                .SetAsync(userId, definitionId, NotificationChannels.Email, isEnabled: true, updatedByActorId: userId, cancellationToken)
+                .ConfigureAwait(false);
         }
         else
         {
-            var existing = await _subscriptions
-                .FindUserSelfSubscriptionAsync(userId, definitionId, cancellationToken)
-                .ConfigureAwait(false);
-            if (existing is { IsEnabled: true })
-            {
-                await _subscriptions
-                    .SetEnabledAsync(existing.Id, false, userId, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            await _subscriptions.SetUserOptOutAsync(
-                    new NotificationSubscriptionUserOverrideCommand(
-                        userId,
-                        definitionId,
-                        OperationalTeamId: null,
-                        CreatedByActorId: userId),
-                    cancellationToken)
+            await _preferences
+                .SetAsync(userId, definitionId, NotificationChannels.Email, isEnabled: false, updatedByActorId: userId, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -109,8 +97,11 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
         var hasOptOut = await _subscriptions
             .HasGlobalUserOptOutAsync(userId, definition.Id.Value, cancellationToken)
             .ConfigureAwait(false);
+        var explicitPreference = await _preferences
+            .GetAsync(userId, definition.Id.Value, NotificationChannels.Email, cancellationToken)
+            .ConfigureAwait(false);
 
-        var emailEnabled = selfSub is { IsEnabled: true } && !hasOptOut;
+        var emailEnabled = (explicitPreference?.IsEnabled ?? (selfSub is { IsEnabled: true })) && !hasOptOut;
 
         return new OperatorEmailSubscriptionPreference(
             definition.Id.Value,

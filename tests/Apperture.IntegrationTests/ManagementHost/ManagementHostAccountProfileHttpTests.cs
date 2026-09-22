@@ -5,6 +5,7 @@ using System.Text.Json;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Apperture.Core.Domain.Notifications;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Client;
 using Apperture.Persistence.SqlServer;
@@ -548,7 +549,7 @@ public sealed class ManagementHostAccountProfileHttpTests
     public async Task An_email_preference_round_trips_and_is_reflected_on_reload()
     {
         AssertSqlAvailable();
-        var (client, _, _) = await CreateAuthenticatedClientAsync();
+        var (client, _, userId) = await CreateAuthenticatedClientAsync();
 
         var preferences = await client.GetFromJsonAsync<NotificationPreferenceDto[]>(
             "/api/account/notification-preferences",
@@ -576,6 +577,33 @@ public sealed class ManagementHostAccountProfileHttpTests
                 new { emailEnabled = false });
             (await disable.Content.ReadFromJsonAsync<NotificationPreferenceDto>(JsonOptions))!
                 .EmailEnabled.Should().BeFalse();
+
+            // Toast-B P2: the "Email off" toggle must be channel-specific -- it must not disable the
+            // operator's self-subscription (the route) or write a global route-level opt-out override.
+            // Verify all three directly against the database, not just the HTTP response body.
+            await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+
+            var overrideRow = await db.NotificationSubscriptionUserOverrides.AsNoTracking()
+                .FirstOrDefaultAsync(o => o.UserId == userId && o.NotificationDefinitionId == target.DefinitionId);
+            overrideRow.Should().BeNull("disabling email must not write a global route-level opt-out override");
+
+            var selfSubscription = await db.NotificationSubscriptions.AsNoTracking()
+                .FirstOrDefaultAsync(s =>
+                    s.NotificationDefinitionId == target.DefinitionId
+                    && s.RecipientKind == NotificationRecipientKinds.Principal
+                    && s.RecipientRef == userId
+                    && s.Origin == NotificationSubscriptionOrigins.UserSelfSubscribed
+                    && s.IntegrationId == null);
+            selfSubscription.Should().NotBeNull("the enable step must have created the self-subscription");
+            selfSubscription!.IsEnabled.Should().BeTrue(
+                "disabling the email preference must not touch the underlying subscription/route");
+
+            var preferenceRow = await db.NotificationUserPreferences.AsNoTracking()
+                .FirstOrDefaultAsync(p =>
+                    p.UserId == userId && p.NotificationDefinitionId == target.DefinitionId && p.Channel == "email");
+            preferenceRow.Should().NotBeNull();
+            preferenceRow!.IsEnabled.Should().BeFalse();
         }
         finally
         {

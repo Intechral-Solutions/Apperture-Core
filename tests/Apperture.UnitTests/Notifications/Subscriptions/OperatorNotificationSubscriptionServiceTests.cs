@@ -49,7 +49,8 @@ public sealed class OperatorNotificationSubscriptionServiceTests
         await SeedExpectedRunMissingDefinitionAsync(db);
         var sut = new OperatorNotificationSubscriptionService(
             new SqlNotificationDefinitionStore(db),
-            new SqlNotificationSubscriptionStore(db));
+            new SqlNotificationSubscriptionStore(db),
+            new SqlNotificationUserPreferenceStore(db));
 
         var prefs = await sut.ListEmailPreferencesAsync("user-1");
 
@@ -64,7 +65,8 @@ public sealed class OperatorNotificationSubscriptionServiceTests
         await using var db = CreateDb();
         await SeedExpectedRunMissingDefinitionAsync(db);
         var store = new SqlNotificationSubscriptionStore(db);
-        var sut = new OperatorNotificationSubscriptionService(new SqlNotificationDefinitionStore(db), store);
+        var sut = new OperatorNotificationSubscriptionService(
+            new SqlNotificationDefinitionStore(db), store, new SqlNotificationUserPreferenceStore(db));
 
         var updated = await sut.SetEmailEnabledAsync(
             "user-1",
@@ -79,12 +81,13 @@ public sealed class OperatorNotificationSubscriptionServiceTests
     }
 
     [Fact]
-    public async Task Disable_sets_global_opt_out()
+    public async Task Disable_writes_email_preference_without_touching_subscription_or_override()
     {
         await using var db = CreateDb();
         await SeedExpectedRunMissingDefinitionAsync(db);
         var store = new SqlNotificationSubscriptionStore(db);
-        var sut = new OperatorNotificationSubscriptionService(new SqlNotificationDefinitionStore(db), store);
+        var preferences = new SqlNotificationUserPreferenceStore(db);
+        var sut = new OperatorNotificationSubscriptionService(new SqlNotificationDefinitionStore(db), store, preferences);
         await sut.SetEmailEnabledAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, true);
 
         var updated = await sut.SetEmailEnabledAsync(
@@ -93,9 +96,73 @@ public sealed class OperatorNotificationSubscriptionServiceTests
             emailEnabled: false);
 
         updated.EmailEnabled.Should().BeFalse();
-        updated.HasGlobalEmailOptOut.Should().BeTrue();
+
+        var sub = await store.FindUserSelfSubscriptionAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing);
+        sub.Should().NotBeNull();
+        sub!.IsEnabled.Should().BeTrue();
+
         (await store.HasGlobalUserOptOutAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing))
-            .Should().BeTrue();
+            .Should().BeFalse();
+
+        var explicitPreference = await preferences.GetAsync(
+            "user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, NotificationChannels.Email);
+        explicitPreference.Should().NotBeNull();
+        explicitPreference!.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Enable_after_disable_survives_and_re_enables()
+    {
+        await using var db = CreateDb();
+        await SeedExpectedRunMissingDefinitionAsync(db);
+        var store = new SqlNotificationSubscriptionStore(db);
+        var preferences = new SqlNotificationUserPreferenceStore(db);
+        var sut = new OperatorNotificationSubscriptionService(new SqlNotificationDefinitionStore(db), store, preferences);
+
+        await sut.SetEmailEnabledAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, true);
+        await sut.SetEmailEnabledAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, false);
+        var updated = await sut.SetEmailEnabledAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            emailEnabled: true);
+
+        updated.EmailEnabled.Should().BeTrue();
+
+        var sub = await store.FindUserSelfSubscriptionAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing);
+        sub.Should().NotBeNull();
+        sub!.IsEnabled.Should().BeTrue();
+
+        (await store.HasGlobalUserOptOutAsync("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing))
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Admin_global_opt_out_still_suppresses_email_enabled_view_even_with_explicit_true_preference()
+    {
+        await using var db = CreateDb();
+        await SeedExpectedRunMissingDefinitionAsync(db);
+        var store = new SqlNotificationSubscriptionStore(db);
+        var preferences = new SqlNotificationUserPreferenceStore(db);
+        var sut = new OperatorNotificationSubscriptionService(new SqlNotificationDefinitionStore(db), store, preferences);
+
+        await preferences.SetAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationChannels.Email,
+            isEnabled: true,
+            updatedByActorId: "user-1");
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand(
+                "user-1",
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                OperationalTeamId: null,
+                CreatedByActorId: "admin-1"));
+
+        var prefs = await sut.ListEmailPreferencesAsync("user-1");
+
+        var preference = prefs.Should().ContainSingle().Subject;
+        preference.EmailEnabled.Should().BeFalse();
+        preference.HasGlobalEmailOptOut.Should().BeTrue();
     }
 
     [Fact]
@@ -104,7 +171,8 @@ public sealed class OperatorNotificationSubscriptionServiceTests
         await using var db = CreateDb();
         var sut = new OperatorNotificationSubscriptionService(
             new SqlNotificationDefinitionStore(db),
-            new SqlNotificationSubscriptionStore(db));
+            new SqlNotificationSubscriptionStore(db),
+            new SqlNotificationUserPreferenceStore(db));
 
         var act = async () => await sut.SetEmailEnabledAsync("user-1", "unknown.def", true);
         await act.Should().ThrowAsync<KeyNotFoundException>();
