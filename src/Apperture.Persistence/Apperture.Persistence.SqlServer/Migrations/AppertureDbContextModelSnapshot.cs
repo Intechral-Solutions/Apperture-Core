@@ -1060,6 +1060,9 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(65536)
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("ToastEnabledByDefault")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1455,9 +1458,53 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasIndex("PrincipalUserId", "NotificationInstanceId")
                         .IsUnique();
 
+                    b.HasIndex("PrincipalUserId", "CreatedAtUtc", "Id");
+
                     b.HasIndex("PrincipalUserId", "IsRead", "CreatedAtUtc");
 
                     b.ToTable("NotificationUserInboxItems", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.NotificationUserPreferenceEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NotificationDefinitionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedByActorId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "NotificationDefinitionId", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("NotificationUserPreferences", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationCancelRequestEntity", b =>

@@ -33,6 +33,7 @@ public class AppertureDbContext : DbContext
     public DbSet<NotificationInstanceEntity> NotificationInstances => Set<NotificationInstanceEntity>();
     public DbSet<NotificationDeliveryOutboxEntity> NotificationDeliveryOutbox => Set<NotificationDeliveryOutboxEntity>();
     public DbSet<NotificationUserInboxItemEntity> NotificationUserInboxItems => Set<NotificationUserInboxItemEntity>();
+    public DbSet<NotificationUserPreferenceEntity> NotificationUserPreferences => Set<NotificationUserPreferenceEntity>();
     public DbSet<SecretDescriptorEntity> SecretDescriptors => Set<SecretDescriptorEntity>();
     public DbSet<SecretVersionEntity> SecretVersions => Set<SecretVersionEntity>();
     public DbSet<SecretAuditEntity> SecretAudits => Set<SecretAuditEntity>();
@@ -526,6 +527,19 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.SourceRecipientRef).HasMaxLength(64);
             e.HasIndex(x => new { x.PrincipalUserId, x.NotificationInstanceId }).IsUnique();
             e.HasIndex(x => new { x.PrincipalUserId, x.IsRead, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.PrincipalUserId, x.CreatedAtUtc, x.Id });
+        });
+
+        modelBuilder.Entity<NotificationUserPreferenceEntity>(e =>
+        {
+            e.ToTable("NotificationUserPreferences");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.NotificationDefinitionId).HasMaxLength(64);
+            e.Property(x => x.Channel).HasMaxLength(16);
+            e.Property(x => x.UpdatedByActorId).HasMaxLength(64);
+            e.HasIndex(x => new { x.UserId, x.NotificationDefinitionId, x.Channel }).IsUnique();
         });
 
         modelBuilder.Entity<SecretDescriptorEntity>(e =>

@@ -20,4 +20,5 @@ public sealed class NotificationDefinitionEntity
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string? CreatedByActorId { get; set; }
     public string? UpdatedByActorId { get; set; }
+    public bool ToastEnabledByDefault { get; set; }
 }

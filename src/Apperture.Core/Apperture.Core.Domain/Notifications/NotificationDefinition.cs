@@ -19,4 +19,5 @@ public sealed record NotificationDefinition(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     string? CreatedByActorId,
-    string? UpdatedByActorId);
+    string? UpdatedByActorId,
+    bool ToastEnabledByDefault = false);

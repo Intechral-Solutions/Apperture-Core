@@ -19,4 +19,5 @@ public static class NotificationOutboxStatuses
 public static class NotificationChannels
 {
     public const string Email = "email";
+    public const string Toast = "toast";
 }
