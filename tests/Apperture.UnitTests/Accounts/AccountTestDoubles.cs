@@ -196,6 +196,56 @@ public sealed class StubOperatorNotificationSubscriptionService : IOperatorNotif
     }
 }
 
+/// <summary>Toast preference service backed by an in-memory opt-in map, independent of email state.</summary>
+public sealed class StubOperatorNotificationToastPreferenceService : IOperatorNotificationToastPreferenceService
+{
+    private readonly Dictionary<string, (string DisplayName, string? Description)> _definitions;
+    private readonly Dictionary<(string UserId, string DefinitionId), bool> _toastEnabled = new();
+
+    public StubOperatorNotificationToastPreferenceService(
+        params (string DefinitionId, string DisplayName, string? Description)[] definitions)
+    {
+        _definitions = definitions.ToDictionary(d => d.DefinitionId, d => (d.DisplayName, d.Description), StringComparer.Ordinal);
+    }
+
+    public List<(string UserId, string DefinitionId, bool ToastEnabled)> SetCalls { get; } = [];
+
+    public void SeedToastEnabled(string userId, string definitionId, bool enabled) =>
+        _toastEnabled[(userId, definitionId)] = enabled;
+
+    public bool IsToastEnabled(string userId, string definitionId) =>
+        _toastEnabled.TryGetValue((userId, definitionId), out var value) && value;
+
+    public ValueTask<IReadOnlyList<OperatorToastPreference>> ListToastPreferencesAsync(
+        string userId,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<OperatorToastPreference>>(
+            _definitions.Select(d => Build(userId, d.Key)).ToList());
+
+    public ValueTask<OperatorToastPreference> SetToastEnabledAsync(
+        string userId,
+        string definitionId,
+        bool toastEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_definitions.ContainsKey(definitionId))
+        {
+            throw new KeyNotFoundException(
+                $"Notification definition '{definitionId}' is not available for operator toast preferences.");
+        }
+
+        SetCalls.Add((userId, definitionId, toastEnabled));
+        _toastEnabled[(userId, definitionId)] = toastEnabled;
+        return ValueTask.FromResult(Build(userId, definitionId));
+    }
+
+    private OperatorToastPreference Build(string userId, string definitionId)
+    {
+        var (displayName, description) = _definitions[definitionId];
+        return new OperatorToastPreference(definitionId, displayName, description, IsToastEnabled(userId, definitionId));
+    }
+}
+
 /// <summary>Audit sink that keeps every appended record for assertions.</summary>
 public sealed class RecordingAuditService : IAuditService
 {

@@ -36,7 +36,8 @@ public sealed record AccountNotificationPreference(
     string DisplayName,
     string? Description,
     AccountNotificationChannelState Platform,
-    AccountNotificationChannelState Email);
+    AccountNotificationChannelState Email,
+    AccountNotificationChannelState Toast);
 
 /// <summary>State of one delivery channel for one notification.</summary>
 public sealed record AccountNotificationChannelState(
@@ -100,6 +101,12 @@ public interface IAccountProfileService
         string definitionId,
         bool emailEnabled,
         CancellationToken cancellationToken = default);
+
+    ValueTask<AccountNotificationPreference> SetNotificationToastPreferenceAsync(
+        UserId userId,
+        string definitionId,
+        bool toastEnabled,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Requested preference values. Raw strings so the service can reject unknown enum members.</summary>
@@ -134,6 +141,8 @@ public static class AccountAuditActionNames
     public const string AvatarUploadRejected = "account.profile.avatar.upload_rejected";
     public const string NotificationEmailOptOut = "account.notification.email.opted_out";
     public const string NotificationEmailOptIn = "account.notification.email.opted_in";
+    public const string NotificationToastOptOut = "account.notification.toast.opted_out";
+    public const string NotificationToastOptIn = "account.notification.toast.opted_in";
 
     /// <summary>Audit outcome bucket shared by account self-service records.</summary>
     public const string Outcome = "account";

@@ -142,6 +142,10 @@ public sealed class NotificationPreferenceDto
     public bool EmailEnabled { get; init; }
     public bool EmailEditable { get; init; }
     public string? EmailNotEditableReason { get; init; }
+
+    public bool ToastEnabled { get; init; }
+    public bool ToastEditable { get; init; }
+    public string? ToastNotEditableReason { get; init; }
 }
 
 public sealed class UpdateAccountProfileRequestDto
@@ -163,5 +167,6 @@ public sealed class SelectAvatarRequestDto
 
 public sealed class SetNotificationPreferenceRequestDto
 {
-    public bool EmailEnabled { get; init; }
+    public bool? EmailEnabled { get; init; }
+    public bool? ToastEnabled { get; init; }
 }

@@ -902,7 +902,8 @@ public interface IManagementClient
 
     Task<NotificationPreferenceDto> SetAccountNotificationPreferenceAsync(
         string definitionId,
-        bool emailEnabled,
+        bool? emailEnabled,
+        bool? toastEnabled,
         CancellationToken cancellationToken = default);
 
     Task<NotificationDeliveryHealthSummaryDto> GetNotificationDeliveryHealthAsync(

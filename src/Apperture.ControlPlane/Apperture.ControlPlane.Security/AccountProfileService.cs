@@ -31,6 +31,7 @@ public sealed class AccountProfileService : IAccountProfileService
     private readonly IUserProfileImageStore _images;
     private readonly IProfileImageNormalizer _normalizer;
     private readonly IOperatorNotificationSubscriptionService _notificationPreferences;
+    private readonly IOperatorNotificationToastPreferenceService _toastPreferences;
     private readonly IAuditService _audit;
     private readonly ILogger<AccountProfileService> _logger;
 
@@ -40,6 +41,7 @@ public sealed class AccountProfileService : IAccountProfileService
         IUserProfileImageStore images,
         IProfileImageNormalizer normalizer,
         IOperatorNotificationSubscriptionService notificationPreferences,
+        IOperatorNotificationToastPreferenceService toastPreferences,
         IAuditService audit,
         ILogger<AccountProfileService> logger)
     {
@@ -48,6 +50,7 @@ public sealed class AccountProfileService : IAccountProfileService
         _images = images;
         _normalizer = normalizer;
         _notificationPreferences = notificationPreferences;
+        _toastPreferences = toastPreferences;
         _audit = audit;
         _logger = logger;
     }
@@ -274,10 +277,23 @@ public sealed class AccountProfileService : IAccountProfileService
         UserId userId,
         CancellationToken cancellationToken = default)
     {
-        var rows = await _notificationPreferences
+        var emailRows = await _notificationPreferences
             .ListEmailPreferencesAsync(userId.Value, cancellationToken)
             .ConfigureAwait(false);
-        return rows.Select(ToPreference).ToList();
+        var toastRows = await _toastPreferences
+            .ListToastPreferencesAsync(userId.Value, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Both lists iterate the same self-subscribable definition set (Design Decision 5), so they
+        // should always line up 1:1 by DefinitionId -- but look up by id defensively rather than zip
+        // positionally, in case of any future drift between the two services.
+        var toastByDefinitionId = toastRows.ToDictionary(t => t.DefinitionId, StringComparer.Ordinal);
+
+        return emailRows
+            .Select(email => ToPreference(
+                email,
+                toastByDefinitionId.TryGetValue(email.DefinitionId, out var toast) ? toast : null))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -290,8 +306,9 @@ public sealed class AccountProfileService : IAccountProfileService
         if (string.IsNullOrWhiteSpace(definitionId))
             throw new ArgumentException("A notification definition id is required.", nameof(definitionId));
 
+        var trimmedDefinitionId = definitionId.Trim();
         var updated = await _notificationPreferences
-            .SetEmailEnabledAsync(userId.Value, definitionId.Trim(), emailEnabled, cancellationToken)
+            .SetEmailEnabledAsync(userId.Value, trimmedDefinitionId, emailEnabled, cancellationToken)
             .ConfigureAwait(false);
 
         // Opting out of a channel changes who gets told about operational problems, so unlike the
@@ -304,14 +321,59 @@ public sealed class AccountProfileService : IAccountProfileService
             $"Email delivery for '{updated.DisplayName}' ({updated.DefinitionId}) set to {(emailEnabled ? "on" : "off")}.",
             cancellationToken).ConfigureAwait(false);
 
-        return ToPreference(updated);
+        var toast = await _toastPreferences
+            .ListToastPreferencesAsync(userId.Value, cancellationToken)
+            .ConfigureAwait(false);
+        var toastPreference = toast.FirstOrDefault(t => string.Equals(t.DefinitionId, trimmedDefinitionId, StringComparison.Ordinal));
+
+        return ToPreference(updated, toastPreference);
     }
 
-    private static AccountNotificationPreference ToPreference(OperatorEmailSubscriptionPreference source) =>
+    /// <inheritdoc />
+    public async ValueTask<AccountNotificationPreference> SetNotificationToastPreferenceAsync(
+        UserId userId,
+        string definitionId,
+        bool toastEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(definitionId))
+            throw new ArgumentException("A notification definition id is required.", nameof(definitionId));
+
+        var trimmedDefinitionId = definitionId.Trim();
+        var updated = await _toastPreferences
+            .SetToastEnabledAsync(userId.Value, trimmedDefinitionId, toastEnabled, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Opting out of a channel changes who gets told about operational problems, so unlike the
+        // presentation preferences above this is worth an audit record.
+        await AppendAuditAsync(
+            userId,
+            toastEnabled
+                ? AccountAuditActionNames.NotificationToastOptIn
+                : AccountAuditActionNames.NotificationToastOptOut,
+            $"Toast delivery for '{updated.DisplayName}' ({updated.DefinitionId}) set to {(toastEnabled ? "on" : "off")}.",
+            cancellationToken).ConfigureAwait(false);
+
+        var email = await _notificationPreferences
+            .ListEmailPreferencesAsync(userId.Value, cancellationToken)
+            .ConfigureAwait(false);
+        var emailPreference = email.FirstOrDefault(e => string.Equals(e.DefinitionId, trimmedDefinitionId, StringComparison.Ordinal));
+
+        // If the toast service accepted the definition, the email service (which iterates the exact
+        // same self-subscribable definition set) must have a matching row too.
+        if (emailPreference is null)
+            throw new KeyNotFoundException($"Notification definition '{trimmedDefinitionId}' is not available for operator email preferences.");
+
+        return ToPreference(emailPreference, updated);
+    }
+
+    private static AccountNotificationPreference ToPreference(
+        OperatorEmailSubscriptionPreference email,
+        OperatorToastPreference? toast) =>
         new(
-            source.DefinitionId,
-            source.DisplayName,
-            source.Description,
+            email.DefinitionId,
+            email.DisplayName,
+            email.Description,
             // The in-app inbox is materialized from the resolved recipient set, so there is no user
             // switch behind it. Reporting it as not editable keeps the UI honest instead of showing
             // a control that would silently do nothing.
@@ -320,7 +382,13 @@ public sealed class AccountProfileService : IAccountProfileService
                 Editable: false,
                 NotEditableReason: PlatformChannelNotEditableReason),
             new AccountNotificationChannelState(
-                Enabled: source.EmailEnabled,
+                Enabled: email.EmailEnabled,
+                Editable: true,
+                NotEditableReason: null),
+            // Toast editability never depends on email's state -- it is a wholly independent
+            // preference-store channel with no subscription/route concept behind it.
+            new AccountNotificationChannelState(
+                Enabled: toast?.ToastEnabled ?? false,
                 Editable: true,
                 NotEditableReason: null));
 

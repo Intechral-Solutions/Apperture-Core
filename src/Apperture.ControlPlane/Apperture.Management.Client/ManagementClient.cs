@@ -3103,12 +3103,13 @@ public sealed class ManagementClient : IManagementClient
 
     public async Task<NotificationPreferenceDto> SetAccountNotificationPreferenceAsync(
         string definitionId,
-        bool emailEnabled,
+        bool? emailEnabled,
+        bool? toastEnabled,
         CancellationToken cancellationToken = default)
     {
         using var response = await _http.PutAsJsonAsync(
                 $"account/notification-preferences/{Uri.EscapeDataString(definitionId)}",
-                new SetNotificationPreferenceRequestDto { EmailEnabled = emailEnabled },
+                new SetNotificationPreferenceRequestDto { EmailEnabled = emailEnabled, ToastEnabled = toastEnabled },
                 ApiJsonWriteOptions,
                 cancellationToken)
             .ConfigureAwait(false);

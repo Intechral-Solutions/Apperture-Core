@@ -654,6 +654,68 @@ public sealed class AccountProfileServiceTests
             .Should().BeFalse();
     }
 
+    [Fact]
+    public async Task GetNotificationPreferencesAsync_zips_email_and_toast_rows_correctly_by_definition_id()
+    {
+        var fixture = new Fixture();
+        fixture.Notifications.SeedEmailEnabled(Owner.Value, "platform.schedule.expected_run_missing", true);
+        fixture.ToastPreferences.SeedToastEnabled(Owner.Value, "platform.schedule.expected_run_missing", true);
+        fixture.ToastPreferences.SeedToastEnabled(Owner.Value, "module.sample.helloworld.demo.completed", false);
+
+        var preferences = await fixture.Service.GetNotificationPreferencesAsync(Owner);
+
+        var expectedRunMissing = preferences.Single(p => p.DefinitionId == "platform.schedule.expected_run_missing");
+        expectedRunMissing.Email.Enabled.Should().BeTrue();
+        expectedRunMissing.Toast.Enabled.Should().BeTrue();
+        expectedRunMissing.Toast.Editable.Should().BeTrue();
+        expectedRunMissing.Toast.NotEditableReason.Should().BeNull();
+
+        var demoCompleted = preferences.Single(p => p.DefinitionId == "module.sample.helloworld.demo.completed");
+        demoCompleted.Email.Enabled.Should().BeFalse();
+        demoCompleted.Toast.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SetNotificationToastPreferenceAsync_writes_only_the_toast_channel_leaving_email_untouched()
+    {
+        var fixture = new Fixture();
+        fixture.Notifications.SeedEmailEnabled(Owner.Value, "platform.schedule.expected_run_missing", true);
+
+        var updated = await fixture.Service.SetNotificationToastPreferenceAsync(
+            Owner,
+            "platform.schedule.expected_run_missing",
+            toastEnabled: true);
+
+        updated.Toast.Enabled.Should().BeTrue();
+        updated.Email.Enabled.Should().BeTrue();
+        fixture.ToastPreferences.SetCalls.Should().ContainSingle(c =>
+            c.UserId == Owner.Value && c.DefinitionId == "platform.schedule.expected_run_missing" && c.ToastEnabled);
+        fixture.Notifications.SetCalls.Should().BeEmpty("setting the toast channel must never touch the email service");
+    }
+
+    [Fact]
+    public async Task Toast_channel_changes_are_audited()
+    {
+        var fixture = new Fixture();
+
+        await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", false);
+        await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
+
+        fixture.Audit.HasAction(AccountAuditActionNames.NotificationToastOptOut).Should().BeTrue();
+        fixture.Audit.HasAction(AccountAuditActionNames.NotificationToastOptIn).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SetNotificationToastPreferenceAsync_rejects_an_unknown_definition()
+    {
+        var fixture = new Fixture();
+
+        var act = async () => await fixture.Service
+            .SetNotificationToastPreferenceAsync(Owner, "does.not.exist", true);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>();
+    }
+
     private static AccountAvatarUpload ValidUpload() =>
         new("portrait.png", "image/png", ProfileImageTestImages.Png(320, 240));
 
@@ -670,6 +732,9 @@ public sealed class AccountProfileServiceTests
             Notifications = new StubOperatorNotificationSubscriptionService(
                 ("platform.schedule.expected_run_missing", "Expected run missing", "A schedule did not run when expected."),
                 ("module.sample.helloworld.demo.completed", "Demo completed", null));
+            ToastPreferences = new StubOperatorNotificationToastPreferenceService(
+                ("platform.schedule.expected_run_missing", "Expected run missing", "A schedule did not run when expected."),
+                ("module.sample.helloworld.demo.completed", "Demo completed", null));
             Audit = new RecordingAuditService();
 
             Service = new AccountProfileService(
@@ -678,6 +743,7 @@ public sealed class AccountProfileServiceTests
                 Images,
                 new SkiaProfileImageNormalizer(),
                 Notifications,
+                ToastPreferences,
                 Audit,
                 NullLogger<AccountProfileService>.Instance);
         }
@@ -686,6 +752,7 @@ public sealed class AccountProfileServiceTests
         public InMemoryUserPreferencesRepository Preferences { get; }
         public InMemoryUserProfileImageStore Images { get; }
         public StubOperatorNotificationSubscriptionService Notifications { get; }
+        public StubOperatorNotificationToastPreferenceService ToastPreferences { get; }
         public RecordingAuditService Audit { get; }
         public AccountProfileService Service { get; }
     }

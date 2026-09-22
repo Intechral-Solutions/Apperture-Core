@@ -447,11 +447,28 @@ public sealed class AccountController : ControllerBase
 
         try
         {
-            var updated = await _account.SetNotificationEmailPreferenceAsync(
-                userId,
-                definitionId,
-                request.EmailEnabled,
-                cancellationToken);
+            AccountNotificationPreference? updated = null;
+            if (request.EmailEnabled.HasValue)
+            {
+                updated = await _account.SetNotificationEmailPreferenceAsync(
+                    userId,
+                    definitionId,
+                    request.EmailEnabled.Value,
+                    cancellationToken);
+            }
+
+            if (request.ToastEnabled.HasValue)
+            {
+                updated = await _account.SetNotificationToastPreferenceAsync(
+                    userId,
+                    definitionId,
+                    request.ToastEnabled.Value,
+                    cancellationToken);
+            }
+
+            if (updated is null)
+                return ValidationProblem(nameof(request), "At least one of EmailEnabled or ToastEnabled is required.");
+
             return Ok(ToDto(updated));
         }
         catch (ArgumentException ex)
@@ -544,7 +561,10 @@ public sealed class AccountController : ControllerBase
         PlatformNotEditableReason = preference.Platform.NotEditableReason,
         EmailEnabled = preference.Email.Enabled,
         EmailEditable = preference.Email.Editable,
-        EmailNotEditableReason = preference.Email.NotEditableReason
+        EmailNotEditableReason = preference.Email.NotEditableReason,
+        ToastEnabled = preference.Toast.Enabled,
+        ToastEditable = preference.Toast.Editable,
+        ToastNotEditableReason = preference.Toast.NotEditableReason
     };
 
     private ActionResult ValidationProblem(string field, string message)
@@ -604,4 +624,4 @@ public sealed record UpdateUserPreferencesRequest(string? Appearance, string? Ti
 
 public sealed record SelectAvatarRequest(string? OptionId);
 
-public sealed record SetNotificationPreferenceRequest(bool EmailEnabled);
+public sealed record SetNotificationPreferenceRequest(bool? EmailEnabled, bool? ToastEnabled);
