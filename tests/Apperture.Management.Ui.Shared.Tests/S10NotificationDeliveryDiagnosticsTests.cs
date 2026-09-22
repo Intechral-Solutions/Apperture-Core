@@ -114,7 +114,7 @@ public sealed class S10NotificationDiagnosticsUiTests
         var content = ReadRepoFile(
             "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Account/AccountNotifications.razor");
         content.Should().Contain("appear in your");
-        content.Should().Contain("turning email off suppresses your email only");
+        content.Should().Contain("turning email or toast off suppresses that channel for you only");
         content.Should().Contain("Administrators decide which notifications exist");
         content.Should().Contain("Digest summaries and quiet hours");
     }
