@@ -43,6 +43,22 @@ public interface INotificationUserInboxStore
         IReadOnlyList<string> inboxItemIds,
         DateTimeOffset viewedAtUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Scans this user's inbox in ascending (CreatedAtUtc, Id) order, starting strictly after the
+    /// given composite cursor (or from the tip of the inbox when no cursor is given), joining in the
+    /// definition's default severity/toast-eligibility and any explicit per-user Toast channel
+    /// preference. Returns ALL scanned rows — toast-eligible or not — so the caller can advance the
+    /// cursor past every row; eligibility filtering is the caller's responsibility, not this method's.
+    /// <paramref name="afterCreatedAtUtc"/> and <paramref name="afterId"/> together form one cursor:
+    /// pass both or neither (bootstrap).
+    /// </summary>
+    ValueTask<IReadOnlyList<NotificationToastDeltaRow>> ListToastDeltaAsync(
+        string principalUserId,
+        DateTimeOffset? afterCreatedAtUtc,
+        string? afterId,
+        int take,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record NotificationUserInboxItemInsert(
@@ -53,3 +69,22 @@ public sealed record NotificationUserInboxItemInsert(
     string SourceRecipientKind,
     string SourceRecipientRef,
     DateTimeOffset CreatedAtUtc);
+
+/// <summary>
+/// One scanned inbox row for the incremental Toast delta feed. <see cref="DefaultSeverity"/> is null
+/// when the originating <c>NotificationDefinition</c> no longer exists (deleted definition); in that
+/// case <see cref="IsToastEligible"/> is always false. Otherwise <see cref="IsToastEligible"/> is the
+/// user's explicit Toast-channel preference if one exists, else the definition's
+/// <c>ToastEnabledByDefault</c>.
+/// </summary>
+public sealed record NotificationToastDeltaRow(
+    string Id,
+    string NotificationInstanceId,
+    DateTimeOffset CreatedAtUtc,
+    string RenderedSubject,
+    string RenderedSummary,
+    string NotificationKind,
+    string InstanceStatus,
+    string? IntegrationId,
+    string? DefaultSeverity,
+    bool IsToastEligible);

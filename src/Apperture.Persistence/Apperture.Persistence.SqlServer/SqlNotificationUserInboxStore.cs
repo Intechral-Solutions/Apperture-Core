@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Notifications.Inbox;
+using Apperture.Core.Domain.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
@@ -194,6 +195,79 @@ public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return touched;
+    }
+
+    public async ValueTask<IReadOnlyList<NotificationToastDeltaRow>> ListToastDeltaAsync(
+        string principalUserId,
+        DateTimeOffset? afterCreatedAtUtc,
+        string? afterId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedTake = Math.Clamp(take, 1, 50);
+
+        var q = from inbox in _db.NotificationUserInboxItems.AsNoTracking()
+                join inst in _db.NotificationInstances.AsNoTracking()
+                    on inbox.NotificationInstanceId equals inst.Id
+                join def in _db.NotificationDefinitions.AsNoTracking()
+                    on inst.NotificationDefinitionId equals def.Id into defJoin
+                from def in defJoin.DefaultIfEmpty()
+                join pref in _db.NotificationUserPreferences.AsNoTracking()
+                    on new { UserId = inbox.PrincipalUserId, DefinitionId = inst.NotificationDefinitionId, Channel = NotificationChannels.Toast }
+                    equals new { UserId = pref.UserId, DefinitionId = pref.NotificationDefinitionId, Channel = pref.Channel }
+                    into prefJoin
+                from pref in prefJoin.DefaultIfEmpty()
+                where inbox.PrincipalUserId == principalUserId
+                select new { inbox, inst, def, pref };
+
+        if (afterCreatedAtUtc is not null)
+        {
+            var cursorCreatedAtUtc = afterCreatedAtUtc.Value;
+            q = q.Where(x => x.inbox.CreatedAtUtc > cursorCreatedAtUtc
+                || (x.inbox.CreatedAtUtc == cursorCreatedAtUtc
+                    && x.inbox.Id.CompareTo(afterId) > 0));
+        }
+
+        if (afterCreatedAtUtc is null)
+        {
+            // Bootstrap: no cursor yet — establish the current tip, not the full history.
+            var tipRows = await q
+                .OrderByDescending(x => x.inbox.CreatedAtUtc).ThenByDescending(x => x.inbox.Id)
+                .Take(boundedTake)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            tipRows.Reverse(); // back to ascending order for the response
+            return tipRows.Select(x => ToToastDeltaRow(x.inbox, x.inst, x.def, x.pref)).ToList();
+        }
+
+        var rows = await q
+            .OrderBy(x => x.inbox.CreatedAtUtc).ThenBy(x => x.inbox.Id)
+            .Take(boundedTake)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows.Select(x => ToToastDeltaRow(x.inbox, x.inst, x.def, x.pref)).ToList();
+    }
+
+    private static NotificationToastDeltaRow ToToastDeltaRow(
+        NotificationUserInboxItemEntity inbox,
+        NotificationInstanceEntity inst,
+        NotificationDefinitionEntity? def,
+        NotificationUserPreferenceEntity? pref)
+    {
+        var isToastEligible = def is not null && (pref is not null ? pref.IsEnabled : def.ToastEnabledByDefault);
+
+        return new NotificationToastDeltaRow(
+            inbox.Id,
+            inbox.NotificationInstanceId,
+            inbox.CreatedAtUtc,
+            inst.RenderedSubject,
+            inst.RenderedSummary,
+            inst.NotificationKind,
+            inst.Status,
+            inst.IntegrationId,
+            def?.DefaultSeverity,
+            isToastEligible);
     }
 
     private static NotificationUserInboxItem ToModel(
