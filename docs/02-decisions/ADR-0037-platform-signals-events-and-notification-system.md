@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (notification foundation delivered in Epic 77). **NTF-C (2026-09-10) completed legacy Attention email removal** — production delivery is the platform pipeline only (activation, reminder, escalation, resolved). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md). The Context table below is the pre-cutover landscape.
+Accepted (notification foundation delivered in Epic 77). **NTF-C (2026-09-10) completed legacy Attention email removal** — production delivery is the platform pipeline only (activation, reminder, escalation, resolved). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md). The Context table below is the pre-cutover landscape. **User preferences addendum (2026-09-22):** the `NotificationUserPreferences` sketch in §5 and §10 below was superseded by the simpler tri-state model actually shipped — see the addendum before *Consequences*, and [ADR-0042](./ADR-0042-notification-to-toast-channel-model.md).
 
 ## Context
 
@@ -311,6 +311,23 @@ Phased cutover: dual-write deliveries → switch orchestrator off → deprecate 
 ### 12. Relationship to ADR-0010 (federated notifications)
 
 Within-instance platform events and delivery evidence become the **source of truth** for child-instance health signals. Federation adapters subscribe to `PlatformEvents` (filtered) and project to signed outbound envelopes per ADR-0010. Do not duplicate rule engines across instances.
+
+### 13. Addendum (2026-09-22): user preferences superseded by ADR-0042
+
+This is an addendum, not a rewrite of the historical record above — §5 and §10's `NotificationUserPreferences`
+sketch (`userId`, `definitionId`/`definitionPattern`, `channel`, `optOut: true`; and, separately, per-channel
+quiet hours, severity minimum, digest enable) reflects this ADR's original thinking at the time it was written
+and is kept as-is above for history.
+
+What actually shipped, delivered as the **Toast-B** body and recorded in full in
+[ADR-0042](./ADR-0042-notification-to-toast-channel-model.md), is a simpler, flatter model: a
+`NotificationUserPreferences` table keyed on `(UserId, NotificationDefinitionId, Channel)` with a single
+`IsEnabled` boolean, exactly two channel tokens (`email`, `toast` — no `inApp`, since in-app delivery has no
+opt-out in v1), no-row-means-inherit-the-definition's-default resolved fresh on every read (never copied at
+subscribe time), and no `definitionPattern`, quiet hours, severity minimum, or digest concept. Those latter
+ideas were not built and are not currently planned; if pursued later, they are new scope on top of the shipped
+schema, not a gap being filled in. See ADR-0042 for the full schema, the delta-polling watcher that consumes it,
+and the migration that converted historical self-service email opt-outs forward into this table.
 
 ## Consequences
 

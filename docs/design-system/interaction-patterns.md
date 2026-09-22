@@ -123,8 +123,11 @@ Rules:
 
 ### Toast presentation and interaction
 
-Callers only ever use `IToastService.Show(severity, message, title?, duration?)`. Placement, animation,
-gestures, pausing and announcements are the toast subsystem's job; feature pages never manage them.
+Callers only ever use `IToastService.Show(severity, message, title?, duration?, dedupeKey?)`. Placement,
+animation, gestures, pausing and announcements are the toast subsystem's job; feature pages never manage them.
+`dedupeKey` (added for Notification-originated toasts — see below) is optional and defaults to `null`; a
+blank/whitespace value is normalized to "no key" (falls back to the content-signature matching described in
+the duplicates row below), so pass a real, stable identity or omit it, never an empty string as a sentinel.
 
 | Aspect | Behavior |
 | --- | --- |
@@ -137,6 +140,7 @@ gestures, pausing and announcements are the toast subsystem's job; feature pages
 | Lifecycle | `Visible` → (dismiss requested) `Exiting` → removed after `ToastPolicy.ExitDuration`. Removal is timer-driven, exactly once, and never waits on an animation event. |
 | Bound | At most `ToastPolicy.MaxToasts` (100) in memory. Beyond that the oldest auto-dismissing toast is evicted first; persistent errors last. This is a safety net for runaway callers, not a display limit. |
 | Duplicates | An identical outcome (same severity, title, message) re-arms the existing toast; it is not announced again. A toast that is already leaving is not revived. |
+| Duplicates (keyed) | A caller that passes `dedupeKey` re-arms an existing **Visible** toast with the same key instead of matching by content signature — used for Notification-originated toasts, keyed by inbox item id, so a re-presented notification doesn't stack a second card. A same-key re-arm only refreshes the dwell countdown: it does **not** update the toast's displayed severity/message/title and does **not** re-announce it. It also does not suppress re-display after the toast has already fully dismissed (auto or manual) — a caller that needs "don't show this again this session" tracks that itself (the Notification toast watcher keeps its own bounded recently-shown set for exactly this reason; `dedupeKey` only re-arms a *currently displayed* toast). |
 
 Accessibility: toasts are **not** live regions themselves. Each new toast is announced **once** through
 a persistent polite region (errors: assertive) as `Severity: Title. Message`, cleared after a few
@@ -149,8 +153,20 @@ Reduced motion (`prefers-reduced-motion: reduce`): no enter/exit/collapse animat
 animation; a leaving toast disappears at once. Dragging still follows the pointer and every control
 keeps working.
 
-Not a Notification delivery channel: incoming platform Notifications do not surface as toasts yet
-(a separate roadmap body builds on this API).
+**Notification Toasts.** Incoming platform Notifications now do surface as Toasts — this is a presentation
+of the existing persistent in-app inbox, not a second delivery channel or a bypass of it: every Toasted item
+still exists (and is still readable) as an ordinary inbox row regardless of whether a Toast was ever shown for
+it. Toasting is off by default per notification and is gated by an explicit per-user Toast preference
+(inherited from the notification Definition's own Toast default when the user has not set one explicitly —
+see [ADR-0042](../02-decisions/ADR-0042-notification-to-toast-channel-model.md)). A session-scoped watcher
+polls a delta feed roughly every 30 seconds while the operator is signed in and calls `Show(...)` with the
+inbox item's id as `dedupeKey` (not a content signature — two notifications can render identical text and must
+still be tracked as distinct items) and the severity/duration resolved by
+`NotificationToastSeverityMapper.Resolve(...)`, which maps the notification's severity token onto
+`ToastSeverity` plus an optional explicit duration: Critical/Error toasts get an explicit 10 s duration (so
+they auto-dismiss, unlike an ordinary feature-code error toast, which persists until dismissed);
+Warning/Info use the normal default duration; a Notification toast is never `Success`. A Notification toast
+carries no action/link and is not clickable to a destination — see ADR-0042 for what's deferred.
 
 ---
 

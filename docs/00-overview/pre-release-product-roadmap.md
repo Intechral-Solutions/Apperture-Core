@@ -62,9 +62,12 @@ reset, cutting across several of them.
      there is **no approved one-to-one Component→Resource invariant** and HSK-D introduced none (evidence
      recorded in the
      [Components/Services/Catalog planning note](../01-architecture/transitions/components-services-catalog/README.md)).
-2. **Toast UX foundation** (**Toast-A**) — **implemented (2026-09-21); not merge-ready until a short operator
-   re-smoke passes on a rebuilt, restarted app** (the first real-app smoke failed because the running stack held
-   pre-change compiled code alongside new live-served CSS/JS; cause, fix and guards are in the audit). Presentation rewrite of the existing, already well-centralized toast system;
+2. **Toast UX foundation** (**Toast-A**) — **implemented and merged (2026-09-21).** The required operator
+   re-smoke on a rebuilt, restarted app passed functionally; the two visual issues it surfaced (a luminous
+   shadow halo in dark theme, and the bottom-most toast's shadow clipping flat) were fixed in that same pass
+   and are the branch's last commit. (The *first*, pre-rebuild real-app smoke had failed only because the
+   running stack held pre-change compiled code alongside new live-served CSS/JS — not a defect in the
+   branch's own markup/CSS/JS; cause, fix and guards are in the audit.) Presentation rewrite of the existing, already well-centralized toast system;
    **no call-site changes**. Delivered: a bottom-centred, responsive, upward-growing stack capped to a
    fraction of the viewport height that scrolls when it overflows; enter/exit motion with a timer-driven
    `Visible → Exiting → removed` lifecycle; countdowns that pause stack-wide while the operator interacts
@@ -73,9 +76,18 @@ reset, cutting across several of them.
    support; and a generous queue bound. Details, decisions and findings:
    [`toast-a-toast-ux-foundation.md`](../audits/toast-a-toast-ux-foundation.md); behaviour reference:
    [interaction patterns](../design-system/interaction-patterns.md#toast-presentation-and-interaction).
-3. **Notification → Toast integration** — **not started.** Incoming platform Notifications optionally
-   surface as Toasts; per-user preference, not a new delivery channel. Toast-A deliberately implements none
-   of it (no definition defaults, preferences, polling/push, or notification dedupe).
+3. **Notification → Toast integration** (**Toast-B**) — **complete.** Incoming platform Notifications can now
+   surface as Toasts, a presentation of the existing persistent in-app inbox rather than a new delivery
+   channel: a per-user Toast preference per notification (independent of the always-on in-app inbox and the
+   separately switchable Email preference), a Definition-level Toast default administrators set so a new
+   notification doesn't default to silent, a session-scoped delta-polling watcher (30 s cadence) that turns
+   newly-delivered, Toast-eligible inbox items into Toasts, de-duplication by inbox item identity (not message
+   content), and severity mapping onto the existing Toast severities (Critical/Error get an explicit 10 s
+   duration so they don't linger like ordinary feature-code error toasts; Warning/Info use the normal
+   default). Details, phase-by-phase summary, known accepted gaps and manual smoke checklist:
+   [`toast-b-notification-toast-integration.md`](../audits/toast-b-notification-toast-integration.md); decision
+   record: [`ADR-0042`](../02-decisions/ADR-0042-notification-to-toast-channel-model.md); behaviour reference:
+   [interaction patterns](../design-system/interaction-patterns.md#toast-presentation-and-interaction).
 4. **Components design gate**
 5. **Services design gate** — immediately follows the Components design gate, before either
    implementation begins. Services may reveal catalog/capability requirements Components needs to account

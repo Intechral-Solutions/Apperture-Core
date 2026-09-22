@@ -1,8 +1,11 @@
 # Toast-A — Toast UX foundation
 
-**Status:** implemented and automatically validated, but **not merge-ready**: the first real-app smoke failed
-(see *Real-app smoke failure*), the cause is fixed and guarded, and a short operator re-smoke on a **restarted** app is
-still required. Notification → Toast integration is a **separate, later** roadmap body and is **not started**.
+**Status:** implemented, automatically validated, and **merged** (`bca189d`, 2026-09-21) — the required operator
+re-smoke on a rebuilt, restarted app passed functionally, and the two visual issues it surfaced were fixed in
+the same, final commit on this body (see *Verification* for the historical smoke record; nothing below this
+banner has been rewritten). Notification → Toast integration was a **separate, later** roadmap body
+("Toast-B") — it has since shipped; see *Notification → Toast readiness* at the end of this document for the
+forward-reference update.
 
 Scope: redesign and harden the *presentation* of the existing in-app Toast system. No persistent
 platform Notification is connected to Toasts by this body.
@@ -370,3 +373,11 @@ Nothing blocks starting it. The presentation API it can consume is `Show(severit
 `Dismiss`, and the severity/duration policy. Things that body will likely want to decide (not built here): a
 per-toast dedupe key richer than the message signature, an optional action/link on a toast (toasts currently have no
 click target), and where a Notification's severity maps onto `ToastSeverity`.
+
+**Consumed (2026-09-22).** This forward-reference is resolved: "Toast-B" shipped, and answered each open
+question named above — a `dedupeKey` parameter was added to `IToastService.Show` (keyed by inbox item id, not
+message content), a Notification Toast still carries no action/link (deferred, not decided-and-skipped), and
+`NotificationToastSeverityMapper` maps a Notification's severity token onto `ToastSeverity` plus an optional
+explicit duration. See [ADR-0042](../02-decisions/ADR-0042-notification-to-toast-channel-model.md) and
+[`toast-b-notification-toast-integration.md`](toast-b-notification-toast-integration.md). Nothing above this
+note is rewritten history.

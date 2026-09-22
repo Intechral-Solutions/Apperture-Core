@@ -115,3 +115,19 @@ Targeted coverage includes activation, reminders, escalation threshold/routing/a
 ## 10. Confirmation
 
 **There is now one canonical production notification delivery pipeline. The legacy Attention delivery path is gone.**
+
+## 11. Addendum (2026-09-22): Toast presentation added by a later body (Toast-B)
+
+Not part of NTF-C's own scope or timeline — recorded here because this is the closest current-state doc
+describing the notification pipeline's overall shape, and it should not go stale as the pipeline gains a new
+presentation. A later, separate body ("Toast-B") added a third presentation of a delivered notification
+alongside email and the always-on in-app inbox this report describes: an ephemeral, session-scoped **Toast**,
+gated by an explicit per-user preference (`NotificationUserPreferences`, channel `toast`) that inherits a
+per-definition default (`NotificationDefinition.ToastEnabledByDefault`) when the user has not chosen explicitly,
+resolved fresh on every read rather than copied at subscribe time. A client-side watcher polls a new endpoint,
+`GET api/me/notifications/toast-delta`, roughly every 30 seconds while a session is open, and turns
+newly-delivered, Toast-eligible inbox items into Toasts via the existing `IToastService`, de-duplicated by inbox
+item identity. Toast is additive: it changes nothing about how or whether a notification reaches the email or
+in-app channels this report covers, and every Toasted item remains an ordinary, permanently readable inbox row
+regardless of whether a Toast was ever shown for it. Full detail: [ADR-0042](../../../02-decisions/ADR-0042-notification-to-toast-channel-model.md);
+phase-by-phase account and known gaps: [`toast-b-notification-toast-integration.md`](../../../audits/toast-b-notification-toast-integration.md).

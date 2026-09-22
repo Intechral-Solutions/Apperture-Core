@@ -22,6 +22,7 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 | [ADR-0038](../../docs/02-decisions/ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (events/logs/telemetry authoring, unified Signals surface, fail-fast emit) |
 | [Epic 77 plan](../../docs/02-decisions/Epic77-Platform-Signals-and-Notification-System-Implementation-Plan.md) | Phased implementation plan for ADR-0037 (delivered milestone) |
 | [Epic 103A plan](../../docs/02-decisions/Epic103A-Platform-Signals-SDK-Stabilization-Implementation-Plan.md) | SDK stabilization plan (Signals-02–08; docs-only in 103A) |
+| [ADR-0042](../../docs/02-decisions/ADR-0042-notification-to-toast-channel-model.md) | Notification-to-Toast channel model: `NotificationUserPreferences` (email/toast, resolve-at-read), Definition Toast default, delta-polling watcher (Toast-B; supersedes ADR-0037's user-preferences sketch — see its addendum) |
 | [Epic 104](../../docs/02-decisions/Epic104-Module-Authoring-Documentation.md) | Module authoring guide rewrite (104A) and documentation consistency closeout (104B) |
 | [Epic 78](../../docs/02-decisions/Epic78-Management-UI-Modernization-Groundwork.md) | Management UI audit, page archetypes, layering/drill-in rules, pilot recommendations (documentation only) |
 | [Management UI design system](../../docs/01-architecture/management-ui-design-system.md) | Epic 79: layout/status primitives, semantics, PageMessage conventions |
