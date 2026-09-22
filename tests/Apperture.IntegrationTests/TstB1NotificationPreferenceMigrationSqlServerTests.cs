@@ -197,11 +197,16 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
             }
 
             // ----------------------------------------------------------------------------------
-            // Act: apply TstB1.
+            // Act: apply TstB1 only (not later migrations). This test proves TstB1's own,
+            // isolated behavior -- the override row surviving TstB1 -- which is exactly what
+            // TstB2_RetireLegacyEmailOptOutOverrides later deletes once it's safe to. Migrating to
+            // latest here would run TstB2 too and delete the row this test asserts must still
+            // exist, which is TstB2's job to prove (see
+            // TstB2NotificationOverrideRetirementMigrationSqlServerTests), not this test's.
             // ----------------------------------------------------------------------------------
             await using (var migrateDb = NewDb(connectionString))
             {
-                await migrateDb.Database.MigrateAsync();
+                await migrateDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(TstB1Migration);
             }
 
             // ----------------------------------------------------------------------------------

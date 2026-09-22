@@ -1,6 +1,31 @@
 # Notification toggle preference migration — deployment notes
 
-Deployment notes for SQL migration `20260922075738_TstB1_NotificationTogglePreferences`.
+Deployment notes for SQL migration `20260922075738_TstB1_NotificationTogglePreferences`, and its
+deferred follow-up `20260922102920_TstB2_RetireLegacyEmailOptOutOverrides`.
+
+## Update: the deferred deletion has now landed (TstB2)
+
+As of `20260922102920_TstB2_RetireLegacyEmailOptOutOverrides`, the "Legacy override rows are
+intentionally left in place" section below is historical: it describes the state between TstB1 and
+TstB2, not the current one. TstB2 deletes the `NotificationSubscriptionUserOverrides` rows matching
+the exact same predicate TstB1 used to select conversion candidates
+(`OperationalTeamId IS NULL AND CreatedByActorId = UserId`), and is safe to apply now because both
+halves of the read/write wiring this section describes as "planned for a later phase" have since
+landed:
+
+- `SqlNotificationRecipientResolver`'s recipient-eligibility check consults the per-user `email`
+  preference channel this migration writes, instead of only the legacy override table.
+- The self-service Email switch writes only that preference, never the legacy override table.
+
+After TstB2, a person's self-service email opt-out is represented solely by their
+`NotificationUserPreferences` row -- the `NotificationSubscriptionUserOverrides` row that TstB1
+converted from is gone. Admin-written global opt-outs (`CreatedByActorId != UserId`) and all
+team-scoped opt-outs (`OperationalTeamId` set) are untouched: they were never conversion candidates,
+are not touched by TstB2's predicate, and remain the mechanism that suppresses delivery on
+team/attention-routed paths, exactly as before. TstB2's deletion is naturally idempotent (a second run
+matches and deletes zero rows), and, being data-only, its `Down()` cannot restore the deleted rows any
+more than TstB1's `Down()` could restore the preference rows it created -- take a backup before
+applying it, the same as any migration that deletes data.
 
 ## What this migration does
 
