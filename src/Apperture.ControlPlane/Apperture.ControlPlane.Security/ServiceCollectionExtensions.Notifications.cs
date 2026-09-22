@@ -43,6 +43,8 @@ public static class NotificationsServiceCollectionExtensions
         services.AddHostedService<PlatformEventNotificationEvaluationHostedService>();
         services.AddScoped<INotificationDefinitionStore, SqlNotificationDefinitionStore>();
         services.AddScoped<INotificationSubscriptionStore, SqlNotificationSubscriptionStore>();
+        services.AddScoped<INotificationUserPreferenceStore, SqlNotificationUserPreferenceStore>();
+        services.AddScoped<INotificationTogglePreferenceResolver, NotificationTogglePreferenceResolver>();
         services.AddScoped<OperationalTeamRecipientExpander>();
         services.AddScoped<INotificationRecipientResolver, SqlNotificationRecipientResolver>();
         services.AddSingleton<NotificationRecipientAddressParser>();

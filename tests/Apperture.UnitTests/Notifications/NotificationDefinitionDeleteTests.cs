@@ -67,6 +67,25 @@ public sealed class NotificationDefinitionDeleteTests
     }
 
     [Fact]
+    public async Task Deleting_a_definition_removes_its_notification_user_preferences_but_leaves_other_definitions_untouched()
+    {
+        // Toast-B P1 Task 2: NotificationUserPreferences rows are subordinate current-state data just
+        // like subscriptions and user overrides -- meaningless once their definition is gone.
+        using var h = new NotificationDefinitionTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var definition = await h.CreateUserDefinitionAsync(integration.Id.Value);
+        var otherDefinition = await h.CreateUserDefinitionAsync(integration.Id.Value);
+        await h.AddUserPreferenceAsync(definition.Id.Value, userId: "user-1", channel: NotificationChannels.Toast);
+        await h.AddUserPreferenceAsync(definition.Id.Value, userId: "user-1", channel: NotificationChannels.Email);
+        await h.AddUserPreferenceAsync(otherDefinition.Id.Value, userId: "user-1", channel: NotificationChannels.Toast);
+
+        await h.Definitions.DeleteAsync(definition.Id.Value);
+
+        (await h.Db.NotificationUserPreferences.CountAsync(p => p.NotificationDefinitionId == definition.Id.Value)).Should().Be(0);
+        (await h.Db.NotificationUserPreferences.CountAsync(p => p.NotificationDefinitionId == otherDefinition.Id.Value)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Deleting_a_definition_preserves_historical_notification_instances()
     {
         using var h = new NotificationDefinitionTestHarness();

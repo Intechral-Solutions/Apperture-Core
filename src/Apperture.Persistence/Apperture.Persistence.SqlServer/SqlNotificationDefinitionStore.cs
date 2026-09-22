@@ -170,17 +170,22 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
         if (entity.Origin is NotificationDefinitionOrigins.PlatformBuiltIn or NotificationDefinitionOrigins.ModuleBuiltIn)
             throw new InvalidOperationException("Built-in notification definitions cannot be deleted.");
 
-        // Subordinate current-state data, per the CTX-3B referential inventory: both are meaningless once
-        // the definition is gone and neither is reachable by any other route.
+        // Subordinate current-state data, per the CTX-3B referential inventory (extended by Toast-B P1 to
+        // include per-user channel preferences): each is meaningless once the definition is gone and none
+        // is reachable by any other route.
         var subscriptions = await _db.NotificationSubscriptions
             .Where(s => s.NotificationDefinitionId == id.Value)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var overrides = await _db.NotificationSubscriptionUserOverrides
             .Where(o => o.NotificationDefinitionId == id.Value)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var userPreferences = await _db.NotificationUserPreferences
+            .Where(p => p.NotificationDefinitionId == id.Value)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         _db.NotificationSubscriptions.RemoveRange(subscriptions);
         _db.NotificationSubscriptionUserOverrides.RemoveRange(overrides);
+        _db.NotificationUserPreferences.RemoveRange(userPreferences);
         _db.NotificationDefinitions.Remove(entity);
 
         // Historical NotificationInstances are deliberately NOT touched.
@@ -247,5 +252,6 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             e.CreatedAtUtc,
             e.UpdatedAtUtc,
             e.CreatedByActorId,
-            e.UpdatedByActorId);
+            e.UpdatedByActorId,
+            e.ToastEnabledByDefault);
 }

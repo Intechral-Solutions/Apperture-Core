@@ -57,8 +57,9 @@ public interface INotificationDefinitionStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes a user-created definition and its subordinate current-state data (subscriptions and
-    /// subscription user overrides). Returns false when no such definition exists.
+    /// Deletes a user-created definition and its subordinate current-state data (subscriptions,
+    /// subscription user overrides, and per-user notification channel preferences). Returns false when no
+    /// such definition exists.
     /// </summary>
     /// <remarks>
     /// Refuses built-in definitions, mirroring <see cref="UpdateAsync"/>'s existing immutability rule for

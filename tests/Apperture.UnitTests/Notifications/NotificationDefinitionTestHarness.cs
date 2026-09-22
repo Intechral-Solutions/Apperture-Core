@@ -143,6 +143,22 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
         await _db.SaveChangesAsync();
     }
 
+    public async Task AddUserPreferenceAsync(string definitionId, string userId, string channel = NotificationChannels.Toast)
+    {
+        _db.NotificationUserPreferences.Add(new NotificationUserPreferenceEntity
+        {
+            Id = $"nupref_{NextSequence()}",
+            UserId = userId,
+            NotificationDefinitionId = definitionId,
+            Channel = channel,
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedByActorId = "test-actor",
+        });
+        await _db.SaveChangesAsync();
+    }
+
     public async Task AddUserOverrideAsync(string definitionId, string userId)
     {
         _db.NotificationSubscriptionUserOverrides.Add(new NotificationSubscriptionUserOverrideEntity
