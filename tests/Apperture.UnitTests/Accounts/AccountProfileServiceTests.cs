@@ -594,6 +594,24 @@ public sealed class AccountProfileServiceTests
     }
 
     [Fact]
+    public async Task SetNotificationEmailPreferenceAsync_writes_only_the_email_channel_leaving_toast_untouched()
+    {
+        var fixture = new Fixture();
+        fixture.ToastPreferences.SeedToastEnabled(Owner.Value, "platform.schedule.expected_run_missing", true);
+
+        var updated = await fixture.Service.SetNotificationEmailPreferenceAsync(
+            Owner,
+            "platform.schedule.expected_run_missing",
+            emailEnabled: true);
+
+        updated.Email.Enabled.Should().BeTrue();
+        updated.Toast.Enabled.Should().BeTrue();
+        fixture.Notifications.SetCalls.Should().ContainSingle(c =>
+            c.UserId == Owner.Value && c.DefinitionId == "platform.schedule.expected_run_missing" && c.EmailEnabled);
+        fixture.ToastPreferences.SetCalls.Should().BeEmpty("setting the email channel must never touch the toast service");
+    }
+
+    [Fact]
     public async Task Turning_email_off_does_not_change_the_in_app_channel()
     {
         var fixture = new Fixture();

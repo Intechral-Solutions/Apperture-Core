@@ -558,25 +558,47 @@ public sealed class ManagementHostAccountProfileHttpTests
             return; // No self-subscribable definitions seeded in this environment.
 
         var target = preferences[0];
+        var originalToastEnabled = target.ToastEnabled;
+
+        // Every test in this class authenticates as the same first-admin user (see
+        // CreateAuthenticatedClientAsync), so an explicit toast preference row for this definition may
+        // already exist from another test's own round trip. Capture its current shape before writing
+        // email, so "toast untouched" can be asserted against a real baseline rather than assumed absent
+        // -- mirroring the approach the toast round-trip test uses for the email side.
+        (string Id, DateTimeOffset UpdatedAtUtc)? baselineToastRow;
+        await using (var baselineScope = _fixture.Factory!.Services.CreateAsyncScope())
+        {
+            var baselineDb = baselineScope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            var row = await baselineDb.NotificationUserPreferences.AsNoTracking()
+                .FirstOrDefaultAsync(p =>
+                    p.UserId == userId && p.NotificationDefinitionId == target.DefinitionId && p.Channel == "toast");
+            baselineToastRow = row is null ? null : (row.Id, row.UpdatedAtUtc);
+        }
+
         try
         {
             var enable = await client.PutAsJsonAsync(
                 $"/api/account/notification-preferences/{Uri.EscapeDataString(target.DefinitionId)}",
                 new { emailEnabled = true });
             enable.StatusCode.Should().Be(HttpStatusCode.OK);
-            (await enable.Content.ReadFromJsonAsync<NotificationPreferenceDto>(JsonOptions))!
-                .EmailEnabled.Should().BeTrue();
+            var enabled = (await enable.Content.ReadFromJsonAsync<NotificationPreferenceDto>(JsonOptions))!;
+            enabled.EmailEnabled.Should().BeTrue();
+            // The response must reflect BOTH channels' current state regardless of which one was written.
+            enabled.ToastEnabled.Should().Be(originalToastEnabled, "writing email must not change toast's reported state");
 
             var reloaded = await client.GetFromJsonAsync<NotificationPreferenceDto[]>(
                 "/api/account/notification-preferences",
                 JsonOptions);
-            reloaded!.Single(p => p.DefinitionId == target.DefinitionId).EmailEnabled.Should().BeTrue();
+            var reloadedTarget = reloaded!.Single(p => p.DefinitionId == target.DefinitionId);
+            reloadedTarget.EmailEnabled.Should().BeTrue();
+            reloadedTarget.ToastEnabled.Should().Be(originalToastEnabled);
 
             var disable = await client.PutAsJsonAsync(
                 $"/api/account/notification-preferences/{Uri.EscapeDataString(target.DefinitionId)}",
                 new { emailEnabled = false });
-            (await disable.Content.ReadFromJsonAsync<NotificationPreferenceDto>(JsonOptions))!
-                .EmailEnabled.Should().BeFalse();
+            var disabled = (await disable.Content.ReadFromJsonAsync<NotificationPreferenceDto>(JsonOptions))!;
+            disabled.EmailEnabled.Should().BeFalse();
+            disabled.ToastEnabled.Should().Be(originalToastEnabled);
 
             // Toast-B P2: the "Email off" toggle must be channel-specific -- it must not disable the
             // operator's self-subscription (the route) or write a global route-level opt-out override.
@@ -604,6 +626,22 @@ public sealed class ManagementHostAccountProfileHttpTests
                     p.UserId == userId && p.NotificationDefinitionId == target.DefinitionId && p.Channel == "email");
             preferenceRow.Should().NotBeNull();
             preferenceRow!.IsEnabled.Should().BeFalse();
+
+            // Mirror check for the other direction: writing email must never touch the toast preference row.
+            var toastPreferenceRow = await db.NotificationUserPreferences.AsNoTracking()
+                .FirstOrDefaultAsync(p =>
+                    p.UserId == userId && p.NotificationDefinitionId == target.DefinitionId && p.Channel == "toast");
+            if (baselineToastRow is null)
+            {
+                toastPreferenceRow.Should().BeNull("only the email channel was written; email writes must never create a toast row");
+            }
+            else
+            {
+                toastPreferenceRow.Should().NotBeNull();
+                toastPreferenceRow!.Id.Should().Be(baselineToastRow.Value.Id);
+                toastPreferenceRow.UpdatedAtUtc.Should().Be(
+                    baselineToastRow.Value.UpdatedAtUtc, "writing the email channel must never touch the toast preference row");
+            }
         }
         finally
         {
