@@ -53,6 +53,10 @@
                 <input type="checkbox" @bind="_model.IsEnabled" disabled="@(!CanSave)" />
                 <span>Enabled</span>
             </label>
+            <label class="flex items-center gap-2 text-xs mt-6">
+                <input type="checkbox" @bind="_model.ToastEnabledByDefault" disabled="@(!CanSave)" />
+                <span>Show as toast by default</span>
+            </label>
         </div>
     </section>
 
@@ -562,7 +566,8 @@
                         ruleJson,
                         templateJson,
                         _model.IsEnabled,
-                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity));
+                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity,
+                        _model.ToastEnabledByDefault));
                 await OnSaved.InvokeAsync(created.Id);
             }
             else if (!string.IsNullOrWhiteSpace(DefinitionId))
@@ -575,7 +580,8 @@
                         ruleJson,
                         templateJson,
                         _model.IsEnabled,
-                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity))
+                        string.IsNullOrWhiteSpace(_model.DefaultSeverity) ? null : _model.DefaultSeverity,
+                        _model.ToastEnabledByDefault))
                     ?? throw new InvalidOperationException("Definition not found.");
                 await OnSaved.InvokeAsync(updated.Id);
             }

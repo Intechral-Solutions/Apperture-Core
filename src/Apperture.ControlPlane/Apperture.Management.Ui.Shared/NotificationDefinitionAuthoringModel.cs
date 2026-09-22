@@ -26,6 +26,7 @@ public sealed class NotificationDefinitionAuthoringModel
     public string? SelectedEventType { get; set; }
     public string? DefaultSeverity { get; set; }
     public bool IsEnabled { get; set; } = true;
+    public bool ToastEnabledByDefault { get; set; }
 
     public string? IndexSeverityOperator { get; set; }
     public string? IndexSeverityValue { get; set; }
@@ -54,6 +55,7 @@ public sealed class NotificationDefinitionAuthoringModel
         SelectedEventType = detail.PrimaryEventType;
         DefaultSeverity = detail.DefaultSeverity;
         IsEnabled = detail.IsEnabled;
+        ToastEnabledByDefault = detail.ToastEnabledByDefault;
 
         if (NotificationRuleDocumentBuilder.TryParse(detail.RuleJson, IntegrationId, out var ruleState))
         {

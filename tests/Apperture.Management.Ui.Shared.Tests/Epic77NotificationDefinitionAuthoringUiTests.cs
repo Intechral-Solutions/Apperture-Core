@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Apperture.Management.Client;
 using FluentAssertions;
 using Xunit;
 
@@ -130,7 +131,7 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
         // Fields that do NOT feed BuildRuleJson/BuildTemplateJson (and therefore do not
         // affect the Validate payload) must not be wired to MarkDirty — editing them alone
         // should not force re-validation before Create/Save is re-enabled.
-        string[] nonValidationFields = ["_model.DisplayName", "_model.Description", "_model.DefaultSeverity", "_model.IsEnabled"];
+        string[] nonValidationFields = ["_model.DisplayName", "_model.Description", "_model.DefaultSeverity", "_model.IsEnabled", "_model.ToastEnabledByDefault"];
         foreach (var field in nonValidationFields)
         {
             Regex.IsMatch(form, "@bind=\"" + Regex.Escape(field) + "\"").Should().BeTrue(
@@ -138,6 +139,67 @@ public sealed class Epic77NotificationDefinitionAuthoringUiTests
             BindsWithMarkDirty(form, field).Should().BeFalse(
                 $"@bind=\"{field}\" does not feed the Validate payload and must not force stale-validation invalidation");
         }
+    }
+
+    [Fact]
+    public void Toast_default_checkbox_is_present_and_passed_through_on_save()
+    {
+        var root = RepoRoot();
+        var form = File.ReadAllText(Path.Combine(
+            root,
+            "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Organisms/Notifications/NotificationDefinitionAuthoringForm.razor"));
+
+        form.Should().Contain("Show as toast by default");
+        Regex.IsMatch(form, "@bind=\"_model\\.ToastEnabledByDefault\"").Should().BeTrue(
+            "the toast-default checkbox must bind _model.ToastEnabledByDefault");
+
+        var createCall = Regex.Match(
+            form,
+            @"new CreateNotificationDefinitionRequest\((?<args>.*?)\)\);",
+            RegexOptions.Singleline);
+        createCall.Success.Should().BeTrue("SaveAsync must construct a CreateNotificationDefinitionRequest");
+        createCall.Groups["args"].Value.Should().Contain("_model.ToastEnabledByDefault");
+
+        var updateCall = Regex.Match(
+            form,
+            @"new UpdateNotificationDefinitionRequest\((?<args>.*?)\)\)",
+            RegexOptions.Singleline);
+        updateCall.Success.Should().BeTrue("SaveAsync must construct an UpdateNotificationDefinitionRequest");
+        updateCall.Groups["args"].Value.Should().Contain("_model.ToastEnabledByDefault");
+    }
+
+    [Fact]
+    public void ApplyFromDetail_round_trips_toast_enabled_by_default()
+    {
+        var model = new NotificationDefinitionAuthoringModel();
+        var detail = new NotificationDefinitionDetailDto(
+            Id: "def-1",
+            DisplayName: "Sample definition",
+            Description: null,
+            SourceKind: "userCreated",
+            Origin: "userCreated",
+            Scope: "integration",
+            Mutability: "mutable",
+            ModuleId: null,
+            IntegrationId: "int-1",
+            PrimaryEventType: "apperture.schedule.expected_run.missing",
+            IsEnabled: true,
+            DefaultSeverity: "warning",
+            RuleJson: NotificationRuleDocumentBuilder.Build(
+                "int-1",
+                "apperture.schedule.expected_run.missing",
+                severityOperator: null,
+                severityValue: null,
+                moduleId: null,
+                propertyFilters: []),
+            TemplateJson: NotificationTemplateDocumentBuilder.Build("Subject", "Summary", "Body", null, null, []),
+            CreatedAtUtc: DateTimeOffset.UtcNow,
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            ToastEnabledByDefault: true);
+
+        model.ApplyFromDetail(detail);
+
+        model.ToastEnabledByDefault.Should().BeTrue();
     }
 
     [Fact]
