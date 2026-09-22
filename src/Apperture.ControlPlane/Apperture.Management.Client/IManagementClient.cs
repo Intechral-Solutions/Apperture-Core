@@ -857,6 +857,9 @@ public interface IManagementClient
         bool emailEnabled,
         CancellationToken cancellationToken = default);
 
+    Task<NotificationToastDeltaResponseDto> GetNotificationToastDeltaAsync(
+        DateTimeOffset? afterCreatedAtUtc, string? afterId, CancellationToken cancellationToken = default);
+
     // --- Account: profile, personal preferences, avatar (AUP-1) ---
     // Every endpoint is scoped to the signed-in operator; none of them takes a user id.
 

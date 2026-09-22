@@ -16,17 +16,20 @@ public sealed class MeNotificationsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly INotificationUserInboxService _inbox;
+    private readonly INotificationUserInboxStore _inboxStore;
     private readonly NotificationDefinitionAuthorization _definitionAuth;
 
     public MeNotificationsController(
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
         INotificationUserInboxService inbox,
+        INotificationUserInboxStore inboxStore,
         NotificationDefinitionAuthorization definitionAuth)
     {
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _inbox = inbox;
+        _inboxStore = inboxStore;
         _definitionAuth = definitionAuth;
     }
 
@@ -137,6 +140,52 @@ public sealed class MeNotificationsController : ControllerBase
 
         await _inbox.RecordPageViewedAsync(userId, inboxItemIds ?? [], cancellationToken).ConfigureAwait(false);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Incremental Toast delta feed for the signed-in operator's inbox: returns only newly scanned,
+    /// Toast-eligible items since the given composite cursor (or the tip of the inbox when no cursor
+    /// is given), along with the cursor to resume from on the next poll.
+    /// </summary>
+    [HttpGet("toast-delta")]
+    [ProducesResponseType(typeof(NotificationToastDeltaResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<NotificationToastDeltaResponseDto>> ToastDelta(
+        [FromQuery] DateTimeOffset? afterCreatedAtUtc = null,
+        [FromQuery] string? afterId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = await ResolveUserIdAsync(cancellationToken).ConfigureAwait(false);
+        if (userId is null)
+            return Forbid();
+
+        var rows = await _inboxStore
+            .ListToastDeltaAsync(userId, afterCreatedAtUtc, afterId, take: 50, cancellationToken)
+            .ConfigureAwait(false);
+
+        var unreadCount = await _inboxStore.CountUnreadAsync(userId, cancellationToken).ConfigureAwait(false);
+
+        var last = rows.Count > 0 ? rows[^1] : null;
+
+        return Ok(new NotificationToastDeltaResponseDto
+        {
+            Items = rows
+                .Where(r => r.IsToastEligible)
+                .Select(r => new NotificationToastDeltaItemDto
+                {
+                    Id = r.Id,
+                    Subject = r.RenderedSubject,
+                    Summary = r.RenderedSummary,
+                    Severity = r.DefaultSeverity,
+                    NotificationKind = r.NotificationKind,
+                })
+                .ToList(),
+            // No rows scanned this poll: fall back to the incoming cursor so the client doesn't lose
+            // its position (a null cursor here would look indistinguishable from "start over").
+            NextAfterCreatedAtUtc = last?.CreatedAtUtc ?? afterCreatedAtUtc,
+            NextAfterId = last?.Id ?? afterId,
+            UnreadCount = unreadCount,
+        });
     }
 
     private async Task<string?> ResolveUserIdAsync(CancellationToken cancellationToken)

@@ -2935,6 +2935,20 @@ public sealed class ManagementClient : IManagementClient
             .ConfigureAwait(false))!;
     }
 
+    public async Task<NotificationToastDeltaResponseDto> GetNotificationToastDeltaAsync(
+        DateTimeOffset? afterCreatedAtUtc, string? afterId, CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (afterCreatedAtUtc is not null)
+            query.Add($"afterCreatedAtUtc={Uri.EscapeDataString(afterCreatedAtUtc.Value.ToString("O"))}");
+        if (!string.IsNullOrWhiteSpace(afterId))
+            query.Add($"afterId={Uri.EscapeDataString(afterId)}");
+        var path = query.Count > 0 ? $"me/notifications/toast-delta?{string.Join("&", query)}" : "me/notifications/toast-delta";
+        var dto = await _http.GetFromJsonAsync<NotificationToastDeltaResponseDto>(path, ApiJsonReadOptions, cancellationToken)
+            .ConfigureAwait(false);
+        return dto ?? new NotificationToastDeltaResponseDto();
+    }
+
     // --- Account: profile, personal preferences, avatar (AUP-1) ---
 
     public async Task<AccountProfileDto?> GetAccountProfileAsync(CancellationToken cancellationToken = default)

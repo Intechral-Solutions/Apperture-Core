@@ -29,3 +29,20 @@ public sealed class PersonalNotificationMarkAllReadResultDto
 {
     public int MarkedCount { get; init; }
 }
+
+public sealed class NotificationToastDeltaResponseDto
+{
+    public IReadOnlyList<NotificationToastDeltaItemDto> Items { get; init; } = [];
+    public DateTimeOffset? NextAfterCreatedAtUtc { get; init; }
+    public string? NextAfterId { get; init; }
+    public int UnreadCount { get; init; }
+}
+
+public sealed class NotificationToastDeltaItemDto
+{
+    public string Id { get; init; } = "";
+    public string Subject { get; init; } = "";
+    public string Summary { get; init; } = "";
+    public string? Severity { get; init; }
+    public string NotificationKind { get; init; } = "";
+}
