@@ -58,7 +58,7 @@ public sealed class S9PersonalNotificationPreferencesUiTests
 
         // Toast-B P5 Task 2: the Toast column mirrors the existing Email column's per-row autosave shape.
         content.Should().Contain("ToggleToastAsync");
-        content.Should().Contain("Show as toast");
+        content.Should().Contain("Show toast");
         content.Should().Contain("aria-label=\"@($\"Show a toast for {preference.DisplayName}\")\"");
 
         // Regression: the email-focused controls are still present alongside the new toast column.
