@@ -32,7 +32,11 @@ public sealed class S9PersonalNotificationPreferencesUiTests
     {
         var content = ReadRepoFile("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Account/AccountNotifications.razor");
         content.Should().Contain("Not available yet");
-        content.Should().Contain("Digest summaries, quiet hours");
+        content.Should().Contain("Digest summaries and quiet hours");
+
+        // Toast-B P5 Task 2 shipped a Toast toggle, so the unbuilt-features copy must not claim that
+        // delivery to non-email channels is unbuilt — that would directly contradict the toggle above it.
+        content.Should().NotContain("delivery to channels other than email are not");
     }
 
     [Fact]
