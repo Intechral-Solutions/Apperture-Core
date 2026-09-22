@@ -41,7 +41,7 @@ public sealed class ToastService : IToastService, IDisposable
         }
     }
 
-    public void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null)
+    public void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null, string? dedupeKey = null)
     {
         var ttl = ToastPolicy.ResolveDuration(severity, duration);
         var signature = ToastPolicy.BuildSignature(severity, message, title);
@@ -53,8 +53,11 @@ public sealed class ToastService : IToastService, IDisposable
                 return;
 
             // UIX-6: repeating an identical outcome re-arms the existing toast rather than stacking
-            // another announcement. A toast that is already leaving is not revived.
-            var existing = _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.Signature == signature);
+            // another announcement. A toast that is already leaving is not revived. When a dedupeKey is
+            // supplied it takes precedence over content signature for identifying the existing toast.
+            var existing = dedupeKey is not null
+                ? _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.DedupeKey == dedupeKey)
+                : _entries.Find(e => e.Item.Phase == ToastPhase.Visible && e.Signature == signature);
             if (existing is not null)
             {
                 existing.Item = existing.Item with { Duration = ttl };
@@ -69,6 +72,7 @@ public sealed class ToastService : IToastService, IDisposable
 
                 var entry = new Entry(
                     signature,
+                    dedupeKey,
                     new ToastItem(Guid.NewGuid(), severity, message, title, ttl, ToastPhase.Visible, ToastExit.Fade, _time.GetUtcNow()))
                 {
                     Remaining = ttl
@@ -232,13 +236,16 @@ public sealed class ToastService : IToastService, IDisposable
 
     private sealed class Entry
     {
-        public Entry(string signature, ToastItem item)
+        public Entry(string signature, string? dedupeKey, ToastItem item)
         {
             Signature = signature;
+            DedupeKey = dedupeKey;
             Item = item;
         }
 
         public string Signature { get; }
+
+        public string? DedupeKey { get; }
 
         public ToastItem Item { get; set; }
 

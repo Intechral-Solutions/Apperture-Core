@@ -8,7 +8,13 @@ public interface IToastService
 
     event Action? Changed;
 
-    void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null);
+    /// <param name="dedupeKey">
+    /// When non-null, identifies the toast for re-arm matching by stable identity rather than by
+    /// content signature: a repeat call with the same <paramref name="dedupeKey"/> re-arms the existing
+    /// toast regardless of whether its content matches, and takes precedence over the default
+    /// signature-based matching used when this is null.
+    /// </param>
+    void Show(ToastSeverity severity, string message, string? title = null, TimeSpan? duration = null, string? dedupeKey = null);
 
     /// <summary>Requests dismissal: the toast plays its exit animation and is then removed. Safe to call repeatedly.</summary>
     void Dismiss(Guid id);

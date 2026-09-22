@@ -465,6 +465,78 @@ public sealed class ToastServiceTests : IDisposable
         _clock.ActiveTimerCount.Should().Be(0);
     }
 
+    // ---------- Dedupe key ----------
+
+    [Fact]
+    public void Call_with_no_dedupe_key_behaves_exactly_as_before()
+    {
+        _toasts.Show(ToastSeverity.Success, "Saved.");
+        var id = _toasts.Toasts.Single().Id;
+
+        _clock.Advance(4 * Second);
+        _toasts.Show(ToastSeverity.Success, " Saved. ");
+
+        _toasts.Toasts.Should().ContainSingle().Which.Id.Should().Be(id);
+    }
+
+    [Fact]
+    public void Same_dedupe_key_rearms_one_toast_even_with_different_content()
+    {
+        _toasts.Show(ToastSeverity.Info, "Import started.", dedupeKey: "inbox-42");
+        var id = _toasts.Toasts.Single().Id;
+
+        _toasts.Show(ToastSeverity.Success, "Import finished.", "Done", dedupeKey: "inbox-42");
+
+        // Re-arm only refreshes the countdown (existing.Item = existing.Item with { Duration = ttl }); it
+        // does not update Message/Title/Severity. For a watcher polling the same inbox item this is the
+        // correct behavior for now: the brief flags updating displayed content on re-arm as a distinct
+        // design question, not something to add silently as part of this task. This test pins today's
+        // actual behavior (original content survives the re-arm) rather than the eventually-desired one.
+        var toast = _toasts.Toasts.Should().ContainSingle().Which;
+        toast.Id.Should().Be(id);
+        toast.Message.Should().Be("Import started.");
+        toast.Title.Should().BeNull();
+        toast.Severity.Should().Be(ToastSeverity.Info);
+    }
+
+    [Fact]
+    public void Different_dedupe_keys_with_identical_content_create_two_toasts()
+    {
+        _toasts.Show(ToastSeverity.Info, "Import finished.", dedupeKey: "inbox-1");
+        _toasts.Show(ToastSeverity.Info, "Import finished.", dedupeKey: "inbox-2");
+
+        _toasts.Toasts.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Dedupe_key_call_ignores_content_signature_for_rearm()
+    {
+        _toasts.Show(ToastSeverity.Info, "Import started.", dedupeKey: "inbox-42");
+        var id = _toasts.Toasts.Single().Id;
+
+        _toasts.Show(ToastSeverity.Error, "Import failed.", "Error", dedupeKey: "inbox-42");
+
+        _toasts.Toasts.Should().ContainSingle().Which.Id.Should().Be(id);
+    }
+
+    [Fact]
+    public void No_key_call_uses_the_unchanged_signature_only_predicate_regardless_of_other_entries_keys()
+    {
+        _toasts.Show(ToastSeverity.Info, "Import finished.", dedupeKey: "inbox-42");
+        var keyedId = _toasts.Toasts.Single().Id;
+
+        // Same (severity, message, title) as the keyed entry above, so the content signature is
+        // identical, but this call passes no dedupeKey. Per the brief's self-review question ("does a
+        // no-dedupeKey call use EXACTLY the same Find predicate as before -- signature-only, regardless
+        // of what any other entry's DedupeKey happens to be?"), the no-key path's Find is untouched: it
+        // matches on Signature alone and does not care whether the entry it finds happens to carry a
+        // DedupeKey. So in this contrived byte-identical-content case it re-arms the keyed entry rather
+        // than creating a second one -- that is the correct, unchanged-predicate behavior, not a bug.
+        _toasts.Show(ToastSeverity.Info, "Import finished.");
+
+        _toasts.Toasts.Should().ContainSingle("the no-key call matched the keyed entry by Signature alone, the same predicate as before this change").Which.Id.Should().Be(keyedId);
+    }
+
     // ---------- Disposal ----------
 
     [Fact]
