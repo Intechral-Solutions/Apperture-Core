@@ -18,7 +18,10 @@ namespace Apperture.IntegrationTests;
 /// (UserId, NotificationDefinitionId, Channel) index, adds the new
 /// (PrincipalUserId, CreatedAtUtc, Id) cursor index on <c>NotificationUserInboxItems</c>, and
 /// converts historical self-service "Email off" overrides into explicit
-/// <c>email=false</c> + <c>toast=false</c> preference rows while leaving non-matching overrides untouched.
+/// <c>email=false</c> + <c>toast=false</c> preference rows while leaving non-matching overrides
+/// untouched. The qualifying override rows themselves are deliberately NOT deleted by this
+/// migration -- <c>SqlNotificationRecipientResolver.IsOptedOut</c> still reads them directly, and
+/// nothing yet consults the new preference rows, so deletion is deferred to phase P2.
 /// </summary>
 /// <remarks>
 /// Each run builds its own throwaway catalog. Soft-skips when no reachable SQL endpoint is configured.
@@ -143,7 +146,7 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
     }
 
     [Fact]
-    public async Task TstB1_converts_matching_legacy_override_and_leaves_non_matching_overrides_untouched()
+    public async Task TstB1_converts_matching_legacy_override_to_preferences_without_deleting_it_and_leaves_non_matching_overrides_untouched()
     {
         var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
         if (baseConnectionString is null)
@@ -206,9 +209,14 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
             // ----------------------------------------------------------------------------------
             await using var db = NewDb(connectionString);
 
-            // Matching row: converted and removed.
+            // Matching row: converted into preference rows, but the override row itself is NOT
+            // deleted -- SqlNotificationRecipientResolver.IsOptedOut still reads it directly for
+            // team/attention-routed delivery paths, and nothing yet consults the new preference
+            // channel, so deletion is deferred to phase P2's own migration.
             (await db.NotificationSubscriptionUserOverrides.AsNoTracking()
-                .CountAsync(o => o.Id == "noverride_tstb1_matching")).Should().Be(0, "the matching override must be deleted");
+                .CountAsync(o => o.Id == "noverride_tstb1_matching")).Should().Be(
+                    1, "the matching override must survive TstB1 -- deleting it now would silently resume " +
+                       "email delivery, since nothing yet reads the new preference row it was converted to");
 
             var matchingPrefs = await db.NotificationUserPreferences.AsNoTracking()
                 .Where(p => p.UserId == matchingUserId && p.NotificationDefinitionId == ExpectedRunMissingDefinitionId)

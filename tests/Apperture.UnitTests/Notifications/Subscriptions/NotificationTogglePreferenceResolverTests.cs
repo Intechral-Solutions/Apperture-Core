@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Persistence.SqlServer;
@@ -115,14 +116,36 @@ public sealed class NotificationTogglePreferenceResolverTests
         await using var db = CreateDb();
         var defId = await SeedDefinitionAsync(db, toastEnabledByDefault: false);
         var preferences = new SqlNotificationUserPreferenceStore(db);
-        await preferences.SetAsync("user-1", defId, NotificationChannels.Toast, true, null);
+        var explicitPreference = await preferences.SetAsync("user-1", defId, NotificationChannels.Toast, true, null);
 
-        // Flip the definition's default the opposite way after the explicit choice was made.
-        await SetToastDefaultAsync(db, defId, toastEnabledByDefault: true);
+        // Flip the definition's default the opposite way after the explicit choice was made, through
+        // the actual production write path for definition changes (not a direct entity mutation) --
+        // this is precisely the invariant phase P2 depends on: UpdateAsync must never touch
+        // NotificationUserPreferences.
+        var definitionStore = new SqlNotificationDefinitionStore(db);
+        var updated = await definitionStore.UpdateAsync(
+            NotificationDefinitionId.From(defId),
+            new NotificationDefinitionUpdateCommand(
+                DisplayName: null,
+                Description: null,
+                RuleJson: null,
+                TemplateJson: null,
+                IsEnabled: null,
+                DefaultSeverity: null,
+                UpdatedByActorId: "actor-1",
+                ToastEnabledByDefault: true));
+        updated.Should().NotBeNull();
+        updated!.ToastEnabledByDefault.Should().BeTrue();
 
         var result = await CreateSut(db).ResolveEffectiveToastEnabledAsync("user-1", defId);
 
         result.Should().BeTrue("the explicit user choice, not the new default, still governs");
+
+        var preferenceAfterUpdate = await preferences.GetAsync("user-1", defId, NotificationChannels.Toast);
+        preferenceAfterUpdate.Should().NotBeNull();
+        preferenceAfterUpdate!.Id.Should().Be(explicitPreference.Id, "UpdateAsync must never touch NotificationUserPreferences");
+        preferenceAfterUpdate.UpdatedAtUtc.Should().Be(
+            explicitPreference.UpdatedAtUtc, "UpdateAsync must never touch NotificationUserPreferences");
     }
 
     [Fact]

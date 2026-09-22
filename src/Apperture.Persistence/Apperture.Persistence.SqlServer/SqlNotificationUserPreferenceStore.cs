@@ -13,6 +13,8 @@ public sealed class SqlNotificationUserPreferenceStore : INotificationUserPrefer
     public async ValueTask<NotificationUserPreference?> GetAsync(
         string userId, string notificationDefinitionId, string channel, CancellationToken cancellationToken = default)
     {
+        ValidateChannel(channel);
+
         var row = await _db.NotificationUserPreferences.AsNoTracking()
             .FirstOrDefaultAsync(
                 x => x.UserId == userId
@@ -43,6 +45,8 @@ public sealed class SqlNotificationUserPreferenceStore : INotificationUserPrefer
         string userId, string notificationDefinitionId, string channel, bool isEnabled, string? updatedByActorId,
         CancellationToken cancellationToken = default)
     {
+        ValidateChannel(channel);
+
         var entity = await _db.NotificationUserPreferences
             .FirstOrDefaultAsync(
                 x => x.UserId == userId
@@ -90,6 +94,18 @@ public sealed class SqlNotificationUserPreferenceStore : INotificationUserPrefer
         _db.NotificationUserPreferences.RemoveRange(rows);
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return rows.Count;
+    }
+
+    /// <summary>
+    /// Guards against a real SQL Server divergence: under the default case-insensitive collation,
+    /// "Toast" and "toast" collide on the unique (UserId, NotificationDefinitionId, Channel) index,
+    /// while EF's InMemory test provider treats them as distinct rows. This is a guard clause, not a
+    /// channel registry -- the two known channels are exhaustive today.
+    /// </summary>
+    private static void ValidateChannel(string channel)
+    {
+        if (channel is not (NotificationChannels.Email or NotificationChannels.Toast))
+            throw new ArgumentException($"Unknown notification channel '{channel}'.", nameof(channel));
     }
 
     private static NotificationUserPreference ToDomain(NotificationUserPreferenceEntity e) =>

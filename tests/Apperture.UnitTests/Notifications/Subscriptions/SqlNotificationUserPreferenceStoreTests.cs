@@ -55,7 +55,9 @@ public sealed class SqlNotificationUserPreferenceStoreTests
         var sut = new SqlNotificationUserPreferenceStore(db);
 
         var first = await sut.SetAsync("user-1", "def-1", NotificationChannels.Toast, true, "actor-1");
-        await Task.Delay(15);
+        // Windows' default DateTimeOffset.UtcNow timer granularity is ~15.6ms, so a 15ms delay is
+        // marginal; 30ms gives comfortable headroom against flakiness.
+        await Task.Delay(30);
         var second = await sut.SetAsync("user-1", "def-1", NotificationChannels.Toast, false, "actor-2");
 
         second.Id.Should().Be(first.Id, "SetAsync upserts by the (userId, definitionId, channel) key");
