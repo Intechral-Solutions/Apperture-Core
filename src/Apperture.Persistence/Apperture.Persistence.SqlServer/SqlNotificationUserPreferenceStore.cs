@@ -41,6 +41,23 @@ public sealed class SqlNotificationUserPreferenceStore : INotificationUserPrefer
         return rows.Select(ToDomain).ToList();
     }
 
+    public async ValueTask<IReadOnlyDictionary<string, bool>> ListExplicitStatesForDefinitionAsync(
+        string notificationDefinitionId, string channel, CancellationToken cancellationToken = default)
+    {
+        ValidateChannel(channel);
+
+        var rows = await _db.NotificationUserPreferences.AsNoTracking()
+            .Where(x => x.NotificationDefinitionId == notificationDefinitionId && x.Channel == channel)
+            .Select(x => new { x.UserId, x.IsEnabled })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var byUser = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var row in rows)
+            byUser[row.UserId] = row.IsEnabled;
+        return byUser;
+    }
+
     public async ValueTask<NotificationUserPreference> SetAsync(
         string userId, string notificationDefinitionId, string channel, bool isEnabled, string? updatedByActorId,
         CancellationToken cancellationToken = default)

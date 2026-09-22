@@ -10,6 +10,9 @@ public interface INotificationUserPreferenceStore
     ValueTask<IReadOnlyList<NotificationUserPreference>> ListForUserAsync(
         string userId, IReadOnlyCollection<string>? notificationDefinitionIds, CancellationToken cancellationToken = default);
 
+    ValueTask<IReadOnlyDictionary<string, bool>> ListExplicitStatesForDefinitionAsync(
+        string notificationDefinitionId, string channel, CancellationToken cancellationToken = default);
+
     ValueTask<NotificationUserPreference> SetAsync(
         string userId, string notificationDefinitionId, string channel, bool isEnabled, string? updatedByActorId,
         CancellationToken cancellationToken = default);

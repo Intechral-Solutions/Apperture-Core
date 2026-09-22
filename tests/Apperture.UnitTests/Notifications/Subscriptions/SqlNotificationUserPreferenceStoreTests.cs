@@ -102,6 +102,51 @@ public sealed class SqlNotificationUserPreferenceStoreTests
     }
 
     [Fact]
+    public async Task ListExplicitStatesForDefinitionAsync_filters_by_definition_and_channel_only()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationUserPreferenceStore(db);
+
+        await sut.SetAsync("user-1", "def-1", NotificationChannels.Toast, true, null);
+        await sut.SetAsync("user-2", "def-1", NotificationChannels.Toast, false, null);
+        // Different definition -- must not leak into the result.
+        await sut.SetAsync("user-3", "def-2", NotificationChannels.Toast, true, null);
+        // Same definition, other channel -- must not leak into the result.
+        await sut.SetAsync("user-4", "def-1", NotificationChannels.Email, true, null);
+
+        var result = await sut.ListExplicitStatesForDefinitionAsync("def-1", NotificationChannels.Toast);
+
+        result.Should().HaveCount(2);
+        result.Should().ContainKey("user-1").WhoseValue.Should().BeTrue();
+        result.Should().ContainKey("user-2").WhoseValue.Should().BeFalse();
+        result.Should().NotContainKey("user-3");
+        result.Should().NotContainKey("user-4");
+    }
+
+    [Fact]
+    public async Task ListExplicitStatesForDefinitionAsync_returns_empty_dictionary_when_no_rows_match()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationUserPreferenceStore(db);
+
+        var result = await sut.ListExplicitStatesForDefinitionAsync("does-not-exist", NotificationChannels.Toast);
+
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListExplicitStatesForDefinitionAsync_throws_for_an_invalid_channel()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationUserPreferenceStore(db);
+
+        var act = () => sut.ListExplicitStatesForDefinitionAsync("def-1", "carrier-pigeon").AsTask();
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task DeleteForDefinitionAsync_removes_only_rows_for_that_definition_and_returns_the_count()
     {
         await using var db = CreateDb();
