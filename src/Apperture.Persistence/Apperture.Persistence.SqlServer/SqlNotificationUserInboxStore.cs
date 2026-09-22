@@ -204,6 +204,21 @@ public sealed class SqlNotificationUserInboxStore : INotificationUserInboxStore
         int take,
         CancellationToken cancellationToken = default)
     {
+        // The composite cursor is "both or neither" (see INotificationUserInboxStore.ListToastDeltaAsync).
+        // afterCreatedAtUtc without afterId would make the tie-break translate to a SQL `[Id] > NULL`,
+        // which three-valued logic evaluates to unknown/false for every row and silently drops
+        // same-CreatedAtUtc ties instead of failing loudly. afterId without afterCreatedAtUtc would
+        // silently fall through to the no-cursor bootstrap branch below, ignoring the caller's cursor
+        // instead of honoring or rejecting it. Guard both directions so a mismatched pair fails fast.
+        if (afterCreatedAtUtc is not null && afterId is null)
+            throw new ArgumentException(
+                $"{nameof(afterId)} must be provided when {nameof(afterCreatedAtUtc)} is set; the composite cursor requires both or neither.",
+                nameof(afterId));
+        if (afterCreatedAtUtc is null && afterId is not null)
+            throw new ArgumentException(
+                $"{nameof(afterCreatedAtUtc)} must be provided when {nameof(afterId)} is set; the composite cursor requires both or neither.",
+                nameof(afterCreatedAtUtc));
+
         var boundedTake = Math.Clamp(take, 1, 50);
 
         var q = from inbox in _db.NotificationUserInboxItems.AsNoTracking()

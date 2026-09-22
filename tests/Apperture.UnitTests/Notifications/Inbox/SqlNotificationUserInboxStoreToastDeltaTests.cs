@@ -248,7 +248,7 @@ public sealed class SqlNotificationUserInboxStoreToastDeltaTests
     }
 
     [Fact]
-    public async Task Returns_both_toastable_and_non_toastable_rows_for_cursor_advancement()
+    public async Task Includes_both_toastable_and_non_toastable_rows_in_the_scanned_set()
     {
         await using var db = CreateDb();
         var t0 = DateTimeOffset.Parse("2026-06-01T10:00:00Z");
@@ -334,5 +334,37 @@ public sealed class SqlNotificationUserInboxStoreToastDeltaTests
         row.ReadAtUtc.Should().Be(readAt);
         row.FirstViewedAtUtc.Should().Be(firstViewedAt);
         row.LastViewedAtUtc.Should().Be(lastViewedAt);
+    }
+
+    [Fact]
+    public async Task Throws_when_afterCreatedAtUtc_is_given_without_afterId()
+    {
+        await using var db = CreateDb();
+        var store = new SqlNotificationUserInboxStore(db);
+
+        var act = async () => await store.ListToastDeltaAsync(
+            "user-a",
+            afterCreatedAtUtc: DateTimeOffset.Parse("2026-06-01T10:00:00Z"),
+            afterId: null,
+            take: 10,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("afterId");
+    }
+
+    [Fact]
+    public async Task Throws_when_afterId_is_given_without_afterCreatedAtUtc()
+    {
+        await using var db = CreateDb();
+        var store = new SqlNotificationUserInboxStore(db);
+
+        var act = async () => await store.ListToastDeltaAsync(
+            "user-a",
+            afterCreatedAtUtc: null,
+            afterId: "inbox-1",
+            take: 10,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("afterCreatedAtUtc");
     }
 }
