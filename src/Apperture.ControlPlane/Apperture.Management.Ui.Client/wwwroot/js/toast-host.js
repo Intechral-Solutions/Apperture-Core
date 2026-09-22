@@ -355,10 +355,13 @@
             sync();
         }
 
-        // Dismissing the toast that has focus must not drop keyboard focus onto <body>.
+        // Dismissing the toast that has focus must not drop keyboard focus onto <body>. Keyboard only:
+        // a keyboard-generated click has detail 0, whereas a mouse or finger click has detail >= 1 (and
+        // Chrome focuses a button on mousedown, so activeElement alone cannot tell them apart). Moving
+        // focus after a pointer click would leave a Focus hold on a neighbour and pause every countdown.
         function onClickCapture(e) {
             var button = e.target.closest && e.target.closest('.ui-toast__dismiss');
-            if (!button || document.activeElement !== button) return;
+            if (!button || e.detail !== 0 || document.activeElement !== button) return;
             var slot = button.closest('.ui-toast-slot');
             if (!slot) return;
 

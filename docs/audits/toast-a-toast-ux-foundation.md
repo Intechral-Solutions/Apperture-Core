@@ -223,6 +223,39 @@ refresh reproduces the reported symptoms.
 
 ---
 
+## Follow-up review (before the operator re-smoke)
+
+An independent focused review of the fix above found no Critical issues and confirmed positioning, hit-testing
+through the layer/stack/slot/card hierarchy, swipe, and nav-rail clearance were otherwise correct. Two Important
+findings were real defects, both introduced by the `pointer-events: auto` hardening itself, and are now fixed and
+proven by new harness checks (**62/62**, up from 58):
+
+1. **A leaving toast stayed interactive.** `.ui-toast-slot[data-phase="exiting"]` relied on `pointer-events: none`
+   reaching the card by inheritance; once the card set `auto` on itself, a fading/collapsing ghost (~380 ms) kept
+   taking clicks and hover. Fixed by also setting `pointer-events: none` on
+   `.ui-toast-slot[data-phase="exiting"] .ui-toast`.
+2. **A mouse dismiss could pause every remaining toast.** The keyboard-focus hand-off after dismissing a focused
+   toast used `document.activeElement === button`, but Chrome focuses a button on mousedown too, so a plain mouse
+   click on X also triggered it — focusing a neighbour's close button, which reported a Focus hold and paused the
+   stack's countdowns until the operator clicked elsewhere. Fixed by gating the hand-off on `e.detail === 0`
+   (a keyboard-activated click), which a real mouse/touch click never has.
+
+Also added on review: a warning log when `appertureToast.attach` fails (mixed-version state was silently
+invisible), a test pinning the `@ref="_stack"` target (unverifiable by `HtmlRenderer`, which never runs
+`OnAfterRenderAsync`), a test asserting the JS↔`ToastHost` interop contract (`[JSInvokable]` names, the
+`appertureToast.attach`/`detach` exports, and that the script's reported hold names are exactly `ToastHold`'s),
+tightened class/attribute coupling checks (token-exact instead of substring), harness checks for exiting-card
+click-through and coarse-pointer close-button sizing, and a harness check that page controls under the
+(click-through) stack area stay clickable.
+
+Known, accepted gaps in this layer of testing (a compiled/stale client is exactly the failure mode a same-build
+render test *cannot* see by construction — that is what the real-runtime probe above and the operator re-smoke are
+for): the render tests use a synthetic `HtmlRenderer` host, not a live circuit, so `OnAfterRenderAsync`/JS interop
+itself does not run there; the harness page is a minimal stand-in for the shell (no `TopBar`, dialogs, or real
+`NavRail`) and only Chromium is driven.
+
+---
+
 ## Verification
 
 **Automated (exact totals are in the completion report):** `ToastServiceTests` (manual-clock lifecycle: order, dwell,

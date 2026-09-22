@@ -165,7 +165,10 @@ public sealed class ToastHostRenderTests
             .ToArray();
 
         styled.Should().NotBeEmpty();
-        styled.Where(c => !rendered.Contains(c)).Should().BeEmpty(
+
+        // The enter classes are only emitted for a toast younger than half a second, so a slow first render
+        // (JIT, cold runner) would make their presence timing-dependent; they are covered by the harness instead.
+        styled.Where(c => !rendered.Contains(c) && !c.EndsWith("--enter", StringComparison.Ordinal)).Should().BeEmpty(
             "every .ui-toast* selector in the stylesheet must match markup the real ToastHost renders");
     }
 
@@ -175,20 +178,58 @@ public sealed class ToastHostRenderTests
         var html = (await RenderAsync(clearNavRail: true)).Html;
         var js = ReadFile("wwwroot", "js", "toast-host.js");
 
+        var renderedClasses = Regex.Matches(html, @"class=""([^""]*)""")
+            .SelectMany(m => m.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet();
+        var renderedAttributes = Regex.Matches(html, @"\s(data-[a-z-]+)=""")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet();
+
         var classHooks = Regex.Matches(js, @"['""\s\[]\.(ui-toast[A-Za-z0-9_-]*)")
             .Select(m => m.Groups[1].Value)
             .Distinct()
             .ToArray();
-        var attributeHooks = Regex.Matches(js, @"getAttribute\('(data-[a-z-]+)'\)")
-            .Select(m => m.Groups[1].Value)
+        // Attributes the script READS from markup Blazor renders (data-dragging / data-fade-* are written by the script itself).
+        var attributeHooks = Regex.Matches(js, @"getAttribute\('(data-[a-z-]+)'\)|\[(data-phase)=")
+            .Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
             .Distinct()
             .ToArray();
 
         classHooks.Should().Contain(new[] { "ui-toast", "ui-toast-slot", "ui-toast__dismiss" });
-        foreach (var hook in classHooks)
-            html.Should().Contain(hook, $"toast-host.js selects .{hook}");
-        foreach (var attribute in attributeHooks)
-            html.Should().Contain($"{attribute}=", $"toast-host.js reads {attribute}");
+        attributeHooks.Should().Contain(new[] { "data-toast-id", "data-phase" });
+        classHooks.Where(h => !renderedClasses.Contains(h)).Should().BeEmpty("toast-host.js selects these classes, so the real host must render them as whole class tokens");
+        attributeHooks.Where(a => !renderedAttributes.Contains(a)).Should().BeEmpty("toast-host.js reads these attributes from the real markup");
+    }
+
+    // ---------- The .NET <-> script contract (the harness stubs the .NET side, so pin it here) ----------
+
+    [Fact]
+    public void The_script_and_the_host_agree_on_the_interop_contract()
+    {
+        var js = ReadFile("wwwroot", "js", "toast-host.js");
+        var host = ReadFile("Organisms", "ToastHost.razor");
+
+        // Methods the script invokes on the host must be [JSInvokable] members of ToastHost.
+        var invoked = Regex.Matches(js, @"invokeMethodAsync\('(\w+)'").Select(m => m.Groups[1].Value).Distinct().ToArray();
+        var exposed = Regex.Matches(host, @"\[JSInvokable\]\s*public\s+\w+\s+(\w+)\(").Select(m => m.Groups[1].Value).ToArray();
+        invoked.Should().BeEquivalentTo(new[] { "SetHold", "Swipe" });
+        invoked.Should().BeSubsetOf(exposed);
+
+        // Functions the host calls on the script must exist on the script's API object.
+        var called = Regex.Matches(host, @"""appertureToast\.(\w+)""").Select(m => m.Groups[1].Value).Distinct().ToArray();
+        called.Should().BeEquivalentTo(new[] { "attach", "detach" });
+        foreach (var fn in called)
+            js.Should().MatchRegex($@"\b{fn}:\s*{fn}\b", $"appertureToast.{fn} must be exported");
+
+        // Every hold the script can report must parse to a ToastHold the service understands.
+        var block = Regex.Match(js, @"function computeHolds\(\)(?<b>.*?)return \{(?<keys>.*?)\};", RegexOptions.Singleline);
+        block.Success.Should().BeTrue();
+        var reported = Regex.Matches(block.Groups["keys"].Value, @"(?m)^\s*(\w+)\s*:").Select(m => m.Groups[1].Value).ToArray();
+        reported.Should().NotBeEmpty();
+        foreach (var name in reported)
+            Enum.TryParse<ToastHold>(name, ignoreCase: true, out var hold).Should().BeTrue($"the script reports hold '{name}'");
+        reported.Should().BeEquivalentTo(Enum.GetNames<ToastHold>().Where(n => n != nameof(ToastHold.None)),
+            "the script and the service must speak about exactly the same set of holds");
     }
 
     // ---------- Fixture for the browser harness ----------

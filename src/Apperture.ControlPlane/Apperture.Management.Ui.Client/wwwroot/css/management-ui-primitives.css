@@ -785,6 +785,8 @@ details.text-muted[open] > summary {
 /* Exit: auto-dismiss and the close button fade and drift up; a swipe keeps going the way it was dragged. */
 .ui-toast-slot[data-phase="exiting"] .ui-toast {
   opacity: 0;
+  /* The card opts in to input itself, so the slot's pointer-events: none no longer reaches it. */
+  pointer-events: none;
   transition-duration: var(--ui-toast-exit-duration);
 }
 

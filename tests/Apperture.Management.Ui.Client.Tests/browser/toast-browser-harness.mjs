@@ -174,6 +174,28 @@ try {
     await shot('desktop-real-markup');
   }
 
+  // ============ A2. Leaving toasts, real-mouse focus, click-through ============
+  await load('main', 1440, 900); await addAll(); await sleep(500);
+  {
+    const savable = await js(`(() => { const b = document.getElementById('save').getBoundingClientRect(); const e = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2); return !!e && e.id === 'save'; })()`);
+    check('page controls under the viewport-wide (empty) stack area stay clickable', savable === true);
+
+    // Leaving toasts must not intercept input while they fade/collapse (~380 ms).
+    await click('.ui-toast__dismiss', 0); await sleep(100);
+    const ghost = await js(`(() => { const s = document.querySelector('.ui-toast-slot[data-phase="exiting"]'); if (!s) return null; const c = s.querySelector('.ui-toast'); const r = c.getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { pe: getComputedStyle(c).pointerEvents, hit: !!e && s.contains(e) }; })()`);
+    check('a leaving toast is click-through (pointer-events none, not hit-testable)', ghost && ghost.pe === 'none' && ghost.hit === false, JSON.stringify(ghost));
+    await sleep(450);
+
+    // A real mouse click on X focuses the button (Chrome) - that must not leave a Focus hold behind on a neighbour.
+    await js('window.holds.length = 0');
+    await click('.ui-toast__dismiss', 1); await sleep(700);
+    await move(60, 300); await sleep(300);
+    const last = {}; (await js('window.holds')).forEach((h) => { last[h[0]] = h[1]; });
+    const inStack = await js(`!!document.activeElement && !!document.activeElement.closest && !!document.activeElement.closest('.ui-toast-stack')`);
+    check('after a mouse dismiss no Focus/Pointer/Drag/Scroll hold is left pausing the remaining toasts',
+      !last.Focus && !last.Pointer && !last.Drag && !last.Scroll && inStack === false, JSON.stringify(last) + ' focusInStack=' + inStack);
+  }
+
   // ============ B. Narrow layouts and nav-rail clearance (main shell) vs sign-in shell ============
   await load('main', 390, 844, { mobile: true, touch: true, keep: true }); await sleep(400);
   {
@@ -262,6 +284,12 @@ try {
   {
     const c = await rect('.ui-toast'); await dragTouch({ x: c.cx, y: c.cy }, { x: c.cx + 200, y: c.cy + 4 }, 10); await sleep(150);
     check('touch: horizontal swipe past the threshold dismisses', (await js('window.swipes')).length === 1);
+    const coarse = await js(`matchMedia('(pointer: coarse)').matches`);
+    if (coarse) {
+      await js(`addToast('info', null, 'Coarse pointer sizing.')`); await sleep(300);
+      const x = await rect('.ui-toast__dismiss');
+      check('coarse pointer: the close button is a 44 px target', x.w >= 43.5 && x.h >= 43.5, `${x.w}x${x.h}`);
+    } else console.log('SKIP  coarse-pointer sizing (emulated pointer media unavailable)');
   }
   await load('main', 390, 844, { mobile: true, touch: true });
   await js(`for (let i = 0; i < 14; i++) addToast('info', 'Import ' + i, 'Batch ' + i + ' completed with warnings.')`); await sleep(700);

@@ -1,9 +1,11 @@
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using Microsoft.Extensions.Logging
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
 @inject IToastService Toasts
 @inject IJSRuntime Js
+@inject ILogger<ToastHost> Logger
 
 @*
     Transient outcome feedback — one bottom-centred, upward-growing stack.
@@ -102,7 +104,12 @@
             await Js.InvokeVoidAsync("appertureToast.attach", _stack, _self);
             _attached = true;
         }
-        catch (JSException) { /* script unavailable: toasts still show, time out and can be closed */ }
+        catch (JSException ex)
+        {
+            // Toasts still show, time out and can be closed, but swipe, hold-pausing and follow-newest scrolling are
+            // missing. That happens when the page did not load toast-host.js or the client and page are from different builds.
+            Logger.LogWarning(ex, "Toast script (appertureToast) is not available; toast gestures and interaction pausing are disabled.");
+        }
         catch (InvalidOperationException) { /* renderer disposed */ }
         catch (TaskCanceledException) { /* torn down */ }
     }

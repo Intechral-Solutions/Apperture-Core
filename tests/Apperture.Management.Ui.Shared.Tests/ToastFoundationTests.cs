@@ -166,6 +166,35 @@ public sealed class ToastFoundationTests
     }
 
     [Fact]
+    public void A_leaving_toast_is_click_through_even_though_the_card_opts_in_to_input_itself()
+    {
+        // The slot's pointer-events: none only reached the card by inheritance; the card now sets auto explicitly,
+        // so a fading ghost would otherwise keep taking clicks and hover for ~380 ms.
+        Rule(".ui-toast-slot[data-phase=\"exiting\"] .ui-toast").Should().Contain("pointer-events: none");
+        Rule(".ui-toast-slot[data-phase=\"exiting\"]").Should().Contain("pointer-events: none");
+    }
+
+    [Fact]
+    public void The_script_attaches_to_the_element_the_host_hands_it()
+    {
+        // HtmlRenderer does not emit element references, so pin the @ref target: moving it would break attach in production.
+        Regex.IsMatch(
+                ReadComponent("Organisms/ToastHost.razor"),
+                @"class=""ui-toast-stack""[^>]*@ref=""_stack""")
+            .Should().BeTrue("the @ref element must be the .ui-toast-stack scroller toast-host.js attaches to");
+    }
+
+    [Fact]
+    public void The_focus_hand_off_after_a_dismiss_is_keyboard_only()
+    {
+        // Chrome focuses a button on mousedown; without this a pointer dismiss moves focus to a neighbour, whose
+        // Focus hold pauses every countdown until the operator clicks elsewhere.
+        var js = File.ReadAllText(Path.Combine(ClientRoot(), "wwwroot", "js", "toast-host.js"));
+
+        js.Should().Contain("e.detail !== 0");
+    }
+
+    [Fact]
     public void Reduced_motion_removes_the_decorative_movement_but_not_the_function()
     {
         var css = ReadCss();
