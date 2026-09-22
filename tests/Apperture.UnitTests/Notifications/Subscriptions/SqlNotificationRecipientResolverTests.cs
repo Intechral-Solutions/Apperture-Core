@@ -10,6 +10,10 @@ using Xunit;
 
 namespace Apperture.UnitTests.Notifications.Subscriptions;
 
+// Note: NotificationRecipientSkipReasons.UserDisabled is a reserved skip reason. As of this
+// writing, SqlNotificationRecipientResolver.ExpandPrincipalAsync has no concept of a disabled
+// UserEntity (UserEntity carries no such flag), so that reason is never produced today. Do not
+// assume principal "disabled" handling is covered by these characterization tests.
 public sealed class SqlNotificationRecipientResolverTests
 {
     private static AppertureDbContext CreateDb()
@@ -341,5 +345,105 @@ public sealed class SqlNotificationRecipientResolverTests
 
         preview.Deliverable.Should().HaveCount(1);
         preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.DuplicateEmail);
+    }
+
+    [Fact]
+    public async Task Principal_with_missing_email_is_skipped_with_missing_email_reason()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "No Email", EmailAddress = null });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.MissingEmail);
+    }
+
+    [Fact]
+    public async Task Team_disabled_is_skipped_with_team_disabled_reason()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        const string teamId = "team-disabled";
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = teamId,
+            Name = "Disabled team",
+            IsEnabled = false,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.OperationalTeam,
+                teamId,
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.TeamDisabled);
+    }
+
+    [Fact]
+    public async Task Team_empty_is_skipped_with_team_empty_reason()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        const string teamId = "team-empty";
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = teamId,
+            Name = "Empty team",
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.OperationalTeam,
+                teamId,
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.TeamEmpty);
     }
 }
