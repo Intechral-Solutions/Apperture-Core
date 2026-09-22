@@ -412,7 +412,8 @@ internal static class NotificationInstanceCoordinatorTestsHelper
             db,
             subscriptionStore,
             definitionStore,
-            teamExpander);
+            teamExpander,
+            new SqlNotificationUserPreferenceStore(db));
 
         return new NotificationInstanceCoordinator(
             definitionStore,

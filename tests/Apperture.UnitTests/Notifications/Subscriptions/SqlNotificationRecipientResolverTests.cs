@@ -29,7 +29,8 @@ public sealed class SqlNotificationRecipientResolverTests
             db,
             new SqlNotificationSubscriptionStore(db),
             new SqlNotificationDefinitionStore(db),
-            new OperationalTeamRecipientExpander(db));
+            new OperationalTeamRecipientExpander(db),
+            new SqlNotificationUserPreferenceStore(db));
 
     private static async Task SeedBuiltInDefinitionAsync(AppertureDbContext db)
     {
@@ -693,5 +694,225 @@ public sealed class SqlNotificationRecipientResolverTests
 
         preview.Deliverable.Should().BeEmpty();
         preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.TeamEmpty);
+    }
+
+    [Fact]
+    public async Task Explicit_email_preference_false_skips_with_EmailOptedOut_reason()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preferenceStore = new SqlNotificationUserPreferenceStore(db);
+        await preferenceStore.SetAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationChannels.Email,
+            false,
+            "user-1");
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.Skipped.Should().Contain(s => s.Reason == NotificationRecipientSkipReasons.EmailOptedOut);
+        preview.InApp.Should().ContainSingle(r => r.UserId == "user-1");
+    }
+
+    [Fact]
+    public async Task Explicit_email_preference_true_does_not_skip()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preferenceStore = new SqlNotificationUserPreferenceStore(db);
+        await preferenceStore.SetAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationChannels.Email,
+            true,
+            "user-1");
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().ContainSingle(r => r.Email == "owner@test.com" && r.UserId == "user-1");
+        preview.Skipped.Should().NotContain(s => s.Reason == NotificationRecipientSkipReasons.EmailOptedOut);
+    }
+
+    [Fact]
+    public async Task No_email_preference_row_behaves_as_before()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().ContainSingle(r => r.Email == "owner@test.com" && r.UserId == "user-1");
+        preview.Skipped.Should().NotContain(s => s.Reason == NotificationRecipientSkipReasons.EmailOptedOut);
+        preview.InApp.Should().ContainSingle(r => r.UserId == "user-1");
+    }
+
+    [Fact]
+    public async Task Admin_global_opt_out_still_suppresses_everything_regardless_of_email_preference()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Owner", EmailAddress = "owner@test.com" });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.UserSelfSubscribed,
+                true,
+                "user-1"));
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand("user-1", NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, null, "user-1"));
+
+        var preferenceStore = new SqlNotificationUserPreferenceStore(db);
+        await preferenceStore.SetAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationChannels.Email,
+            true,
+            "user-1");
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            "int-1");
+
+        preview.Deliverable.Should().BeEmpty();
+        preview.InApp.Should().BeEmpty();
+        preview.Skipped.Should().ContainSingle(s => s.UserId == "user-1")
+            .Which.Reason.Should().Be(NotificationRecipientSkipReasons.UserOptOut);
+    }
+
+    [Fact]
+    public async Task Team_scoped_opt_out_still_route_scoped_after_this_change()
+    {
+        await using var db = CreateDb();
+        await SeedBuiltInDefinitionAsync(db);
+        const string teamId = "team-1";
+        db.Users.Add(new UserEntity { Id = "user-1", DisplayName = "Member", EmailAddress = "member@test.com" });
+        db.OperationalTeams.Add(new OperationalTeamEntity
+        {
+            Id = teamId,
+            Name = "Ops",
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        db.OperationalTeamMembers.Add(new OperationalTeamMemberEntity
+        {
+            Id = "m1",
+            OperationalTeamId = teamId,
+            MemberKind = "Principal",
+            PrincipalUserId = "user-1",
+            IsEnabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var store = new SqlNotificationSubscriptionStore(db);
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.OperationalTeam,
+                teamId,
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+        await store.AddAsync(
+            new NotificationSubscriptionCreateCommand(
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                null,
+                NotificationRecipientKinds.Principal,
+                "user-1",
+                NotificationDeliveryModes.Immediate,
+                NotificationSubscriptionOrigins.AdminAssigned,
+                true,
+                null));
+        await store.SetUserOptOutAsync(
+            new NotificationSubscriptionUserOverrideCommand(
+                "user-1",
+                NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+                teamId,
+                null));
+
+        // Explicit email preference is set to true, proving the email-preference check is
+        // completely uninvolved in team-scoped opt-out routing -- the direct-subscription path
+        // still delivers, and the team-scoped skip is still reported as UserOptOut, not
+        // EmailOptedOut, exactly as before this change.
+        var preferenceStore = new SqlNotificationUserPreferenceStore(db);
+        await preferenceStore.SetAsync(
+            "user-1",
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            NotificationChannels.Email,
+            true,
+            "user-1");
+
+        var preview = await CreateSut(db).ResolvePreviewAsync(
+            NotificationDefinitionIds.PlatformScheduleExpectedRunMissing,
+            null);
+
+        preview.Deliverable.Should().ContainSingle(r => r.Email == "member@test.com");
+        preview.Skipped.Should().Contain(s =>
+            s.Reason == NotificationRecipientSkipReasons.UserOptOut
+            && s.Source == NotificationRecipientSources.OperationalTeamMembership);
+        preview.InApp.Should().Contain(r => r.UserId == "user-1");
     }
 }

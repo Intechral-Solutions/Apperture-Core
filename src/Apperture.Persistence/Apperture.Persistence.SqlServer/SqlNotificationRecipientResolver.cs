@@ -13,17 +13,20 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
     private readonly INotificationSubscriptionStore _subscriptions;
     private readonly INotificationDefinitionStore _definitions;
     private readonly OperationalTeamRecipientExpander _teamExpander;
+    private readonly INotificationUserPreferenceStore _preferences;
 
     public SqlNotificationRecipientResolver(
         AppertureDbContext db,
         INotificationSubscriptionStore subscriptions,
         INotificationDefinitionStore definitions,
-        OperationalTeamRecipientExpander teamExpander)
+        OperationalTeamRecipientExpander teamExpander,
+        INotificationUserPreferenceStore preferences)
     {
         _db = db;
         _subscriptions = subscriptions;
         _definitions = definitions;
         _teamExpander = teamExpander;
+        _preferences = preferences;
     }
 
     public async ValueTask<NotificationRecipientResolutionPreview> ResolvePreviewAsync(
@@ -43,6 +46,9 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         var overrides = await _subscriptions
             .ListUserOverridesAsync(notificationDefinitionId, cancellationToken)
             .ConfigureAwait(false);
+        var emailPreferences = await _preferences
+            .ListExplicitStatesForDefinitionAsync(notificationDefinitionId, NotificationChannels.Email, cancellationToken)
+            .ConfigureAwait(false);
 
         var deliverable = new List<ResolvedNotificationRecipient>();
         var skipped = new List<SkippedNotificationRecipient>();
@@ -51,7 +57,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
 
         foreach (var sub in subs)
         {
-            await ExpandSubscriptionAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, cancellationToken)
+            await ExpandSubscriptionAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, emailPreferences, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -65,6 +71,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
                     inApp,
                     seenEmails,
                     overrides,
+                    emailPreferences,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -108,6 +115,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
         IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences,
         CancellationToken cancellationToken)
     {
         var routing = await _db.IntegrationAttentionRoutings.AsNoTracking()
@@ -137,7 +145,8 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
                 skipped,
                 inApp,
                 seenEmails,
-                overrides);
+                overrides,
+                emailPreferences);
         }
     }
 
@@ -148,6 +157,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
         IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences,
         CancellationToken cancellationToken)
     {
         if (sub.DeliveryMode == NotificationDeliveryModes.Muted)
@@ -181,15 +191,15 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         switch (sub.RecipientKind)
         {
             case NotificationRecipientKinds.Principal:
-                await ExpandPrincipalAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, cancellationToken)
+                await ExpandPrincipalAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, emailPreferences, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             case NotificationRecipientKinds.OperationalTeam:
-                await ExpandOperationalTeamAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, cancellationToken)
+                await ExpandOperationalTeamAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, emailPreferences, cancellationToken)
                     .ConfigureAwait(false);
                 break;
             case NotificationRecipientKinds.ManagedContact:
-                await ExpandManagedContactAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, cancellationToken)
+                await ExpandManagedContactAsync(sub, deliverable, skipped, inApp, seenEmails, overrides, emailPreferences, cancellationToken)
                     .ConfigureAwait(false);
                 break;
         }
@@ -202,6 +212,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
         IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences,
         CancellationToken cancellationToken)
     {
         var user = await _db.Users.AsNoTracking()
@@ -230,7 +241,8 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
             skipped,
             inApp,
             seenEmails,
-            overrides);
+            overrides,
+            emailPreferences);
     }
 
     private async ValueTask ExpandOperationalTeamAsync(
@@ -240,6 +252,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
         IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences,
         CancellationToken cancellationToken)
     {
         var expansion = await _teamExpander.ExpandAsync(sub.RecipientRef, cancellationToken).ConfigureAwait(false);
@@ -283,7 +296,8 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
                 skipped,
                 inApp,
                 seenEmails,
-                overrides);
+                overrides,
+                emailPreferences);
         }
     }
 
@@ -294,6 +308,7 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
         IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences,
         CancellationToken cancellationToken)
     {
         var contact = await _db.ManagedContacts.AsNoTracking()
@@ -326,7 +341,8 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
             skipped,
             inApp,
             seenEmails,
-            overrides);
+            overrides,
+            emailPreferences);
     }
 
     private static void ProcessExpandedMember(
@@ -339,7 +355,8 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
         List<SkippedNotificationRecipient> skipped,
         List<InAppEligibleRecipient> inApp,
         Dictionary<string, ResolvedNotificationRecipient> seenEmails,
-        IReadOnlyList<NotificationSubscriptionUserOverride> overrides)
+        IReadOnlyList<NotificationSubscriptionUserOverride> overrides,
+        IReadOnlyDictionary<string, bool> emailPreferences)
     {
         if (IsOptedOut(member.UserId, operationalTeamId, overrides))
         {
@@ -392,6 +409,22 @@ public sealed class SqlNotificationRecipientResolver : INotificationRecipientRes
                 subscriptionId,
                 recipientKind,
                 NotificationRecipientSkipReasons.MissingEmail));
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(member.UserId)
+            && emailPreferences.TryGetValue(member.UserId, out var emailEnabled)
+            && !emailEnabled)
+        {
+            skipped.Add(new SkippedNotificationRecipient(
+                member.Email,
+                member.DisplayName,
+                member.UserId,
+                member.ManagedContactId,
+                source,
+                subscriptionId,
+                recipientKind,
+                NotificationRecipientSkipReasons.EmailOptedOut));
             return;
         }
 

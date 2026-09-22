@@ -67,7 +67,8 @@ public sealed class NotificationInstanceCoordinatorTests
             db,
             subscriptionStore,
             definitionStore,
-            teamExpander);
+            teamExpander,
+            new SqlNotificationUserPreferenceStore(db));
 
         return new NotificationInstanceCoordinator(
             definitionStore,
