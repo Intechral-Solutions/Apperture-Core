@@ -20,7 +20,8 @@ public sealed record NotificationDefinitionCreateCommand(
     string TemplateJson,
     bool IsEnabled,
     string? DefaultSeverity,
-    string? CreatedByActorId);
+    string? CreatedByActorId,
+    bool ToastEnabledByDefault = false);
 
 public sealed record NotificationDefinitionUpdateCommand(
     string? DisplayName,
@@ -29,7 +30,8 @@ public sealed record NotificationDefinitionUpdateCommand(
     string? TemplateJson,
     bool? IsEnabled,
     string? DefaultSeverity,
-    string? UpdatedByActorId);
+    string? UpdatedByActorId,
+    bool? ToastEnabledByDefault = null);
 
 public interface INotificationDefinitionStore
 {

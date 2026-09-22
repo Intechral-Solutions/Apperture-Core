@@ -9,7 +9,8 @@ public sealed record NotificationDefinitionCreateRequest(
     string RuleJson,
     string TemplateJson,
     bool IsEnabled = true,
-    string? DefaultSeverity = null);
+    string? DefaultSeverity = null,
+    bool ToastEnabledByDefault = false);
 
 public sealed record NotificationDefinitionUpdateRequest(
     string? DisplayName,
@@ -17,7 +18,8 @@ public sealed record NotificationDefinitionUpdateRequest(
     string? RuleJson,
     string? TemplateJson,
     bool? IsEnabled,
-    string? DefaultSeverity);
+    string? DefaultSeverity,
+    bool? ToastEnabledByDefault = null);
 
 public sealed record NotificationDefinitionValidateRequest(
     string RuleJson,

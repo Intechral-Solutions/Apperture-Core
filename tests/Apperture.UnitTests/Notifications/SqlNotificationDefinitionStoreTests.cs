@@ -139,4 +139,88 @@ public sealed class SqlNotificationDefinitionStoreTests
         rows.Should().ContainSingle(x => x.Id == moduleBuiltIn.Id);
         rows.Should().NotContain(x => x.Id == otherModuleBuiltIn.Id);
     }
+
+    [Fact]
+    public async Task Create_persists_toast_enabled_by_default_and_read_back_reflects_it()
+    {
+        // Toast-B P1 Task 3: CreateUserDefinitionAsync previously ignored the command's
+        // ToastEnabledByDefault value entirely -- this pins that it now actually lands in storage and
+        // survives a fresh (untracked) read.
+        await using var db = CreateDb();
+        var sut = new SqlNotificationDefinitionStore(db);
+
+        var created = await sut.CreateUserDefinitionAsync(
+            new NotificationDefinitionCreateCommand(
+                "Toast default on",
+                null,
+                "int-1",
+                NotificationValidationTestHelpers.ValidUserRuleJson,
+                NotificationValidationTestHelpers.ValidUserTemplateJson,
+                true,
+                null,
+                null,
+                ToastEnabledByDefault: true));
+
+        created.ToastEnabledByDefault.Should().BeTrue();
+
+        var fetched = await sut.GetAsync(created.Id);
+        fetched.Should().NotBeNull();
+        fetched!.ToastEnabledByDefault.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Update_with_null_toast_enabled_by_default_leaves_it_unchanged_and_non_null_overwrites_it_alone()
+    {
+        // Toast-B P1 Task 3: UpdateAsync previously never mutated ToastEnabledByDefault at all, so a
+        // caller could never flip it after creation. This pins "null = no change" (matching IsEnabled /
+        // DefaultSeverity) and that setting it does not disturb any other field.
+        await using var db = CreateDb();
+        var sut = new SqlNotificationDefinitionStore(db);
+
+        var created = await sut.CreateUserDefinitionAsync(
+            new NotificationDefinitionCreateCommand(
+                "Toast default off",
+                "Original description",
+                "int-1",
+                NotificationValidationTestHelpers.ValidUserRuleJson,
+                NotificationValidationTestHelpers.ValidUserTemplateJson,
+                true,
+                "warning",
+                null,
+                ToastEnabledByDefault: false));
+
+        var untouched = await sut.UpdateAsync(
+            created.Id,
+            new NotificationDefinitionUpdateCommand(
+                DisplayName: null,
+                Description: null,
+                RuleJson: null,
+                TemplateJson: null,
+                IsEnabled: null,
+                DefaultSeverity: null,
+                UpdatedByActorId: null,
+                ToastEnabledByDefault: null));
+        untouched!.ToastEnabledByDefault.Should().BeFalse();
+
+        var updated = await sut.UpdateAsync(
+            created.Id,
+            new NotificationDefinitionUpdateCommand(
+                DisplayName: null,
+                Description: null,
+                RuleJson: null,
+                TemplateJson: null,
+                IsEnabled: null,
+                DefaultSeverity: null,
+                UpdatedByActorId: null,
+                ToastEnabledByDefault: true));
+
+        updated!.ToastEnabledByDefault.Should().BeTrue();
+        updated.DisplayName.Should().Be("Toast default off");
+        updated.Description.Should().Be("Original description");
+        updated.IsEnabled.Should().BeTrue();
+        updated.DefaultSeverity.Should().Be("warning");
+
+        var fetched = await sut.GetAsync(created.Id);
+        fetched!.ToastEnabledByDefault.Should().BeTrue();
+    }
 }

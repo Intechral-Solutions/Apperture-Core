@@ -113,7 +113,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
                 request.TemplateJson,
                 request.IsEnabled,
                 request.DefaultSeverity,
-                actorId),
+                actorId,
+                request.ToastEnabledByDefault),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -151,7 +152,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
                 request.TemplateJson,
                 request.IsEnabled,
                 request.DefaultSeverity,
-                actorId),
+                actorId,
+                request.ToastEnabledByDefault),
             cancellationToken).ConfigureAwait(false);
     }
 

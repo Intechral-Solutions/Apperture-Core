@@ -77,7 +77,8 @@ public sealed class NotificationDefinitionsController : ControllerBase
                         body.RuleJson,
                         body.TemplateJson,
                         body.IsEnabled,
-                        body.DefaultSeverity),
+                        body.DefaultSeverity,
+                        body.ToastEnabledByDefault),
                     cancellationToken)
                 .ConfigureAwait(false);
             return Ok(ToDetailDto(created));
@@ -110,7 +111,8 @@ public sealed class NotificationDefinitionsController : ControllerBase
                         body.RuleJson,
                         body.TemplateJson,
                         body.IsEnabled,
-                        body.DefaultSeverity),
+                        body.DefaultSeverity,
+                        body.ToastEnabledByDefault),
                     cancellationToken)
                 .ConfigureAwait(false);
             return updated is null ? NotFound() : Ok(ToDetailDto(updated));
@@ -250,7 +252,8 @@ public sealed class NotificationDefinitionsController : ControllerBase
             d.PrimaryEventType,
             d.IsEnabled,
             d.DefaultSeverity,
-            d.UpdatedAtUtc);
+            d.UpdatedAtUtc,
+            d.ToastEnabledByDefault);
 
     private static NotificationDefinitionDetailDto ToDetailDto(Core.Domain.Notifications.NotificationDefinition d) =>
         new(
@@ -269,7 +272,8 @@ public sealed class NotificationDefinitionsController : ControllerBase
             d.RuleJson,
             d.TemplateJson,
             d.CreatedAtUtc,
-            d.UpdatedAtUtc);
+            d.UpdatedAtUtc,
+            d.ToastEnabledByDefault);
 
     private static NotificationValidationResultDto ToValidationDto(NotificationValidationResult r) =>
         new(

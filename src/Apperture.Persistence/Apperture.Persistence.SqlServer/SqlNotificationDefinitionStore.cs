@@ -91,6 +91,7 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             UpdatedAtUtc = now,
             CreatedByActorId = command.CreatedByActorId,
             UpdatedByActorId = command.CreatedByActorId,
+            ToastEnabledByDefault = command.ToastEnabledByDefault,
         };
 
         _db.NotificationDefinitions.Add(entity);
@@ -117,6 +118,8 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             entity.IsEnabled = enabled;
         if (command.DefaultSeverity is not null)
             entity.DefaultSeverity = command.DefaultSeverity;
+        if (command.ToastEnabledByDefault is { } toastEnabledByDefault)
+            entity.ToastEnabledByDefault = toastEnabledByDefault;
 
         if (command.RuleJson is not null)
         {

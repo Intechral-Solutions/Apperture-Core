@@ -11,7 +11,8 @@ public sealed record NotificationDefinitionSummaryDto(
     string? PrimaryEventType,
     bool IsEnabled,
     string? DefaultSeverity,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    bool ToastEnabledByDefault = false);
 
 public sealed record NotificationDefinitionDetailDto(
     string Id,
@@ -29,7 +30,8 @@ public sealed record NotificationDefinitionDetailDto(
     string RuleJson,
     string TemplateJson,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    bool ToastEnabledByDefault = false);
 
 public sealed record CreateNotificationDefinitionRequest(
     string DisplayName,
@@ -38,7 +40,8 @@ public sealed record CreateNotificationDefinitionRequest(
     string RuleJson,
     string TemplateJson,
     bool IsEnabled = true,
-    string? DefaultSeverity = null);
+    string? DefaultSeverity = null,
+    bool ToastEnabledByDefault = false);
 
 public sealed record UpdateNotificationDefinitionRequest(
     string? DisplayName,
@@ -46,7 +49,8 @@ public sealed record UpdateNotificationDefinitionRequest(
     string? RuleJson,
     string? TemplateJson,
     bool? IsEnabled,
-    string? DefaultSeverity);
+    string? DefaultSeverity,
+    bool? ToastEnabledByDefault = null);
 
 public sealed record SetNotificationDefinitionEnabledRequest(bool IsEnabled);
 
