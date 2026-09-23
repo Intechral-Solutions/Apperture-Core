@@ -46,6 +46,12 @@ public static class ComponentCatalogPresentation
     public static string NotificationDefinitionHref(string definitionId) =>
         $"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}";
 
+    /// <summary>The Component detail a Connectors-tab row links to.</summary>
+    public static string ConnectorDetailHref(string connectorDefinitionId) =>
+        DetailHref(ConnectorKind, connectorDefinitionId);
+
+    public const string ModuleHasNoComponentsMessage = "This module provides no catalog components.";
+
     /// <summary>The existing Connection page a usage row opens.</summary>
     public static string ConnectionHref(string connectionId) =>
         $"/connections/{Uri.EscapeDataString(connectionId)}";

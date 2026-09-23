@@ -60,7 +60,9 @@
                     @foreach (var d in _definitions)
                     {
                         <tr class="align-top">
-                            <td class="font-medium">@d.Name</td>
+                            <td class="font-medium">
+                                <a class="ui-link" href="@ComponentCatalogPresentation.ConnectorDetailHref(d.Id)">@d.Name</a>
+                            </td>
                             <td class="font-mono text-xs">@d.Id</td>
                             <td>@(d.ModuleId ?? "Platform")</td>
                             <td class="text-xs">@d.Fields.Count</td>

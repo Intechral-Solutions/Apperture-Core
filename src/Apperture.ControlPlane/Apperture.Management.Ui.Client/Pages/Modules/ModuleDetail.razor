@@ -100,6 +100,10 @@
                     <MetadataItem Label="Enabled (persisted)" Value="@(_module.Enabled ? "Yes" : "No")" />
                     <MetadataItem Label="Effectively active" Value="@(_module.EffectivelyActive ? "Yes" : "No")" />
                     <MetadataItem Label="Installed" Value="@(_module.Installed ? "Yes" : "No")" />
+                    @if (ModuleContributionPresentation.Summary(_module.ContributionCounts) is { } contributes)
+                    {
+                        <MetadataItem Label="Contributes" Value="@contributes" />
+                    }
                 </MetadataGrid>
                 </div>
                 @if (_module.ValidationIssues is { Count: > 0 })
@@ -132,6 +136,44 @@
                     </FooterLinks>
                 </EntityRecentActivityPanel>
             </ManagementSection>
+
+            @* Components provided by this module: the same catalog projection as /components, filtered by module id (one
+               query). Like "Integrations using this module" it is global -- no Context/View filter -- because Module and
+               Component are both system/catalog concepts. The whole section is omitted (not shown empty) for a caller who
+               can read no Component family, since an empty state would assert "this module provides none". *@
+            @if (CanViewComponentFamilies && !_moduleComponentsForbidden)
+            {
+                <ManagementSection Title="Components provided by this module"
+                                   Layer="ManagementSection.UiLayer.Detail">
+                    @if (_moduleComponentsError is not null)
+                    {
+                        <ErrorState Message="@_moduleComponentsError" />
+                    }
+                    else if (_moduleComponentsLoading && _moduleComponents is null)
+                    {
+                        <LoadingState Message="Loading…" />
+                    }
+                    else if (_moduleComponents is { Count: > 0 })
+                    {
+                        <ul class="space-y-1">
+                            @foreach (var component in _moduleComponents)
+                            {
+                                <li @key="(component.Kind + ':' + component.NativeId)">
+                                    <a href="@ComponentCatalogPresentation.DetailHref(component.Kind, component.NativeId)"
+                                       class="underline text-sm hover:text-heading">
+                                        @component.DisplayName
+                                    </a>
+                                    <span class="text-xs text-muted"> · @ComponentCatalogPresentation.KindLabel(component.Kind)</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <EmptyState Message="@ComponentCatalogPresentation.ModuleHasNoComponentsMessage" />
+                    }
+                </ManagementSection>
+            }
 
             @if (_capabilities?.CanViewIntegrations == true)
             {
@@ -197,6 +239,14 @@
     private IReadOnlyList<IntegrationDto>? _moduleIntegrations;
     private bool _moduleIntegrationsLoading;
     private string? _moduleIntegrationsError;
+    private IReadOnlyList<ComponentSummaryDto>? _moduleComponents;
+    private bool _moduleComponentsLoading;
+    private string? _moduleComponentsError;
+    private bool _moduleComponentsForbidden;
+
+    // Either Component family is enough to see the section; the server still decides per family what it returns.
+    private bool CanViewComponentFamilies =>
+        _capabilities?.CanViewConnectorDefinitions == true || _capabilities?.CanViewNotificationDefinitions == true;
 
     private string RecentActivityHelp =>
         $"Merged from authorized runs (module definition) and audit (moduleId filter). Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
@@ -248,12 +298,16 @@
             if (_module is not null)
             {
                 await LoadRecentActivityAsync();
+                await LoadModuleComponentsAsync();
                 await LoadModuleIntegrationsAsync();
             }
             else
             {
                 _recentActivity = null;
                 _activityError = null;
+                _moduleComponents = null;
+                _moduleComponentsError = null;
+                _moduleComponentsForbidden = false;
                 _moduleIntegrations = null;
                 _moduleIntegrationsError = null;
             }
@@ -274,6 +328,40 @@
             Nav,
             EntityShellTitles.Detail(_module?.Name, "Module"),
             ModuleHeaderSubtitle);
+
+    private async Task LoadModuleComponentsAsync()
+    {
+        _moduleComponentsForbidden = false;
+        if (!CanViewComponentFamilies)
+        {
+            _moduleComponents = null;
+            return;
+        }
+
+        _moduleComponentsLoading = true;
+        _moduleComponentsError = null;
+        _moduleComponents = null;
+        try
+        {
+            // One catalog query filtered by this module id -- the same projection the /components page uses, so there
+            // is a single contribution-discovery path. Global by design: no Context/View filter is applied.
+            var result = await Client.GetComponentsAsync(moduleId: ModuleId);
+            _moduleComponents = result.Items;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            // Every family was denied after all: omit the section instead of asserting the module provides none.
+            _moduleComponentsForbidden = true;
+        }
+        catch (HttpRequestException ex)
+        {
+            _moduleComponentsError = ex.Message;
+        }
+        finally
+        {
+            _moduleComponentsLoading = false;
+        }
+    }
 
     private async Task LoadModuleIntegrationsAsync()
     {

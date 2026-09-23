@@ -103,6 +103,11 @@ public sealed class ComponentCatalogPresentationTests
         ComponentCatalogPresentation.IsFiltered(null, null, null, "sql").Should().BeTrue();
     }
 
+    [Fact]
+    public void ConnectorDetailHref_targets_the_connector_component_detail() =>
+        ComponentCatalogPresentation.ConnectorDetailHref("Apperture.Platform.Sql")
+            .Should().Be("/components/connector/Apperture.Platform.Sql");
+
     [Theory]
     [InlineData("c1", "/connections/c1")]
     [InlineData("a b", "/connections/a%20b")]
