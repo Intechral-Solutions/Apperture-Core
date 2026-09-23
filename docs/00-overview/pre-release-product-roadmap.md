@@ -123,7 +123,8 @@ reset, cutting across several of them.
 6. **Components implementation** — **next.** Unblocked by item 5. CMP-1…CMP-6 proceed as designed; the only
    Services-side follow-ups are a factual CMP-3 deep-link correction (`/connections/new?connectorDefinitionId=…`
    does not currently exist) and the ruling that the `/connections` Connectors tab is retired during **Services**
-   implementation, not Components. CMP-X remains separate and **not complete**.
+   implementation, not Components. CMP-X (built-in Notification Definition platform defaults) is separate and **complete (2026-09-23)**;
+   it is not part of Components implementation, which has not begun.
 7. **Services implementation** — **not started.** Gated on item 6.
 8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
    doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/

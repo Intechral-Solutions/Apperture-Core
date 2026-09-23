@@ -1390,7 +1390,26 @@ CMP-X carries no dependency on CMP-1–CMP-2 and can be planned independently.
 
 **Gate sequencing — satisfied (2026-09-23)**: Components design gate → Services design gate → *then*
 implementation bodies. Both gates are complete and approved, so CMP-1–CMP-6 may now be planned and started.
-CMP-X remains separate and is **not** complete.
+CMP-X remains separate. **CMP-X is complete (2026-09-23)** — see §22a.
+
+### 22a. CMP-X completion record (2026-09-23)
+
+Delivered on `NotificationDefinitionDetail.razor` only; **no server change** — the audit confirmed the store and
+`NotificationDefinitionService.UpdateAsync` already accepted `DefaultSeverity`/`ToastEnabledByDefault` for
+built-ins and refused only `RuleJson`/`TemplateJson`.
+
+- "Platform defaults" section, shown when `Origin` is `platformBuiltIn` or `moduleBuiltIn` (an Origin predicate,
+  not the `fullyEditable` Mutability gate). Editable under the existing `notification.definition.manage`
+  capability; read-only text otherwise. No new permission, action or capability field.
+- Handlers send only the two default fields and reassign the page's detail from the server response.
+- `userCreated` definitions do not get the section; they keep the existing Edit page.
+- Toast default changes never write `NotificationUserPreferences` rows, so ADR-0042's resolve-at-read semantics
+  apply unchanged.
+- Verified by backend regression tests, UI source-text tests, and an operator smoke of Platform, Module and
+  user-created definitions.
+
+This does not start Components implementation: CMP-1 through CMP-6 remain not begun. CMP-3's Component detail
+can now delegate to a page that can actually change the two settings it names.
 
 ---
 
@@ -1571,7 +1590,7 @@ that made running the Services gate next safe, and which held.
 prohibitions. All eight questions are answered in [`services-design-gate.md`](./services-design-gate.md), and
 §19's prohibitions were re-confirmed rather than relaxed.
 
-**Nothing here is implemented.** No branch, no code, no nav change, no schema, no new permission. Roadmap item 4
-(Components design gate) is **complete**; item 5 (Services design gate) is **complete**; item 6 (Components
-implementation) is **next**; item 7 (Services implementation) is **not started**. CMP-1 through CMP-6 and CMP-X
-are planned, not begun.
+**Nothing here is implemented, except CMP-X (§22a).** No Components code, no nav change, no schema, no new
+permission. Roadmap item 4 (Components design gate) is **complete**; item 5 (Services design gate) is
+**complete**; item 6 (Components implementation) is **next**; item 7 (Services implementation) is **not
+started**. CMP-1 through CMP-6 are planned, not begun.
