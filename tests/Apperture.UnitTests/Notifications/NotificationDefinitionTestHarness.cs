@@ -27,7 +27,7 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
     private readonly IIntegrationRepository _integrations;
     private int _nextSequence;
 
-    public NotificationDefinitionTestHarness(bool denyIntegrationUpdate = false)
+    public NotificationDefinitionTestHarness(bool denyIntegrationUpdate = false, bool denyInstanceManage = false)
     {
         _db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
@@ -41,7 +41,7 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
 
         var authorization = new NotificationDefinitionAuthorization(
             new FixedPrincipalContext(new FixedActor()),
-            new AlwaysAllowAuthorizationService(),
+            new ConfigurableAuthorizationService(denyInstanceManage),
             new ConfigurableAuthorizationEvaluationService(denyIntegrationUpdate),
             _integrations);
 
@@ -227,16 +227,29 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
             ValueTask.FromResult(_actor);
     }
 
-    /// <summary>Grants the instance-level (action, resourceType) permission check unconditionally -- only the Integration-scoped gate is configurable by these tests.</summary>
-    private sealed class AlwaysAllowAuthorizationService : IAuthorizationService
+    /// <summary>
+    /// Grants the instance-level (action, resourceType) permission check, unless configured to deny
+    /// <c>notification.definition.manage</c> specifically (for tests proving the platform-defaults
+    /// mutation path is actually gated by that permission, not merely wired to always-allow).
+    /// </summary>
+    private sealed class ConfigurableAuthorizationService : IAuthorizationService
     {
+        private readonly bool _denyInstanceManage;
+
+        public ConfigurableAuthorizationService(bool denyInstanceManage) =>
+            _denyInstanceManage = denyInstanceManage;
+
         public ValueTask<bool> EvaluateAsync(
             IActor actor,
             PermissionDescriptor permission,
             ResourceDescriptor? resource,
             IGovernedResourceIdentity? resourceIdentity = null,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(true);
+            CancellationToken cancellationToken = default)
+        {
+            if (_denyInstanceManage && string.Equals(permission.Action, ActionConstants.NotificationDefinitionManage, StringComparison.Ordinal))
+                return ValueTask.FromResult(false);
+            return ValueTask.FromResult(true);
+        }
     }
 
     /// <summary>

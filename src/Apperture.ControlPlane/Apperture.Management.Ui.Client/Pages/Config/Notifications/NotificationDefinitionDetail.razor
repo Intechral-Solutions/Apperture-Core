@@ -127,6 +127,52 @@
                          Message="Platform-built-in definitions keep rule and template fixed. You can still manage enabled state and subscriptions." />
         }
 
+        @if (_showPlatformDefaults)
+        {
+            <ManagementSection Title="Platform defaults"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Editable platform defaults for this built-in definition. Rule and template content remain fixed.">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 text-xs" id="notification-definition-platform-defaults">
+                    <label class="block">
+                        <span class="text-muted">Default severity</span>
+                        @if (_canManage)
+                        {
+                            <select class="ui-input mt-1"
+                                    id="platform-default-severity"
+                                    value="@_detail.DefaultSeverity"
+                                    disabled="@_busy"
+                                    @onchange="SetPlatformDefaultSeverityAsync">
+                                <option value="">—</option>
+                                @foreach (var (value, label) in NotificationSeverityOptions.All)
+                                {
+                                    <option value="@value">@label</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <div id="platform-default-severity">@(_detail.DefaultSeverity ?? "—")</div>
+                        }
+                    </label>
+                    <label class="flex items-center gap-2">
+                        @if (_canManage)
+                        {
+                            <input type="checkbox"
+                                   id="platform-toast-default"
+                                   checked="@_detail.ToastEnabledByDefault"
+                                   disabled="@_busy"
+                                   @onchange="SetToastEnabledByDefaultAsync" />
+                        }
+                        else
+                        {
+                            <span id="platform-toast-default">@(_detail.ToastEnabledByDefault ? "Yes" : "No")</span>
+                        }
+                        <span class="text-muted">Show as toast by default</span>
+                    </label>
+                </div>
+            </ManagementSection>
+        }
+
         <NotificationDefinitionPostCreatePrompt Visible="@_showPostCreatePrompt"
                                                 CanManageSubscriptions="@_canManage"
                                                 Disabled="@_busy"
@@ -489,6 +535,14 @@
         && _detail is not null
         && string.Equals(_detail.Origin, "userCreated", StringComparison.OrdinalIgnoreCase);
 
+    // CMP-X: built-ins cannot reach DefaultSeverity/ToastEnabledByDefault through the fullyEditable-gated
+    // authoring form, even though the store already accepts changes to those two fields for them (only
+    // RuleJson/TemplateJson are refused). Gated on Origin, matching _canDeleteDefinition's convention, not
+    // on Mutability -- this section's eligibility is "is this a built-in", not "is rule/template locked".
+    private bool _showPlatformDefaults =>
+        _detail is not null
+        && (_detail.Origin == "platformBuiltIn" || _detail.Origin == "moduleBuiltIn");
+
     private bool HasAttentionRoutingRecipients =>
         _attentionRouting is not null
         && (_attentionRouting.PrimaryRecipients.Count > 0 || _attentionRouting.EscalationRecipients.Count > 0);
@@ -626,6 +680,54 @@
     private async Task DeleteDefinitionAsync()
     {
         await Client.DeleteNotificationDefinitionAsync(_detail!.Id);
+    }
+
+    private async Task SetPlatformDefaultSeverityAsync(ChangeEventArgs e)
+    {
+        if (!_canManage || _detail is null)
+            return;
+        var severity = e.Value?.ToString();
+        _busy = true;
+        _error = null;
+        try
+        {
+            _detail = await Client.UpdateNotificationDefinitionAsync(
+                DefinitionId,
+                new UpdateNotificationDefinitionRequest(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    string.IsNullOrWhiteSpace(severity) ? null : severity,
+                    null)) ?? _detail;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private async Task SetToastEnabledByDefaultAsync(ChangeEventArgs e)
+    {
+        if (!_canManage || _detail is null)
+            return;
+        var enabled = ParseCheckbox(e);
+        _busy = true;
+        _error = null;
+        try
+        {
+            _detail = await Client.UpdateNotificationDefinitionAsync(
+                DefinitionId,
+                new UpdateNotificationDefinitionRequest(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    enabled)) ?? _detail;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
     }
 
     private void NavigateToDefinitionsList()
