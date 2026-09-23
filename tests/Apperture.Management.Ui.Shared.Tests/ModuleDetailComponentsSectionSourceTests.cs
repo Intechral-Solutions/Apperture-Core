@@ -48,9 +48,45 @@ public sealed class ModuleDetailComponentsSectionSourceTests
     {
         var content = ReadRepoFile(Detail);
 
-        content.Should().Contain("ComponentCatalogPresentation.ModuleHasNoComponentsMessage");
+        content.Should().Contain("ComponentCatalogPresentation.ModuleComponentsEmptyMessage(CanViewAllComponentFamilies)");
         ComponentCatalogPresentation.ModuleHasNoComponentsMessage.Should().Be("This module provides no catalog components.");
+        ComponentCatalogPresentation.ModuleComponentsEmptyMessage(true).Should().Be("This module provides no catalog components.");
+        ComponentCatalogPresentation.ModuleComponentsEmptyMessage(false).Should().Be("This module provides no catalog components you can view.",
+            "a caller who can read one family cannot conclude the module provides none");
         content.Should().Contain("_moduleComponents is { Count: > 0 }");
+    }
+
+    [Fact]
+    public void The_section_renders_error_then_loading_then_list_then_empty_and_never_empty_for_an_unknown_state()
+    {
+        var content = ReadRepoFile(Detail);
+        var start = content.IndexOf("Title=\"Components provided by this module\"", StringComparison.Ordinal);
+        var end = content.IndexOf("Title=\"Integrations using this module\"", StringComparison.Ordinal);
+        var section = content[start..end];
+
+        var order = new[]
+        {
+            section.IndexOf("_moduleComponentsError is not null", StringComparison.Ordinal),
+            section.IndexOf("_moduleComponentsLoading && _moduleComponents is null", StringComparison.Ordinal),
+            section.IndexOf("_moduleComponents is { Count: > 0 }", StringComparison.Ordinal),
+            section.IndexOf("else if (_moduleComponents is not null)", StringComparison.Ordinal),
+        };
+        order.Should().OnlyContain(i => i >= 0).And.BeInAscendingOrder();
+        section.Should().NotContain("\n                    else\n                    {\n                        <EmptyState",
+            "an unresolved (null) result must render nothing rather than the empty state");
+    }
+
+    [Fact]
+    public void No_catalog_query_runs_for_a_caller_without_a_family_capability_and_unexpected_failures_are_not_rendered_as_empty()
+    {
+        var content = ReadRepoFile(Detail);
+        var method = content.IndexOf("private async Task LoadModuleComponentsAsync()", StringComparison.Ordinal);
+        var call = content.IndexOf("Client.GetComponentsAsync(", method, StringComparison.Ordinal);
+        var guard = content.IndexOf("if (!CanViewComponentFamilies)", method, StringComparison.Ordinal);
+
+        guard.Should().BePositive().And.BeLessThan(call);
+        content.Should().Contain("catch (Exception ex) when (ex is not OperationCanceledException)");
+        content.Should().Contain("Components could not be loaded.");
     }
 
     [Fact]

@@ -168,9 +168,9 @@
                             }
                         </ul>
                     }
-                    else
+                    else if (_moduleComponents is not null)
                     {
-                        <EmptyState Message="@ComponentCatalogPresentation.ModuleHasNoComponentsMessage" />
+                        <EmptyState Message="@ComponentCatalogPresentation.ModuleComponentsEmptyMessage(CanViewAllComponentFamilies)" />
                     }
                 </ManagementSection>
             }
@@ -247,6 +247,10 @@
     // Either Component family is enough to see the section; the server still decides per family what it returns.
     private bool CanViewComponentFamilies =>
         _capabilities?.CanViewConnectorDefinitions == true || _capabilities?.CanViewNotificationDefinitions == true;
+
+    // A caller who can read only one family cannot conclude "none" from an empty result, so the empty copy is softened.
+    private bool CanViewAllComponentFamilies =>
+        _capabilities?.CanViewConnectorDefinitions == true && _capabilities?.CanViewNotificationDefinitions == true;
 
     private string RecentActivityHelp =>
         $"Merged from authorized runs (module definition) and audit (moduleId filter). Last {EntityRecentActivityComposer.DefaultLookback.Days} days, up to {EntityRecentActivityComposer.DefaultMaxItems} items.";
@@ -356,6 +360,11 @@
         catch (HttpRequestException ex)
         {
             _moduleComponentsError = ex.Message;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Anything else (for example a malformed payload) must not be rendered as "provides none".
+            _moduleComponentsError = "Components could not be loaded.";
         }
         finally
         {

@@ -52,6 +52,13 @@ public static class ComponentCatalogPresentation
 
     public const string ModuleHasNoComponentsMessage = "This module provides no catalog components.";
 
+    /// <summary>
+    /// Empty copy for the module's Components section. A caller who can read only one Component family cannot
+    /// conclude the module provides none, so the wording is scoped to what they can see.
+    /// </summary>
+    public static string ModuleComponentsEmptyMessage(bool canViewAllFamilies) =>
+        canViewAllFamilies ? ModuleHasNoComponentsMessage : "This module provides no catalog components you can view.";
+
     /// <summary>The existing Connection page a usage row opens.</summary>
     public static string ConnectionHref(string connectionId) =>
         $"/connections/{Uri.EscapeDataString(connectionId)}";
