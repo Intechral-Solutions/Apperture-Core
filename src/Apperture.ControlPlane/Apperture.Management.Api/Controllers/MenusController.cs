@@ -76,6 +76,7 @@ public class MenusController : ControllerBase
             DomainMenuCapabilityTokens.ManageModules => caps.CanManageModules,
             DomainMenuCapabilityTokens.ViewAuthConfiguration => caps.CanViewAuthConfiguration,
             DomainMenuCapabilityTokens.ManageSchedules => caps.CanManageSchedules,
+            DomainMenuCapabilityTokens.ViewComponents => caps.CanViewConnectorDefinitions || caps.CanViewNotificationDefinitions,
             _ => true
         };
 }

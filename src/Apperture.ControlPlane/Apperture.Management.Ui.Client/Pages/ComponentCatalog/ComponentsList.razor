@@ -1,0 +1,331 @@
+@page "/components"
+@implements IDisposable
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+
+@* The catalog of curated platform capabilities (connectors and supplied notification definitions). It is a
+   read-time projection over the family services and is deliberately GLOBAL: it has no Context/View filter,
+   because a Component is a system/catalog concept, not an Application-owned resource. Families the caller
+   cannot read are simply absent from both the rows and the filter options. *@
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config"
+                Title="Components"
+                Subtitle="Connectors and notification definitions supplied by the platform or by modules.">
+        <Toolbar>
+            @if (_capabilitiesReady && !_forbidden)
+            {
+                <button type="button"
+                        class="ui-toolbar-btn"
+                        disabled="@_loading"
+                        @onclick="RetryAsync">
+                    Refresh
+                </button>
+            }
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesReady)
+    {
+        <LoadingState Message="Loading components…" />
+    }
+    else if (_forbidden)
+    {
+        <ForbiddenState Message="You do not have permission to view components." />
+    }
+    else
+    {
+        @if (ShowControls)
+        {
+            <div class="flex flex-wrap items-end gap-3 text-sm">
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted" for="component-catalog-search">Search components</label>
+                    <input id="component-catalog-search"
+                           type="search"
+                           class="ui-input"
+                           autocomplete="off"
+                           placeholder="Name, id, or description"
+                           value="@_query"
+                           @oninput="OnSearchInputAsync" />
+                </div>
+                @if (_kindOptions.Count > 1 || _kind is not null)
+                {
+                    <div class="flex flex-col gap-1">
+                        <label class="text-xs text-muted" for="component-catalog-kind">Kind</label>
+                        <select id="component-catalog-kind"
+                                class="ui-input ui-input--narrow"
+                                value="@(_kind ?? "")"
+                                @onchange="OnKindChangedAsync">
+                            <option value="">Any</option>
+                            @foreach (var kind in _kindOptions)
+                            {
+                                <option value="@kind">@ComponentCatalogPresentation.KindLabel(kind)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-muted" for="component-catalog-origin">Origin</label>
+                    <select id="component-catalog-origin"
+                            class="ui-input ui-input--narrow"
+                            value="@(_origin ?? "")"
+                            @onchange="OnOriginChangedAsync">
+                        <option value="">Any</option>
+                        <option value="system">@ComponentCatalogPresentation.OriginLabel("system")</option>
+                        <option value="module">@ComponentCatalogPresentation.OriginLabel("module")</option>
+                    </select>
+                </div>
+                @if (_moduleOptions.Count > 0 || _moduleId is not null)
+                {
+                    <div class="flex flex-col gap-1">
+                        <label class="text-xs text-muted" for="component-catalog-module">Module</label>
+                        <select id="component-catalog-module"
+                                class="ui-input ui-input--narrow"
+                                value="@(_moduleId ?? "")"
+                                @onchange="OnModuleChangedAsync">
+                            <option value="">Any</option>
+                            @foreach (var module in _moduleOptions)
+                            {
+                                <option value="@module.ModuleId">@module.ModuleId</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </div>
+            @* One persistent live region: it stays mounted so screen readers announce its text changes. *@
+            <p class="@StatusClass" role="status">@StatusText</p>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error">
+                <button type="button" class="mt-3 ui-toolbar-btn" @onclick="RetryAsync">Try again</button>
+            </ErrorState>
+        }
+        else if (_loading && _result.Items.Count == 0)
+        {
+            <LoadingState Message="Loading components…" />
+        }
+        else if (_result.Items.Count == 0)
+        {
+            @if (ComponentCatalogPresentation.IsFiltered(_kind, _origin, _moduleId, _appliedQuery))
+            {
+                <EmptyState Title="No matching components" Message="@ComponentCatalogPresentation.NoMatchMessage">
+                    <button type="button" class="mt-3 ui-toolbar-btn" @onclick="ClearFiltersAsync">Clear filters</button>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Title="No components" Message="@ComponentCatalogPresentation.EmptyMessage" />
+            }
+        }
+        else if (_result.Items.Count > 0)
+        {
+            <div class="ui-data-table overflow-x-auto" aria-busy="@(_loading ? "true" : "false")">
+                <table class="ui-data-table__table min-w-full text-left text-body">
+                    <caption class="sr-only">Components supplied by the platform and by modules</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Origin</th>
+                            <th scope="col">Supplied by</th>
+                            <th scope="col">Id</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _result.Items)
+                        {
+                            <tr @key="@(item.Kind + ":" + item.NativeId)" class="align-top">
+                                <td class="font-medium text-heading break-words">
+                                    <a class="ui-link" href="@ComponentCatalogPresentation.DetailHref(item.Kind, item.NativeId)">@item.DisplayName</a>
+                                </td>
+                                <td>@ComponentCatalogPresentation.KindLabel(item.Kind)</td>
+                                <td>@ComponentCatalogPresentation.OriginLabel(item.Origin)</td>
+                                <td>@ComponentCatalogPresentation.SuppliedBy(item.SupplyingModuleId)</td>
+                                <td class="font-mono text-xs text-muted break-all">@item.NativeId</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const int SearchDebounceMilliseconds = 300;
+
+    private ComponentCatalogResultDto _result = new([], [], [], 0);
+    private IReadOnlyList<string> _kindOptions = [];
+    private IReadOnlyList<ComponentModuleRefDto> _moduleOptions = [];
+    private bool _capabilitiesReady;
+    private bool _forbidden;
+    private bool _loading = true;
+    private bool _hasLoaded;
+    private bool _controlsShown;
+    private string? _error;
+    private string? _kind;
+    private string? _origin;
+    private string? _moduleId;
+    private string _query = "";
+    private string _appliedQuery = "";
+    private int _requestSequence;
+    private CancellationTokenSource? _searchDelay;
+    private string _lastLoadKey = "";
+
+    // Only the applied (debounced) text takes part, so nothing that re-renders this component can start a
+    // load with half-typed text.
+    private string LoadKey => $"{_kind}|{_origin}|{_moduleId}|{_appliedQuery.Trim()}";
+
+    // Controls are decided once per COMPLETED load and latched, so they stay mounted while the next load is
+    // in flight -- unmounting them would drop keyboard focus from the input or a select.
+    private bool ShowControls => _hasLoaded && _controlsShown;
+
+    private string StatusText =>
+        _loading || !string.IsNullOrEmpty(_error) ? ""
+        : _result.Items.Count > 0 ? ComponentCatalogPresentation.ResultsSummary(_result.Items.Count, _result.TotalMatching)
+        : ComponentCatalogPresentation.IsFiltered(_kind, _origin, _moduleId, _appliedQuery) ? ComponentCatalogPresentation.NoMatchMessage
+        : "";
+
+    private string StatusClass => _result.Items.Count > 0 && !_loading ? "mt-3 text-xs text-muted" : "sr-only";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var caps = await Capabilities.GetCapabilitiesAsync();
+            _forbidden = !(caps.CanViewConnectorDefinitions || caps.CanViewNotificationDefinitions);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _capabilitiesReady = true;
+        }
+
+        if (!_forbidden)
+            await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        // Latest request wins: a slower earlier response must never overwrite a newer one.
+        var sequence = ++_requestSequence;
+        var kind = _kind;
+        var origin = _origin;
+        var moduleId = _moduleId;
+        var query = _appliedQuery.Trim();
+        _lastLoadKey = LoadKey;
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Client.GetComponentsAsync(kind, origin, moduleId, query.Length == 0 ? null : query);
+            if (sequence != _requestSequence)
+                return;
+
+            _result = result;
+            // The kind and module options describe the whole authorized catalog, so they are refreshed only by a
+            // load that did not restrict the kind (a kind-restricted load only ever reports that one kind and its
+            // modules, which would otherwise strand an active module selection without a matching option).
+            if (kind is null)
+            {
+                _kindOptions = result.AvailableKinds;
+                _moduleOptions = result.AvailableModules;
+            }
+
+            _controlsShown = result.TotalMatching > 0 || ComponentCatalogPresentation.IsFiltered(kind, origin, moduleId, query);
+            _hasLoaded = true;
+            _loading = false;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            if (sequence != _requestSequence)
+                return;
+            _lastLoadKey = "";
+            _forbidden = true;
+            _loading = false;
+        }
+        catch (Exception ex)
+        {
+            if (sequence != _requestSequence)
+                return;
+            _lastLoadKey = ""; // a later edit that returns to the same filters must retry, not be skipped
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadIfChangedAsync()
+    {
+        _kind = ComponentCatalogPresentation.NormalizeKind(_kind, _kindOptions);
+        _origin = ComponentCatalogPresentation.NormalizeOrigin(_origin);
+        _moduleId = ComponentCatalogPresentation.NormalizeModule(_moduleId, _moduleOptions);
+
+        if (string.Equals(LoadKey, _lastLoadKey, StringComparison.Ordinal))
+            return;
+        await LoadAsync();
+    }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+
+        _searchDelay?.Cancel();
+        _searchDelay?.Dispose();
+        var delay = _searchDelay = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(SearchDebounceMilliseconds, delay.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        _appliedQuery = _query;
+        await ReloadIfChangedAsync();
+    }
+
+    private async Task OnKindChangedAsync(ChangeEventArgs e)
+    {
+        _kind = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        await ReloadIfChangedAsync();
+    }
+
+    private async Task OnOriginChangedAsync(ChangeEventArgs e)
+    {
+        _origin = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        await ReloadIfChangedAsync();
+    }
+
+    private async Task OnModuleChangedAsync(ChangeEventArgs e)
+    {
+        _moduleId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        await ReloadIfChangedAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _searchDelay?.Cancel();
+        _query = "";
+        _appliedQuery = "";
+        _kind = null;
+        _origin = null;
+        _moduleId = null;
+        await LoadAsync();
+    }
+
+    private async Task RetryAsync() => await LoadAsync();
+
+    public void Dispose()
+    {
+        _searchDelay?.Cancel();
+        _searchDelay?.Dispose();
+    }
+}

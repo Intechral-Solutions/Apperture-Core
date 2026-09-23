@@ -54,6 +54,8 @@ public static class ManagementBreadcrumbResolver
         MatchConfigSecuritySignInRedirect,
         MatchConfigContactEditor,
         MatchConfigContactsList,
+        MatchComponentsDetail,
+        MatchComponentsList,
         MatchModulesDetail,
         MatchModulesList,
         MatchRunsDetail,
@@ -854,6 +856,28 @@ public static class ManagementBreadcrumbResolver
         if (!Matches(s, "config", "contacts"))
             return false;
         c = Attention(("Managed contacts", null));
+        return true;
+    }
+
+    // --- Components ---
+
+    private static bool MatchComponentsDetail(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "components", "{kind}", "{id}"))
+            return false;
+        c = Config(
+            ("Components", "/components"),
+            ("Component", null));
+        return true;
+    }
+
+    private static bool MatchComponentsList(string[] s, out IReadOnlyList<BreadcrumbItem>? c)
+    {
+        c = null;
+        if (!Matches(s, "components"))
+            return false;
+        c = Config(("Components", null));
         return true;
     }
 

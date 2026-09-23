@@ -72,7 +72,7 @@ public sealed class Nav1OperatorInformationArchitectureTests
     {
         var system = Menus()[SectionOwnerConstants.Config].Items.First(i => i.Text == "System");
         system.Children!.Select(c => c.Text).Should().Equal(
-            "Platform settings", "Modules", "Authentication", "Developer & internal");
+            "Platform settings", "Components", "Authentication", "Developer & internal");
         var auth = system.Children!.First(c => c.Text == "Authentication");
         auth.Children!.Select(c => c.Href).Should().Contain("/config/auth/sign-in");
         auth.Children!.Select(c => c.Href).Should().Contain("/config/auth/tenants");
@@ -175,7 +175,7 @@ public sealed class Nav1OperatorInformationArchitectureTests
         system.Href.Should().BeNull("its canonical destination (Platform settings) was filtered out");
         system.Children.Should().Contain(c => c.Text == "Developer & internal");
         system.Children.Should().NotContain(c => c.Text == "Platform settings");
-        system.Children.Should().Contain(c => c.Text == "Modules");
+        system.Children.Should().Contain(c => c.Text == "Components");
         system.Children.Should().Contain(c => c.Text == "Authentication");
     }
 

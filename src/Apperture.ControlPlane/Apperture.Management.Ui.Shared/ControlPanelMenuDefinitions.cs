@@ -119,11 +119,31 @@ public static class ControlPanelMenuDefinitions
                                 Href = "/config/platform-settings",
                                 RequiredCapability = DomainMenuCapabilityTokens.ViewPlatformSettings
                             },
+                            // Structural parent: deliberately NO RequiredCapability. The menu filter drops a gated
+                            // parent together with its whole subtree, which would hide an authorized Modules child
+                            // from an operator who can manage modules but read neither Component family. The parent
+                            // is kept whenever at least one child survives, and its own Href (shared with Catalog) is
+                            // nulled when Catalog is filtered out.
                             new DomainMenuItem
                             {
-                                Text = "Modules",
-                                Href = "/modules",
-                                RequiredCapability = DomainMenuCapabilityTokens.ManageModules
+                                Id = "config-components",
+                                Text = "Components",
+                                Href = "/components",
+                                Children = new List<DomainMenuItem>
+                                {
+                                    new DomainMenuItem
+                                    {
+                                        Text = "Catalog",
+                                        Href = "/components",
+                                        RequiredCapability = DomainMenuCapabilityTokens.ViewComponents
+                                    },
+                                    new DomainMenuItem
+                                    {
+                                        Text = "Modules",
+                                        Href = "/modules",
+                                        RequiredCapability = DomainMenuCapabilityTokens.ManageModules
+                                    }
+                                }
                             },
                             new DomainMenuItem
                             {

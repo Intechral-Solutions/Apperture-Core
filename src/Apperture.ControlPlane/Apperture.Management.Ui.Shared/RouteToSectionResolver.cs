@@ -25,6 +25,8 @@ public static class RouteToSectionResolver
             return SectionOwnerConstants.Config;
         if (NavPathMatching.IsPathUnder(p, "/modules"))
             return SectionOwnerConstants.Config;
+        if (NavPathMatching.IsPathUnder(p, "/components"))
+            return SectionOwnerConstants.Config;
         if (NavPathMatching.IsPathUnder(p, "/attention"))
             return SectionOwnerConstants.Config;
         if (NavPathMatching.IsPathUnder(p, "/connections"))

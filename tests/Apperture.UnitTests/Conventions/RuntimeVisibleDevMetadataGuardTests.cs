@@ -20,6 +20,7 @@ public sealed class RuntimeVisibleDevMetadataGuardTests
         new(@"\bBDS-\d+[A-Z]?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
         new(@"\bRR-\d+[A-Z]?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
         new(@"\bPFB-\d+[A-Z]?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+        new(@"\bCMP-\d+[A-Z]?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
         new(@"Cursor\s+agent", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
         new(@"closure\s+report", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
         new(@"implementation\s+pass", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
@@ -81,6 +82,8 @@ public sealed class RuntimeVisibleDevMetadataGuardTests
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/ControlPanelMenuDefinitions.cs";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/DemoCustomerUiHelpers.cs";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/PlatformSettingUiHelpers.cs";
+        yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/ComponentCatalogPresentation.cs";
+        yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/ComponentCatalog/ComponentsList.razor";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor";
         yield return "src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/HelloWorldModule.cs";
         yield return "src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/HelloWorldIntegrationConfiguration.cs";

@@ -18,7 +18,8 @@ public sealed class Epic41ConfigGovernanceUiTests
         var config = menus["Config"];
         config.Items.Should().Contain(i => i.Text == "Governance");
         var system = config.Items.First(i => i.Text == "System");
-        system.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        system.Children!.Single(i => i.Text == "Components")
+            .Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
         config.Items.Should().Contain(i => i.Href == "/config" && i.Text == "Overview");
     }
 

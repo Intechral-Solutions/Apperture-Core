@@ -45,13 +45,14 @@ public sealed class Epic99RouteMenuTruthCleanupTests
     }
 
     [Fact]
-    public void Config_modules_is_grouped_under_system()
+    public void Config_modules_is_grouped_under_system_components()
     {
         var menus = ControlPanelMenuDefinitions.GetDefaultMenus();
         var system = menus[SectionOwnerConstants.Config].Items
             .FirstOrDefault(i => i.Text == "System");
         system.Should().NotBeNull();
-        var modules = system!.Children!.FirstOrDefault(c => c.Text == "Modules");
+        var modules = system!.Children!.FirstOrDefault(c => c.Text == "Components")
+            ?.Children?.FirstOrDefault(c => c.Text == "Modules");
         modules.Should().NotBeNull();
         modules!.Href.Should().Be("/modules");
         modules.Children.Should().BeNullOrEmpty();

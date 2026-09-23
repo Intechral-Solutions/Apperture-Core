@@ -39,7 +39,9 @@ public sealed class S3ProductShellNavigationTests
         system.Should().NotBeNull();
         system!.Children.Should().NotBeNullOrEmpty();
         system.Children!.Select(c => c.Href).Should().Contain("/config/platform-settings");
-        system.Children!.Select(c => c.Href).Should().Contain("/modules");
+        // Modules now sits one level down, under the structural Components node.
+        system.Children!.Single(c => c.Text == "Components").Children!
+            .Select(c => c.Href).Should().Contain("/modules");
     }
 
     [Fact]

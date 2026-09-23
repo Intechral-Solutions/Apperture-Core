@@ -34,7 +34,8 @@ public sealed class Epic33CrossNavigationTests
         var config = menus[SectionOwnerConstants.Config];
         var system = config.Items.FirstOrDefault(i => i.Text == "System");
         system.Should().NotBeNull();
-        system!.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        system!.Children!.Single(i => i.Text == "Components")
+            .Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 
     [Fact]
@@ -48,7 +49,8 @@ public sealed class Epic33CrossNavigationTests
         controlHrefs.Should().Contain("/control/audit");
         var config = menus[SectionOwnerConstants.Config];
         var system = config.Items.First(i => i.Text == "System");
-        system.Children!.Should().Contain(i => i.Href == "/modules");
+        system.Children!.Single(i => i.Text == "Components")
+            .Children!.Should().Contain(i => i.Href == "/modules");
 
         controlHrefs.Should().Contain("/runs");
         config.Items.Should().Contain(i => i.Href == ShellSectionRoutes.Inventory);

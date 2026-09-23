@@ -62,6 +62,7 @@ public sealed class Epic100ShellDomainNavigationTests
         config[0].Href.Should().Be("/config");
         config.Should().NotContain(i => i.Text == "Managed contacts" && i.Href == "/config/contacts");
         var system = config.First(i => i.Text == "System");
-        system.Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
+        system.Children!.Single(i => i.Text == "Components")
+            .Children!.Should().Contain(i => i.Text == "Modules" && i.Href == "/modules");
     }
 }
