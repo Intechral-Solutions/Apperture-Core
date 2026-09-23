@@ -90,6 +90,10 @@ public sealed class ModuleDetailComponentsSectionSourceTests
         var activity = content.IndexOf("await LoadRecentActivityAsync();", loadAsync, StringComparison.Ordinal);
         loading.Should().BePositive().And.BeLessThan(activity,
             "the section shows as loading, not as a blank titled body, while recent activity loads first");
+        var publish = content.IndexOf("PublishShellTitle();", loadAsync, StringComparison.Ordinal);
+        content.IndexOf("_moduleComponentsLoading = false;", content.IndexOf("_loading = false;", loadAsync, StringComparison.Ordinal), StringComparison.Ordinal)
+            .Should().BePositive().And.BeLessThan(publish,
+            "LoadAsync's finally clears the flag, so a faulted earlier step can never leave a permanent spinner");
         content.Should().Contain("catch (Exception ex) when (ex is not OperationCanceledException)");
         content.Should().Contain("Components could not be loaded.");
     }

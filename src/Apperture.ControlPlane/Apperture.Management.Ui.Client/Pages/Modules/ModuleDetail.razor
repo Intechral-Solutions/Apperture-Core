@@ -325,6 +325,8 @@
         finally
         {
             _loading = false;
+            // Every awaited section load has finished (or faulted) by now, so nothing may still read as loading.
+            _moduleComponentsLoading = false;
             PublishShellTitle();
         }
     }

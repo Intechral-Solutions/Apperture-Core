@@ -1136,8 +1136,8 @@ in the list loop.
 **Graceful degradation:** when the definition is not registered, render the raw id with no link (never "Unknown
 connector", never a broken link) — the same discipline Components §17 applies to unresolvable module ids.
 
-**Sequencing:** this link targets a route CMP-2/CMP-3 create. Until Components ships, render the display name
-**without** the link. The `ConnectorDisplayName` addition is independently valuable and independently shippable.
+**Sequencing:** this link targets a route CMP-2/CMP-3 create (now shipped, so the link is available). Had Components
+not shipped, the display name would have rendered **without** the link. The `ConnectorDisplayName` addition is independently valuable and independently shippable.
 
 ---
 
@@ -1578,7 +1578,7 @@ status line).** §31 confirms no amendment to any approved Components
 decision; the only Components-side action is a five-line factual correction inside CMP-3's own scope (A2), and the
 Connectors-tab timing ruling (A1) explicitly leaves CMP-5's planned behaviour unchanged. The roadmap sequencing —
 Components design gate → Services design gate → **Components implementation** → Services implementation — is now
-satisfied through both gates, and CMP-1 is unblocked.
+satisfied through both gates; CMP-1 was unblocked and Components implementation is now complete.
 
 **Services implementation is ready to plan but not started; its Components-implementation gate is now satisfied.** SVC-1…SVC-8
 are defined in §30; §11.3, §20.1, §21.2 and §29's safety and audit matrices are the binding constraints on them.

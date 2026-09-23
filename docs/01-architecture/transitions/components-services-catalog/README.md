@@ -27,8 +27,9 @@ execution order) will each produce their own ADR when they run.
 > projection** (gate §7). This note's other rulings — Origin-based eligibility, the retired Resource Catalog,
 > specialized registries staying specialized, the non-1:1 Resource relationship, Services' boundary, the
 > sequencing, and the "never a bare `Component` type" naming constraint — are all **carried forward unchanged**.
-> The **Services design gate has not yet run**; everything this note says about Services still stands as a
-> starting hypothesis, now supplemented by the Components gate's §23 handoff.
+> *(At the time of this block the Services design gate had not yet run; it has since — see the block above.)*
+> Everything this note says about Services was then a starting hypothesis, supplemented by the Components gate's
+> §23 handoff.
 
 **Not a target architecture and not implementation-ready.** Like
 [`application-contexts/current-inventory.md`](../application-contexts/current-inventory.md) before it, this
