@@ -85,6 +85,11 @@ public sealed class ModuleDetailComponentsSectionSourceTests
         var guard = content.IndexOf("if (!CanViewComponentFamilies)", method, StringComparison.Ordinal);
 
         guard.Should().BePositive().And.BeLessThan(call);
+        var loadAsync = content.IndexOf("private async Task LoadAsync(", StringComparison.Ordinal);
+        var loading = content.IndexOf("_moduleComponentsLoading = CanViewComponentFamilies;", loadAsync, StringComparison.Ordinal);
+        var activity = content.IndexOf("await LoadRecentActivityAsync();", loadAsync, StringComparison.Ordinal);
+        loading.Should().BePositive().And.BeLessThan(activity,
+            "the section shows as loading, not as a blank titled body, while recent activity loads first");
         content.Should().Contain("catch (Exception ex) when (ex is not OperationCanceledException)");
         content.Should().Contain("Components could not be loaded.");
     }

@@ -88,6 +88,29 @@ has not started.**
 - The pre-existing Integration-configuration "create connection" link emits `?connector=` and `&returnUrl=`, which
   `ConnectionNew` ignores; it could adopt `connectorDefinitionId` later.
 - Module-supplied connectors are wired and covered with a fake, but none exists in production.
+- Module attribution is decoration on detail: a module-registry fault (not a denial) fails that detail request
+  instead of degrading to the bare module id, unlike usage which degrades.
+- Notification Definition ids resolve case-insensitively (SQL default collation), so a differently-cased URL reaches
+  the same Component; the response carries the canonical id. Cosmetic.
+- The dotted-id fallback fix covers the `/components`, `/modules` and `/config/notifications/definitions` families
+  only. Other routes whose final segment can look like a file (for example
+  `/business-data/customers/{BusinessKey}` with keys such as `C.1001`) still 404 on a hard load — pre-existing and
+  outside this body. There is no runtime routing test for the fix (the Ui.Server host is not test-hostable
+  without an entry-point change); the guard pins the mapping in source and the probe evidence is recorded above.
+- Keyboard focus is not restored after "Clear filters" / "Try again" on the list (the control removes itself).
+- The list page's filters are not URL-bound, so the `/components?kind=connector` link the Services gate sketches
+  for SVC-4 would land on the unfiltered list; SVC-4 must add a `kind` query parameter (or link differently).
+- Component detail shows some raw tokens (mutability, scope, module state) rather than friendlier labels.
+- Kind and Origin appear as metadata rows on detail, not as pills.
+
+## Review record
+
+Every plan was reviewed by an independent read-only reviewer before or immediately after its commit, and the whole
+branch was reviewed against both gates in two halves (backend/authorization and UI/navigation/docs). No Critical
+finding was raised at any point. Important findings and their resolution: CMP-2 — catalog rows linked to a detail
+route that landed in the next commit (transient, same branch, resolved by CMP-3); CMP-3 — dotted native-id hard
+loads returned 404 (fixed, above); final review — the closure's validation section was empty (recorded below).
+All Minor findings were either fixed or listed under residuals.
 
 ## Services readiness
 

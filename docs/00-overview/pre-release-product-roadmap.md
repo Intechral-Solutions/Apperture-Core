@@ -279,8 +279,8 @@ concepts that the post-CTX reset now separates:
   of many Integrations); the live-browse/metadata-exploration idea folds into this, not into Components. See
   the near-term execution order above and
   [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
-  for the full hypothesis. **Its design gate is now next** (near-term item 5), the Components gate having
-  completed 2026-09-22; its required inputs are that gate's §23 handoff and §19 prohibitions.
+  for the full hypothesis. **Its design gate is complete (2026-09-23; near-term item 5) and Components
+  implementation is complete (item 6); Services implementation (item 7) has not started.**
 - **Connection grouping** — not currently an independent planned deliverable; reconsider during the
   Services design gate if a concrete grouping requirement emerges. Distinct from the **cross-context
   organizational grouping** layer now recorded under near-term item 8, which is about organizational areas

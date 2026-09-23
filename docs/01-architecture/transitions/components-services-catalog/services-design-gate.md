@@ -1398,7 +1398,7 @@ New: `tests/Apperture.UnitTests/ControlPlane/ConnectionWorkspaceTests.cs`,
 ## 30. Implementation decomposition (Task 27)
 
 Sonnet-sized, independently testable and committable, reflecting the approved **S-B** path. **Nothing here is
-authorized to start**; Components implementation sequencing is unchanged and remains next.
+authorized to start** by this gate alone; Components implementation, which had to come first, is now complete.
 
 **Grouping:**
 
@@ -1573,14 +1573,16 @@ architecture; that clients stay runtime details; that no generic browse abstract
 is `/connections/{id}`; that `/connections` is the list; that Integrations, HSK-D and Bindings are untouched; that
 the Connectors tab retires in Services (SVC-4); and that Components needs no design amendment.
 
-**Components implementation is the next implementation body.** §31 confirms no amendment to any approved Components
+**Components implementation was the next implementation body and has since been delivered (see the update under the
+status line).** §31 confirms no amendment to any approved Components
 decision; the only Components-side action is a five-line factual correction inside CMP-3's own scope (A2), and the
 Connectors-tab timing ruling (A1) explicitly leaves CMP-5's planned behaviour unchanged. The roadmap sequencing —
 Components design gate → Services design gate → **Components implementation** → Services implementation — is now
 satisfied through both gates, and CMP-1 is unblocked.
 
-**Services implementation is ready to plan but not started, and is gated on Components implementation.** SVC-1…SVC-8
+**Services implementation is ready to plan but not started; its Components-implementation gate is now satisfied.** SVC-1…SVC-8
 are defined in §30; §11.3, §20.1, §21.2 and §29's safety and audit matrices are the binding constraints on them.
 
-**Nothing here is implemented.** No branch, no code, no schema, no permission, no nav change, no route. The product
-rulings are approved; the implementation bodies are not begun.
+**Nothing in this gate is implemented.** No Services code, no schema, no permission, no nav change, no route. The
+product rulings are approved; the Services implementation body is not begun (Components implementation, which this
+gate confirmed, is complete).

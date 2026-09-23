@@ -1600,8 +1600,8 @@ detail** (§16, §22).
 ## 26. Readiness
 
 **The Components design is approved. The Services design gate has now completed and confirmed it. No product
-decisions remain open** — D1–D4 are recorded as decided in §24. **CMP-1…CMP-6 are unblocked and are the next
-implementation body.**
+decisions remain open** — D1–D4 are recorded as decided in §24. **CMP-1…CMP-6 were unblocked by that gate and have
+been delivered (§22b).**
 
 What is settled and will not need to be reopened by Services: the projection-vs-persistence decision, the
 identity scheme, the kind/origin taxonomy, the authorization model, the navigation placement and its visibility

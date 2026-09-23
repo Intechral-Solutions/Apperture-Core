@@ -252,6 +252,12 @@
                 return;
             _error = ex.Message;
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (sequence != _requestSequence)
+                return;
+            _error = "The component could not be loaded.";
+        }
         finally
         {
             if (sequence == _requestSequence)

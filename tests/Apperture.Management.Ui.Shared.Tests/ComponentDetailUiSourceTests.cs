@@ -122,6 +122,9 @@ public sealed class ComponentDetailUiSourceTests
 
         content.Should().Contain("@implements IDisposable");
         content.Should().Contain("if (!_disposed)");
+        content.Should().Contain("catch (Exception ex) when (ex is not OperationCanceledException)",
+            "an unexpected failure (for example a malformed payload) is reported as an error, never as an unhandled render fault");
+        content.Should().Contain("The component could not be loaded.");
         var setParameters = content.IndexOf("protected override async Task OnParametersSetAsync()", StringComparison.Ordinal);
         var firstAwait = content.IndexOf("await LoadCapabilitiesAsync();", setParameters, StringComparison.Ordinal);
         var loadingSet = content.IndexOf("_loading = true;", setParameters, StringComparison.Ordinal);

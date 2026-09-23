@@ -301,6 +301,8 @@
             _module = await Client.GetModuleAsync(ModuleId);
             if (_module is not null)
             {
+                // Show the Components section as loading (not a blank body) while recent activity loads first.
+                _moduleComponentsLoading = CanViewComponentFamilies;
                 await LoadRecentActivityAsync();
                 await LoadModuleComponentsAsync();
                 await LoadModuleIntegrationsAsync();
