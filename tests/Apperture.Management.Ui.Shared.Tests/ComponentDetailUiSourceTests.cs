@@ -147,6 +147,10 @@ public sealed class ComponentDetailUiSourceTests
         content.Should().Contain("ComponentCatalogPresentation.ConnectorUsageSummary(connectorUsage.ActiveConnectionCount, connectorUsage.Connections.Count)");
         content.Should().Contain("ComponentCatalogPresentation.ConnectionHref(");
         content.Should().Contain("@key=\"connection.ConnectionId\"");
+        Regex.IsMatch(
+            content,
+            @"connectorUsage\.Connections\.Count < connectorUsage\.ActiveConnectionCount\)\s*\{[^{}]*href=""/connections"">View all connections</a>").Should().BeTrue(
+            "when names are truncated the plain, unfiltered Connections list is offered");
     }
 
     [Fact]

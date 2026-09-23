@@ -159,6 +159,11 @@
                             }
                         </ul>
                     }
+                    @if (connectorUsage.Connections.Count < connectorUsage.ActiveConnectionCount)
+                    {
+                        @* Beyond the named rows the list cannot filter by connector, so the honest affordance is the plain list. *@
+                        <p class="mt-2 text-sm"><a class="ui-link" href="/connections">View all connections</a></p>
+                    }
                 </ManagementSection>
             }
 

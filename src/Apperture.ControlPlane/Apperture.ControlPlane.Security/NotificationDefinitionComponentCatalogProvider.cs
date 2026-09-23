@@ -87,10 +87,18 @@ public sealed class NotificationDefinitionComponentCatalogProvider : IComponentC
         try
         {
             var subscriptions = await _subscriptions.ListByDefinitionAsync(definitionId, cancellationToken).ConfigureAwait(false);
+            // Every subscription row counts, exactly as the authoritative subscriptions section lists them
+            // (disabled and muted rows included), so the two surfaces never disagree.
             return new ComponentUsage(NotificationDefinition: new NotificationDefinitionComponentUsage(subscriptions.Count));
         }
         catch (UnauthorizedAccessException)
         {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            // The definition (or an owning Integration) disappeared between the lookup and this call. Usage
+            // decorates a Component that was just read, so it degrades to "not available" instead of failing the page.
             return null;
         }
     }

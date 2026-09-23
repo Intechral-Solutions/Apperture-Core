@@ -126,6 +126,23 @@ public sealed class ComponentUsageTests
     }
 
     [Fact]
+    public async Task Connector_usage_ignores_connections_of_a_differently_cased_connector_id()
+    {
+        // SQL Server's default collation is case-insensitive, so the query can return case variants. Connector
+        // ids are ordinal keys of the definition registry, so only the exact id is usage.
+        var sut = new ConnectorComponentCatalogProvider(
+            Definitions(Connector()).Object,
+            Connections(
+                Conn("exact", "Exact"),
+                Conn("variant", "Variant", connectorId: SqlId.ToUpperInvariant())).Object);
+
+        var usage = (await sut.GetAsync(SqlId))!.Usage!.Connector!;
+
+        usage.ActiveConnectionCount.Should().Be(1);
+        usage.Connections.Should().ContainSingle().Which.ConnectionId.Should().Be("exact");
+    }
+
+    [Fact]
     public async Task Connector_usage_is_not_looked_up_for_an_unknown_connector()
     {
         var connections = Connections();
@@ -218,6 +235,37 @@ public sealed class ComponentUsageTests
 
         detail.Should().NotBeNull();
         detail!.Usage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Definition_usage_is_absent_when_the_definition_disappears_mid_request()
+    {
+        var subscriptions = new Mock<INotificationSubscriptionService>();
+        subscriptions.Setup(s => s.ListByDefinitionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Notification definition 'platform.a' not found."));
+        var sut = new NotificationDefinitionComponentCatalogProvider(
+            DefinitionService(Def("platform.a", NotificationDefinitionOrigins.PlatformBuiltIn, null, NotificationDefinitionScopes.Platform)).Object,
+            subscriptions.Object);
+
+        var detail = await sut.GetAsync("platform.a");
+
+        detail.Should().NotBeNull("the component was read successfully");
+        detail!.Usage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Definition_usage_counts_every_subscription_row_including_disabled_ones()
+    {
+        // Same rows the authoritative subscriptions section lists, so the two surfaces never disagree.
+        var disabled = Sub("s-disabled") with { IsEnabled = false };
+        var subscriptions = new Mock<INotificationSubscriptionService>();
+        subscriptions.Setup(s => s.ListByDefinitionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Sub("s-1"), disabled]);
+        var sut = new NotificationDefinitionComponentCatalogProvider(
+            DefinitionService(Def("platform.a", NotificationDefinitionOrigins.PlatformBuiltIn, null, NotificationDefinitionScopes.Platform)).Object,
+            subscriptions.Object);
+
+        (await sut.GetAsync("platform.a"))!.Usage!.NotificationDefinition!.SubscriptionCount.Should().Be(2);
     }
 
     [Fact]
