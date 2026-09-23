@@ -1,4 +1,7 @@
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
@@ -90,6 +93,60 @@ public sealed class ComponentCatalogSqlServerTests
             await using var scope = provider.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             db.NotificationDefinitions.RemoveRange(db.NotificationDefinitions.Where(d => ids.Contains(d.Id)));
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ConnectionRepository_ConnectorFilter_TranslatesToSql_AndKeepsScopeContainment()
+    {
+        var connectionString = SqlServerTestConfiguration.GetConnectionString();
+        if (connectionString is null)
+            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
+        var services = new ServiceCollection();
+        services.AddApperturePersistence(connectionString);
+        services.AddScoped<IConnectionRepository, SqlConnectionRepository>();
+        await using var provider = services.BuildServiceProvider();
+
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sqlConnector = new ConnectorDefinitionId($"Cmp.Connector.A.{suffix}");
+        var otherConnector = new ConnectorDefinitionId($"Cmp.Connector.B.{suffix}");
+        var ids = new[] { $"cmp-a-active-{suffix}", $"cmp-a-retired-{suffix}", $"cmp-b-{suffix}" };
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            if (!await db.Database.CanConnectAsync())
+                throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
+            await db.Database.MigrateAsync();
+
+            var repository = scope.ServiceProvider.GetRequiredService<IConnectionRepository>();
+            Connection Make(string id, ConnectorDefinitionId connector, ConnectionState state) =>
+                new(new ConnectionId(id), connector, id, new Dictionary<string, string>(), new Dictionary<string, string>(), null, null, state);
+            await repository.AddAsync(Make(ids[0], sqlConnector, ConnectionState.Active));
+            await repository.AddAsync(Make(ids[1], sqlConnector, ConnectionState.Retired));
+            await repository.AddAsync(Make(ids[2], otherConnector, ConnectionState.Active));
+        }
+
+        try
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var repository = scope.ServiceProvider.GetRequiredService<IConnectionRepository>();
+
+            var rows = await repository.GetVisibleByConnectorDefinitionAsync(ScopeKeyConstants.Instance, sqlConnector);
+
+            rows.Select(r => r.Id.Value).Should().BeEquivalentTo([ids[0], ids[1]]);
+            (await repository.GetVisibleByConnectorDefinitionAsync("module:Not.Contained", sqlConnector)).Should().BeEmpty(
+                "the instance-scoped connections are not contained by a narrower actor scope");
+        }
+        finally
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            db.Connections.RemoveRange(db.Connections.Where(c => ids.Contains(c.Id)));
             await db.SaveChangesAsync();
         }
     }

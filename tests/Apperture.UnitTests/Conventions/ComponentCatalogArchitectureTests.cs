@@ -33,17 +33,17 @@ public sealed class ComponentCatalogArchitectureTests
     ];
 
     [Fact]
-    public void Connector_provider_depends_only_on_the_authorized_connector_read_service()
+    public void Connector_provider_depends_only_on_authorized_services()
     {
         ConstructorParameterTypes(typeof(ConnectorComponentCatalogProvider))
-            .Should().Equal(typeof(IConnectorDefinitionCatalogReadService));
+            .Should().Equal(typeof(IConnectorDefinitionCatalogReadService), typeof(IConnectionManagementService));
     }
 
     [Fact]
-    public void Notification_definition_provider_depends_only_on_the_authorized_definition_service()
+    public void Notification_definition_provider_depends_only_on_authorized_services_and_never_on_notification_instances()
     {
         ConstructorParameterTypes(typeof(NotificationDefinitionComponentCatalogProvider))
-            .Should().Equal(typeof(INotificationDefinitionService));
+            .Should().Equal(typeof(INotificationDefinitionService), typeof(Apperture.Core.Application.Notifications.Subscriptions.INotificationSubscriptionService));
     }
 
     [Fact]

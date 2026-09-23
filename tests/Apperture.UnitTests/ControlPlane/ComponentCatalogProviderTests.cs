@@ -16,6 +16,23 @@ namespace Apperture.UnitTests.ControlPlane;
 /// </summary>
 public sealed class ComponentCatalogProviderTests
 {
+    // Usage lookups are exercised in ComponentUsageTests; here they are inert and strict about being unused.
+    private static ConnectorComponentCatalogProvider NewConnectorProvider(IConnectorDefinitionCatalogReadService definitions)
+    {
+        var connections = new Mock<IConnectionManagementService>();
+        connections.Setup(c => c.ListConnectionsByConnectorAsync(It.IsAny<ConnectorDefinitionId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        return new(definitions, connections.Object);
+    }
+
+    private static NotificationDefinitionComponentCatalogProvider NewDefinitionProvider(INotificationDefinitionService definitions)
+    {
+        var subscriptions = new Mock<Apperture.Core.Application.Notifications.Subscriptions.INotificationSubscriptionService>();
+        subscriptions.Setup(s => s.ListByDefinitionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        return new(definitions, subscriptions.Object);
+    }
+
     // ---- connector provider ---------------------------------------------------------------------
 
     private static ConnectorDefinition Connector(string id, string name, string? moduleId = null, ConnectorCapabilities caps = ConnectorCapabilities.None) =>
@@ -44,13 +61,13 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public void Connector_provider_kind_is_the_connector_token()
     {
-        new ConnectorComponentCatalogProvider(ConnectorService().Object).Kind.Should().Be(ComponentKinds.Connector);
+        NewConnectorProvider(ConnectorService().Object).Kind.Should().Be(ComponentKinds.Connector);
     }
 
     [Fact]
     public async Task System_connector_projects_with_system_origin_and_no_module()
     {
-        var sut = new ConnectorComponentCatalogProvider(ConnectorService(Connector("Apperture.Platform.Sql", "Platform SQL")).Object);
+        var sut = NewConnectorProvider(ConnectorService(Connector("Apperture.Platform.Sql", "Platform SQL")).Object);
 
         var list = await sut.ListAsync();
 
@@ -65,7 +82,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Module_connector_projects_with_module_origin_and_module_id()
     {
-        var sut = new ConnectorComponentCatalogProvider(ConnectorService(Connector("Fake.Module.Connector", "Fake", moduleId: "Fake.Module")).Object);
+        var sut = NewConnectorProvider(ConnectorService(Connector("Fake.Module.Connector", "Fake", moduleId: "Fake.Module")).Object);
 
         var item = (await sut.ListAsync()).Should().ContainSingle().Subject;
 
@@ -76,7 +93,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Connector_detail_carries_fields_and_only_the_verification_capability_fact()
     {
-        var sut = new ConnectorComponentCatalogProvider(ConnectorService(
+        var sut = NewConnectorProvider(ConnectorService(
             Connector("Apperture.Platform.Sql", "Platform SQL",
                 caps: ConnectorCapabilities.SupportsConnectionVerification | ConnectorCapabilities.BrokeredAccessCandidate)).Object);
 
@@ -93,7 +110,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Connector_without_verification_capability_reports_false()
     {
-        var sut = new ConnectorComponentCatalogProvider(ConnectorService(
+        var sut = NewConnectorProvider(ConnectorService(
             Connector("a", "A", caps: ConnectorCapabilities.BrokeredAccessCandidate)).Object);
 
         (await sut.GetAsync("a"))!.Connector!.SupportsConnectionVerification.Should().BeFalse();
@@ -102,7 +119,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Connector_get_unknown_returns_null()
     {
-        var sut = new ConnectorComponentCatalogProvider(ConnectorService(Connector("a", "A")).Object);
+        var sut = NewConnectorProvider(ConnectorService(Connector("a", "A")).Object);
 
         (await sut.GetAsync("missing")).Should().BeNull();
     }
@@ -113,7 +130,7 @@ public sealed class ComponentCatalogProviderTests
         var service = new Mock<IConnectorDefinitionCatalogReadService>();
         service.Setup(s => s.ListAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new UnauthorizedAccessException());
         service.Setup(s => s.GetByIdAsync(It.IsAny<ConnectorDefinitionId>(), It.IsAny<CancellationToken>())).ThrowsAsync(new UnauthorizedAccessException());
-        var sut = new ConnectorComponentCatalogProvider(service.Object);
+        var sut = NewConnectorProvider(service.Object);
 
         await ((Func<Task>)(async () => await sut.ListAsync())).Should().ThrowAsync<UnauthorizedAccessException>();
         await ((Func<Task>)(async () => await sut.GetAsync("x"))).Should().ThrowAsync<UnauthorizedAccessException>();
@@ -162,7 +179,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public void Definition_provider_kind_is_the_notification_definition_token()
     {
-        new NotificationDefinitionComponentCatalogProvider(DefinitionService().Object)
+        NewDefinitionProvider(DefinitionService().Object)
             .Kind.Should().Be(ComponentKinds.NotificationDefinition);
     }
 
@@ -172,7 +189,7 @@ public sealed class ComponentCatalogProviderTests
         var service = DefinitionService(
             Definition("platform.a", NotificationDefinitionOrigins.PlatformBuiltIn, NotificationDefinitionScopes.Platform),
             Definition("module.b", NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: "M.B"));
-        var sut = new NotificationDefinitionComponentCatalogProvider(service.Object);
+        var sut = NewDefinitionProvider(service.Object);
 
         await sut.ListAsync();
 
@@ -194,7 +211,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Platform_built_in_definition_is_a_system_component()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("platform.schedule.expected_run_missing", NotificationDefinitionOrigins.PlatformBuiltIn, NotificationDefinitionScopes.Platform, name: "Expected run missing")).Object);
 
         var item = (await sut.ListAsync()).Should().ContainSingle().Subject;
@@ -208,7 +225,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Module_built_in_definition_is_a_module_component_with_its_module_id()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("module.sample.helloworld.demo.completed", NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: "Sample.HelloWorld")).Object);
 
         var item = (await sut.ListAsync()).Should().ContainSingle().Subject;
@@ -220,7 +237,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task User_created_definitions_never_appear_even_when_the_store_returns_them()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("ndef_1", NotificationDefinitionOrigins.UserCreated, NotificationDefinitionScopes.Integration, integrationId: "int-1"),
             Definition("ndef_2", NotificationDefinitionOrigins.UserCreated, NotificationDefinitionScopes.Platform),
             Definition("platform.a", NotificationDefinitionOrigins.PlatformBuiltIn, NotificationDefinitionScopes.Platform)).Object);
@@ -233,7 +250,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Eligibility_follows_origin_not_scope()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             // Built-in that happens to carry Integration scope: still eligible.
             Definition("module.odd", NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Integration, moduleId: "M.Odd"),
             // User-created that happens to carry Platform scope: still excluded.
@@ -247,7 +264,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Platform_built_in_carrying_a_module_id_is_inconsistent_data_and_is_not_coerced()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("platform.bad", NotificationDefinitionOrigins.PlatformBuiltIn, NotificationDefinitionScopes.Platform, moduleId: "Some.Module")).Object);
 
         await ((Func<Task>)(async () => await sut.ListAsync())).Should().ThrowAsync<InvalidOperationException>()
@@ -257,7 +274,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Module_built_in_without_a_module_id_is_inconsistent_data_and_is_not_coerced()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("module.bad", NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: null)).Object);
 
         await ((Func<Task>)(async () => await sut.ListAsync())).Should().ThrowAsync<InvalidOperationException>()
@@ -267,7 +284,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Definition_detail_carries_family_facts()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("module.sample.helloworld.demo.completed", NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: "Sample.HelloWorld")).Object);
 
         var detail = await sut.GetAsync("module.sample.helloworld.demo.completed");
@@ -287,7 +304,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Definition_detail_for_a_user_created_id_is_null()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var sut = NewDefinitionProvider(DefinitionService(
             Definition("ndef_1", NotificationDefinitionOrigins.UserCreated, NotificationDefinitionScopes.Platform)).Object);
 
         (await sut.GetAsync("ndef_1")).Should().BeNull();
@@ -299,7 +316,7 @@ public sealed class ComponentCatalogProviderTests
         var service = new Mock<INotificationDefinitionService>();
         service.Setup(s => s.GetAsync("ndef_orphan", It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Integration int-gone not found."));
-        var sut = new NotificationDefinitionComponentCatalogProvider(service.Object);
+        var sut = NewDefinitionProvider(service.Object);
 
         (await sut.GetAsync("ndef_orphan")).Should().BeNull();
     }
@@ -307,7 +324,7 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Definition_detail_unknown_id_is_null()
     {
-        var sut = new NotificationDefinitionComponentCatalogProvider(DefinitionService().Object);
+        var sut = NewDefinitionProvider(DefinitionService().Object);
 
         (await sut.GetAsync("missing")).Should().BeNull();
     }
@@ -318,7 +335,7 @@ public sealed class ComponentCatalogProviderTests
         var service = new Mock<INotificationDefinitionService>();
         service.Setup(s => s.ListAsync(It.IsAny<NotificationDefinitionListQuery>(), It.IsAny<CancellationToken>())).ThrowsAsync(new UnauthorizedAccessException());
         service.Setup(s => s.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(new UnauthorizedAccessException());
-        var sut = new NotificationDefinitionComponentCatalogProvider(service.Object);
+        var sut = NewDefinitionProvider(service.Object);
 
         await ((Func<Task>)(async () => await sut.ListAsync())).Should().ThrowAsync<UnauthorizedAccessException>();
         await ((Func<Task>)(async () => await sut.GetAsync("x"))).Should().ThrowAsync<UnauthorizedAccessException>();
@@ -329,11 +346,11 @@ public sealed class ComponentCatalogProviderTests
     [Fact]
     public async Task Seeded_state_composes_three_system_connectors_and_four_definitions()
     {
-        var connectors = new ConnectorComponentCatalogProvider(ConnectorService(
+        var connectors = NewConnectorProvider(ConnectorService(
             Connector(WellKnownConnectorDefinitionIds.PlatformSql.Value, "Platform SQL"),
             Connector(WellKnownConnectorDefinitionIds.PlatformSftp.Value, "SFTP"),
             Connector(WellKnownConnectorDefinitionIds.PlatformCampusNexus.Value, "Campus Nexus")).Object);
-        var definitions = new NotificationDefinitionComponentCatalogProvider(DefinitionService(
+        var definitions = NewDefinitionProvider(DefinitionService(
             Definition(NotificationDefinitionIds.PlatformScheduleExpectedRunMissing, NotificationDefinitionOrigins.PlatformBuiltIn, NotificationDefinitionScopes.Platform),
             Definition(NotificationDefinitionIds.ModuleSampleHelloWorldDemoCompleted, NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: "Sample.HelloWorld"),
             Definition(NotificationDefinitionIds.ModuleSampleFileImportCompletedWithErrors, NotificationDefinitionOrigins.ModuleBuiltIn, NotificationDefinitionScopes.Module, moduleId: "Sample.FileImport"),

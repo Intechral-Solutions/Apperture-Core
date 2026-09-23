@@ -1,5 +1,6 @@
 using Apperture.Core.Application.ComponentCatalog;
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Domain.Notifications;
 
 namespace Apperture.ControlPlane.Security;
@@ -19,9 +20,15 @@ public sealed class NotificationDefinitionComponentCatalogProvider : IComponentC
     ];
 
     private readonly INotificationDefinitionService _definitions;
+    private readonly INotificationSubscriptionService _subscriptions;
 
-    public NotificationDefinitionComponentCatalogProvider(INotificationDefinitionService definitions) =>
+    public NotificationDefinitionComponentCatalogProvider(
+        INotificationDefinitionService definitions,
+        INotificationSubscriptionService subscriptions)
+    {
         _definitions = definitions;
+        _subscriptions = subscriptions;
+    }
 
     public string Kind => ComponentKinds.NotificationDefinition;
 
@@ -66,7 +73,26 @@ public sealed class NotificationDefinitionComponentCatalogProvider : IComponentC
                 row.DefaultSeverity,
                 row.IsEnabled,
                 row.ToastEnabledByDefault,
-                row.UpdatedAtUtc));
+                row.UpdatedAtUtc),
+            Usage: await GetUsageAsync(row.Id.Value, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Current subscriptions to the definition, through the authorized subscription service. Historical
+    /// notification instances, per-user preference rows and Integration ownership are deliberately not usage.
+    /// Null (not zero) when the caller may not read the definition's subscriptions.
+    /// </summary>
+    private async ValueTask<ComponentUsage?> GetUsageAsync(string definitionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var subscriptions = await _subscriptions.ListByDefinitionAsync(definitionId, cancellationToken).ConfigureAwait(false);
+            return new ComponentUsage(NotificationDefinition: new NotificationDefinitionComponentUsage(subscriptions.Count));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static bool IsEligible(NotificationDefinition row) =>

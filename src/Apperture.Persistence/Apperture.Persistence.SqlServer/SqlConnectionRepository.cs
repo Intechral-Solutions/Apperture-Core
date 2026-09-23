@@ -51,6 +51,25 @@ public sealed class SqlConnectionRepository : IConnectionRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Connection>> GetVisibleByConnectorDefinitionAsync(
+        string scopeKey,
+        ConnectorDefinitionId connectorDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        // The connector filter runs in SQL; the scope-containment rule is the same in-memory evaluation the
+        // ordinary visible list applies.
+        var connectorId = connectorDefinitionId.Value;
+        var entities = await _db.Connections.AsNoTracking()
+            .Where(e => e.ConnectorDefinitionId == connectorId)
+            .ToListAsync(cancellationToken);
+
+        return entities
+            .Select(ToDomain)
+            .Where(c => IsScopeContained(c.ScopeKey ?? "instance", scopeKey))
+            .ToList();
+    }
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<Connection>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
         var entities = await _db.Connections.AsNoTracking()

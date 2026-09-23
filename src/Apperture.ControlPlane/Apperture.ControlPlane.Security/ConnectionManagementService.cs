@@ -75,6 +75,29 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     }
 
     /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<Connection>> ListConnectionsByConnectorAsync(
+        ConnectorDefinitionId connectorDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        // Same gate as the ordinary list: connection.read at instance scope. There is no cheaper path around it.
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(ActionConstants.ConnectionRead, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)),
+                null),
+            cancellationToken);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to list connections.");
+
+        return await _connectionRepository.GetVisibleByConnectorDefinitionAsync(
+            ScopeKeyConstants.Instance, connectorDefinitionId, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<Connection?> GetConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);

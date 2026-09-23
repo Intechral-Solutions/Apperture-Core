@@ -106,5 +106,16 @@ public sealed class ComponentsController : ControllerBase
                 d.NotificationDefinition.DefaultSeverity,
                 d.NotificationDefinition.IsEnabled,
                 d.NotificationDefinition.ToastEnabledByDefault,
-                d.NotificationDefinition.UpdatedAtUtc));
+                d.NotificationDefinition.UpdatedAtUtc),
+        d.Usage is null
+            ? null
+            : new ComponentUsageDto(
+                d.Usage.Connector is null
+                    ? null
+                    : new ConnectorComponentUsageDto(
+                        d.Usage.Connector.ActiveConnectionCount,
+                        d.Usage.Connector.Connections.Select(c => new ComponentConnectionRefDto(c.ConnectionId, c.Name)).ToList()),
+                d.Usage.NotificationDefinition is null
+                    ? null
+                    : new NotificationDefinitionComponentUsageDto(d.Usage.NotificationDefinition.SubscriptionCount)));
 }

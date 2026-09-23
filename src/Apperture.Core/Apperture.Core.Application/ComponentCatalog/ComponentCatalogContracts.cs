@@ -76,12 +76,38 @@ public sealed record NotificationDefinitionComponentFacts(
     bool ToastEnabledByDefault,
     DateTimeOffset UpdatedAtUtc);
 
+public sealed record ComponentConnectionRef(string ConnectionId, string Name);
+
+/// <param name="ActiveConnectionCount">
+/// Active Connections made from the connector that the caller may see. Retired Connections are decommissioned
+/// configuration and do not count as current usage.
+/// </param>
+/// <param name="Connections">Up to a bounded number of those Connections, by name; the count is always complete.</param>
+public sealed record ConnectorComponentUsage(
+    int ActiveConnectionCount,
+    IReadOnlyList<ComponentConnectionRef> Connections);
+
+/// <param name="SubscriptionCount">
+/// Current subscriptions to the definition. Historical notification instances, per-user preferences and
+/// Integration ownership are deliberately not usage.
+/// </param>
+public sealed record NotificationDefinitionComponentUsage(int SubscriptionCount);
+
+/// <summary>
+/// Current usage of a Component, exactly one family block populated. Detail-only: it is never part of a list
+/// row. A null <see cref="ComponentDetail.Usage"/> means "not visible to this caller", never "unused".
+/// </summary>
+public sealed record ComponentUsage(
+    ConnectorComponentUsage? Connector = null,
+    NotificationDefinitionComponentUsage? NotificationDefinition = null);
+
 /// <summary>Exactly one family block is populated, matching <see cref="ComponentSummary.Key"/>'s kind.</summary>
 public sealed record ComponentDetail(
     ComponentSummary Summary,
     ComponentModuleAttribution? SupplyingModule = null,
     ConnectorComponentFacts? Connector = null,
-    NotificationDefinitionComponentFacts? NotificationDefinition = null);
+    NotificationDefinitionComponentFacts? NotificationDefinition = null,
+    ComponentUsage? Usage = null);
 
 public sealed record ComponentCatalogQuery(
     string? Kind = null,

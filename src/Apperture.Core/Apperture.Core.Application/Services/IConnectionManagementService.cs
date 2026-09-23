@@ -35,6 +35,22 @@ public interface IConnectionManagementService
     }
 
     /// <summary>
+    /// Lists the connections made from one connector definition, in every state, that the current actor may
+    /// see. Authorized exactly like <see cref="ListConnectionsAsync(CancellationToken)"/>.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation exists only so in-memory test doubles keep working; the production
+    /// implementation pushes the connector filter down to the repository query.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<Connection>> ListConnectionsByConnectorAsync(
+        ConnectorDefinitionId connectorDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await ListConnectionsAsync(cancellationToken).ConfigureAwait(false);
+        return all.Where(c => c.ConnectorDefinitionId == connectorDefinitionId).ToList();
+    }
+
+    /// <summary>
     /// Gets a connection by id. Returns null if not found or not visible.
     /// </summary>
     ValueTask<Connection?> GetConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default);

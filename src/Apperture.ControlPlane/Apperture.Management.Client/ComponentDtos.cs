@@ -39,6 +39,24 @@ public sealed record NotificationDefinitionComponentDetailDto(
     bool ToastEnabledByDefault,
     DateTimeOffset UpdatedAtUtc);
 
+public sealed record ComponentConnectionRefDto(string ConnectionId, string Name);
+
+/// <summary>Active Connections made from the connector. Names are bounded; the count is complete.</summary>
+public sealed record ConnectorComponentUsageDto(
+    int ActiveConnectionCount,
+    IReadOnlyList<ComponentConnectionRefDto> Connections);
+
+/// <summary>Current subscriptions to the definition. Historical notification instances are not usage.</summary>
+public sealed record NotificationDefinitionComponentUsageDto(int SubscriptionCount);
+
+/// <summary>
+/// Detail-only usage; exactly one family block is non-null. The whole object is null (not zero) when the caller
+/// may not read the usage source.
+/// </summary>
+public sealed record ComponentUsageDto(
+    ConnectorComponentUsageDto? Connector,
+    NotificationDefinitionComponentUsageDto? NotificationDefinition);
+
 /// <summary>Exactly one family block (<c>Connector</c> or <c>NotificationDefinition</c>) is non-null, matching <c>Kind</c>.</summary>
 public sealed record ComponentDetailDto(
     string Kind,
@@ -49,4 +67,5 @@ public sealed record ComponentDetailDto(
     string? SupplyingModuleId,
     ModuleAttributionDto? SupplyingModule,
     ConnectorComponentDetailDto? Connector,
-    NotificationDefinitionComponentDetailDto? NotificationDefinition);
+    NotificationDefinitionComponentDetailDto? NotificationDefinition,
+    ComponentUsageDto? Usage = null);

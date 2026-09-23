@@ -111,6 +111,49 @@ public sealed class ComponentsControllerTests
     }
 
     [Fact]
+    public async Task Get_maps_connector_usage_and_keeps_an_absent_usage_absent()
+    {
+        var (controller, catalog) = Build();
+        var key = new ComponentKey(ComponentKinds.Connector, "Apperture.Platform.Sql");
+        var facts = new ConnectorComponentFacts([], false);
+        catalog.SetupSequence(c => c.GetAsync(key, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ComponentDetail(
+                Summary(ComponentKinds.Connector, "Apperture.Platform.Sql"),
+                Connector: facts,
+                Usage: new ComponentUsage(Connector: new ConnectorComponentUsage(2, [new ComponentConnectionRef("c1", "Reporting DB")]))))
+            .ReturnsAsync(new ComponentDetail(
+                Summary(ComponentKinds.Connector, "Apperture.Platform.Sql"),
+                Connector: facts,
+                Usage: null));
+
+        var withUsage = (await controller.Get(ComponentKinds.Connector, "Apperture.Platform.Sql", CancellationToken.None))
+            .Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ComponentDetailDto>().Subject;
+        var withoutUsage = (await controller.Get(ComponentKinds.Connector, "Apperture.Platform.Sql", CancellationToken.None))
+            .Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ComponentDetailDto>().Subject;
+
+        withUsage.Usage!.Connector.Should().BeEquivalentTo(new ConnectorComponentUsageDto(2, [new ComponentConnectionRefDto("c1", "Reporting DB")]));
+        withUsage.Usage.NotificationDefinition.Should().BeNull();
+        withoutUsage.Usage.Should().BeNull("absent usage is never rendered as zero");
+    }
+
+    [Fact]
+    public async Task Get_maps_definition_subscription_usage()
+    {
+        var (controller, catalog) = Build();
+        var key = new ComponentKey(ComponentKinds.NotificationDefinition, "module.x");
+        catalog.Setup(c => c.GetAsync(key, It.IsAny<CancellationToken>())).ReturnsAsync(new ComponentDetail(
+            Summary(ComponentKinds.NotificationDefinition, "module.x", "Sample.HelloWorld"),
+            NotificationDefinition: new NotificationDefinitionComponentFacts("ev", "platformEvent", "module", "m", null, true, true, DateTimeOffset.UnixEpoch),
+            Usage: new ComponentUsage(NotificationDefinition: new NotificationDefinitionComponentUsage(4))));
+
+        var dto = (await controller.Get(ComponentKinds.NotificationDefinition, "module.x", CancellationToken.None))
+            .Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ComponentDetailDto>().Subject;
+
+        dto.Usage!.NotificationDefinition.Should().Be(new NotificationDefinitionComponentUsageDto(4));
+        dto.Usage.Connector.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Get_maps_a_notification_definition_detail_with_module_attribution()
     {
         var (controller, catalog) = Build();

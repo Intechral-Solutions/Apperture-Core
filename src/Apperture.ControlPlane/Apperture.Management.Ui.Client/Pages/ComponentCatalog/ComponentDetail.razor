@@ -140,6 +140,38 @@
                 </ManagementSection>
             }
 
+            @* Where used: current configuration only, and only what this caller may see. An absent usage block means the
+               caller cannot read that source -- never "unused" -- so nothing is rendered in its place. *@
+            @if (_detail.Usage?.Connector is { } connectorUsage)
+            {
+                <ManagementSection Title="Where used" Layer="ManagementSection.UiLayer.Detail">
+                    <p class="text-sm text-body">
+                        @ComponentCatalogPresentation.ConnectorUsageSummary(connectorUsage.ActiveConnectionCount, connectorUsage.Connections.Count)
+                    </p>
+                    @if (connectorUsage.Connections.Count > 0)
+                    {
+                        <ul class="mt-2 space-y-1">
+                            @foreach (var connection in connectorUsage.Connections)
+                            {
+                                <li @key="connection.ConnectionId">
+                                    <a class="ui-link text-sm" href="@ComponentCatalogPresentation.ConnectionHref(connection.ConnectionId)">@connection.Name</a>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </ManagementSection>
+            }
+
+            @if (_detail.Usage?.NotificationDefinition is { } definitionUsage)
+            {
+                <ManagementSection Title="Where used" Layer="ManagementSection.UiLayer.Detail">
+                    <p class="text-sm text-body">@ComponentCatalogPresentation.SubscriptionUsageSummary(definitionUsage.SubscriptionCount)</p>
+                    <div class="ui-action-row mt-3">
+                        <a class="ui-toolbar-btn" href="@ComponentCatalogPresentation.NotificationDefinitionHref(_detail.NativeId)">Manage subscriptions</a>
+                    </div>
+                </ManagementSection>
+            }
+
             <TechnicalDetails>
                 <TechnicalDetail Label="Native id" Value="@_detail.NativeId" />
                 <TechnicalDetail Label="Kind" Value="@_detail.Kind" />

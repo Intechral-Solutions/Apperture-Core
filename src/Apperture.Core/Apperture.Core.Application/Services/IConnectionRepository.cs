@@ -40,6 +40,23 @@ public interface IConnectionRepository
     }
 
     /// <summary>
+    /// Gets connections visible within the given scope that were made from one connector definition, in every
+    /// state. The connector filter belongs in the query.
+    /// </summary>
+    /// <remarks>
+    /// A store-backed implementation must push the connector filter into the query. The default implementation
+    /// here exists only so in-memory test doubles keep working; it is not a query plan.
+    /// </remarks>
+    async ValueTask<IReadOnlyList<Connection>> GetVisibleByConnectorDefinitionAsync(
+        string scopeKey,
+        ConnectorDefinitionId connectorDefinitionId,
+        CancellationToken cancellationToken = default)
+    {
+        var all = await GetVisibleAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+        return all.Where(c => c.ConnectorDefinitionId == connectorDefinitionId).ToList();
+    }
+
+    /// <summary>
     /// Gets all active connections (for eligibility filtering).
     /// </summary>
     ValueTask<IReadOnlyList<Connection>> GetActiveAsync(CancellationToken cancellationToken = default);

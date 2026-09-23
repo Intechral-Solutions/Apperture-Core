@@ -129,6 +129,38 @@ public sealed class ComponentDetailUiSourceTests
     }
 
     [Fact]
+    public void Usage_renders_only_when_the_server_supplied_it_and_is_never_defaulted_to_zero()
+    {
+        var content = ReadRepoFile(Page);
+
+        content.Should().Contain("_detail.Usage?.Connector is { } connectorUsage");
+        content.Should().Contain("_detail.Usage?.NotificationDefinition is { } definitionUsage");
+        content.Should().NotContain("?? 0", "an absent usage block must not be rendered as zero");
+        content.Should().NotContain("Usage is null", "there is no placeholder for a usage block the caller may not see");
+    }
+
+    [Fact]
+    public void Connector_usage_names_connections_through_the_existing_connection_page_and_states_the_zero_case()
+    {
+        var content = ReadRepoFile(Page);
+
+        content.Should().Contain("ComponentCatalogPresentation.ConnectorUsageSummary(connectorUsage.ActiveConnectionCount, connectorUsage.Connections.Count)");
+        content.Should().Contain("ComponentCatalogPresentation.ConnectionHref(");
+        content.Should().Contain("@key=\"connection.ConnectionId\"");
+    }
+
+    [Fact]
+    public void Definition_usage_is_the_current_subscription_count_and_delegates_management()
+    {
+        var content = ReadRepoFile(Page);
+        var visible = Regex.Replace(content, @"@\*.*?\*@", " ", RegexOptions.Singleline);
+
+        visible.Should().Contain("ComponentCatalogPresentation.SubscriptionUsageSummary(definitionUsage.SubscriptionCount)");
+        visible.Should().NotContainEquivalentOf("notification instance", "historical activity is not usage");
+        visible.Should().NotContain("Instances");
+    }
+
+    [Fact]
     public void Detail_copy_carries_no_planning_labels()
     {
         var visible = Regex.Replace(ReadRepoFile(Page), @"@\*.*?\*@", " ", RegexOptions.Singleline);

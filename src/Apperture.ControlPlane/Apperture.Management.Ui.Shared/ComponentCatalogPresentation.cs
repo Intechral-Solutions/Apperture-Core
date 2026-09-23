@@ -46,6 +46,24 @@ public static class ComponentCatalogPresentation
     public static string NotificationDefinitionHref(string definitionId) =>
         $"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}";
 
+    /// <summary>The existing Connection page a usage row opens.</summary>
+    public static string ConnectionHref(string connectionId) =>
+        $"/connections/{Uri.EscapeDataString(connectionId)}";
+
+    /// <summary>Usage means Active Connections; the count is complete even when fewer rows are named.</summary>
+    public static string ConnectorUsageSummary(int activeCount, int namedCount) =>
+        activeCount <= 0 ? "No active connections use this connector yet."
+        : activeCount == 1 ? "1 active connection uses this connector."
+        : namedCount < activeCount
+            ? $"{activeCount} active connections use this connector. Showing the first {namedCount}."
+            : $"{activeCount} active connections use this connector.";
+
+    /// <summary>Current subscriptions only. Historical activity is not usage and is never counted or mentioned.</summary>
+    public static string SubscriptionUsageSummary(int subscriptionCount) =>
+        subscriptionCount <= 0 ? "No current subscriptions."
+        : subscriptionCount == 1 ? "1 current subscription."
+        : $"{subscriptionCount} current subscriptions.";
+
     public static string? NormalizeKind(string? requested, IReadOnlyList<string> availableKinds) =>
         string.IsNullOrWhiteSpace(requested) || !availableKinds.Contains(requested, StringComparer.Ordinal)
             ? null

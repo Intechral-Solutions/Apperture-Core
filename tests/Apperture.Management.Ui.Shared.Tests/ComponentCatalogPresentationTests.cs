@@ -103,6 +103,43 @@ public sealed class ComponentCatalogPresentationTests
         ComponentCatalogPresentation.IsFiltered(null, null, null, "sql").Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("c1", "/connections/c1")]
+    [InlineData("a b", "/connections/a%20b")]
+    public void ConnectionHref_links_to_the_existing_connection_page(string id, string expected) =>
+        ComponentCatalogPresentation.ConnectionHref(id).Should().Be(expected);
+
+    [Theory]
+    [InlineData(0, 0, "No active connections use this connector yet.")]
+    [InlineData(1, 1, "1 active connection uses this connector.")]
+    [InlineData(4, 4, "4 active connections use this connector.")]
+    [InlineData(30, 25, "30 active connections use this connector. Showing the first 25.")]
+    public void ConnectorUsageSummary_states_the_count_and_any_truncation(int count, int shown, string expected) =>
+        ComponentCatalogPresentation.ConnectorUsageSummary(count, shown).Should().Be(expected);
+
+    [Theory]
+    [InlineData(0, "No current subscriptions.")]
+    [InlineData(1, "1 current subscription.")]
+    [InlineData(6, "6 current subscriptions.")]
+    public void SubscriptionUsageSummary_states_the_current_subscription_count(int count, string expected) =>
+        ComponentCatalogPresentation.SubscriptionUsageSummary(count).Should().Be(expected);
+
+    [Fact]
+    public void Usage_copy_carries_no_planning_labels_and_never_mentions_notification_instances()
+    {
+        var copy = new[]
+        {
+            ComponentCatalogPresentation.ConnectorUsageSummary(0, 0),
+            ComponentCatalogPresentation.ConnectorUsageSummary(30, 25),
+            ComponentCatalogPresentation.SubscriptionUsageSummary(0),
+            ComponentCatalogPresentation.SubscriptionUsageSummary(3),
+        };
+
+        copy.Should().NotContain(c => c.Contains("CMP", StringComparison.Ordinal));
+        copy.Should().NotContain(c => c.Contains("instance", StringComparison.OrdinalIgnoreCase),
+            "historical notification instances are not usage");
+    }
+
     [Fact]
     public void Copy_carries_no_planning_labels()
     {
