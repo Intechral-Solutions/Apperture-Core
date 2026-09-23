@@ -84,6 +84,7 @@ public sealed class RuntimeVisibleDevMetadataGuardTests
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/PlatformSettingUiHelpers.cs";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/ComponentCatalogPresentation.cs";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/ComponentCatalog/ComponentsList.razor";
+        yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/ComponentCatalog/ComponentDetail.razor";
         yield return "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/DeveloperTasks.razor";
         yield return "src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/HelloWorldModule.cs";
         yield return "src/Apperture.Modules/Sample.HelloWorld/Sample.HelloWorld.Module/HelloWorldIntegrationConfiguration.cs";

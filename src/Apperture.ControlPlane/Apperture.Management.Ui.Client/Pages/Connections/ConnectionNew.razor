@@ -135,6 +135,13 @@
     [SupplyParameterFromQuery(Name = "context")]
     public string? QueryContext { get; set; }
 
+    /// <summary>
+    /// Optional deep link (for example from a Component detail page) that preselects a registered connector.
+    /// Unknown or missing values fall back to the normal unselected form; it composes with <c>?context=</c>.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "connectorDefinitionId")]
+    public string? QueryConnectorDefinitionId { get; set; }
+
     protected override void OnInitialized()
     {
         // With no active Application anywhere, the Context field is hidden entirely (ViewState.SelectorVisible
@@ -177,6 +184,10 @@
             if (_capabilities?.CanCreateConnections == true)
             {
                 _connectorDefinitions = await Client.GetConnectorDefinitionsAsync();
+                _connectorDefinitionId = ConnectionCreatePreselection.ResolveConnectorDefinitionId(
+                    QueryConnectorDefinitionId,
+                    _connectorDefinitions.Select(d => d.Id));
+                ResetFieldMaps();
             }
         }
         catch (HttpRequestException ex)

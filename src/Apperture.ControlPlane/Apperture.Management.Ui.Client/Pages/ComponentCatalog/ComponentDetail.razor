@@ -1,0 +1,225 @@
+@page "/components/{Kind}/{NativeId}"
+@using Apperture.Management.Ui.Client.Molecules
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
+@inject ShellOrientationService ShellOrientation
+
+@* One coherent wrapper for every Component. It is descriptive and DELEGATING: it shows read-only facts and links to
+   the authoritative surface where the thing is actually managed. It never edits, enables, subscribes or
+   configures anything, and it has no Context/View filter (a Component is a system/catalog concept). *@
+
+<div class="p-4 ui-page-stack">
+    <PageHeader @key="@($"{Kind}/{NativeId}")"
+                Eyebrow="Components"
+                Title="@EntityShellTitles.Detail(_detail?.DisplayName, "Component")"
+                Subtitle="@HeaderSubtitle">
+        <Toolbar>
+            <a href="/components" class="ui-toolbar-btn">Back to catalog</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <ErrorState Message="@_error" />
+    }
+    else if (_loading && _detail is null)
+    {
+        <LoadingState Message="Loading component…" />
+    }
+    else if (_detail is null)
+    {
+        @* Unknown, unreadable and forbidden components all land here, so this state never confirms existence. *@
+        <EmptyState Title="Component not found"
+                    Message="The requested component could not be loaded, or you do not have access to it." />
+    }
+    else
+    {
+        <div class="grid gap-4">
+            <ManagementSection Title="Summary" Layer="ManagementSection.UiLayer.Detail">
+                <MetadataGrid>
+                    <MetadataItem Label="Kind" Value="@ComponentCatalogPresentation.KindLabel(_detail.Kind)" />
+                    <MetadataItem Label="Origin" Value="@ComponentCatalogPresentation.OriginLabel(_detail.Origin)" />
+                    <MetadataItem Label="Supplied by">
+                        @if (_detail.SupplyingModule is { } module)
+                        {
+                            <a class="ui-link" href="@("/modules/" + Uri.EscapeDataString(module.ModuleId))">@module.DisplayName</a>
+                            <span class="text-muted"> · @module.Version · @module.State</span>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_detail.SupplyingModuleId))
+                        {
+                            <span class="font-mono text-xs">@_detail.SupplyingModuleId</span>
+                        }
+                        else
+                        {
+                            <span>System (platform)</span>
+                        }
+                    </MetadataItem>
+                </MetadataGrid>
+                @if (!string.IsNullOrWhiteSpace(_detail.Description))
+                {
+                    <p class="mt-3 text-sm text-body">@_detail.Description</p>
+                }
+            </ManagementSection>
+
+            @if (_detail.Connector is { } connector)
+            {
+                <ManagementSection Title="Connection fields"
+                                   Layer="ManagementSection.UiLayer.Detail"
+                                   Help="The information a connection made from this connector asks for.">
+                    @if (connector.Fields.Count == 0)
+                    {
+                        <p class="text-sm text-muted">This connector declares no connection fields.</p>
+                    }
+                    else
+                    {
+                        <div class="ui-data-table overflow-x-auto">
+                            <table class="ui-data-table__table min-w-full text-left text-body">
+                                <caption class="sr-only">Connection fields for @_detail.DisplayName</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Field</th>
+                                        <th scope="col">Key</th>
+                                        <th scope="col">Required</th>
+                                        <th scope="col">Secret</th>
+                                        <th scope="col">Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var field in connector.Fields)
+                                    {
+                                        <tr @key="field.Key" class="align-top">
+                                            <td class="font-medium text-heading">@field.DisplayName</td>
+                                            <td class="font-mono text-xs">@field.Key</td>
+                                            <td>@(field.IsRequired ? "Yes" : "No")</td>
+                                            <td>@(field.IsSecret ? "Yes" : "No")</td>
+                                            <td class="text-xs text-muted">@field.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    <p class="mt-3 text-sm text-body">
+                        @(connector.SupportsConnectionVerification
+                            ? "Supports test connection."
+                            : "Test connection is not available for this connector.")
+                    </p>
+                    @if (_capabilities?.CanCreateConnections == true)
+                    {
+                        <div class="ui-action-row mt-3">
+                            <a class="ui-toolbar-btn" href="@ComponentCatalogPresentation.CreateConnectionHref(_detail.NativeId)">Create a connection</a>
+                        </div>
+                    }
+                </ManagementSection>
+            }
+
+            @if (_detail.NotificationDefinition is { } definition)
+            {
+                <ManagementSection Title="Notification definition"
+                                   Layer="ManagementSection.UiLayer.Detail"
+                                   Help="Rule and template are fixed for supplied definitions.">
+                    <MetadataGrid>
+                        <MetadataItem Label="Event type" Monospace="true" Value="@(definition.PrimaryEventType ?? "—")" />
+                        <MetadataItem Label="Source" Monospace="true" Value="@definition.SourceKind" />
+                        <MetadataItem Label="Scope" Monospace="true" Value="@definition.Scope" />
+                        <MetadataItem Label="Mutability" Monospace="true" Value="@definition.Mutability" />
+                        <MetadataItem Label="Default severity" Value="@(definition.DefaultSeverity ?? "—")" />
+                        <MetadataItem Label="Enabled" Value="@(definition.IsEnabled ? "Yes" : "No")" />
+                        <MetadataItem Label="Toast by default" Value="@(definition.ToastEnabledByDefault ? "Yes" : "No")" />
+                        <MetadataItem Label="Last updated" Value="@definition.UpdatedAtUtc.UtcDateTime.ToString("u")" />
+                    </MetadataGrid>
+                    <p class="mt-3 text-sm text-body">
+                        Rule and template are fixed for supplied definitions. Enabled state, platform defaults and
+                        subscriptions are managed on the notification definition itself.
+                    </p>
+                    <div class="ui-action-row mt-3">
+                        <a class="ui-toolbar-btn" href="@ComponentCatalogPresentation.NotificationDefinitionHref(_detail.NativeId)">Open notification definition</a>
+                    </div>
+                </ManagementSection>
+            }
+
+            <TechnicalDetails>
+                <TechnicalDetail Label="Native id" Value="@_detail.NativeId" />
+                <TechnicalDetail Label="Kind" Value="@_detail.Kind" />
+                <TechnicalDetail Label="Origin" Value="@_detail.Origin" />
+                @if (!string.IsNullOrWhiteSpace(_detail.SupplyingModuleId))
+                {
+                    <TechnicalDetail Label="Supplying module id" Value="@_detail.SupplyingModuleId" />
+                }
+            </TechnicalDetails>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Kind { get; set; } = "";
+    [Parameter] public string NativeId { get; set; } = "";
+
+    private ComponentDetailDto? _detail;
+    private OperatorCapabilitiesDto? _capabilities;
+    private bool _loading;
+    private string? _error;
+    private string? _loadKey;
+    private int _requestSequence;
+
+    private string HeaderSubtitle =>
+        _detail is null
+            ? "Component detail"
+            : $"{ComponentCatalogPresentation.KindLabel(_detail.Kind)} · {ComponentCatalogPresentation.OriginLabel(_detail.Origin)}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{Kind}/{NativeId}";
+        if (string.Equals(key, _loadKey, StringComparison.Ordinal))
+            return;
+        _loadKey = key;
+        _detail = null;
+        await LoadCapabilitiesAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadCapabilitiesAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = null;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        // Latest request wins: navigating between components must not let a slower earlier response overwrite.
+        var sequence = ++_requestSequence;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var detail = await Client.GetComponentAsync(Kind, NativeId);
+            if (sequence != _requestSequence)
+                return;
+            _detail = detail;
+        }
+        catch (HttpRequestException ex)
+        {
+            if (sequence != _requestSequence)
+                return;
+            _error = ex.Message;
+        }
+        finally
+        {
+            if (sequence == _requestSequence)
+            {
+                _loading = false;
+                ShellOrientation.PublishForCurrentUri(
+                    Nav,
+                    EntityShellTitles.Detail(_detail?.DisplayName, "Component"),
+                    HeaderSubtitle);
+            }
+        }
+    }
+}
