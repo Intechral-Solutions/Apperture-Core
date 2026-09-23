@@ -40,9 +40,28 @@ public sealed class ConnectionNewConnectorPreselectionSourceTests
             @"ConnectionCreatePreselection\.ResolveConnectorDefinitionId\(\s*QueryConnectorDefinitionId").Should().BeTrue();
         content.Should().NotContain("_connectorDefinitionId = QueryConnectorDefinitionId",
             "the raw query value must never become the selected id");
-        var resolve = content.IndexOf("ConnectionCreatePreselection.ResolveConnectorDefinitionId(", StringComparison.Ordinal);
-        content.IndexOf("ResetFieldMaps();", resolve, StringComparison.Ordinal).Should().BeGreaterThan(resolve,
+        var init = content.IndexOf("protected override async Task OnInitializedAsync()", StringComparison.Ordinal);
+        var initEnd = content.IndexOf("private Task OnConnectorDefinitionChangedAsync()", init, StringComparison.Ordinal);
+        var body = content[init..initEnd];
+        var resolve = body.IndexOf("ConnectionCreatePreselection.ResolveConnectorDefinitionId(", StringComparison.Ordinal);
+        resolve.Should().BePositive("preselection happens in OnInitializedAsync, after the definitions load");
+        body.IndexOf("ResetFieldMaps();", resolve, StringComparison.Ordinal).Should().BeGreaterThan(resolve,
             "the config/secret field maps are keyed by the selected definition and must be rebuilt after preselecting");
+        body.IndexOf("GetConnectorDefinitionsAsync()", StringComparison.Ordinal).Should().BeLessThan(resolve,
+            "the requested id can only be validated against loaded definitions");
+    }
+
+    [Fact]
+    public void Context_and_connector_preselection_run_in_separate_lifecycle_steps_and_touch_disjoint_fields()
+    {
+        var content = ReadPage();
+
+        var initialized = content.IndexOf("protected override void OnInitialized()", StringComparison.Ordinal);
+        var initializedAsync = content.IndexOf("protected override async Task OnInitializedAsync()", StringComparison.Ordinal);
+        var contextBody = content[initialized..initializedAsync];
+        contextBody.Should().Contain("_selectedResourceContextId").And.NotContain("_connectorDefinitionId");
+        content[initializedAsync..].Should().NotContain("_selectedResourceContextId =",
+            "the async step only ever preselects the connector, so the two query values compose");
     }
 
     [Fact]

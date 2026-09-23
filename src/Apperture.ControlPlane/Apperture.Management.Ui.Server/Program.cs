@@ -130,6 +130,12 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseRouting();
 app.MapRazorPages();
+// The default fallback below carries ASP.NET Core's `nonfile` constraint, so a hard load (refresh, bookmark,
+// shared link) of a path whose last segment contains a dot and looks like a file extension -- the native ids
+// Sample.HelloWorld, Apperture.Platform.Sql and platform.schedule.expected_run_missing -- would 404 instead of
+// booting the client. These detail-route families are keyed by such ids, so they get an explicit catch-all.
+foreach (var prefix in new[] { "/components", "/modules", "/config/notifications/definitions" })
+    app.MapFallbackToPage(prefix + "/{*path}", "/_Host");
 app.MapFallbackToPage("/_Host");
 
 app.MapDefaultEndpoints();

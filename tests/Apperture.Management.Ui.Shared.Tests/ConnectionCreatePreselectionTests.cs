@@ -35,14 +35,4 @@ public sealed class ConnectionCreatePreselectionTests
     {
         ConnectionCreatePreselection.ResolveConnectorDefinitionId("Apperture.Platform.Sql", []).Should().Be("");
     }
-
-    [Fact]
-    public void Preselection_is_independent_of_the_context_query_value()
-    {
-        // The two query values compose: ?context= is resolved by the page's Context rules, the connector id by
-        // this helper. Neither input may influence the other.
-        ConnectionCreatePreselection.ResolveConnectorDefinitionId("Apperture.Platform.Sql", Available)
-            .Should().Be("Apperture.Platform.Sql");
-        ConnectionCreatePreselection.ResolveConnectorDefinitionId("shared", Available).Should().Be("");
-    }
 }

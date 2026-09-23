@@ -1,4 +1,5 @@
 @page "/components/{Kind}/{NativeId}"
+@implements IDisposable
 @using Apperture.Management.Ui.Client.Molecules
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
@@ -118,7 +119,7 @@
             {
                 <ManagementSection Title="Notification definition"
                                    Layer="ManagementSection.UiLayer.Detail"
-                                   Help="Rule and template are fixed for supplied definitions.">
+                                   Help="Read-only facts about this supplied definition.">
                     <MetadataGrid>
                         <MetadataItem Label="Event type" Monospace="true" Value="@(definition.PrimaryEventType ?? "—")" />
                         <MetadataItem Label="Source" Monospace="true" Value="@definition.SourceKind" />
@@ -162,6 +163,7 @@
     private string? _error;
     private string? _loadKey;
     private int _requestSequence;
+    private bool _disposed;
 
     private string HeaderSubtitle =>
         _detail is null
@@ -175,6 +177,9 @@
             return;
         _loadKey = key;
         _detail = null;
+        // Show the loading state immediately (capabilities may take a round trip) and drop the previous component's error.
+        _loading = true;
+        _error = null;
         await LoadCapabilitiesAsync();
         await LoadAsync();
     }
@@ -215,11 +220,21 @@
             if (sequence == _requestSequence)
             {
                 _loading = false;
-                ShellOrientation.PublishForCurrentUri(
-                    Nav,
-                    EntityShellTitles.Detail(_detail?.DisplayName, "Component"),
-                    HeaderSubtitle);
+                // A page that was navigated away from must not publish its title under the new page's path.
+                if (!_disposed)
+                {
+                    ShellOrientation.PublishForCurrentUri(
+                        Nav,
+                        EntityShellTitles.Detail(_detail?.DisplayName, "Component"),
+                        HeaderSubtitle);
+                }
             }
         }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _requestSequence++;
     }
 }

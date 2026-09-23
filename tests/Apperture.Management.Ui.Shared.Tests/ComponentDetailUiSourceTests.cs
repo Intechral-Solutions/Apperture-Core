@@ -44,7 +44,8 @@ public sealed class ComponentDetailUiSourceTests
                      "<input", "<select", "<textarea", "<EditForm", "@bind", "@onchange", "type=\"checkbox\"",
                      "PostAsync", "PutAsync", "PatchAsync", "DeleteAsync",
                      "UpdateNotificationDefinition", "SetNotificationDefinitionEnabled", "CreateConnectionAsync",
-                     "NotificationSubscription", "ActionButton"
+                     "NotificationSubscription", "ActionButton",
+                     "@onclick", "<button", "EventCallback", "NavigateTo"
                  })
         {
             content.Should().NotContain(forbidden, "Component detail delegates every mutation to the authoritative surface");
@@ -66,8 +67,11 @@ public sealed class ComponentDetailUiSourceTests
     {
         var content = ReadRepoFile(Page);
 
-        content.Should().Contain("ComponentCatalogPresentation.CreateConnectionHref(");
-        content.Should().Contain("CanCreateConnections");
+        Regex.IsMatch(
+            content,
+            @"_capabilities\?\.CanCreateConnections == true\)\s*\{[^{}]*ComponentCatalogPresentation\.CreateConnectionHref\(").Should().BeTrue(
+            "the link must sit inside the capability gate");
+        Regex.Matches(content, @"CreateConnectionHref\(").Should().HaveCount(1, "there is exactly one, gated, link");
         content.Should().Contain("Supports test connection");
         content.Should().NotContain("BrokeredAccess", "the reserved capability flag is never surfaced as a capability claim");
     }
@@ -78,7 +82,10 @@ public sealed class ComponentDetailUiSourceTests
         var content = ReadRepoFile(Page);
 
         content.Should().Contain("_detail.SupplyingModule is { } module");
-        content.Should().Contain("_detail.SupplyingModuleId");
+        Regex.IsMatch(
+            content,
+            @"else if \(!string\.IsNullOrWhiteSpace\(_detail\.SupplyingModuleId\)\)\s*\{\s*<span[^>]*>@_detail\.SupplyingModuleId</span>").Should().BeTrue(
+            "an unresolved module id is shown verbatim, without a link or fabricated metadata");
         content.Should().NotContain("Unknown module", "an unresolvable module id is shown verbatim, never as a placeholder claim");
         content.Should().Contain("System (platform)");
     }
@@ -101,6 +108,24 @@ public sealed class ComponentDetailUiSourceTests
         content.Should().Contain("Component not found");
         content.Should().Contain("or you do not have access to it");
         content.Should().Contain("<LoadingState").And.Contain("<ErrorState");
+        var error = content.IndexOf("<ErrorState", StringComparison.Ordinal);
+        var loading = content.IndexOf("else if (_loading && _detail is null)", StringComparison.Ordinal);
+        var notFound = content.IndexOf("Component not found", StringComparison.Ordinal);
+        (error < loading && loading < notFound).Should().BeTrue(
+            "error, then loading, then not-found: not-found must never flash while a load is in flight");
+    }
+
+    [Fact]
+    public void Detail_shows_loading_before_its_first_await_and_does_not_publish_a_title_after_disposal()
+    {
+        var content = ReadRepoFile(Page);
+
+        content.Should().Contain("@implements IDisposable");
+        content.Should().Contain("if (!_disposed)");
+        var setParameters = content.IndexOf("protected override async Task OnParametersSetAsync()", StringComparison.Ordinal);
+        var firstAwait = content.IndexOf("await LoadCapabilitiesAsync();", setParameters, StringComparison.Ordinal);
+        var loadingSet = content.IndexOf("_loading = true;", setParameters, StringComparison.Ordinal);
+        loadingSet.Should().BePositive().And.BeLessThan(firstAwait);
     }
 
     [Fact]
