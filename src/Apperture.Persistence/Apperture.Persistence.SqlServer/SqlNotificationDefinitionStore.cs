@@ -38,6 +38,12 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             q = q.Where(x => x.IsEnabled == enabled);
         if (!string.IsNullOrWhiteSpace(query.Origin))
             q = q.Where(x => x.Origin == query.Origin);
+        if (query.Origins is { } origins)
+        {
+            // Set membership; an empty set matches nothing. Additive to the single-value Origin above.
+            var originSet = origins.ToArray();
+            q = q.Where(x => originSet.Contains(x.Origin));
+        }
         if (!string.IsNullOrWhiteSpace(query.OwnerResourceContextId))
         {
             var owner = query.OwnerResourceContextId;

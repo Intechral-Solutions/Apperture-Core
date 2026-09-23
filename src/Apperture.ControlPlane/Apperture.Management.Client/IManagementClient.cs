@@ -198,6 +198,24 @@ public interface IManagementClient
     Task RetireConnectionAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries the read-only Component catalog. Families the caller cannot read are omitted rather than
+    /// denied; throws <see cref="HttpRequestException"/> (403) only when every consulted family is denied.
+    /// </summary>
+    Task<ComponentCatalogResultDto> GetComponentsAsync(
+        string? kind = null,
+        string? origin = null,
+        string? moduleId = null,
+        string? q = null,
+        int take = 200,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets one Component by <c>(kind, nativeId)</c>. Returns null for an unknown Component or one in a
+    /// family the caller cannot read (the server answers 404 in both cases).
+    /// </summary>
+    Task<ComponentDetailDto?> GetComponentAsync(string kind, string nativeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Executes connector-specific test-connect and returns updated connection projection.
     /// </summary>
     Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default);

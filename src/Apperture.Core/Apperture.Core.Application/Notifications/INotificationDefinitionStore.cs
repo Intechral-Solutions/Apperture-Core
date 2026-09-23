@@ -10,7 +10,8 @@ public sealed record NotificationDefinitionListQuery(
     string? Origin = null,
     int Take = 100,
     string? OwnerResourceContextId = null,
-    bool SystemScopedOnly = false);
+    bool SystemScopedOnly = false,
+    IReadOnlyList<string>? Origins = null);
 
 public sealed record NotificationDefinitionCreateCommand(
     string DisplayName,

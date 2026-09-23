@@ -2,6 +2,7 @@ using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
 using Apperture.ControlPlane.Security.Audit;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.ComponentCatalog;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.ModuleSdk.Integration.Configuration;
@@ -173,6 +174,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IControlActionAvailabilityProjection, ControlActionAvailabilityProjection>();
         services.AddScoped<IControlActivityQueryService, ControlActivityQueryService>();
         services.AddScoped<IInventoryQueryService, InventoryQueryService>();
+        // Component catalog: a read-model projection over the authorized family read services. Two providers,
+        // registered as a plain collection -- not a plugin framework, no persistence, no new permission.
+        services.AddScoped<IComponentCatalogProvider, ConnectorComponentCatalogProvider>();
+        services.AddScoped<IComponentCatalogProvider, NotificationDefinitionComponentCatalogProvider>();
+        services.AddScoped<IComponentCatalog, ComponentCatalogService>();
         services.AddScoped<IControlAttentionQueryService, ControlAttentionQueryService>();
         services.AddScoped<IControlCenterQueryService, ControlCenterQueryService>();
         // Orphaned from the operator UI since NAV-1 (Control Center is the sole home); no

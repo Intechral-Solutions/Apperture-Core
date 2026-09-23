@@ -465,6 +465,36 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? new InventoryQueryResult([], []);
     }
 
+    public async Task<ComponentCatalogResultDto> GetComponentsAsync(
+        string? kind = null,
+        string? origin = null,
+        string? moduleId = null,
+        string? q = null,
+        int take = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var pairs = new List<string> { $"take={take.ToString(CultureInfo.InvariantCulture)}" };
+        Add(pairs, "kind", kind);
+        Add(pairs, "origin", origin);
+        Add(pairs, "moduleId", moduleId);
+        Add(pairs, "q", q);
+        using var response = await _http.GetAsync($"components?{string.Join("&", pairs)}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        var dto = await response.Content.ReadFromJsonAsync<ComponentCatalogResultDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return dto ?? new ComponentCatalogResultDto([], [], [], 0);
+    }
+
+    public async Task<ComponentDetailDto?> GetComponentAsync(string kind, string nativeId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync(
+            $"components/{Uri.EscapeDataString(kind)}/{Uri.EscapeDataString(nativeId)}",
+            cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<ComponentDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<DashboardDefaultDto> GetDashboardDefaultAsync(CancellationToken cancellationToken = default)
     {
         var dto = await _http.GetFromJsonAsync<DashboardDefaultDto>("dashboard/default", cancellationToken).ConfigureAwait(false);
