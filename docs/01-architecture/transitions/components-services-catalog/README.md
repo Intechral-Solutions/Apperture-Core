@@ -7,6 +7,18 @@ and does not specify implementation. The Components design gate and the Services
 [`pre-release-product-roadmap.md`](../../../00-overview/pre-release-product-roadmap.md)'s near-term
 execution order) will each produce their own ADR when they run.
 
+> **Superseded in part (2026-09-22): the Components design gate has run and is approved.**
+> See [`components-design-gate.md`](./components-design-gate.md). Where this note and the gate differ, **the
+> gate wins** — it is grounded in a code audit at `f3ec369`, this note in pre-audit planning. The gate's §1
+> records the one deliberate departure: this note's suggested `ComponentDefinition` +
+> `I*Registry`/`I*Contributor` triad was **not** adopted, because the audit found both v1 families already have
+> authoritative registries and a Component record would own nothing. The Components model is a **read-time
+> projection** (gate §7). This note's other rulings — Origin-based eligibility, the retired Resource Catalog,
+> specialized registries staying specialized, the non-1:1 Resource relationship, Services' boundary, the
+> sequencing, and the "never a bare `Component` type" naming constraint — are all **carried forward unchanged**.
+> The **Services design gate has not yet run**; everything this note says about Services still stands as a
+> starting hypothesis, now supplemented by the Components gate's §23 handoff.
+
 **Not a target architecture and not implementation-ready.** Like
 [`application-contexts/current-inventory.md`](../application-contexts/current-inventory.md) before it, this
 records rulings gathered so the later design gates can start from decided ground rather than re-litigating
@@ -29,13 +41,19 @@ work can safely start. This note records the resulting rulings.
 - **Module** = the package/install/distribution boundary. Keeps its existing, real (if shallow) install/
   enable lifecycle (`ModuleInstallationStateEntity`).
 - **Component** = a reusable, operator-visible capability supplied either by the System/platform itself or
-  by an installed Module.
+  by a Module. *(Wording corrected 2026-09-22: "by an installed Module" was misleading — catalog membership
+  does not depend on Module install/enable state. See gate §6 and §17.)*
 - Internally, do **not** use a bare, ambiguous `Component` class. Follow the codebase's existing
   `*Definition`/`*Descriptor` naming convention — the recommended shape is `ComponentDefinition` (or a more
   qualified variant), paired with an `I*Registry`/`I*Contributor` pair mirroring the existing
   `ConnectorDefinition`/`IConnectorDefinitionRegistry`/`IConnectorDefinitionContributor` triad. A bare
   `Component` type would collide with Blazor's own `ComponentBase`/"Razor component" vocabulary in the UI
   project specifically.
+  **Gate outcome (2026-09-22):** the `ComponentDefinition`/registry/contributor triad was **not** adopted —
+  the audit showed both v1 families already have authoritative registries, so it would have been the universal
+  registry this same note forbids below. The naming constraint itself holds in full: the gate's types are
+  `ComponentSummary`, `ComponentDetail`, `ComponentKey`, `ComponentKinds`, `ComponentOrigins`,
+  `IComponentCatalog`, `IComponentCatalogProvider` — no bare `Component`. See gate §1 and §7.
 
 ### Components v1 scope
 
@@ -187,8 +205,20 @@ which capability/catalog abstractions Components actually needs (in particular, 
 Resource Catalog once envisioned lands in Services, and the Components catalog needs to know that before it
 locks its own shape). Do not ship the entire Component catalog before the Services contract is decided.
 
+**Status (2026-09-22):** Components design gate **complete and approved**
+([`components-design-gate.md`](./components-design-gate.md)). Services design gate **next**. Both
+implementations **not started**. The sequence is unchanged and still binding — no Components implementation
+body (CMP-1…CMP-6) may start before the Services gate completes.
+
 ## What this note deliberately does not decide
 
-Left to the Components and Services design gates themselves: exact `ComponentDefinition` schema, exact
-Component catalog UI, exact Service permission verbs, whether Service cardinality could ever exceed
-one-per-Connection, and any implementation detail not stated above as a ruling.
+Left to the Components and Services design gates themselves: exact Component catalog schema and UI, exact
+Service permission verbs, whether Service cardinality could ever exceed one-per-Connection, and any
+implementation detail not stated above as a ruling.
+
+**Now decided by the Components gate** (see it, not this note, for detail): the projection-vs-persistence
+model (§7), Component identity `(Kind, NativeId)` (§8), kind/origin taxonomy (§9), catalog API (§10),
+authorization — **no new permission** (§11), detail UX (§12), usage relationships (§13), Module detail
+evolution (§14), System Component model (§15), configuration (§16), lifecycle/provenance (§17), navigation
+placement `Config → System → Components` (§18), and the Services handoff (§23). Product rulings **D1–D4** are
+recorded as decided in gate §24.

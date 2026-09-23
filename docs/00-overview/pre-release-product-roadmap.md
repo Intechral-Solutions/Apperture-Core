@@ -88,18 +88,50 @@ reset, cutting across several of them.
    [`toast-b-notification-toast-integration.md`](../audits/toast-b-notification-toast-integration.md); decision
    record: [`ADR-0042`](../02-decisions/ADR-0042-notification-to-toast-channel-model.md); behaviour reference:
    [interaction patterns](../design-system/interaction-patterns.md#toast-presentation-and-interaction).
-4. **Components design gate**
-5. **Services design gate** — immediately follows the Components design gate, before either
+4. **Components design gate** — **complete and approved (2026-09-22).** Components is a **read-time
+   projection**, not a persisted entity: no `Components` table, no universal registry. v1 covers exactly two
+   families — Connector definitions, and Notification Definitions whose `Origin` is `PlatformBuiltIn` (System)
+   or `ModuleBuiltIn` (Module); user-created definitions are operator content and are **not** catalog entries.
+   Identity is `(Kind, NativeId)` routed as `/components/{kind}/{nativeId}`, reusing each family's existing
+   readable native id — no new identifier, no slug subsystem, ADR-0041-compliant as-is. **No new permission**:
+   the per-family read gates are reused and a family the operator cannot read is omitted, never denied.
+   Component detail is a uniform wrapper that delegates every mutation to the authoritative specialized
+   surface. Navigation lands at `Config → System → Components → { Catalog, Modules }` — **no new rail
+   domain**. Product rulings D1–D4 are recorded as decided. Full gate, test matrix, implementation
+   decomposition (CMP-1…CMP-6, plus the separate CMP-X) and the Services handoff:
+   [`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md).
+   **Not implemented** — no code, no nav change, no schema.
+5. **Services design gate** — **next.** Immediately follows the Components design gate, before either
    implementation begins. Services may reveal catalog/capability requirements Components needs to account
    for; the two gates run back-to-back so the Component catalog isn't shipped before the Services contract
-   is decided.
-6. **Components implementation**
-7. **Services implementation**
-8. **Application-centric navigation redesign** — after Components and Services stabilize, so the rail
-   doesn't move twice.
+   is decided. Its required inputs are the Components gate's §23 handoff (eight constraint-bearing questions,
+   deliberately unanswered there) and §19's Resource-relationship prohibitions. Two questions are explicitly
+   delegated to it: whether a Component can advertise browse/query capability without a generic
+   `Capabilities[]` framework, and the eventual fate of the Connectors tab on `/connections`.
+6. **Components implementation** — **not started.** Gated on item 5.
+7. **Services implementation** — **not started.** Gated on items 5 and 6.
+8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
+   doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
+   View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
+   broadly as-is**, and ResourceContext remains the ownership/scoping boundary for Applications and Shared.
+   This gate will instead explore a **separate cross-context organizational grouping layer** — departments,
+   responsibilities, operational areas, areas of concern, or other user-defined groupings — which may contain
+   or surface resources spanning **multiple** ResourceContexts, and which may later support cross-context
+   operational experiences, workflow capabilities over the relevant resources, and platform-generated reports
+   organized by those groupings. **Architectural constraint:** the grouping layer must not be conflated with
+   ResourceContext ownership, authorization, or resource identity. ResourceContext answers *"who/what owns
+   this resource, and what Application/Shared scope is it in?"*; the grouping layer would answer *"what
+   organizational area, responsibility, department, or concern should surface this resource?"* The model,
+   membership semantics and the **product term are all undecided** — "domain" is a working label only, and
+   deliberately not a candidate, since it already carries technical meanings in this codebase (shell nav
+   domains, DDD domain layer). Nothing about this is designed or scheduled yet; it is recorded here only so
+   future sessions do not assume the older "Application-centric navigation redesign" framing.
 
 Full rulings on the Components/Resource-Catalog/Services boundary:
 [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md).
+The **Components design gate** supersedes that planning note wherever they differ (it is grounded in a code
+audit; the note is pre-audit):
+[`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md).
 
 **Re-ranked below this sequence:** Connection/Schedule lifecycle cleanup (one combined item, scheduled
 *after* the Services design gate — Services will clarify Connection's future operator role first);
@@ -216,16 +248,21 @@ concepts that the post-CTX reset now separates:
   of many Integrations); the live-browse/metadata-exploration idea folds into this, not into Components. See
   the near-term execution order above and
   [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
-  for the full hypothesis. Scheduled for its own design gate immediately after Components'.
+  for the full hypothesis. **Its design gate is now next** (near-term item 5), the Components gate having
+  completed 2026-09-22; its required inputs are that gate's §23 handoff and §19 prohibitions.
 - **Connection grouping** — not currently an independent planned deliverable; reconsider during the
-  Services design gate if a concrete grouping requirement emerges.
+  Services design gate if a concrete grouping requirement emerges. Distinct from the **cross-context
+  organizational grouping** layer now recorded under near-term item 8, which is about organizational areas
+  spanning ResourceContexts, not about grouping Connections.
 - **Resource Catalog** (referenced by ADR-0040 as a separate future concept, never actually a bullet in this
   track) is **retired as a standalone roadmap concept** — its metadata/discoverability responsibility moves
   into Components (which may adapt and aggregate relevant operator-visible definitions behind a catalog
   abstraction; specialized registries such as permission descriptors, setting definitions, and connector
   definitions may remain specialized rather than being physically collapsed into one universal registry —
   no such collapse is approved), and its live-Connection-browsing responsibility moves into the Service
-  abstraction above. See the planning note for the full split.
+  abstraction above. See the planning note for the full split. **Confirmed by the Components design gate
+  (2026-09-22):** no universal registry was created — Components is a read-time projection over the existing
+  specialized registries, which remain authoritative for their own domains.
 
 ---
 
@@ -291,6 +328,9 @@ Do **not** start this track as a substitute for product completeness. On-prem/de
 
 - Module-supplied UI patterns — closely related to the Components design gate (near-term order above),
   since Module is expected to become the install/distribution boundary subordinate to Components.
+  **Confirmed by that gate (2026-09-22):** Modules becomes a child of `Config → System → Components`, keeps
+  `/modules` and `/modules/{id}` unchanged, and gains a "Components provided by this module" section.
+  Module remains the package/install boundary; catalog membership does not depend on install/enable state.
 - Configuration / template foundations for integrations
 - Progressive wizard frameworks beyond current progressive steps — the "shared platform Wizard subsystem"
   named in CTX-3B's closure debt. Deferred, legitimate future value, not currently prioritized.
