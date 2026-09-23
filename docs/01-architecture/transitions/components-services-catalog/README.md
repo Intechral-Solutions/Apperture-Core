@@ -7,6 +7,17 @@ and does not specify implementation. The Components design gate and the Services
 [`pre-release-product-roadmap.md`](../../../00-overview/pre-release-product-roadmap.md)'s near-term
 execution order) will each produce their own ADR when they run.
 
+> **Superseded in part (2026-09-23): both design gates have now run and are approved.**
+> See [`services-design-gate.md`](./services-design-gate.md). Where this note and that gate differ, **the gate
+> wins** — it is grounded in a code audit at `2fa0857`. The Services hypothesis this note recorded is **confirmed
+> in substance and sharpened in one respect**: a Service is not merely "derived initially", it is **not an object
+> at all**. It is the evolved operator workspace for one Connection, rendered at `/connections/{id}`. There is no
+> Service entity, no Service GUID, no `/services` route and no `/services` list; identity is `ConnectionId`;
+> cardinality is 1:1 by construction. Integrations continue Binding directly to Connections, and HSK-D continues
+> listing one Connection Resource rather than a second Service row. Services v1 scope (**S-B**), the
+> `connection.browse` authorization ruling, the Connectors-tab retirement timing and the terminology ruling are
+> recorded as decided in that gate's §32.
+>
 > **Superseded in part (2026-09-22): the Components design gate has run and is approved.**
 > See [`components-design-gate.md`](./components-design-gate.md). Where this note and the gate differ, **the
 > gate wins** — it is grounded in a code audit at `f3ec369`, this note in pre-audit planning. The gate's §1
@@ -141,7 +152,15 @@ ADR-0034's "System" concept (a grouping layer *above* many Integrations). Servic
 between them: it is a presentation/experience over a Connection, not a persistence or execution hop that
 requests pass through.
 
-Initial design hypothesis (subject to the Services design gate, not final):
+**Gate outcome (2026-09-23):** every bullet below was **confirmed** by the Services design gate, and one was
+sharpened. Service is not "derived initially" — it is **not a separate object at any point**. The workspace *is*
+`/connections/{id}`; identity *is* `ConnectionId`; cardinality is 1:1 by construction rather than by policy. The
+gate additionally decided what this note left open: **Services v1 scope is S-B** (Connection-workspace foundation +
+provider/tool seam + a SQL **structure**-browser exemplar, explicitly **not** a query console); **`connection.browse`**
+is the one new action; the Connectors tab retires in Services (SVC-4); and **"Service" does not become an
+operator-facing noun**. See [`services-design-gate.md`](./services-design-gate.md) §32.
+
+Initial design hypothesis (recorded pre-gate; confirmed by the gate except where noted above):
 
 - One Service experience per Connection.
 - One Service may expose multiple capabilities/tools (basic connection info/settings, health, diagnostics,
@@ -205,16 +224,25 @@ which capability/catalog abstractions Components actually needs (in particular, 
 Resource Catalog once envisioned lands in Services, and the Components catalog needs to know that before it
 locks its own shape). Do not ship the entire Component catalog before the Services contract is decided.
 
-**Status (2026-09-22):** Components design gate **complete and approved**
-([`components-design-gate.md`](./components-design-gate.md)). Services design gate **next**. Both
-implementations **not started**. The sequence is unchanged and still binding — no Components implementation
-body (CMP-1…CMP-6) may start before the Services gate completes.
+**Status (2026-09-23): both design gates are complete and approved.**
+Components design gate — [`components-design-gate.md`](./components-design-gate.md).
+Services design gate — [`services-design-gate.md`](./services-design-gate.md).
+**Components implementation (CMP-1…CMP-6) is now the next implementation body and is unblocked.** Services
+implementation (SVC-1…SVC-8) is defined but **not started** and follows Components. The Services gate confirmed
+that it requires **no architectural amendment to Components**; the only Components-side follow-ups are a factual
+CMP-3 deep-link correction and the Connectors-tab retirement timing, both recorded in that gate's §31.
 
 ## What this note deliberately does not decide
 
 Left to the Components and Services design gates themselves: exact Component catalog schema and UI, exact
 Service permission verbs, whether Service cardinality could ever exceed one-per-Connection, and any
 implementation detail not stated above as a ruling.
+
+**All of these are now decided** (2026-09-23). Component catalog schema and UI: Components gate §§7–18. Service
+permission verbs: **`connection.browse` only**, Services gate §11.3 — with the durable rule that no `service.read`
+exists in the derived Connection-workspace architecture, and that a Service-specific permission would require a
+future, independently justified Service authorization boundary. Cardinality: **1:1 by construction**, Services
+gate §8.
 
 **Now decided by the Components gate** (see it, not this note, for detail): the projection-vs-persistence
 model (§7), Component identity `(Kind, NativeId)` (§8), kind/origin taxonomy (§9), catalog API (§10),

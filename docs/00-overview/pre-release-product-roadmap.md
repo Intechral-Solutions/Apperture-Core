@@ -101,15 +101,30 @@ reset, cutting across several of them.
    decomposition (CMP-1…CMP-6, plus the separate CMP-X) and the Services handoff:
    [`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md).
    **Not implemented** — no code, no nav change, no schema.
-5. **Services design gate** — **next.** Immediately follows the Components design gate, before either
-   implementation begins. Services may reveal catalog/capability requirements Components needs to account
-   for; the two gates run back-to-back so the Component catalog isn't shipped before the Services contract
-   is decided. Its required inputs are the Components gate's §23 handoff (eight constraint-bearing questions,
-   deliberately unanswered there) and §19's Resource-relationship prohibitions. Two questions are explicitly
-   delegated to it: whether a Component can advertise browse/query capability without a generic
-   `Capabilities[]` framework, and the eventual fate of the Connectors tab on `/connections`.
-6. **Components implementation** — **not started.** Gated on item 5.
-7. **Services implementation** — **not started.** Gated on items 5 and 6.
+5. **Services design gate** — **complete and approved (2026-09-23).** A **Service is the evolved operator
+   workspace for one Connection — not an object**: no Service table, no Service GUID, no independent lifecycle,
+   no `Service.ResourceContextId`. Identity is `ConnectionId`; cardinality is 1:1 by construction; effective
+   Context always derives from `Connection.ResourceContextId`, so moving a Connection implicitly moves the
+   experience. The workspace **is** `/connections/{id}` and the list **is** `/connections` — **no `/services`
+   route and no `/services` list**. Integration Bindings remain Integration → Connection, and HSK-D continues
+   listing one Connection Resource rather than a second Service row. The Connector relationship stays derived
+   from `ConnectorDefinitionId` with no persisted edge. Runtime clients remain connector implementation details;
+   `ClientDefinition` is **not** resurrected. **v1 scope is S-B**: the Connection-workspace foundation, the
+   provider/tool seam, and a SQL Server **structure**-browser exemplar (platform-authored closed metadata
+   operations, no user-authored SQL, no row/content preview, no DML/DDL, no remote mutation) — **an arbitrary
+   SQL/query console is explicitly future work behind its own security/design gate, not a later tab**.
+   Authorization adds exactly one action, **`connection.browse`**, additive to `connection.read`. The
+   pre-existing Connection audit gap is closed as bounded Services work; a Connection Recent Activity panel is
+   **not** in v1. "Service" stays the architectural/roadmap term and does **not** become an operator-facing noun.
+   Product rulings D-S1–D-S4 are recorded as decided. The gate required **no architectural amendment to
+   Components**. Full gate, test matrix and decomposition (SVC-1…SVC-8):
+   [`services-design-gate.md`](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
+   **Not implemented** — no code, no schema, no permission, no nav change.
+6. **Components implementation** — **next.** Unblocked by item 5. CMP-1…CMP-6 proceed as designed; the only
+   Services-side follow-ups are a factual CMP-3 deep-link correction (`/connections/new?connectorDefinitionId=…`
+   does not currently exist) and the ruling that the `/connections` Connectors tab is retired during **Services**
+   implementation, not Components. CMP-X remains separate and **not complete**.
+7. **Services implementation** — **not started.** Gated on item 6.
 8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
    doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
@@ -126,15 +141,24 @@ reset, cutting across several of them.
    deliberately not a candidate, since it already carries technical meanings in this codebase (shell nav
    domains, DDD domain layer). Nothing about this is designed or scheduled yet; it is recorded here only so
    future sessions do not assume the older "Application-centric navigation redesign" framing.
+   **Remains after Components and Services implementation** (items 6 and 7), unchanged by the Services gate.
+   Constraints it inherits from that gate: `/connections` and `/connections/{id}` are stable identity and must
+   not be renamed or made Context-specific; `DomainMenuCapabilityTokens.ViewConnections` already exists and is
+   already resolved, so attaching a Connections leaf later needs no new permission; Services stores no
+   grouping/domain membership; and `connection.browse` authorization derives from Connection authorization,
+   never from future grouping membership. The gate also records a standing finding for this one to own:
+   **`/connections` is currently reachable from no rail item at all** (ADR-0040 rule 3 keeps it off-rail).
 
 Full rulings on the Components/Resource-Catalog/Services boundary:
 [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md).
-The **Components design gate** supersedes that planning note wherever they differ (it is grounded in a code
-audit; the note is pre-audit):
-[`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md).
+**Both design gates supersede that planning note wherever they differ** (they are grounded in code audits; the
+note is pre-audit):
+[`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md)
+and [`services-design-gate.md`](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
 
-**Re-ranked below this sequence:** Connection/Schedule lifecycle cleanup (one combined item, scheduled
-*after* the Services design gate — Services will clarify Connection's future operator role first);
+**Re-ranked below this sequence:** Connection/Schedule lifecycle cleanup (one combined item; the Services design
+gate has now clarified Connection's future operator role — Connection detail becomes the operator workspace, and
+`ConnectionState` remains Active/Retired with no un-retire);
 Business Data final architecture (Track 5, gated — closed, no second entity type currently proposed);
 Dashboard Panels (indefinitely parked — no chart library exists anywhere in the repo, no owner); Shared
 Wizard foundation (Track 8, deferred, legitimate future value, not prioritized); Context-scoped IAM

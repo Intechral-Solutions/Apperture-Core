@@ -6,8 +6,9 @@ Audience: the agent implementing CTX-1, and the reviewer approving this directio
 
 Evidence base: current code read this pass (entities, repositories, authorization, module DbContexts, migration conventions), plus `docs/01-architecture/transitions/application-contexts/current-inventory.md` §11–§12 (prior hazard catalogue, re-verified where load-bearing), ADR-0040, and the NAV-1 / HUB-1 closure reports.
 
-> **Superseded in three places by CTX-1 implementation evidence.** This document stands as written; the
-> corrections are recorded in [`ctx1-closure.md`](./ctx1-closure.md) §12 rather than edited into the body.
+> **Superseded in three places by CTX-1 implementation evidence, and in one further place by the Services
+> design gate (2026-09-23).** This document stands as written; the CTX-1 corrections are recorded in
+> [`ctx1-closure.md`](./ctx1-closure.md) §12 rather than edited into the body.
 >
 > 1. **§2.4 hard delete** — "an Application created and never used can be deleted" is withdrawn.
 >    ResourceContexts are archive-only, with no delete operation on any supported contract. A foreign key
@@ -18,6 +19,13 @@ Evidence base: current code read this pass (entities, repositories, authorizatio
 > 3. **§10-R2 `GetBySlotAsync`** — closed in CTX-1 rather than "before CTX-3", and closed by restricting
 >    the contextless lookup to bindings no Integration owns, not by adding a context filter: the resolver
 >    has no owning context to supply on that path.
+> 4. **§3 matrix row "Future Services | Direct | SVC"** — superseded by the 2026-09-23
+>    [Services design gate](../components-services-catalog/services-design-gate.md): "Service" is a derived
+>    Connection workspace, **not** an independently owned Resource. There is no Service entity, no Service
+>    row and no `Service.ResourceContextId`; the backing **Connection** remains the direct
+>    ResourceContext-owned resource, and effective Service Context is always `Connection.ResourceContextId`
+>    read at point of use. The row's own rationale — "Nothing in ResourceContext changes to accommodate
+>    them" — holds, and holds more strongly than written: there is no fourth Direct column, now or planned.
 
 ---
 

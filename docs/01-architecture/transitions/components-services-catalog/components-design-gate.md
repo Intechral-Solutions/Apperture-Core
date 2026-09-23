@@ -7,13 +7,34 @@ Audited HEAD: `f3ec36957897fb85b5da921f2419c249c42191c7` (`master`, clean tree).
 Product rulings D1–D4 were reviewed and **approved** on 2026-09-22 and are recorded as decided in §24. Two
 consistency corrections were applied at the same time (§6 wording; §11/§18 menu parent visibility).
 
+> **Services-gate follow-ups (2026-09-23) — no architectural amendment.** The
+> [Services design gate](./services-design-gate.md) has now run and **confirmed** every settled decision here:
+> the projection-only model, `(Kind, NativeId)` identity, the kind/origin taxonomy, the authorization
+> aggregation rule and the non-1:1 Resource rule all stand unchanged, and **CMP-1 is unblocked**. It settles the
+> two questions D2 and §23 deliberately delegated to it, and corrects one factual assumption:
+>
+> 1. **Connectors tab (D2 timing, now final)** — Components behaviour is **unchanged**: keep the tab, link its
+>    rows to `/components/connector/{nativeId}` in CMP-5. The tab is **retired during Services implementation
+>    (SVC-4)**, never during Components. Components must not be blocked or slowed by that retirement.
+> 2. **Capability advertisement (§23 Q1)** — **none in Components v1.** `ComponentSummary` and
+>    `ComponentDetailDto` are unchanged; no `Capabilities[]`, no provider-availability field, no list-path
+>    lookup. The later mechanism, if ever wanted, is a detail-time-only static lookup (Services gate §14).
+> 3. **Factual correction to §12** — the deep link *"Create a connection with this connector →
+>    `/connections/new?connectorDefinitionId=…`"* names a query parameter that **does not exist**:
+>    `ConnectionNew.razor` supports only `?context=`, and the connector is chosen from a `<select>` bound to
+>    `_connectorDefinitionId` with no `[SupplyParameterFromQuery]`. **CMP-3 may add the small supported
+>    preselection behaviour if still desired** (roughly five lines), or link to `/connections/new` without it.
+>    This is a CMP-3 implementation detail, not a design change.
+
 Starts from the approved rulings in [`README.md`](./README.md) (the Components/Resource-Catalog/Services
 boundary note) and the near-term execution order in
 [`pre-release-product-roadmap.md`](../../../00-overview/pre-release-product-roadmap.md) §4. Everything below is
 grounded in the code as it stands at that commit; where a prior planning note and the code disagree, the code
 wins and the disagreement is called out rather than quietly smoothed over.
 
-The **Services design gate runs next**, before any implementation of either. §23 is this gate's handoff.
+The **Services design gate has now run and is approved (2026-09-23)** — see
+[`services-design-gate.md`](./services-design-gate.md). §23 was this gate's handoff and is answered there in full.
+**Components implementation (CMP-1…CMP-6) is unblocked and is the next implementation body.**
 
 ---
 
@@ -1344,9 +1365,11 @@ Extend `Nav1OperatorInformationArchitectureTests` (`Apperture.Management.Ui.Shar
 
 ## 22. Implementation decomposition
 
-Sonnet-sized plans, each independently testable and commit-able. **None of this is authorized to start until the
-Services design gate completes** — that is the approved sequencing, and Services may change CMP-3's detail
-surface.
+Sonnet-sized plans, each independently testable and commit-able. **The Services design gate has now completed
+(2026-09-23) and this sequencing condition is satisfied** — it confirmed every settled decision here and required
+no architectural amendment, so **CMP-1…CMP-6 are unblocked**. CMP-3's detail surface is unchanged; the Services
+gate added only the two follow-ups recorded at the top of this document (Connectors-tab retirement moves to
+Services; the `?connectorDefinitionId=` deep link does not yet exist and CMP-3 may add it).
 
 | Plan | Scope | Est. |
 |---|---|---|
@@ -1365,8 +1388,9 @@ implementation**, but it **must be complete before CMP-3 is considered fully pol
 Component detail delegates operators to that specialized page for exactly the two settings CMP-X exposes.
 CMP-X carries no dependency on CMP-1–CMP-2 and can be planned independently.
 
-**Gate sequencing (unchanged and binding)**: Services design gate → *then* implementation bodies. None of
-CMP-1–CMP-6 is authorized to start before the Services gate completes.
+**Gate sequencing — satisfied (2026-09-23)**: Components design gate → Services design gate → *then*
+implementation bodies. Both gates are complete and approved, so CMP-1–CMP-6 may now be planned and started.
+CMP-X remains separate and is **not** complete.
 
 ---
 
@@ -1527,22 +1551,27 @@ detail** (§16, §22).
 
 ## 26. Readiness
 
-**The Components design is approved and ready for the Services design gate. No product decisions remain
-open** — D1–D4 are recorded as decided in §24.
+**The Components design is approved. The Services design gate has now completed and confirmed it. No product
+decisions remain open** — D1–D4 are recorded as decided in §24. **CMP-1…CMP-6 are unblocked and are the next
+implementation body.**
 
 What is settled and will not need to be reopened by Services: the projection-vs-persistence decision, the
 identity scheme, the kind/origin taxonomy, the authorization model, the navigation placement and its visibility
 rule, the non-1:1 Resource rule, and the performance constraints. Each is grounded in code at `f3ec369` rather
 than in prior planning prose.
 
-What Services may legitimately change: the **content of Component detail** (if a Component should advertise a
-Service-backed capability), and the **fate of the `/connections` Connectors tab**, which D2 explicitly delegates
-to it. Neither touches the catalog's shape, its API, its identity or its authorization — which is the property
-that makes running the Services gate next safe.
+What Services could legitimately have changed — and what it actually decided (2026-09-23): the **content of
+Component detail** (outcome: **no change**; no capability advertisement in Components v1, so `ComponentSummary`
+and `ComponentDetailDto` are untouched), and the **fate of the `/connections` Connectors tab**, which D2
+delegated to it (outcome: **keep it during Components exactly as CMP-5 plans; retire it during Services, in
+SVC-4**). Neither touched the catalog's shape, its API, its identity or its authorization — which is the property
+that made running the Services gate next safe, and which held.
 
-**§23 is the authoritative handoff** to the Services design gate. Services must consume it in full, plus §19's
-prohibitions, before answering its own questions.
+**§23 was the authoritative handoff** to the Services design gate, which consumed it in full along with §19's
+prohibitions. All eight questions are answered in [`services-design-gate.md`](./services-design-gate.md), and
+§19's prohibitions were re-confirmed rather than relaxed.
 
 **Nothing here is implemented.** No branch, no code, no nav change, no schema, no new permission. Roadmap item 4
-(Components design gate) is **complete**; item 5 (Services design gate) is **next**; items 6 and 7 (Components
-and Services implementation) are **not started**. CMP-1 through CMP-6 and CMP-X are planned, not begun.
+(Components design gate) is **complete**; item 5 (Services design gate) is **complete**; item 6 (Components
+implementation) is **next**; item 7 (Services implementation) is **not started**. CMP-1 through CMP-6 and CMP-X
+are planned, not begun.
