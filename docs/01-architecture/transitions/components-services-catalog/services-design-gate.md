@@ -4,6 +4,11 @@ Date: 2026-09-23
 Status: **Design gate complete and approved (2026-09-23). Not implemented. No branch, no code.**
 Audited HEAD: `2fa08573ccf01222257526a482394b1170a9e37f` (`master`, clean tree).
 
+> **Update (2026-09-23): Components implementation is complete** ([closure](../../../audits/components-catalog-closure.md)).
+> Nothing in this gate was amended: the Connectors tab was kept and its rows link to `/components/connector/{id}`
+> (SVC-4 still owns its retirement), `/connections/new?connectorDefinitionId=` now exists (A2), and the Component
+> catalog shipped unchanged by Services. **Services implementation (SVC-1…SVC-8) is unblocked and has not started.**
+
 Product rulings **D-S1 through D-S4** were reviewed and **approved** on 2026-09-23 and are recorded as decided in
 §32. Four consistency corrections (C1–C4) were applied at the same time: the provider seam was reduced to one
 coherent minimal design (§12), the SQL safety contract was tightened to forbid dynamic identifier SQL (§20.1), the

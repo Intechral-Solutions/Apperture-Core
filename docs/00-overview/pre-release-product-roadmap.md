@@ -100,7 +100,7 @@ reset, cutting across several of them.
    domain**. Product rulings D1–D4 are recorded as decided. Full gate, test matrix, implementation
    decomposition (CMP-1…CMP-6, plus the separate CMP-X) and the Services handoff:
    [`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md).
-   **Not implemented** — no code, no nav change, no schema.
+   **Implemented** — see item 6.
 5. **Services design gate** — **complete and approved (2026-09-23).** A **Service is the evolved operator
    workspace for one Connection — not an object**: no Service table, no Service GUID, no independent lifecycle,
    no `Service.ResourceContextId`. Identity is `ConnectionId`; cardinality is 1:1 by construction; effective
@@ -120,12 +120,18 @@ reset, cutting across several of them.
    Components**. Full gate, test matrix and decomposition (SVC-1…SVC-8):
    [`services-design-gate.md`](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
    **Not implemented** — no code, no schema, no permission, no nav change.
-6. **Components implementation** — **next.** Unblocked by item 5. CMP-1…CMP-6 proceed as designed; the only
-   Services-side follow-ups are a factual CMP-3 deep-link correction (`/connections/new?connectorDefinitionId=…`
-   does not currently exist) and the ruling that the `/connections` Connectors tab is retired during **Services**
-   implementation, not Components. CMP-X (built-in Notification Definition platform defaults) is separate and **complete (2026-09-23)**;
-   it is not part of Components implementation, which has not begun.
-7. **Services implementation** — **not started.** Gated on item 6.
+6. **Components implementation** — **complete (2026-09-23).** CMP-1…CMP-6 delivered as designed, with CMP-X
+   (built-in Notification Definition platform defaults) complete alongside. Components is a read-time projection
+   with **no** table, registry, `ComponentId` or new permission. Shipped: the authorized catalog API
+   (`GET /api/components`, `GET /api/components/{kind}/{nativeId}`, read-only), the `/components` catalog page and
+   the `Config → System → Components → { Catalog, Modules }` menu (no rail domain; the structural parent is
+   ungated so it can never hide an authorized child), a delegating detail wrapper, detail-only current usage
+   (Active Connections per connector; current subscriptions per definition), "Components provided by this
+   module" on Module detail, and Connector-tab rows linked to Component detail. The `/connections` Connectors tab
+   is **retained**; its retirement belongs to **Services** (SVC-4). Decision record:
+   [`ADR-0043`](../02-decisions/ADR-0043-component-catalog-read-model.md); closure and evidence:
+   [`components-catalog-closure.md`](../audits/components-catalog-closure.md).
+7. **Services implementation** — **not started.** Unblocked by item 6; SVC-1 has not begun.
 8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
    doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained

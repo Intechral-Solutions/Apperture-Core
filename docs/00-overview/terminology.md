@@ -25,6 +25,10 @@ See [.ai/memory/glossary.md](../../.ai/memory/glossary.md) for the canonical glo
 - **Runtime Resource** — A dependency or component in the runtime topology.
 - **Binding** — Association between runtime/module parameter needs and configured resources.
 
+## Component catalog
+
+- **Component (catalog)** — A curated, operator-visible platform capability supplied by the platform (origin `system`) or by a Module (origin `module`): today Connector definitions and platform/module-supplied Notification Definitions. A read-time projection over the specialized family services, identified by `(Kind, NativeId)`; not a persisted entity, not a Service, and not a Resource. Distinct from **Runtime Resource**, which is a dependency in the runtime topology.
+
 ## Work lifecycle
 
 - **Work Item** — A unit of pending executable work.

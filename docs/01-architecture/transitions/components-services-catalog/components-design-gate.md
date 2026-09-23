@@ -1,7 +1,7 @@
 # Components — design gate
 
 Date: 2026-09-22
-Status: **Design gate complete and approved (2026-09-22). Not implemented. No branch, no code.**
+Status: **Design gate complete and approved (2026-09-22). Implemented (CMP-X 2026-09-23; CMP-1…CMP-6 delivered on the `components-catalog` branch — see §22b).**
 Audited HEAD: `f3ec36957897fb85b5da921f2419c249c42191c7` (`master`, clean tree).
 
 Product rulings D1–D4 were reviewed and **approved** on 2026-09-22 and are recorded as decided in §24. Two
@@ -34,7 +34,7 @@ wins and the disagreement is called out rather than quietly smoothed over.
 
 The **Services design gate has now run and is approved (2026-09-23)** — see
 [`services-design-gate.md`](./services-design-gate.md). §23 was this gate's handoff and is answered there in full.
-**Components implementation (CMP-1…CMP-6) is unblocked and is the next implementation body.**
+**Components implementation (CMP-1…CMP-6) was unblocked by that gate and has since been delivered (§22b).**
 
 ---
 
@@ -1408,8 +1408,37 @@ built-ins and refused only `RuleJson`/`TemplateJson`.
 - Verified by backend regression tests, UI source-text tests, and an operator smoke of Platform, Module and
   user-created definitions.
 
-This does not start Components implementation: CMP-1 through CMP-6 remain not begun. CMP-3's Component detail
-can now delegate to a page that can actually change the two settings it names.
+This did not start Components implementation. CMP-3's Component detail can delegate to a page that can actually
+change the two settings it names.
+
+### 22b. Implementation record (CMP-1…CMP-6)
+
+Delivered as six coherent commits on one branch, `components-catalog`, reviewed independently per plan. Nothing in
+§§1–24 was reopened; the projection-only model, `(Kind, NativeId)` identity, Origin-based eligibility, reused
+family authorization, the parent-visibility rule and the non-1:1 Resource rule all stand exactly as designed.
+Decisions the gate deliberately left to implementation, now made:
+
+- **Retired Connections (U3)** — connector usage counts **Active** Connections only. A retired Connection is
+  decommissioned configuration, excluded from binding eligibility, and the ownership summary already counts only
+  Active Connections as live; counting it would make an idle connector look in use.
+- **Subscription usage** — every subscription row the authoritative page lists (disabled and muted included), so
+  the two surfaces never disagree.
+- **All-families-denied is decided by the families consulted** — a `kind` filter naming a denied family answers 403
+  because every consulted provider denied.
+- **Take** — a non-positive `take` means the default (200), matching Inventory; the maximum is 200.
+- **Usage shape** — up to 25 named Connections plus a complete count; a truncated list offers the plain
+  Connections list (which cannot filter by connector).
+- **Dotted native-id routes (§8 / R5, verified)** — the Ui.Server default fallback `{*path:nonfile}` refuses a last
+  segment that looks like a file, so a hard load of `/components/connector/Apperture.Platform.Sql` (and the
+  pre-existing `/modules/Sample.HelloWorld` and built-in definition pages) returned 404 while in-app navigation
+  worked. Confirmed with a probe host; fixed with explicit catch-all fallbacks for the `/components`, `/modules` and
+  `/config/notifications/definitions` families. The query-string fallback route was not needed.
+- **`?connectorDefinitionId=`** — added to `/connections/new` as a tiny supported preselection (unknown ids fall
+  back to the normal form; composes with `?context=`), per the Services gate's A2 correction.
+- **Connectors tab** — retained; rows link to Component detail. Retirement stays with the Connection-workspace work.
+
+Full account, test evidence and residuals: [`components-catalog-closure.md`](../../../audits/components-catalog-closure.md);
+decision record: [ADR-0043](../../../02-decisions/ADR-0043-component-catalog-read-model.md).
 
 ---
 
@@ -1590,7 +1619,7 @@ that made running the Services gate next safe, and which held.
 prohibitions. All eight questions are answered in [`services-design-gate.md`](./services-design-gate.md), and
 §19's prohibitions were re-confirmed rather than relaxed.
 
-**Nothing here is implemented, except CMP-X (§22a).** No Components code, no nav change, no schema, no new
-permission. Roadmap item 4 (Components design gate) is **complete**; item 5 (Services design gate) is
-**complete**; item 6 (Components implementation) is **next**; item 7 (Services implementation) is **not
-started**. CMP-1 through CMP-6 are planned, not begun.
+**Implemented (CMP-X §22a; CMP-1…CMP-6 §22b).** Components shipped as a read-time projection: no schema, no new
+permission, no rail domain. Roadmap item 4 (Components design gate) is **complete**; item 5 (Services design
+gate) is **complete**; item 6 (Components implementation) is **complete**; item 7 (Services implementation) is
+**not started**.
