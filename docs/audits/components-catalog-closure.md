@@ -120,4 +120,53 @@ ready for it. SVC-1 is unblocked and **not started**.
 
 ## Validation
 
-Recorded in the final section below at the whole-branch validation run.
+Run 2026-09-23 at code commit `7a939f1` (later commits on the branch are documentation only), from an isolated,
+repo-local, git-ignored artifacts path because the running Aspire stack locks the normal outputs. Suites ran
+sequentially, one MSBuild node, no build servers.
+
+| Check | Result |
+|---|---|
+| `dotnet build Apperture.slnx` | 0 errors, 46 warnings (none in any file added or edited by this body) |
+| `Apperture.UnitTests` | **2597 passed**, 0 failed, 0 skipped |
+| `Apperture.ArchTests` | **38 passed**, 0 failed, 0 skipped |
+| `Apperture.Management.Ui.Shared.Tests` | **1290 passed**, 0 failed, 0 skipped |
+| `Apperture.Management.Ui.Client.Tests` | **135 passed**, 0 failed, 0 skipped |
+| `Apperture.IntegrationTests` | **241 passed**, 0 failed, 0 skipped (4 m 02 s) |
+
+**Proof that SQL actually executed** (the SQL tests can soft-skip as a pass, so "Skipped: 0" is not the proof):
+the test databases' `sys.dm_db_index_usage_stats.last_user_update` markers advanced across the run —
+`Apperture_ManagementGovernanceTests` 22:07:32 → 22:19:38 and `Apperture_IntegrationTests` 22:06:09 → 22:23:06 (UTC,
+server clock), and the run took four minutes. The new Component tests are hard-failing (they throw when SQL is not
+configured) and assert seeded migration rows, so they cannot pass without a real database.
+
+Environment notes: the dedicated `apperture-test-sql` and `apperture-test-sftp` containers were stopped at the start
+of the session and were started for this run; one governance test
+(`Post_sftp_test_connect_persists_…`) failed on the first pass only because the SFTP container was down, and passed
+with it up.
+
+**Not performed: browser smoke.** The running stack serves builds from before this branch, and restarting it was not
+authorized. The operator checklist below covers what automation cannot.
+
+### Operator smoke checklist (restart the stack from this branch first)
+
+1. **Menu** — Config → System shows *Components* with *Catalog* and *Modules*; *Modules* still opens `/modules`.
+2. **Catalog** — `/components` lists Platform SQL, SFTP, Campus Nexus and the built-in notification definitions;
+   an operator-created notification definition is absent. Search (no request per keystroke), Kind, Origin and
+   Module filters, and their combinations; light/dark theme and a narrow window.
+3. **Hard loads (the fix under §22b)** — refresh and open in a new tab: `/components/connector/Apperture.Platform.Sql`,
+   `/modules/Sample.HelloWorld` and `/config/notifications/definitions/platform.schedule.expected_run_missing` all
+   boot the app instead of returning 404.
+4. **Detail** — a Connector and a Notification Definition component; technical ids readable but not dominant; the
+   notification link opens the authoritative page and no editing control appears on the component page.
+5. **Create connection** — from a Connector component; the connector is preselected; also open
+   `/connections/new?connectorDefinitionId=Apperture.Platform.Sql&context=shared` (both compose) and an unknown
+   connector id (falls back to the normal form).
+6. **Usage** — a connector with connections (Active only listed, links open `/connections/{id}`) and one with none
+   ("No active connections use this connector yet."); a definition's current subscription count.
+7. **Module** — Module detail shows *Components provided by this module* above *Integrations using this module*;
+   links work; the Integrations section is unchanged; a module that provides none shows the empty state.
+8. **Connectors tab** — still present on `/connections`; row names open Component detail.
+9. **Authorization (automated-only unless a second principal is easy)** — an operator without one family sees no
+   rows or filter option for it; a modules-only operator still reaches Modules through the Components parent.
+   These are pinned by unit tests (family omission, 403/404 semantics, menu matrix N1–N6) and were not exercised in
+   a browser.
