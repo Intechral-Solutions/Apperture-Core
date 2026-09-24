@@ -87,7 +87,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
             ResourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            Mock.Of<IAuditService>());
 
         Bindings = new BindingService(
             new FixedPrincipalContext(),

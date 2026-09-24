@@ -865,7 +865,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 new ConnectionSecretMaterialProvisioner(new NullSecretStore()),
                 resourceContexts,
                 db,
-                gate);
+                gate,
+                new NullAuditService());
 
             var bindings = new BindingService(
                 principal,

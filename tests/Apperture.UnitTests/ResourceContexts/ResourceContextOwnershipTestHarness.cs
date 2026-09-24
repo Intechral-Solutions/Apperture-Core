@@ -100,7 +100,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(SecretStore.Object),
             ResourceContexts,
             Db,
-            ownershipGate);
+            ownershipGate,
+            Mock.Of<IAuditService>());
 
         Eligibility = new BindingEligibilityService(ConnectionRepository, ConnectorRegistry);
         Bindings = new BindingService(

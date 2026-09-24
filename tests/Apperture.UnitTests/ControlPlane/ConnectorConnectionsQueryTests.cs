@@ -91,7 +91,7 @@ public sealed class ConnectorConnectionsQueryTests
         auth.Setup(a => a.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>())).ReturnsAsync(allowed);
         var repository = new Mock<IConnectionRepository>(MockBehavior.Strict);
         var sut = new ConnectionManagementService(
-            principal.Object, auth.Object, repository.Object, null!, null!, null!, null!, null!, null!);
+            principal.Object, auth.Object, repository.Object, null!, null!, null!, null!, null!, null!, null!);
         return (sut, repository, auth);
     }
 

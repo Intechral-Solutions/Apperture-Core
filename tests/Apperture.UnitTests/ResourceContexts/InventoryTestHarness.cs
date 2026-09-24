@@ -112,7 +112,8 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
             ResourceContexts,
             Db,
-            ownershipGate);
+            ownershipGate,
+            Mock.Of<IAuditService>());
 
         var schedules = new SqlScheduleManagementService(
             scheduleRepository,

@@ -2,6 +2,7 @@ using System.Linq;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
@@ -25,6 +26,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
+    private readonly IAuditService _audit;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
@@ -35,7 +37,8 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         ConnectionSecretMaterialProvisioner secretProvisioner,
         IResourceContextService resourceContexts,
         AppertureDbContext db,
-        IResourceOwnershipMutationGate ownershipGate)
+        IResourceOwnershipMutationGate ownershipGate,
+        IAuditService audit)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -46,6 +49,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
+        _audit = audit;
     }
 
     /// <inheritdoc />
@@ -216,6 +220,13 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
             await _connectionRepository.AddAsync(connection, cancellationToken).ConfigureAwait(false);
 
+            // Inside the transaction: the Connection and its creation record commit (or roll back) together.
+            await AppendAuditAsync(
+                actor, ConnectionAuditActionNames.Created, "succeeded", connection,
+                new ConnectionAuditDetails(
+                    ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ConnectorDefinitionId.Value),
+                cancellationToken).ConfigureAwait(false);
+
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
             return connection;
@@ -257,25 +268,77 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         foreach (var kv in workingSecretRefs)
             ValidateIncomingSecretRef(def, kv.Key, kv.Value);
 
+        var rotatedSecretFields = new SortedSet<string>(StringComparer.Ordinal);
+        IReadOnlyDictionary<string, string>? secretValuesToApply = null;
         if (request.SecretValues is { Count: > 0 })
         {
-            var normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
-            await _secretProvisioner
-                .ApplySecretValuesForUpdateAsync(existing.Id, def, normalizedSecretValues, workingSecretRefs, cancellationToken)
-                .ConfigureAwait(false);
+            secretValuesToApply = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
+            // Mirrors the provisioner, which skips blank values: only fields that actually receive material count.
+            foreach (var kv in secretValuesToApply.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)))
+                rotatedSecretFields.Add(kv.Key);
         }
 
-        ApplyCampusNexusAuthModeDefault(def, nextConfigDict);
-        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfigDict, workingSecretRefs);
+        // Secret material is written to the store BEFORE the row is validated and saved, and the store cannot join
+        // the row's transaction. So once material may have been written, a later failure must still leave a record
+        // that the rotation was attempted (outcome "failed"), rather than a silent change to a credential.
+        var secretMaterialMayHaveChanged = rotatedSecretFields.Count > 0;
 
-        var updated = existing with
+        Connection updated;
+        try
         {
-            Name = request.Name ?? existing.Name,
-            Config = nextConfigDict,
-            SecretRefs = workingSecretRefs
-        };
+            if (secretValuesToApply is not null)
+            {
+                await _secretProvisioner
+                    .ApplySecretValuesForUpdateAsync(existing.Id, def, secretValuesToApply, workingSecretRefs, cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-        await _connectionRepository.UpdateAsync(updated, cancellationToken);
+            ApplyCampusNexusAuthModeDefault(def, nextConfigDict);
+            ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfigDict, workingSecretRefs);
+
+            updated = existing with
+            {
+                Name = request.Name ?? existing.Name,
+                Config = nextConfigDict,
+                SecretRefs = workingSecretRefs
+            };
+
+            // A field also counts as rotated when its secret reference was added, removed or now points somewhere new
+            // (key names only).
+            foreach (var key in existing.SecretRefs.Keys.Union(workingSecretRefs.Keys, StringComparer.Ordinal))
+            {
+                existing.SecretRefs.TryGetValue(key, out var previousRef);
+                workingSecretRefs.TryGetValue(key, out var nextRef);
+                if (!string.Equals(previousRef, nextRef, StringComparison.Ordinal))
+                    rotatedSecretFields.Add(key);
+            }
+
+            await _connectionRepository.UpdateAsync(updated, cancellationToken);
+        }
+        catch when (secretMaterialMayHaveChanged)
+        {
+            await TryAppendAuditAsync(
+                actor, ConnectionAuditActionNames.SecretRotated, "failed", existing,
+                new ConnectionAuditDetails(
+                    ResourceMoveResourceTypes.Connection, existing.Id.Value, existing.Name, existing.ConnectorDefinitionId.Value,
+                    SecretFieldsRotated: rotatedSecretFields.ToList())).ConfigureAwait(false);
+            throw;
+        }
+
+        // Exactly one record per update. When any secret field changed it is the secret-rotation record; the
+        // details still say whether the name or other fields changed too. Appended after the update has been
+        // persisted, matching the other management services' post-commit audit.
+        await AppendAuditAsync(
+            actor,
+            rotatedSecretFields.Count > 0 ? ConnectionAuditActionNames.SecretRotated : ConnectionAuditActionNames.Updated,
+            "succeeded",
+            updated,
+            new ConnectionAuditDetails(
+                ResourceMoveResourceTypes.Connection, updated.Id.Value, updated.Name, updated.ConnectorDefinitionId.Value,
+                NameChanged: !string.Equals(existing.Name, updated.Name, StringComparison.Ordinal),
+                ConfigFieldsChanged: ChangedKeys(existing.Config, updated.Config),
+                SecretFieldsRotated: rotatedSecretFields.ToList()),
+            cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -302,6 +365,12 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
         var retired = existing with { State = ConnectionState.Retired };
         await _connectionRepository.UpdateAsync(retired, cancellationToken);
+
+        await AppendAuditAsync(
+            actor, ConnectionAuditActionNames.Retired, "succeeded", retired,
+            new ConnectionAuditDetails(
+                ResourceMoveResourceTypes.Connection, retired.Id.Value, retired.Name, retired.ConnectorDefinitionId.Value),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -326,7 +395,22 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to verify this connection.");
 
-        var verification = await _connectionVerification.VerifyAsync(existing, cancellationToken);
+        ConnectionVerificationResult verification;
+        try
+        {
+            verification = await _connectionVerification.VerifyAsync(existing, cancellationToken);
+        }
+        catch
+        {
+            // The attempt used stored secrets against a remote host even though it produced no result. Record that it
+            // happened; the exception itself (which may echo remote text) is not recorded.
+            await TryAppendAuditAsync(
+                actor, ConnectionAuditActionNames.Verified, "failed", existing,
+                new ConnectionAuditDetails(
+                    ResourceMoveResourceTypes.Connection, existing.Id.Value, existing.Name, existing.ConnectorDefinitionId.Value)).ConfigureAwait(false);
+            throw;
+        }
+
         var updated = existing with
         {
             LastVerificationStatus = verification.Status,
@@ -334,8 +418,67 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             LastVerificationSummary = verification.Summary
         };
         await _connectionRepository.UpdateAsync(updated, cancellationToken);
+
+        // An outbound operation that used stored secrets. Only the status is recorded: the verifier's summary is
+        // remote-derived text and stays on the Connection row, never in the audit trail.
+        await AppendAuditAsync(
+            actor,
+            ConnectionAuditActionNames.Verified,
+            verification.Status == ConnectionVerificationStatus.Success ? "succeeded" : "failed",
+            updated,
+            new ConnectionAuditDetails(
+                ResourceMoveResourceTypes.Connection, updated.Id.Value, updated.Name, updated.ConnectorDefinitionId.Value,
+                VerificationStatus: verification.Status.ToString()),
+            cancellationToken).ConfigureAwait(false);
         return updated;
     }
+
+    /// <summary>
+    /// Appends one Connection lifecycle audit record. <c>Resource</c> is deliberately <c>null</c>: SqlAuditService appends a
+    /// non-null Resource to Details as plain text (corrupting JSON) and never persists it, so Connection identity lives in
+    /// the structured Details instead. The owning ResourceContext comes from the Connection the caller already loaded.
+    /// </summary>
+    private ValueTask AppendAuditAsync(
+        IActor actor,
+        string action,
+        string outcome,
+        Connection connection,
+        ConnectionAuditDetails details,
+        CancellationToken cancellationToken) =>
+        _audit.AppendAsync(new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor.Id,
+            action,
+            Resource: null,
+            Outcome: outcome,
+            DateTimeOffset.UtcNow,
+            new CorrelationId(Guid.NewGuid().ToString("N")),
+            System.Text.Json.JsonSerializer.Serialize(details),
+            ResourceContextId: connection.ResourceContextId.Value), cancellationToken);
+
+    /// <summary>
+    /// Best-effort append for a failure path that is about to rethrow: a broken audit sink must not replace the
+    /// original exception the caller needs to see. Uses no caller token, so a cancelled request still leaves its record.
+    /// </summary>
+    private async ValueTask TryAppendAuditAsync(
+        IActor actor, string action, string outcome, Connection connection, ConnectionAuditDetails details)
+    {
+        try
+        {
+            await AppendAuditAsync(actor, action, outcome, connection, details, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed: see summary.
+        }
+    }
+
+    /// <summary>Keys whose value was added, removed or changed. Values are never returned.</summary>
+    private static List<string> ChangedKeys(IReadOnlyDictionary<string, string> before, IReadOnlyDictionary<string, string> after) =>
+        before.Keys.Union(after.Keys, StringComparer.Ordinal)
+            .Where(k => !before.TryGetValue(k, out var b) || !after.TryGetValue(k, out var a) || !string.Equals(a, b, StringComparison.Ordinal))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Operators often leave <c>AuthMode</c> blank when using an API key; runtime factory defaults to ApiKey semantics when mode is ApiKey.

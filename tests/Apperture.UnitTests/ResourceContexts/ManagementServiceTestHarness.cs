@@ -104,7 +104,8 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             new ConnectionSecretMaterialProvisioner(new Mock<ISecretStore>().Object),
             resourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            Mock.Of<IAuditService>());
 
         // The actor is always authenticated; only the permission grant varies. This exercises the
         // "authenticated but not authorized" branch specifically (rather than short-circuiting on a
