@@ -13,4 +13,8 @@
     <ProjectReference Include="..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Apperture.UnitTests" />
+    <InternalsVisibleTo Include="Apperture.IntegrationTests" />
+  </ItemGroup>
 </Project>

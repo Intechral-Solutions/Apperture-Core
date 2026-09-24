@@ -162,10 +162,34 @@ public sealed class ConnectionWorkspaceUiSourceTests
         onLoad.Should().NotContain("TestConnection").And.NotContain("Browse");
     }
 
+    private const string Browser = "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Organisms/SqlStructureBrowser.razor";
+
+    [Fact]
+    public void The_structure_browser_is_plain_page_content_with_no_overlay_no_native_dialog_and_no_input()
+    {
+        var content = ReadRepoFile(Browser);
+        var code = Visible(content);
+
+        foreach (var forbidden in new[] { "z-index", "position: fixed", "position:fixed", "confirm(", "alert(", "prompt(", "<input", "<textarea", "<select", "<form", "<dialog", "@bind" })
+            code.Should().NotContain(forbidden);
+        code.Should().NotContain("Modal").And.NotContain("Drawer").And.NotContain("Popover");
+    }
+
+    [Fact]
+    public void The_structure_browser_makes_no_request_on_initialisation_and_only_calls_the_three_structure_endpoints()
+    {
+        var content = ReadRepoFile(Browser);
+
+        content.Should().NotContain("OnInitialized").And.NotContain("OnParametersSet").And.NotContain("OnAfterRender",
+            "nothing is requested when the tool renders; every request is an explicit operator action");
+        Regex.Matches(content, @"Client\.(\w+)\(").Select(m => m.Groups[1].Value).Distinct()
+            .Should().BeEquivalentTo("GetSqlSchemasAsync", "GetSqlTablesAsync", "GetSqlColumnsAsync");
+    }
+
     [Fact]
     public void Workspace_copy_carries_no_planning_labels()
     {
-        foreach (var page in new[] { Detail, List })
+        foreach (var page in new[] { Detail, List, Browser })
         {
             var visible = Visible(ReadRepoFile(page));
             visible.Should().NotMatchRegex(@"\bSVC-?\d");

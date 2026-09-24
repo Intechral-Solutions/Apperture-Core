@@ -266,6 +266,8 @@
                 <ManagementSection Title="Tools"
                                    Layer="ManagementSection.UiLayer.Detail"
                                    Help="Read-only tools for inspecting the system this connection points at.">
+                    @* Keyed by the Connection, so a different Connection never inherits this one's loaded structure. *@
+                    <SqlStructureBrowser @key="@_connection.Id" ConnectionId="@_connection.Id" />
                 </ManagementSection>
             }
 

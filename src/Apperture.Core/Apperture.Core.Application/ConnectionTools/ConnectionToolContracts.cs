@@ -107,4 +107,51 @@ public interface IConnectionToolAccess
     /// <c>connection.browse</c>. Performs no I/O beyond the Connection lookup: no client, no secret, no remote call.
     /// </summary>
     ValueTask<ConnectionToolSet?> GetToolsAsync(ConnectionId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists the schemas of the database this Connection points at. Runs one remote structure request, on demand, and appends
+    /// exactly one audit record for it. Returns null when the Connection does not exist. Throws
+    /// <see cref="UnauthorizedAccessException"/> unless the caller holds <c>connection.read</c> and <c>connection.browse</c>, and
+    /// <see cref="ConnectionToolNotAvailableException"/> when the Connection is retired or has no such tool here.
+    /// </summary>
+    ValueTask<SqlStructureResult<SqlSchemaInfo>?> ListSqlSchemasAsync(ConnectionId id, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists the tables and views of one schema. Same rules as <see cref="ListSqlSchemasAsync"/>; a bad name is an <see cref="ArgumentException"/>.</summary>
+    ValueTask<SqlStructureResult<SqlTableInfo>?> ListSqlTablesAsync(ConnectionId id, string schema, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists the columns of one table or view. Same rules as <see cref="ListSqlSchemasAsync"/>; a bad name is an <see cref="ArgumentException"/>.</summary>
+    ValueTask<SqlStructureResult<SqlColumnInfo>?> ListSqlColumnsAsync(ConnectionId id, string schema, string table, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Shared limits for SQL structure requests, so the entry point and the provider validate identically.</summary>
+public static class SqlStructureLimits
+{
+    /// <summary>SQL Server identifiers (<c>sysname</c>) are at most 128 characters; anything longer cannot name a real object.</summary>
+    public const int MaxIdentifierLength = 128;
+
+    /// <summary>The most structure requests that may run at once against one Connection's database.</summary>
+    public const int MaxConcurrentRequestsPerConnection = 2;
+}
+
+/// <summary>The request had a missing or over-long name. The message is fixed and safe to return to the caller.</summary>
+public sealed class ConnectionToolRequestException : ArgumentException
+{
+    private readonly string _message;
+
+    public ConnectionToolRequestException(string message, string paramName) : base(message, paramName) => _message = message;
+
+    /// <summary>Just the fixed sentence, without the framework's "(Parameter 'x')" suffix.</summary>
+    public override string Message => _message;
+}
+
+/// <summary>Too many structure requests are already running against this Connection's database; nothing was sent to it.</summary>
+public sealed class ConnectionToolBusyException : InvalidOperationException
+{
+    public ConnectionToolBusyException() : base("Too many structure requests are running for this connection.") { }
+}
+
+/// <summary>The Connection exists and the caller may browse it, but it has no such tool here (retired, or no provider).</summary>
+public sealed class ConnectionToolNotAvailableException : InvalidOperationException
+{
+    public ConnectionToolNotAvailableException() : base("This connection does not offer that tool.") { }
 }

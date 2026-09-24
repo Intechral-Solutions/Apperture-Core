@@ -62,6 +62,8 @@ builder.Services.AddRuntimeSchedulerDispatch();
 builder.Services.AddAppertureCampusNexusConnector();
 builder.Services.AddAppertureSftpConnector();
 builder.Services.AddPlatformSqlConnector();
+// The SQL structure browser is a management-plane operator tool (authorized, audited); runtime workers do not compose it.
+builder.Services.AddPlatformSqlStructureBrowser();
 builder.Services.AddConnectorResolution();
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();

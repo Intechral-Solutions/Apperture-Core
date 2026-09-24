@@ -430,6 +430,8 @@ public sealed class ConnectionWorkspaceRenderTests
         var page = await RenderAsync(Connection(), Definition(), Browser(), tools: new ConnectionToolsDto(true));
 
         page.Client.Verify(c => c.TestConnectionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-        page.Client.Invocations.Select(i => i.Method.Name).Should().NotContain(n => n.Contains("Browse", StringComparison.OrdinalIgnoreCase) || n.Contains("Structure", StringComparison.OrdinalIgnoreCase));
+        page.Html.Should().Contain("data-sql-structure-browser").And.Contain("Browse structure");
+        page.Client.Invocations.Select(i => i.Method.Name).Should().NotContain(n => n.StartsWith("GetSql", StringComparison.Ordinal),
+            "no schema, table or column request is made until the operator asks for one");
     }
 }

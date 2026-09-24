@@ -1,5 +1,7 @@
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Application.ResourceContexts;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Shared.Kernel;
@@ -7,34 +9,44 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Authorized, local-only access to a Connection's tools. It depends on the Connection repository, authorization and the
-/// providers that connector packages registered; it deliberately depends on no client factory, connection resolver or secret
-/// resolver, so answering "which tools?" cannot create a remote client, resolve a secret or touch the network.
+/// The single authorized entry point to a Connection's tools. Answering "which tools?" is local-only: it depends on the
+/// Connection repository, authorization and the providers connector packages registered, and on no client factory,
+/// connection resolver or secret resolver, so it cannot create a remote client, resolve a secret or touch the network.
+/// Running a tool is the only thing here that reaches a remote system, and only after BOTH grants are held on the Connection
+/// and only for an Active Connection with a provider, on an operator-invoked request. Each such request is audited once,
+/// and the audit record is written BEFORE the result is returned: no audit, no data.
 /// </summary>
 public sealed class ConnectionToolAccess : IConnectionToolAccess
 {
+    private const string SqlStructureTool = "sql-structure";
+
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IConnectionRepository _connectionRepository;
     private readonly IReadOnlyList<IConnectionToolProvider> _providers;
+    private readonly IAuditService _audit;
+    private readonly ConnectionToolRequestLimiter _limiter;
 
     public ConnectionToolAccess(
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
-        IEnumerable<IConnectionToolProvider> providers)
+        IEnumerable<IConnectionToolProvider> providers,
+        IAuditService audit,
+        ConnectionToolRequestLimiter limiter)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _providers = providers.ToList();
+        _audit = audit;
+        _limiter = limiter;
     }
 
     /// <inheritdoc />
     public async ValueTask<ConnectionToolSet?> GetToolsAsync(ConnectionId id, CancellationToken cancellationToken = default)
     {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new UnauthorizedAccessException("No authenticated actor.");
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
 
         var connection = await _connectionRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
         if (connection is null)
@@ -48,6 +60,87 @@ public sealed class ConnectionToolAccess : IConnectionToolAccess
 
         return new ConnectionToolSet(SqlStructureBrowser: ProviderFor<ISqlStructureBrowser>(connection) is not null);
     }
+
+    /// <inheritdoc />
+    public ValueTask<SqlStructureResult<SqlSchemaInfo>?> ListSqlSchemasAsync(ConnectionId id, CancellationToken cancellationToken = default) =>
+        BrowseAsync(id, "schemas", [], (browser, connection) => browser.ListSchemasAsync(connection, cancellationToken), cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<SqlStructureResult<SqlTableInfo>?> ListSqlTablesAsync(ConnectionId id, string schema, CancellationToken cancellationToken = default) =>
+        BrowseAsync(id, "tables", [(schema, nameof(schema))], (browser, connection) => browser.ListTablesAsync(connection, schema, cancellationToken), cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<SqlStructureResult<SqlColumnInfo>?> ListSqlColumnsAsync(ConnectionId id, string schema, string table, CancellationToken cancellationToken = default) =>
+        BrowseAsync(id, "columns", [(schema, nameof(schema)), (table, nameof(table))], (browser, connection) => browser.ListColumnsAsync(connection, schema, table, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Order matters and is the same for every operation: actor, then the Connection is loaded FROM THE STORE by id (a
+    /// client-supplied Connection is never trusted), then both grants, then state and provider, then the remote request, then
+    /// the audit record, and only then the result. A caller without both grants never reaches the provider.
+    /// </summary>
+    private async ValueTask<SqlStructureResult<T>?> BrowseAsync<T>(
+        ConnectionId id,
+        string operation,
+        (string? Value, string Name)[] names,
+        Func<ISqlStructureBrowser, Connection, ValueTask<SqlStructureResult<T>>> run,
+        CancellationToken cancellationToken)
+    {
+        var actor = await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+
+        var connection = await _connectionRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (connection is null)
+            return null;
+
+        await AuthorizeAsync(actor, connection, cancellationToken).ConfigureAwait(false);
+
+        if (connection.State != ConnectionState.Active)
+            throw new ConnectionToolNotAvailableException();
+        var browser = ProviderFor<ISqlStructureBrowser>(connection) ?? throw new ConnectionToolNotAvailableException();
+
+        // Names are validated HERE, after authorization and before anything remote, with fixed messages. A bad request never
+        // reached the remote system, so it is not an audited remote operation.
+        foreach (var (value, name) in names)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                throw new ConnectionToolRequestException("The " + name + " name is required.", name);
+            if (value.Length > SqlStructureLimits.MaxIdentifierLength)
+                throw new ConnectionToolRequestException($"The {name} name is at most {SqlStructureLimits.MaxIdentifierLength} characters.", name);
+        }
+
+        // Bounded concurrency per Connection: refused immediately, before any client exists or any secret is resolved.
+        using var slot = _limiter.TryEnter(connection.Id.Value) ?? throw new ConnectionToolBusyException();
+
+        SqlStructureResult<T> result;
+        try
+        {
+            result = await run(browser, connection).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The remote request was started and abandoned by the caller: still an attempt worth recording.
+            await TryAppendAsync(actor, connection, operation, "cancelled", "Cancelled", resultCount: null, truncated: null).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception)
+        {
+            await TryAppendAsync(actor, connection, operation, "failed", "Failed", resultCount: null, truncated: null).ConfigureAwait(false);
+            throw;
+        }
+
+        // Not best-effort: if the record cannot be written the caller does not get the data (the exception propagates and
+        // the result is dropped). Written with no caller token so a request cancelled at the last moment is still recorded.
+        await AppendAsync(
+            actor, connection, operation,
+            result.Outcome == ConnectionToolOutcome.Succeeded ? "succeeded" : "failed",
+            result.Outcome.ToString(),
+            result.Outcome == ConnectionToolOutcome.Succeeded ? result.Items.Count : null,
+            result.Outcome == ConnectionToolOutcome.Succeeded ? result.Truncated : null).ConfigureAwait(false);
+        return result;
+    }
+
+    private async ValueTask<IActor> RequireActorAsync(CancellationToken cancellationToken) =>
+        await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new UnauthorizedAccessException("No authenticated actor.");
 
     /// <summary>
     /// Both grants, on the Connection itself, or nothing. Evaluated BEFORE any provider lookup, and with one message for
@@ -77,4 +170,35 @@ public sealed class ConnectionToolAccess : IConnectionToolAccess
                         && p.Availability == ConnectionToolAvailability.Available)
             .OfType<T>()
             .FirstOrDefault();
+
+    private ValueTask AppendAsync(
+        IActor actor, Connection connection, string operation, string auditOutcome, string toolOutcome, int? resultCount, bool? truncated) =>
+        _audit.AppendAsync(new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor.Id,
+            ConnectionAuditActionNames.StructureBrowsed,
+            // Resource stays null: SqlAuditService would string-append it into Details (corrupting the JSON) and never
+            // persists it. Connection identity lives in the structured Details.
+            Resource: null,
+            Outcome: auditOutcome,
+            DateTimeOffset.UtcNow,
+            new CorrelationId(Guid.NewGuid().ToString("N")),
+            System.Text.Json.JsonSerializer.Serialize(new ConnectionToolAuditDetails(
+                ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ConnectorDefinitionId.Value,
+                SqlStructureTool, operation, toolOutcome, resultCount, truncated)),
+            ResourceContextId: connection.ResourceContextId.Value), CancellationToken.None);
+
+    /// <summary>Failure paths only: the request is already failing, and a broken audit sink must not replace the real error.</summary>
+    private async ValueTask TryAppendAsync(
+        IActor actor, Connection connection, string operation, string auditOutcome, string toolOutcome, int? resultCount, bool? truncated)
+    {
+        try
+        {
+            await AppendAsync(actor, connection, operation, auditOutcome, toolOutcome, resultCount, truncated).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed: see summary.
+        }
+    }
 }

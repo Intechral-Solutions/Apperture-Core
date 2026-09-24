@@ -1,4 +1,5 @@
 using System.Data;
+using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,6 +45,22 @@ public static class ConnectorResolutionServiceCollectionExtensions
         services.AddSingleton<IConnectorClientFactory<IDbConnection>, PlatformSqlConnectorClientFactory>();
         services.AddSingleton<IConnectorClientFactoryContributor, PlatformSqlConnectorClientFactoryContributor>();
         services.AddScoped<IConnectionVerifier, PlatformSqlConnectionVerifier>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the SQL structure browser, the one real connection tool provider. It is a management-plane operator tool, so
+    /// only the Management Host composes it; runtime workers do not. Scoped, because it uses the scoped secret resolver; its
+    /// constructor does no work, and it creates a remote client only inside an operator-invoked request. Idempotent.
+    /// </summary>
+    public static IServiceCollection AddPlatformSqlStructureBrowser(this IServiceCollection services)
+    {
+        if (services.Any(d => d.ServiceType == typeof(IConnectionToolProvider) && d.ImplementationType == typeof(PlatformSqlStructureBrowser)))
+            return services;
+
+        services.AddPlatformSqlConnector();
+        services.AddSingleton<SqlStructureBrowserOptions>();
+        services.AddScoped<IConnectionToolProvider, PlatformSqlStructureBrowser>();
         return services;
     }
 

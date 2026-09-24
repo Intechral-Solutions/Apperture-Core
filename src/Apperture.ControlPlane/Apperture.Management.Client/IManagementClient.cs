@@ -223,6 +223,15 @@ public interface IManagementClient
     /// <summary>The tools this Connection offers the caller (requires connection.read and connection.browse; otherwise the call is refused).</summary>
     Task<ConnectionToolsDto?> GetConnectionToolsAsync(string id, CancellationToken cancellationToken = default);
 
+    /// <summary>Structure browser: schemas. One remote request; requires connection.read and connection.browse.</summary>
+    Task<SqlStructureResponseDto<SqlSchemaDto>> GetSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Structure browser: tables and views of a schema.</summary>
+    Task<SqlStructureResponseDto<SqlTableDto>> GetSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default);
+
+    /// <summary>Structure browser: columns of a table or view.</summary>
+    Task<SqlStructureResponseDto<SqlColumnDto>> GetSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
     /// </summary>
@@ -1328,6 +1337,15 @@ public sealed record ConnectorDefinitionCatalogDto(
 
 /// <summary>Typed tool flags for one Connection. One member per real tool; deliberately not a generic capability list.</summary>
 public sealed record ConnectionToolsDto(bool SqlStructureBrowser);
+
+/// <summary>One structure request's result. Outcome is one of Succeeded, RemoteDenied, RemoteUnavailable, SecretsUnavailable, Failed; Message is a fixed safe sentence.</summary>
+public sealed record SqlStructureResponseDto<T>(string Outcome, IReadOnlyList<T> Items, bool Truncated, int Limit, string? Message);
+
+public sealed record SqlSchemaDto(string Name);
+
+public sealed record SqlTableDto(string Schema, string Name, bool IsView);
+
+public sealed record SqlColumnDto(string Name, string DataType, bool IsNullable, int Ordinal, int? MaxLength);
 
 /// <summary>Connection resource with Used In projection. Epic 48.</summary>
 public sealed record ConnectionDto(

@@ -26,6 +26,7 @@ public static class ConnectorWorkflowServiceCollectionExtensions
         services.AddScoped<ConnectionSecretMaterialProvisioner>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
         // Local-only tool lookup over the providers connector packages register; it holds no client factory or secret resolver.
+        services.AddSingleton<ConnectionToolRequestLimiter>();
         services.AddScoped<IConnectionToolAccess, ConnectionToolAccess>();
         services.AddScoped<IConnectionVerificationService, ConnectionVerificationService>();
         services.AddAdvisoryConnectionVerificationReadinessPolicy();

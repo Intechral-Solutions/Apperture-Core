@@ -13,6 +13,9 @@ public static class ConnectionAuditActionNames
     public const string SecretRotated = "connection.secret_rotated";
     public const string Retired = "connection.retired";
     public const string Verified = "connection.verified";
+
+    /// <summary>One remote structure request against the external system a Connection points at (one record per request).</summary>
+    public const string StructureBrowsed = "connection.structure_browsed";
 }
 
 /// <summary>
@@ -33,3 +36,19 @@ public sealed record ConnectionAuditDetails(
     [property: JsonPropertyName("configFieldsChanged"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ConfigFieldsChanged = null,
     [property: JsonPropertyName("secretFieldsRotated"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? SecretFieldsRotated = null,
     [property: JsonPropertyName("verificationStatus"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VerificationStatus = null);
+
+/// <summary>
+/// Structured JSON <c>Details</c> for one remote tool operation. It records that an operator ran a metadata operation
+/// against a Connection and how it ended, with counts. It never carries the names, types or any other CONTENT the remote
+/// system returned, the schema or table the operator selected, a secret, a connection string or remote error text.
+/// </summary>
+public sealed record ConnectionToolAuditDetails(
+    [property: JsonPropertyName("resourceType")] string ResourceType,
+    [property: JsonPropertyName("resourceId")] string ResourceId,
+    [property: JsonPropertyName("displayName")] string? DisplayName,
+    [property: JsonPropertyName("connectorDefinitionId")] string ConnectorDefinitionId,
+    [property: JsonPropertyName("tool")] string Tool,
+    [property: JsonPropertyName("operation")] string Operation,
+    [property: JsonPropertyName("toolOutcome")] string ToolOutcome,
+    [property: JsonPropertyName("resultCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ResultCount = null,
+    [property: JsonPropertyName("truncated"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Truncated = null);

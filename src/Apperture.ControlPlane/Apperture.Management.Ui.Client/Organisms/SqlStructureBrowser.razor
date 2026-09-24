@@ -1,0 +1,295 @@
+@implements IDisposable
+@using Apperture.Management.Client
+@inject IManagementClient Client
+
+@* The SQL structure browser: schemas, then tables and views, then columns, for the database one Connection points at.
+   STRUCTURE ONLY. There is no row or content view, no query box and nothing that changes anything. Nothing is requested when
+   this renders: every remote request is an explicit operator action, and each node is fetched once and then reused, so
+   expanding and collapsing the tree does not send further requests (each request is audited on the server). *@
+
+<div class="space-y-3" data-sql-structure-browser>
+    <p class="text-sm text-body">
+        Browse the structure of the database this connection points at: its schemas, tables, views and columns.
+        <strong>Structure only</strong> &mdash; no rows or data are read, and nothing can be changed from here.
+    </p>
+
+    @if (_schemas is null)
+    {
+        <button type="button" class="ui-toolbar-btn" disabled="@_schemasLoading" @onclick="BrowseAsync">
+            @(_schemasLoading ? "Loading…" : "Browse structure")
+        </button>
+    }
+    else if (_schemas.Outcome != Succeeded)
+    {
+        <PageMessage Kind="PageMessageKind.Warning">@_schemas.Message</PageMessage>
+        <button type="button" class="ui-toolbar-btn" disabled="@_schemasLoading" @onclick="RetrySchemasAsync">Try again</button>
+    }
+    else if (_schemas.Items.Count == 0)
+    {
+        <p class="text-sm text-muted">No schemas are visible to this connection's login.</p>
+    }
+    else
+    {
+        <ul class="space-y-1" role="tree" aria-label="Database structure">
+            @foreach (var schema in _schemas.Items)
+            {
+                var schemaName = schema.Name;
+                var open = _openSchemas.Contains(schemaName);
+                <li @key="schemaName" role="treeitem" aria-expanded="@(open ? "true" : "false")">
+                    <button type="button" class="ui-link text-sm" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleSchemaAsync(schemaName)">
+                        <span aria-hidden="true">@(open ? "▾" : "▸")</span> @schemaName
+                    </button>
+                    @if (open)
+                    {
+                        <div class="ml-4 mt-1">
+                            @if (!_tables.TryGetValue(schemaName, out var tables) || tables.Loading)
+                            {
+                                <p class="text-xs text-muted">Loading…</p>
+                            }
+                            else if (tables.Response is null || tables.Response.Outcome != Succeeded)
+                            {
+                                <PageMessage Kind="PageMessageKind.Warning">@(tables.Response?.Message ?? GenericFailure)</PageMessage>
+                                <button type="button" class="ui-toolbar-btn" @onclick="() => RetryTablesAsync(schemaName)">Try again</button>
+                            }
+                            else if (tables.Response.Items.Count == 0)
+                            {
+                                <p class="text-xs text-muted">No tables or views in this schema.</p>
+                            }
+                            else
+                            {
+                                <ul class="space-y-1" role="group">
+                                    @foreach (var table in tables.Response.Items)
+                                    {
+                                        var tableKey = (table.Schema, table.Name);
+                                        var tableOpen = _openTables.Contains(tableKey);
+                                        <li @key="tableKey" role="treeitem" aria-expanded="@(tableOpen ? "true" : "false")">
+                                            <button type="button" class="ui-link text-sm" aria-expanded="@(tableOpen ? "true" : "false")"
+                                                    @onclick="() => ToggleTableAsync(table.Schema, table.Name)">
+                                                <span aria-hidden="true">@(tableOpen ? "▾" : "▸")</span> @table.Name
+                                            </button>
+                                            <span class="text-xs text-muted">@(table.IsView ? "View" : "Table")</span>
+                                            @if (tableOpen)
+                                            {
+                                                <div class="ml-4 mt-1">
+                                                    @if (!_columns.TryGetValue(tableKey, out var columns) || columns.Loading)
+                                                    {
+                                                        <p class="text-xs text-muted">Loading…</p>
+                                                    }
+                                                    else if (columns.Response is null || columns.Response.Outcome != Succeeded)
+                                                    {
+                                                        <PageMessage Kind="PageMessageKind.Warning">@(columns.Response?.Message ?? GenericFailure)</PageMessage>
+                                                        <button type="button" class="ui-toolbar-btn" @onclick="() => RetryColumnsAsync(table.Schema, table.Name)">Try again</button>
+                                                    }
+                                                    else if (columns.Response.Items.Count == 0)
+                                                    {
+                                                        <p class="text-xs text-muted">No columns are visible for this object.</p>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="ui-data-table overflow-x-auto">
+                                                            <table class="ui-data-table__table min-w-full text-left text-body">
+                                                                <caption class="sr-only">Columns of @table.Schema.@table.Name</caption>
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th scope="col">Column</th>
+                                                                        <th scope="col">Type</th>
+                                                                        <th scope="col">Nullable</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach (var column in columns.Response.Items)
+                                                                    {
+                                                                        <tr @key="column.Ordinal">
+                                                                            <td class="font-medium">@column.Name</td>
+                                                                            <td class="font-mono text-xs">@TypeLabel(column)</td>
+                                                                            <td>@(column.IsNullable ? "Yes" : "No")</td>
+                                                                        </tr>
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                        @if (columns.Response.Truncated)
+                                                        {
+                                                            <p class="mt-1 text-xs text-muted">@TruncationNotice(columns.Response.Limit, "columns")</p>
+                                                        }
+                                                    }
+                                                </div>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                                @if (tables.Response.Truncated)
+                                {
+                                    <p class="mt-1 text-xs text-muted">@TruncationNotice(tables.Response.Limit, "tables and views")</p>
+                                }
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+        @if (_schemas.Truncated)
+        {
+            <p class="text-xs text-muted">@TruncationNotice(_schemas.Limit, "schemas")</p>
+        }
+    }
+</div>
+
+@code {
+    private const string Succeeded = "Succeeded";
+    private const string BusyFailure = "Too many structure requests are running for this connection. Try again in a moment.";
+    private const string GenericFailure =
+        "The request could not be completed. You may no longer have permission, or this connection may no longer offer this tool.";
+
+    /// <summary>The Connection whose database is browsed. A different Connection is a different instance (keyed by the parent).</summary>
+    [Parameter, EditorRequired] public string ConnectionId { get; set; } = "";
+
+    private sealed class Node<T>
+    {
+        public bool Loading { get; set; }
+        public SqlStructureResponseDto<T>? Response { get; set; }
+    }
+
+    private readonly CancellationTokenSource _cts = new();
+    private readonly HashSet<string> _openSchemas = new(StringComparer.Ordinal);
+    private readonly HashSet<(string Schema, string Table)> _openTables = [];
+    private readonly Dictionary<string, Node<SqlTableDto>> _tables = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Schema, string Table), Node<SqlColumnDto>> _columns = [];
+
+    private SqlStructureResponseDto<SqlSchemaDto>? _schemas;
+    private bool _schemasLoading;
+    private bool _disposed;
+
+    // The handlers below are public so a test can drive them exactly as a click does.
+
+    /// <summary>The operator's explicit request to load the schemas. This is the first remote request; rendering makes none.</summary>
+    public async Task BrowseAsync()
+    {
+        if (_schemasLoading)
+            return;
+        _schemasLoading = true;
+        try
+        {
+            var response = await FetchAsync(() => Client.GetSqlSchemasAsync(ConnectionId, _cts.Token), Failure<SqlSchemaDto>);
+            if (response is null)
+                return; // cancelled: the page was left
+            _schemas = response;
+        }
+        finally
+        {
+            _schemasLoading = false;
+        }
+        await Refresh();
+    }
+
+    public async Task RetrySchemasAsync()
+    {
+        _schemas = null;
+        await BrowseAsync();
+    }
+
+    /// <summary>Expanding loads a schema's tables once; collapsing and re-expanding reuses them and sends nothing.</summary>
+    public async Task ToggleSchemaAsync(string schema)
+    {
+        if (!_openSchemas.Add(schema))
+        {
+            _openSchemas.Remove(schema);
+            return;
+        }
+
+        if (!_tables.ContainsKey(schema))
+            await LoadTablesAsync(schema);
+    }
+
+    public async Task RetryTablesAsync(string schema)
+    {
+        _tables.Remove(schema);
+        await LoadTablesAsync(schema);
+    }
+
+    public async Task ToggleTableAsync(string schema, string table)
+    {
+        var key = (schema, table);
+        if (!_openTables.Add(key))
+        {
+            _openTables.Remove(key);
+            return;
+        }
+
+        if (!_columns.ContainsKey(key))
+            await LoadColumnsAsync(schema, table);
+    }
+
+    public async Task RetryColumnsAsync(string schema, string table)
+    {
+        _columns.Remove((schema, table));
+        await LoadColumnsAsync(schema, table);
+    }
+
+    private async Task LoadTablesAsync(string schema)
+    {
+        var node = _tables[schema] = new Node<SqlTableDto> { Loading = true };
+        await Refresh();
+        var response = await FetchAsync(() => Client.GetSqlTablesAsync(ConnectionId, schema, _cts.Token), Failure<SqlTableDto>);
+        if (response is null)
+            return;
+        node.Response = response;
+        node.Loading = false;
+        await Refresh();
+    }
+
+    private async Task LoadColumnsAsync(string schema, string table)
+    {
+        var node = _columns[(schema, table)] = new Node<SqlColumnDto> { Loading = true };
+        await Refresh();
+        var response = await FetchAsync(() => Client.GetSqlColumnsAsync(ConnectionId, schema, table, _cts.Token), Failure<SqlColumnDto>);
+        if (response is null)
+            return;
+        node.Response = response;
+        node.Loading = false;
+        await Refresh();
+    }
+
+    // Any failure of the request itself (refused, gone, offline) becomes the fixed message, never the exception text. Null means
+    // the request was cancelled because the page was left.
+    private async Task<SqlStructureResponseDto<T>?> FetchAsync<T>(
+        Func<Task<SqlStructureResponseDto<T>>> call, Func<SqlStructureResponseDto<T>> failure)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (Exception) when (_cts.IsCancellationRequested)
+        {
+            // The page was left. A request that merely timed out is NOT this case and falls through to a retryable failure.
+            return null;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return new SqlStructureResponseDto<T>("Failed", [], false, 0, BusyFailure);
+        }
+        catch (Exception)
+        {
+            return failure();
+        }
+    }
+
+    private static SqlStructureResponseDto<T> Failure<T>() => new("Failed", [], false, 0, GenericFailure);
+
+    private Task Refresh() => _disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged);
+
+    private static string TypeLabel(SqlColumnDto column) =>
+        column.MaxLength is { } length ? $"{column.DataType}({length})" : column.DataType;
+
+    private static string TruncationNotice(int limit, string what) =>
+        $"Showing the first {limit} {what}. More exist that are not shown.";
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

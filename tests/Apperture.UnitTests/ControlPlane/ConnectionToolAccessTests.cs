@@ -1,6 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Management.Api.Controllers;
@@ -71,7 +72,8 @@ public sealed class ConnectionToolAccessTests
         Connection? connection,
         IEnumerable<string> granted,
         IEnumerable<IConnectionToolProvider> providers,
-        bool authenticated = true)
+        bool authenticated = true,
+        IAuditService? audit = null)
     {
         var grants = granted.ToHashSet(StringComparer.Ordinal);
         var evaluated = new List<PermissionDescriptor>();
@@ -96,7 +98,7 @@ public sealed class ConnectionToolAccessTests
 
         return new Rig
         {
-            Sut = new ConnectionToolAccess(principal.Object, auth.Object, repository.Object, providers),
+            Sut = new ConnectionToolAccess(principal.Object, auth.Object, repository.Object, providers, audit ?? new Mock<IAuditService>().Object, new ConnectionToolRequestLimiter()),
             Evaluated = evaluated,
             Contexts = contexts,
             Repository = repository
@@ -317,7 +319,7 @@ public sealed class ConnectionToolAccessTests
         dependencies.Should().BeEquivalentTo(
         [
             typeof(IPrincipalContext), typeof(IAuthorizationEvaluationService), typeof(IConnectionRepository),
-            typeof(IEnumerable<IConnectionToolProvider>)
+            typeof(IEnumerable<IConnectionToolProvider>), typeof(IAuditService), typeof(ConnectionToolRequestLimiter)
         ], "no connection resolver, client factory, secret resolver or secret store is even injectable, so provider lookup cannot do I/O");
     }
 

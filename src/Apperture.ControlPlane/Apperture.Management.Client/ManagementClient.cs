@@ -641,6 +641,24 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<SqlStructureResponseDto<SqlSchemaDto>> GetSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default) =>
+        GetStructureAsync<SqlSchemaDto>($"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/schemas", cancellationToken);
+
+    public Task<SqlStructureResponseDto<SqlTableDto>> GetSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default) =>
+        GetStructureAsync<SqlTableDto>(
+            $"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/tables?schema={Uri.EscapeDataString(schema)}", cancellationToken);
+
+    public Task<SqlStructureResponseDto<SqlColumnDto>> GetSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default) =>
+        GetStructureAsync<SqlColumnDto>(
+            $"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/columns?schema={Uri.EscapeDataString(schema)}&table={Uri.EscapeDataString(table)}",
+            cancellationToken);
+
+    private async Task<SqlStructureResponseDto<T>> GetStructureAsync<T>(string path, CancellationToken cancellationToken)
+    {
+        var result = await _http.GetFromJsonAsync<SqlStructureResponseDto<T>>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return result ?? throw new InvalidOperationException("Server returned no structure body.");
+    }
+
     public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync(

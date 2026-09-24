@@ -59,6 +59,10 @@ public class ClientServerDtoParityTests
         yield return new object[] { typeof(ServerConnectionDto), typeof(ClientConnectionDto), true };
         yield return new object[] { typeof(ServerCreateConnectionRequestBody), typeof(ClientCreateConnectionRequest), true };
         yield return new object[] { typeof(ServerConnectionToolsDto), typeof(ClientConnectionToolsDto), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlStructureResponseDto<Apperture.Management.Api.Controllers.SqlSchemaDto>), typeof(Apperture.Management.Client.SqlStructureResponseDto<Apperture.Management.Client.SqlSchemaDto>), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlSchemaDto), typeof(Apperture.Management.Client.SqlSchemaDto), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlTableDto), typeof(Apperture.Management.Client.SqlTableDto), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlColumnDto), typeof(Apperture.Management.Client.SqlColumnDto), true };
         yield return new object[] { typeof(ServerRunSummaryDto), typeof(ClientRunSummaryDto), true };
         yield return new object[] { typeof(ServerRunQueryFilter), typeof(ClientRunQueryFilter), true };
         yield return new object[] { typeof(ServerRunDetailDto), typeof(ClientRunDetailDto), true };
