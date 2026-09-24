@@ -143,7 +143,7 @@ public sealed class ConnectionWorkspaceUiSourceTests
 
         content.Should().Contain("@if (!ConnectionWorkspacePresentation.IsConnectorRegistered(_connection))");
         content.Should().Contain("ConnectionWorkspacePresentation.UnregisteredConnectorNotice");
-        var guard = content.IndexOf("if (!ConnectionWorkspacePresentation.IsConnectorRegistered(connection))", StringComparison.Ordinal);
+        var guard = content.IndexOf("if (!ConnectionWorkspacePresentation.IsConnectorRegistered(connection)", StringComparison.Ordinal);
         var fetch = content.IndexOf("Client.GetConnectorDefinitionAsync(connection.ConnectorDefinitionId)", StringComparison.Ordinal);
         guard.Should().BePositive();
         fetch.Should().BeGreaterThan(guard, "the registry-unknown case returns before any definition request");
