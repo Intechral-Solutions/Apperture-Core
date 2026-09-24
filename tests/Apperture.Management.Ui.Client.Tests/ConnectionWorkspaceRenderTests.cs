@@ -62,7 +62,8 @@ public sealed class ConnectionWorkspaceRenderTests
         ConnectionDto? connection,
         ConnectorDefinitionCatalogDto? definition,
         OperatorCapabilitiesDto? capabilities = null,
-        Exception? definitionFailure = null)
+        Exception? definitionFailure = null,
+        bool withApplication = false)
     {
         capabilities ??= new OperatorCapabilitiesDto(false, false, false, false, false)
             with { CanViewConnections = true, CanViewConnectorDefinitions = true };
@@ -73,9 +74,14 @@ public sealed class ConnectionWorkspaceRenderTests
             client.Setup(c => c.GetConnectorDefinitionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(definitionFailure);
         else
             client.Setup(c => c.GetConnectorDefinitionAsync(SqlId, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        var contexts = new List<ResourceContextDto>
+        {
+            new(ResourceContextIds.SharedValue, "Shared", "shared", ResourceContextKinds.Shared, ResourceContextStates.Active, true, null, default, default)
+        };
+        if (withApplication)
+            contexts.Add(new ResourceContextDto("app-a", "Campus Nexus", "campus-nexus", ResourceContextKinds.Application, ResourceContextStates.Active, false, null, default, default));
         client.Setup(c => c.GetResourceContextsAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[
-                new ResourceContextDto(ResourceContextIds.SharedValue, "Shared", "shared", ResourceContextKinds.Shared, ResourceContextStates.Active, true, null, default, default)]);
+            .ReturnsAsync((IReadOnlyList<ResourceContextDto>)contexts);
 
         var caps = new Mock<IOperatorCapabilitiesService>();
         caps.Setup(c => c.GetCapabilitiesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(capabilities);
@@ -83,6 +89,9 @@ public sealed class ConnectionWorkspaceRenderTests
         var nav = new TestNavigationManager("https://localhost/", "https://localhost/connections/conn-0001");
         var session = new SessionStateService(client.Object);
         var js = new FakeJsRuntime();
+
+        var viewState = new ResourceContextViewState(js, nav, client.Object, session);
+        await viewState.InitializeAsync();
 
         using var services = new ServiceCollection()
             .AddLogging()
@@ -93,7 +102,7 @@ public sealed class ConnectionWorkspaceRenderTests
             .AddSingleton(session)
             .AddSingleton(new ShellOrientationService())
             .AddSingleton<IToastService>(new ToastService())
-            .AddSingleton(new ResourceContextViewState(js, nav, client.Object, session))
+            .AddSingleton(viewState)
             .BuildServiceProvider();
 
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
@@ -206,5 +215,135 @@ public sealed class ConnectionWorkspaceRenderTests
 
         page.Html.Should().Contain("You do not have permission to view connection details.");
         page.Client.Verify(c => c.GetConnectionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---- Lifecycle and fallback ----------------------------------------------------------------------
+
+    // The Edit button is markup with surrounding whitespace, so match the word inside the button element.
+    private const string EditButton = @"ui-toolbar-btn"">\s*Edit\s*</button>";
+
+    private static OperatorCapabilitiesDto FullOperator() =>
+        new OperatorCapabilitiesDto(false, false, false, false, false)
+            with { CanViewConnections = true, CanViewConnectorDefinitions = true, CanUpdateConnections = true, CanRetireConnections = true };
+
+    [Fact]
+    public async Task LC_active_connection_offers_test_edit_move_and_retire_to_a_full_operator()
+    {
+        var page = await RenderAsync(Connection(), Definition(), FullOperator());
+
+        page.Html.Should().Contain("<span>Test connection</span>").And.MatchRegex(EditButton).And.Contain("connection-move-trigger").And.Contain("connection-retire-trigger");
+        page.Html.Should().NotContain(ConnectionWorkspacePresentation.RetiredNotice);
+    }
+
+    [Fact]
+    public async Task LC1_a_retired_connection_is_read_only_and_says_so()
+    {
+        var page = await RenderAsync(Connection(state: "Retired"), Definition(), FullOperator());
+
+        page.Html.Should().Contain(ConnectionWorkspacePresentation.RetiredNotice);
+        page.Html.Should().NotContain("<span>Test connection</span>").And.NotMatchRegex(EditButton)
+            .And.NotContain("connection-move-trigger").And.NotContain("connection-retire-trigger");
+        // Still a complete, readable workspace.
+        page.Html.Should().Contain("Configuration").And.Contain("Used in").And.Contain("Retired");
+    }
+
+    [Fact]
+    public async Task LC2_an_unregistered_connector_hides_edit_and_test_but_keeps_move_and_retire()
+    {
+        var page = await RenderAsync(
+            Connection(connectorDisplayName: null, connectorId: "Gone.Connector", supportsVerification: false), null, FullOperator());
+
+        page.Html.Should().Contain(ConnectionWorkspacePresentation.UnregisteredConnectorNotice);
+        page.Html.Should().NotMatchRegex(EditButton).And.NotContain("<span>Test connection</span>");
+        page.Html.Should().Contain("connection-move-trigger").And.Contain("connection-retire-trigger");
+    }
+
+    [Fact]
+    public async Task LC4_a_failed_verification_does_not_remove_any_action()
+    {
+        var page = await RenderAsync(Connection(status: "Failed", summary: "SQL verification failed"), Definition(), FullOperator());
+
+        page.Html.Should().Contain("<span>Test connection</span>").And.MatchRegex(EditButton).And.Contain("connection-retire-trigger");
+    }
+
+    [Fact]
+    public async Task A_read_only_operator_sees_no_authoring_actions_on_an_active_connection()
+    {
+        var page = await RenderAsync(Connection(), Definition());
+
+        page.Html.Should().NotMatchRegex(EditButton).And.NotContain("connection-move-trigger").And.NotContain("connection-retire-trigger");
+    }
+
+    [Fact]
+    public async Task RC3_a_shared_connection_and_an_application_owned_connection_both_render_their_owner()
+    {
+        var shared = await RenderAsync(Connection(contextId: "shared"), Definition(), withApplication: true);
+        var owned = await RenderAsync(Connection(contextId: "app-a"), Definition(), withApplication: true);
+
+        shared.Html.Should().Contain("Context: Shared");
+        owned.Html.Should().Contain("Context: Campus Nexus").And.Contain("/config/applications/app-a");
+    }
+
+    [Fact]
+    public async Task RC1_the_displayed_context_is_whatever_the_connection_currently_says()
+    {
+        // A move is just the Connection row changing; the next read shows the new owner with nothing else to sync.
+        var before = await RenderAsync(Connection(contextId: "shared"), Definition(), withApplication: true);
+        var after = await RenderAsync(Connection(contextId: "app-a"), Definition(), withApplication: true);
+
+        before.Html.Should().NotContain("Context: Campus Nexus");
+        after.Html.Should().Contain("Context: Campus Nexus").And.NotContain("Context: Shared");
+    }
+
+    [Fact]
+    public async Task LC4_an_unavailable_verification_also_removes_nothing()
+    {
+        var page = await RenderAsync(Connection(status: "Unavailable"), Definition(), FullOperator());
+
+        page.Html.Should().Contain("Verification unavailable").And.Contain("<span>Test connection</span>").And.MatchRegex(EditButton);
+    }
+
+    [Fact]
+    public async Task A_caller_who_can_retire_but_not_update_sees_retire_only()
+    {
+        var page = await RenderAsync(
+            Connection(), Definition(),
+            new OperatorCapabilitiesDto(false, false, false, false, false) with { CanViewConnections = true, CanRetireConnections = true });
+
+        page.Html.Should().Contain("connection-retire-trigger").And.NotContain("connection-move-trigger").And.NotMatchRegex(EditButton);
+    }
+
+    [Fact]
+    public async Task Edit_needs_permission_to_read_the_connector_definition_it_edits_against()
+    {
+        var page = await RenderAsync(
+            Connection(), Definition(),
+            new OperatorCapabilitiesDto(false, false, false, false, false) with { CanViewConnections = true, CanUpdateConnections = true });
+
+        page.Html.Should().NotMatchRegex(EditButton);
+        page.Html.Should().Contain("connection-move-trigger", "moving needs no definition");
+    }
+
+    [Fact]
+    public async Task An_unregistered_connector_is_never_testable_even_if_a_stale_flag_says_otherwise()
+    {
+        var page = await RenderAsync(
+            Connection(connectorDisplayName: null, connectorId: "Gone.Connector", supportsVerification: true), null, FullOperator());
+
+        page.Html.Should().NotContain("<span>Test connection</span>");
+    }
+
+    [Fact]
+    public async Task An_unregistered_connector_explains_why_it_is_not_testable_and_keeps_the_last_recorded_result()
+    {
+        var page = await RenderAsync(
+            Connection(
+                connectorDisplayName: null, connectorId: "Gone.Connector", supportsVerification: false, status: "Success",
+                summary: "Connected earlier.", verifiedAt: new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero)),
+            null);
+
+        page.Html.Should().Contain("Testing is unavailable because this connector is not registered in this host.");
+        page.Html.Should().NotContain("does not support test connection");
+        page.Html.Should().Contain("Connected earlier.").And.Contain("Last tested 2026-09-01 12:00:00Z");
     }
 }

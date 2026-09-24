@@ -26,7 +26,14 @@ public static class ConnectionWorkspacePresentation
         "The connector for this connection is not registered in this host. Its stored settings are shown as saved, "
         + "and testing and editing are unavailable until the connector is registered.";
 
+    public const string RetiredNotice =
+        "This connection is retired. It is read-only here and no longer eligible for new bindings; existing bindings keep "
+        + "working until they are changed.";
+
     public static string SecretPresence(bool isSet) => isSet ? SecretSet : SecretNotSet;
+
+    public static bool IsRetired(ConnectionDto connection) =>
+        string.Equals(connection.State, "Retired", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The server supplies a display name only when the connector is registered in the host that served the read.</summary>
     public static bool IsConnectorRegistered(ConnectionDto connection) =>
@@ -79,6 +86,13 @@ public static class ConnectionWorkspacePresentation
 
     public static ConnectionHealth Health(ConnectionDto connection)
     {
+        if (!IsConnectorRegistered(connection))
+        {
+            // Not "unsupported": the host simply has no definition for this connector, so nothing can be tested.
+            return new ConnectionHealth(
+                "Not testable", ManagementStatusSemantic.Neutral, "Testing is unavailable because this connector is not registered in this host.");
+        }
+
         if (!connection.SupportsVerification)
         {
             return new ConnectionHealth(
@@ -87,6 +101,9 @@ public static class ConnectionWorkspacePresentation
 
         return connection.LastVerificationStatus switch
         {
+            // A retired connection has no test action, so its health never points the operator at one.
+            "NeverTested" when IsRetired(connection) => new ConnectionHealth(
+                "Never tested", ManagementStatusSemantic.Neutral, "This connection was never tested."),
             "NeverTested" => new ConnectionHealth(
                 "Not tested yet", ManagementStatusSemantic.Neutral, "Run Test connection to check this connection."),
             "Success" => new ConnectionHealth(

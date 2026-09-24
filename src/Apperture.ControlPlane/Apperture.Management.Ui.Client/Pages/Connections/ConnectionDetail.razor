@@ -28,7 +28,7 @@
                     @onclick="LoadAsync">
                 Refresh
             </button>
-            @if (_connection?.SupportsVerification == true && !_editing)
+            @if (CanTest)
             {
                 <ActionButton @ref="_testButton"
                               Variant="ActionButtonVariant.Primary"
@@ -39,7 +39,7 @@
                               IsInactive="@(_loading || _testing)"
                               OnClick="HandleTestClick" />
             }
-            @if (_capabilities?.CanUpdateConnections == true && _connection is not null && !_editing)
+            @if (CanEdit)
             {
                 <button type="button"
                         class="ui-toolbar-btn"
@@ -47,6 +47,9 @@
                         @onclick="StartEditAsync">
                     Edit
                 </button>
+            }
+            @if (CanMove)
+            {
                 <button type="button"
                         id="connection-move-trigger"
                         class="ui-toolbar-btn"
@@ -55,7 +58,7 @@
                     Move to another context…
                 </button>
             }
-            @if (_capabilities?.CanRetireConnections == true && _connection is not null && !_editing && string.Equals(_connection.State, "Active", StringComparison.OrdinalIgnoreCase))
+            @if (CanRetire)
             {
                 <button type="button"
                         id="connection-retire-trigger"
@@ -124,6 +127,11 @@
     else
     {
         <div class="space-y-4">
+            @if (ConnectionWorkspacePresentation.IsRetired(_connection))
+            {
+                <PageMessage Kind="PageMessageKind.Info">@ConnectionWorkspacePresentation.RetiredNotice</PageMessage>
+            }
+
             @if (!ConnectionWorkspacePresentation.IsConnectorRegistered(_connection))
             {
                 <PageMessage Kind="PageMessageKind.Warning">@ConnectionWorkspacePresentation.UnregisteredConnectorNotice</PageMessage>
@@ -160,7 +168,7 @@
                     <div class="text-xs text-muted">Health</div>
                     <div class="mt-1 flex flex-wrap items-center gap-2">
                         <StatusPill Label="@_health.Label" Semantic="@_health.Semantic" />
-                        @if (_connection.SupportsVerification && _connection.LastVerificationAtUtc is { } testedAt)
+                        @if (_connection.LastVerificationAtUtc is { } testedAt)
                         {
                             <span class="text-xs text-muted">Last tested @testedAt.ToString("u")</span>
                         }
@@ -169,7 +177,7 @@
                     {
                         <div class="mt-1 text-sm text-body">@_health.Detail</div>
                     }
-                    @if (_connection.SupportsVerification && !string.IsNullOrWhiteSpace(_connection.LastVerificationSummary))
+                    @if (!string.IsNullOrWhiteSpace(_connection.LastVerificationSummary))
                     {
                         <div class="mt-2">
                             <div class="text-xs text-muted">Result of the last test</div>
@@ -303,6 +311,22 @@
 
     private ConnectionHealth _health => ConnectionWorkspacePresentation.Health(_connection!);
 
+    // Actions follow the Connection's own facts and the caller's permissions; nothing here has a state of its own. A
+    // retired Connection is read-only. An unregistered connector cannot be tested or edited (its fields are unknown), but
+    // it can still be moved or retired, which need no definition. A failed verification removes nothing.
+    // A failed (re)load leaves any earlier record on screen behind the error state, so it offers no actions either.
+    private bool Loaded => _connection is not null && !_editing && string.IsNullOrEmpty(_error);
+    private bool IsRetired => _connection is not null && ConnectionWorkspacePresentation.IsRetired(_connection);
+    private bool CanTest =>
+        Loaded && _connection!.SupportsVerification && !IsRetired
+        && ConnectionWorkspacePresentation.IsConnectorRegistered(_connection);
+    // Editing needs the connector's field definitions, so it also needs permission to read them.
+    private bool CanEdit =>
+        Loaded && _capabilities?.CanUpdateConnections == true && _capabilities?.CanViewConnectorDefinitions == true && !IsRetired
+        && ConnectionWorkspacePresentation.IsConnectorRegistered(_connection!);
+    private bool CanMove => Loaded && _capabilities?.CanUpdateConnections == true && !IsRetired;
+    private bool CanRetire => Loaded && _capabilities?.CanRetireConnections == true && !IsRetired;
+
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private bool _loading;
@@ -410,7 +434,16 @@
     private async Task StartEditAsync()
     {
         if (_connection is null) return;
-        _editConnectorDefinition = await Client.GetConnectorDefinitionAsync(_connection.ConnectorDefinitionId);
+        try
+        {
+            _editConnectorDefinition = await Client.GetConnectorDefinitionAsync(_connection.ConnectorDefinitionId);
+        }
+        catch (Exception)
+        {
+            // The client throws on a missing or unreadable definition rather than returning null.
+            _editConnectorDefinition = null;
+        }
+
         if (_editConnectorDefinition is null)
         {
             Toasts.Show(ToastSeverity.Error, "Connector definition not found.");
@@ -461,7 +494,7 @@
         }
         catch (HttpRequestException ex)
         {
-            _error = ex.Message;
+            // A failed save is reported and the form stays as typed; it must not replace the workspace with an error state.
             Toasts.Show(ToastSeverity.Error, ex.Message);
         }
         finally
@@ -513,13 +546,16 @@
             var summary = string.IsNullOrWhiteSpace(_connection?.LastVerificationSummary)
                 ? "Test completed."
                 : _connection!.LastVerificationSummary;
-            Toasts.Show(ToastSeverity.Success, summary);
+            // The call succeeded either way; whether the connection verified is the result. A failed or unavailable
+            // verification is reported as such rather than under a success banner.
+            var verified = string.Equals(_connection?.LastVerificationStatus, "Success", StringComparison.Ordinal);
+            Toasts.Show(verified ? ToastSeverity.Success : ToastSeverity.Warning, summary);
             if (_testButton is not null)
-                await _testButton.SetStateAsync(ActionButtonState.Success);
+                await _testButton.SetStateAsync(verified ? ActionButtonState.Success : ActionButtonState.Error);
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            // A test that could not run is reported; the workspace itself stays intact.
             Toasts.Show(ToastSeverity.Error, ex.Message);
             if (_testButton is not null)
                 await _testButton.SetStateAsync(ActionButtonState.Error);

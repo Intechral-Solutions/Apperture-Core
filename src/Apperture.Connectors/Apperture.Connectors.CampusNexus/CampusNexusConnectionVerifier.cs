@@ -33,12 +33,12 @@ public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
         {
             material = await BuildMaterialAsync(connection, _secretResolver, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new ConnectionVerificationResult(
                 ConnectionVerificationStatus.Failed,
                 at,
-                $"Could not resolve connection secrets: {ex.Message}");
+                ConnectionVerificationMessages.SecretResolutionFailed);
         }
 
         try

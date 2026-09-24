@@ -138,6 +138,20 @@ public sealed class ConnectionWorkspacePresentationTests
     }
 
     [Fact]
+    public void A_retired_connection_never_points_the_operator_at_a_test_action_it_no_longer_has()
+    {
+        var retired = Connection(status: "NeverTested") with { State = "Retired" };
+
+        var health = ConnectionWorkspacePresentation.Health(retired);
+
+        health.Label.Should().Be("Never tested");
+        health.Detail.Should().NotContain("Run Test connection");
+        ConnectionWorkspacePresentation.IsRetired(retired).Should().BeTrue();
+        ConnectionWorkspacePresentation.IsRetired(Connection()).Should().BeFalse();
+        ConnectionWorkspacePresentation.RetiredNotice.Should().Contain("retired").And.Contain("read-only");
+    }
+
+    [Fact]
     public void A_failed_verification_is_reported_as_a_fact_not_a_gate()
     {
         var health = ConnectionWorkspacePresentation.Health(Connection(status: "Failed"));
@@ -170,4 +184,13 @@ public sealed class ConnectionWorkspacePresentationTests
     [InlineData("Whatever", ManagementStatusSemantic.Neutral)]
     public void State_has_a_semantic(string state, ManagementStatusSemantic expected) =>
         ConnectionWorkspacePresentation.StateSemantic(state).Should().Be(expected);
+
+    [Fact]
+    public void An_unregistered_connector_is_described_as_unregistered_not_as_lacking_test_support()
+    {
+        var health = ConnectionWorkspacePresentation.Health(Connection(connectorDisplayName: null, supportsVerification: false));
+
+        health.Label.Should().Be("Not testable");
+        health.Detail.Should().Contain("not registered").And.NotContain("does not support");
+    }
 }

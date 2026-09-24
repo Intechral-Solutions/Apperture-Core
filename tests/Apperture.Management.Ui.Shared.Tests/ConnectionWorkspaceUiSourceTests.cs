@@ -181,4 +181,24 @@ public sealed class ConnectionWorkspaceUiSourceTests
             dir = dir.Parent;
         return Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
+
+    [Fact]
+    public void A_failed_save_or_test_is_a_toast_and_never_replaces_the_workspace_with_an_error_state()
+    {
+        var content = ReadRepoFile(Detail);
+        string Body(string method) =>
+            Regex.Match(content, @"private async Task " + method + @"\(\)(.*?)\n    \}\n", RegexOptions.Singleline).Groups[1].Value;
+
+        Body("SaveEditAsync").Should().NotContain("_error = ex.Message");
+        Body("TestConnectionAsync").Should().NotContain("_error = ex.Message");
+        Body("LoadAsync").Should().Contain("_error = ex.Message", "only a failed LOAD is an error state");
+    }
+
+    [Fact]
+    public void Actions_are_offered_only_when_nothing_is_in_error()
+    {
+        var content = ReadRepoFile(Detail);
+
+        content.Should().Contain("private bool Loaded => _connection is not null && !_editing && string.IsNullOrEmpty(_error);");
+    }
 }
