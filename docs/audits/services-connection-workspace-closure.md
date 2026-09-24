@@ -16,7 +16,7 @@ optional connector tool — a SQL Server **structure** browser — behind one ne
 | Plan | Delivered |
 |---|---|
 | **SVC-1** connector identity | `ConnectorDisplayName` on the Connection read contract from the already-injected in-memory registry (no extra I/O, including in the list loop); the Connector shown by name, linked to `/components/connector/{id}` (link only when the caller can read the catalog); unregistered connector = stored id, no link, no invented name; raw ids into `TechnicalDetails`. |
-| **SVC-2** lifecycle audit | `ConnectionManagementService` appends one record for create (inside its transaction), update, secret rotation, retire and test-connect (`ConnectionAuditActionNames`). `Resource` is null; identity is structured JSON `Details`; `ResourceContextId` is the loaded Connection's. Keys and status only — never a secret value, secret reference, config value or remote summary. A rotation that fails after the secret was written, and a verifier that throws, are recorded as failed. No schema change. |
+| **SVC-2** lifecycle audit | `ConnectionManagementService` appends one record for create (inside its transaction), update, secret rotation, retire and test-connect (`ConnectionAuditActionNames`). `Resource` is null; identity is structured JSON `Details`; `ResourceContextId` is the loaded Connection's. Keys and status only — never a secret value, secret reference, config value or remote summary. A rotation that fails after the secret was written, and a verifier that throws, are recorded as failed; a failed row save detaches the rejected update so the failure record cannot commit it through the shared context. No schema change. |
 | **SVC-3** workspace presentation | The existing page reshaped: header · Overview/health · Configuration · Used in · Tools slot · TechnicalDetails. Configuration renders connector-declared names and descriptions; secret fields are only *Set* / *Not set*. Health is a legible point-in-time fact. The definition lookup is best-effort and cannot fail the page. |
 | **SVC-5** lifecycle and fallbacks | Retired = read-only with a notice (test/edit/move/retire hidden). Unregistered connector = notice; no test or edit, move/retire kept; health says "unregistered", not "unsupported", and keeps the last recorded result. Editing needs `connector.definition.read`. Failed save/test is a toast, never a whole-page error; a test that ran but did not verify no longer shows a success banner. Verifiers no longer echo exception text when secrets cannot be resolved (one fixed message); cancellation propagates. |
 | **SVC-4** Connectors tab | The tab, its duplicate table and `?tab=` handling are gone; `/connections` lists Connections only, with an inline "Browse the connector catalog" link (shown to callers who can read definitions). `/components?kind=connector` now opens filtered on a direct load and on in-app navigation; unknown or unseen kinds are dropped exactly as other unrecognised filters are; plain `/components` is unchanged. |
@@ -52,7 +52,8 @@ optional connector tool — a SQL Server **structure** browser — behind one ne
   repository-call-log test).
 - **Audit is safe** — one record per remote request; never the selected names, returned content, secrets or remote text; fail-closed
   (result withheld if the record cannot be written); failure and cancellation paths record once and preserve the original
-  exception; refused, invalid, retired and unavailable requests write none; verified against the real SQL audit store (valid JSON,
+  exception; requests refused before the provider is reached (authorization, validation, retired, unavailable, busy) write none, while
+  a request the provider itself declines without contacting the database (no SQL login, unresolvable secrets) is recorded as failed; verified against the real SQL audit store (valid JSON,
   context column populated).
 - **Integration Bindings, HSK-D and Inventory untouched** — no change to Binding persistence or resolution, `MapConnection` still
   emits `/connections/{id}`, and the workspace remains one Resource row.
@@ -96,6 +97,20 @@ any plan.
 | SVC-6 (Opus) | No Critical/Important. Break-glass wording; real-evaluator and scoped-identity tests; bypassable arch guards | Wording; real-evaluator tests; scoped test; pinned csproj references, single-consumer and no-registry guards |
 | SVC-7 (Opus) | **I1** no-UserId browses as the host identity; **I2** unbounded concurrency; **I3** transport bounds untested; M1 resolver timeout misreported; M2 provider `ArgumentException` skipped audit / echoed text; M5 node stuck on timeout; M6 mid-open cancel untested; M7 worker composed the tool | All fixed as ruling 2, 4 and 5 above plus tests (real `SqlConnection` bounds, loopback blackhole cancel, fixed 400 message, retryable nodes) |
 
+### Whole-branch review (Opus, against both gates)
+
+No Critical finding. Two Important findings were fixed: **(I-1)** a failed Connection row save left the rejected update tracked in the
+context shared with the audit store, so the "failed rotation" record could commit an update the caller was told had failed
+(`SqlConnectionRepository.UpdateAsync` now detaches the row on a failed save; test fails without the fix); **(I-2)** the metadata guard
+(`RuntimeVisibleDevMetadataGuardTests`) now scans the workspace pages, the browser component and the presentation helper and forbids
+`SVC-` labels. Minor items fixed: `(max)` column type label, audit wording for provider-declined requests, stale registration/summary/
+supersession text in the architecture docs and ADR-0043, and §35 now records the audit-granularity and truncation-wording
+interpretations. Not changed: a repeat visit to `/components?kind=connector` after manually changing the Kind filter is a no-op
+(accepted); the structure endpoints are GET requests that cause a remote login and an audit record, and the session cookie is `SameSite=Lax`,
+which is sent on cross-site top-level navigations. The response is not readable cross-site and the calls are authorized,
+read-only, capped and rate-limited per Connection, so this is recorded as an accepted residual (a POST or an anti-forgery check is the
+follow-up if it is ever judged worth it).
+
 ## Accepted residuals
 
 - **Verification summaries carry remote-derived text** (a `SqlException` message can name a login or host; SFTP/Campus Nexus messages
@@ -121,19 +136,19 @@ any plan.
 
 ## Validation
 
-At code HEAD `296b52f` (documentation commits follow):
+At the whole-branch review fixes commit (re-validated after the review changes; the earlier run at `296b52f` had 2786 UnitTests):
 
-- `dotnet build Apperture.slnx` — succeeded, 0 errors (48 pre-existing warnings), isolated `--artifacts-path`, single node.
-- `Apperture.UnitTests` — **2786 passed**, 0 failed, 0 skipped.
+- `dotnet build Apperture.slnx` — succeeded, 0 errors (pre-existing warnings only), isolated `--artifacts-path`, single node.
+- `Apperture.UnitTests` — **2791 passed**, 0 failed, 0 skipped.
 - `Apperture.ArchTests` — **38 passed**, 0 failed, 0 skipped.
 - `Apperture.Management.Ui.Shared.Tests` — **1348 passed**, 0 failed, 0 skipped.
 - `Apperture.Management.Ui.Client.Tests` — **193 passed**, 0 failed, 0 skipped.
-- `Apperture.IntegrationTests` — **259 passed**, 0 failed, 0 skipped, in 5 min 59 s.
+- `Apperture.IntegrationTests` — **259 passed**, 0 failed, 0 skipped, in 6 min 18 s.
 
 **SQL was genuinely exercised**, independent of "Skipped: 0" (integration tests can soft-skip): the new suites use hard-failing
 fixtures (`RequireFixtureAsync` / `SqlAvailable` assertions), so they cannot pass without SQL Server; the run took a realistic
 six minutes; and the test databases' last-write markers advanced across the run (`Apperture_IntegrationTests` last user update
-`2026-09-23 22:23` → `2026-09-24 22:30:41`; `Apperture_ManagementGovernanceTests` `22:25:40`, server UTC `22:30:50`), read
+`22:30:41` → `22:53:27`; `Apperture_ManagementGovernanceTests` `22:25:40` → `22:48:28`; server UTC `22:53:46`, all 2026-09-24), read
 through the container with credentials taken from the environment, never placed on a command line. New real-SQL and real-host
 evidence: `ConnectionLifecycleAuditSqlServerTests` (2), `PlatformSqlStructureBrowserSqlServerTests` (6),
 `ManagementHostConnectionToolsHttpTests` (10) — including a real 403 matrix, real audit rows, a real login refusal

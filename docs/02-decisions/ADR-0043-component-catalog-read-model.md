@@ -9,6 +9,10 @@ Accepted (delivered 2026-09-23). Design and rulings: the
 (2026-09-23). Implementation account and evidence:
 [`components-catalog-closure.md`](../audits/components-catalog-closure.md).
 
+> **Update (2026-09-24):** the Connection workspace work this ADR calls "not started" has since been delivered, and the `/connections`
+> Connectors tab it says is retained has been retired in favour of `/components?kind=connector`. See
+> [ADR-0044](./ADR-0044-connection-workspace-and-browse-authorization.md). The catalog decision itself is unchanged.
+
 ## Context
 
 The platform supplies operator-visible capabilities from several places that each already have an authoritative

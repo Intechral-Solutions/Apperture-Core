@@ -279,7 +279,7 @@
     private Task Refresh() => _disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged);
 
     private static string TypeLabel(SqlColumnDto column) =>
-        column.MaxLength is { } length ? $"{column.DataType}({length})" : column.DataType;
+        column.MaxLength is { } length ? $"{column.DataType}({(length < 0 ? "max" : length.ToString(System.Globalization.CultureInfo.InvariantCulture))})" : column.DataType;
 
     private static string TruncationNotice(int limit, string what) =>
         $"Showing the first {limit} {what}. More exist that are not shown.";

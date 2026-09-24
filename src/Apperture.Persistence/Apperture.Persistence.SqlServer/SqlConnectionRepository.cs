@@ -104,7 +104,17 @@ public sealed class SqlConnectionRepository : IConnectionRepository
         entity.LastVerificationAtUtc = connection.LastVerificationAtUtc;
         entity.LastVerificationSummary = connection.LastVerificationSummary;
 
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            // A failed save must not leave the modified row tracked: the context is shared with the audit store, and
+            // its next SaveChanges (e.g. a "failed" audit record) would otherwise commit the update the caller was told failed.
+            _db.Entry(entity).State = EntityState.Detached;
+            throw;
+        }
     }
 
     /// <inheritdoc />

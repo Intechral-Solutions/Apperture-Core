@@ -123,7 +123,7 @@ public sealed class SqlStructureBrowserRenderTests
             Schemas("dbo", "sales")(client);
             Tables(client, "sales", new SqlTableDto("sales", "Orders", false), new SqlTableDto("sales", "OrderTotals", true));
             Columns(client, "sales", "Orders",
-                new SqlColumnDto("Id", "int", false, 1, null), new SqlColumnDto("Note", "nvarchar", true, 2, 200));
+                new SqlColumnDto("Id", "int", false, 1, null), new SqlColumnDto("Note", "nvarchar", true, 2, 200), new SqlColumnDto("Body", "varchar", true, 3, -1));
         });
 
         await rig.Do(rig.Browser.BrowseAsync);
@@ -133,7 +133,7 @@ public sealed class SqlStructureBrowserRenderTests
         rig.Html.Should().Contain("Orders").And.Contain("OrderTotals").And.Contain(">View<").And.Contain(">Table<").And.NotContain("Note");
 
         await rig.Do(() => rig.Browser.ToggleTableAsync("sales", "Orders"));
-        rig.Html.Should().Contain("Note").And.Contain("nvarchar(200)").And.Contain(">int<");
+        rig.Html.Should().Contain("Note").And.Contain("nvarchar(200)").And.Contain("varchar(max)").And.NotContain("(-1)").And.Contain(">int<");
         rig.Client.Verify(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()), Times.Once);
         rig.Client.Verify(c => c.GetSqlTablesAsync("conn-1", "sales", It.IsAny<CancellationToken>()), Times.Once);
         rig.Client.Verify(c => c.GetSqlColumnsAsync("conn-1", "sales", "Orders", It.IsAny<CancellationToken>()), Times.Once);

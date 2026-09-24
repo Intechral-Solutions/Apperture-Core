@@ -94,7 +94,7 @@ Binding eligibility or slot-bound resolution. See
 
 ## Implementation Summary
 
-- **Apperture.ConnectorResolution** — Implements `SlotBoundResolver`, `DefaultConnectionResolver`, `ConnectorClientFactoryRegistry`, `ResolvedConnectionMaterialBuilder`, `PlatformSqlConnectorClientFactory`, `CampusNexusApiConnectorClientFactory`, `SftpConnectorClientFactory`, `InMemoryConnectorDefinitionRegistry`. DI: `AddConnectorResolution()`, `AddPlatformSqlConnector()` (SQL + Campus Nexus + SFTP definitions and factories).
+- **Apperture.ConnectorResolution** — Implements `SlotBoundResolver`, `DefaultConnectionResolver`, `ConnectorClientFactoryRegistry`, `ResolvedConnectionMaterialBuilder`, `PlatformSqlConnectorClientFactory`, `CampusNexusApiConnectorClientFactory`, `SftpConnectorClientFactory`, `InMemoryConnectorDefinitionRegistry`, and the read-only `PlatformSqlStructureBrowser`. DI: `AddConnectorResolution()`, `AddPlatformSqlConnector()` (SQL + Campus Nexus + SFTP definitions and factories), `AddPlatformSqlStructureBrowser()` (management host only; runtime workers do not register it).
 - **Persistence** — `AddConnectorRepositories()` registers `IConnectionRepository`, `IBindingRepository` for runtime hosts that need resolution without the full control-plane workflows.
 - **Worker host** — Registers persistence, connector repositories, connector resolution, and platform SQL so `IRuntimeSlotResolver` is available.
 

@@ -8,6 +8,8 @@ Audited HEAD: `2fa08573ccf01222257526a482394b1170a9e37f` (`master`, clean tree).
 > Nothing in this gate was amended: the Connectors tab was kept and its rows link to `/components/connector/{id}`
 > (SVC-4 still owns its retirement), `/connections/new?connectorDefinitionId=` now exists (A2), and the Component
 > catalog shipped unchanged by Services. **Services implementation (SVC-1…SVC-8) is unblocked and has not started.**
+>
+> *(That was the state when the gate was approved. Implementation is now complete — see §35.)*
 
 Product rulings **D-S1 through D-S4** were reviewed and **approved** on 2026-09-23 and are recorded as decided in
 §32. Four consistency corrections (C1–C4) were applied at the same time: the provider seam was reduced to one
@@ -1613,6 +1615,12 @@ what this gate recorded, **the code won and the difference is stated**:
   structure requests run at once per Connection (429 otherwise). Both came from the security review and are covered by tests.
 - **§21.4** — browse audit records the operation, counts and outcome; it deliberately does **not** record the schema or table the
   operator selected, because that is echoed remote content. Each request writes one record, fail-closed (no record → no result).
+  "Not every node expansion" is interpreted as: every *remote* request is one record, and repeat expansions are answered from the
+  browser's per-node cache without a request (so without a record).
+- **§21 / SF6** — the truncation notice reads "Showing the first N … More exist that are not shown", because the total is never queried
+  (the fetch takes one row beyond the cap only to detect truncation), so "first N of M" is not available.
+- **§29 / AR4** — `RuntimeVisibleDevMetadataGuardTests` now scans the workspace pages, the browser component and the presentation helper
+  and forbids `SVC-` labels, in addition to the workspace source-text test.
 - **§11.3** — the `connection.browse` grant reaches the platform administrator role through the startup repair set; break-glass sessions
   pass every check by design. A `CanBrowseConnections` capability (true only with `connection.read`) was added so callers without the
   grant are never sent to an endpoint that must refuse them.

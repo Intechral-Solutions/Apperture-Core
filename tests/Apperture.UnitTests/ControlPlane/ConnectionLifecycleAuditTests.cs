@@ -13,6 +13,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using Xunit;
 
@@ -32,6 +33,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     private static readonly ConnectorDefinitionId Sql = new("Apperture.Platform.Sql");
     private static readonly string SecretRefGuid = Guid.NewGuid().ToString("D");
 
+    private readonly FailingSaveInterceptor _failSaves = new();
     private readonly AppertureDbContext _db;
     private readonly RecordingAudit _audit = new();
     private readonly Mock<IAuthorizationEvaluationService> _auth = new();
@@ -46,6 +48,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
             new DbContextOptionsBuilder<AppertureDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
                 .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+                .AddInterceptors(_failSaves)
                 .Options);
         foreach (var (id, kind, reserved) in new[]
                  {
@@ -382,6 +385,26 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_save_that_fails_does_not_leave_the_update_tracked_for_the_shared_audit_context_to_commit()
+    {
+        var created = await CreateAsync();
+        _audit.Records.Clear();
+        _failSaves.Fail = true;
+
+        var act = async () => await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            "Renamed", null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+
+        await act.Should().ThrowAsync<InvalidOperationException>("the simulated save failure");
+        _audit.Records.Should().ContainSingle().Which.Outcome.Should().Be("failed");
+
+        // The audit store shares this context; the next save it performs must not carry the rejected update.
+        _failSaves.Fail = false;
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+        (await _repository.GetByIdAsync(created.Id))!.Name.Should().Be("Warehouse");
+    }
+
+    [Fact]
     public async Task An_invalid_update_that_touches_no_secret_writes_no_record()
     {
         var created = await CreateAsync();
@@ -454,6 +477,15 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
             ConnectionAuditActionNames.Created, ConnectionAuditActionNames.Updated, ConnectionAuditActionNames.SecretRotated,
             ConnectionAuditActionNames.Retired, ConnectionAuditActionNames.Verified
         }.Should().OnlyHaveUniqueItems().And.OnlyContain(a => a.StartsWith("connection.", StringComparison.Ordinal));
+    }
+
+    private sealed class FailingSaveInterceptor : SaveChangesInterceptor
+    {
+        public bool Fail { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
+            Fail ? throw new InvalidOperationException("Simulated save failure.") : base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
     private sealed class RecordingAudit : IAuditService
