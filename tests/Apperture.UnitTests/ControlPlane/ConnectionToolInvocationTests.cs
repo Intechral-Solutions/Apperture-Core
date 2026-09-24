@@ -273,7 +273,7 @@ public sealed class ConnectionToolInvocationTests
         var controller = new ConnectionToolsController(rig.Sut);
 
         var direct = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
-        var viaController = async () => await controller.SqlSchemas("conn-1", CancellationToken.None);
+        var viaController = async () => await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None);
 
         await direct.Should().ThrowAsync<ArgumentException>();
         sink.Records.Should().ContainSingle().Which.Outcome.Should().Be("failed");
@@ -351,7 +351,7 @@ public sealed class ConnectionToolInvocationTests
         var controller = new ConnectionToolsController(rig.Sut) { ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() } };
 
         var inFlight = rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask();
-        var refused = await controller.SqlSchemas("conn-1", CancellationToken.None);
+        var refused = await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None);
 
         refused.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(429);
         controller.Response.Headers.RetryAfter.ToString().Should().Be("2");
@@ -444,9 +444,9 @@ public sealed class ConnectionToolInvocationTests
         };
         var controller = new ConnectionToolsController(NewRig(ConnectionFor(Sql), ReadAndBrowse, [browser], sink).Sut);
 
-        var denied = await controller.SqlSchemas("conn-1", CancellationToken.None);
-        var badName = await controller.SqlTables("conn-1", "  ", CancellationToken.None);
-        var missingSchema = await controller.SqlColumns("conn-1", null, null, CancellationToken.None);
+        var denied = await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None);
+        var badName = await controller.SqlTables("conn-1", new SqlTablesRequestDto("  "), CancellationToken.None);
+        var missingSchema = await controller.SqlColumns("conn-1", new SqlColumnsRequestDto(null, null), CancellationToken.None);
 
         var ok = denied.Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<SqlStructureResponseDto<SqlSchemaDto>>().Subject;
         ok.Outcome.Should().Be("RemoteDenied");
@@ -463,11 +463,11 @@ public sealed class ConnectionToolInvocationTests
         var unknown = new ConnectionToolsController(NewRig(null, ReadAndBrowse, [new CannedBrowser(Sql)], sink).Sut);
         var noTool = new ConnectionToolsController(NewRig(ConnectionFor(Sftp), ReadAndBrowse, [new CannedBrowser(Sql)], sink).Sut);
 
-        (await withoutBrowse.SqlSchemas("conn-1", CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
-        (await withoutBrowse.SqlTables("conn-1", "dbo", CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
-        (await withoutBrowse.SqlColumns("conn-1", "dbo", "t", CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
-        (await unknown.SqlSchemas("conn-1", CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
-        (await noTool.SqlSchemas("conn-1", CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
+        (await withoutBrowse.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
+        (await withoutBrowse.SqlTables("conn-1", new SqlTablesRequestDto("dbo"), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
+        (await withoutBrowse.SqlColumns("conn-1", new SqlColumnsRequestDto("dbo", "t"), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
+        (await unknown.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
+        (await noTool.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
         sink.Records.Should().BeEmpty();
     }
 
@@ -476,8 +476,13 @@ public sealed class ConnectionToolInvocationTests
     {
         var actions = typeof(ConnectionToolsController).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
 
-        actions.Should().OnlyContain(m => m.GetCustomAttributes(typeof(HttpGetAttribute), true).Length == 1,
-            "there is no POST, PUT, PATCH or DELETE: nothing here can run SQL or change anything");
+        // The three structure requests are POSTs (each logs in remotely and is audited: see ConnectionToolsRequestForgeryTests), but
+        // there is still no PUT, PATCH or DELETE and no route that takes SQL: nothing here can run SQL or change anything.
+        actions.Should().OnlyContain(m =>
+            m.GetCustomAttributes(typeof(HttpGetAttribute), true).Length + m.GetCustomAttributes(typeof(HttpPostAttribute), true).Length == 1);
+        actions.SelectMany(m => m.GetCustomAttributes(typeof(HttpPutAttribute), true)
+            .Concat(m.GetCustomAttributes(typeof(HttpPatchAttribute), true))
+            .Concat(m.GetCustomAttributes(typeof(HttpDeleteAttribute), true))).Should().BeEmpty();
         actions.SelectMany(m => m.GetParameters()).Select(p => p.Name).Should().NotContain(n =>
             n == "sql" || n == "statement" || n == "command" || n == "query" || n == "body" || n == "payload");
         actions.Select(m => m.Name).Should().BeEquivalentTo("Get", "SqlSchemas", "SqlTables", "SqlColumns");

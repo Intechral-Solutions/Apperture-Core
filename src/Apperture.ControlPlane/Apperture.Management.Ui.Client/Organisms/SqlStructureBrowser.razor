@@ -170,7 +170,7 @@
         _schemasLoading = true;
         try
         {
-            var response = await FetchAsync(() => Client.GetSqlSchemasAsync(ConnectionId, _cts.Token), Failure<SqlSchemaDto>);
+            var response = await FetchAsync(() => Client.ListSqlSchemasAsync(ConnectionId, _cts.Token), Failure<SqlSchemaDto>);
             if (response is null)
                 return; // cancelled: the page was left
             _schemas = response;
@@ -230,7 +230,7 @@
     {
         var node = _tables[schema] = new Node<SqlTableDto> { Loading = true };
         await Refresh();
-        var response = await FetchAsync(() => Client.GetSqlTablesAsync(ConnectionId, schema, _cts.Token), Failure<SqlTableDto>);
+        var response = await FetchAsync(() => Client.ListSqlTablesAsync(ConnectionId, schema, _cts.Token), Failure<SqlTableDto>);
         if (response is null)
             return;
         node.Response = response;
@@ -242,7 +242,7 @@
     {
         var node = _columns[(schema, table)] = new Node<SqlColumnDto> { Loading = true };
         await Refresh();
-        var response = await FetchAsync(() => Client.GetSqlColumnsAsync(ConnectionId, schema, table, _cts.Token), Failure<SqlColumnDto>);
+        var response = await FetchAsync(() => Client.ListSqlColumnsAsync(ConnectionId, schema, table, _cts.Token), Failure<SqlColumnDto>);
         if (response is null)
             return;
         node.Response = response;

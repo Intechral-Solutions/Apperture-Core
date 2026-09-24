@@ -60,6 +60,9 @@ public class ClientServerDtoParityTests
         yield return new object[] { typeof(ServerCreateConnectionRequestBody), typeof(ClientCreateConnectionRequest), true };
         yield return new object[] { typeof(ServerConnectionToolsDto), typeof(ClientConnectionToolsDto), true };
         yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlStructureResponseDto<Apperture.Management.Api.Controllers.SqlSchemaDto>), typeof(Apperture.Management.Client.SqlStructureResponseDto<Apperture.Management.Client.SqlSchemaDto>), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlSchemasRequestDto), typeof(Apperture.Management.Client.SqlSchemasRequestDto), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlTablesRequestDto), typeof(Apperture.Management.Client.SqlTablesRequestDto), true };
+        yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlColumnsRequestDto), typeof(Apperture.Management.Client.SqlColumnsRequestDto), true };
         yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlSchemaDto), typeof(Apperture.Management.Client.SqlSchemaDto), true };
         yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlTableDto), typeof(Apperture.Management.Client.SqlTableDto), true };
         yield return new object[] { typeof(Apperture.Management.Api.Controllers.SqlColumnDto), typeof(Apperture.Management.Client.SqlColumnDto), true };

@@ -68,14 +68,14 @@ public sealed class SqlStructureBrowserRenderTests
     }
 
     private static Action<Mock<IManagementClient>> Schemas(params string[] names) => client =>
-        client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+        client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(Ok(names.Select(n => new SqlSchemaDto(n)).ToArray()));
 
     private static void Tables(Mock<IManagementClient> client, string schema, params SqlTableDto[] tables) =>
-        client.Setup(c => c.GetSqlTablesAsync("conn-1", schema, It.IsAny<CancellationToken>())).ReturnsAsync(Ok(tables));
+        client.Setup(c => c.ListSqlTablesAsync("conn-1", schema, It.IsAny<CancellationToken>())).ReturnsAsync(Ok(tables));
 
     private static void Columns(Mock<IManagementClient> client, string schema, string table, params SqlColumnDto[] columns) =>
-        client.Setup(c => c.GetSqlColumnsAsync("conn-1", schema, table, It.IsAny<CancellationToken>())).ReturnsAsync(Ok(columns));
+        client.Setup(c => c.ListSqlColumnsAsync("conn-1", schema, table, It.IsAny<CancellationToken>())).ReturnsAsync(Ok(columns));
 
     // ---- Nothing happens until the operator asks -------------------------------------------------------
 
@@ -134,9 +134,9 @@ public sealed class SqlStructureBrowserRenderTests
 
         await rig.Do(() => rig.Browser.ToggleTableAsync("sales", "Orders"));
         rig.Html.Should().Contain("Note").And.Contain("nvarchar(200)").And.Contain("varchar(max)").And.NotContain("(-1)").And.Contain(">int<");
-        rig.Client.Verify(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()), Times.Once);
-        rig.Client.Verify(c => c.GetSqlTablesAsync("conn-1", "sales", It.IsAny<CancellationToken>()), Times.Once);
-        rig.Client.Verify(c => c.GetSqlColumnsAsync("conn-1", "sales", "Orders", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlTablesAsync("conn-1", "sales", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlColumnsAsync("conn-1", "sales", "Orders", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -156,8 +156,8 @@ public sealed class SqlStructureBrowserRenderTests
             await rig.Do(() => rig.Browser.ToggleTableAsync("dbo", "Orders"));
         }
 
-        rig.Client.Verify(c => c.GetSqlTablesAsync("conn-1", "dbo", It.IsAny<CancellationToken>()), Times.Once);
-        rig.Client.Verify(c => c.GetSqlColumnsAsync("conn-1", "dbo", "Orders", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlTablesAsync("conn-1", "dbo", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlColumnsAsync("conn-1", "dbo", "Orders", It.IsAny<CancellationToken>()), Times.Once);
         rig.Client.Invocations.Should().HaveCount(3, "one request per node, however often the tree is expanded and collapsed");
     }
 
@@ -166,14 +166,14 @@ public sealed class SqlStructureBrowserRenderTests
     {
         var gate = new TaskCompletionSource<SqlStructureResponseDto<SqlSchemaDto>>();
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>())).Returns(gate.Task));
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>())).Returns(gate.Task));
 
         var first = rig.Do(rig.Browser.BrowseAsync);
         var second = rig.Do(rig.Browser.BrowseAsync);
         gate.SetResult(Ok(new SqlSchemaDto("dbo")));
         await Task.WhenAll(first, second);
 
-        rig.Client.Verify(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()), Times.Once);
+        rig.Client.Verify(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ---- Caps and empty states -------------------------------------------------------------------------
@@ -182,7 +182,7 @@ public sealed class SqlStructureBrowserRenderTests
     public async Task A_truncated_list_says_so_honestly()
     {
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new SqlStructureResponseDto<SqlSchemaDto>("Succeeded", [new SqlSchemaDto("dbo")], true, 500, null)));
 
         await rig.Do(rig.Browser.BrowseAsync);
@@ -211,7 +211,7 @@ public sealed class SqlStructureBrowserRenderTests
     {
         var calls = 0;
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() => ++calls == 1
                     ? new SqlStructureResponseDto<SqlSchemaDto>("RemoteDenied", [], false, 500, "The database refused this request for the login.")
                     : Ok(new SqlSchemaDto("dbo"))));
@@ -228,7 +228,7 @@ public sealed class SqlStructureBrowserRenderTests
     public async Task A_failed_request_shows_a_generic_fixed_message_and_never_the_exception_text()
     {
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new HttpRequestException("Data Source=db.example;Password=hunter2 returned 500")));
 
         await rig.Do(rig.Browser.BrowseAsync);
@@ -244,7 +244,7 @@ public sealed class SqlStructureBrowserRenderTests
         await using var rig = await RenderAsync(client =>
         {
             Schemas("dbo", "sales")(client);
-            client.Setup(c => c.GetSqlTablesAsync("conn-1", "sales", It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("boom"));
+            client.Setup(c => c.ListSqlTablesAsync("conn-1", "sales", It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("boom"));
             Tables(client, "dbo", new SqlTableDto("dbo", "Orders", false));
         });
         await rig.Do(rig.Browser.BrowseAsync);
@@ -262,7 +262,7 @@ public sealed class SqlStructureBrowserRenderTests
         await using var rig = await RenderAsync(client =>
         {
             Schemas("dbo")(client);
-            client.Setup(c => c.GetSqlTablesAsync("conn-1", "dbo", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlTablesAsync("conn-1", "dbo", It.IsAny<CancellationToken>()))
                 .Returns(() => ++calls == 1
                     ? Task.FromException<SqlStructureResponseDto<SqlTableDto>>(new TaskCanceledException("HttpClient.Timeout elapsed"))
                     : Task.FromResult(Ok(new SqlTableDto("dbo", "Orders", false))));
@@ -282,7 +282,7 @@ public sealed class SqlStructureBrowserRenderTests
     {
         var calls = 0;
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
                 .Returns(() => ++calls == 1
                     ? Task.FromException<SqlStructureResponseDto<SqlSchemaDto>>(new HttpRequestException("busy", null, System.Net.HttpStatusCode.TooManyRequests))
                     : Task.FromResult(Ok(new SqlSchemaDto("dbo")))));
@@ -302,7 +302,7 @@ public sealed class SqlStructureBrowserRenderTests
         CancellationToken seen = default;
         var started = new TaskCompletionSource();
         await using var rig = await RenderAsync(client =>
-            client.Setup(c => c.GetSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
+            client.Setup(c => c.ListSqlSchemasAsync("conn-1", It.IsAny<CancellationToken>()))
                 .Returns(async (string _, CancellationToken ct) =>
                 {
                     seen = ct;

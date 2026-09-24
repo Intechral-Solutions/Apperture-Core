@@ -11,6 +11,13 @@ namespace Apperture.Management.Api.Controllers;
 /// Refusals are identical whether or not the connector has a tool, so tool availability is never disclosed to a caller without
 /// <c>connection.browse</c>. Structure requests return metadata only: there is no endpoint that reads rows, takes SQL, or changes
 /// anything, and each request writes one audit record.
+/// <para>
+/// Each structure request logs in to an external system, consumes browse capacity and writes an audit record, so it is a POST, never
+/// a GET that a cross-site navigation could trigger. The platform has no antiforgery-token middleware; its request-forgery posture is
+/// the SameSite=Lax session cookie (not sent on cross-site POSTs) plus a required typed JSON body: a non-JSON or missing content type is
+/// a 415 and an empty JSON body is a 400 (<c>[Consumes]</c>, the body binder and <c>[ApiController]</c>), all before the action runs,
+/// so a plain cross-site HTML form cannot reach the provider or the audit. Only the local availability lookup remains a GET.
+/// </para>
 /// </summary>
 [ApiController]
 [Route("api/connections/{id}/tools")]
@@ -36,25 +43,30 @@ public sealed class ConnectionToolsController : ControllerBase
     }
 
     /// <summary>Schemas in the database the Connection points at.</summary>
-    [HttpGet("sql-structure/schemas")]
-    public Task<ActionResult<SqlStructureResponseDto<SqlSchemaDto>>> SqlSchemas(string id, CancellationToken cancellationToken) =>
+    [HttpPost("sql-structure/schemas")]
+    [Consumes("application/json")]
+    public Task<ActionResult<SqlStructureResponseDto<SqlSchemaDto>>> SqlSchemas(
+        string id, [FromBody] SqlSchemasRequestDto request, CancellationToken cancellationToken) =>
         RunAsync(
             () => _tools.ListSqlSchemasAsync(new ConnectionId(id), cancellationToken),
             s => new SqlSchemaDto(s.Name));
 
     /// <summary>Tables and views in one schema. The schema is a VALUE, bound as a parameter; it is never part of any SQL text.</summary>
-    [HttpGet("sql-structure/tables")]
-    public Task<ActionResult<SqlStructureResponseDto<SqlTableDto>>> SqlTables(string id, [FromQuery] string? schema, CancellationToken cancellationToken) =>
+    [HttpPost("sql-structure/tables")]
+    [Consumes("application/json")]
+    public Task<ActionResult<SqlStructureResponseDto<SqlTableDto>>> SqlTables(
+        string id, [FromBody] SqlTablesRequestDto request, CancellationToken cancellationToken) =>
         RunAsync(
-            () => _tools.ListSqlTablesAsync(new ConnectionId(id), schema ?? "", cancellationToken),
+            () => _tools.ListSqlTablesAsync(new ConnectionId(id), request.Schema ?? "", cancellationToken),
             t => new SqlTableDto(t.Schema, t.Name, t.IsView));
 
     /// <summary>Columns of one table or view. Schema and table are VALUES, bound as parameters.</summary>
-    [HttpGet("sql-structure/columns")]
+    [HttpPost("sql-structure/columns")]
+    [Consumes("application/json")]
     public Task<ActionResult<SqlStructureResponseDto<SqlColumnDto>>> SqlColumns(
-        string id, [FromQuery] string? schema, [FromQuery] string? table, CancellationToken cancellationToken) =>
+        string id, [FromBody] SqlColumnsRequestDto request, CancellationToken cancellationToken) =>
         RunAsync(
-            () => _tools.ListSqlColumnsAsync(new ConnectionId(id), schema ?? "", table ?? "", cancellationToken),
+            () => _tools.ListSqlColumnsAsync(new ConnectionId(id), request.Schema ?? "", request.Table ?? "", cancellationToken),
             c => new SqlColumnDto(c.Name, c.DataType, c.IsNullable, c.Ordinal, c.MaxLength));
 
     private async Task<ActionResult<SqlStructureResponseDto<TDto>>> RunAsync<TInfo, TDto>(
@@ -98,6 +110,15 @@ public sealed record ConnectionToolsDto(bool SqlStructureBrowser);
 
 /// <summary>One structure request's result. <c>Outcome</c> is a <see cref="ConnectionToolOutcome"/> name; <c>Message</c> is a fixed safe sentence.</summary>
 public sealed record SqlStructureResponseDto<T>(string Outcome, IReadOnlyList<T> Items, bool Truncated, int Limit, string? Message);
+
+/// <summary>Body of a schema-listing request. Deliberately empty: a JSON body is still required (see the controller remarks).</summary>
+public sealed record SqlSchemasRequestDto();
+
+/// <summary>Body of a table-listing request. The schema is a VALUE, bound as a parameter; it is never part of any SQL text.</summary>
+public sealed record SqlTablesRequestDto(string? Schema);
+
+/// <summary>Body of a column-listing request. Schema and table are VALUES, bound as parameters.</summary>
+public sealed record SqlColumnsRequestDto(string? Schema, string? Table);
 
 public sealed record SqlSchemaDto(string Name);
 

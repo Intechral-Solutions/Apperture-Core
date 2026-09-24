@@ -95,7 +95,13 @@ the tool can show, so a Connection with **no SQL login** (which would sign in as
 refused before any client exists, and at most two requests run at once per Connection (a third is refused with 429 and
 nothing is sent to the remote system). The remote system's own refusal or outage is an outcome with a fixed message,
 never a platform error, and remote error text, connection strings and secrets never reach the UI, audit or logs. Only
-the Management Host composes the browser; runtime workers do not. **Arbitrary SQL, a query console and row preview remain outside this decision** and would each need
+the Management Host composes the browser; runtime workers do not. Because each structure request logs in to an external
+system, consumes browse capacity and writes an audit record, the three requests are **POSTs with a required typed JSON
+body**, never GETs that a cross-site navigation could trigger; only the local availability lookup stays a GET. The
+platform has no antiforgery-token middleware, and none was added: the protection is the `SameSite=Lax` session cookie
+(withheld from cross-site POSTs) together with the JSON-only body contract (`[Consumes("application/json")]` returns 415
+and an absent body returns 400, both before the action runs, so a plain cross-site form cannot reach the provider or the
+audit). A platform-wide antiforgery layer would be a separate decision. **Arbitrary SQL, a query console and row preview remain outside this decision** and would each need
 their own security and design gate.
 
 ### Audit

@@ -641,21 +641,29 @@ public sealed class ManagementClient : IManagementClient
             cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<SqlStructureResponseDto<SqlSchemaDto>> GetSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default) =>
-        GetStructureAsync<SqlSchemaDto>($"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/schemas", cancellationToken);
+    public Task<SqlStructureResponseDto<SqlSchemaDto>> ListSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default) =>
+        PostStructureAsync<SqlSchemaDto>(connectionId, "schemas", new SqlSchemasRequestDto(), cancellationToken);
 
-    public Task<SqlStructureResponseDto<SqlTableDto>> GetSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default) =>
-        GetStructureAsync<SqlTableDto>(
-            $"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/tables?schema={Uri.EscapeDataString(schema)}", cancellationToken);
+    public Task<SqlStructureResponseDto<SqlTableDto>> ListSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default) =>
+        PostStructureAsync<SqlTableDto>(connectionId, "tables", new SqlTablesRequestDto(schema), cancellationToken);
 
-    public Task<SqlStructureResponseDto<SqlColumnDto>> GetSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default) =>
-        GetStructureAsync<SqlColumnDto>(
-            $"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/columns?schema={Uri.EscapeDataString(schema)}&table={Uri.EscapeDataString(table)}",
-            cancellationToken);
+    public Task<SqlStructureResponseDto<SqlColumnDto>> ListSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default) =>
+        PostStructureAsync<SqlColumnDto>(connectionId, "columns", new SqlColumnsRequestDto(schema, table), cancellationToken);
 
-    private async Task<SqlStructureResponseDto<T>> GetStructureAsync<T>(string path, CancellationToken cancellationToken)
+    /// <summary>
+    /// A structure request logs in to an external system, consumes browse capacity and is audited, so it is a POST with a typed
+    /// JSON body; the operator's schema and table are body values and never part of the URL.
+    /// </summary>
+    private async Task<SqlStructureResponseDto<T>> PostStructureAsync<T>(
+        string connectionId, string operation, object request, CancellationToken cancellationToken)
     {
-        var result = await _http.GetFromJsonAsync<SqlStructureResponseDto<T>>(path, ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync(
+            $"connections/{Uri.EscapeDataString(connectionId)}/tools/sql-structure/{operation}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SqlStructureResponseDto<T>>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         return result ?? throw new InvalidOperationException("Server returned no structure body.");
     }
 

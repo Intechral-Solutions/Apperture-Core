@@ -183,7 +183,7 @@ public sealed class ConnectionWorkspaceUiSourceTests
         content.Should().NotContain("OnInitialized").And.NotContain("OnParametersSet").And.NotContain("OnAfterRender",
             "nothing is requested when the tool renders; every request is an explicit operator action");
         Regex.Matches(content, @"Client\.(\w+)\(").Select(m => m.Groups[1].Value).Distinct()
-            .Should().BeEquivalentTo("GetSqlSchemasAsync", "GetSqlTablesAsync", "GetSqlColumnsAsync");
+            .Should().BeEquivalentTo("ListSqlSchemasAsync", "ListSqlTablesAsync", "ListSqlColumnsAsync");
     }
 
     [Fact]

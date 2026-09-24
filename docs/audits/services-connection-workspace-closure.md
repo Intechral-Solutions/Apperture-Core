@@ -21,7 +21,7 @@ optional connector tool — a SQL Server **structure** browser — behind one ne
 | **SVC-5** lifecycle and fallbacks | Retired = read-only with a notice (test/edit/move/retire hidden). Unregistered connector = notice; no test or edit, move/retire kept; health says "unregistered", not "unsupported", and keeps the last recorded result. Editing needs `connector.definition.read`. Failed save/test is a toast, never a whole-page error; a test that ran but did not verify no longer shows a success banner. Verifiers no longer echo exception text when secrets cannot be resolved (one fixed message); cancellation propagates. |
 | **SVC-4** Connectors tab | The tab, its duplicate table and `?tab=` handling are gone; `/connections` lists Connections only, with an inline "Browse the connector catalog" link (shown to callers who can read definitions). `/components?kind=connector` now opens filtered on a direct load and on in-app navigation; unknown or unseen kinds are dropped exactly as other unrecognised filters are; plain `/components` is unchanged. |
 | **SVC-6** permission and seam | `connection.browse` (Connection, instance, Connector family), granted to the platform administrator role via the repair set, additive to `connection.read`. `IConnectionToolProvider` + typed `ISqlStructureBrowser`; `ConnectionToolAccess` requires both grants before any provider lookup and refuses identically whether or not a tool exists; `GET api/connections/{id}/tools`; `CanBrowseConnections` capability; Tools section only when the caller may browse, a provider exists, and the Connection is Active. |
-| **SVC-7** SQL structure browser | Three fixed, parameterized `INFORMATION_SCHEMA` statements (`SqlStructureQueries`, asserted literally); explicit connect/command timeouts, a 500-item cap with truncation notice, cancellation end to end, a client per operator-invoked request with pooling off and deterministic disposal; fixed safe outcomes for remote refusal/outage; three read-only endpoints; one fail-closed audit record per remote request (counts and outcome only); a UI that requests nothing until asked and fetches each node once. |
+| **SVC-7** SQL structure browser | Three fixed, parameterized `INFORMATION_SCHEMA` statements (`SqlStructureQueries`, asserted literally); explicit connect/command timeouts, a 500-item cap with truncation notice, cancellation end to end, a client per operator-invoked request with pooling off and deterministic disposal; fixed safe outcomes for remote refusal/outage; three metadata-only POST endpoints (see the request-forgery hardening below); one fail-closed audit record per remote request (counts and outcome only); a UI that requests nothing until asked and fetches each node once. |
 | **SVC-8** documentation | ADR-0044, this closure, the design-gate implementation record (§35), roadmap items 5/7, transitions README, connector-resource-family and runtime-connection-resolution, current-inventory, glossary, decisions index. |
 
 ## Invariants verified
@@ -41,8 +41,9 @@ optional connector tool — a SQL Server **structure** browser — behind one ne
 - **Structure only, no dynamic SQL** — `SqlStructureQueries.All` is asserted as three exact literals; a regex test forbids
   DML/DDL/EXEC/QUOTENAME/`;`/`INTO`/`*`/any non-`INFORMATION_SCHEMA` source; injection-shaped names (quotes, `]`, `GO`, `EXEC
   xp_cmdshell`, a leading `'; DROP TABLE`) are proven to be inert parameter *values* both against recording ADO.NET doubles and
-  against real SQL Server (row count unchanged); scalar and non-query execution throw in the double; the controller has only
-  `GET` actions and no `sql`/`statement`/`command`/`query`/`body` parameter.
+  against real SQL Server (row count unchanged); scalar and non-query execution throw in the double; the controller has no
+  PUT/PATCH/DELETE action and no `sql`/`statement`/`command`/`query`/`payload` parameter (the three structure requests take
+  only a typed request record holding the selected values).
 - **Bounded and disposed** — command timeout asserted on every command; the cap and honest truncation on real and faked data;
   cancellation reaches the execute call and propagates as cancellation (including a real mid-`OpenAsync` cancel against a local
   server that never answers); connection, command and reader are disposed on success, failure and cancellation; `Pooling=false`
@@ -106,13 +107,31 @@ context shared with the audit store, so the "failed rotation" record could commi
 `SVC-` labels. Minor items fixed: `(max)` column type label, audit wording for provider-declined requests, stale registration/summary/
 supersession text in the architecture docs and ADR-0043, and §35 now records the audit-granularity and truncation-wording
 interpretations. Not changed: a repeat visit to `/components?kind=connector` after manually changing the Kind filter is a no-op
-(accepted); the structure endpoints are GET requests that cause a remote login and an audit record, and the session cookie is `SameSite=Lax`,
-which is sent on cross-site top-level navigations. The response is not readable cross-site and the calls are authorized,
-read-only, capped and rate-limited per Connection, so this is recorded as an accepted residual (a POST or an anti-forgery check is the
-follow-up if it is ever judged worth it).
+(accepted).
+
+### Request-forgery hardening (post-review stabilization)
+
+The three structure requests were GETs although each logs in to an external system, consumes browse capacity and writes an audit
+record, and the `SameSite=Lax` session cookie is sent on cross-site top-level GET navigations. They are now POSTs with a required
+typed JSON body (`[Consumes("application/json")]`, `[FromBody]` request records); the client sends POST JSON and the operator's
+schema and table travel in the body, not the URL. Only the local availability lookup remains a GET. **The platform has no
+antiforgery-token mechanism to reuse** (no `AddAntiforgery`/`UseAntiforgery`/validation attribute anywhere), and none was invented:
+the protection is the Lax cookie (not sent on cross-site POSTs) plus the JSON-only body, so a cross-site form, link or no-cors fetch
+is refused with 415/400 by the framework before the action, the provider or the audit. Authorization is unchanged (`connection.read`
+and `connection.browse` on every request). Limits: SameSite is enforced by the browser and cannot be exercised by the header-based
+test host, so the integration tests prove the method and content-type contract, not the cookie; same-site (sibling-origin) attackers
+are outside this protection, as for every other state-changing endpoint on the platform.
+
+A focused independent review of this change (Opus) found no Critical or Important issue; its Minor items were applied (controller
+remark wording, response disposal, a guard that only the tools controller can reach the tool-access service). It also observed, as
+pre-existing and platform-wide, that the `UiDev` CORS policy (credentials allowed from `localhost:9001`) is registered in every
+environment; that is unchanged and recorded below.
 
 ## Accepted residuals
 
+- **The `UiDev` CORS policy is applied in every environment** (Management Host), allowing credentialed requests from
+  `http(s)://localhost:9001`. Pre-existing, affects every endpoint equally, not changed here; restricting it to development or making
+  the origins configurable is the follow-up.
 - **Verification summaries carry remote-derived text** (a `SqlException` message can name a login or host; SFTP/Campus Nexus messages
   can name a URL). It is persisted on the Connection and visible to `connection.read` holders. Pre-existing and not secret material;
   only the secret-resolution failure text was normalised (SVC-5).
@@ -136,22 +155,22 @@ follow-up if it is ever judged worth it).
 
 ## Validation
 
-At the whole-branch review fixes commit (re-validated after the review changes; the earlier run at `296b52f` had 2786 UnitTests):
+At the request-forgery hardening commit (re-validated in full; the run at `296b52f` had 2786 UnitTests and 259 IntegrationTests):
 
 - `dotnet build Apperture.slnx` — succeeded, 0 errors (pre-existing warnings only), isolated `--artifacts-path`, single node.
-- `Apperture.UnitTests` — **2791 passed**, 0 failed, 0 skipped.
+- `Apperture.UnitTests` — **2814 passed**, 0 failed, 0 skipped.
 - `Apperture.ArchTests` — **38 passed**, 0 failed, 0 skipped.
 - `Apperture.Management.Ui.Shared.Tests` — **1348 passed**, 0 failed, 0 skipped.
 - `Apperture.Management.Ui.Client.Tests` — **193 passed**, 0 failed, 0 skipped.
-- `Apperture.IntegrationTests` — **259 passed**, 0 failed, 0 skipped, in 6 min 18 s.
+- `Apperture.IntegrationTests` — **262 passed**, 0 failed, 0 skipped, in 8 min 5 s.
 
 **SQL was genuinely exercised**, independent of "Skipped: 0" (integration tests can soft-skip): the new suites use hard-failing
 fixtures (`RequireFixtureAsync` / `SqlAvailable` assertions), so they cannot pass without SQL Server; the run took a realistic
 six minutes; and the test databases' last-write markers advanced across the run (`Apperture_IntegrationTests` last user update
-`22:30:41` → `22:53:27`; `Apperture_ManagementGovernanceTests` `22:25:40` → `22:48:28`; server UTC `22:53:46`, all 2026-09-24), read
+`22:53:27` → `23:49:48`; `Apperture_ManagementGovernanceTests` `23:34:18` → `23:43:04`; server UTC `23:50:09`, all 2026-09-24, re-measured after the request-forgery change), read
 through the container with credentials taken from the environment, never placed on a command line. New real-SQL and real-host
 evidence: `ConnectionLifecycleAuditSqlServerTests` (2), `PlatformSqlStructureBrowserSqlServerTests` (6),
-`ManagementHostConnectionToolsHttpTests` (10) — including a real 403 matrix, real audit rows, a real login refusal
+`ManagementHostConnectionToolsHttpTests` (13, including the request-forgery contract: GET 405, non-JSON POST 415/400, no audit) — including a real 403 matrix, real audit rows, a real login refusal
 (`RemoteDenied`), a real closed-port outage (`RemoteUnavailable`), a hostile schema that changes nothing, and composition of exactly
 one provider in the real host.
 

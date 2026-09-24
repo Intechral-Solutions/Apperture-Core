@@ -93,6 +93,67 @@ public sealed class ManagementHostConnectionToolsHttpTests
 
     private static string Password(string connectionString) => new SqlConnectionStringBuilder(connectionString).Password;
 
+    private static Task<HttpResponseMessage> BrowseAsync(HttpClient client, string connectionId, string operation, object? body = null) =>
+        client.PostAsJsonAsync($"/api/connections/{connectionId}/tools/sql-structure/{operation}", body ?? new { });
+
+    // ---- Request forgery: remote browse is POST-only with a JSON body -----------------------------------
+
+    [Fact]
+    public async Task RF_a_GET_can_no_longer_perform_a_remote_browse_and_writes_nothing()
+    {
+        var (author, _, browser, _) = await SetUpAsync();
+        var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
+        var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), target.DataSource, target.InitialCatalog);
+
+        foreach (var path in new[] { "schemas", "tables?schema=dbo", "columns?schema=dbo&table=x" })
+        {
+            // Even a fully authorized caller, and even with the values a working POST would carry.
+            var response = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/{path}");
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, $"GET {path}");
+        }
+
+        (await StructureAuditCountAsync(id)).Should().Be(0, "a refused GET must not reach the provider or the audit");
+    }
+
+    [Fact]
+    public async Task RF_a_POST_that_is_not_a_JSON_body_is_refused_before_any_remote_io_or_audit()
+    {
+        var (author, _, browser, _) = await SetUpAsync();
+        var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
+        var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), target.DataSource, target.InitialCatalog);
+        var url = $"/api/connections/{id}/tools/sql-structure/tables";
+
+        // The requests a cross-site HTML form (or a query-string-only POST) can produce.
+        var formEncoded = new HttpRequestMessage(HttpMethod.Post, url) { Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["schema"] = "dbo" }) };
+        var textPlain = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{\"schema\":\"dbo\"}", System.Text.Encoding.UTF8, "text/plain") };
+        var noBody = new HttpRequestMessage(HttpMethod.Post, url + "?schema=dbo");
+        var emptyJson = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("", System.Text.Encoding.UTF8, "application/json") };
+
+        foreach (var (label, request) in new[] { ("form", formEncoded), ("text/plain", textPlain), ("no body", noBody), ("empty json", emptyJson) })
+        {
+            var response = await browser.SendAsync(request);
+            ((int)response.StatusCode).Should().BeOneOf([400, 415], $"{label} must be refused by the framework before the action runs");
+        }
+
+        (await StructureAuditCountAsync(id)).Should().Be(0, "none of these may reach the provider or write a browse audit");
+    }
+
+    [Fact]
+    public async Task RF_an_unauthenticated_POST_is_refused_and_a_legitimate_POST_still_succeeds()
+    {
+        var (author, _, browser, _) = await SetUpAsync();
+        var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
+        var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), target.DataSource, target.InitialCatalog);
+
+        var anonymous = _fixture.Factory!.CreateClient();
+        var refused = await BrowseAsync(anonymous, id, "schemas");
+        var allowed = await BrowseAsync(browser, id, "schemas");
+
+        ((int)refused.StatusCode).Should().BeOneOf([401, 403]);
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await StructureAuditCountAsync(id)).Should().Be(1, "exactly the one legitimate request is audited");
+    }
+
     // ---- Authorization, end to end ---------------------------------------------------------------------
 
     [Fact]
@@ -105,9 +166,15 @@ public sealed class ManagementHostConnectionToolsHttpTests
         // read (plus create/update/delete) is not enough; browse alone is not enough; the response body says nothing either way.
         foreach (var client in new[] { reader, browseOnly, author })
         {
-            foreach (var path in new[] { "", "/sql-structure/schemas", "/sql-structure/tables?schema=dbo", "/sql-structure/columns?schema=dbo&table=x" })
+            var responses = new List<(string Path, HttpResponseMessage Response)>
             {
-                var response = await client.GetAsync($"/api/connections/{id}/tools{path}");
+                ("tools", await client.GetAsync($"/api/connections/{id}/tools")),
+                ("schemas", await BrowseAsync(client, id, "schemas")),
+                ("tables", await BrowseAsync(client, id, "tables", new { schema = "dbo" })),
+                ("columns", await BrowseAsync(client, id, "columns", new { schema = "dbo", table = "x" })),
+            };
+            foreach (var (path, response) in responses)
+            {
                 response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{path} must refuse a caller without both grants");
                 (await response.Content.ReadAsStringAsync()).Should().NotContain("sqlStructureBrowser");
             }
@@ -144,14 +211,14 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var id = await CreateSqlConnectionAsync(author, password, target.DataSource, target.InitialCatalog);
         var bodies = new List<string>();
 
-        var schemasResponse = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/schemas");
+        var schemasResponse = await BrowseAsync(browser, id, "schemas");
         bodies.Add(await schemasResponse.Content.ReadAsStringAsync());
         var schemas = JsonSerializer.Deserialize<JsonElement>(bodies[^1], Json);
-        var tablesResponse = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/tables?schema=dbo");
+        var tablesResponse = await BrowseAsync(browser, id, "tables", new { schema = "dbo" });
         bodies.Add(await tablesResponse.Content.ReadAsStringAsync());
         var tables = JsonSerializer.Deserialize<JsonElement>(bodies[^1], Json);
         var firstTable = tables.GetProperty("items").EnumerateArray().First(t => !t.GetProperty("isView").GetBoolean()).GetProperty("name").GetString()!;
-        var columnsResponse = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/columns?schema=dbo&table={Uri.EscapeDataString(firstTable)}");
+        var columnsResponse = await BrowseAsync(browser, id, "columns", new { schema = "dbo", table = firstTable });
         bodies.Add(await columnsResponse.Content.ReadAsStringAsync());
         var columns = JsonSerializer.Deserialize<JsonElement>(bodies[^1], Json);
 
@@ -198,8 +265,8 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
         var before = await db.Connections.CountAsync();
 
-        var hostile = Uri.EscapeDataString("dbo'; DELETE FROM Connections; DROP TABLE Connections;--");
-        var response = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/tables?schema={hostile}");
+        var hostile = ("dbo'; DELETE FROM Connections; DROP TABLE Connections;--");
+        var response = await BrowseAsync(browser, id, "tables", new { schema = hostile });
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -215,8 +282,8 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
         var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), target.DataSource, target.InitialCatalog);
 
-        var empty = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/tables");
-        var tooLong = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/tables?schema={new string('x', 200)}");
+        var empty = await BrowseAsync(browser, id, "tables");
+        var tooLong = await BrowseAsync(browser, id, "tables", new { schema = new string((char)120, 200) });
 
         empty.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         tooLong.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -232,7 +299,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
         var id = await CreateSqlConnectionAsync(author, "definitely-wrong-" + Guid.NewGuid().ToString("N"), target.DataSource, target.InitialCatalog);
 
-        var response = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/schemas");
+        var response = await BrowseAsync(browser, id, "schemas");
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, "a refusal by the remote system is its answer, not a platform 500");
@@ -257,7 +324,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
         var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), "127.0.0.1,1", target.InitialCatalog);
 
-        var response = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/schemas");
+        var response = await BrowseAsync(browser, id, "schemas");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -277,7 +344,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
         (await author.DeleteAsync($"/api/connections/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var tools = await browser.GetFromJsonAsync<JsonElement>($"/api/connections/{id}/tools", Json);
-        var schemas = await browser.GetAsync($"/api/connections/{id}/tools/sql-structure/schemas");
+        var schemas = await BrowseAsync(browser, id, "schemas");
 
         tools.GetProperty("sqlStructureBrowser").GetBoolean().Should().BeFalse();
         schemas.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -290,7 +357,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var (_, _, browser, _) = await SetUpAsync();
 
         (await browser.GetAsync("/api/connections/does-not-exist/tools")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await browser.GetAsync("/api/connections/does-not-exist/tools/sql-structure/schemas")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await BrowseAsync(browser, "does-not-exist", "schemas")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

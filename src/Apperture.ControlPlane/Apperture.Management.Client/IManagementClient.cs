@@ -224,13 +224,13 @@ public interface IManagementClient
     Task<ConnectionToolsDto?> GetConnectionToolsAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>Structure browser: schemas. One remote request; requires connection.read and connection.browse.</summary>
-    Task<SqlStructureResponseDto<SqlSchemaDto>> GetSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default);
+    Task<SqlStructureResponseDto<SqlSchemaDto>> ListSqlSchemasAsync(string connectionId, CancellationToken cancellationToken = default);
 
     /// <summary>Structure browser: tables and views of a schema.</summary>
-    Task<SqlStructureResponseDto<SqlTableDto>> GetSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default);
+    Task<SqlStructureResponseDto<SqlTableDto>> ListSqlTablesAsync(string connectionId, string schema, CancellationToken cancellationToken = default);
 
     /// <summary>Structure browser: columns of a table or view.</summary>
-    Task<SqlStructureResponseDto<SqlColumnDto>> GetSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default);
+    Task<SqlStructureResponseDto<SqlColumnDto>> ListSqlColumnsAsync(string connectionId, string schema, string table, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
@@ -1340,6 +1340,15 @@ public sealed record ConnectionToolsDto(bool SqlStructureBrowser);
 
 /// <summary>One structure request's result. Outcome is one of Succeeded, RemoteDenied, RemoteUnavailable, SecretsUnavailable, Failed; Message is a fixed safe sentence.</summary>
 public sealed record SqlStructureResponseDto<T>(string Outcome, IReadOnlyList<T> Items, bool Truncated, int Limit, string? Message);
+
+/// <summary>Body of a schema-listing request. Deliberately empty: the request is still a JSON POST.</summary>
+public sealed record SqlSchemasRequestDto();
+
+/// <summary>Body of a table-listing request. The schema is a value bound as a parameter on the server.</summary>
+public sealed record SqlTablesRequestDto(string? Schema);
+
+/// <summary>Body of a column-listing request. Schema and table are values bound as parameters on the server.</summary>
+public sealed record SqlColumnsRequestDto(string? Schema, string? Table);
 
 public sealed record SqlSchemaDto(string Name);
 
