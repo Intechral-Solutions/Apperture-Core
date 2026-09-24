@@ -124,7 +124,12 @@
     else
     {
         <div class="space-y-4">
-            <ManagementSection Title="Details" Layer="ManagementSection.UiLayer.Summary">
+            @if (!ConnectionWorkspacePresentation.IsConnectorRegistered(_connection))
+            {
+                <PageMessage Kind="PageMessageKind.Warning">@ConnectionWorkspacePresentation.UnregisteredConnectorNotice</PageMessage>
+            }
+
+            <ManagementSection Title="Overview" Layer="ManagementSection.UiLayer.Summary">
                 <MetadataGrid>
                     <MetadataItem Label="Name" Value="@_connection.Name" />
                     <MetadataItem Label="Connector">
@@ -146,40 +151,67 @@
                             <span class="font-mono text-xs">@_connection.ConnectorDefinitionId</span>
                         }
                     </MetadataItem>
-                    <MetadataItem Label="State" Value="@_connection.State" />
-                    <MetadataItem Label="Scope" Value="@(_connection.ScopeKey ?? "—")" />
-                    <MetadataItem Label="Owner" Value="@(_connection.OwnerId ?? "—")" />
-                    <MetadataItem Label="Verification support" Value="@(_connection.SupportsVerification ? "Available" : "Unavailable")" />
-                    <MetadataItem Label="Last verification status" Value="@_connection.LastVerificationStatus" />
-                    <MetadataItem Label="Last verified at (UTC)" Value="@(_connection.LastVerificationAtUtc?.ToString("u") ?? "—")" />
+                    <MetadataItem Label="State">
+                        <StatusPill Label="@_connection.State" Semantic="@ConnectionWorkspacePresentation.StateSemantic(_connection.State)" />
+                    </MetadataItem>
                 </MetadataGrid>
-                @if (!string.IsNullOrWhiteSpace(_connection.LastVerificationSummary))
-                {
-                    <div class="mt-3">
-                        <div class="text-xs text-muted">Verification summary</div>
-                        <div class="mt-1 text-sm text-body">@_connection.LastVerificationSummary</div>
+
+                <div class="mt-4" data-connection-health>
+                    <div class="text-xs text-muted">Health</div>
+                    <div class="mt-1 flex flex-wrap items-center gap-2">
+                        <StatusPill Label="@_health.Label" Semantic="@_health.Semantic" />
+                        @if (_connection.SupportsVerification && _connection.LastVerificationAtUtc is { } testedAt)
+                        {
+                            <span class="text-xs text-muted">Last tested @testedAt.ToString("u")</span>
+                        }
                     </div>
-                }
-                @if (_connection.Config is { Count: > 0 })
-                {
-                    <div class="mt-3">
-                        <div class="text-xs text-muted">Config</div>
-                        <div class="ui-code-block mt-1">
-                            @foreach (var kv in _connection.Config)
-                            {
-                                <div>@kv.Key = @kv.Value</div>
-                            }
+                    @if (!string.IsNullOrWhiteSpace(_health.Detail))
+                    {
+                        <div class="mt-1 text-sm text-body">@_health.Detail</div>
+                    }
+                    @if (_connection.SupportsVerification && !string.IsNullOrWhiteSpace(_connection.LastVerificationSummary))
+                    {
+                        <div class="mt-2">
+                            <div class="text-xs text-muted">Result of the last test</div>
+                            <div class="mt-1 text-sm text-body">@_connection.LastVerificationSummary</div>
                         </div>
-                    </div>
-                }
-                @if (_connection.SecretRefs is { Count: > 0 })
+                    }
+                </div>
+            </ManagementSection>
+
+            <ManagementSection Title="Configuration"
+                               Layer="ManagementSection.UiLayer.Detail"
+                               Help="Settings as stored for this connection. Secret values are never shown.">
+                @if (_configurationRows.Count == 0)
                 {
-                    <div class="mt-3">
-                        <div class="text-xs text-muted">Secret fields (stored)</div>
-                        <div class="mt-1 text-sm text-muted">
-                            @string.Join(", ", _connection.SecretRefs.Keys)
-                        </div>
-                    </div>
+                    <p class="text-sm text-muted">No settings are stored for this connection.</p>
+                }
+                else
+                {
+                    <MetadataGrid>
+                        @foreach (var row in _configurationRows)
+                        {
+                            <MetadataItem @key="row.Key" Label="@row.Label">
+                                @if (row.IsSecret)
+                                {
+                                    <StatusPill Label="@ConnectionWorkspacePresentation.SecretPresence(row.IsSet)"
+                                                Semantic="@(row.IsSet ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                }
+                                else if (row.Value is not null)
+                                {
+                                    <span>@row.Value</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Not set</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(row.Description))
+                                {
+                                    <div class="mt-1 text-xs text-muted">@row.Description</div>
+                                }
+                            </MetadataItem>
+                        }
+                    </MetadataGrid>
                 }
             </ManagementSection>
 
@@ -221,6 +253,8 @@
             <TechnicalDetails>
                 <TechnicalDetail Label="Connection id" Value="@_connection.Id" />
                 <TechnicalDetail Label="Connector definition id" Value="@_connection.ConnectorDefinitionId" />
+                <TechnicalDetail Label="Scope key" Value="@(_connection.ScopeKey ?? "—")" />
+                <TechnicalDetail Label="Owner id" Value="@(_connection.OwnerId ?? "—")" />
             </TechnicalDetails>
         </div>
     }
@@ -259,6 +293,16 @@
             : _connection!.ConnectorDisplayName!;
 
     private ConnectionDto? _connection;
+
+    // Connector-declared field metadata for readable labels. Null when the connector is not registered or the caller
+    // cannot read definitions; the Configuration section then falls back to the stored keys.
+    private ConnectorDefinitionCatalogDto? _connectorDefinition;
+
+    private IReadOnlyList<ConnectionConfigurationRow> _configurationRows =>
+        _connection is null ? [] : ConnectionWorkspacePresentation.ConfigurationRows(_connection, _connectorDefinition);
+
+    private ConnectionHealth _health => ConnectionWorkspacePresentation.Health(_connection!);
+
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private bool _loading;
@@ -299,6 +343,7 @@
 
         _dataLoadKey = key;
         _connection = null;
+        _connectorDefinition = null;
         _editing = false;
         _error = null;
 
@@ -315,7 +360,10 @@
         {
             _connection = await Client.GetConnectionAsync(ConnectionId);
             if (_connection is not null)
+            {
                 await ViewState.EnsureContextsKnownAsync(_connection.UsedIn.Select(u => u.IntegrationResourceContextId));
+                await LoadConnectorDefinitionAsync(_connection);
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -325,6 +373,31 @@
         {
             _loading = false;
             PublishShellTitle();
+        }
+    }
+
+    // Presentation metadata only: a local, in-memory catalog lookup on the server -- never a remote call. It is not asked
+    // for when the connector is unregistered in this host, or when the caller cannot read definitions (a guaranteed 403);
+    // in both cases, and on ANY failure, the stored keys simply remain the labels. Best-effort metadata must never be
+    // able to fail the page, so this deliberately catches everything.
+    private async Task LoadConnectorDefinitionAsync(ConnectionDto connection)
+    {
+        if (_connectorDefinition is not null
+            && string.Equals(_connectorDefinition.Id, connection.ConnectorDefinitionId, StringComparison.Ordinal))
+            return;
+
+        _connectorDefinition = null;
+        if (!ConnectionWorkspacePresentation.IsConnectorRegistered(connection)
+            || _capabilities?.CanViewConnectorDefinitions != true)
+            return;
+
+        try
+        {
+            _connectorDefinition = await Client.GetConnectorDefinitionAsync(connection.ConnectorDefinitionId);
+        }
+        catch (Exception)
+        {
+            _connectorDefinition = null;
         }
     }
 

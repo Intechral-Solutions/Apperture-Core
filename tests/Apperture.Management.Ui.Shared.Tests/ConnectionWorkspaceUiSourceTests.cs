@@ -89,6 +89,80 @@ public sealed class ConnectionWorkspaceUiSourceTests
     }
 
     [Fact]
+    public void Sections_appear_in_workspace_order_and_technical_details_come_last()
+    {
+        var content = ReadRepoFile(Detail);
+
+        var order = new[]
+            {
+                "Title=\"Overview\"", "Title=\"Configuration\"", "Title=\"Used in\"", "<TechnicalDetails>"
+            }
+            .Select(marker => content.IndexOf(marker, StringComparison.Ordinal))
+            .ToList();
+        order.Should().OnlyContain(i => i >= 0);
+        order.Should().BeInAscendingOrder();
+        content.Should().NotContain("Title=\"Details\"", "the old undifferentiated Details block is replaced by Overview");
+    }
+
+    [Fact]
+    public void UI7_configuration_is_rendered_from_the_presentation_rows_and_never_touches_secret_refs()
+    {
+        var content = ReadRepoFile(Detail);
+
+        content.Should().Contain("ConnectionWorkspacePresentation.ConfigurationRows(_connection, _connectorDefinition)");
+        content.Should().NotContain("SecretRefs", "secret references never reach the markup; only present/absent does");
+        content.Should().NotContain("@kv.Key", "the raw Key = Value dump is gone");
+        content.Should().NotContain("ui-code-block");
+        content.Should().Contain("ConnectionWorkspacePresentation.SecretPresence(row.IsSet)");
+    }
+
+    [Fact]
+    public void Scope_and_owner_are_technical_facts_not_headline_fields()
+    {
+        var content = ReadRepoFile(Detail);
+
+        content.Should().Contain("Label=\"Scope key\"").And.Contain("Label=\"Owner id\"");
+        content.Should().NotContain("<MetadataItem Label=\"Scope\"").And.NotContain("<MetadataItem Label=\"Owner\"");
+    }
+
+    [Fact]
+    public void LC4_health_is_rendered_as_a_fact_and_verification_status_gates_nothing()
+    {
+        var content = ReadRepoFile(Detail);
+
+        content.Should().Contain("data-connection-health").And.Contain("_health.Label");
+        content.Should().NotContain("LastVerificationStatus ==", "a stale failure must never switch parts of the page off");
+        content.Should().NotContain("LastVerificationStatus !=");
+        content.Should().NotContain("Label=\"Verification support\"").And.NotContain("Label=\"Last verification status\"");
+    }
+
+    [Fact]
+    public void LC2_an_unregistered_connector_shows_the_notice_and_is_never_asked_for_its_definition()
+    {
+        var content = ReadRepoFile(Detail);
+
+        content.Should().Contain("@if (!ConnectionWorkspacePresentation.IsConnectorRegistered(_connection))");
+        content.Should().Contain("ConnectionWorkspacePresentation.UnregisteredConnectorNotice");
+        var guard = content.IndexOf("if (!ConnectionWorkspacePresentation.IsConnectorRegistered(connection))", StringComparison.Ordinal);
+        var fetch = content.IndexOf("Client.GetConnectorDefinitionAsync(connection.ConnectorDefinitionId)", StringComparison.Ordinal);
+        guard.Should().BePositive();
+        fetch.Should().BeGreaterThan(guard, "the registry-unknown case returns before any definition request");
+        content.Should().Contain("_capabilities?.CanViewConnectorDefinitions != true", "a caller who cannot read definitions is not sent a request that must fail");
+        Regex.IsMatch(content, @"GetConnectorDefinitionAsync\(connection\.ConnectorDefinitionId\);\s*\}\s*catch \(Exception\)").Should().BeTrue(
+            "best-effort metadata can never fail the page");
+    }
+
+    [Fact]
+    public void The_workspace_page_performs_no_remote_operation_on_load()
+    {
+        var content = ReadRepoFile(Detail);
+        var onLoad = Regex.Match(content, @"private async Task LoadAsync\(\)(.*?)private async Task LoadConnectorDefinitionAsync", RegexOptions.Singleline).Value;
+
+        onLoad.Should().NotBeEmpty();
+        onLoad.Should().NotContain("TestConnection").And.NotContain("Browse");
+    }
+
+    [Fact]
     public void Workspace_copy_carries_no_planning_labels()
     {
         foreach (var page in new[] { Detail, List })

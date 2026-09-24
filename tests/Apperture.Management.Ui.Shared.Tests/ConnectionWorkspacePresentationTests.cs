@@ -1,0 +1,173 @@
+using Apperture.Management.Client;
+using Apperture.Management.Ui.Shared;
+using FluentAssertions;
+using Xunit;
+
+namespace Apperture.Management.Ui.Shared.Tests;
+
+/// <summary>
+/// Presentation rules for the Connection workspace. The rows and health are a pure function of the Connection read
+/// contract plus the connector-declared fields, so "no secret value, no secret reference" is provable here rather than
+/// merely hoped for in markup.
+/// </summary>
+public sealed class ConnectionWorkspacePresentationTests
+{
+    private const string SecretGuid = "3f2a9c1e-77aa-4c1d-9b1e-0a4d0d5b7c11";
+
+    private static ConnectorDefinitionCatalogDto Definition() =>
+        new(
+            "Apperture.Platform.Sql",
+            "Platform SQL",
+            null,
+            "SQL Server connection",
+            [
+                new ConnectionFieldCatalogDto("Password", "Password", true, "Stored securely.", true),
+                new ConnectionFieldCatalogDto("Host", "Server", false, "Host name or address.", true),
+                new ConnectionFieldCatalogDto("Database", "Database", false, null),
+            ],
+            "SupportsConnectionVerification");
+
+    private static ConnectionDto Connection(
+        IReadOnlyDictionary<string, string>? config = null,
+        IReadOnlyDictionary<string, string>? secretRefs = null,
+        string status = "NeverTested",
+        bool supportsVerification = true,
+        string? connectorDisplayName = "Platform SQL") =>
+        new(
+            "c-1", "Apperture.Platform.Sql", "Warehouse",
+            config ?? new Dictionary<string, string> { ["Host"] = "db.example", ["Database"] = "Ops" },
+            secretRefs ?? new Dictionary<string, string> { ["Password"] = SecretGuid },
+            null, null, "Active", supportsVerification, status, null, null, [],
+            ConnectorDisplayName: connectorDisplayName);
+
+    [Fact]
+    public void Rows_follow_the_connector_declared_order_and_use_declared_labels_and_descriptions()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(Connection(), Definition());
+
+        rows.Select(r => r.Label).Should().Equal("Password", "Server", "Database");
+        rows.Single(r => r.Key == "Host").Description.Should().Be("Host name or address.");
+        rows.Single(r => r.Key == "Host").Value.Should().Be("db.example");
+    }
+
+    [Fact]
+    public void A_secret_field_is_only_present_or_absent_and_never_carries_a_value_or_reference()
+    {
+        var present = ConnectionWorkspacePresentation.ConfigurationRows(Connection(), Definition()).Single(r => r.IsSecret);
+        var absent = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(secretRefs: new Dictionary<string, string>()), Definition()).Single(r => r.IsSecret);
+
+        present.IsSet.Should().BeTrue();
+        absent.IsSet.Should().BeFalse();
+        present.Value.Should().BeNull("a secret row never carries a value");
+        absent.Value.Should().BeNull();
+        System.Text.Json.JsonSerializer.Serialize(present).Should().NotContain(SecretGuid);
+        ConnectionWorkspacePresentation.SecretPresence(true).Should().Be("Set");
+        ConnectionWorkspacePresentation.SecretPresence(false).Should().Be("Not set");
+    }
+
+    [Fact]
+    public void A_secret_ref_that_is_blank_counts_as_absent()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(secretRefs: new Dictionary<string, string> { ["Password"] = "  " }), Definition());
+
+        rows.Single(r => r.IsSecret).IsSet.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_config_value_stored_under_a_declared_secret_key_is_never_shown()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(config: new Dictionary<string, string> { ["Password"] = "leaked-in-config", ["Host"] = "h" }, secretRefs: new Dictionary<string, string>()),
+            Definition());
+
+        System.Text.Json.JsonSerializer.Serialize(rows).Should().NotContain("leaked-in-config");
+    }
+
+    [Fact]
+    public void Stored_keys_the_connector_does_not_declare_are_kept_visible_by_their_key()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(config: new Dictionary<string, string> { ["Host"] = "h", ["Legacy"] = "old" },
+                secretRefs: new Dictionary<string, string> { ["LegacySecret"] = SecretGuid }),
+            Definition());
+
+        rows.Single(r => r.Key == "Legacy").Label.Should().Be("Legacy");
+        rows.Single(r => r.Key == "Legacy").Value.Should().Be("old");
+        rows.Single(r => r.Key == "LegacySecret").IsSecret.Should().BeTrue();
+        rows.Single(r => r.Key == "LegacySecret").IsSet.Should().BeTrue();
+        rows.Single(r => r.Key == "LegacySecret").Value.Should().BeNull();
+    }
+
+    [Fact]
+    public void Without_a_definition_the_stored_settings_still_render_by_key_and_secrets_stay_present_or_absent()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(Connection(), null);
+
+        rows.Select(r => r.Label).Should().BeEquivalentTo("Host", "Database", "Password");
+        rows.Single(r => r.Key == "Password").Value.Should().BeNull();
+        rows.Single(r => r.Key == "Password").IsSet.Should().BeTrue();
+        rows.Should().OnlyContain(r => r.Description == null);
+    }
+
+    [Fact]
+    public void A_declared_field_with_no_stored_value_is_listed_as_not_set()
+    {
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(config: new Dictionary<string, string> { ["Host"] = "h" }), Definition());
+
+        var database = rows.Single(r => r.Key == "Database");
+        database.Value.Should().BeNull();
+        database.IsSet.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("NeverTested", true, "Not tested yet", ManagementStatusSemantic.Neutral)]
+    [InlineData("Success", true, "Verified", ManagementStatusSemantic.Success)]
+    [InlineData("Failed", true, "Verification failed", ManagementStatusSemantic.Error)]
+    [InlineData("Unavailable", true, "Verification unavailable", ManagementStatusSemantic.Warning)]
+    [InlineData("Success", false, "Not testable", ManagementStatusSemantic.Neutral)]
+    [InlineData("NeverTested", false, "Not testable", ManagementStatusSemantic.Neutral)]
+    public void Health_is_a_legible_point_in_time_status(string status, bool supported, string label, ManagementStatusSemantic semantic)
+    {
+        var health = ConnectionWorkspacePresentation.Health(Connection(status: status, supportsVerification: supported));
+
+        health.Label.Should().Be(label);
+        health.Semantic.Should().Be(semantic);
+    }
+
+    [Fact]
+    public void A_failed_verification_is_reported_as_a_fact_not_a_gate()
+    {
+        var health = ConnectionWorkspacePresentation.Health(Connection(status: "Failed"));
+
+        health.Detail.Should().NotBeNullOrWhiteSpace();
+        health.Detail.Should().NotContainEquivalentOf("disabled").And.NotContainEquivalentOf("blocked");
+    }
+
+    [Fact]
+    public void An_unrecognised_status_is_shown_verbatim_and_neutral_never_thrown_on()
+    {
+        var health = ConnectionWorkspacePresentation.Health(Connection(status: "SomethingNew"));
+
+        health.Label.Should().Be("SomethingNew");
+        health.Semantic.Should().Be(ManagementStatusSemantic.Neutral);
+    }
+
+    [Fact]
+    public void A_connector_is_unregistered_exactly_when_the_server_supplied_no_display_name()
+    {
+        ConnectionWorkspacePresentation.IsConnectorRegistered(Connection(connectorDisplayName: "Platform SQL")).Should().BeTrue();
+        ConnectionWorkspacePresentation.IsConnectorRegistered(Connection(connectorDisplayName: null)).Should().BeFalse();
+        ConnectionWorkspacePresentation.IsConnectorRegistered(Connection(connectorDisplayName: " ")).Should().BeFalse();
+        ConnectionWorkspacePresentation.UnregisteredConnectorNotice.Should().Contain("not registered");
+    }
+
+    [Theory]
+    [InlineData("Active", ManagementStatusSemantic.Success)]
+    [InlineData("Retired", ManagementStatusSemantic.Neutral)]
+    [InlineData("Whatever", ManagementStatusSemantic.Neutral)]
+    public void State_has_a_semantic(string state, ManagementStatusSemantic expected) =>
+        ConnectionWorkspacePresentation.StateSemantic(state).Should().Be(expected);
+}
