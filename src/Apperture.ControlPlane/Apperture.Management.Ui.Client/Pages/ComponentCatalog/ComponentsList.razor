@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
+@inject NavigationManager Nav
 
 @* The catalog of curated platform capabilities (connectors and supplied notification definitions). It is a
    read-time projection over the family services and is deliberately GLOBAL: it has no Context/View filter,
@@ -192,6 +193,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Subscribed before the first await so no navigation during the initial loads is missed. The handler only records
+        // the latest requested kind until the initial load has finished; the loop below then applies whatever is newest.
+        _latestRequestedKind = ComponentCatalogPresentation.RequestedKind(Nav.Uri);
+        Nav.LocationChanged += OnLocationChanged;
+
         try
         {
             var caps = await Capabilities.GetCapabilitiesAsync();
@@ -207,7 +213,72 @@
         }
 
         if (!_forbidden)
+        {
             await LoadAsync();
+            // The address may ask the catalog to open on one kind (for example the Connections page's catalog link). The
+            // unfiltered load above is what tells us which kinds this caller may see, so the request is applied after it.
+            _initialLoadComplete = true;
+            await SyncRequestedKindAsync();
+        }
+    }
+
+    private string? _appliedRequestedKind;
+    private string? _latestRequestedKind;
+    private bool _initialLoadComplete;
+    private bool _syncingRequestedKind;
+    private bool _disposed;
+
+    // Applies the newest kind the address has asked for. Runs as a loop with a single active instance, so a navigation that
+    // arrives while a filtered load is in flight is picked up by that same loop rather than lost or applied twice.
+    private async Task SyncRequestedKindAsync()
+    {
+        if (_syncingRequestedKind)
+            return;
+
+        _syncingRequestedKind = true;
+        try
+        {
+            while (!_disposed && !string.Equals(_appliedRequestedKind, _latestRequestedKind, StringComparison.Ordinal))
+            {
+                _appliedRequestedKind = _latestRequestedKind;
+                await ApplyRequestedKindAsync(_appliedRequestedKind);
+            }
+        }
+        finally
+        {
+            _syncingRequestedKind = false;
+        }
+    }
+
+    // Unknown or unseen kinds are dropped by NormalizeKind, exactly as any other unrecognised filter value is.
+    private async Task ApplyRequestedKindAsync(string? requested)
+    {
+        var kind = ComponentCatalogPresentation.NormalizeKind(requested, _kindOptions);
+        if (string.Equals(kind, _kind, StringComparison.Ordinal))
+            return;
+
+        _kind = kind;
+        await ReloadIfChangedAsync();
+    }
+
+    // In-app navigation between /components and /components?kind=... reuses this instance, so the address is followed here.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Leaving the page also raises this event; only react to addresses that are still the catalog.
+        if (_disposed
+            || !string.Equals(new Uri(e.Location).AbsolutePath.TrimEnd('/'), "/components", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _latestRequestedKind = ComponentCatalogPresentation.RequestedKind(e.Location);
+        if (!_initialLoadComplete)
+            return; // the initial flow applies the latest value once it has the caller's kinds
+
+        _ = InvokeAsync(async () =>
+        {
+            await SyncRequestedKindAsync();
+            if (!_disposed)
+                StateHasChanged();
+        });
     }
 
     private async Task LoadAsync()
@@ -321,10 +392,22 @@
         await LoadAsync();
     }
 
-    private async Task RetryAsync() => await LoadAsync();
+    private async Task RetryAsync()
+    {
+        // If the very first load failed, the caller's kinds were never learned and a requested kind was dropped; re-apply it now.
+        var kindsUnknown = _kindOptions.Count == 0;
+        await LoadAsync();
+        if (kindsUnknown)
+        {
+            _appliedRequestedKind = null;
+            await SyncRequestedKindAsync();
+        }
+    }
 
     public void Dispose()
     {
+        _disposed = true;
+        Nav.LocationChanged -= OnLocationChanged;
         _searchDelay?.Cancel();
         _searchDelay?.Dispose();
     }

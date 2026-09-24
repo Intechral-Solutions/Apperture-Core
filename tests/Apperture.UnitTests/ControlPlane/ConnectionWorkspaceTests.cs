@@ -120,4 +120,40 @@ public sealed class ConnectionWorkspaceTests
     {
         typeof(ClientConnectionDto).GetProperty(nameof(ConnectionDto.ConnectorDisplayName)).Should().NotBeNull();
     }
+
+    // CP1 / CP2 -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void CP1_the_component_route_is_constructed_from_the_connector_id_alone()
+    {
+        var key = new Apperture.Core.Application.ComponentCatalog.ComponentKey(
+            Apperture.Core.Application.ComponentCatalog.ComponentKinds.Connector, Sql.Value);
+
+        Apperture.Management.Ui.Shared.ComponentCatalogPresentation.ConnectorDetailHref(Sql.Value)
+            .Should().Be($"/components/{key.Kind}/{key.NativeId}", "the link is a pure construction, never a lookup through a stored relationship");
+    }
+
+    [Fact]
+    public void CP2_no_persisted_edge_or_component_column_exists_on_a_connection_or_a_connector_definition()
+    {
+        var connectionEntity = typeof(Apperture.Persistence.SqlServer.AppertureDbContext).Assembly.GetTypes().Single(t => t.Name == "ConnectionEntity");
+        foreach (var type in new[] { typeof(Connection), connectionEntity, typeof(ConnectorDefinition) })
+        {
+            type.GetProperties().Select(p => p.Name)
+                .Should().NotContain(n => n.Contains("Component", StringComparison.Ordinal) || n.Contains("Service", StringComparison.Ordinal),
+                    $"{type.Name} carries no relationship to a Component or a Service");
+        }
+
+        // The connector reference is the one and only link, and it is the existing ConnectorDefinitionId.
+        typeof(Connection).GetProperties().Select(p => p.Name).Where(n => n.Contains("Connector", StringComparison.Ordinal))
+            .Should().Equal(nameof(Connection.ConnectorDefinitionId));
+    }
+
+    [Fact]
+    public void UI1_the_workspace_breadcrumb_is_rooted_at_connections_with_no_config_or_inventory_ancestry()
+    {
+        var crumbs = Apperture.Management.Ui.Shared.ManagementBreadcrumbResolver.Resolve("/connections/conn-1");
+
+        crumbs.Select(c => c.Label).Should().Equal("Connections", "Connection");
+    }
 }

@@ -46,7 +46,7 @@ public static class ComponentCatalogPresentation
     public static string NotificationDefinitionHref(string definitionId) =>
         $"/config/notifications/definitions/{Uri.EscapeDataString(definitionId)}";
 
-    /// <summary>The Component detail a Connectors-tab row links to.</summary>
+    /// <summary>The Component detail for a connector: linked from the Connection workspace and from the catalog.</summary>
     public static string ConnectorDetailHref(string connectorDefinitionId) =>
         DetailHref(ConnectorKind, connectorDefinitionId);
 
@@ -76,6 +76,40 @@ public static class ComponentCatalogPresentation
         subscriptionCount <= 0 ? "No current subscriptions."
         : subscriptionCount == 1 ? "1 current subscription."
         : $"{subscriptionCount} current subscriptions.";
+
+    /// <summary>The catalog opened on Connectors; replaces the retired Connectors tab as the way to discover definitions.</summary>
+    public const string ConnectorCatalogHref = "/components?kind=connector";
+
+    /// <summary>
+    /// The <c>kind</c> the address asks the catalog to open with, or null when it asks for none. It is only a request:
+    /// callers pass it through <see cref="NormalizeKind"/>, which drops anything that is not a kind the caller can see.
+    /// </summary>
+    public static string? RequestedKind(string? uri)
+    {
+        if (string.IsNullOrEmpty(uri))
+            return null;
+
+        var queryStart = uri.IndexOf('?', StringComparison.Ordinal);
+        if (queryStart < 0)
+            return null;
+
+        var query = uri[(queryStart + 1)..];
+        var fragmentStart = query.IndexOf('#', StringComparison.Ordinal);
+        if (fragmentStart >= 0)
+            query = query[..fragmentStart];
+
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = pair.IndexOf('=', StringComparison.Ordinal);
+            if (separator <= 0 || !string.Equals(pair[..separator], "kind", StringComparison.Ordinal))
+                continue;
+
+            var value = Uri.UnescapeDataString(pair[(separator + 1)..]);
+            return value.Length == 0 ? null : value;
+        }
+
+        return null;
+    }
 
     public static string? NormalizeKind(string? requested, IReadOnlyList<string> availableKinds) =>
         string.IsNullOrWhiteSpace(requested) || !availableKinds.Contains(requested, StringComparer.Ordinal)

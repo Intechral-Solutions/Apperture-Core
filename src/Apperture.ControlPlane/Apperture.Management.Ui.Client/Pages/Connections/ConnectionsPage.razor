@@ -10,7 +10,7 @@
 @inject ResourceContextViewState ViewState
 
 <div class="p-4 ui-page-stack">
-    <PageHeader Title="Connections" Subtitle="Manage connection instances and browse connector definitions (connection shape only — not executable client operations).">
+    <PageHeader Title="Connections" Subtitle="The configured connections your integrations use to reach external systems.">
         <Toolbar>
             @if (_capabilities?.CanViewConnections == true && _capabilities?.CanCreateConnections == true)
             {
@@ -31,34 +31,20 @@
     }
     else if (!CanAccessPage)
     {
-        <ForbiddenState Message="You do not have permission to view connections or connector definitions." />
+        <ForbiddenState Message="You do not have permission to view connections." />
     }
     else
     {
-        @if (ShowTabs)
+        @if (_capabilities?.CanViewConnections == true)
         {
-            <div class="mt-4 flex gap-2 border-b border-default">
-                @if (_capabilities?.CanViewConnections == true)
-                {
-                    <button type="button"
-                            class="px-3 py-2 text-sm font-medium @(_activeTab == "connections" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
-                            @onclick="@(() => SetTab("connections"))">
-                        Connections
-                    </button>
-                }
+            <p class="text-sm text-muted">
+                Each connection is built from a connector.
                 @if (_capabilities?.CanViewConnectorDefinitions == true)
                 {
-                    <button type="button"
-                            class="px-3 py-2 text-sm font-medium @(_activeTab == "connectors" ? "text-heading border-b-2 border-body -mb-px" : "text-muted hover:text-body")"
-                            @onclick="@(() => SetTab("connectors"))">
-                        Connectors
-                    </button>
+                    <a href="@ComponentCatalogPresentation.ConnectorCatalogHref" class="ui-link">Browse the connector catalog</a>
                 }
-            </div>
-        }
+            </p>
 
-        @if (_activeTab == "connections" && _capabilities?.CanViewConnections == true)
-        {
             @if (ViewState.SelectorVisible && _context.State == ScopedListContextState.Ready && !_context.IsAll
                  && !ResourceContextIds.IsShared(_context.ApiFilter) && _sharedConnectionCount > 0)
             {
@@ -144,10 +130,6 @@
                 </div>
             }
         }
-        else if (_activeTab == "connectors" && _capabilities?.CanViewConnectorDefinitions == true)
-        {
-            <ConnectorsListContent />
-        }
     }
 </div>
 
@@ -157,7 +139,6 @@
     private bool _capabilitiesLoaded;
     private bool _loading;
     private string? _error;
-    private string _activeTab = "connections";
     private int _sharedConnectionCount;
 
     [SupplyParameterFromQuery(Name = "context")]
@@ -167,10 +148,7 @@
     private string? _loadedContextValue;
 
     private bool CanAccessPage =>
-        _capabilities?.CanViewConnections == true || _capabilities?.CanViewConnectorDefinitions == true;
-
-    private bool ShowTabs =>
-        _capabilities?.CanViewConnections == true && _capabilities?.CanViewConnectorDefinitions == true;
+        _capabilities?.CanViewConnections == true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,47 +161,6 @@
             _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
         }
         _capabilitiesLoaded = true;
-
-        if (!CanAccessPage)
-            return;
-
-        if (_capabilities?.CanViewConnections != true && _capabilities?.CanViewConnectorDefinitions == true)
-            _activeTab = "connectors";
-
-        var uri = new Uri(Nav.Uri);
-        if (!string.IsNullOrEmpty(uri.Query))
-        {
-            var query = uri.Query.TrimStart('?');
-            foreach (var part in query.Split('&'))
-            {
-                var kv = part.Split('=', 2, StringSplitOptions.None);
-                if (kv.Length == 2 && string.Equals(kv[0], "tab", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (string.Equals(kv[1], "connectors", StringComparison.OrdinalIgnoreCase)
-                        && _capabilities?.CanViewConnectorDefinitions == true)
-                        _activeTab = "connectors";
-                    else if (string.Equals(kv[1], "connections", StringComparison.OrdinalIgnoreCase)
-                             && _capabilities?.CanViewConnections == true)
-                        _activeTab = "connections";
-                    break;
-                }
-            }
-        }
-    }
-
-    private void SetTab(string tab)
-    {
-        _activeTab = tab;
-        var uri = new Uri(Nav.Uri);
-        var basePath = uri.GetLeftPart(UriPartial.Path);
-        var queryParts = new List<string>();
-        if (tab == "connectors")
-            queryParts.Add("tab=connectors");
-        if (!string.IsNullOrEmpty(_context.QueryValue))
-            queryParts.Add("context=" + Uri.EscapeDataString(_context.QueryValue));
-        var newUri = queryParts.Count > 0 ? $"{basePath}?{string.Join("&", queryParts)}" : basePath;
-        if (Nav.Uri != newUri)
-            Nav.NavigateTo(newUri);
     }
 
     protected override async Task OnParametersSetAsync()

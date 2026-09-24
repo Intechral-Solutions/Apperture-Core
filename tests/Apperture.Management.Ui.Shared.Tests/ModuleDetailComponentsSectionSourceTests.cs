@@ -142,14 +142,18 @@ public sealed class ModuleDetailComponentsSectionSourceTests
     }
 
     [Fact]
-    public void The_connectors_tab_is_retained_and_each_row_links_to_the_component_detail()
+    public void The_connectors_tab_is_retired_and_the_connections_page_points_at_the_component_catalog()
     {
-        var tab = ReadRepoFile(ConnectorsTab);
-        var page = ReadRepoFile(ConnectionsPage);
+        // The tab was kept while the catalog did not yet have a navigable home for Connection users; the Connection
+        // workspace now links each connector to its Component page and this page links to the catalog itself.
+        var repoRoot = new DirectoryInfo(AppContext.BaseDirectory);
+        while (repoRoot is not null && !Directory.Exists(Path.Combine(repoRoot.FullName, ".git")))
+            repoRoot = repoRoot.Parent;
+        File.Exists(Path.Combine(repoRoot!.FullName, ConnectorsTab.Replace('/', Path.DirectorySeparatorChar))).Should().BeFalse();
 
-        page.Should().Contain("<ConnectorsListContent />", "the Connectors tab stays until the Connection workspace replaces it");
-        tab.Should().Contain("ComponentCatalogPresentation.ConnectorDetailHref(d.Id)");
-        tab.Should().Contain("<th>Name</th>").And.Contain("<th>Id</th>");
+        var page = ReadRepoFile(ConnectionsPage);
+        page.Should().NotContain("ConnectorsListContent");
+        page.Should().Contain("ComponentCatalogPresentation.ConnectorCatalogHref");
     }
 
     [Fact]
