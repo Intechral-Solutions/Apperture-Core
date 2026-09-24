@@ -119,7 +119,7 @@ reset, cutting across several of them.
    Product rulings D-S1–D-S4 are recorded as decided. The gate required **no architectural amendment to
    Components**. Full gate, test matrix and decomposition (SVC-1…SVC-8):
    [`services-design-gate.md`](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
-   **Not implemented** — no code, no schema, no permission, no nav change.
+   **Implemented** — see item 7.
 6. **Components implementation** — **complete (2026-09-23).** CMP-1…CMP-6 delivered as designed, with CMP-X
    (built-in Notification Definition platform defaults) complete alongside. Components is a read-time projection
    with **no** table, registry, `ComponentId` or new permission. Shipped: the authorized catalog API
@@ -128,10 +128,21 @@ reset, cutting across several of them.
    ungated so it can never hide an authorized child), a delegating detail wrapper, detail-only current usage
    (Active Connections per connector; current subscriptions per definition), "Components provided by this
    module" on Module detail, and Connector-tab rows linked to Component detail. The `/connections` Connectors tab
-   is **retained**; its retirement belongs to **Services** (SVC-4). Decision record:
+   was **retained** at that point and **retired by Services (SVC-4)**. Decision record:
    [`ADR-0043`](../02-decisions/ADR-0043-component-catalog-read-model.md); closure and evidence:
    [`components-catalog-closure.md`](../audits/components-catalog-closure.md).
-7. **Services implementation** — **not started.** Unblocked by item 6; SVC-1 has not begun.
+7. **Services implementation** — **complete (2026-09-24).** SVC-1…SVC-8 delivered as designed, with **no Service entity, route,
+   permission or type**: the existing `/connections/{id}` page became the operational workspace (connector identity linked to its
+   Component; connector-declared configuration with secrets as *Set/Not set*; health; used-in; TechnicalDetails; correct
+   retired/unregistered/failed states). The pre-existing Connection **audit gap is closed** (create, update, secret rotation, retire,
+   test-connect). The duplicate **Connectors tab is retired** in favour of the Components catalog, which now opens filtered from
+   `/components?kind=connector`. One new action, **`connection.browse`** (additive to `connection.read`), gates a minimal typed tool
+   seam and one exemplar — a SQL Server **structure** browser (closed, fixed, parameterized `INFORMATION_SCHEMA` statements; no
+   dynamic SQL, no rows, no query console, no mutation; bounded, cancellable, audited fail-closed). Connection Recent Activity is
+   **not** delivered (audit query model). Decision record: [`ADR-0044`](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md);
+   closure and evidence:
+   [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
+   row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
 8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
    doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
@@ -280,7 +291,7 @@ concepts that the post-CTX reset now separates:
   the near-term execution order above and
   [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
   for the full hypothesis. **Its design gate is complete (2026-09-23; near-term item 5) and Components
-  implementation is complete (item 6); Services implementation (item 7) has not started.**
+  implementation and Services implementation are complete (items 6 and 7).**
 - **Connection grouping** — not currently an independent planned deliverable; reconsider during the
   Services design gate if a concrete grouping requirement emerges. Distinct from the **cross-context
   organizational grouping** layer now recorded under near-term item 8, which is about organizational areas

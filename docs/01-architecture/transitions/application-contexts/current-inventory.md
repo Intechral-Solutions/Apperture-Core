@@ -192,7 +192,7 @@ Landing `/config/developer` (`DeveloperTasks`). **No capability gate on the hub.
 | Surface | List route | Page | Gate notes |
 |---------|------------|------|------------|
 | Integrations | `/integrations` | `IntegrationsList` | `CanViewIntegrations`; create `CanManageIntegrations`. Detail `{IntegrationId}` plus `/settings`, `/notifications`, `/schedule-diagnostics`. |
-| Connections | `/connections` | `ConnectionsPage` | `CanViewConnections \|\| CanViewConnectorDefinitions`. In-page Connectors tab `?tab=connectors`. |
+| Connections | `/connections` | `ConnectionsPage` | `CanViewConnections`. Lists configured Connections only; the former in-page Connectors tab (`?tab=connectors`) was retired — connector discovery is the Components catalog (`/components?kind=connector`, link shown with `CanViewConnectorDefinitions`). Detail `/connections/{ConnectionId}` is the Connection workspace. |
 | Schedules | `/schedules` | `SchedulesList` | No view-cap on list; create `CanManageSchedules`. |
 | Runs | `/runs` | `RunsList` | **No capability check on the page.** |
 

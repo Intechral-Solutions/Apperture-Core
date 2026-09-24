@@ -23,6 +23,7 @@ The connector resource family is one governed resource family among many. It par
 | connector.definition.read | ConnectorDefinition | Read the connector-definition catalog (management API shape metadata) |
 | connector.manage | ConnectorDefinition | Reserved for future mutating/admin semantics on connector definitions (not used for catalog read) |
 | connection.create, read, update, delete | Connection | Administrative connection lifecycle |
+| connection.browse | Connection | Inspect, read-only, the **structure** of the external system a Connection points at (currently the SQL structure browser). **Additive to `connection.read`** — a caller needs both — and never implied by it or by any other grant. Structure only: reading remote rows or content is outside it. See [ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md) |
 | binding.create, read, delete, assign, revoke | Binding | Binding/delegation management |
 | capability.consume | CapabilitySlot | Operational use when resolving connection for slot |
 | mapping.manage | MappingDefinition | Gateway mapping registration |
@@ -51,6 +52,15 @@ The control plane can govern connector-related resources through these applicati
 - **IConnectionManagementService** — List, get, create, update, retire connections
 - Auth: connection.read, connection.create, connection.update, connection.delete
 - Persistence: IConnectionRepository, SqlConnectionRepository
+
+- Every lifecycle operation (create, update, secret rotation, retire, test-connect) appends one audit record with connection identity in structured JSON `Details` and `Resource` null; no secret value, secret reference, config value or remote text is recorded ([ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md)).
+
+### Connection Workspace and Tools
+- The operator workspace for one Connection **is** `/connections/{id}`. "Service" is architectural language for it, not a product noun: there is no Service entity, route, permission or type. Identity is `ConnectionId`; ownership is `Connection.ResourceContextId`, which is not an authorization boundary.
+- The connector is reached through `ConnectorDefinitionId` only (a pure construction of `/components/connector/{id}`); nothing persists the relationship.
+- **IConnectionToolProvider** — a connector-supplied, typed, optional tool surface keyed on `ConnectorDefinitionId`, registered from the connector package's own `Add…Connector` extension; **ISqlStructureBrowser** is its one typed capability. **IConnectionToolAccess** (`ConnectionToolAccess`) is the single authorized entry point: both `connection.read` and `connection.browse` on the Connection, local-only availability, one audit record per remote request, fail-closed. No registry, contributor, generic capability list or command surface exists, and nothing executable is on `ConnectorDefinition`.
+- Endpoints: `GET /api/connections/{id}/tools`, `GET …/tools/sql-structure/{schemas|tables|columns}` (all read-only).
+- The SQL structure browser lives in `Apperture.ConnectorResolution` beside the SQL client factory and issues only three fixed, parameterized `INFORMATION_SCHEMA` statements (`SqlStructureQueries`). Operator input is only ever a bound parameter value.
 
 ### Slot Inspection
 - **IModuleSlotRegistry** — Register and list capability slots per module

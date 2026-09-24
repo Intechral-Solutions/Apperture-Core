@@ -76,6 +76,22 @@ When the resolved client type `T` is **IDisposable** or **IAsyncDisposable**, th
 
 **Forbidden:** Resolving by connection id from module code; browsing arbitrary global connections; bypassing the binding gate.
 
+### Management-plane operator paths (not runtime resolution)
+
+The prohibition above is scoped to module code and the runtime slot-bound path. Two operator-initiated, per-Connection
+paths in the Management Host create a client for **one named Connection** without a Binding, on purpose, and are
+separate from `IConnectionResolver`/`IRuntimeSlotResolver`:
+
+- **Test connection** — a fixed probe (`IConnectionVerifier`), gated by `connection.read`, that returns no remote data.
+- **Structure browse** — the SQL structure browser (`ISqlStructureBrowser`), gated by **both** `connection.read` and
+  `connection.browse`, that returns remote **structure metadata only** through a closed set of fixed, parameterized
+  statements. It resolves the Connection's secrets and creates a client only inside an operator-invoked request, disposes
+  it on every path, caches and pools nothing, and audits each request.
+
+Neither is reachable from module code, neither is a general "resolve by connection id" facility, and neither changes
+Binding eligibility or slot-bound resolution. See
+[ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md).
+
 ## Implementation Summary
 
 - **Apperture.ConnectorResolution** — Implements `SlotBoundResolver`, `DefaultConnectionResolver`, `ConnectorClientFactoryRegistry`, `ResolvedConnectionMaterialBuilder`, `PlatformSqlConnectorClientFactory`, `CampusNexusApiConnectorClientFactory`, `SftpConnectorClientFactory`, `InMemoryConnectorDefinitionRegistry`. DI: `AddConnectorResolution()`, `AddPlatformSqlConnector()` (SQL + Campus Nexus + SFTP definitions and factories).

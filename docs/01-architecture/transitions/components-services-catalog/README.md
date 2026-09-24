@@ -229,8 +229,10 @@ locks its own shape). Do not ship the entire Component catalog before the Servic
 Components design gate — [`components-design-gate.md`](./components-design-gate.md).
 Services design gate — [`services-design-gate.md`](./services-design-gate.md).
 **Components implementation (CMP-1…CMP-6) is complete ([closure](../../../audits/components-catalog-closure.md),
-[ADR-0043](../../../02-decisions/ADR-0043-component-catalog-read-model.md)).** Services
-implementation (SVC-1…SVC-8) is defined but **not started** and follows Components. The Services gate confirmed
+[ADR-0043](../../../02-decisions/ADR-0043-component-catalog-read-model.md)).** **Services
+implementation (SVC-1…SVC-8) is also complete (2026-09-24; [closure](../../../audits/services-connection-workspace-closure.md),
+[ADR-0044](../../../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md))**: the Connection workspace evolved
+in place, `connection.browse` and a SQL structure browser were added, and the Connectors tab was retired. The Services gate confirmed
 that it requires **no architectural amendment to Components**; the only Components-side follow-ups are a factual
 CMP-3 deep-link correction and the Connectors-tab retirement timing, both recorded in that gate's §31.
 

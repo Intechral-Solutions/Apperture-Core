@@ -9,6 +9,12 @@ Decision record: [ADR-0043](../02-decisions/ADR-0043-component-catalog-read-mode
 **Status: Components implementation (CMP-1…CMP-6, with CMP-X) is complete. Services implementation (SVC-1…SVC-8)
 has not started.**
 
+> **Update (2026-09-24): Services implementation is complete** — see
+> [`services-connection-workspace-closure.md`](./services-connection-workspace-closure.md) and
+> [ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md). SVC-4 retired the Connectors
+> tab described below and resolved the `?kind=` residual (the catalog now opens filtered from
+> `/components?kind=connector`). The Components record itself is otherwise unchanged and accurate as of its delivery.
+
 ## What shipped
 
 | Plan | Delivered |

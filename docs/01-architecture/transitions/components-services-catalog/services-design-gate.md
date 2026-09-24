@@ -1,7 +1,7 @@
 # Services — design gate
 
 Date: 2026-09-23
-Status: **Design gate complete and approved (2026-09-23). Not implemented. No branch, no code.**
+Status: **Design gate complete and approved (2026-09-23). Implemented 2026-09-24 (SVC-1…SVC-8, branch `services-connection-workspace`, not merged) — see §35, [ADR-0044](../../../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md) and the [closure](../../../audits/services-connection-workspace-closure.md).** The text below is the design as approved and is left as written; §35 records where implementation differs from it.
 Audited HEAD: `2fa08573ccf01222257526a482394b1170a9e37f` (`master`, clean tree).
 
 > **Update (2026-09-23): Components implementation is complete** ([closure](../../../audits/components-catalog-closure.md)).
@@ -1586,3 +1586,39 @@ are defined in §30; §11.3, §20.1, §21.2 and §29's safety and audit matrices
 **Nothing in this gate is implemented.** No Services code, no schema, no permission, no nav change, no route. The
 product rulings are approved; the Services implementation body is not begun (Components implementation, which this
 gate confirmed, is complete).
+
+> *(The two paragraphs above describe the state when the gate was approved. Implementation is now complete — see §35.)*
+
+---
+
+## 35. Implementation record (2026-09-24)
+
+**Services v1 (S-B) is implemented as approved.** SVC-1 → SVC-2 → SVC-3 → SVC-5 → SVC-4 → SVC-6 → SVC-7 → SVC-8 were delivered in that
+order on one branch, each with targeted tests and an independent review (SVC-6 and SVC-7 reviewed on Opus with a security brief).
+Full account, evidence and residuals: [`services-connection-workspace-closure.md`](../../../audits/services-connection-workspace-closure.md);
+decision record: [ADR-0044](../../../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md).
+
+Every ruling in §32 (D-S1…D-S4) and every binding constraint in §11, §12, §20.1, §21 and §29 held. Where the code turned out to differ from
+what this gate recorded, **the code won and the difference is stated**:
+
+- **§12 / AR2** — `ControlPlane.Security` *already* referenced `Apperture.Connectors.CampusNexus` (for an unrelated option provider), so
+  the boundary is enforced as **no new connector reference** with that baseline pinned; `Management.Api`, `Core.Application` and
+  `ConnectorResolution` reference none. The tool seam itself uses no connector type.
+- **§12.2** — the SQL provider lives in `Apperture.ConnectorResolution` (the SQL connector has no separate package) and is registered by a
+  management-only extension, `AddPlatformSqlStructureBrowser`, called by the Management Host alone; runtime workers do not compose it.
+- **§22** — the "Edit/Move/Retire already hidden for Retired" statement was not true at the audited commit (only Retire was). SVC-5 made
+  it true and also hides Test for retired Connections.
+- **§20.1 / §11.3** — implementation added two safety rules the gate did not spell out: a Connection with **no SQL login** is refused
+  (it would sign in as the platform host's identity, so "the remote login's rights" would not bound what is shown), and at most **two**
+  structure requests run at once per Connection (429 otherwise). Both came from the security review and are covered by tests.
+- **§21.4** — browse audit records the operation, counts and outcome; it deliberately does **not** record the schema or table the
+  operator selected, because that is echoed remote content. Each request writes one record, fail-closed (no record → no result).
+- **§11.3** — the `connection.browse` grant reaches the platform administrator role through the startup repair set; break-glass sessions
+  pass every check by design. A `CanBrowseConnections` capability (true only with `connection.read`) was added so callers without the
+  grant are never sent to an endpoint that must refuse them.
+- **§17 / A2** — `/components?kind=connector` is now honoured (address parse + navigation subscription; two requests on a direct load so an
+  unseen kind can never influence a query).
+- **§21.3** — Connection Recent Activity is **not** delivered, as approved.
+
+Not started, as required: a query console, row/content preview, SFTP or Campus Nexus tools, a provider registry, capability advertisement to
+Components, and the navigation / cross-context grouping body.
