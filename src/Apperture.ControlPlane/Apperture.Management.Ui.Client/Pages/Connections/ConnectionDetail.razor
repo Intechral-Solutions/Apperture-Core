@@ -18,7 +18,6 @@
                 Title="@EntityShellTitles.Detail(_connection?.Name, "Connection")"
                 Subtitle="@ConnectionHeaderSubtitle">
         <ChildContent>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@ConnectionId</div>
             <OwnershipChip ResourceContextId="@_connection?.ResourceContextId" />
         </ChildContent>
         <Toolbar>
@@ -128,7 +127,25 @@
             <ManagementSection Title="Details" Layer="ManagementSection.UiLayer.Summary">
                 <MetadataGrid>
                     <MetadataItem Label="Name" Value="@_connection.Name" />
-                    <MetadataItem Label="Connector definition" Monospace="true" Value="@_connection.ConnectorDefinitionId" />
+                    <MetadataItem Label="Connector">
+                        @if (!string.IsNullOrWhiteSpace(_connection.ConnectorDisplayName))
+                        {
+                            @if (_capabilities?.CanViewConnectorDefinitions == true)
+                            {
+                                <a class="ui-link" href="@ComponentCatalogPresentation.ConnectorDetailHref(_connection.ConnectorDefinitionId)">@_connection.ConnectorDisplayName</a>
+                            }
+                            else
+                            {
+                                @* The Component catalog is gated separately; without access the name is plain text. *@
+                                <span>@_connection.ConnectorDisplayName</span>
+                            }
+                        }
+                        else
+                        {
+                            @* Not registered in this host: show the stored id as-is, with no link and no invented name. *@
+                            <span class="font-mono text-xs">@_connection.ConnectorDefinitionId</span>
+                        }
+                    </MetadataItem>
                     <MetadataItem Label="State" Value="@_connection.State" />
                     <MetadataItem Label="Scope" Value="@(_connection.ScopeKey ?? "—")" />
                     <MetadataItem Label="Owner" Value="@(_connection.OwnerId ?? "—")" />
@@ -200,6 +217,11 @@
                     <div class="text-sm text-muted">This connection is not used by any module slot bindings.</div>
                 }
             </ManagementSection>
+
+            <TechnicalDetails>
+                <TechnicalDetail Label="Connection id" Value="@_connection.Id" />
+                <TechnicalDetail Label="Connector definition id" Value="@_connection.ConnectorDefinitionId" />
+            </TechnicalDetails>
         </div>
     }
 </div>
@@ -228,7 +250,13 @@
     private string ConnectionHeaderSubtitle =>
         _connection is null
             ? "Connection detail"
-            : $"{_connection.ConnectorDefinitionId} · {_connection.State}";
+            : $"{ConnectorLabel} · {_connection.State}";
+
+    // Readable connector name; the stored id only when this host does not register the connector.
+    private string ConnectorLabel =>
+        string.IsNullOrWhiteSpace(_connection?.ConnectorDisplayName)
+            ? _connection?.ConnectorDefinitionId ?? ""
+            : _connection!.ConnectorDisplayName!;
 
     private ConnectionDto? _connection;
     private OperatorCapabilitiesDto? _capabilities;

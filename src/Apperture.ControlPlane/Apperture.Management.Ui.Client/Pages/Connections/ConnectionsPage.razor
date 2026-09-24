@@ -105,7 +105,14 @@
                                 <tr class="cursor-pointer"
                                     @onclick="@(() => Nav.NavigateTo("/connections/" + Uri.EscapeDataString(c.Id)))">
                                     <td class="font-medium">@c.Name</td>
-                                    <td class="font-mono text-xs">@c.ConnectorDefinitionId</td>
+                                    @if (!string.IsNullOrWhiteSpace(c.ConnectorDisplayName))
+                                    {
+                                        <td>@c.ConnectorDisplayName</td>
+                                    }
+                                    else
+                                    {
+                                        <td class="font-mono text-xs">@c.ConnectorDefinitionId</td>
+                                    }
                                     <td>@c.State</td>
                                     <td class="text-muted">@(c.ScopeKey ?? "—")</td>
                                     <td>

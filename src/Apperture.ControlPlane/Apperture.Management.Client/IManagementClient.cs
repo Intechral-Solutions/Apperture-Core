@@ -1338,7 +1338,8 @@ public sealed record ConnectionDto(
     string? LastVerificationSummary,
     IReadOnlyList<ConnectionUsedInEntry> UsedIn,
     string? ResourceContextId = null,
-    ResourceContextRef? ResourceContext = null);
+    ResourceContextRef? ResourceContext = null,
+    string? ConnectorDisplayName = null);
 
 /// <summary>Request to create a connection resource.</summary>
 public sealed record CreateConnectionRequest(

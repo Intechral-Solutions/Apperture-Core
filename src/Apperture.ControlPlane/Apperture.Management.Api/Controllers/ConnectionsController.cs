@@ -268,8 +268,16 @@ public sealed class ConnectionsController : ControllerBase
             c.LastVerificationSummary,
             usedIn,
             c.ResourceContextId.Value,
-            owning?.ToRef());
+            owning?.ToRef(),
+            ConnectorDisplayName(c.ConnectorDefinitionId));
     }
+
+    /// <summary>
+    /// The connector's human-readable name from the in-memory registry (no I/O). Null when this host does not
+    /// register the connector: the workspace then falls back to the raw id rather than inventing a name.
+    /// </summary>
+    private string? ConnectorDisplayName(ConnectorDefinitionId connectorDefinitionId) =>
+        _connectorDefinitions.Get(connectorDefinitionId)?.Name;
 
     private bool IsVerificationSupported(ConnectorDefinitionId connectorDefinitionId)
     {
@@ -304,7 +312,8 @@ public sealed record ConnectionDto(
     string? LastVerificationSummary,
     IReadOnlyList<ConnectionUsedInEntry> UsedIn,
     string? ResourceContextId = null,
-    ResourceContextRef? ResourceContext = null);
+    ResourceContextRef? ResourceContext = null,
+    string? ConnectorDisplayName = null);
 
 /// <param name="ScopeKey">Authorization scope. Unrelated to <paramref name="ResourceContextId"/>.</param>
 /// <param name="ResourceContextId">
