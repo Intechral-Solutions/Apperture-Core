@@ -11,6 +11,7 @@ namespace Apperture.ControlPlane.Security.Models;
 /// Epic 49: CanViewIntegrations (integration.read), CanManageIntegrations (integration.create), CanUpdateIntegrations (integration.update).
 /// Epic 52 / 52A: CanViewConnectorDefinitions (connector.definition.read on ConnectorDefinition at instance scope).
 /// CTX-3A: CanManageResourceContexts (resource_context.manage on ResourceContext at instance scope).
+/// CanBrowseConnections (connection.browse on Connection at instance scope), true only together with CanViewConnections: browsing is additive to reading.
 /// </summary>
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,
@@ -41,4 +42,5 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManagePlatformSettings = false,
     bool CanManageUsers = false,
     bool CanManageCredentials = false,
-    bool CanManageResourceContexts = false);
+    bool CanManageResourceContexts = false,
+    bool CanBrowseConnections = false);

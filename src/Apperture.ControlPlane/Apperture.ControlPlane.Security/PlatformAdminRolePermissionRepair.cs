@@ -92,6 +92,17 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
+    /// Remote structure browsing on Connections. Held by the platform administrator role (break-glass sessions pass every check
+    /// by design); it is deliberately a separate
+    /// set from the read/authoring grants above and is never implied by <c>connection.read</c>. Every other role receives it
+    /// only by an explicit grant.
+    /// </summary>
+    public static readonly PermissionDescriptor[] RequiredConnectionBrowsePermissions =
+    [
+        new(ActionConstants.ConnectionBrowse, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>
     /// Operator console surfaces (menus, modules, workflows, schedules, recovery, audit, runtime health).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredOperatorUiPermissions =
@@ -118,6 +129,7 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureModuleScopedPermissions(step, registry);
         step = EnsureSet(step, RequiredOperatorUiPermissions);
         step = EnsureSet(step, RequiredConnectorOperatorPermissions);
+        step = EnsureSet(step, RequiredConnectionBrowsePermissions);
         step = EnsureSet(step, RequiredIntegrationPermissions);
         step = EnsureSet(step, RequiredGovernanceSurfacePermissions);
         step = EnsureSet(step, RequiredInstanceAuthConfigurationPermissions);

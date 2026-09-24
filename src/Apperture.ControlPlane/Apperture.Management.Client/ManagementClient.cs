@@ -633,6 +633,14 @@ public sealed class ManagementClient : IManagementClient
         await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<ConnectionToolsDto?> GetConnectionToolsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        return await _http.GetFromJsonAsync<ConnectionToolsDto>(
+            $"connections/{Uri.EscapeDataString(id)}/tools",
+            ApiJsonReadOptions,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsync(

@@ -1,3 +1,4 @@
+using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
@@ -24,6 +25,8 @@ public static class ConnectorWorkflowServiceCollectionExtensions
         services.AddScoped<IBindingEligibilityService, BindingEligibilityService>();
         services.AddScoped<ConnectionSecretMaterialProvisioner>();
         services.AddScoped<IConnectionManagementService, ConnectionManagementService>();
+        // Local-only tool lookup over the providers connector packages register; it holds no client factory or secret resolver.
+        services.AddScoped<IConnectionToolAccess, ConnectionToolAccess>();
         services.AddScoped<IConnectionVerificationService, ConnectionVerificationService>();
         services.AddAdvisoryConnectionVerificationReadinessPolicy();
         services.AddScoped<IBindingService, BindingService>();

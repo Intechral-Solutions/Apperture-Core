@@ -87,6 +87,12 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ConnectionDelete,
                 ResourceTypeConstants.Connection,
                 cancellationToken).ConfigureAwait(false);
+            // Additive to connection.read: a caller who cannot read Connections is never reported as able to browse them.
+            var canBrowseConnections = canViewConnections && await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionBrowse,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
             var canViewIntegrations = await EvaluateAsync(
                 actor,
                 ActionConstants.IntegrationRead,
@@ -187,7 +193,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManagePlatformSettings,
                 canManageUsers,
                 canManageCredentials,
-                canManageResourceContexts);
+                canManageResourceContexts,
+                canBrowseConnections);
         }
         catch (OperationCanceledException ex)
         {

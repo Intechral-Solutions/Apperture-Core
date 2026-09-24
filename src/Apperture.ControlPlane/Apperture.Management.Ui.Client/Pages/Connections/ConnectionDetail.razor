@@ -258,6 +258,17 @@
                 }
             </ManagementSection>
 
+            @* Tools: offered only when the caller may browse this Connection AND a connector-supplied provider is registered
+               in this host, and never for a retired Connection. Absent otherwise -- not disabled, not empty -- because an
+               empty state would claim something about the connector that the caller has no right to know. *@
+            @if (_tools is { SqlStructureBrowser: true } && !IsRetired)
+            {
+                <ManagementSection Title="Tools"
+                                   Layer="ManagementSection.UiLayer.Detail"
+                                   Help="Read-only tools for inspecting the system this connection points at.">
+                </ManagementSection>
+            }
+
             <TechnicalDetails>
                 <TechnicalDetail Label="Connection id" Value="@_connection.Id" />
                 <TechnicalDetail Label="Connector definition id" Value="@_connection.ConnectorDefinitionId" />
@@ -301,6 +312,9 @@
             : _connection!.ConnectorDisplayName!;
 
     private ConnectionDto? _connection;
+
+    // Which typed tools this Connection offers the caller. Null unless the caller may browse and a provider exists here.
+    private ConnectionToolsDto? _tools;
 
     // Connector-declared field metadata for readable labels. Null when the connector is not registered or the caller
     // cannot read definitions; the Configuration section then falls back to the stored keys.
@@ -367,6 +381,7 @@
 
         _dataLoadKey = key;
         _connection = null;
+        _tools = null;
         _connectorDefinition = null;
         _editing = false;
         _error = null;
@@ -387,6 +402,7 @@
             {
                 await ViewState.EnsureContextsKnownAsync(_connection.UsedIn.Select(u => u.IntegrationResourceContextId));
                 await LoadConnectorDefinitionAsync(_connection);
+                await LoadToolsAsync(_connection);
             }
         }
         catch (HttpRequestException ex)
@@ -422,6 +438,24 @@
         catch (Exception)
         {
             _connectorDefinition = null;
+        }
+    }
+
+    // A local lookup on the server (no remote call, no secret, no client). Only asked for a caller who may browse and for a
+    // Connection that is not retired; and, like the definition, best-effort: it can never fail the page.
+    private async Task LoadToolsAsync(ConnectionDto connection)
+    {
+        _tools = null;
+        if (_capabilities?.CanBrowseConnections != true || ConnectionWorkspacePresentation.IsRetired(connection))
+            return;
+
+        try
+        {
+            _tools = await Client.GetConnectionToolsAsync(connection.Id);
+        }
+        catch (Exception)
+        {
+            _tools = null;
         }
     }
 

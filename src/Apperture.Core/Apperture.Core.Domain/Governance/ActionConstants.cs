@@ -25,6 +25,14 @@ public static class ActionConstants
     public const string ConnectionUpdate = "connection.update";
     public const string ConnectionDelete = "connection.delete";
 
+    /// <summary>
+    /// Inspect, read-only, the STRUCTURE of the external system a Connection points at (for example the schemas, tables and
+    /// columns of a SQL Server database). Additive to <see cref="ConnectionRead"/>: a caller needs both. It is deliberately not
+    /// implied by <see cref="ConnectionRead"/>, because reading remote structure discloses more than reading Connection metadata.
+    /// It covers structure only; reading remote rows or file content is outside it.
+    /// </summary>
+    public const string ConnectionBrowse = "connection.browse";
+
     // Connector
     /// <summary>Read the connector-definition catalog (shape metadata) at instance scope. Epic 52A.</summary>
     public const string ConnectorDefinitionRead = "connector.definition.read";

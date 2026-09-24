@@ -14,6 +14,8 @@ using ServerIntegrationDto = Apperture.Management.Api.Controllers.IntegrationDto
 using ServerCreateIntegrationRequestBody = Apperture.Management.Api.Controllers.CreateIntegrationRequestBody;
 using ServerConnectionDto = Apperture.Management.Api.Controllers.ConnectionDto;
 using ServerCreateConnectionRequestBody = Apperture.Management.Api.Controllers.CreateConnectionRequestBody;
+using ClientConnectionToolsDto = Apperture.Management.Client.ConnectionToolsDto;
+using ServerConnectionToolsDto = Apperture.Management.Api.Controllers.ConnectionToolsDto;
 using ServerRunSummaryDto = Apperture.ControlPlane.Security.RunSummaryDto;
 using ServerRunQueryFilter = Apperture.ControlPlane.Security.RunQueryFilter;
 using ServerRunDetailDto = Apperture.ControlPlane.Security.RunDetailDto;
@@ -56,6 +58,7 @@ public class ClientServerDtoParityTests
         yield return new object[] { typeof(ServerCreateIntegrationRequestBody), typeof(ClientCreateIntegrationRequest), true };
         yield return new object[] { typeof(ServerConnectionDto), typeof(ClientConnectionDto), true };
         yield return new object[] { typeof(ServerCreateConnectionRequestBody), typeof(ClientCreateConnectionRequest), true };
+        yield return new object[] { typeof(ServerConnectionToolsDto), typeof(ClientConnectionToolsDto), true };
         yield return new object[] { typeof(ServerRunSummaryDto), typeof(ClientRunSummaryDto), true };
         yield return new object[] { typeof(ServerRunQueryFilter), typeof(ClientRunQueryFilter), true };
         yield return new object[] { typeof(ServerRunDetailDto), typeof(ClientRunDetailDto), true };

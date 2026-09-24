@@ -63,7 +63,9 @@ public sealed class ConnectionWorkspaceRenderTests
         ConnectorDefinitionCatalogDto? definition,
         OperatorCapabilitiesDto? capabilities = null,
         Exception? definitionFailure = null,
-        bool withApplication = false)
+        bool withApplication = false,
+        ConnectionToolsDto? tools = null,
+        Exception? toolsFailure = null)
     {
         capabilities ??= new OperatorCapabilitiesDto(false, false, false, false, false)
             with { CanViewConnections = true, CanViewConnectorDefinitions = true };
@@ -74,6 +76,10 @@ public sealed class ConnectionWorkspaceRenderTests
             client.Setup(c => c.GetConnectorDefinitionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(definitionFailure);
         else
             client.Setup(c => c.GetConnectorDefinitionAsync(SqlId, It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        if (toolsFailure is not null)
+            client.Setup(c => c.GetConnectionToolsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(toolsFailure);
+        else
+            client.Setup(c => c.GetConnectionToolsAsync("conn-0001", It.IsAny<CancellationToken>())).ReturnsAsync(tools);
         var contexts = new List<ResourceContextDto>
         {
             new(ResourceContextIds.SharedValue, "Shared", "shared", ResourceContextKinds.Shared, ResourceContextStates.Active, true, null, default, default)
@@ -345,5 +351,85 @@ public sealed class ConnectionWorkspaceRenderTests
         page.Html.Should().Contain("Testing is unavailable because this connector is not registered in this host.");
         page.Html.Should().NotContain("does not support test connection");
         page.Html.Should().Contain("Connected earlier.").And.Contain("Last tested 2026-09-01 12:00:00Z");
+    }
+
+    // ---- Tools slot ----------------------------------------------------------------------------------
+
+    private static OperatorCapabilitiesDto Browser() =>
+        new OperatorCapabilitiesDto(false, false, false, false, false)
+            with { CanViewConnections = true, CanViewConnectorDefinitions = true, CanBrowseConnections = true };
+
+    private static bool ToolsRequested(Harness page) =>
+        page.Client.Invocations.Any(i => i.Method.Name == nameof(IManagementClient.GetConnectionToolsAsync));
+
+    [Fact]
+    public async Task AZ3_a_caller_who_may_browse_sees_the_tools_section_between_used_in_and_technical_details()
+    {
+        var page = await RenderAsync(Connection(), Definition(), Browser(), tools: new ConnectionToolsDto(true));
+
+        var used = page.Html.IndexOf("Used in", StringComparison.Ordinal);
+        var tools = page.Html.IndexOf(">Tools<", StringComparison.Ordinal);
+        var technical = page.Html.IndexOf("ui-technical-details", StringComparison.Ordinal);
+        tools.Should().BePositive();
+        (used < tools && tools < technical).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AZ2_a_caller_who_may_only_read_gets_the_full_workspace_with_no_tools_and_no_tools_request()
+    {
+        var page = await RenderAsync(Connection(), Definition(), tools: new ConnectionToolsDto(true));
+
+        page.Html.Should().NotContain(">Tools<").And.Contain("Configuration").And.Contain("Used in");
+        ToolsRequested(page).Should().BeFalse("a caller without browse is never sent to the tools endpoint");
+    }
+
+    [Fact]
+    public async Task No_tools_flag_means_no_section_at_all_not_an_empty_one()
+    {
+        var page = await RenderAsync(Connection(), Definition(), Browser(), tools: new ConnectionToolsDto(false));
+
+        page.Html.Should().NotContain(">Tools<");
+    }
+
+    [Fact]
+    public async Task A_missing_tools_response_means_no_section()
+    {
+        var page = await RenderAsync(Connection(), Definition(), Browser(), tools: null);
+
+        page.Html.Should().NotContain(">Tools<");
+    }
+
+    [Fact]
+    public async Task LC1_a_retired_connection_hides_tools_and_never_asks_for_them()
+    {
+        var page = await RenderAsync(Connection(state: "Retired"), Definition(), Browser(), tools: new ConnectionToolsDto(true));
+
+        page.Html.Should().NotContain(">Tools<");
+        ToolsRequested(page).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_failing_tools_lookup_never_fails_the_page()
+    {
+        var page = await RenderAsync(Connection(), Definition(), Browser(), toolsFailure: new HttpRequestException("403", null, System.Net.HttpStatusCode.Forbidden));
+
+        page.Html.Should().NotContain(">Tools<").And.Contain("Configuration").And.Contain("Warehouse");
+    }
+
+    [Fact]
+    public async Task LC4_a_failed_verification_still_offers_the_tools()
+    {
+        var page = await RenderAsync(Connection(status: "Failed"), Definition(), Browser(), tools: new ConnectionToolsDto(true));
+
+        page.Html.Should().Contain(">Tools<");
+    }
+
+    [Fact]
+    public async Task PR5_rendering_the_workspace_with_tools_creates_no_remote_call()
+    {
+        var page = await RenderAsync(Connection(), Definition(), Browser(), tools: new ConnectionToolsDto(true));
+
+        page.Client.Verify(c => c.TestConnectionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        page.Client.Invocations.Select(i => i.Method.Name).Should().NotContain(n => n.Contains("Browse", StringComparison.OrdinalIgnoreCase) || n.Contains("Structure", StringComparison.OrdinalIgnoreCase));
     }
 }

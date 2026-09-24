@@ -220,6 +220,9 @@ public interface IManagementClient
     /// </summary>
     Task<ConnectionDto> TestConnectionAsync(string id, CancellationToken cancellationToken = default);
 
+    /// <summary>The tools this Connection offers the caller (requires connection.read and connection.browse; otherwise the call is refused).</summary>
+    Task<ConnectionToolsDto?> GetConnectionToolsAsync(string id, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Lists connector definitions (catalog metadata; not executable client operations). Epic 52.
     /// </summary>
@@ -1154,7 +1157,8 @@ public sealed record OperatorCapabilitiesDto(
     [property: JsonPropertyName("canManagePlatformSettings")] bool CanManagePlatformSettings = false,
     [property: JsonPropertyName("canManageUsers")] bool CanManageUsers = false,
     [property: JsonPropertyName("canManageCredentials")] bool CanManageCredentials = false,
-    [property: JsonPropertyName("canManageResourceContexts")] bool CanManageResourceContexts = false);
+    [property: JsonPropertyName("canManageResourceContexts")] bool CanManageResourceContexts = false,
+    [property: JsonPropertyName("canBrowseConnections")] bool CanBrowseConnections = false);
 
 public sealed record PlatformSettingAllowedValueDto(
     string Value,
@@ -1321,6 +1325,9 @@ public sealed record ConnectorDefinitionCatalogDto(
     string? Description,
     IReadOnlyList<ConnectionFieldCatalogDto> Fields,
     string Capabilities);
+
+/// <summary>Typed tool flags for one Connection. One member per real tool; deliberately not a generic capability list.</summary>
+public sealed record ConnectionToolsDto(bool SqlStructureBrowser);
 
 /// <summary>Connection resource with Used In projection. Epic 48.</summary>
 public sealed record ConnectionDto(
