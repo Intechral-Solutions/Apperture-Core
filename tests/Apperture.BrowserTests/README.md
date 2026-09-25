@@ -11,8 +11,9 @@ is now kept); those now pin the safe return-target policy and the stable Entra e
 `EntraReturnTargetBrowserTests` adds the sign-in journeys (fragment round trip, hostile targets on the host link, Try again).
 **SEC-1A2b has flipped** F8 (`StepUpCallbackBaselineTests`, Chromium and Firefox): the cross-site callback still arrives without
 the session cookie, and Entra step-up now succeeds from the protected OIDC state (design gate §41), including the wrong-user,
-wrong-tenant, unknown-identity and missing-context refusals. Still characterizations of today's behavior, on purpose: F9 (SEC-1A3),
-F11 and the side-effect GET / CORS / cookie findings (SEC-1B).
+wrong-tenant, unknown-identity and missing-context refusals. **SEC-1A3 has flipped** F9 (`SessionRenewalBaselineTests`): background
+polls carry `X-Apperture-Background` and do not re-issue the session cookie; a user Refresh at the same threshold still does (design gate §43).
+Still characterizations of today's behavior, on purpose: F11 and the side-effect GET / CORS / cookie findings (SEC-1B).
 
 ## Run it (one command)
 

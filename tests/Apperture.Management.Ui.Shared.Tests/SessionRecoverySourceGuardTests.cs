@@ -80,16 +80,18 @@ public sealed class SessionRecoverySourceGuardTests
     }
 
     [Fact]
-    public void The_http_pipeline_order_is_credentials_then_recovery_then_the_network_handler()
+    public void The_http_pipeline_order_is_credentials_then_background_headers_then_recovery_then_the_network_handler()
     {
         var program = File.ReadAllText(Path.Combine(RepoRoot(), UiClientDir.Replace('/', Path.DirectorySeparatorChar), "Program.cs"));
 
-        var credentialsToRecovery = program.IndexOf("credentials.InnerHandler = recovery;", StringComparison.Ordinal);
+        var credentialsToHeaders = program.IndexOf("credentials.InnerHandler = headers;", StringComparison.Ordinal);
+        var headersToRecovery = program.IndexOf("headers.InnerHandler = recovery;", StringComparison.Ordinal);
         var recoveryToNetwork = program.IndexOf("recovery.InnerHandler = new HttpClientHandler();", StringComparison.Ordinal);
         var client = program.IndexOf("new HttpClient(credentials)", StringComparison.Ordinal);
 
-        credentialsToRecovery.Should().BeGreaterThan(0);
-        recoveryToNetwork.Should().BeGreaterThan(credentialsToRecovery);
+        credentialsToHeaders.Should().BeGreaterThan(0);
+        headersToRecovery.Should().BeGreaterThan(credentialsToHeaders);
+        recoveryToNetwork.Should().BeGreaterThan(headersToRecovery);
         client.Should().BeGreaterThan(recoveryToNetwork);
         program.Should().Contain("AddSessionRecovery(apiUri)");
         Regex_Count(program, "new HttpClient(").Should().Be(1, "one application pipeline; the probe client lives in the recovery registration");

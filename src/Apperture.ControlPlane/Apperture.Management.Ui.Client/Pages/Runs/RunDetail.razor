@@ -869,7 +869,11 @@
             {
                 while (await _timer.WaitForNextTickAsync(_pollingCts.Token))
                 {
-                    await InvokeAsync(() => LoadAsync());
+                    await InvokeAsync(async () =>
+                    {
+                        using (BackgroundRequest.Begin())
+                            await LoadAsync();
+                    });
                 }
             }
             catch (OperationCanceledException)

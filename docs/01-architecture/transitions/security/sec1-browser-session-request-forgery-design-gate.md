@@ -7,7 +7,8 @@ SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its
 safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
 in §40, and SEC-1A2b (Entra step-up continuation across the cross-site callback, finding F8) is implemented and proven in Chromium and
 Firefox, recorded in §41. An independent review of the A-series found one Important trust-boundary issue (I-1, external
-Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
+Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 (background
+requests do not renew the sliding session) is implemented and recorded in §43. Every SEC-1B slice has not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1605,3 +1606,44 @@ are still added afterwards by the host and are not in this namespace.
 actor not break-glass. `oid`, `tid`, and `acrs` remain. `EntraStepUpSecurityGuardTests` pins that the strip is namespace-wide and occurs before
 `identity_source` is added. The full step-up callback and guard classes: 51 passed. Browser and integration suites were not re-run for this follow-up;
 the changed path is the same handler those suites already drive, and SEC-1A3 re-runs them.
+
+---
+
+## 43. SEC-1A3 — background requests do not renew the sliding session (2026-09-25)
+
+Scope: findings F9 and the renewal half of F10. Not touched: request forgery (SEC-1B1), side-effect GETs and `GET /signout` (SEC-1B2), CORS / cookie Secure / host hygiene (SEC-1B3), the CI browser job (I-2), `N1`. The 12 h sliding lifetime, SameSite, and Secure policy are unchanged. SEC-1 is not complete.
+
+### 43.1 What counts as activity
+
+A passive tab must not keep the 12 h sliding cookie alive. Operator-initiated authenticated requests still renew it once the framework's renewal threshold is reached. Automatic work is marked by a `BackgroundRequest` scope (`AsyncLocal`, nested and exception-safe). `BrowserRequestHeadersHandler` is the only writer of `X-Apperture-Background: 1` (`BackgroundActivity` in shared kernel). The host's `OnCheckSlidingExpiration` sets `ShouldRenew = false` when that header is present. The request stays authenticated and authorized. Forging the header can only decline renewal of the caller's own cookie.
+
+Call sites, by invocation context rather than by API method:
+
+| Caller | Classification |
+|---|---|
+| Toast watcher tick | Background |
+| `RunDetail` poll loop | Background. The shared `LoadAsync` stays unmarked, so the operator Refresh button renews |
+| Unread count on first paint and on session change | Background |
+| Unread count when the notification menu is opened | Operator (renewing) |
+| Toast dwell timers | Local UI, no HTTP |
+| Boot (`auth/me`, capabilities, menus) | Operator: a navigation |
+
+A source guard fails if a new `PeriodicTimer`, `CreateTimer`, or `new Timer` appears in the UI client outside that inventory.
+
+### 43.2 Session kinds
+
+Renewal suppression is on the application cookie scheme, which is the scheme local sign-in, Entra sign-in, and both step-up re-issues use. A unit theory covers Local and Entra tickets with and without step-up assurance claims: background does not re-issue; the next foreground request does.
+
+### 43.3 Findings
+
+| Id | Status |
+|---|---|
+| I-1 | **Fixed** (§42). External claims in `http://schemas.apperture/` are stripped before the host adds trusted ones |
+| F9 | **Fixed** when the browser proof below passes: a passive toast poll does not `Set-Cookie` at the renewal threshold; the session then expires and A1 recovers once |
+| F10 | 401 half fixed in A1. Renewal half closed with F9 when that proof passes |
+| I-2 | **Open.** The browser suite stays gated off in normal CI. SEC-1 is not complete until a CI, gated, or scheduled run exists. Left for SEC-1B4 / closure |
+| F11–F18, N1 | Unchanged. SEC-1B |
+
+### 43.4 Evidence
+
+`dotnet build Apperture.slnx`: 0 errors (repo-local `artifacts/sec1-a3-slnx`). UnitTests 3 090 passed. ArchTests 38. Ui.Shared.Tests 1 381. Ui.Client.Tests 333. `BackgroundSessionRenewalTests`: background requests do not re-issue the cookie for Local and Entra tickets, with and without step-up assurance; the next foreground request does; a background request after expiry is 401 and mints no cookie. Browser suite (`APPERTURE_BROWSER_TESTS=1`): **301 / 301 passed** in about 26 minutes. F9 is flipped (`SessionRenewalBaselineTests`): the passive toast poll at the renewal threshold does not `Set-Cookie`, the session then expires, and recovery reaches `/login`. The same threshold with an operator Refresh does re-issue the cookie. IntegrationTests: 154 passed and 108 failed because the SQL fixture could not open `127.0.0.1,58361` (`SqlAvailable = false`), not because of an auth assertion. I-2 (browser suite gated off in normal CI) stays open. SEC-1 is not complete.

@@ -19,13 +19,11 @@ namespace Apperture.BrowserTests;
 public sealed class SessionRenewalBaselineTests(BrowserHarness harness, ITestOutputHelper output)
 {
     /// <summary>
-    /// F9 — REPRODUCED. A background poll, with no operator interaction, re-issues the session cookie
-    /// (sliding renewal), and the tab is still authenticated at a moment when the ORIGINAL ticket is
-    /// provably dead (a replay of it is rejected). FLIPS IN SEC-1A3 (D9): background traffic carries
-    /// the non-renewing marker, so the same poll must NOT re-issue the cookie.
+    /// F9 — FLIPPED IN SEC-1A3. A background poll, with no operator interaction, does not re-issue the
+    /// session cookie. After the 12 h lifetime the next poll is 401 and recovery makes one transition to login.
     /// </summary>
     [BrowserFact]
-    public async Task F9_background_polling_renews_the_sliding_session_so_a_passive_tab_never_idles_out()
+    public async Task F9_background_polling_does_not_renew_the_sliding_session_and_the_passive_tab_expires()
     {
         await harness.ResetAsync();
         await using var context = await harness.NewContextAsync();
@@ -54,8 +52,8 @@ public sealed class SessionRenewalBaselineTests(BrowserHarness harness, ITestOut
             "the next automatic poll", TimeSpan.FromSeconds(50));
         var firstPoll = harness.Recorder.Where(r => r.Path.EndsWith("/toast-delta", StringComparison.Ordinal)).First();
         output.Line("F9", $"poll after 7 h (no operator input): {firstPoll}");
-        harness.Recorder.Where(r => r.Method != "GET" || !r.Path.EndsWith("/toast-delta", StringComparison.Ordinal))
-            .Should().BeEmpty("only the automatic poll reached the host: no operator activity");
+        harness.Recorder.Where(r => r.SetSessionCookie).Should().BeEmpty(
+            "no request in the passive window re-issued the session cookie, including a late boot request that was not operator input");
 
         // Six more hours: 13 h since sign-in. The original ticket expired at 12 h.
         harness.Clock.Advance(TimeSpan.FromHours(6));
@@ -73,10 +71,47 @@ public sealed class SessionRenewalBaselineTests(BrowserHarness harness, ITestOut
         output.Line("F9", $"control: the original ticket replayed at 13 h -> HTTP {replay.Status}");
 
         firstPoll.Status.Should().Be(200);
-        firstPoll.SetSessionCookie.Should().BeTrue("a background poll re-issued the sliding session cookie");
-        firstPoll.BackgroundHeaderPresent.Should().BeFalse("no non-renewing marker exists yet");
-        laterPoll.Status.Should().Be(200, "the passive tab is still signed in 13 h after sign-in");
-        laterPoll.SetSessionCookie.Should().BeTrue("the second background poll re-issued the cookie again");
-        replay.Status.Should().Be(401, "control: without renewal the session would have ended at 12 h");
+        firstPoll.SetSessionCookie.Should().BeFalse("a background poll must not re-issue the sliding session cookie");
+        firstPoll.BackgroundHeaderPresent.Should().BeTrue();
+        laterPoll.Status.Should().Be(401, "the passive tab's session ended at 12 h");
+        laterPoll.SetSessionCookie.Should().BeFalse();
+        replay.Status.Should().Be(401, "the original ticket is dead at 13 h");
+
+        await page.WaitForURLAsync(u => u.Contains("/login", StringComparison.Ordinal), new() { Timeout = 60_000 });
+        new Uri(page.Url).AbsolutePath.Should().Be("/login");
+        harness.Recorder.Where(r => r.Path.Contains("/auth/me", StringComparison.OrdinalIgnoreCase) && r.Status is 200 or 401)
+            .Should().NotBeEmpty("recovery probes auth/me once the background poll is 401");
+    }
+
+    /// <summary>
+    /// Positive control for F9. At the same renewal threshold, a click on Refresh is operator activity and
+    /// the session cookie is re-issued. Sliding expiration is not turned off globally.
+    /// </summary>
+    [BrowserFact]
+    public async Task A_user_triggered_refresh_past_the_renewal_threshold_reissues_the_session_cookie()
+    {
+        await harness.ResetAsync();
+        await using var context = await harness.NewContextAsync();
+        await harness.SignInAsync(context);
+        var page = await context.NewPageAsync();
+
+        await page.GotoAsync(harness.Origins.Ui + "/connections");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForEnabledAsync();
+        await TestSupport.EventuallyAsync(
+            () => harness.Recorder.Where(r => r.Path.EndsWith("/toast-delta", StringComparison.Ordinal)).Any(),
+            "the watcher's first poll", TimeSpan.FromSeconds(30));
+
+        harness.Clock.Advance(TimeSpan.FromHours(7));
+        harness.Recorder.Clear();
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).ClickAsync();
+        await TestSupport.EventuallyAsync(
+            () => harness.Recorder.Where(r => r.Path.Contains("/connections", StringComparison.OrdinalIgnoreCase) && r.Status == 200 && !r.BackgroundHeaderPresent).Any(),
+            "the operator refresh", TimeSpan.FromSeconds(20));
+
+        var refresh = harness.Recorder.Where(r => r.Path.Contains("/connections", StringComparison.OrdinalIgnoreCase) && !r.BackgroundHeaderPresent && r.Status == 200).First();
+        output.Line("F9-control", refresh.ToString());
+        refresh.SetSessionCookie.Should().BeTrue("operator activity still slides the session");
+        refresh.BackgroundHeaderPresent.Should().BeFalse();
     }
 }

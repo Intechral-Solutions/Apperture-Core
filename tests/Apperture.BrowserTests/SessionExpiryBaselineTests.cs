@@ -74,8 +74,8 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
     /// <summary>
     /// F10 (background half of F1) — FLIPPED IN SEC-1A1 (was: the watcher polls on and nothing recovers). The Toast
     /// watcher's next tick after expiry is answered 401. Recovery is the same single, central one: one probe, one
-    /// navigation to sign-in, and then no further polling and no error toast. (Not marking background requests
-    /// non-renewing is SEC-1A3, and is unchanged.)
+    /// navigation to sign-in, and then no further polling and no error toast. SEC-1A3 keeps that recovery and
+    /// stops the poll from renewing the cookie before expiry (F9).
     /// </summary>
     [BrowserFact]
     public async Task F10_background_toast_poll_after_expiry_converges_on_one_recovery_and_stops_polling()

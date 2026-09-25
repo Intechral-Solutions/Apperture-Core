@@ -207,7 +207,9 @@ public sealed class NotificationToastWatcher : INotificationToastWatcher
 
         try
         {
-            var response = await _client.GetNotificationToastDeltaAsync(cursorCreatedAtUtc, cursorId, cancellationToken).ConfigureAwait(false);
+            NotificationToastDeltaResponseDto response;
+            using (BackgroundRequest.Begin())
+                response = await _client.GetNotificationToastDeltaAsync(cursorCreatedAtUtc, cursorId, cancellationToken).ConfigureAwait(false);
 
             lock (_gate)
             {
