@@ -137,7 +137,7 @@ public sealed class SessionRecoveryCoordinator : ISessionRecoveryCoordinator
     /// </summary>
     public void SignInNow()
     {
-        var url = LoginUrl ?? LoginRouteHelper.BuildLoginUrl(CurrentPathAndQuery(), LoginRouteHelper.ExpiredReason);
+        var url = LoginUrl ?? LoginRouteHelper.BuildLoginUrl(CurrentTarget(), LoginRouteHelper.ExpiredReason);
         _nav.NavigateTo(url, forceLoad: true);
     }
 
@@ -219,7 +219,7 @@ public sealed class SessionRecoveryCoordinator : ISessionRecoveryCoordinator
         if (_session.State != SessionLoadState.Authenticated || IsPublicRoute())
             return;
 
-        var loginUrl = LoginRouteHelper.BuildLoginUrl(CurrentPathAndQuery(), LoginRouteHelper.ExpiredReason);
+        var loginUrl = LoginRouteHelper.BuildLoginUrl(CurrentTarget(), LoginRouteHelper.ExpiredReason);
         lock (_gate)
         {
             _loginUrl = loginUrl;
@@ -279,9 +279,6 @@ public sealed class SessionRecoveryCoordinator : ISessionRecoveryCoordinator
     private bool IsPublicRoute() =>
         LoginRouteHelper.IsPublicPath(new Uri(_nav.Uri).AbsolutePath);
 
-    private string CurrentPathAndQuery()
-    {
-        var uri = new Uri(_nav.Uri);
-        return uri.AbsolutePath + uri.Query;
-    }
+    /// <summary>The page the operator is on: path, query and fragment exactly as the browser has them (validated later by <c>BuildLoginUrl</c>).</summary>
+    private string? CurrentTarget() => LocalReturnUrl.FromAbsoluteUri(_nav.Uri);
 }

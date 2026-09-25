@@ -255,6 +255,180 @@ public sealed class ManagementAuthEndpointsTests
         capture.SignOutRedirectUri.Should().BeNull();
     }
 
+    // ---- SEC-1A2a: a cancelled or failed Microsoft sign-in never leaves the operator on a raw API error --------------------
+
+    /// <summary>Runs the challenge and returns the protected <c>state</c> plus the correlation/nonce cookies the browser would hold.</summary>
+    private static async Task<(string State, string Cookies)> BeginChallengeAsync(HttpClient client, string path)
+    {
+        var challenge = await client.GetAsync(path);
+        challenge.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var state = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(challenge.Headers.Location!.Query)["state"].ToString();
+        state.Should().NotBeNullOrEmpty();
+        var cookies = string.Join("; ", challenge.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+        return (state, cookies);
+    }
+
+    /// <summary>The provider's <c>form_post</c> callback to <c>/signin-oidc</c>.</summary>
+    private static async Task<HttpResponseMessage> PostCallbackAsync(
+        HttpClient client, string? state, string cookies, params (string Name, string Value)[] fields)
+    {
+        var form = new List<KeyValuePair<string, string>>();
+        if (state is not null)
+            form.Add(new("state", state));
+        form.AddRange(fields.Select(f => new KeyValuePair<string, string>(f.Name, f.Value)));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/signin-oidc") { Content = new FormUrlEncodedContent(form) };
+        if (cookies.Length > 0)
+            request.Headers.Add("Cookie", cookies);
+        return await client.SendAsync(request);
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task A_cancelled_sign_in_returns_to_the_ui_login_with_the_cancelled_code_in_every_environment(string environment)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: environment);
+        using var client = Client(host);
+        var (state, cookies) = await BeginChallengeAsync(client, "/signin?returnUrl=%2Fconnections%2Fabc%3Fx%3D1%23notes");
+
+        var response = await PostCallbackAsync(
+            client, state, cookies,
+            ("error", "access_denied"),
+            ("error_description", "AADSTS65004: The user declined to consent to access the app."));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect, "one redirect back to the UI, never a rethrown 500");
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login?error=cancelled");
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
+    }
+
+    [Theory]
+    [InlineData("Development", "server_error")]
+    [InlineData("Production", "server_error")]
+    [InlineData("Production", "invalid_request")]
+    [InlineData("Production", "interaction_required")]
+    public async Task A_failed_sign_in_returns_to_the_ui_login_with_the_generic_code_and_no_provider_text(string environment, string providerError)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: environment);
+        using var client = Client(host);
+        var (state, cookies) = await BeginChallengeAsync(client, "/signin");
+
+        var response = await PostCallbackAsync(
+            client, state, cookies,
+            ("error", providerError),
+            ("error_description", "AADSTS900000: secret-looking provider prose that must never reach the URL"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var location = response.Headers.Location!.ToString();
+        location.Should().Be("http://localhost:9001/login?error=oidc");
+        location.Should().NotContain("detail").And.NotContain("AADSTS").And.NotContain("secret");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task A_tampered_or_missing_state_is_an_ordinary_failure_and_never_a_500(string environment)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: environment);
+        using var client = Client(host);
+        var (_, cookies) = await BeginChallengeAsync(client, "/signin");
+
+        foreach (var state in new[] { "tampered-state-value", null })
+        {
+            var response = await PostCallbackAsync(client, state, cookies, ("error", "access_denied"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.Redirect, $"state={state ?? "<missing>"}");
+            response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login?error=oidc", "an unvalidated callback is not a trustworthy 'cancelled'");
+        }
+    }
+
+    [Fact]
+    public async Task A_valid_state_without_the_correlation_cookie_is_never_reported_as_cancelled()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: "Production");
+        using var client = Client(host);
+        var (state, _) = await BeginChallengeAsync(client, "/signin");
+
+        // A forged callback: a genuine protected state, but not from this browser (no correlation or nonce cookie).
+        var response = await PostCallbackAsync(client, state, cookies: "", ("error", "access_denied"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login?error=oidc");
+    }
+
+    [Fact]
+    public async Task A_failed_step_up_returns_to_its_return_path_before_any_fragment_with_the_generic_code()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: "c1", environment: "Production");
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        var (state, cookies) = await BeginChallengeAsync(client, "/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1%23roles");
+
+        var response = await PostCallbackAsync(client, state, cookies, ("error", "access_denied"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/config/governance/users/usr-1?error=oidc#roles");
+    }
+
+    [Fact]
+    public async Task A_failed_link_returns_to_account_security_and_not_to_the_sign_in_page()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: "Production");
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        var (state, cookies) = await BeginChallengeAsync(client, "/signin/link");
+
+        var response = await PostCallbackAsync(client, state, cookies, ("error", "access_denied"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/account?error=oidc");
+    }
+
+    [Fact]
+    public async Task Signin_carries_a_path_query_and_fragment_return_target_into_the_challenge()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+
+        var response = await client.GetAsync("/signin?returnUrl=%2Fconnections%2Fabc%3Fx%3D1%26y%3D%252F%23notes");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        capture.RedirectUri.Should().Be("http://localhost:9001/connections/abc?x=1&y=%2F#notes");
+    }
+
+    [Theory]
+    [InlineData("%2F%5Cevil.example")]
+    [InlineData("%2F%09%2Fevil.example")]
+    [InlineData("%2F%0D%0A%2Fevil.example")]
+    [InlineData("%2F%0A%2Fevil.example")]
+    [InlineData("%20%2F%5Cevil.example")]
+    [InlineData("%2Flogin%3FreturnUrl%3D%252F%255Cevil.example")]
+    [InlineData("https%3A%2F%2Fevil.example")]
+    [InlineData("%2F%2Fevil.example")]
+    [InlineData("%2F%252F%252Fevil.example")]
+    public async Task Signin_never_turns_a_hostile_return_target_into_an_off_origin_or_unhandled_redirect(string escaped)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+
+        var challenge = await client.GetAsync("/signin?returnUrl=" + escaped);
+        challenge.StatusCode.Should().Be(HttpStatusCode.Redirect, "control characters must fall back, not become a 500");
+        capture.RedirectUri.Should().Be("http://localhost:9001/control/center", "a refused target is replaced, never repaired");
+
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        var signedIn = await client.GetAsync("/signin?returnUrl=" + escaped);
+        signedIn.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        signedIn.Headers.Location!.ToString().Should().Be("http://localhost:9001/control/center");
+    }
+
     private static HttpClient Client(WebApplication app)
     {
         var server = app.GetTestServer();
@@ -267,11 +441,12 @@ public sealed class ManagementAuthEndpointsTests
     private static async Task<WebApplication> StartAsync(
         RedirectCapture capture,
         bool entraEnabled,
-        string? authenticationContextId = null)
+        string? authenticationContextId = null,
+        string environment = "Development")
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
-            EnvironmentName = Environments.Development
+            EnvironmentName = environment
         });
         builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>

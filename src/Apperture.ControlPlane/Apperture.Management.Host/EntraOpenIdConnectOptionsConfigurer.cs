@@ -78,30 +78,9 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             OnRedirectToIdentityProvider = OnRedirectToIdentityProvider,
             OnRedirectToIdentityProviderForSignOut = OnRedirectToIdentityProviderForSignOut,
             OnTokenValidated = OnTokenValidatedAsync,
-            OnRemoteFailure = ctx =>
-            {
-                if (EntraStepUpFlowConstants.IsStepUpPurpose(ctx.Properties))
-                {
-                    var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
-                    ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, returnPath, "error", "oidc"));
-                    ctx.HandleResponse();
-                    return Task.CompletedTask;
-                }
-
-                var env = ctx.HttpContext.RequestServices.GetService<IHostEnvironment>();
-                if (env?.IsDevelopment() == true)
-                {
-                    var msg = ctx.Failure?.Message ?? "sign_in_failed";
-                    ctx.Response.Redirect(ManagementUiRedirects.Build(
-                        _configuration,
-                        EntraLinkFlowConstants.LoginPath + "?error=oidc",
-                        "detail",
-                        msg));
-                    ctx.HandleResponse();
-                }
-
-                return Task.CompletedTask;
-            }
+            // Cancelled and failed sign-ins, in every environment, end as one redirect to the UI with a fixed error code.
+            OnAccessDenied = ctx => EntraRemoteFailure.HandleAccessDeniedAsync(ctx, _configuration),
+            OnRemoteFailure = ctx => EntraRemoteFailure.HandleRemoteFailureAsync(ctx, _configuration)
         };
     }
 

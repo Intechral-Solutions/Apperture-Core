@@ -76,6 +76,33 @@ public sealed class SessionRecoveryCoordinatorTests
         rig.Probe.Calls.Should().Be(1);
     }
 
+    // SEC-1A2a: the fragment is part of the captured target (path + query + fragment, exactly as the browser has them).
+    [Theory]
+    [InlineData("connections/abc?x=1#notes", "/login?returnUrl=%2Fconnections%2Fabc%3Fx%3D1%23notes&reason=expired")]
+    [InlineData("connections/abc#notes", "/login?returnUrl=%2Fconnections%2Fabc%23notes&reason=expired")]
+    [InlineData("connections/a%2Fb?q=a%20b", "/login?returnUrl=%2Fconnections%2Fa%252Fb%3Fq%3Da%2520b&reason=expired")]
+    [InlineData("components/connector/Apperture.Platform.Sql", "/login?returnUrl=%2Fcomponents%2Fconnector%2FApperture.Platform.Sql&reason=expired")]
+    public async Task Recovery_captures_path_query_and_fragment_exactly_as_the_browser_has_them(string location, string expectedLoginUrl)
+    {
+        var rig = new Rig(uri: Base + location);
+        rig.Probe.Enqueue(SessionProbeResult.Unauthenticated);
+
+        await rig.Coordinator.ReportUnauthenticatedAsync();
+
+        rig.Nav.FullPageLoads.Should().ContainSingle().Which.Should().Be(expectedLoginUrl);
+    }
+
+    [Fact]
+    public async Task A_current_address_the_shared_policy_refuses_is_left_out_of_the_sign_in_url()
+    {
+        var rig = new Rig(uri: Base + "runs?q=" + new string('a', 2100));
+        rig.Probe.Enqueue(SessionProbeResult.Unauthenticated);
+
+        await rig.Coordinator.ReportUnauthenticatedAsync();
+
+        rig.Nav.FullPageLoads.Should().ContainSingle().Which.Should().Be("/login?reason=expired");
+    }
+
     [Fact]
     public async Task Probe_200_means_the_401_was_endpoint_specific_no_navigation_no_state_change()
     {

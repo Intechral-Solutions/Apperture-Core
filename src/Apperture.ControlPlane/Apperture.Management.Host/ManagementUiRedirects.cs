@@ -1,3 +1,4 @@
+using Apperture.Management.Ui.Shared.Auth;
 using Microsoft.Extensions.Configuration;
 
 namespace Apperture.Management.Host;
@@ -5,6 +6,7 @@ namespace Apperture.Management.Host;
 /// <summary>
 /// Builds absolute UI URLs for browser redirects out of the OIDC callback. The management UI is a
 /// separate origin from this host, so the base URL comes from configuration with a development default.
+/// The authority is always the configured UI origin: a request value never supplies it.
 /// </summary>
 internal static class ManagementUiRedirects
 {
@@ -19,24 +21,24 @@ internal static class ManagementUiRedirects
             : configured.TrimEnd('/');
     }
 
-    /// <summary>Only same-site relative paths are accepted, so a crafted return url cannot bounce elsewhere.</summary>
-    public static string? NormalizeRelativePath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return null;
-        var trimmed = path.Trim();
-        if (trimmed.Contains("://", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal))
-            return null;
-        return trimmed.StartsWith('/') ? trimmed : null;
-    }
-
+    /// <summary>
+    /// <paramref name="relativePath"/> must already be trusted: a host constant (<c>/login</c>, <c>/account</c>) or an
+    /// operator-supplied target that passed <see cref="LocalReturnUrl.Validate"/>. It is still checked for browser-stable
+    /// local-path shape (defense in depth; the reserved-surface rule is not applied because the host's own constants are
+    /// auth surfaces), and anything else becomes the UI root. The optional query parameter is placed before any fragment,
+    /// so a fragment-carrying return target survives (<c>/x#notes</c> → <c>/x?steppedUp=1#notes</c>).
+    /// </summary>
     public static string Build(IConfiguration? configuration, string relativePath, string? queryKey = null, string? queryValue = null)
     {
-        var url = ResolveBaseUrl(configuration) + (NormalizeRelativePath(relativePath) ?? "/");
+        var path = LocalReturnUrl.IsLocalPath(relativePath) ? relativePath : "/";
+        var url = ResolveBaseUrl(configuration) + path;
         if (string.IsNullOrEmpty(queryKey) || string.IsNullOrEmpty(queryValue))
             return url;
 
-        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
-        return $"{url}{separator}{queryKey}={Uri.EscapeDataString(queryValue)}";
+        var hash = url.IndexOf('#', StringComparison.Ordinal);
+        var head = hash < 0 ? url : url[..hash];
+        var fragment = hash < 0 ? "" : url[hash..];
+        var separator = head.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{head}{separator}{queryKey}={Uri.EscapeDataString(queryValue)}{fragment}";
     }
 }

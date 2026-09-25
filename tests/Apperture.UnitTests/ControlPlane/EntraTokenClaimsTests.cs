@@ -75,14 +75,6 @@ public sealed class EntraTokenClaimsTests
         EntraLinkFlowConstants.IsLinkPurpose(null).Should().BeFalse();
     }
 
-    [Theory]
-    [InlineData("/account/security", "/account/security")]
-    [InlineData("https://evil.example/steal", null)]
-    [InlineData("//evil.example", null)]
-    [InlineData("account/security", null)]
-    public void Only_same_site_relative_return_paths_are_accepted(string candidate, string? expected) =>
-        ManagementUiRedirects.NormalizeRelativePath(candidate).Should().Be(expected);
-
     private static ClaimsPrincipal Principal(params (string Type, string Value)[] claims) =>
         new(new ClaimsIdentity(claims.Select(c => new Claim(c.Type, c.Value)), "test"));
 }

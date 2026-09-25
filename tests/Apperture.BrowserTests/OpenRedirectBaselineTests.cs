@@ -9,66 +9,26 @@ using Xunit.Abstractions;
 namespace Apperture.BrowserTests;
 
 /// <summary>
-/// SEC-1.0 characterization of return-target handling in a REAL browser (finding F5 and its neighbours).
+/// Return-target handling in a REAL browser (finding F5 and its neighbours). Characterized by SEC-1.0 (where ten hostile
+/// values really navigated to <c>evil.example</c>), FLIPPED by SEC-1A2a: every hostile and auth-surface value now ends on the
+/// default route on the UI origin, and every legitimate deep link still arrives intact.
 /// <para>
 /// Each case drives the shipped Blazor client and host, then records whether the browser ended up on a
 /// foreign origin. The foreign origin is answered locally by <see cref="ExternalNavigationSink"/>, so
 /// "escaped" means the browser really navigated to <c>evil.example</c>; nothing leaves the machine.
-/// The validator's own verdict is obtained by calling the production <see cref="LoginRouteHelper"/>, not by
+/// The policy's own verdict is obtained by calling the production <see cref="LocalReturnUrl"/>, not by
 /// re-implementing it, and .NET <see cref="Uri"/> resolution is printed alongside to show why a .NET-only
 /// test cannot see this class of bug.
 /// </para>
 /// <para>
-/// These assertions pin TODAY's behavior. <see cref="EscapesToday"/> is the exact set that escapes; SEC-1A2
-/// (<c>LocalReturnUrl</c>) must empty it, at which point the tests become the regression suite.
+/// A "did not escape" verdict is only meaningful once the flow finished navigating, so every negative asserts
+/// <see cref="Probe.Settled"/> first, and asserts WHERE the flow ended (the fallback), not merely where it did not.
 /// </para>
 /// </summary>
 [Collection(BrowserHarnessCollection.Name)]
 public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutputHelper output)
 {
-    /// <summary>
-    /// F5 — ids of hostile candidates that leave the origin today via the client (signed-in bounce from
-    /// /login, and post-sign-in navigation). FLIPS IN SEC-1A2: this set must become empty.
-    /// </summary>
-    private static readonly HashSet<string> EscapesToday =
-    [
-        // All measured on Chromium; the decisive ones (slash-backslash, tab-in-authority, crlf-in-authority) also on Firefox and WebKit.
-        "slash-backslash",
-        "slash-backslash-x2",
-        "slash-backslash-slash",
-        "slash-backslash-at",
-        "leading-space-slash-backslash",
-        "tab-in-authority",
-        "tab-before-backslash",
-        "crlf-in-authority",
-        "lf-in-authority",
-        "nested-login-backslash",
-    ];
-
-    /// <summary>
-    /// The host answers a control character in <c>returnUrl</c> with an unhandled 500 (a CR/LF cannot be written into a
-    /// <c>Location</c> header) instead of falling back to the default route. Not an escape; a robustness defect the
-    /// shared policy removes (SEC-1A2).
-    /// </summary>
-    private static readonly HashSet<string> HostAnswers500Today = ["crlf-in-authority", "lf-in-authority"];
-
-    /// <summary>Hostile candidates the host's <c>/signin?returnUrl=</c> turns into an off-origin redirect today. FLIPS IN SEC-1A2 (must stay empty).</summary>
-    private static readonly HashSet<string> HostEscapesToday = [];
-
-    /// <summary>Where the bounce/sign-in flows must end for the auth-surface candidates (all stay on the UI origin).</summary>
-    private static readonly Dictionary<string, string> AuthSurfaceBounceLandsOn = new()
-    {
-        ["login"] = "/control/center",
-        ["login-local"] = "/control/center",
-        ["login-self-return"] = "/control/center",
-        ["signin"] = "/signin",
-        ["signout"] = "/signout",
-        ["signin-oidc"] = "/signin-oidc",
-        ["access-request"] = "/access-request",
-    };
-
-    /// <summary>The host replaces the reserved host paths with the default route; it accepts the login-family paths.</summary>
-    private static readonly HashSet<string> HostReplacesWithDefault = ["signin", "signout", "signin-oidc"];
+    private const string Fallback = LocalReturnUrl.Fallback;
 
     private sealed record Probe(string Flow, ReturnTargetCase Case, bool ValidatorAccepts, bool Escaped, string? ExternalUrl, string FinalUrl)
     {
@@ -83,63 +43,73 @@ public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutpu
             $"external={ExternalUrl ?? "-"} final={FinalUrl}";
     }
 
+    /// <summary>F5 — FLIPPED IN SEC-1A2a (ten of these navigated to evil.example). A signed-in operator opens /login?returnUrl=&lt;hostile&gt;.</summary>
     [BrowserTheory]
     [MemberData(nameof(ReturnTargetCorpus.HostileIds), MemberType = typeof(ReturnTargetCorpus))]
-    public async Task F5_signed_in_operator_visiting_login_is_bounced_to_the_return_target_hostile(string id)
+    public async Task F5_signed_in_operator_visiting_login_is_bounced_to_the_default_route_not_the_hostile_target(string id)
     {
         var probe = await BounceAsync(BrowserEngine.Chromium, ReturnTargetCorpus.ById(id));
         Report(probe);
-        AssertHostileVerdict(probe, id);
+        AssertSafeFallback(probe);
     }
 
+    /// <summary>F5 — FLIPPED IN SEC-1A2a. A signed-out operator signs in locally on /login/local?returnUrl=&lt;hostile&gt;.</summary>
     [BrowserTheory]
     [MemberData(nameof(ReturnTargetCorpus.HostileIds), MemberType = typeof(ReturnTargetCorpus))]
-    public async Task F5_local_sign_in_navigates_to_the_return_target_hostile(string id)
+    public async Task F5_local_sign_in_lands_on_the_default_route_not_the_hostile_target(string id)
     {
         var probe = await LocalSignInAsync(BrowserEngine.Chromium, ReturnTargetCorpus.ById(id));
         Report(probe);
-        AssertHostileVerdict(probe, id);
+        AssertSafeFallback(probe);
     }
 
-    private static void AssertHostileVerdict(Probe probe, string id)
+    /// <summary>
+    /// The one assertion every hostile or auth-surface case must satisfy: the flow finished, never left the UI origin, and
+    /// ended on the default route (the policy refused the value and the fallback was used; nothing was repaired into a
+    /// different valid target).
+    /// </summary>
+    private void AssertSafeFallback(Probe probe)
     {
         probe.Settled.Should().BeTrue("the flow must have finished navigating, otherwise 'did not escape' proves nothing");
-        probe.Escaped.Should().Be(EscapesToday.Contains(id), "the pinned set records exactly which hostile values escape today");
-        if (probe.Escaped)
-            probe.ValidatorAccepts.Should().BeTrue("every value that escapes today was ACCEPTED by the production validator");
+        probe.Escaped.Should().BeFalse($"'{probe.Case.Id}' must never navigate to {probe.ExternalUrl}");
+        probe.ValidatorAccepts.Should().BeFalse("the shared policy refuses every hostile and auth-surface value");
+        probe.FinalUrl.Should().StartWith(harness.Origins.Ui + Fallback, "the operator lands on the default route on the UI origin");
+        new Uri(probe.FinalUrl).AbsolutePath.Should().Be(Fallback);
     }
 
+    /// <summary>
+    /// F5 (host leg) — FLIPPED IN SEC-1A2a. The host's <c>GET /signin?returnUrl=</c> for an authenticated browser is always a
+    /// <c>302</c> to the default route on the configured UI origin. CR/LF values used to be an unhandled 500 (N6).
+    /// </summary>
     [BrowserTheory]
     [MemberData(nameof(ReturnTargetCorpus.HostileIds), MemberType = typeof(ReturnTargetCorpus))]
-    public async Task F5_host_signin_redirect_hostile(string id)
+    public async Task F5_host_signin_redirects_to_the_default_route_and_never_answers_500(string id)
     {
         var probe = await HostSignInAsync(BrowserEngine.Chromium, ReturnTargetCorpus.ById(id));
         Report(probe);
-        probe.Escaped.Should().Be(HostEscapesToday.Contains(id), "the host builds the redirect from the configured UI authority");
-        probe.FinalUrl.Should().StartWith(HostAnswers500Today.Contains(id) ? "500" : "302");
+        probe.Escaped.Should().BeFalse("the host builds the redirect from the configured UI authority");
+        probe.FinalUrl.Should().StartWith("302", "a control character no longer becomes an unhandled 500");
+        probe.FinalUrl.Should().Contain($"Location: {harness.Origins.Ui}{Fallback} ");
     }
 
-    /// <summary>Auth surfaces and loops: recorded, and none may leave the origin.</summary>
+    /// <summary>Auth surfaces and loops — FLIPPED IN SEC-1A2a. None may be a post-sign-in destination, on the client or the host.</summary>
     [BrowserTheory]
     [MemberData(nameof(ReturnTargetCorpus.AuthSurfaceIds), MemberType = typeof(ReturnTargetCorpus))]
-    public async Task Auth_surface_return_targets_stay_on_the_ui_origin_today(string id)
+    public async Task Auth_surface_return_targets_fall_back_to_the_default_route(string id)
     {
         var bounce = await BounceAsync(BrowserEngine.Chromium, ReturnTargetCorpus.ById(id));
         Report(bounce);
         var host = await HostSignInAsync(BrowserEngine.Chromium, ReturnTargetCorpus.ById(id));
         Report(host);
 
-        bounce.Settled.Should().BeTrue();
-        bounce.Escaped.Should().BeFalse();
-        new Uri(bounce.FinalUrl).AbsolutePath.Should().Be(AuthSurfaceBounceLandsOn[id], "where the signed-in bounce ends today");
+        AssertSafeFallback(bounce);
         host.Escaped.Should().BeFalse();
-        var expectedHostTarget = HostReplacesWithDefault.Contains(id) ? "/control/center" : ReturnTargetCorpus.ById(id).Value;
-        host.FinalUrl.Should().EndWith(" " + expectedHostTarget, "the host replaces its own reserved paths with the default route and accepts the login-family paths");
+        host.FinalUrl.Should().StartWith("302").And.Contain($"Location: {harness.Origins.Ui}{Fallback} ");
     }
 
     /// <summary>
-    /// The valid-route corpus a future <c>LocalReturnUrl</c> must keep accepting: every legitimate deep
-    /// link survives a real local sign-in and lands on exactly that path, query and fragment.
+    /// The valid-route corpus the policy must keep accepting: every legitimate deep link survives a real local sign-in and
+    /// lands on exactly that path, query and fragment (dotted ids, nested routes, encoded data included).
     /// </summary>
     [BrowserTheory]
     [MemberData(nameof(ReturnTargetCorpus.LegitimateIds), MemberType = typeof(ReturnTargetCorpus))]
@@ -150,7 +120,7 @@ public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutpu
         Report(probe);
 
         probe.Escaped.Should().BeFalse();
-        probe.ValidatorAccepts.Should().BeTrue("today's validator accepts every legitimate route");
+        probe.ValidatorAccepts.Should().BeTrue("the shared policy accepts every legitimate route");
         AssertLandedOn(probe, c);
     }
 
@@ -168,21 +138,45 @@ public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutpu
     }
 
     /// <summary>
-    /// F5 across engines: the WHATWG URL parser is shared in spirit but not in code, so the decisive
-    /// values are measured on all three engines. (Full matrix: Chromium only; runtime cost.)
+    /// F5 across engines: the WHATWG URL parser is shared in spirit but not in code, so the decisive values (and two legitimate
+    /// ones, so the policy is proven not to be a blanket refusal) are measured on all three engines. (Full matrix: Chromium only;
+    /// runtime cost. The signed-in bounce needs only the API cookie, which every engine accepts on plain http, so the whole
+    /// bounce flow is representative on WebKit; the OIDC legs are Chromium/Firefox, see <see cref="BrowserEngines.OidcCapable"/>.)
     /// </summary>
-    public static IEnumerable<object[]> KeyCasesPerEngine() =>
+    public static IEnumerable<object[]> KeyHostileCasesPerEngine() =>
         from engine in BrowserEngines.All
-        from id in new[] { "scheme-relative", "slash-backslash", "tab-in-authority", "crlf-in-authority", "encoded-backslash-literal" }
+        from id in new[]
+        {
+            "scheme-relative", "slash-backslash", "tab-in-authority", "crlf-in-authority", "encoded-backslash-literal",
+            "nested-login-backslash", "leading-space-slash-backslash",
+        }
+        select new object[] { engine, id };
+
+    public static IEnumerable<object[]> KeyLegitimateCasesPerEngine() =>
+        from engine in BrowserEngines.All
+        from id in new[] { "path-query-fragment", "component-dotted", "path-encoded-slash" }
         select new object[] { engine, id };
 
     [BrowserTheory]
-    [MemberData(nameof(KeyCasesPerEngine))]
-    public async Task F5_key_cases_on_every_engine(BrowserEngine engine, string id)
+    [MemberData(nameof(KeyHostileCasesPerEngine))]
+    public async Task F5_key_hostile_cases_end_on_the_default_route_on_every_engine(BrowserEngine engine, string id)
     {
         var probe = await BounceAsync(engine, ReturnTargetCorpus.ById(id));
         Report(probe with { Flow = $"bounce/{engine}" });
-        AssertHostileVerdict(probe, id);
+        AssertSafeFallback(probe);
+    }
+
+    [BrowserTheory]
+    [MemberData(nameof(KeyLegitimateCasesPerEngine))]
+    public async Task Key_legitimate_deep_links_arrive_intact_on_every_engine(BrowserEngine engine, string id)
+    {
+        var c = ReturnTargetCorpus.ById(id);
+        var probe = await BounceAsync(engine, c);
+        Report(probe with { Flow = $"bounce/{engine}" });
+
+        probe.Settled.Should().BeTrue();
+        probe.Escaped.Should().BeFalse();
+        AssertLandedOn(probe, c);
     }
 
     // ---- flows -------------------------------------------------------------------------------------------
@@ -248,7 +242,7 @@ public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutpu
     private Probe ToProbe(string flow, ReturnTargetCase c, ExternalNavigationSink sink, IPage page) =>
         new(flow, c, Accepts(c.Value), sink.Escaped, sink.First, page.Url);
 
-    private static bool Accepts(string value) => LoginRouteHelper.NormalizeReturnUrl(value) is not null;
+    private static bool Accepts(string value) => LocalReturnUrl.IsValid(value);
 
     private void Report(Probe probe)
     {
@@ -266,16 +260,7 @@ public sealed class OpenRedirectBaselineTests(BrowserHarness harness, ITestOutpu
         output.Line("F5", probe + $" dotnetUriHost={dotnet} note=\"{probe.Case.Note}\"");
     }
 
-    /// <summary>
-    /// The client appends its View selector (<c>context=all</c>) to selector-aware list pages after they load. That is
-    /// application state leaking into the address bar (and therefore into a captured return target, contrary to
-    /// design-gate §13); it is removed here so the assertion is about the route the operator asked for.
-    /// </summary>
-    private static string StripViewSelector(string pathAndQuery)
-    {
-        var stripped = pathAndQuery.Replace("&context=all", "", StringComparison.Ordinal).Replace("?context=all&", "?", StringComparison.Ordinal);
-        return stripped.EndsWith("?context=all", StringComparison.Ordinal) ? stripped[..^"?context=all".Length] : stripped;
-    }
+    private static string StripViewSelector(string pathAndQuery) => TestSupport.StripViewSelector(pathAndQuery);
 
     private void AssertLandedOn(Probe probe, ReturnTargetCase c)
     {

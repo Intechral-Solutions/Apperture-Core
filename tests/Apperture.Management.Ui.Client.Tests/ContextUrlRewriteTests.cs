@@ -24,6 +24,14 @@ public sealed class ContextUrlRewriteTests
         query["q"].Should().Be("nightly sync");
     }
 
+    // SEC-1A2a: the rewrite replaces the context parameter; it must not drop the operator's #fragment.
+    [Theory]
+    [InlineData("https://localhost/connections?status=active#details", "https://localhost/connections?status=active&context=all#details")]
+    [InlineData("https://localhost/connections?context=dev-id#notes", "https://localhost/connections?context=all#notes")]
+    [InlineData("https://localhost/connections?status=active", "https://localhost/connections?status=active&context=all")]
+    public void TryBuild_keeps_the_fragment(string request, string expected) =>
+        ContextUrlRewrite.TryBuild(request, request, "all").Should().Be(expected);
+
     [Theory]
     [InlineData("https://localhost/runs?context=all")]
     [InlineData("https://localhost/config/applications")]

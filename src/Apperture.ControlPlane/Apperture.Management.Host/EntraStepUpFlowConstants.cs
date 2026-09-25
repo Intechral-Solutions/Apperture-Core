@@ -1,3 +1,4 @@
+using Apperture.Management.Ui.Shared.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
@@ -26,11 +27,10 @@ internal static class EntraStepUpFlowConstants
 
     public static string GetReturnPath(AuthenticationProperties? properties)
     {
-        if (properties?.Items.TryGetValue(ReturnPathItemKey, out var path) == true)
+        if (properties?.Items.TryGetValue(ReturnPathItemKey, out var path) == true
+            && LocalReturnUrl.Validate(path) is { } valid)
         {
-            var normalized = ManagementUiRedirects.NormalizeRelativePath(path);
-            if (normalized is not null && !EntraSignInChallenge.IsReservedAuthPath(normalized))
-                return normalized;
+            return valid;
         }
 
         return DefaultReturnPath;
@@ -42,9 +42,7 @@ internal static class EntraStepUpFlowConstants
         string requestedContextId,
         string? returnUrl)
     {
-        var path = ManagementUiRedirects.NormalizeRelativePath(returnUrl);
-        if (path is null || EntraSignInChallenge.IsReservedAuthPath(path))
-            path = DefaultReturnPath;
+        var path = LocalReturnUrl.Validate(returnUrl) ?? DefaultReturnPath;
 
         var properties = new OpenIdConnectChallengeProperties
         {

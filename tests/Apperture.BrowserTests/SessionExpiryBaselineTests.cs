@@ -1,4 +1,5 @@
 using Apperture.BrowserTests.Infrastructure;
+using Apperture.Management.Ui.Shared.Auth;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Xunit;
@@ -112,12 +113,13 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
     }
 
     /// <summary>
-    /// F2 — REPRODUCED (control). A true document reload with an expired session does reach sign-in with the
-    /// route preserved as returnUrl (path + query; the fragment is already dropped at capture).
-    /// This one is correct today and must keep working.
+    /// F2 — REPRODUCED (control), extended by SEC-1A2a. A true document reload with an expired session does reach sign-in with the
+    /// route preserved as returnUrl. SEC-1A2a also keeps the fragment (it was dropped at capture in SEC-1.0): the whole
+    /// <c>path?query#fragment</c> is captured, escaped once, and validated by the shared policy.
+    /// This one was correct before and must keep working.
     /// </summary>
     [BrowserFact]
-    public async Task F2_hard_reload_after_expiry_reaches_login_with_return_target_and_drops_the_fragment()
+    public async Task F2_hard_reload_after_expiry_reaches_login_with_return_target_including_the_fragment()
     {
         await harness.ResetAsync();
         await using var context = await harness.NewContextAsync();
@@ -139,9 +141,12 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
         var uri = new Uri(page.Url);
         uri.AbsolutePath.Should().Be("/login");
         Uri.UnescapeDataString(uri.Query).Should().Contain("returnUrl=/connections?status=active");
-        page.Url.Should().NotContain("details", "the fragment is not part of the captured return target");
-        // Not in the design gate: by the time the target is captured, the client has appended its own View selector to the
-        // address bar, so application state travels inside the return target. FLIPS IN SEC-1A2 (fragment/target capture).
+        // SEC-1A2a: the fragment travels inside the escaped returnUrl value (never as the sign-in page's own fragment).
+        uri.Fragment.Should().BeEmpty("the fragment belongs to the return target, not to /login");
+        uri.Query.Should().Contain("%23details", "the fragment is part of the captured return target, escaped once");
+        LoginRouteHelper.ReadReturnTarget(page.Url).Should().EndWith("#details").And.StartWith("/connections?status=active");
+        // Not in the design gate (N1, unchanged by SEC-1A2a and awaiting an owner ruling): by the time the target is captured,
+        // the client has appended its own View selector to the address bar, so application state travels inside the return target.
         Uri.UnescapeDataString(uri.Query).Should().Contain("context=all", "the View selector leaks into the captured target");
     }
 

@@ -273,8 +273,7 @@ else
             && Session.User is not null)
         {
             _loginRedirectIssued = false;
-            var returnUrl = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
-            var safe = LoginRouteHelper.NormalizeReturnUrl(returnUrl) ?? LoginRouteHelper.DefaultPostLoginPath;
+            var safe = LoginRouteHelper.ReadReturnTarget(Nav.Uri) ?? LoginRouteHelper.DefaultPostLoginPath;
             Nav.NavigateTo(safe, replace: true);
             return;
         }
@@ -309,6 +308,7 @@ else
             return;
 
         _loginRedirectIssued = true;
-        Nav.NavigateTo(LoginRouteHelper.BuildLoginUrl(path + new Uri(Nav.Uri).Query), replace: true);
+        // Path, query and fragment exactly as the browser has them; BuildLoginUrl applies the shared return-target policy.
+        Nav.NavigateTo(LoginRouteHelper.BuildLoginUrl(LocalReturnUrl.FromAbsoluteUri(Nav.Uri)), replace: true);
     }
 }

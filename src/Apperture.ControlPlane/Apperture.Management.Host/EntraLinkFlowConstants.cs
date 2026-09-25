@@ -1,3 +1,4 @@
+using Apperture.Management.Ui.Shared.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Configuration;
@@ -36,8 +37,7 @@ internal static class EntraLinkFlowConstants
         string userId,
         string? returnUrl)
     {
-        var safeReturnPath = ManagementUiRedirects.NormalizeRelativePath(returnUrl)
-            ?? AccountSecurityPath;
+        var safeReturnPath = LocalReturnUrl.Validate(returnUrl) ?? AccountSecurityPath;
         var properties = new OpenIdConnectChallengeProperties
         {
             RedirectUri = ManagementUiRedirects.Build(configuration, safeReturnPath, "linked", "1"),

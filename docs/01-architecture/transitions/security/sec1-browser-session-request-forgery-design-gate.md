@@ -2,9 +2,10 @@
 
 Date: 2026-09-24
 Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). Implementation is in progress:
-SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, and SEC-1A1
-(centralized expired-session recovery) is implemented and proven in browsers, recorded in §39; SEC-1A2 onward have not
-started.** SEC-1 is not complete.
+SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, SEC-1A1
+(centralized expired-session recovery) is implemented and proven in browsers, recorded in §39, and SEC-1A2a (the shared
+safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
+in §40. SEC-1A2b (step-up continuation), SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -44,10 +45,10 @@ Brief discrepancies found while verifying the brief:
 | F2 | Hard refresh with a missing, expired or invalid cookie *does* reach `/login?returnUrl=` (§4). | Code fact | — |
 | F3 | Valid cookie but unknown/unlinked user: `auth/me` returns 403, the state becomes `ForbiddenUnlinked`, and the protected shell mounts over failing pages. | Code fact. The rendered result is a browser finding. | 1A1 — **fixed (§39)** |
 | F4 | API unreachable, or 5xx during startup: state `Error` redirects to login. `GetAccessRequestSessionAsync` maps a 5xx to "signed out". | Code fact | 1A1 — **fixed (§39)** |
-| F5 | The return-URL validator accepts `/\evil.example`, and the browser resolves it off-origin (**open redirect**). .NET `Uri` resolves it on-origin (verified in this session). | **Browser finding (pending SEC-1.0)** | 1A2 |
-| F6 | With auto-redirect to Entra enabled, `/login?error=…` redirects to Entra again, which can loop. | Code fact (logic). The loop is a **browser finding**. | 1A2 |
-| F7 | In production, a cancelled or failed Entra sign-in (`OnRemoteFailure`) is unhandled, so the operator gets a raw 500 `problem+json` document on the API host. | Code fact | 1A2 |
-| F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). The failure is a **browser finding (pending SEC-1.0)**. | 1A2 |
+| F5 | The return-URL validator accepts `/\evil.example`, and the browser resolves it off-origin (**open redirect**). .NET `Uri` resolves it on-origin (verified in this session). | Reproduced in browsers by SEC-1.0 (§0.1) | 1A2a — **fixed (§40)** |
+| F6 | With auto-redirect to Entra enabled, `/login?error=…` redirects to Entra again, which can loop. **Corrected by SEC-1.0:** no loop; the feature effectively never fired on a real entry (N2). | Code fact (logic); loop **not reproduced** | 1A2a — **corrected and fixed (§40)**: the feature works, once, and never on an error |
+| F7 | In production, a cancelled or failed Entra sign-in (`OnRemoteFailure`) is unhandled, so the operator gets a raw 500 `problem+json` document on the API host. | Code fact; reproduced in browsers by SEC-1.0 | 1A2a — **fixed (§40)** |
+| F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). Reproduced on Chromium and Firefox by SEC-1.0 | **1A2b — not started; SEC-1A2a leaves it exactly as measured** |
 | F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
 | F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
 | F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 |
@@ -79,10 +80,10 @@ Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F
 | F2 | **Reproduced** (control, C) | Reload after expiry → `/login?returnUrl=%2Fconnections%3Fstatus%3Dactive%26context%3Dall`. The `#fragment` is dropped. **New (N1):** `context=all` (the client's View selector) is already in the captured target. | `F2_hard_reload_…` | (must stay) / N1 → 1A2 |
 | F3 | **Reproduced**, with nuance (C) | Valid cookie, principal unlinked: `GET /api/auth/me → 403`; URL stays `/connections`; **no** login navigation. The shell mounts with an inline banner ("You are signed in, but this identity is not linked to a platform user. … Account not linked") and the page shows "Not authorized". So a banner exists, but not the terminal surface D5 requires. | `BootstrapStateBaselineTests.F3_…` | 1A1 — **flipped** (terminal account-unavailable surface) |
 | F4 | **Reproduced** (C), three outage shapes | `auth/me` connection refused / 503 / 500 with a valid session → every shape ends on `/login?returnUrl=%2Fconnections`, text "Sign in … Sign in to the Apperture management console."; no "unavailable"/Retry text. | `BootstrapStateBaselineTests.F4_…` | 1A1 — **flipped** (service-unavailable surface + Retry, all three shapes) |
-| F5 | **Reproduced** (C full matrix; F/W the five decisive values) | 10 hostile values leave the origin in a real browser; the validator accepts all 10 (§38.2). `/\evil.example`, the TAB form and the CR LF form navigate to `http://evil.example/` on Chromium, Firefox **and** WebKit (signed-in `/login` bounce); the full 26-value matrix, and post-sign-in navigation, ran on Chromium. .NET `Uri` resolves every one on-origin. The host's `/signin` cannot leave the origin (authority is fixed) but turns them into a `//evil.example` **path** on the UI origin, and answers CR/LF with an unhandled 500. | `OpenRedirectBaselineTests` | 1A2 |
-| F6 | **Not reproduced** as a loop (C) | Auto-redirect is ON, host returns `/login?error=tenant_mismatch`: **0** provider round trips on a direct load of `/login`, on the host's own error redirect and on a protected-route reload. `Login.razor` only auto-redirects from `OnAfterRenderAsync(firstRender)` when the sign-in options are already loaded; on every real entry they are not. It fires exactly once when entered in-app (link from `/login/local`), and the error return is a document load, so it does not fire again. The hazard in the code is real; the observed behavior is "auto-redirect mostly never fires". **New (N2):** the feature itself is effectively dead on real entries. | `OidcFlowBaselineTests.F6_…` | 1A2 (keep the `error` guard) |
-| F7 | **Reproduced** (C) | Provider `access_denied` and `server_error` (Testing environment = the Production branch): the browser ends on `http://localhost:{api}/signin-oidc`, `POST … → 500`, `application/problem+json`, body `{"type":"https://httpstatuses.com/500","title":"An error occurred while processing your request.","status":500,"correlationId":…}`. One provider round trip, no loop. | `OidcFlowBaselineTests.F7_…` | 1A2 |
-| F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | 1A2 / 1A2b |
+| F5 | **Reproduced** (C full matrix; F/W the five decisive values) | 10 hostile values leave the origin in a real browser; the validator accepts all 10 (§38.2). `/\evil.example`, the TAB form and the CR LF form navigate to `http://evil.example/` on Chromium, Firefox **and** WebKit (signed-in `/login` bounce); the full 26-value matrix, and post-sign-in navigation, ran on Chromium. .NET `Uri` resolves every one on-origin. The host's `/signin` cannot leave the origin (authority is fixed) but turns them into a `//evil.example` **path** on the UI origin, and answers CR/LF with an unhandled 500. | `OpenRedirectBaselineTests` | 1A2a — **flipped** (§40): no hostile value escapes; all end on `/control/center` |
+| F6 | **Not reproduced** as a loop (C) | Auto-redirect is ON, host returns `/login?error=tenant_mismatch`: **0** provider round trips on a direct load of `/login`, on the host's own error redirect and on a protected-route reload. `Login.razor` only auto-redirects from `OnAfterRenderAsync(firstRender)` when the sign-in options are already loaded; on every real entry they are not. It fires exactly once when entered in-app (link from `/login/local`), and the error return is a document load, so it does not fire again. The hazard in the code is real; the observed behavior is "auto-redirect mostly never fires". **New (N2):** the feature itself is effectively dead on real entries. | `OidcFlowBaselineTests.F6_…` | 1A2a — **flipped** (§40): auto-redirect now fires once after the options load; the `error` guard, the recent-attempt marker and the bare-visit rule are pinned |
+| F7 | **Reproduced** (C) | Provider `access_denied` and `server_error` (Testing environment = the Production branch): the browser ends on `http://localhost:{api}/signin-oidc`, `POST … → 500`, `application/problem+json`, body `{"type":"https://httpstatuses.com/500","title":"An error occurred while processing your request.","status":500,"correlationId":…}`. One provider round trip, no loop. | `OidcFlowBaselineTests.F7_…` | 1A2a — **flipped** (§40): `error=cancelled` / `error=oidc`, stable panel, one 302 |
+| F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | **1A2b** (the baseline is unchanged by 1A2a and still pins `error=user_not_found`) |
 | F9 | **Reproduced** (C) | With no operator input after load, the Toast poll at +7 h returned 200 **and re-issued the session cookie** (`Set-Cookie: .AspNetCore.Cookies … expires; samesite=lax`); the poll at +13 h was still 200 (and renewed again). Control: the original ticket replayed at +13 h → 401. | `SessionRenewalBaselineTests` | 1A3 |
 | F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 — **flipped** (401 half: one recovery, watcher stops) / 1A3 (renewal half, unchanged) |
 | F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 |
@@ -394,8 +395,11 @@ The policy is applied to the value **after exactly one decode**, and never decod
 2. Begins with exactly one `/`. The second character is neither `/` nor `\`.
 3. Contains no `\` anywhere, no ASCII control characters (U+0000–U+001F, U+007F) and no whitespace. It is never trimmed internally; it is
    rejected instead.
-4. Contains no percent-encoded `/`, `\`, `.` or control character in the **path** segment (`%2F`, `%5C`, `%2E`, `%0x`, case-insensitive).
-   These are encoded forms that a second decoder or the browser could normalize off-origin.
+4. ~~Contains no percent-encoded `/`, `\`, `.` or control character in the **path** segment.~~ **Superseded in SEC-1A2a (§40.1)** by the
+   SEC-1.0 evidence (§38.5): browsers keep `%2F`, `%5C` and `%2E` text inside a segment and never turn it into a separator, and
+   legitimate routes carry them (`/connections/a%2Fb`, `?q=a%20b%2Fc`), so a blanket refusal was neither needed for origin safety nor
+   correct. The implemented rule is positional (the first path segment is a plain route name) plus a browser-stable path form (no dot or
+   empty segments).
 5. No scheme and no authority: after resolving against a fixed sentinel origin, both must be unchanged. This check supplements the
    string rules and never replaces them.
 6. The path (trailing `/` trimmed) is not a reserved auth surface: `/login`, `/login/local`, `/access-request`, `/signin`, `/signin/link`,
@@ -681,10 +685,13 @@ with a startup warning). There is no `Off`.
 - `OnRemoteFailure` **always** calls `HandleResponse()` and redirects:
   - step-up → the step-up return path with `error=oidc`;
   - otherwise → `/login?error=<code>`: `cancelled` for `access_denied`, `oidc` for any other failure.
-- `detail` is only allowed in Development and never carries token material.
+- ~~`detail` is only allowed in Development and never carries token material.~~ **Amended in SEC-1A2a (§40.5):** there is no `detail` in any
+  environment. The operator-facing URL and page carry only a fixed code; the diagnostic context stays in the server log.
 - The operator never sees a raw API-host error document.
 - `Login.razor` **never auto-redirects when the URL carries `error`**. It also never auto-redirects when a per-tab `sessionStorage` marker
-  shows an auto-redirect started in the last 30 s, which covers a failure that returns without `error`.
+  shows an auto-redirect started in the last 30 s, which covers a failure that returns without `error`. **Amended in SEC-1A2a (§40.6):** it
+  also never auto-redirects on a bare visit to `/login` (only when the application sent the operator, with a `returnUrl` or `reason`), so
+  that signing out is possible.
 - On error it shows a stable house error panel ("Sign-in with Microsoft didn't complete." / "Sign-in was cancelled."). The panel offers
   **Try again** (an explicit, manual Entra navigation) and, where the auth UI policy shows it, local sign-in.
 
@@ -902,7 +909,7 @@ the header would break every UI mutation, so the two must land atomically. SEC-1
 |---|---|---|---|
 | **SEC-1.0 — browser proof harness** — **delivered 2026-09-24 (§0.1, §38)** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
 | **SEC-1A1 — session-loss detection and recovery** — **delivered (§39)** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
-| **SEC-1A2 — return URL and login/error/step-up** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
+| **SEC-1A2 — return URL and login/error/step-up** — **split; SEC-1A2a delivered (§40), SEC-1A2b (step-up continuation) not started** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
 | **SEC-1A3 — background requests, renewal and capability refresh** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
 | **SEC-1B1 — server request-forgery policy** | `BrowserRequestTrustMiddleware` + options (exact trusted origins, Mode, startup validation), Rules U/G/N, exemption metadata on `Enroll` + OIDC path exemptions, `problem+json` 403, logging/meter, **client `X-Apperture-Request` header in the same change**, test-factory default handler, F18 pin, guards (exemptions, order, header literals) | 1.0 | §29.4 (I, S) |
 | **SEC-1B2 — endpoint verb cleanup and logout** | G1/G2 → POST (+ client); re-confirm G3–G5 and G9b classifications; `/signout` → POST with Rule N + hidden-form UI in three places; remove GET `/signout` and unused `POST auth/local/logout`; remove Ui.Server's dead `HttpClient`/`ManagementClient`/capabilities registrations; GET-classification guard | 1B1 | §29.4 verb/logout rows |
@@ -1179,7 +1186,8 @@ origin, which is what Rule U will compare.
 | Slice | Baselines to flip |
 |---|---|
 | 1A1 | F1, F3, F4, F10 (401 half), simultaneous-401, history (review) |
-| 1A2 | F5 (empty `EscapesToday`), F6 guard, F7, F8 (with 1A2b), N1, N6 |
+| 1A2a | F5 (flipped), F6 (flipped), F7 (flipped), N6 (flipped: a control character is refused, never a 500); N2 (the auto-redirect now works). **N1 is not changed** (§40.8). |
+| 1A2b | F8 (`StepUpCallbackBaselineTests`, unchanged so far) |
 | 1A3 | F9, F10 (poll half) |
 | 1B1 | F11 (same-site sibling form and fetch must be rejected), the Origin/Fetch-Metadata probe becomes the positive-path suite |
 | 1B3 | F16 (Secure), F13/F15 assertions |
@@ -1295,3 +1303,164 @@ were not run: Management.Host and the server-side auth behavior are unchanged.
   because outage handling is uniform (D8).
 - `ResourceContextViewState` does not subscribe to session changes; every exit from the three surfaces is a full document load, so
   nothing stale is reused.
+
+---
+
+## 40. SEC-1A2a — what was built and what it proved (2026-09-25)
+
+Scope: the one shared return-target policy, safe preservation of a local path, query and fragment, local and normal Entra sign-in
+return, failed and cancelled Entra sign-in, the auto-Entra behavior after the F6 finding, and removal of the raw OIDC/API-host failure
+experience. **Not** in this slice, and unchanged: step-up continuation (SEC-1A2b, finding F8), background renewal (SEC-1A3), request
+forgery, the signout verb, CORS, cookies and `Management.Api` cleanup.
+
+### 40.1 The `LocalReturnUrl` policy (`Apperture.Management.Ui.Shared/Auth/LocalReturnUrl.cs`)
+
+One class, consumed by the WebAssembly client and by Management.Host (through `Management.Api`'s reference to Ui.Shared). Both old
+validators (`LoginRouteHelper.NormalizeReturnUrl`, `ManagementUiRedirects.NormalizeRelativePath`) and the host's private reserved-path list
+are deleted; `ReturnTargetSourceGuardTests` pins that no second copy exists.
+
+**Representation contract (decode discipline).** The policy receives the `returnUrl` query value after **exactly one** percent-decode
+(the client's `LoginRouteHelper.GetReturnUrlRaw`, or ASP.NET's query binder on the host). It is still a URL *reference*: any `%XX` left in
+it is data or an encoded separator inside that reference, and nothing decodes it again. What the policy accepts is emitted **verbatim**:
+`Uri.EscapeDataString` once into a query value (`BuildLoginUrl`, `BuildReturnQuery`), or appended to the configured UI origin for a redirect
+(`ManagementUiRedirects.Build`). Nothing is trimmed, rewritten or repaired: a candidate is accepted unchanged or refused, and the caller
+uses `/control/center` (`LocalReturnUrl.Fallback`, the same route as before).
+
+**Rules** (`LocalReturnUrlVerdict` names each refusal):
+
+1. Non-empty, at most 2 048 characters.
+2. Printable ASCII only (`U+0021`–`U+007E`) and **no backslash**. This refuses every control character (TAB/CR/LF that browsers strip), every
+   space (a leading one is trimmed by a browser), DEL, every non-ASCII character (a legitimate target is always the browser's serialized href,
+   which is ASCII), and the backslash a browser reads as `/`.
+3. Begins with `/`.
+4. The **first path segment is a plain route name** (`[A-Za-z0-9_-]+`), or the whole path is `/`. This refuses an authority-shaped start (`//x`,
+   `/\x`, `/.//x`) and any encoding, dot or punctuation in the position where a second decoder could create an authority.
+5. Later path segments are in the form a browser would normalize them to: no `.`/`..` segment (including `%2e` spellings) and no empty segment
+   except a single trailing slash (`/connections/`).
+6. The first segment is not an authentication surface: `login` (so `/login`, `/login/local` and any nested `returnUrl` chain), `access-request`,
+   `signin` (`/signin`, `/signin/link`, `/signin/step-up`), `signin-oidc`, `signout`, `signout-callback-oidc`, `signout-oidc`. Case-insensitive.
+7. Supplementary only: resolving against a fixed sentinel origin with `Uri.TryCreate` keeps the scheme and authority. It never decides alone.
+
+**Correction to the gate (rule 4 of §14).** SEC-1.0 proved browsers keep `%2F`, `%5C` and `%2E` text inside a path segment or query and never
+turn it into a separator, and that legitimate routes carry them. The policy therefore does **not** reject encoded `/` or `.` merely for being
+encoded (`/connections/a%2Fb`, `/connections/a%2Eb`, `?q=a%20b%2Fc`, `?next=%2Fcontrol%2Fcenter` all pass, pinned in unit and browser tests). The
+encoded hostile corpus values (`/%5Cevil.example`, `/%2F%2Fevil.example`, `/%2fevil.example`, `/%255Cevil.example`, `/%2E%2E/%2E%2E/evil.example`)
+are refused by rule 4 *positionally*, as defense in depth: no legitimate route has any encoding in its first segment, and that is the only place
+a lazy second decoder could turn an encoded separator into an authority. `/.//evil.example` is refused by rule 4 as well.
+
+### 40.2 Consumers
+
+| Where | Change |
+|---|---|
+| `LoginRouteHelper.BuildLoginUrl` | The one builder for every automatic sign-in navigation (A1's boot-time gate and runtime recovery). Validates with the policy and **leaves out** a refused target. Takes the full `path?query#fragment`. |
+| `AuthRouteGate`, `SessionRecoveryCoordinator` | Capture `LocalReturnUrl.FromAbsoluteUri(Nav.Uri)`: path, query **and fragment** exactly as the browser serialized them (from the string, not from `Uri`, so .NET canonicalization cannot change it). A1's 401 decision matrix, single-flight, loop breaker, no-replay and outage semantics are untouched. |
+| `Login.razor`, `LoginLocal.razor` | `LoginRouteHelper.ReadReturnTarget` (validated). Only a valid target is kept, linked between the two sign-in pages, passed to the local form, or forwarded to `/signin`. |
+| `LocalLoginFormSection` | `LocalReturnUrl.ResolveOrFallback(ReturnPath)` then `NavigateTo(..., forceLoad: true)` (checked again: the component does not trust its parent). |
+| Host `/signin`, `/signin/link`, `/signin/step-up` | `LocalReturnUrl.Validate` / `ResolveOrFallback`. The redirect authority is always the configured UI origin. A CR/LF `returnUrl` is refused instead of becoming an unhandled 500 (N6). |
+| `ManagementUiRedirects.Build` | Host-built paths must still be a browser-stable local path (`IsLocalPath`, which skips the reserved rule because the host's own targets are auth surfaces); the optional query parameter is inserted **before** the fragment (`/x#n` → `/x?steppedUp=1#n`), or a fragment-carrying return target would swallow it. |
+| `EntraSignInChallenge.IsSafeUiRedirect` | Kept as defense in depth (UI authority equality) and now uses the shared reserved rule. |
+
+### 40.3 Fragment handling
+
+A fragment never reaches a server, so the journey carries it deliberately: the client captures it from `NavigationManager.Uri`; it travels
+inside the **escaped `returnUrl` value** (`%23`) through `/login`; a local sign-in navigates to it directly; a Microsoft sign-in forwards it to the
+host's `/signin` (decoded once to `path?query#fragment`), which stores the whole string in `AuthenticationProperties.RedirectUri` (protected inside
+the OIDC `state`); the post-callback `302 Location` restores it, and browsers honor a fragment in `Location`. It cannot be an open-redirect
+bypass: it is part of the validated string, after the path, and the policy allows nothing in it that a browser reads as a separator (no backslash,
+no control character). One bug was in the way: the View selector's own URL rewrite (`ResourceContextViewState.BuildUriWithContext`) dropped the
+address bar's `#fragment` on selector-aware list pages before any capture (found by the F2 and in-app-recovery browser tests); it now keeps it.
+
+### 40.4 Local sign-in
+
+Valid target → returned to with path, query and fragment; invalid or hostile → `/control/center`; a failed sign-in stays on the same URL with the
+inline message, no navigation, no further document load; `/login` itself can never be a return target (rule 6). Credential semantics are untouched.
+
+### 40.5 Failed and cancelled Microsoft sign-in (F7)
+
+`EntraRemoteFailure` (Management.Host) handles the two events the OpenID Connect handler raises for a sign-in that produced no session:
+
+| Framework event | When | Operator lands on |
+|---|---|---|
+| `OnAccessDenied` | the provider answered `access_denied` **and** the callback's state and correlation validated | `/login?error=cancelled` |
+| `OnRemoteFailure` | every other failure: a provider error, a tampered, replayed or missing state, a failed back-channel exchange, an exception thrown while completing sign-in | `/login?error=oidc` |
+
+Each writes the redirect and calls `HandleResponse()` in the same step, so a failure yields **exactly one** 302 and no rethrow. Step-up keeps its
+own return leg (`<return path>?error=oidc`) and a failed self-link now returns to `/account?error=oidc` (it was an unhandled 500 in production too);
+neither distinguishes "cancelled". The URL and the page carry **only a fixed code**: no `detail` parameter in any environment (the Development-only
+`detail=<exception message>` is removed), no provider text, no return target (an error leg drops it on purpose, so a failure cannot re-enter a flow).
+The server log keeps the context (Information for a cancellation; Warning with the exception for a failure). `Login.razor` maps the code to a fixed
+message ("Sign-in was cancelled." / "Sign-in with Microsoft didn't complete." / the existing "not connected to an Apperture user" text); an unknown
+or empty code is the generic failure, so **every** error code (including `tenant_mismatch`, which previously showed nothing) gets the stable panel.
+The panel offers an explicit **Try again**; the chooser and local sign-in remain below it. Integration tests (`ManagementAuthEndpointsTests`, real
+OpenID Connect handler on a test server, Development and Production environments) pin: cancelled, provider errors, a tampered or missing state, a
+genuine state without the correlation cookie (never "cancelled"), step-up and link legs, no provider text in the URL, no `problem+json`.
+
+### 40.6 Auto-Entra redirect (F6, corrected)
+
+Decision (from the code and Epic 43: a persisted, operator-configurable policy labelled "Automatically redirect to Microsoft sign-in when policy
+allows (advanced)"): **the feature is intended, so it is made to work rather than deleted.** SEC-1.0 found it effectively dead because the page
+looked at the sign-in options only at first render, before they had loaded (N2). `LoginAutoRedirectPolicy` now decides, once per page load and only
+after the options are known. It never fires:
+
+- when the URL carries an `error` (any value, including an empty one): a failed or cancelled attempt shows its panel;
+- within 30 s of the previous automatic attempt in the tab (per-tab `sessionStorage` marker, memory fallback): a return without an error, such as a
+  session cookie the browser refused, cannot become a loop;
+- **on a bare visit to `/login`**. The application always sends an operator with a `returnUrl` and/or `reason` (an expired session, a protected
+  route); a bare `/login` is where **sign-out** and "Sign in with a different account" land. Bouncing that straight back into the same Microsoft
+  account would make signing out impossible. This rule is an addition to the gate's wording and is the one product decision in this slice; it is
+  cheap to relax if the owner prefers.
+
+### 40.7 Browser evidence
+
+| Test | Proves |
+|---|---|
+| `OpenRedirectBaselineTests` (Chromium, full corpus × three flows) | every hostile value and every auth surface finishes on `/control/center` on the UI origin, in the signed-in bounce, the local sign-in and the host `/signin` leg (F5 flipped: none of the ten escape; N6: no 500); every legitimate deep link (dotted Component / Notification Definition / Module ids, nested routes, query, fragment, encoded data) arrives intact by local sign-in and by bounce |
+| `F5_key_hostile_cases_end_on_the_default_route_on_every_engine`, `Key_legitimate_deep_links_arrive_intact_on_every_engine` | the decisive cases on Chromium, Firefox and WebKit |
+| `EntraReturnTargetBrowserTests` (Chromium, Firefox) | a legitimate deep link through capture → sign-in page → Microsoft (stub) → landing; a hostile `returnUrl` on the host's `/signin` link and on the UI page; Try again after a cancelled sign-in; local sign-in, failed local sign-in and in-app expiry recovery, fragment included |
+| `OidcFlowBaselineTests.F7_…` (Chromium, Firefox) | cancelled → `error=cancelled`, failed → `error=oidc`; one 302 (server-side record), the stable panel and Try again, no raw JSON, no loop |
+| `OidcFlowBaselineTests.F6_…` | auto-redirect fires exactly once for a protected route, and never on a bare visit, on an error (with or without a return target) or within the window; a failure returns to its panel with no second attempt |
+
+Engines, honestly: the OIDC legs run on Chromium and Firefox. Playwright's WebKit build for Windows is not Safari and cannot complete an OpenID
+Connect handshake here (it rejects the Secure correlation cookie on `http://localhost`, §38.4), so the WebKit evidence is the URL-normalization
+cases only. Real Microsoft Entra was not contacted; a cancelled real sign-in remains a manual item (§38.6). Harness note: the login endpoint stamps a
+new ticket's expiry from the real clock, so a browser test that advanced the cookie handler's clock must reset it before signing in again.
+
+### 40.8 Findings left exactly as they were
+
+- **F8** (step-up): the `StepUpCallbackBaselineTests` baseline is untouched and still measures the cross-site `form_post` callback arriving without the
+  session cookie and ending `error=user_not_found`. **Handed to SEC-1A2b.** The ordinary session cookie was not loosened.
+- **F9** / F10 renewal half (SEC-1A3), **F11** (1B1), **F12** side-effect GETs and `GET /signout` (1B2), **F13–F16** CORS, cookie and host hygiene
+  (1B3), F17, F18: not touched. The A2a slice only swapped the validator behind the existing step-up and link return paths (and made their
+  failure legs redirect); it did not change their continuation.
+- **N1** (the View selector's `context=all` leaking into captured targets): **not changed.** It needs an owner ruling, because `context=` is
+  genuinely part of what a list page shows; stripping it would silently change the view an operator returns to. The tests strip it before asserting.
+- **Known limits, not addressed:** a *configured* (database) OIDC callback path other than `/signin-oidc` is not in the policy's reserved list (the
+  policy cannot see it); a return target equal to it is a meaningless UI-origin route, not a loop. An error leg drops the return target, so Try again
+  lands on the default route. A raw backslash inside a query or fragment (`?user=CORP\jdoe`) is refused (a browser cannot reinterpret it there, but the
+  rule is one line and fails safe to the default route). A failure of the *challenge* leg itself (IdP metadata unreachable) is outside the callback
+  handling and is not turned into an error redirect. The account-unavailable surface still reaches sign-out by `GET /signout` (SEC-1B2 converts it).
+
+### 40.9 Independent review (read-only) and its resolution
+
+Critical: none. Important: none. Reviewed: open-redirect bypasses (WHATWG parsing, encoding, Unicode), decode/encode confusion and client/host drift,
+`Build`, OIDC failure handling, loops, fragment handling, legitimate-route regressions. Minor findings and what was done:
+
+- *Auto-redirect evaluated before the URL state was read* (a render between the options arriving and `OnInitializedAsync` resuming could silently disable
+  it): fixed. The URL-derived state (error, hand-off, target) is now read synchronously before the options request; it also makes the error panel appear
+  on first paint.
+- *Cancelled claimed without a validated correlation?* Added a test: a genuine protected state with no correlation cookie plus `access_denied` returns
+  `error=oidc`, never `cancelled` (the handler validates correlation first).
+- *Host and client can differ on `returnUrl`* (`+` is a space to ASP.NET; duplicate parameters are comma-joined): fail-safe only (the host refuses or
+  keeps an on-origin value); values built by the client are `EscapeDataString`ed and unaffected. Accepted.
+- *2 048-character cap and the OIDC `state` size*, *marker with blocked storage cannot span a full-page navigation* (not a regression: it was unbounded
+  before), *guard-test looseness*, *`ResolvesOffOrigin` unreachable*, *duplicate `account_not_linked` constant*, *log volume on junk callbacks*: accepted
+  as Minor; the size limit against a real Microsoft authorize URL is part of the manual Entra smoke (§38.6).
+
+### 40.10 Validation (final code, repo-local `artifacts/sec1a2a`)
+
+`dotnet build Apperture.slnx`: 0 errors. UnitTests 3 034 passed (was 2 827); ArchTests 38; Ui.Shared.Tests 1 381 (was 1 374); Ui.Client.Tests 325
+(was 309); IntegrationTests 262 passed in about 7 minutes against the test SQL container (the soft-skip pattern returns in milliseconds, so the
+duration is the evidence that SQL ran; no separate database write-marker check was made). Browser suite (`APPERTURE_BROWSER_TESTS=1`, all engines where
+the suite uses them): **284 / 284 passed** in about 19 minutes (was 173 at SEC-1A1). The additions are the return-target matrix (three flows over the
+hostile, auth-surface and legitimate corpus, and the per-engine key cases), `EntraReturnTargetBrowserTests`, the flipped F6/F7 cases and the always-on
+corpus-versus-policy tests; the flipped F5/F6/F7/F2 tests replaced their baselines.

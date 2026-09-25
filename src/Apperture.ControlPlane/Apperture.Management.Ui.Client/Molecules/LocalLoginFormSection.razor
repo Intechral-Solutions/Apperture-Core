@@ -134,8 +134,8 @@
 
     private void NavigateAfterLogin()
     {
-        var safe = LoginRouteHelper.NormalizeReturnUrl(ReturnPath) ?? LoginRouteHelper.DefaultPostLoginPath;
-        Nav.NavigateTo(safe, forceLoad: true);
+        // Full document load (a clean auth bootstrap). The target is checked again here: this component does not trust its parent.
+        Nav.NavigateTo(LocalReturnUrl.ResolveOrFallback(ReturnPath), forceLoad: true);
     }
 
     private sealed class LoginModel

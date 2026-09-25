@@ -6,7 +6,11 @@ Metadata, URL normalization, `form_post` callbacks). It is *characterization fir
 what the platform does today; the SEC-1 fixing slices flip the marked assertions. **SEC-1A1 has flipped** F1, F3, F4,
 F10 (the 401 half) and the simultaneous-401 test (and extended the history test); those now pin the session-recovery
 behavior (see the design gate §39), and `SessionRecoveryBrowserTests` adds the recovery cases the baselines did not cover.
-Everything else is still a characterization of today's behavior.
+**SEC-1A2a has flipped** F5 (`OpenRedirectBaselineTests`), F6 and F7 (`OidcFlowBaselineTests`) and extended F2 (the fragment
+is now kept); those now pin the safe return-target policy and the stable Entra error flow (design gate §40), and
+`EntraReturnTargetBrowserTests` adds the sign-in journeys (fragment round trip, hostile targets on the host link, Try again).
+Still characterizations of today's behavior, on purpose: F8 (`StepUpCallbackBaselineTests`, SEC-1A2b), F9 (SEC-1A3), F11 and
+the side-effect GET / CORS / cookie findings (SEC-1B).
 
 ## Run it (one command)
 
@@ -98,9 +102,11 @@ elsewhere:
 | Test | Chromium | Firefox | WebKit |
 |---|---|---|---|
 | `RequestForgeryBaselineTests.Unsafe_requests_carry_an_Origin_header_on_every_engine` (Origin/Fetch Metadata on every unsafe request) | yes | yes | yes |
-| `OpenRedirectBaselineTests.F5_key_cases_on_every_engine` (URL normalization of the decisive return targets) | yes | yes | yes |
+| `OpenRedirectBaselineTests.F5_key_hostile_cases_end_on_the_default_route_on_every_engine` (URL normalization of the decisive hostile return targets) and `Key_legitimate_deep_links_arrive_intact_on_every_engine` (legitimate ones, so the policy is proven not to be a blanket refusal) | yes | yes | yes |
 | `StepUpCallbackBaselineTests` (cookie on the cross-site `form_post` callback) | yes | yes | no |
 | SEC-1A1 recovery tests (`SessionRecoveryBrowserTests`, and the flipped F1/F3/F4/F10/simultaneous-401/history cases) | yes | no | no |
+| SEC-1A2a Entra legs: `OidcFlowBaselineTests.F7_…` (cancelled / failed panel), `EntraReturnTargetBrowserTests` (deep link, hostile link, Try again) | yes | yes | no (cannot complete an OIDC handshake here) |
+| SEC-1A2a full hostile / auth-surface / legitimate corpus, local sign-in, F6 auto-redirect | yes | no | no |
 
 **WebKit here is Playwright's Windows build, not Safari.** It does not enforce SameSite (it attached the Lax session
 cookie to cross-site requests, so cross-site cookie assertions are skipped for it) and it rejects the `Secure`
@@ -117,8 +123,13 @@ item. Everything else runs on Chromium only, for runtime cost.
   service-unavailable / account-unavailable surface; the loop breaker across real document loads.
 - `Infrastructure/RecoveryEvidence.cs` — counts a tab's recovery probes and sign-in navigations from a `PageTrace`, and
   samples a page for a raw-error flash.
-- `ReturnTargetCorpus.cs` — the hostile and legitimate return-target corpus (shared by the later
-  `LocalReturnUrl` unit tests' authors).
+- `ReturnTargetCorpus.cs` — the hostile and legitimate return-target corpus. It is the contract for the shared
+  `LocalReturnUrl` policy: `ReturnTargetCorpusPolicyTests` (always on, no browser) asserts every hostile and auth-surface
+  value is refused and every legitimate value accepted, and the browser tests prove the navigation.
+- `EntraReturnTargetBrowserTests.cs` — SEC-1A2a: a legitimate deep link (path + query + fragment, dotted and encoded ids) through
+  capture → sign-in page → Microsoft (stub) → landing; a hostile `returnUrl` on the host's `/signin` link and on the UI sign-in
+  page; Try again after a cancelled sign-in; local sign-in from a deep link, a failed local sign-in, and in-app expiry recovery
+  with a fragment.
 
 ## Compatibility with the approved design (D1–D9)
 

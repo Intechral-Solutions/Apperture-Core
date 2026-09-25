@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.Management.Ui.Shared.Auth;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -121,10 +122,7 @@ internal static class ManagementAuthEndpoints
         var evaluator = ctx.RequestServices.GetService<IAuthenticationAssuranceEvaluator>();
         if (evaluator?.Evaluate(ctx.User) is { RequirementSatisfied: true, IsRecent: true })
         {
-            var alreadyPath = ManagementUiRedirects.NormalizeRelativePath(returnUrl)
-                ?? EntraStepUpFlowConstants.DefaultReturnPath;
-            if (EntraSignInChallenge.IsReservedAuthPath(alreadyPath))
-                alreadyPath = EntraStepUpFlowConstants.DefaultReturnPath;
+            var alreadyPath = LocalReturnUrl.Validate(returnUrl) ?? EntraStepUpFlowConstants.DefaultReturnPath;
             ctx.Response.Redirect(ManagementUiRedirects.Build(configuration, alreadyPath, "steppedUp", "1"));
             return;
         }

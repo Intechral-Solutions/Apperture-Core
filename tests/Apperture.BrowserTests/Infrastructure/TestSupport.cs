@@ -82,6 +82,17 @@ public static class TestSupport
         throw new TimeoutException($"Timed out waiting for text '{text}'. Visible text was: {last[..Math.Min(last.Length, 300)]}");
     }
 
+    /// <summary>
+    /// The client appends its View selector (<c>context=all</c>) to selector-aware list pages after they load. That is
+    /// application state leaking into the address bar (finding N1, unchanged by SEC-1A2a); it is removed so an assertion
+    /// is about the route the operator asked for.
+    /// </summary>
+    public static string StripViewSelector(string pathAndQuery)
+    {
+        var stripped = pathAndQuery.Replace("&context=all", "", StringComparison.Ordinal).Replace("?context=all&", "?", StringComparison.Ordinal);
+        return stripped.EndsWith("?context=all", StringComparison.Ordinal) ? stripped[..^"?context=all".Length] : stripped;
+    }
+
     /// <summary>Waits until the protected shell (navigation rail) has mounted.</summary>
     public static Task WaitForShellAsync(this IPage page) => page.WaitForTextAsync("Configuration");
 
