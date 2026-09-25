@@ -144,9 +144,12 @@ reset, cutting across several of them.
    [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
 7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **design gate complete and approved (2026-09-24);
-   implementation not started.** Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
-   (beginning with a browser-proof harness, SEC-1.0) are in
+   implementation in progress.** Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
+   are in
    [`sec1-browser-session-request-forgery-design-gate.md`](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md).
+   **SEC-1.0 (the opt-in Playwright browser proof harness and the baseline reproduction of the browser findings) is
+   delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1); **no production behavior has
+   changed and the fixing slices (SEC-1A1 onward) have not started.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must

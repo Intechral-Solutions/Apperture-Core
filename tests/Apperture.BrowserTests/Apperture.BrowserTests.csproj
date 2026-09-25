@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Opt-in browser proof harness (SEC-1.0). Every test is skipped unless APPERTURE_BROWSER_TESTS=1, so
+    `dotnet test Apperture.slnx` stays fast. See README.md in this folder for the single run command.
+
+    The ASP.NET Core shared framework is referenced only so the harness can host its own test-only
+    Kestrel apps (stub OIDC provider, attacker origins). No production project references this one.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Apperture.BrowserTests</RootNamespace>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Apperture.Bootstrap\Apperture.Bootstrap\Apperture.Bootstrap.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.ControlPlane.Security\Apperture.ControlPlane.Security.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj" />
+    <ProjectReference Include="..\..\src\Apperture.Persistence\Apperture.Persistence.SqlServer\Apperture.Persistence.SqlServer.csproj" />
+    <!-- Ui.Server is launched as a child process from its build output; it is built first but never linked. -->
+    <ProjectReference Include="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <!-- Record where the Ui.Server build output lives (works for the default layout and for a custom artifacts path). -->
+  <Target Name="EmitUiServerPath" DependsOnTargets="ResolveProjectReferences" BeforeTargets="CoreCompile">
+    <MSBuild Projects="..\..\src\Apperture.ControlPlane\Apperture.Management.Ui.Server\Apperture.Management.Ui.Server.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" ItemName="_UiServerTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <_UiServerGeneratedFile>$(IntermediateOutputPath)UiServerPath.g.cs</_UiServerGeneratedFile>
+      <_UiServerPath>@(_UiServerTargetPath->'%(FullPath)')</_UiServerPath>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_UiServerGeneratedFile)" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="[assembly: System.Reflection.AssemblyMetadata(&quot;UiServerAssemblyPath&quot;, @&quot;$(_UiServerPath)&quot;)]" />
+    <ItemGroup>
+      <Compile Include="$(_UiServerGeneratedFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

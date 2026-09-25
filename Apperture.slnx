@@ -97,6 +97,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Apperture.AppHost.Diagnostics.Tests/Apperture.AppHost.Diagnostics.Tests.csproj" />
     <Project Path="tests/Apperture.ArchTests/Apperture.ArchTests.csproj" />
+    <Project Path="tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj" />
     <Project Path="tests/Apperture.EndToEndTests/Apperture.EndToEndTests.csproj" />
     <Project Path="tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj" />
     <Project Path="tests/Apperture.Management.Ui.Client.Tests/Apperture.Management.Ui.Client.Tests.csproj" />

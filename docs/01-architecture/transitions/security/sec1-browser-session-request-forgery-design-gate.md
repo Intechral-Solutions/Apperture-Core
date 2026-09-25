@@ -1,8 +1,9 @@
 # SEC-1 — Browser Session & Request-Forgery Hardening — design gate
 
 Date: 2026-09-24
-Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). Implementation has not started; it
-begins with SEC-1.0 (browser proof harness).** SEC-1 is not complete.
+Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). Implementation is in progress:
+SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38; the fixing slices
+(SEC-1A1 onward) have not started, and no production behavior has changed.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -56,6 +57,48 @@ Brief discrepancies found while verifying the brief:
 | F16 | Cookie `Secure` is `SameAsRequest` in every environment, and SameSite relies on the framework default. | Code fact | 1B3 |
 | F17 | 33 `ManagementClient` methods collapse 401/403 (sometimes 404) to `null`. | Code fact. Harmless once the handler owns 401 (F1); the 403 UX part is deferred (§37). | — |
 | F18 | Nullable `[FromBody]` POSTs accept an empty body (e.g. `procedures/{p}/launch` launches with defaults). | Believed from ASP.NET rules; **pinned by test in 1B1** | 1B1 |
+
+### 0.1 SEC-1.0 evidence register (2026-09-24)
+
+SEC-1.0 built the opt-in browser proof harness ([tests/Apperture.BrowserTests](../../../../tests/Apperture.BrowserTests/README.md); §38)
+and reproduced or characterized each browser finding **before any production change**. Nothing in `src/` changed. Every result below
+is pinned by a characterization test whose doc comment names the slice that must invert it. Legend: **Reproduced** (observed as
+predicted), **Not reproduced** (the prediction did not hold in a browser), **Partial**, **Unverified** (needs something the harness
+cannot provide).
+
+Suite size at delivery: 165 test cases (161 browser cases, rows of theories counted, plus 4 always-on isolation guards); the full
+gated run takes about 11 minutes and was green (165/165) after an independent review whose Important findings were resolved.
+
+Engines: Chromium 153.0.8010.12 (headless shell), Firefox 155.0, WebKit 26.6 (Playwright 1.63 builds; the WebKit build is
+Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F" = Chromium and Firefox, "C/F/W" = all three.
+
+| ID | SEC-1.0 result | Exact browser evidence | Test (in `SessionExpiryBaselineTests` unless noted) | Inverted by |
+|---|---|---|---|---|
+| F1 | **Reproduced** (C) | Session expired for real (server clock +13 h, real cookie handler). Clicking Refresh on `/connections`: `GET /api/connections → 401`; an error panel shows the raw text `net_http_message_not_success_statuscode_reason, 401, Unauthorized`; URL unchanged; no document request to `/login`; still nothing 3 s later. | `F1_in_app_reload_after_expiry_…` | 1A1 |
+| F2 | **Reproduced** (control, C) | Reload after expiry → `/login?returnUrl=%2Fconnections%3Fstatus%3Dactive%26context%3Dall`. The `#fragment` is dropped. **New (N1):** `context=all` (the client's View selector) is already in the captured target. | `F2_hard_reload_…` | (must stay) / N1 → 1A2 |
+| F3 | **Reproduced**, with nuance (C) | Valid cookie, principal unlinked: `GET /api/auth/me → 403`; URL stays `/connections`; **no** login navigation. The shell mounts with an inline banner ("You are signed in, but this identity is not linked to a platform user. … Account not linked") and the page shows "Not authorized". So a banner exists, but not the terminal surface D5 requires. | `BootstrapStateBaselineTests.F3_…` | 1A1 |
+| F4 | **Reproduced** (C), three outage shapes | `auth/me` connection refused / 503 / 500 with a valid session → every shape ends on `/login?returnUrl=%2Fconnections`, text "Sign in … Sign in to the Apperture management console."; no "unavailable"/Retry text. | `BootstrapStateBaselineTests.F4_…` | 1A1 |
+| F5 | **Reproduced** (C full matrix; F/W the five decisive values) | 10 hostile values leave the origin in a real browser; the validator accepts all 10 (§38.2). `/\evil.example`, the TAB form and the CR LF form navigate to `http://evil.example/` on Chromium, Firefox **and** WebKit (signed-in `/login` bounce); the full 26-value matrix, and post-sign-in navigation, ran on Chromium. .NET `Uri` resolves every one on-origin. The host's `/signin` cannot leave the origin (authority is fixed) but turns them into a `//evil.example` **path** on the UI origin, and answers CR/LF with an unhandled 500. | `OpenRedirectBaselineTests` | 1A2 |
+| F6 | **Not reproduced** as a loop (C) | Auto-redirect is ON, host returns `/login?error=tenant_mismatch`: **0** provider round trips on a direct load of `/login`, on the host's own error redirect and on a protected-route reload. `Login.razor` only auto-redirects from `OnAfterRenderAsync(firstRender)` when the sign-in options are already loaded; on every real entry they are not. It fires exactly once when entered in-app (link from `/login/local`), and the error return is a document load, so it does not fire again. The hazard in the code is real; the observed behavior is "auto-redirect mostly never fires". **New (N2):** the feature itself is effectively dead on real entries. | `OidcFlowBaselineTests.F6_…` | 1A2 (keep the `error` guard) |
+| F7 | **Reproduced** (C) | Provider `access_denied` and `server_error` (Testing environment = the Production branch): the browser ends on `http://localhost:{api}/signin-oidc`, `POST … → 500`, `application/problem+json`, body `{"type":"https://httpstatuses.com/500","title":"An error occurred while processing your request.","status":500,"correlationId":…}`. One provider round trip, no loop. | `OidcFlowBaselineTests.F7_…` | 1A2 |
+| F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | 1A2 / 1A2b |
+| F9 | **Reproduced** (C) | With no operator input after load, the Toast poll at +7 h returned 200 **and re-issued the session cookie** (`Set-Cookie: .AspNetCore.Cookies … expires; samesite=lax`); the poll at +13 h was still 200 (and renewed again). Control: the original ticket replayed at +13 h → 401. | `SessionRenewalBaselineTests` | 1A3 |
+| F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 / 1A3 |
+| F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 |
+| — | **Reproduced** (simultaneous 401) | Three tabs meet the expired session together: 3 × `401`, 3 error panels, **0** `auth/me` probes, **0** navigations to sign-in. (A single tab yields one 401 per navigation: pages issue calls sequentially.) | `Simultaneous_401_baseline_…` | 1A1 |
+| — | **Reproduced** (history) | Expired reload replaces the protected entry with `/login` (Back → previous document). After a local sign-in, Back returns to `/login/local`, which immediately bounces the signed-in operator forward again (Back is trapped). | `HistoryBaselineTests` | 1A1 (review) |
+| F13 | **Partial** | The existing `UiDev` policy refuses both cross-site and same-site-sibling preflights: a custom-header JSON POST is never delivered (C), and neither is PUT/PATCH/DELETE (C/F/W). Its being active outside Development is a code fact, not browser-provable here. | `RequestForgeryBaselineTests` | 1B3 |
+| D2 | **Reproduced** (C) | A cross-site page's `location.href = '{api}/signout'`: `GET /signout`, `Sec-Fetch-Site: cross-site`, `Sec-Fetch-Mode: navigate`, session cookie sent, `302`; afterwards `GET /api/auth/me → 401` (the session really ended). | `RequestForgeryBaselineTests.D2_…` | 1B2 |
+| F15 | **Observed** (developer machine only) | Starting the real Ui.Server touched the hard-coded, git-ignored `debug-4bd3d8.log` at the repository root (file mtime), as predicted. The path is absolute and machine-specific, so there is no automated test. | (side effect of the harness) | 1B3 |
+| F16 | **Corrected** | The session `Set-Cookie` is `.AspNetCore.Cookies=…; expires; path=/; samesite=lax; httponly` — SameSite=Lax is **explicit** (emitted by the cookie-authentication defaults), there is no `secure` and no `domain`. Chromium's "Lax+POST" grace period therefore does not apply. | `HarnessSmokeTests` | 1B3 (Secure) |
+| F12, F14, F17, F18, D3, D4 | **Not exercised** | Code facts with no browser dimension (F12's Graph GETs need a Graph endpoint; D3/D4 are future behavior: GET-safety classification and no-replay); their slices (1B2, 1B3, 1A1) own the tests. | — | — |
+
+Findings the audit did not predict, discovered by the harness: **N1** the View selector (`context=all`) leaks into captured return
+targets and post-sign-in URLs (contradicts §13); **N2** "auto-redirect to Entra" never fires on a direct load; **N3** the raw
+resource-key error text in F1; **N4** the client resolves *any* loopback UI origin to API port 9000 (`ManagementUiDevApiRouting`), so a
+UI served on another port silently talks to a different developer stack; **N5** `PUT /api/account/preferences` is an unsafe request
+issued automatically on every boot (the header handler and D9 classification must account for it); **N6** the host answers a CR/LF
+`returnUrl` with an unhandled 500.
 
 ---
 
@@ -126,7 +169,7 @@ tested.
 | Property | Application cookie | Access-request cookie | Pending-MFA cookie |
 |---|---|---|---|
 | Name | `.AspNetCore.Cookies` (default) | `.Apperture.EntraAccessRequest` | `apperture.mfa.pending` |
-| SameSite | Lax (framework default, not explicit) | Lax (default) | Lax (explicit) |
+| SameSite | Lax (emitted explicitly by the framework's cookie defaults; not set by Apperture code — SEC-1.0 §0.1) | Lax (default) | Lax (explicit) |
 | Secure | `SameAsRequest` everywhere | same | `Request.IsHttps` |
 | HttpOnly / Domain / Path | true / host-only / `/` | same | same |
 | Lifetime | 12 h **sliding**, **persistent** | 20 min absolute, no refresh | ticket lifetime |
@@ -712,6 +755,9 @@ with a startup warning). There is no `Off`.
 - **Fallback:** if self-hosting Ui.Server static web assets proves impractical, the non-OIDC scenarios may run against a running dev stack
   (env-var URLs, like the existing smoke scripts). The OIDC scenarios still use a self-hosted Management.Host with the stub provider.
   SEC-1.0 records which mode it used.
+  **Recorded (SEC-1.0): fully self-hosted; the fallback was not needed.** Management.Host runs in the test process on a real Kestrel
+  socket (its real `Program.cs`), Ui.Server runs as a harness-owned child process from its own build output, and the client's
+  `ApiBaseUrl` is rewritten per browser context (§38.1).
 
 What each layer proves:
 
@@ -851,7 +897,7 @@ the header would break every UI mutation, so the two must land atomically. SEC-1
 
 | Slice | Scope | Depends on | Tests |
 |---|---|---|---|
-| **SEC-1.0 — browser proof harness** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
+| **SEC-1.0 — browser proof harness** — **delivered 2026-09-24 (§0.1, §38)** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
 | **SEC-1A1 — session-loss detection and recovery** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
 | **SEC-1A2 — return URL and login/error/step-up** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
 | **SEC-1A3 — background requests, renewal and capability refresh** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
@@ -993,3 +1039,144 @@ keeps renewing. All recurring and automatic requests are audited (§10, §16), a
   - a split-site production topology (which would need its own CORS/SameSite design).
 - Services residuals (`ConnectionDto.SecretRefs`, the Components kind-filter behavior), IAM-8 custom role lifecycle (roadmap 7b), and
   navigation / cross-context grouping (roadmap 8). None of these is a security dependency of SEC-1.
+
+---
+
+## 38. SEC-1.0 — what was built and what it proved (2026-09-24)
+
+Code, run command and lifecycle details live in [tests/Apperture.BrowserTests/README.md](../../../../tests/Apperture.BrowserTests/README.md).
+This section records the decisions and evidence that later slices depend on.
+
+### 38.1 Harness architecture
+
+- **Opt-in.** Every test is skipped unless `APPERTURE_BROWSER_TESTS=1`. One command:
+  `$env:APPERTURE_BROWSER_TESTS="1"; dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj`. Without it the project only runs
+  four fast isolation guards, so `dotnet test Apperture.slnx` is unaffected.
+- **Origins** (dynamic ports; the developer's Aspire stack owns `:9000/:9001` and is never touched; the *hosts* are fixed because SameSite is
+  decided by site, not port):
+
+  | Role | Origin | Relationship to the app (`localhost`) |
+  |---|---|---|
+  | UI | `http://localhost:{ui}` (Ui.Server child process) | — |
+  | API | `http://localhost:{api}` (Management.Host in-process, real Kestrel) | cross-origin, **same-site** |
+  | OIDC stub | `http://127.0.0.1:{oidc}` | **cross-site** |
+  | Cross-site attacker | `http://127.0.0.1:{atk}` | **cross-site** |
+  | Same-site attacker | `http://localhost:{sib}` | cross-origin, **same-site** |
+
+  The site relationships are asserted from the browser (`Sec-Fetch-Site` recorded by the host) in
+  `HarnessSmokeTests.Cross_site_and_same_site_attacker_origins_have_the_intended_site_relationship_to_the_api`.
+- **Stub OIDC provider.** Discovery, JWKS, an authorize endpoint that answers by browser-driven `form_post` (success, `access_denied`,
+  `server_error`), and a token endpoint signing RS256 id_tokens (with `oid`/`tid`/`nonce`/`acrs`) with an in-memory key. The real
+  OpenID Connect handler, association service and step-up service run against it. It never sees a credential.
+- **Real composition.** `LiveManagementHost` runs the real `Program.cs` (cookie, OIDC, CORS, authorization, controllers, SQL persistence) in the
+  test process via `WebApplicationFactory` with Kestrel substituted for TestServer. The deferred-host machinery also runs the entry point for
+  the TestServer twin, so the twin is built with **no hosted services** (otherwise two copies of start-up work race on one database).
+- **Test-only controls** (all in the test assembly; see the guards below): a server clock on the application cookie handler only
+  (`CookieAuthenticationOptions.TimeProvider`), an observe-only request recorder in front of the pipeline (cookie/token *values* never
+  captured), an ephemeral Data Protection key ring, the stub-OIDC configuration and `RequireHttpsMetadata=false`, and re-pointing the
+  existing `UiDev` policy's origin list at the run's UI origin (headers, methods and credentials are production's). The client's
+  `appsettings*.json` `ApiBaseUrl` is rewritten per browser context (N4). No production endpoint manipulates auth state.
+- **Test isolation from production.** `HarnessIsolationGuardTests` (always run, no browser) assert: no `src` project references a test project;
+  no `src` file mentions the harness or its controls; no production assembly references the harness assembly; the gate defaults to off.
+- **Safety nets.** Playwright contexts abort (and count) any browser request to a localhost port that is not one of the run's own hosts, so a
+  client mis-pointed at `:9000` cannot reach the developer stack; off-harness *navigations* (evil.example) are answered locally.
+- **Lifecycle.** One shared fixture. The only child process (Ui.Server) is held by handle in a Windows kill-on-close **job object** and killed by
+  exact handle on disposal; nothing is ever killed by name. The harness database `Apperture_BrowserTests` is dropped and recreated per run.
+- **CORS evidence caveat.** While any Playwright route is registered, Chromium answers CORS preflights itself. Contexts that gather CORS
+  evidence therefore register no route (`interceptClientConfig:false`); see `BrowserHarness.NewContextAsync`.
+
+### 38.2 F5 detail — return targets in real browsers
+
+Values as the client sees them after its one percent-decode. "Escapes" = the browser navigated to `http://evil.example/` (answered locally).
+
+- **Escape today (validator accepts all 10):** `/\evil.example`, `/\\evil.example`, `/\/evil.example`, `/\@evil.example`, ` /\evil.example`
+  (leading space, trimmed by the validator), `/<TAB>/evil.example`, `/<TAB>\evil.example`, `/<CR><LF>/evil.example`, `/<LF>/evil.example`, and
+  `/login?returnUrl=%2F%5Cevil.example` (a second hop: `/login` is on-origin, its nested target then escapes). Chromium, Firefox and WebKit agree on
+  `/\evil.example`, the TAB form and the CR LF form. Paths: signed-in `/login?returnUrl=…` bounce, and post-sign-in navigation.
+- **Rejected by today's validator and stay on-origin:** absolute `https://`/`http://`, `//evil.example`, `//evil.example/deep`, `\/evil.example`,
+  `\\evil.example`, `javascript:`, `data:`, `evil.example`.
+- **Accepted, and stay on-origin (do not escape):** literal `%5C`, `%2F%2F`, `%2f`, `%255C` text (the browser does not decode them); `/.//evil.example`
+  (becomes the *path* `//evil.example` on the UI origin); `%2E%2E/%2E%2E/evil.example` (normalized to `/evil.example`, still same origin);
+  `/login?returnUrl=%2F%2Fevil.example` (the nested value is rejected on the second hop).
+- **Auth surfaces and loops** (`/login`, `/login/local`, `/login?returnUrl=%2Flogin`, `/signin`, `/signout`, `/signin-oidc`, `/access-request`): none leaves
+  the origin. `/login…` return targets end on `/control/center` (the signed-in operator is bounced off login); the others are accepted by the client and
+  the browser lands on that path **on the UI origin** (`/access-request` is a UI route; the `/signin*`, `/signout`, `/signin-oidc` paths are not). The **host** replaces `/signin*`, `/signout*`, `/signin-oidc` with `/control/center` but
+  accepts `/login`-family targets.
+- **Host `GET /signin?returnUrl=`:** always a `302` to the configured UI authority; the browser resolves every case to the UI origin. `/\evil.example`
+  becomes the UI *path* `//evil.example`. CR/LF values produce an **unhandled 500** (cannot be written into a `Location` header).
+- **Legitimate corpus (all survive a real local sign-in and the signed-in bounce, on Chromium):** `/control/center`; `/connections/<id>`;
+  `…?foo=bar`; `…?foo=bar#notes` (fragment preserved when it is *in* the return value); `/components/connector/Apperture.Platform.Sql`;
+  `/config/notifications/definitions/platform.schedule.expected_run_missing`; `/modules/Sample.HelloWorld`; `/runs?status=failed&q=a%20b%2Fc`;
+  `/connections?next=%2Fcontrol%2Fcenter`; `/runs?q=%E2%9C%93`; `/connections/caf%C3%A9`; `/connections/a%2Fb`; `/connections/a%2Eb`;
+  `/runs?status=failed`; `/connections/`. On selector-aware list pages the client appends `context=all` (N1).
+
+### 38.3 Origin / Fetch Metadata across engines
+
+*(D1 depends on the browser sending `Origin` on unsafe requests.)* Measured by `Unsafe_requests_carry_an_Origin_header_on_every_engine`: for
+cross-site and same-site form POST, cross-site and same-site fetch POST, and same-origin and trusted-UI-origin fetch with POST/PUT/PATCH/DELETE,
+every request that **reached the host** carried an exact `Origin` (never absent, never `null`) and `Sec-Fetch-Site`. PUT/PATCH/DELETE from a
+cross-site or same-site-sibling origin never reached the host (preflight refused by `UiDev`).
+
+| Engine | Unsafe requests delivered | With `Origin` | With `Sec-Fetch-Site` | Cross-site ones carrying the session cookie | Same-site ones carrying it |
+|---|---|---|---|---|---|
+| Chromium 153 | 12 | 12 | 12 | 0 of 2 | all |
+| Firefox 155 | 12 | 12 | 12 | 0 of 2 | all |
+| WebKit 26.6 (Playwright Windows build) | 12 | 12 | 12 | **2 of 2** (§38.4) | all |
+
+Observed `Sec-Fetch-Site` values: `same-origin` (page on the API origin), `same-site` (trusted UI origin and the sibling), `cross-site`
+(`127.0.0.1`); top-level form posts report `Sec-Fetch-Mode: navigate`, fetches `cors`. `Origin` on the UI's own calls is the exact UI
+origin, which is what Rule U will compare.
+
+### 38.4 Environment limits and caveats
+
+- **Interception limits CORS fidelity for SPA-driven tests.** While any Playwright route is registered, Chromium answers CORS preflights itself
+  (they never reach the host). Every test that drives the Blazor client (F1–F10, the OIDC and F5 flows, history) registers the `appsettings`
+  rewrite and therefore runs with permissive preflights; the host's real CORS *response* headers are still what the client sees, but the recorder
+  under-reports `OPTIONS` there. CORS evidence (the preflight refusals above) comes only from route-free contexts, which
+  `RequestForgeryBaselineTests` uses; those contexts have no localhost-port guard, so they only ever load harness pages.
+- **WebKit here is Playwright's Windows build, not Safari.** It (a) attached the Lax session cookie to **cross-site** form and fetch POSTs
+  (SameSite not enforced), so the cross-site rows are recorded but not asserted on it; and (b) rejects the `Secure` OIDC correlation cookie on
+  `http://localhost`, so no OIDC flow can complete on it. F8 is therefore measured on Chromium and Firefox only. Safari behavior for F8/F11 is a
+  manual item (§38.6).
+- Real Microsoft Entra was never contacted. What the stub cannot prove: Conditional Access, real `acrs` issuance, and Microsoft's own cookie/consent
+  behavior on the return leg. The step-up finding rests on the **browser** not sending the cookie on a cross-site POST, which is provider-independent.
+- The harness runs the `Testing` environment (same branch as Production for `OnRemoteFailure`); Development-only behavior (the
+  `/login?error=oidc&detail=` redirect) was not exercised in a browser.
+- Ports/origins are plain `http`. `Secure` cookies and HTTPS-only behavior (SEC-1B3) need the HTTPS topology, not this harness.
+
+### 38.5 Points where the evidence bears on the approved wording (for implementation review, not changed here)
+
+1. **§14 rule 4 (reject percent-encoded `/`, `\`, `.` in the path).** The browser does **not** turn `%2F`, `%5C` or `%2f` text into a separator or
+   authority, and `%2E%2E` only normalizes *within* the origin. None of these left the origin. Rule 4 is therefore not needed for origin safety in the
+   current stack; it is defense against a second decoder. It would also reject the legitimate `/connections/a%2Fb` and `/connections/a%2Eb`, which
+   route today. Decide explicitly, in the 1A2 implementation review, whether ids that need an encoded `/` or `.` are supported (no shipped id does).
+2. **§13 "return targets carry no View-selector state".** Capture happens after the client has appended `context=all` (N1); the capture point, or a
+   strip, must be specified.
+3. **§26 "Login.razor never auto-redirects when the URL carries `error`".** Still correct as hardening, but the loop it prevents does not occur today
+   (F6); the fix must not make auto-redirect start firing on direct loads as a side effect, and the feature's actual behavior (N2) needs a product decision.
+4. **§19 threat table row "cross-site form POST / fetch: cookie sent — No".** Holds on Chromium and Firefox; not on Playwright's WebKit-Windows build
+   (§38.4). Safari is unverified.
+5. **§3 / F16 "SameSite relies on the framework default".** It is emitted **explicitly** as `samesite=lax`; §25's explicit setting is still worthwhile
+   for intent but changes no attribute on the wire.
+6. **§16 D9 classification.** A boot request, `PUT /api/account/preferences`, is an *unsafe* request issued automatically on every load (N5). It is
+   correctly "operator-initiated" (a load is a navigation), but 1B1's header handler must send the platform header on it, and D9 tests must not treat it as background.
+
+### 38.6 Remaining uncertainty and the manual tests it needs
+
+| Item | Why the harness cannot settle it | Manual test |
+|---|---|---|
+| Real Entra step-up (F8) | The stub proves the browser withholds the cookie; it cannot prove Microsoft's flow, `acrs`, or that a redesigned continuation satisfies Conditional Access | Configure a test tenant with an authentication context; from a signed-in session run `/signin/step-up`; confirm the return lands with `steppedUp=1` (after 1A2/1A2b) and, before the fix, `error=user_not_found` |
+| Safari (F8, F11) | Playwright's WebKit build here is not Safari | Repeat the cross-site form POST and the step-up on macOS/iOS Safari |
+| `RunDetail` 2 s poll (F10) | Needs a Run; the Toast watcher covers the class | Enable "Poll" on a run, expire the session, watch the 401 cadence |
+| HTTPS topology, `Secure` cookies, `UiDev` outside Development | Harness is plain-http `Testing` | SEC-1B3/1B4 integration + smoke |
+| Development-only OIDC failure redirect | Not run in the Development environment | Cancel a real sign-in in a dev stack; observe `/login?error=oidc&detail=` |
+
+### 38.7 Which slice inverts which baseline
+
+| Slice | Baselines to flip |
+|---|---|
+| 1A1 | F1, F3, F4, F10 (401 half), simultaneous-401, history (review) |
+| 1A2 | F5 (empty `EscapesToday`), F6 guard, F7, F8 (with 1A2b), N1, N6 |
+| 1A3 | F9, F10 (poll half) |
+| 1B1 | F11 (same-site sibling form and fetch must be rejected), the Origin/Fetch-Metadata probe becomes the positive-path suite |
+| 1B3 | F16 (Secure), F13/F15 assertions |
