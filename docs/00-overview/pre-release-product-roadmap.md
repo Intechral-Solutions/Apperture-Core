@@ -143,8 +143,34 @@ reset, cutting across several of them.
    closure and evidence:
    [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
-8. **Navigation / cross-context grouping design** — after Components and Services stabilize, so the rail
-   doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
+7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **near-term design/implementation body; not started,
+   not designed.** Sequenced after Services (item 7) and **before** navigation / cross-context grouping (item 8). Numbered
+   7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
+   surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must
+   **audit the existing Entra/local sign-in and return-URL behaviour first and reuse/finish that infrastructure where
+   possible** before designing anything new. The gate, not this entry, chooses the mechanisms.
+   - **SEC-1A — session expiry / authentication recovery.** Observed: when an authenticated browser session expires,
+     refreshing or continuing to use some Management UI pages does not always start authentication; the SPA can stay on the
+     requested page and surface an Unauthorized error. The gate must audit and make consistent: expired-session behaviour;
+     hard-refresh behaviour with an expired session; 401 handling for Management API calls; how authentication redirects are
+     initiated; return to the original page after successful sign-in; preservation of the local path and query (and
+     fragment state where appropriate); safe, local-only return URLs with no open redirect; the **401 vs 403** distinction (a
+     401 may trigger authentication recovery; a **403 is an authorization result and must not redirect to sign-in**);
+     simultaneous 401s producing a single authentication transition; background polling (for example Notification/Toast
+     polling) not causing redirect storms; sign-in/authentication routes never entering redirect loops; and refreshing
+     authorization/capability state after re-authentication.
+   - **SEC-1B — platform request-forgery protection.** The Services security pass established that the repository has **no
+     general antiforgery middleware, token or Origin validation**. The SQL structure-browse endpoints are POST with a required
+     JSON body under a `SameSite=Lax` session cookie ([ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md));
+     that is a narrowly sufficient measure for those endpoints and **must not become an endpoint-by-endpoint security
+     pattern**. The gate must audit cookie-authenticated mutation and side-effect endpoints and select a platform-wide
+     approach, reviewing: `ManagementClient` integration; Blazor hosting behaviour; Origin / `Sec-Fetch-*` checks and conventional
+     antiforgery-token options; same-origin and sibling-origin threat boundaries; compatibility with Entra and local session
+     authentication; which APIs should and should not require protection; and the existing **`UiDev` CORS policy** — in particular
+     whether credentialed `localhost` origin access can ever be active outside the intended development environment.
+   Neither concern is implemented on the Services branch, and neither is a prerequisite for merging it.
+8. **Navigation / cross-context grouping design** — after Components and Services stabilize (and after SEC-1, item 7a),
+   so the rail doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
    broadly as-is**, and ResourceContext remains the ownership/scoping boundary for Applications and Shared.
    This gate will instead explore a **separate cross-context organizational grouping layer** — departments,

@@ -151,7 +151,7 @@ environment; that is unchanged and recorded below.
 - **The existing `/connections` list N+1 on bindings** is unchanged; nothing Services added worsens it.
 - **Connection Recent Activity is not delivered** (audit query model has no Resource column/filter); the lifecycle and browse write
   gaps are closed, retrieval is future audit-query work.
-- **Real browser smoke was not performed** in this body (see below).
+- **The implementer performed no browser smoke**; the operator smoke and the automated-only items are recorded under Browser smoke below.
 
 ## Validation
 
@@ -176,14 +176,34 @@ one provider in the real host.
 
 ## Browser smoke
 
-**Not performed.** No browser automation was available against a running stack built from this code, and the user's Aspire stack
-executes older binaries until restarted. The page and tool markup were instead verified by rendering the **real** Blazor components
+### Operator smoke record
+
+I (the implementer) performed no browser smoke: no browser automation was available against a running stack built from this code.
+The **operator then exercised the feature by hand** on a stack running this branch, and reported:
+
+- SQL structure browsing worked end to end — schemas, tables and columns loaded.
+- The browser requests were confirmed, in the browser's network view, to be **POST with a JSON body**.
+- Good and bad Connection outcomes produced the expected UI (successful browse; the fixed refusal message on a bad login).
+- Successful and failed browse attempts each produced an audit record.
+- The UI appearance was considered **acceptable for the current pre-overhaul stage**; it is not the intended final browsing
+  experience.
+
+**Covered by automated tests only** (not manually smoked, and not an incomplete smoke):
+
+| Behaviour | Why it was not exercised by hand | Automated coverage |
+|---|---|---|
+| A third concurrent structure request returns **429** | The shipped UI naturally prevents multiple simultaneous browse submissions | `ConnectionToolInvocationTests` (per-Connection limiter; the controller answers 429 with `Retry-After`), `ManagementClientSqlStructureTests` and `SqlStructureBrowserRenderTests` (client and UI handling of 429) |
+| A principal holding only `connection.read` is refused (403) | The product has no custom-role creation interface to make such a principal | `ConnectionBrowsePermissionTests` (real RBAC evaluator), `ManagementHostConnectionToolsHttpTests` (real host 403 matrix) |
+| A principal holding only `connection.browse` is refused (403) | Same | Same |
+
+Those automated tests are unchanged and must not be weakened.
+
+Before the operator smoke, the page and tool markup had been verified by rendering the **real** Blazor components
 (`ConnectionDetail`, `ConnectionsPage`, `ComponentsList`, `SqlStructureBrowser`) through Blazor's own renderer with mocked clients
 and asserting on the produced HTML and on client-call logs (`ConnectionWorkspaceRenderTests`, `CatalogNavigationRenderTests`,
-`SqlStructureBrowserRenderTests`). What real rendering cannot cover — CSS/appearance in dark, light and narrow widths, and focus
-behaviour — remains for the operator checklist below.
+`SqlStructureBrowserRenderTests`).
 
-### Operator checklist
+### Operator checklist (record of what was asked for)
 
 **Connections list** — Connectors tab is gone; "Browse the connector catalog" opens `/components` already filtered to Connector.
 
