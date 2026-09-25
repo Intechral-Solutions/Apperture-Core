@@ -33,7 +33,6 @@ public static class AuthShellAccess
         // Protected path: once shell was shown, keep it through Loading / cap re-warm.
         if (shellAlreadyCommitted
             && state is SessionLoadState.Authenticated
-                or SessionLoadState.ForbiddenUnlinked
                 or SessionLoadState.Loading)
         {
             return false;
@@ -41,14 +40,23 @@ public static class AuthShellAccess
 
         return state switch
         {
-            SessionLoadState.Unknown or SessionLoadState.Loading => true,
-            SessionLoadState.Unauthenticated or SessionLoadState.Error => true,
             // Wait for App bootstrap (theme/session/TZ) AND capabilities before first mount.
             SessionLoadState.Authenticated => !capabilitiesReady || !appBootstrapReady,
-            SessionLoadState.ForbiddenUnlinked => !appBootstrapReady,
+            // Everything else (loading, signed out, expired, account/service unavailable) has no shell:
+            // the gate shows a loading message, a redirect message or a session-status surface instead.
             _ => true
         };
     }
+
+    /// <summary>
+    /// The protected shell is replaced by a session-status surface (session-expired recovery, account
+    /// unavailable, service unavailable) instead of a plain loading message. Never on public routes.
+    /// </summary>
+    public static bool ShouldShowSessionStatusSurface(SessionLoadState state, bool isPublicPath) =>
+        !isPublicPath
+        && state is SessionLoadState.SessionExpired
+            or SessionLoadState.AccountUnavailable
+            or SessionLoadState.ServiceUnavailable;
 
     /// <summary>
     /// Whether the gate should remember that the protected shell has been shown this circuit.
@@ -66,15 +74,22 @@ public static class AuthShellAccess
         SessionLoadState state,
         bool isPublicPath) =>
         isPublicPath
-        || state is SessionLoadState.Unauthenticated or SessionLoadState.Error or SessionLoadState.AccessRequestSession;
+        || state is SessionLoadState.Unauthenticated
+            or SessionLoadState.AccessRequestSession
+            or SessionLoadState.ServiceUnavailable
+            or SessionLoadState.SessionExpired
+            or SessionLoadState.AccountUnavailable;
 
     public static string GetBlockingMessage(SessionLoadState state, bool capabilitiesReady)
     {
         if (state is SessionLoadState.Unknown or SessionLoadState.Loading)
             return "Loading session…";
 
-        if (state is SessionLoadState.Unauthenticated or SessionLoadState.Error or SessionLoadState.AccessRequestSession)
+        if (state is SessionLoadState.Unauthenticated or SessionLoadState.AccessRequestSession)
             return "Redirecting to sign-in…";
+
+        if (state == SessionLoadState.SessionExpired)
+            return "Your session has expired. Redirecting to sign-in…";
 
         if (state == SessionLoadState.Authenticated && !capabilitiesReady)
             return "Loading permissions…";
@@ -85,8 +100,13 @@ public static class AuthShellAccess
         return "Loading…";
     }
 
+    /// <summary>
+    /// Boot-time sign-in redirect: only positive evidence of no session (<c>auth/me</c> = 401). An outage
+    /// (<see cref="SessionLoadState.ServiceUnavailable"/>) or an unusable account never qualifies, and a
+    /// session lost while the tab is open is owned by session recovery, not by this rule.
+    /// </summary>
     public static bool ShouldRedirectToLogin(SessionLoadState state, bool isPublicPath) =>
-        !isPublicPath && state is SessionLoadState.Unauthenticated or SessionLoadState.Error;
+        !isPublicPath && state == SessionLoadState.Unauthenticated;
 
     public static bool ShouldRedirectToAccessRequest(SessionLoadState state, bool isAccessRequestPath) =>
         !isAccessRequestPath && state == SessionLoadState.AccessRequestSession;
@@ -96,12 +116,10 @@ public static class AuthShellAccess
 
     public static bool ShouldRedirectRootBootstrap(SessionLoadState state, bool isRootBootstrapPath) =>
         isRootBootstrapPath && state is SessionLoadState.Authenticated
-            or SessionLoadState.ForbiddenUnlinked
             or SessionLoadState.Unauthenticated
-            or SessionLoadState.AccessRequestSession
-            or SessionLoadState.Error;
+            or SessionLoadState.AccessRequestSession;
 
     /// <summary>Whether authenticated shell services (menus, dashboard) may start loading.</summary>
     public static bool MayLoadAuthenticatedShellData(SessionLoadState state) =>
-        state is SessionLoadState.Authenticated or SessionLoadState.ForbiddenUnlinked;
+        state == SessionLoadState.Authenticated;
 }

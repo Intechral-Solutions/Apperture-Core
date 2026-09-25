@@ -3,7 +3,10 @@
 Opt-in Playwright suite that drives the **real** Management UI (Blazor WebAssembly) against the **real**
 Management Host in a real browser, to prove browser-semantic security behavior (cookies, `Origin`, Fetch
 Metadata, URL normalization, `form_post` callbacks). It is *characterization first*: SEC-1.0 tests describe
-what the platform does today; the SEC-1 fixing slices flip the marked assertions.
+what the platform does today; the SEC-1 fixing slices flip the marked assertions. **SEC-1A1 has flipped** F1, F3, F4,
+F10 (the 401 half) and the simultaneous-401 test (and extended the history test); those now pin the session-recovery
+behavior (see the design gate §39), and `SessionRecoveryBrowserTests` adds the recovery cases the baselines did not cover.
+Everything else is still a characterization of today's behavior.
 
 ## Run it (one command)
 
@@ -97,6 +100,7 @@ elsewhere:
 | `RequestForgeryBaselineTests.Unsafe_requests_carry_an_Origin_header_on_every_engine` (Origin/Fetch Metadata on every unsafe request) | yes | yes | yes |
 | `OpenRedirectBaselineTests.F5_key_cases_on_every_engine` (URL normalization of the decisive return targets) | yes | yes | yes |
 | `StepUpCallbackBaselineTests` (cookie on the cross-site `form_post` callback) | yes | yes | no |
+| SEC-1A1 recovery tests (`SessionRecoveryBrowserTests`, and the flipped F1/F3/F4/F10/simultaneous-401/history cases) | yes | no | no |
 
 **WebKit here is Playwright's Windows build, not Safari.** It does not enforce SameSite (it attached the Lax session
 cookie to cross-site requests, so cross-site cookie assertions are skipped for it) and it rejects the `Secure`
@@ -108,6 +112,11 @@ item. Everything else runs on Chromium only, for runtime cost.
 - `Infrastructure/` — the harness (hosts, stub provider, recorder, clock, seeding, Playwright helpers).
 - `*BaselineTests.cs` — characterizations, one file per concern. Each assertion that a later slice must invert
   says **FLIPS IN SEC-…** in its doc comment; the evidence register is the SEC-1 design gate §0.
+- `SessionRecoveryBrowserTests.cs` — SEC-1A1: 403 never recovers; a failed sign-in 401 never recovers; a mutation that
+  met 401 is never replayed (before or after sign-in); an outage or 403 found by the recovery probe shows the
+  service-unavailable / account-unavailable surface; the loop breaker across real document loads.
+- `Infrastructure/RecoveryEvidence.cs` — counts a tab's recovery probes and sign-in navigations from a `PageTrace`, and
+  samples a page for a raw-error flash.
 - `ReturnTargetCorpus.cs` — the hostile and legitimate return-target corpus (shared by the later
   `LocalReturnUrl` unit tests' authors).
 

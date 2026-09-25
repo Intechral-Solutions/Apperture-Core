@@ -57,8 +57,28 @@ public static class LoginRouteHelper
 
     public static string DefaultPostLoginPath => "/control/center";
 
+    /// <summary>The <c>reason</c> value the expired-session recovery appends to the sign-in URL.</summary>
+    public const string ExpiredReason = "expired";
+
+    /// <summary>
+    /// The one place that builds an automatic sign-in navigation target: <c>/login?returnUrl=&lt;escaped once&gt;</c>,
+    /// plus <c>&amp;reason=</c> when the operator lost a session they had. <paramref name="pathAndQuery"/> is the current
+    /// local path and query (the fragment is not captured today).
+    /// </summary>
+    public static string BuildLoginUrl(string pathAndQuery, string? reason = null)
+    {
+        var url = "/login?returnUrl=" + Uri.EscapeDataString(pathAndQuery);
+        return string.IsNullOrEmpty(reason) ? url : url + "&reason=" + Uri.EscapeDataString(reason);
+    }
+
+    /// <summary>True when the sign-in URL says the operator arrived because their session expired.</summary>
+    public static bool IsExpiredReason(string absoluteUri) =>
+        string.Equals(GetQueryValueRaw(absoluteUri, "reason"), ExpiredReason, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Reads <c>returnUrl</c> from a URI query string (first occurrence).</summary>
-    public static string? GetReturnUrlRaw(string absoluteUri)
+    public static string? GetReturnUrlRaw(string absoluteUri) => GetQueryValueRaw(absoluteUri, "returnUrl");
+
+    private static string? GetQueryValueRaw(string absoluteUri, string parameterName)
     {
         var q = new Uri(absoluteUri).Query;
         if (string.IsNullOrEmpty(q) || q == "?")
@@ -83,7 +103,7 @@ public static class LoginRouteHelper
             if (eq <= 0)
                 continue;
             var name = segment[..eq];
-            if (!name.Equals("returnUrl", StringComparison.OrdinalIgnoreCase))
+            if (!name.Equals(parameterName, StringComparison.OrdinalIgnoreCase))
                 continue;
             var value = segment[(eq + 1)..];
             return Uri.UnescapeDataString(value.ToString());

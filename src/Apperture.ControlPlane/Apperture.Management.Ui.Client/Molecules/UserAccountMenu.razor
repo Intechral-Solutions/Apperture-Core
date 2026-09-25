@@ -16,14 +16,6 @@
     {
         <span class="text-xs text-muted">Signing in…</span>
     }
-    else if (Session.State == SessionLoadState.ForbiddenUnlinked)
-    {
-        <a href="@AccountUiRoutes.Profile"
-           class="rounded px-3 py-1.5 text-sm text-message-warning hover:bg-surface-muted"
-           title="Contact an administrator to link your Entra account">
-            Account not linked
-        </a>
-    }
     else if (Session.State == SessionLoadState.Authenticated && Session.User is not null)
     {
         <button type="button"

@@ -430,12 +430,10 @@ public sealed class NotificationToastWatcherTests : IDisposable
         var changedCount = 0;
         watcher.Changed += () => changedCount++;
 
-        // Session leaves Authenticated mid-cycle.
-        _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>())).ReturnsAsync((MeResponse?)null);
-        _client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>())).ReturnsAsync((EntraAccessRequestSessionDto?)null);
-        await session.RefreshAsync();
+        // Session leaves Authenticated mid-cycle (session recovery confirmed the loss, SEC-1A1).
+        session.MarkSessionExpired();
 
-        session.State.Should().Be(SessionLoadState.Unauthenticated);
+        session.State.Should().Be(SessionLoadState.SessionExpired);
         _clock.ActiveTimerCount.Should().Be(0, "the watcher must stop polling once the session leaves Authenticated");
         watcher.UnreadCount.Should().Be(0, "cursor/dedupe/unread state is cleared on the transition out");
         changedCount.Should().Be(1, "UnreadCount actually changed (6 -> 0), so Changed must fire exactly once");
@@ -589,9 +587,7 @@ public sealed class NotificationToastWatcherTests : IDisposable
         _clock.ActiveTimerCount.Should().Be(0, "no re-arm can have happened yet -- the in-flight poll hasn't completed");
 
         // Session leaves Authenticated while epoch 1's poll is still pending.
-        _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>())).ReturnsAsync((MeResponse?)null);
-        _client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>())).ReturnsAsync((EntraAccessRequestSessionDto?)null);
-        await session.RefreshAsync();
+        session.MarkSessionExpired();
         _clock.ActiveTimerCount.Should().Be(0);
 
         // ...and returns, starting a fresh epoch (epoch 2) with its own baseline.

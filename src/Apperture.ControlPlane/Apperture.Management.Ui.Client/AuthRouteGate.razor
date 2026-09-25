@@ -5,13 +5,23 @@
 @inject IOperatorCapabilitiesService Capabilities
 @inject ShellBootstrapState ShellBootstrap
 @inject NavigationManager Nav
+@* Injected so the per-document recovery coordinator exists from the first render: it listens for a signed-in
+   tab's soft session refresh being answered 401 (SessionStateService.UnauthorizedDuringRefresh). *@
+@inject SessionRecoveryCoordinator Recovery
 
 @* UIX-2 pass 7: keep ChildContent mounted after first show. Initial auth still loading-only.
    Public routes (login) render ChildContent without committing the protected shell. *@
 @if (_blockProtectedShell && !_shellCommitted)
 {
     <div class="flex min-h-screen items-center justify-center bg-surface-elevated px-4">
-        <p class="text-sm text-muted">@_loadingMessage</p>
+        @if (_surfaceState is { } surfaceState)
+        {
+            <SessionStatusSurface State="surfaceState" />
+        }
+        else
+        {
+            <p class="text-sm text-muted">@_loadingMessage</p>
+        }
     </div>
 }
 else
@@ -38,6 +48,9 @@ else
     private int _capabilitiesWarmGeneration;
     private bool _loginRedirectIssued;
     private bool _disposed;
+
+    /// <summary>Set while the protected shell is replaced by a session-status surface (session expired, account or service unavailable).</summary>
+    private SessionLoadState? _surfaceState;
 
     protected override void OnInitialized()
     {
@@ -136,8 +149,11 @@ else
         if (AuthShellAccess.ShouldCommitShell(next, pub, root))
             _shellCommitted = true;
 
-        var changed = next != _blockProtectedShell || wasCommitted != _shellCommitted;
+        var surface = AuthShellAccess.ShouldShowSessionStatusSurface(Session.State, pub) ? Session.State : (SessionLoadState?)null;
+
+        var changed = next != _blockProtectedShell || wasCommitted != _shellCommitted || surface != _surfaceState;
         _blockProtectedShell = next;
+        _surfaceState = surface;
         return changed;
     }
 
@@ -150,7 +166,11 @@ else
                 if (_disposed)
                     return;
 
-                if (Session.State is SessionLoadState.Unauthenticated or SessionLoadState.Error)
+                // Anything that is not a usable signed-in session must not leave stale capabilities behind.
+                if (Session.State is SessionLoadState.Unauthenticated
+                    or SessionLoadState.ServiceUnavailable
+                    or SessionLoadState.SessionExpired
+                    or SessionLoadState.AccountUnavailable)
                     Capabilities.InvalidateCache();
 
                 if (_lastSessionState == SessionLoadState.Authenticated && !_shellCommitted)
@@ -226,7 +246,7 @@ else
         if (AuthShellAccess.ShouldRedirectRootBootstrap(Session.State, isRoot))
         {
             _loginRedirectIssued = false;
-            if (Session.State is SessionLoadState.Authenticated or SessionLoadState.ForbiddenUnlinked)
+            if (Session.State == SessionLoadState.Authenticated)
             {
                 Nav.NavigateTo(LoginRouteHelper.DefaultPostLoginPath, replace: true);
                 return;
@@ -243,7 +263,7 @@ else
                 if (_loginRedirectIssued)
                     return;
                 _loginRedirectIssued = true;
-                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString("/")}", replace: true);
+                Nav.NavigateTo(LoginRouteHelper.BuildLoginUrl("/"), replace: true);
             }
 
             return;
@@ -274,12 +294,14 @@ else
         if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading)
             return;
 
-        if (Session.State is SessionLoadState.ForbiddenUnlinked or SessionLoadState.Authenticated)
+        if (Session.State == SessionLoadState.Authenticated)
         {
             _loginRedirectIssued = false;
             return;
         }
 
+        // Boot-time sign-in only: auth/me positively answered 401. A session lost while the tab is open is owned
+        // by SessionRecoveryCoordinator (full-page navigation); an outage or unusable account never signs in.
         if (!AuthShellAccess.ShouldRedirectToLogin(Session.State, isPublic))
             return;
 
@@ -287,7 +309,6 @@ else
             return;
 
         _loginRedirectIssued = true;
-        var enc = Uri.EscapeDataString(path + new Uri(Nav.Uri).Query);
-        Nav.NavigateTo($"/login?returnUrl={enc}", replace: true);
+        Nav.NavigateTo(LoginRouteHelper.BuildLoginUrl(path + new Uri(Nav.Uri).Query), replace: true);
     }
 }

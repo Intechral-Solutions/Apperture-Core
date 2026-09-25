@@ -116,7 +116,7 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
                     maxAttempts);
                 return dto;
             }
-            catch (Exception ex) when (attempt < maxAttempts)
+            catch (Exception ex) when (attempt < maxAttempts && !IsUnauthorized(ex))
             {
                 _logger.LogWarning(
                     ex,
@@ -137,6 +137,10 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
 
         return DenyAll;
     }
+
+    /// <summary>A request that met 401 is never re-sent (SEC-1 REQ-5): session recovery owns what happens next.</summary>
+    private static bool IsUnauthorized(Exception ex) =>
+        ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized };
 
     private static bool IsDenyAllCapabilities(OperatorCapabilitiesDto d) =>
         !d.CanManageSchedules && !d.CanManageRecovery && !d.CanViewAudit && !d.CanViewRuntimeHealth && !d.CanManageModules

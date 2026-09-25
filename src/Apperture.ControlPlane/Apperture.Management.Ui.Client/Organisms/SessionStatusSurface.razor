@@ -1,0 +1,79 @@
+@using Apperture.Management.Ui.Client.Services
+@using Apperture.Management.Ui.Shared.Auth
+@inject SessionRecoveryCoordinator Recovery
+@inject ShellHostNavigation HostNav
+@inject NavigationManager Nav
+
+@* SEC-1A1: what replaces the protected shell when the session cannot be used. Terminal or transitional, never a
+   loop: this surface issues no navigation of its own until the operator clicks an action. *@
+<div class="mx-auto w-full max-w-md ui-section-panel p-6" data-session-surface="@SurfaceKey">
+    @switch (State)
+    {
+        case SessionLoadState.AccountUnavailable:
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Title="Your account isn't available in Apperture."
+                         Message="You're signed in, but this account can't be used with Apperture right now. Ask an administrator to check your access, or sign in with a different account.">
+                <div class="mt-4 space-y-2">
+                    <button type="button" class="btn btn-primary w-full" @onclick="SignOut">Sign out</button>
+                    <button type="button" class="btn btn-secondary w-full" @onclick="SignOut">Sign in with a different account</button>
+                </div>
+            </PageMessage>
+            break;
+
+        case SessionLoadState.ServiceUnavailable:
+            <PageMessage Kind="PageMessageKind.Warning"
+                         Title="Apperture can't reach the management service right now."
+                         Message="Your session hasn't been changed. Retry in a moment.">
+                <div class="mt-4">
+                    <button type="button" class="btn btn-primary w-full" @onclick="Retry">Retry</button>
+                </div>
+            </PageMessage>
+            break;
+
+        default:
+            @if (Recovery.Phase == SessionRecoveryPhase.ManualSignInRequired)
+            {
+                <PageMessage Kind="PageMessageKind.Warning"
+                             Title="Your session has expired."
+                             Message="Sign in to continue.">
+                    <div class="mt-4">
+                        <button type="button" class="btn btn-primary w-full" @onclick="Recovery.SignInNow">Sign in</button>
+                    </div>
+                </PageMessage>
+            }
+            else
+            {
+                @* The button is a fallback, not the plan: a tab restored from the back/forward cache would otherwise
+                   sit on "Taking you to sign-in…" with nothing left to make that happen. *@
+                <PageMessage Kind="PageMessageKind.Info"
+                             Title="Your session has expired."
+                             Message="Taking you to sign-in…">
+                    <div class="mt-4">
+                        <button type="button" class="btn btn-secondary w-full" @onclick="Recovery.SignInNow">Sign in</button>
+                    </div>
+                </PageMessage>
+            }
+            break;
+    }
+</div>
+
+@code {
+    /// <summary>The unusable-session state being presented.</summary>
+    [Parameter] public SessionLoadState State { get; set; }
+
+    private string SurfaceKey => State switch
+    {
+        SessionLoadState.AccountUnavailable => "account-unavailable",
+        SessionLoadState.ServiceUnavailable => "service-unavailable",
+        _ => Recovery.Phase == SessionRecoveryPhase.ManualSignInRequired ? "session-expired-manual" : "session-expired",
+    };
+
+    private void SignOut() =>
+        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
+
+    // Retry means retrying the whole auth bootstrap on the same address: a document reload re-runs the session
+    // check, capabilities, menus and watchers from a clean slate, and keeps the operator's intended destination.
+    // It never replays an interrupted request.
+    private void Retry() =>
+        Nav.NavigateTo(Nav.Uri, forceLoad: true);
+}

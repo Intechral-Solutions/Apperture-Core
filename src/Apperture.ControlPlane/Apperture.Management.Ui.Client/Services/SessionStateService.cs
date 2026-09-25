@@ -25,11 +25,17 @@ public sealed class SessionStateService
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised when a refresh started while signed in is answered 401 by <c>auth/me</c>. <c>auth/me</c> is not reported
+    /// by the HTTP pipeline (it is the boot path), so this is how that suspicion reaches session recovery.
+    /// </summary>
+    public event Action? UnauthorizedDuringRefresh;
+
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         // Soft refresh when already signed in: skip Loading notify so AuthRouteGate does not unmount
         // the Router/MainLayout mid-flight (Symbol()/parentNode while menus or pages load).
-        var softRefresh = State is SessionLoadState.Authenticated or SessionLoadState.ForbiddenUnlinked;
+        var softRefresh = State == SessionLoadState.Authenticated;
         if (!softRefresh)
         {
             State = SessionLoadState.Loading;
@@ -40,6 +46,11 @@ public sealed class SessionStateService
         var previousUserId = User?.UserId;
         var previousError = ErrorMessage;
 
+        // The outcome is computed into locals and applied only after every await, so a refresh that was in flight
+        // while session recovery marked the session cannot overwrite that decision.
+        SessionLoadState outcome;
+        MeResponse? outcomeUser = null;
+        string? outcomeError = null;
         try
         {
             // Stay on the Blazor sync context: Notify() and AuthRouteGate UpdateBlocking must not
@@ -47,38 +58,52 @@ public sealed class SessionStateService
             var me = await _client.GetMeAsync(cancellationToken);
             if (me is null)
             {
-                User = null;
-                ErrorMessage = null;
+                if (softRefresh)
+                {
+                    // A signed-in tab was told 401 by auth/me. Whether that is session loss is recovery's
+                    // decision (one probe, one navigation, loop breaker), never this refresh's: it neither
+                    // declares the tab signed out nor navigates.
+                    if (State == SessionLoadState.Authenticated)
+                        UnauthorizedDuringRefresh?.Invoke();
+                    return;
+                }
+
                 var access = await _client.GetAccessRequestSessionAsync(cancellationToken);
-                State = access is null
+                outcome = access is null
                     ? SessionLoadState.Unauthenticated
                     : SessionLoadState.AccessRequestSession;
             }
             else
             {
-                User = me;
-                State = SessionLoadState.Authenticated;
-                ErrorMessage = null;
+                outcome = SessionLoadState.Authenticated;
+                outcomeUser = me;
             }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
-            User = null;
-            State = SessionLoadState.ForbiddenUnlinked;
-            ErrorMessage = ex.Message;
+            outcome = SessionLoadState.AccountUnavailable;
+            outcomeError = ex.Message;
         }
         catch (HttpRequestException)
         {
-            User = null;
-            State = SessionLoadState.Error;
-            ErrorMessage = "Unable to reach the management API.";
+            // Connection refused, 5xx, unexpected status: availability, never "signed out" (design gate D8).
+            outcome = SessionLoadState.ServiceUnavailable;
+            outcomeError = "Unable to reach the management API.";
         }
         catch (Exception ex)
         {
-            User = null;
-            State = SessionLoadState.Error;
-            ErrorMessage = ex.Message;
+            outcome = SessionLoadState.ServiceUnavailable;
+            outcomeError = ex.Message;
         }
+
+        // A signed-in tab whose state was marked (expired, account/service unavailable) while this refresh was in
+        // flight keeps the mark: recovery already owns that transition.
+        if (softRefresh && State != SessionLoadState.Authenticated)
+            return;
+
+        User = outcomeUser;
+        ErrorMessage = outcomeError;
+        State = outcome;
 
         // Soft refresh with identical outcomes must not re-SHC the shell (MainLayout/NavRail).
         if (softRefresh
@@ -89,6 +114,27 @@ public sealed class SessionStateService
             return;
         }
 
+        Notify();
+    }
+
+    /// <summary>
+    /// Session recovery confirmed (by <c>auth/me</c> = 401) that this tab's session is gone. Drops the identity so
+    /// nothing keeps treating it as valid; <see cref="Changed"/> stops the Toast watcher and lets the gate replace
+    /// the shell with the recovery surface. The navigation to sign-in is the coordinator's, not this state's.
+    /// </summary>
+    public void MarkSessionExpired() => Mark(SessionLoadState.SessionExpired, null);
+
+    /// <summary><c>auth/me</c> = 403 while signed in: the principal no longer maps to a usable account. Terminal.</summary>
+    public void MarkAccountUnavailable() => Mark(SessionLoadState.AccountUnavailable, "Authenticated principal is not linked to a platform user.");
+
+    /// <summary>The session check could not be completed (outage, 5xx, timeout). Retryable; never a sign-in.</summary>
+    public void MarkServiceUnavailable() => Mark(SessionLoadState.ServiceUnavailable, "Unable to reach the management API.");
+
+    private void Mark(SessionLoadState state, string? message)
+    {
+        User = null;
+        ErrorMessage = message;
+        State = state;
         Notify();
     }
 

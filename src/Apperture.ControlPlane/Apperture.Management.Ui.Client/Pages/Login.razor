@@ -13,6 +13,11 @@
     <PageHeader Title="Sign in"
                 Subtitle="Sign in to the Apperture management console." />
 
+    @if (_sessionExpired && !_accountNotLinkedError && !_oidcError)
+    {
+        <PageMessage Kind="PageMessageKind.Info" Message="Your session has expired. Sign in to continue." />
+    }
+
     @if (_accountNotLinkedError)
     {
         <PageMessage Kind="PageMessageKind.Error" Message="That Microsoft account is not connected to an Apperture user. Ask an administrator to link it, or sign in with your Apperture username and password." />
@@ -86,12 +91,14 @@
     private bool _autoRedirected;
     private bool _oidcError;
     private bool _accountNotLinkedError;
+    private bool _sessionExpired;
 
     protected override async Task OnInitializedAsync()
     {
         if (SignInOptions.Current is null)
             await SignInOptions.RefreshAsync();
 
+        _sessionExpired = LoginRouteHelper.IsExpiredReason(Nav.Uri);
         var u = new Uri(Nav.Uri);
         var q = u.Query.TrimStart('?');
         foreach (var part in q.Split('&', StringSplitOptions.RemoveEmptyEntries))

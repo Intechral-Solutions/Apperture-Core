@@ -2,8 +2,9 @@
 
 Date: 2026-09-24
 Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). Implementation is in progress:
-SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38; the fixing slices
-(SEC-1A1 onward) have not started, and no production behavior has changed.** SEC-1 is not complete.
+SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, and SEC-1A1
+(centralized expired-session recovery) is implemented and proven in browsers, recorded in §39; SEC-1A2 onward have not
+started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -39,16 +40,16 @@ Brief discrepancies found while verifying the brief:
 
 | ID | Finding | Class | Owning slice |
 |---|---|---|---|
-| F1 | After startup nothing re-checks the session and no UI code handles 401. In-app expiry shows "401 (Unauthorized)" text or empty states and never starts sign-in. | Code fact. The operator-visible symptom is a **browser finding (pending SEC-1.0)**. | 1A1 |
+| F1 | After startup nothing re-checks the session and no UI code handles 401. In-app expiry shows "401 (Unauthorized)" text or empty states and never starts sign-in. | Code fact. The operator-visible symptom is a **browser finding (pending SEC-1.0)**. | 1A1 — **fixed (§39)** |
 | F2 | Hard refresh with a missing, expired or invalid cookie *does* reach `/login?returnUrl=` (§4). | Code fact | — |
-| F3 | Valid cookie but unknown/unlinked user: `auth/me` returns 403, the state becomes `ForbiddenUnlinked`, and the protected shell mounts over failing pages. | Code fact. The rendered result is a browser finding. | 1A1 |
-| F4 | API unreachable, or 5xx during startup: state `Error` redirects to login. `GetAccessRequestSessionAsync` maps a 5xx to "signed out". | Code fact | 1A1 |
+| F3 | Valid cookie but unknown/unlinked user: `auth/me` returns 403, the state becomes `ForbiddenUnlinked`, and the protected shell mounts over failing pages. | Code fact. The rendered result is a browser finding. | 1A1 — **fixed (§39)** |
+| F4 | API unreachable, or 5xx during startup: state `Error` redirects to login. `GetAccessRequestSessionAsync` maps a 5xx to "signed out". | Code fact | 1A1 — **fixed (§39)** |
 | F5 | The return-URL validator accepts `/\evil.example`, and the browser resolves it off-origin (**open redirect**). .NET `Uri` resolves it on-origin (verified in this session). | **Browser finding (pending SEC-1.0)** | 1A2 |
 | F6 | With auto-redirect to Entra enabled, `/login?error=…` redirects to Entra again, which can loop. | Code fact (logic). The loop is a **browser finding**. | 1A2 |
 | F7 | In production, a cancelled or failed Entra sign-in (`OnRemoteFailure`) is unhandled, so the operator gets a raw 500 `problem+json` document on the API host. | Code fact | 1A2 |
 | F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). The failure is a **browser finding (pending SEC-1.0)**. | 1A2 |
 | F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
-| F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 / 1A3 |
+| F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
 | F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 |
 | F12 | Two GETs write Apperture state (Entra directory users/groups). `GET /signout` ends the session (§18.1). | Code fact | 1B2 |
 | F13 | `UiDev` credentialed CORS is applied in every environment. | Code fact | 1B3 |
@@ -74,19 +75,19 @@ Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F
 
 | ID | SEC-1.0 result | Exact browser evidence | Test (in `SessionExpiryBaselineTests` unless noted) | Inverted by |
 |---|---|---|---|---|
-| F1 | **Reproduced** (C) | Session expired for real (server clock +13 h, real cookie handler). Clicking Refresh on `/connections`: `GET /api/connections → 401`; an error panel shows the raw text `net_http_message_not_success_statuscode_reason, 401, Unauthorized`; URL unchanged; no document request to `/login`; still nothing 3 s later. | `F1_in_app_reload_after_expiry_…` | 1A1 |
+| F1 | **Reproduced** (C) | Session expired for real (server clock +13 h, real cookie handler). Clicking Refresh on `/connections`: `GET /api/connections → 401`; an error panel shows the raw text `net_http_message_not_success_statuscode_reason, 401, Unauthorized`; URL unchanged; no document request to `/login`; still nothing 3 s later. | `F1_in_app_reload_after_expiry_…` | 1A1 — **flipped** (now `…_recovers_with_one_probe_and_one_sign_in_navigation`) |
 | F2 | **Reproduced** (control, C) | Reload after expiry → `/login?returnUrl=%2Fconnections%3Fstatus%3Dactive%26context%3Dall`. The `#fragment` is dropped. **New (N1):** `context=all` (the client's View selector) is already in the captured target. | `F2_hard_reload_…` | (must stay) / N1 → 1A2 |
-| F3 | **Reproduced**, with nuance (C) | Valid cookie, principal unlinked: `GET /api/auth/me → 403`; URL stays `/connections`; **no** login navigation. The shell mounts with an inline banner ("You are signed in, but this identity is not linked to a platform user. … Account not linked") and the page shows "Not authorized". So a banner exists, but not the terminal surface D5 requires. | `BootstrapStateBaselineTests.F3_…` | 1A1 |
-| F4 | **Reproduced** (C), three outage shapes | `auth/me` connection refused / 503 / 500 with a valid session → every shape ends on `/login?returnUrl=%2Fconnections`, text "Sign in … Sign in to the Apperture management console."; no "unavailable"/Retry text. | `BootstrapStateBaselineTests.F4_…` | 1A1 |
+| F3 | **Reproduced**, with nuance (C) | Valid cookie, principal unlinked: `GET /api/auth/me → 403`; URL stays `/connections`; **no** login navigation. The shell mounts with an inline banner ("You are signed in, but this identity is not linked to a platform user. … Account not linked") and the page shows "Not authorized". So a banner exists, but not the terminal surface D5 requires. | `BootstrapStateBaselineTests.F3_…` | 1A1 — **flipped** (terminal account-unavailable surface) |
+| F4 | **Reproduced** (C), three outage shapes | `auth/me` connection refused / 503 / 500 with a valid session → every shape ends on `/login?returnUrl=%2Fconnections`, text "Sign in … Sign in to the Apperture management console."; no "unavailable"/Retry text. | `BootstrapStateBaselineTests.F4_…` | 1A1 — **flipped** (service-unavailable surface + Retry, all three shapes) |
 | F5 | **Reproduced** (C full matrix; F/W the five decisive values) | 10 hostile values leave the origin in a real browser; the validator accepts all 10 (§38.2). `/\evil.example`, the TAB form and the CR LF form navigate to `http://evil.example/` on Chromium, Firefox **and** WebKit (signed-in `/login` bounce); the full 26-value matrix, and post-sign-in navigation, ran on Chromium. .NET `Uri` resolves every one on-origin. The host's `/signin` cannot leave the origin (authority is fixed) but turns them into a `//evil.example` **path** on the UI origin, and answers CR/LF with an unhandled 500. | `OpenRedirectBaselineTests` | 1A2 |
 | F6 | **Not reproduced** as a loop (C) | Auto-redirect is ON, host returns `/login?error=tenant_mismatch`: **0** provider round trips on a direct load of `/login`, on the host's own error redirect and on a protected-route reload. `Login.razor` only auto-redirects from `OnAfterRenderAsync(firstRender)` when the sign-in options are already loaded; on every real entry they are not. It fires exactly once when entered in-app (link from `/login/local`), and the error return is a document load, so it does not fire again. The hazard in the code is real; the observed behavior is "auto-redirect mostly never fires". **New (N2):** the feature itself is effectively dead on real entries. | `OidcFlowBaselineTests.F6_…` | 1A2 (keep the `error` guard) |
 | F7 | **Reproduced** (C) | Provider `access_denied` and `server_error` (Testing environment = the Production branch): the browser ends on `http://localhost:{api}/signin-oidc`, `POST … → 500`, `application/problem+json`, body `{"type":"https://httpstatuses.com/500","title":"An error occurred while processing your request.","status":500,"correlationId":…}`. One provider round trip, no loop. | `OidcFlowBaselineTests.F7_…` | 1A2 |
 | F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | 1A2 / 1A2b |
 | F9 | **Reproduced** (C) | With no operator input after load, the Toast poll at +7 h returned 200 **and re-issued the session cookie** (`Set-Cookie: .AspNetCore.Cookies … expires; samesite=lax`); the poll at +13 h was still 200 (and renewed again). Control: the original ticket replayed at +13 h → 401. | `SessionRenewalBaselineTests` | 1A3 |
-| F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 / 1A3 |
+| F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 — **flipped** (401 half: one recovery, watcher stops) / 1A3 (renewal half, unchanged) |
 | F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 |
-| — | **Reproduced** (simultaneous 401) | Three tabs meet the expired session together: 3 × `401`, 3 error panels, **0** `auth/me` probes, **0** navigations to sign-in. (A single tab yields one 401 per navigation: pages issue calls sequentially.) | `Simultaneous_401_baseline_…` | 1A1 |
-| — | **Reproduced** (history) | Expired reload replaces the protected entry with `/login` (Back → previous document). After a local sign-in, Back returns to `/login/local`, which immediately bounces the signed-in operator forward again (Back is trapped). | `HistoryBaselineTests` | 1A1 (review) |
+| — | **Reproduced** (simultaneous 401) | Three tabs meet the expired session together: 3 × `401`, 3 error panels, **0** `auth/me` probes, **0** navigations to sign-in. (A single tab yields one 401 per navigation: pages issue calls sequentially.) | `Simultaneous_401_baseline_…` | 1A1 — **flipped** (per tab: one probe, one sign-in navigation) |
+| — | **Reproduced** (history) | Expired reload replaces the protected entry with `/login` (Back → previous document). After a local sign-in, Back returns to `/login/local`, which immediately bounces the signed-in operator forward again (Back is trapped). | `HistoryBaselineTests` | 1A1 (review) — **extended**: the reload case is unchanged; a third test pins the in-app-recovery history (§39). Local sign-in Back-bounce unchanged (1A2). |
 | F13 | **Partial** | The existing `UiDev` policy refuses both cross-site and same-site-sibling preflights: a custom-header JSON POST is never delivered (C), and neither is PUT/PATCH/DELETE (C/F/W). Its being active outside Development is a code fact, not browser-provable here. | `RequestForgeryBaselineTests` | 1B3 |
 | D2 | **Reproduced** (C) | A cross-site page's `location.href = '{api}/signout'`: `GET /signout`, `Sec-Fetch-Site: cross-site`, `Sec-Fetch-Mode: navigate`, session cookie sent, `302`; afterwards `GET /api/auth/me → 401` (the session really ended). | `RequestForgeryBaselineTests.D2_…` | 1B2 |
 | F15 | **Observed** (developer machine only) | Starting the real Ui.Server touched the hard-coded, git-ignored `debug-4bd3d8.log` at the repository root (file mtime), as predicted. The path is absolute and machine-specific, so there is no automated test. | (side effect of the harness) | 1B3 |
@@ -325,7 +326,9 @@ principal on `auth/me` → 403. The client blurs them in several places:
 Normal     --401 (non-excluded)-->  Confirming   (first reporter only; concurrent reporters await the same task)
 Confirming --auth/me 200-->         Normal       (endpoint-specific 401; the page's own error stands)
 Confirming --auth/me 403-->         terminal "account unavailable" surface (§11); no navigation loop
-Confirming --auth/me network/5xx--> Normal       (availability, not authentication; page error stands)
+Confirming --auth/me network/5xx--> service-unavailable surface (§11) with Retry; no navigation. (Amended in 1A1 by the task
+                                    owner: the original text returned to Normal and let the page's own error stand. Either way it
+                                    is availability, never authentication.)
 Confirming --auth/me 401-->         Recovering: capture target → MarkSignedOut() →
                                     NavigateTo("/login?returnUrl=<target>&reason=expired", forceLoad: true)
 Recovering --any 401-->             ignored
@@ -898,7 +901,7 @@ the header would break every UI mutation, so the two must land atomically. SEC-1
 | Slice | Scope | Depends on | Tests |
 |---|---|---|---|
 | **SEC-1.0 — browser proof harness** — **delivered 2026-09-24 (§0.1, §38)** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
-| **SEC-1A1 — session-loss detection and recovery** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
+| **SEC-1A1 — session-loss detection and recovery** — **delivered (§39)** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
 | **SEC-1A2 — return URL and login/error/step-up** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
 | **SEC-1A3 — background requests, renewal and capability refresh** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
 | **SEC-1B1 — server request-forgery policy** | `BrowserRequestTrustMiddleware` + options (exact trusted origins, Mode, startup validation), Rules U/G/N, exemption metadata on `Enroll` + OIDC path exemptions, `problem+json` 403, logging/meter, **client `X-Apperture-Request` header in the same change**, test-factory default handler, F18 pin, guards (exemptions, order, header literals) | 1.0 | §29.4 (I, S) |
@@ -1180,3 +1183,115 @@ origin, which is what Rule U will compare.
 | 1A3 | F9, F10 (poll half) |
 | 1B1 | F11 (same-site sibling form and fetch must be rejected), the Origin/Fetch-Metadata probe becomes the positive-path suite |
 | 1B3 | F16 (Secure), F13/F15 assertions |
+
+---
+
+## 39. SEC-1A1 — what was built and what it proved (2026-09-25)
+
+Scope: centralized session-loss detection and recovery only. Return-URL validation and fragment capture (1A2), the Entra/OIDC
+fixes (1A2), background non-renewal (1A3) and everything in SEC-1B are untouched.
+
+### 39.1 As built
+
+| Piece | Where (`Apperture.Management.Ui.Client` unless noted) | Responsibility |
+|---|---|---|
+| `AuthRecoveryHandler` | `Services/AuthRecoveryHandler.cs` | The one pipeline interception point (`IncludeCredentialsHandler → AuthRecoveryHandler → HttpClientHandler`, `Program.cs`). On a **401** from a non-excluded call it reports to the coordinator, **awaits the shared decision**, and returns the original response untouched. Never looks at 403 or any other status. |
+| `AuthRecoveryExclusions` | same file | Sign-in and bootstrap endpoints never report: `auth/me`, `auth/local/login\|mfa\|logout`, `auth/break-glass`, `auth/sign-in-options`, `auth/forgot-password`, `auth/reset-password`, `auth/setup-password`, `auth/verify-contact-email`, `access-requests[/*]`, `bootstrap/*`. `auth/local/change-password` is *not* excluded (it is session-authenticated). |
+| `SessionRecoveryCoordinator` | `Services/SessionRecoveryCoordinator.cs` | Scoped (per document). `Normal → Confirming → Recovering \| ManualSignInRequired`. Single-flight probe, exception-safe recovery edge, loop breaker, public-route and not-signed-in inertness. |
+| `ISessionProbe` / `HttpSessionProbe` | `Services/SessionProbe.cs` | The authoritative `GET auth/me` over a **separate credentials-only `HttpClient`** (no recovery handler, browser cache `no-store`). 200 / 401 / 403 / anything else. 15 s timeout. |
+| `IRecoveryHistoryStore` | `Services/RecoveryHistoryStore.cs` | Per-tab `sessionStorage` (via the runtime's dotted interop; **no new JavaScript**), falling back to memory. |
+| `SessionStateService` | `Services/SessionStateService.cs` | New `MarkSessionExpired` / `MarkAccountUnavailable` / `MarkServiceUnavailable` (clear the identity, notify once). New event `UnauthorizedDuringRefresh`. |
+| `SessionLoadState` | `Ui.Shared/Auth/SessionLoadState.cs` | `ForbiddenUnlinked → AccountUnavailable`, `Error → ServiceUnavailable`, new `SessionExpired`. |
+| `AuthShellAccess` | `Ui.Shared/Auth/AuthShellAccess.cs` | The shell never mounts for the three unusable states; `ShouldRedirectToLogin` is now `Unauthenticated` only. |
+| `SessionStatusSurface` | `Organisms/SessionStatusSurface.razor` | The three surfaces (house `PageMessage`). Rendered by `AuthRouteGate` in place of the shell. |
+| `LoginRouteHelper.BuildLoginUrl` | `Ui.Shared/Auth/LoginRouteHelper.cs` | The one builder for automatic sign-in navigations (`returnUrl` existing form + `reason`); the boot-time gate redirect uses it too. |
+| `Login.razor` | `Pages/Login.razor` | Shows "Your session has expired. Sign in to continue." for `reason=expired`. |
+| `ManagementClient.GetAccessRequestSessionAsync` | `Apperture.Management.Client` | 5xx / unexpected status now throws instead of reading as "no session". |
+| `[Authorize]` coverage guard | `tests/Apperture.UnitTests/ControlPlane/ControllerAuthorizationCoverageTests.cs` | Every controller has a class-level `[Authorize]` except `AuthController` (every action states its own) and `BootstrapController` (`[AllowAnonymous]`); the anonymous mutations are pinned. |
+
+### 39.2 Decision matrix as implemented
+
+| Event | Result |
+|---|---|
+| 401 from a protected, non-excluded call, tab believes it is signed in, route not public | one `auth/me` probe (shared by every concurrent 401) |
+| probe **401** | capture path+query, `MarkSessionExpired`, **one** `NavigateTo(/login?returnUrl=…&reason=expired, forceLoad: true)`; later 401s ignored |
+| probe **403** | `AccountUnavailable` surface (Sign out / Sign in with a different account); no navigation |
+| probe network failure, timeout, 5xx, unexpected status | `ServiceUnavailable` surface with **Retry**; no navigation (amended from the §12 table, per the slice owner) |
+| probe **200** | nothing: the 401 was endpoint-specific; the page's own error stands; no replay; no self-perpetuating probe |
+| resource **403** (any call) | never reaches the coordinator: no probe, no navigation; existing forbidden behavior |
+| `auth/me` at boot: 401 / 403 / 5xx / network | unchanged for 401 (gate → `/login`, F2); 403 → `AccountUnavailable`; 5xx/network → `ServiceUnavailable` |
+| a soft `SessionStateService.RefreshAsync` in a signed-in tab is answered 401 by `auth/me` | forwarded to the coordinator (`UnauthorizedDuringRefresh`); the refresh neither marks the tab signed out nor navigates |
+
+Never done: replaying the request that met 401 (POST/PUT/PATCH/DELETE especially), navigating in-SPA for a runtime recovery,
+retrying a 401 (the capabilities service's own retry now skips 401).
+
+### 39.3 Loop breaker, and refinements of §12
+
+- Loop breaker: the coordinator records each automatic recovery (unix-ms stamps in the tab's `sessionStorage`). If **three** stamps
+  fall inside the last 60 s, the fourth recovery does not navigate: `ManualSignInRequired`, a console warning, and the surface offers
+  **Sign in** (a user gesture, so it navigates regardless). Stamps dated in the future are ignored.
+- The handler **awaits** the coordinator's decision rather than firing and forgetting, so a page never paints its own raw
+  `401 Unauthorized` before the shell is replaced (measured in the browser tests with a text sampler).
+- Retry = a document reload of the same address (re-runs the whole auth bootstrap from a clean slate, preserves the intended
+  destination, replays nothing).
+- The recovery surface carries a fallback **Sign in** button in both expired phases so a tab restored from the back/forward cache is
+  never left with nothing to do.
+- The gate's boot-time redirect for `auth/me` = 401 stays an in-SPA `replace` navigation (F2 is unchanged and correct); only
+  runtime recovery is a full-page load.
+- Fragment capture and the View selector's `context=all` leaking into the target (N1) are unchanged: 1A2.
+- `MainLayout`'s "not linked" banner, the top-bar "Account not linked" link and the `AccountProfile` not-linked branch were dead
+  once the shell stopped mounting for that state, and were removed.
+
+### 39.4 Browser evidence (Chromium)
+
+| Test | Proves |
+|---|---|
+| `SessionExpiryBaselineTests.F1_…recovers_with_one_probe_and_one_sign_in_navigation` | one 401, no replay; one probe; one `/login` document; `returnUrl` + `reason=expired`; the raw error is never visible |
+| `…F10_background_toast_poll_…converges_on_one_recovery_and_stops_polling` | the watcher's 401 leads to one recovery; no further poll; no toast |
+| `…Simultaneous_401_in_several_tabs_…` | three tabs: per tab one probe and one navigation |
+| `BootstrapStateBaselineTests.F3_…` | `auth/me` 403 → terminal surface, no shell, no redirect, one check, Sign out works |
+| `BootstrapStateBaselineTests.F4_…` (3 shapes) | outage → service-unavailable, address preserved, one probe, Retry opens the intended page |
+| `HistoryBaselineTests.In_app_recovery_…` | recovery adds one entry; Back never shows protected data (the reload test is unchanged) |
+| `SessionRecoveryBrowserTests` | resource 403 never probes; a failed sign-in 401 never recovers; a mutation that met 401 is sent once (before and after sign-in); probe 403 / 503 mid-session; the loop breaker across a real reload; Account > Security open after expiry |
+
+### 39.5 Findings left exactly as they were
+
+F2 (correct before and after), F5 (open redirect: reproduced), F6 (not reproduced), F7 (raw failed OIDC result), F8 (step-up; real
+Entra unverified), F9 (background polling still renews the cookie), F11 / F12 / F13 / F14 / F15 / F16 (request forgery and host hygiene),
+F17, F18, N1–N6. Not exercised in a browser: the `RunDetail` 2 s poll (needs a Run). By construction it stops when the gate unmounts
+the shell, and the unit tests cover the class through the Toast watcher.
+
+### 39.6 Independent review (read-only) and its resolution
+
+Critical: none. Important, both fixed with tests:
+
+1. **A second, uncoordinated runtime sign-in path.** A soft `SessionStateService.RefreshAsync` in a signed-in tab (opening
+   Account > Security, saving a preference) is answered 401 by `auth/me`, which the pipeline excludes; the refresh set
+   `Unauthenticated` and the gate did an in-app redirect without `reason=expired`, the loop breaker or a full-page load, and an
+   in-flight refresh could overwrite a `SessionExpired` mark. Now: a soft refresh 401 raises `UnauthorizedDuringRefresh`, which the
+   coordinator turns into the same single recovery; the refresh never declares the tab signed out, and never overwrites a state marked
+   while it was in flight. (`AuthRouteGate` injects the coordinator so it exists from the first render.)
+2. **`auth/local/*` was excluded as a prefix, but `auth/local/change-password` is `[Authorize]`d.** The exclusion is now the exact
+   anonymous endpoints `auth/local/login|mfa|logout`; a 401 from change-password reports.
+
+Minor, fixed: the recovery edge is exception-safe (a throwing session subscriber cannot stop the navigation); stamps dated in the future
+are ignored; the capabilities service no longer retries a 401. Minor, accepted: the stamp is saved just before the final re-check, so a
+recovery abandoned at the last moment is still counted (it only advances the breaker); a failed cosmetic soft refresh with a 5xx shows
+the service-unavailable surface (uniform D8). Historical decision records that still say `ForbiddenUnlinked`/`Error` are left as
+history.
+
+### 39.7 Validation (final code, repo-local artifacts)
+
+`dotnet build Apperture.slnx`: 0 errors. UnitTests 2 827 passed; ArchTests 38; Ui.Shared.Tests 1 374; Ui.Client.Tests 309 (all
+green, 0 skipped). Browser suite (`APPERTURE_BROWSER_TESTS=1`, all engines where the suite uses them): **173 / 173 passed** (was 165
+at SEC-1.0; +8: seven new recovery cases in `SessionRecoveryBrowserTests` and the in-app-recovery history test; the flipped tests
+replaced their baselines one for one). IntegrationTests
+were not run: Management.Host and the server-side auth behavior are unchanged.
+
+### 39.8 Known limits
+
+- If `sessionStorage` is blocked, the loop breaker falls back to memory and guards only one document.
+- A failed *soft* refresh (a cosmetic refresh after saving a profile or theme) that gets a 5xx now shows the service-unavailable surface,
+  because outage handling is uniform (D8).
+- `ResourceContextViewState` does not subscribe to session changes; every exit from the three surfaces is a full document load, so
+  nothing stale is reused.

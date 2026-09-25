@@ -148,8 +148,9 @@ reset, cutting across several of them.
    are in
    [`sec1-browser-session-request-forgery-design-gate.md`](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md).
    **SEC-1.0 (the opt-in Playwright browser proof harness and the baseline reproduction of the browser findings) is
-   delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1); **no production behavior has
-   changed and the fixing slices (SEC-1A1 onward) have not started.**
+   delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1). **SEC-1A1 (centralized
+   expired-session recovery) is implemented on that branch (gate §39); the remaining slices (SEC-1A2 onward) have not started
+   and SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must

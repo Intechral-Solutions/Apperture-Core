@@ -31,6 +31,32 @@ public static class TestSupport
     public static Task NavigateSpaAsync(this IPage page, string relative) =>
         page.EvaluateAsync("path => Blazor.navigateTo(path)", relative);
 
+    /// <summary>
+    /// Waits until the element exists AND is enabled. A page's toolbar button is disabled while the page is still
+    /// loading; a test that expires the session before that finishes races the page's own in-flight calls (which
+    /// now recover on their own, before the test's click).
+    /// </summary>
+    public static async Task WaitForEnabledAsync(this ILocator locator, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(60));
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (await locator.CountAsync().ConfigureAwait(false) > 0 && await locator.First.IsEnabledAsync().ConfigureAwait(false))
+                    return;
+            }
+            catch (PlaywrightException)
+            {
+                // Re-rendered under us; look again.
+            }
+
+            await Task.Delay(100).ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("Timed out waiting for the element to be enabled.");
+    }
+
     /// <summary>Waits until <paramref name="text"/> appears in the rendered document.</summary>
     public static async Task WaitForTextAsync(this IPage page, string text, TimeSpan? timeout = null)
     {

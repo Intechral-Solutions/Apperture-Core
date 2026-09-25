@@ -8,9 +8,9 @@ namespace Apperture.BrowserTests;
 
 /// <summary>
 /// SEC-1.0 baselines for expired-session behavior (findings F1, F2, F10 and the simultaneous-401 baseline).
-/// These tests pin what the browser shows TODAY. They are characterizations, not requirements: each
-/// assertion marked FLIPS IN is expected to be inverted by the slice named, which turns this file's
-/// "current behavior" into that slice's regression test.
+/// These tests pin what the browser shows. F1, F10 and the simultaneous-401 case were characterizations of
+/// the broken behavior in SEC-1.0 and were FLIPPED by SEC-1A1 (session-loss recovery): they now pin the
+/// recovery. F2 (a true reload) was correct before and after, and is unchanged.
 /// <para>
 /// Session expiry is real: the harness advances the server-side clock of the application cookie handler,
 /// so the real cookie middleware rejects a ticket that is genuinely past its lifetime.
@@ -22,12 +22,14 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
     private static readonly TimeSpan PastSessionLifetime = TimeSpan.FromHours(13);
 
     /// <summary>
-    /// F1 — REPRODUCED. After the session expires under a booted SPA, a user-triggered reload of page data
-    /// gets a raw 401 that surfaces as inline error text. Nothing navigates to sign-in.
-    /// FLIPS IN SEC-1A1: expect exactly one full-page navigation to /login?returnUrl=…&amp;reason=expired.
+    /// F1 — FLIPPED IN SEC-1A1 (was: raw 401 text and no sign-in). After the session expires under a booted SPA, a
+    /// user-triggered reload of page data is answered 401; the recovery coordinator confirms the loss with exactly one
+    /// <c>auth/me</c> probe and makes exactly one full-page navigation to
+    /// <c>/login?returnUrl=…&amp;reason=expired</c>. The request that met 401 is sent once and never replayed, and the
+    /// operator never sees the raw error.
     /// </summary>
     [BrowserFact]
-    public async Task F1_in_app_reload_after_expiry_shows_raw_401_text_and_does_not_start_sign_in()
+    public async Task F1_in_app_reload_after_expiry_recovers_with_one_probe_and_one_sign_in_navigation()
     {
         await harness.ResetAsync();
         await using var context = await harness.NewContextAsync();
@@ -37,44 +39,45 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
 
         await page.GotoAsync(harness.Origins.Ui + "/connections");
         var refresh = page.GetByRole(AriaRole.Button, new() { Name = "Refresh" });
-        await refresh.WaitForAsync(new() { Timeout = 60_000 });
+        await refresh.WaitForEnabledAsync();
         await TestSupport.EventuallyAsync(
             () => trace.ApiCalls("/api/connections").Any(r => r.Status == 200),
             "the connections list to load while the session is valid");
-        var urlBeforeExpiry = page.Url;
-        var urlsBeforeExpiry = trace.Urls.Count;
+        var before = trace.Responses.Count;
 
         harness.Clock.Advance(PastSessionLifetime);
+        await using var sampler = new RawErrorSampler(page);
         await refresh.ClickAsync();
 
-        // .ui-state-panel is shared by the loading, empty, error and forbidden states; wait for the one that carries the 401.
-        var errorPanel = page.Locator(".ui-state-panel").Filter(new() { HasText = "401" });
-        await errorPanel.First.WaitForAsync(new() { Timeout = 15_000 });
-        var errorText = await errorPanel.First.InnerTextAsync();
-
-        // Give any delayed redirect a chance to appear before asserting that none did.
+        await page.WaitForURLAsync(u => u.Contains("/login", StringComparison.Ordinal), new() { Timeout = 30_000 });
+        await page.WaitForTextAsync("Your session has expired. Sign in to continue.");
+        // Give any second navigation or replay a chance to appear before asserting that none did.
         await Task.Delay(3000);
 
-        output.Line("F1", $"url before={urlBeforeExpiry} after={page.Url}");
-        output.Line("F1", $"error panel text: {errorText.ReplaceLineEndings(" | ")}");
-        foreach (var r in trace.ApiCalls("/api/connections"))
+        var connections = trace.ApiSince(before, "/api/connections");
+        var probes = trace.RecoveryProbes(before);
+        output.Line("F1", $"url now={page.Url}");
+        foreach (var r in trace.Responses.Skip(before).Where(r => r.ResourceType is "fetch" or "xhr" or "document"))
             output.Line("F1", r.ToString());
+        output.Line("F1", $"raw error ever visible: {sampler.Saw} {sampler.FirstSeenText}");
 
-        trace.ApiCalls("/api/connections").Should().Contain(r => r.Status == 401, "the expired ticket is rejected by the real cookie handler");
-        errorText.Should().Contain("net_http_message_not_success_statuscode_reason", "the operator sees a raw, untranslated runtime resource key");
-        errorText.Should().Contain("401").And.Contain("Unauthorized");
-        page.Url.Should().Be(urlBeforeExpiry, "nothing starts sign-in");
-        trace.Urls.Count.Should().Be(urlsBeforeExpiry, "no navigation of any kind happened after the expiry");
-        trace.Documents.Any(d => d.Url.Contains("/login", StringComparison.Ordinal)).Should().BeFalse();
+        connections.Should().ContainSingle("the request that met 401 is sent exactly once, never replayed").Which.Status.Should().Be(401);
+        probes.Should().ContainSingle("one authoritative auth/me re-check").Which.Status.Should().Be(401);
+        trace.SignInDocuments().Should().ContainSingle("one recovery transition: one full-page navigation to sign-in");
+        var uri = new Uri(page.Url);
+        uri.AbsolutePath.Should().Be("/login");
+        Uri.UnescapeDataString(uri.Query).Should().Contain("returnUrl=/connections").And.Contain("reason=expired");
+        sampler.Saw.Should().BeFalse("the operator must not see a flash of the raw 401 error before recovery takes over");
     }
 
     /// <summary>
-    /// F10 (background half of F1) — REPRODUCED. The Toast watcher keeps polling after the session is gone:
-    /// its next tick is answered 401 and the app still does not navigate or announce anything.
-    /// FLIPS IN SEC-1A1 (watcher stops via MarkSignedOut) / SEC-1A3.
+    /// F10 (background half of F1) — FLIPPED IN SEC-1A1 (was: the watcher polls on and nothing recovers). The Toast
+    /// watcher's next tick after expiry is answered 401. Recovery is the same single, central one: one probe, one
+    /// navigation to sign-in, and then no further polling and no error toast. (Not marking background requests
+    /// non-renewing is SEC-1A3, and is unchanged.)
     /// </summary>
     [BrowserFact]
-    public async Task F10_background_toast_poll_after_expiry_gets_401_and_the_app_stays_put()
+    public async Task F10_background_toast_poll_after_expiry_converges_on_one_recovery_and_stops_polling()
     {
         await harness.ResetAsync();
         await using var context = await harness.NewContextAsync();
@@ -83,25 +86,29 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
         var trace = new PageTrace(page);
 
         await page.GotoAsync(harness.Origins.Ui + "/connections");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForAsync(new() { Timeout = 60_000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForEnabledAsync();
         await TestSupport.EventuallyAsync(
             () => trace.ApiCalls("toast-delta").Any(r => r.Status == 200),
             "the watcher's first (baseline) poll", TimeSpan.FromSeconds(20));
+        var before = trace.Responses.Count;
 
-        var urlBefore = page.Url;
         harness.Clock.Advance(PastSessionLifetime);
 
         // The watcher re-arms every 30 s; no operator interaction happens from here on.
-        await TestSupport.EventuallyAsync(
-            () => trace.ApiCalls("toast-delta").Any(r => r.Status == 401),
-            "the next automatic poll to be answered 401", TimeSpan.FromSeconds(50));
+        await page.WaitForURLAsync(u => u.Contains("/login", StringComparison.Ordinal), new() { Timeout = 60_000 });
+        await page.WaitForTextAsync("Your session has expired. Sign in to continue.");
+        await Task.Delay(3000);
 
-        output.Line("F10", $"url before={urlBefore} after={page.Url}");
-        foreach (var r in trace.ApiCalls("toast-delta"))
+        var polls = trace.ApiSince(before, "toast-delta");
+        output.Line("F10", $"url now={page.Url}");
+        foreach (var r in polls)
             output.Line("F10", r.ToString());
 
-        page.Url.Should().Be(urlBefore, "a 401 from the background poll navigates nowhere");
-        (await page.VisibleTextAsync()).Should().NotContainAny("Sign in to continue", "session has expired");
+        polls.Should().ContainSingle("the poll that met 401 is the last one: the watcher stops when the session is marked expired").Which.Status.Should().Be(401);
+        trace.RecoveryProbes(before).Should().ContainSingle();
+        trace.SignInDocuments().Should().ContainSingle();
+        new Uri(page.Url).AbsolutePath.Should().Be("/login");
+        (await page.VisibleTextAsync()).Should().NotContainAny("Unauthorized", "net_http_message");
     }
 
     /// <summary>
@@ -119,7 +126,7 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
         var trace = new PageTrace(page);
 
         await page.GotoAsync(harness.Origins.Ui + "/connections?status=active#details");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForAsync(new() { Timeout = 60_000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForEnabledAsync();
 
         harness.Clock.Advance(PastSessionLifetime);
         await page.ReloadAsync();
@@ -139,16 +146,16 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
     }
 
     /// <summary>
-    /// Simultaneous-401 baseline — REPRODUCED. Three tabs of one signed-in browser all meet the expired
-    /// session at the same moment, each navigating in-app to a page. Every tab's call is answered 401,
-    /// every tab shows its own raw error, there is no session probe and no tab navigates to sign-in.
+    /// Simultaneous-401 — FLIPPED IN SEC-1A1 (was: N errors, zero probes, zero navigations). Three tabs of one
+    /// signed-in browser all meet the expired session at the same moment, each navigating in-app to a page. The
+    /// coordinator is per tab: every tab makes exactly one <c>auth/me</c> probe and exactly one navigation to
+    /// sign-in. There is no redirect storm and no tab is left showing a raw error.
     /// (Within one tab the Management UI issues a page's calls one after another, and stops at the first
-    /// failure, so a single tab yields one 401 per navigation; the tab count is what makes the burst.
-    /// Background pollers add their own 401s on their own timers, measured by the F10 test.)
-    /// SEC-1A1 replaces "N errors and zero navigations" with, per tab, one probe and one navigation.
+    /// failure; the tab count is what makes the burst. The single-tab, many-401 coalescing case is pinned by the
+    /// coordinator unit tests.)
     /// </summary>
     [BrowserFact]
-    public async Task Simultaneous_401_baseline_many_calls_all_fail_and_nothing_recovers()
+    public async Task Simultaneous_401_in_several_tabs_gives_each_tab_one_probe_and_one_sign_in_navigation()
     {
         await harness.ResetAsync();
         await using var context = await harness.NewContextAsync();
@@ -161,45 +168,40 @@ public sealed class SessionExpiryBaselineTests(BrowserHarness harness, ITestOutp
             var page = await context.NewPageAsync();
             traces.Add(new PageTrace(page));
             await page.GotoAsync(harness.Origins.Ui + "/connections");
-            await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForAsync(new() { Timeout = 60_000 });
+            await page.GetByRole(AriaRole.Button, new() { Name = "Refresh" }).WaitForEnabledAsync();
             pages.Add(page);
         }
 
         await Task.Delay(1500);
         harness.Clock.Advance(PastSessionLifetime);
         var before = traces.Select(t => t.Responses.Count).ToArray();
-        var urlsBefore = traces.Select(t => t.Urls.Count).ToArray();
 
         // All tabs act in the same instant: in-app navigation to a page whose load issues two API calls.
         await Task.WhenAll(pages.Select(p => p.NavigateSpaAsync("/governance/users")));
-        await Task.Delay(5000);
-
-        var after = traces
-            .SelectMany((t, i) => t.Responses.Skip(before[i]))
-            .Where(r => r.ResourceType is "fetch" or "xhr" && r.Url.Contains("/api/", StringComparison.Ordinal)
-                && !r.Url.Contains("toast-delta", StringComparison.Ordinal))
-            .ToArray();
-        var unauthorized = after.Where(r => r.Status == 401).ToArray();
-        var probes = after.Where(r => r.Url.Contains("/api/auth/me", StringComparison.Ordinal)).ToArray();
-        var panels = 0;
         foreach (var p in pages)
         {
-            // Each tab must show its OWN error panel carrying the raw 401 (not merely a loading or empty panel).
-            var errorPanel = p.Locator(".ui-state-panel").Filter(new() { HasText = "401" });
-            await errorPanel.First.WaitForAsync(new() { Timeout = 15_000 });
-            panels += await errorPanel.CountAsync();
+            await p.WaitForURLAsync(u => u.Contains("/login", StringComparison.Ordinal), new() { Timeout = 60_000 });
+            await p.WaitForTextAsync("Your session has expired. Sign in to continue.");
         }
-        var newDocuments = traces.Select((t, i) => t.Urls.Count - urlsBefore[i]).ToArray();
 
-        output.Line("401x", $"tabs: {pages.Count}; api responses after expiry: {after.Length}; unauthorized: {unauthorized.Length}; visible error panels: {panels}");
-        foreach (var r in after)
-            output.Line("401x", r.ToString());
-        output.Line("401x", $"per-tab main-frame url changes since expiry: [{string.Join(",", newDocuments)}]; urls now: {string.Join(" ; ", pages.Select(p => p.Url))}");
+        await Task.Delay(3000);
 
-        unauthorized.Length.Should().BeGreaterThanOrEqualTo(pages.Count, "every tab's first call is rejected (a page's second call is only issued after the first succeeds)");
-        probes.Should().BeEmpty("no session probe (auth/me) exists today; SEC-1A1 adds exactly one per tab");
-        panels.Should().BeGreaterThanOrEqualTo(pages.Count, "each tab shows its own inline error");
-        pages.Should().OnlyContain(p => p.Url.Contains("/governance/users", StringComparison.Ordinal), "no tab recovered by navigating to sign-in");
-        traces.SelectMany(t => t.Documents).Any(d => d.Url.Contains("/login", StringComparison.Ordinal)).Should().BeFalse();
+        var perTab = traces.Select((t, i) => new
+        {
+            Unauthorized = t.ApiSince(before[i], "/api/").Where(r => r.Status == 401 && !r.Url.Contains("/api/auth/me", StringComparison.Ordinal)).ToArray(),
+            Probes = t.RecoveryProbes(before[i]),
+            SignIns = t.SignInDocuments(),
+        }).ToArray();
+        for (var i = 0; i < perTab.Length; i++)
+            output.Line("401x", $"tab {i}: 401s={perTab[i].Unauthorized.Length} probes={perTab[i].Probes.Count} signInDocs={perTab[i].SignIns.Count} url={pages[i].Url}");
+
+        perTab.Should().OnlyContain(t => t.Unauthorized.Length >= 1, "every tab's first call was rejected before the recovery took over");
+        perTab.Should().OnlyContain(t => t.Probes.Count == 1, "exactly one authoritative auth/me re-check per tab, however many 401s it met");
+        perTab.Should().OnlyContain(t => t.SignIns.Count == 1, "exactly one navigation to sign-in per tab: no redirect storm");
+        foreach (var p in pages)
+        {
+            new Uri(p.Url).AbsolutePath.Should().Be("/login");
+            (await p.VisibleTextAsync()).Should().NotContainAny("Unauthorized", "net_http_message");
+        }
     }
 }

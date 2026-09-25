@@ -1831,10 +1831,12 @@ public sealed class ManagementClient : IManagementClient
     public async Task<EntraAccessRequestSessionDto?> GetAccessRequestSessionAsync(CancellationToken cancellationToken = default)
     {
         using var response = await _http.GetAsync("access-requests/session", cancellationToken).ConfigureAwait(false);
+        // 401/403 are the only "no access-request session" answers. Anything else (5xx, an unexpected status) is an
+        // availability failure and must reach the caller as one: reading it as "no session" made an outage look
+        // like being signed out.
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             return null;
-        if (!response.IsSuccessStatusCode)
-            return null;
+        response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<EntraAccessRequestSessionDto>(cancellationToken).ConfigureAwait(false);
     }
 

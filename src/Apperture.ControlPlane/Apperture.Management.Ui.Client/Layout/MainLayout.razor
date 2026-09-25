@@ -18,12 +18,6 @@
              OnControlPanelClose="HandleControlPanelClose" />
 
     <div class="flex min-h-0 flex-1 flex-col @(isControlPanelOpen ? "shell-main-offset-open" : "shell-main-offset-closed")">
-        @if (SessionState.State == SessionLoadState.ForbiddenUnlinked)
-        {
-            <div class="border-b border-message-warning bg-message-warning px-4 py-2 text-sm text-body" role="status">
-                You are signed in, but this identity is not linked to a platform user. Some features will be unavailable until an administrator links your account.
-            </div>
-        }
         <TopBar IsControlPanelOpen="@isControlPanelOpen"
                 IsControlPanelLocked="@isControlPanelLocked"
                 OnHamburgerClick="HandleHamburgerClick" />
@@ -58,11 +52,9 @@
 
     protected override void OnInitialized()
     {
-        SessionState.Changed += OnSessionChanged;
         NavManager.LocationChanged += OnLocationChanged;
         // UIX-2: NavRail alone rebuilds on menu Changed. Dual layout+rail SHC after
         // menus arrived orphaned components while Body/dashboard still rendered.
-        _lastSessionStateForRender = SessionState.State;
         ResolveAndUpdateCurrentDomain();
         // #region agent log
         _ = LogDebugAsync("MainLayout.razor:OnInitialized", "layout-init", "H3", new Dictionary<string, object?>
@@ -157,30 +149,8 @@
         if (_disposed)
             return;
         _disposed = true;
-        SessionState.Changed -= OnSessionChanged;
         NavManager.LocationChanged -= OnLocationChanged;
     }
-
-    private SessionLoadState _lastSessionStateForRender;
-
-    private void OnSessionChanged() =>
-        _ = InvokeAsync(() =>
-        {
-            if (_disposed)
-                return;
-
-            // Only re-render for banner-relevant session transitions (ForbiddenUnlinked strip).
-            var next = SessionState.State;
-            if (next == _lastSessionStateForRender)
-                return;
-
-            var bannerRelevant =
-                next == SessionLoadState.ForbiddenUnlinked
-                || _lastSessionStateForRender == SessionLoadState.ForbiddenUnlinked;
-            _lastSessionStateForRender = next;
-            if (bannerRelevant)
-                StateHasChanged();
-        });
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {

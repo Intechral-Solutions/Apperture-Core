@@ -24,14 +24,6 @@
     {
         <p class="mt-6 text-sm text-muted" role="status">Loading your profile…</p>
     }
-    else if (Session.State == SessionLoadState.ForbiddenUnlinked)
-    {
-        <div class="mt-6">
-            <PageMessage Kind="PageMessageKind.Warning"
-                         Title="Account not linked"
-                         Message="You are signed in with an organizational identity that is not linked to a platform user. Contact an administrator to link your account before using management features." />
-        </div>
-    }
     else if (_loadError is not null)
     {
         <div class="mt-6">
@@ -238,7 +230,7 @@
 
     private async Task LoadAsync()
     {
-        if (Session.State is SessionLoadState.Unknown or SessionLoadState.Loading or SessionLoadState.ForbiddenUnlinked)
+        if (Session.State != SessionLoadState.Authenticated)
             return;
 
         _loadError = null;
