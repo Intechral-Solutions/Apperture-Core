@@ -18,4 +18,5 @@ When the change is done: fold the outcome into an ADR and the real architecture 
 |-----|--------|
 | [nav-overhaul/](nav-overhaul/) | Management UI navigation — overhaul about to start |
 | [application-contexts/](application-contexts/) | Evidence snapshot of current surfaces before any Application/Context planning |
+| [security/](security/) | SEC-1 browser session & request-forgery hardening — design gate approved; implementation not started. See [sec1-browser-session-request-forgery-design-gate.md](security/sec1-browser-session-request-forgery-design-gate.md) |
 | [ntf-c-legacy-removal/](ntf-c-legacy-removal/) | **Completed.** One platform notification pipeline; see [closure-report.md](ntf-c-legacy-removal/closure-report.md) |

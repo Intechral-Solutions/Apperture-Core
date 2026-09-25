@@ -143,8 +143,11 @@ reset, cutting across several of them.
    closure and evidence:
    [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
-7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **near-term design/implementation body; not started,
-   not designed.** Sequenced after Services (item 7) and **before** navigation / cross-context grouping (item 8). Numbered
+7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **design gate complete and approved (2026-09-24);
+   implementation not started.** Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
+   (beginning with a browser-proof harness, SEC-1.0) are in
+   [`sec1-browser-session-request-forgery-design-gate.md`](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md).
+   Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must
    **audit the existing Entra/local sign-in and return-URL behaviour first and reuse/finish that infrastructure where
@@ -169,7 +172,13 @@ reset, cutting across several of them.
      authentication; which APIs should and should not require protection; and the existing **`UiDev` CORS policy** — in particular
      whether credentialed `localhost` origin access can ever be active outside the intended development environment.
    Neither concern is implemented on the Services branch, and neither is a prerequisite for merging it.
-8. **Navigation / cross-context grouping design** — after Components and Services stabilize (and after SEC-1, item 7a),
+7b. **IAM-8 — Custom Role Lifecycle** — **future body; not started, not designed.** Sequenced after SEC-1 (item 7a) and
+   before navigation / cross-context grouping (item 8); numbered 7b so references to item 8 stay valid. Bounded scope:
+   create user-defined roles; edit their permission grants; delete user-created roles; built-in/system roles are protected
+   from edit and deletion; show a role's assignments/usage before deletion; refuse a deletion that would leave active
+   assignments invalid or orphaned; audit the create/update/delete lifecycle. It is **not** Context-scoped IAM (that stays
+   deferred, below) and does not change the authorization evaluation model. Its own design gate chooses the mechanisms.
+8. **Navigation / cross-context grouping design** — after Components and Services stabilize (and after SEC-1, item 7a, and IAM-8, item 7b),
    so the rail doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
    broadly as-is**, and ResourceContext remains the ownership/scoping boundary for Applications and Shared.
