@@ -665,6 +665,61 @@ public sealed class EntraStepUpCallbackTests
     }
 
     [Fact]
+    public async Task A_normal_entra_sign_in_drops_every_externally_supplied_apperture_authority_claim()
+    {
+        await using var rig = new Rig { TokenExtraClaims = HostileAppertureAuthorityClaims() };
+        await rig.StartAsync();
+        using var challengeResponse = await rig.Client.GetAsync("/signin");
+        var state = QueryHelpers.ParseQuery(challengeResponse.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", challengeResponse.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+
+        var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
+
+        var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        AssertNoExternalAppertureAuthority(principal, expectedIdentitySource: "Entra");
+        Has(principal, "oid", OidA).Should().BeTrue("identity proof claims are not Apperture authority");
+        Has(principal, "tid", ActiveTenant).Should().BeTrue();
+        EntraAuthenticationContextEvidence.Satisfies(principal, "c1").Should().BeTrue("acrs is identity-provider evidence, not an Apperture claim");
+    }
+
+    [Fact]
+    public async Task An_entra_session_step_up_drops_every_externally_supplied_apperture_authority_claim()
+    {
+        await using var rig = new Rig { TokenExtraClaims = HostileAppertureAuthorityClaims() };
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(await rig.BeginStepUpAsync(source: "Entra"));
+
+        var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        AssertNoExternalAppertureAuthority(principal, expectedIdentitySource: "Entra");
+        Has(principal, "oid", OidA).Should().BeTrue();
+        Has(principal, "tid", ActiveTenant).Should().BeTrue();
+        EntraAuthenticationContextEvidence.Satisfies(principal, "c1").Should().BeTrue();
+        Has(principal, AuthenticationAssuranceClaims.MechanismClaimType, AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism)
+            .Should().BeTrue("host-issued assurance is added after the external claims are removed");
+    }
+
+    private static Dictionary<string, object> HostileAppertureAuthorityClaims() => new()
+    {
+        [ClaimsPrincipalToActorMapper.BreakGlassClaimType] = "1",
+        [ClaimsPrincipalToActorMapper.IdentitySourceClaimType] = "Local",
+        [ClaimsPrincipalToActorMapper.ApplicationClaimNamespace + "custom_authority"] = "platform-administrator",
+    };
+
+    private static void AssertNoExternalAppertureAuthority(ClaimsPrincipal principal, string expectedIdentitySource)
+    {
+        principal.Claims.Should().NotContain(
+            c => c.Type.StartsWith(ClaimsPrincipalToActorMapper.ApplicationClaimNamespace, StringComparison.Ordinal)
+                 && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType,
+            "an external token must not assert any Apperture-namespace claim");
+        principal.FindAll(ClaimsPrincipalToActorMapper.IdentitySourceClaimType).Select(c => c.Value).Should().Equal(expectedIdentitySource);
+        principal.Claims.Should().NotContain(c => c.Type == ClaimsPrincipalToActorMapper.BreakGlassClaimType);
+        var actor = ClaimsPrincipalToActorMapper.ToActor(principal);
+        actor.Should().BeOfType<HumanActor>().Which.IsBreakGlassSession.Should().BeFalse();
+        ((HumanActor)actor!).PreferredIdentitySource.Should().Be(IdentitySource.Entra);
+    }
+
+    [Fact]
     public async Task A_token_carrying_assurance_claims_never_gets_them_on_a_normal_sign_in()
     {
         await using var rig = new Rig { TokenExtraClaims = new Dictionary<string, object> { [AuthenticationAssuranceClaims.MechanismClaimType] = "native-totp", [AuthenticationAssuranceClaims.EstablishedAtClaimType] = DateTimeOffset.UtcNow.ToString("o") } };
@@ -677,6 +732,68 @@ public sealed class EntraStepUpCallbackTests
 
         var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
         principal.Claims.Should().NotContain(c => c.Type == AuthenticationAssuranceClaims.MechanismClaimType, "assurance is issued by this host only");
+    }
+
+    [Fact]
+    public async Task A_normal_entra_sign_in_drops_every_token_supplied_apperture_namespace_claim_before_adding_trusted_ones()
+    {
+        const string hostileAuthority = "http://schemas.apperture/custom_authority";
+        await using var rig = new Rig
+        {
+            TokenExtraClaims = new Dictionary<string, object>
+            {
+                [ClaimsPrincipalToActorMapper.BreakGlassClaimType] = "1",
+                [ClaimsPrincipalToActorMapper.IdentitySourceClaimType] = "Local",
+                [hostileAuthority] = "platform-admin",
+            },
+        };
+        await rig.StartAsync();
+        using var challengeResponse = await rig.Client.GetAsync("/signin");
+        var state = QueryHelpers.ParseQuery(challengeResponse.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", challengeResponse.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+
+        var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
+
+        var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType);
+        Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue("Apperture adds the trusted Entra source after stripping the token");
+        Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local").Should().BeFalse();
+        Has(principal, "oid", OidA).Should().BeTrue();
+        Has(principal, "tid", ActiveTenant).Should().BeTrue();
+        var actor = ClaimsPrincipalToActorMapper.ToActor(principal);
+        actor.Should().BeOfType<HumanActor>().Which.IsBreakGlassSession.Should().BeFalse();
+        ((HumanActor)actor!).PreferredIdentitySource.Should().Be(IdentitySource.Entra);
+    }
+
+    [Fact]
+    public async Task An_entra_session_step_up_drops_token_supplied_apperture_namespace_claims_and_keeps_the_trusted_entra_source()
+    {
+        const string hostileAuthority = "http://schemas.apperture/custom_authority";
+        await using var rig = new Rig
+        {
+            TokenExtraClaims = new Dictionary<string, object>
+            {
+                [ClaimsPrincipalToActorMapper.BreakGlassClaimType] = "1",
+                [ClaimsPrincipalToActorMapper.IdentitySourceClaimType] = "Local",
+                [hostileAuthority] = "platform-admin",
+            },
+        };
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(await rig.BeginStepUpAsync(source: "Entra"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType);
+        Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue();
+        Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local").Should().BeFalse();
+        Has(principal, "oid", OidA).Should().BeTrue();
+        Has(principal, "tid", ActiveTenant).Should().BeTrue();
+        EntraAuthenticationContextEvidence.Satisfies(principal, "c1").Should().BeTrue("the identity provider's authentication-context evidence is not an Apperture claim");
+        Has(principal, AuthenticationAssuranceClaims.MechanismClaimType, AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism).Should().BeTrue("host-issued assurance is added after the token namespace is stripped");
+        var actor = ClaimsPrincipalToActorMapper.ToActor(principal);
+        actor.Should().BeOfType<HumanActor>().Which.IsBreakGlassSession.Should().BeFalse();
+        ((HumanActor)actor!).PreferredIdentitySource.Should().Be(IdentitySource.Entra);
     }
 
     [Fact]

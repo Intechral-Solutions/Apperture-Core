@@ -127,10 +127,12 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var identity = (ClaimsIdentity?)ctx.Principal?.Identity;
         if (identity is not null)
         {
-            // Session-assurance claims are only ever issued by this host. A token that happens to carry claims in that namespace
-            // (a tenant claims-mapping policy) must not become assurance on the session.
+            // Session-assurance claims and every claim in the Apperture application namespace are only ever issued by this host.
+            // A token that carries them (a tenant claims-mapping policy) must not become authority on the session.
+            // This runs before the host adds identity_source, so an external claim cannot win a FindFirst race.
             AuthenticationAssuranceClaims.Remove(identity);
             RecentAccountVerificationClaims.Remove(identity);
+            ClaimsPrincipalToActorMapper.RemoveUntrustedApplicationClaims(identity);
         }
 
         identity?.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra"));

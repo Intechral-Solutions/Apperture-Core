@@ -6,7 +6,8 @@ SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its
 (centralized expired-session recovery) is implemented and proven in browsers, recorded in §39, and SEC-1A2a (the shared
 safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
 in §40, and SEC-1A2b (Entra step-up continuation across the cross-site callback, finding F8) is implemented and proven in Chromium and
-Firefox, recorded in §41. SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
+Firefox, recorded in §41. An independent review of the A-series found one Important trust-boundary issue (I-1, external
+Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1573,3 +1574,34 @@ evidence that SQL ran; no separate database write-marker check was made). Browse
 them): **300 / 300 passed** in about 18 minutes (was 284 at SEC-1A2a; the single F8 baseline was replaced by 18 step-up cases). An independent
 read-only review found no Critical issue and one Important issue (the local-session gates, §41.2), fixed with tests; its Minor findings are addressed in
 §41.3–41.4 or accepted there.
+
+---
+
+## 42. SEC-1A2b follow-up — external Apperture authority claims (I-1)
+
+An independent review of the A-series found no Critical issue and one Important code issue that predates SEC-1 and must be fixed before SEC-1 merges.
+A second Important finding (I-2, the browser suite is gated off in normal CI) stays open for SEC-1B4 / closure. SEC-1 is not complete.
+
+### 42.1 The trust boundary
+
+`OnTokenValidated` accepted the validated id_token principal largely intact. A2b already removed `apperture.auth.assurance.*` and
+`apperture.auth.account.verification.*`. Other claims in the application namespace `http://schemas.apperture/` (the prefix of
+`ClaimsPrincipalToActorMapper.ApplicationClaimNamespace`, shared by `identity_source` and `break_glass`) could survive. A tenant claims-mapping policy on the
+trusted Entra application could therefore send `break_glass=1` or `identity_source=Local`, and the host would trust those names. `break_glass` grants
+unrestricted authorization.
+
+### 42.2 The rule
+
+Before the host adds any trusted application claim, `RemoveUntrustedApplicationClaims` drops every claim whose type is in
+`http://schemas.apperture/`. Ordinary identity-provider claims (`tid`, `oid`, `acrs`, issuer and audience data) are not in that namespace and are kept.
+The strip runs on the shared token-validated path, so it covers normal Entra sign-in, account linking, and both step-up session kinds. Host-issued
+`identity_source=Entra` is added only after the strip, so an external value cannot win `FindFirst`. Step-up assurance claims (`apperture.auth.assurance.*`)
+are still added afterwards by the host and are not in this namespace.
+
+### 42.3 Evidence
+
+`EntraStepUpCallbackTests` (real OpenID Connect handler): a normal sign-in and an Entra-session step-up whose id_token carries `break_glass=1`,
+`identity_source=Local`, and an unknown `http://schemas.apperture/custom_authority` claim finish with none of those values, identity source `Entra`, and the
+actor not break-glass. `oid`, `tid`, and `acrs` remain. `EntraStepUpSecurityGuardTests` pins that the strip is namespace-wide and occurs before
+`identity_source` is added. The full step-up callback and guard classes: 51 passed. Browser and integration suites were not re-run for this follow-up;
+the changed path is the same handler those suites already drive, and SEC-1A3 re-runs them.

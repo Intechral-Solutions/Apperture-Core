@@ -27,14 +27,35 @@ public static class ClaimsPrincipalToActorMapper
     private const string JwtName = "name";
 
     /// <summary>
+    /// Namespace for claims this application itself issues (identity source, break-glass, and any later session metadata).
+    /// An external identity provider must never be allowed to assert a claim in this namespace.
+    /// </summary>
+    public const string ApplicationClaimNamespace = "http://schemas.apperture/";
+
+    /// <summary>
     /// Claim set by auth handler to indicate identity source (Entra or Local). When present, resolver uses only that source.
     /// </summary>
-    public const string IdentitySourceClaimType = "http://schemas.apperture/identity_source";
+    public const string IdentitySourceClaimType = ApplicationClaimNamespace + "identity_source";
 
     /// <summary>
     /// Claim set when the session was established via break-glass login. Value "1" indicates break-glass session; evaluator grants all permission checks.
     /// </summary>
-    public const string BreakGlassClaimType = "http://schemas.apperture/break_glass";
+    public const string BreakGlassClaimType = ApplicationClaimNamespace + "break_glass";
+
+    /// <summary>
+    /// Removes every claim whose type is in <see cref="ApplicationClaimNamespace"/>.
+    /// Call this on a principal that just arrived from an external identity provider, before this host adds its own claims in that namespace.
+    /// </summary>
+    public static void RemoveUntrustedApplicationClaims(ClaimsIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        foreach (var claim in identity.Claims
+                     .Where(c => c.Type.StartsWith(ApplicationClaimNamespace, StringComparison.OrdinalIgnoreCase))
+                     .ToList())
+        {
+            identity.RemoveClaim(claim);
+        }
+    }
 
     /// <summary>
     /// Maps an authenticated ClaimsPrincipal to a Human IActor, or returns null if not authenticated.
