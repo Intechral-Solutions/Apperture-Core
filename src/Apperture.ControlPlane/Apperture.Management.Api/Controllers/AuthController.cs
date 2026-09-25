@@ -706,10 +706,7 @@ public sealed class AuthController : ControllerBase
         string? assuranceMechanism,
         CancellationToken cancellationToken)
     {
-        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
-        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        var identity = LocalSessionIdentity.Create(user.DisplayName, normalizedUsername);
         if (!string.IsNullOrWhiteSpace(assuranceMechanism))
         {
             AuthenticationAssuranceClaims.Replace(identity, assuranceMechanism, DateTimeOffset.UtcNow, providerContext: null);
@@ -719,7 +716,7 @@ public sealed class AuthController : ControllerBase
         var props = new AuthenticationProperties
         {
             IsPersistent = true,
-            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
+            ExpiresUtc = DateTimeOffset.UtcNow.Add(LocalSessionIdentity.Lifetime)
         };
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
         _ = cancellationToken;

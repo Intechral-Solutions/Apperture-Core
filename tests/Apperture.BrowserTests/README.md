@@ -9,8 +9,10 @@ behavior (see the design gate §39), and `SessionRecoveryBrowserTests` adds the 
 **SEC-1A2a has flipped** F5 (`OpenRedirectBaselineTests`), F6 and F7 (`OidcFlowBaselineTests`) and extended F2 (the fragment
 is now kept); those now pin the safe return-target policy and the stable Entra error flow (design gate §40), and
 `EntraReturnTargetBrowserTests` adds the sign-in journeys (fragment round trip, hostile targets on the host link, Try again).
-Still characterizations of today's behavior, on purpose: F8 (`StepUpCallbackBaselineTests`, SEC-1A2b), F9 (SEC-1A3), F11 and
-the side-effect GET / CORS / cookie findings (SEC-1B).
+**SEC-1A2b has flipped** F8 (`StepUpCallbackBaselineTests`, Chromium and Firefox): the cross-site callback still arrives without
+the session cookie, and Entra step-up now succeeds from the protected OIDC state (design gate §41), including the wrong-user,
+wrong-tenant, unknown-identity and missing-context refusals. Still characterizations of today's behavior, on purpose: F9 (SEC-1A3),
+F11 and the side-effect GET / CORS / cookie findings (SEC-1B).
 
 ## Run it (one command)
 
@@ -103,7 +105,7 @@ elsewhere:
 |---|---|---|---|
 | `RequestForgeryBaselineTests.Unsafe_requests_carry_an_Origin_header_on_every_engine` (Origin/Fetch Metadata on every unsafe request) | yes | yes | yes |
 | `OpenRedirectBaselineTests.F5_key_hostile_cases_end_on_the_default_route_on_every_engine` (URL normalization of the decisive hostile return targets) and `Key_legitimate_deep_links_arrive_intact_on_every_engine` (legitimate ones, so the policy is proven not to be a blanket refusal) | yes | yes | yes |
-| `StepUpCallbackBaselineTests` (cookie on the cross-site `form_post` callback) | yes | yes | no |
+| `StepUpCallbackBaselineTests` (F8, flipped by SEC-1A2b: step-up over the cross-site `form_post` callback without the session cookie; Entra and Local session kinds; refusals; cancel) | yes | yes | no |
 | SEC-1A1 recovery tests (`SessionRecoveryBrowserTests`, and the flipped F1/F3/F4/F10/simultaneous-401/history cases) | yes | no | no |
 | SEC-1A2a Entra legs: `OidcFlowBaselineTests.F7_…` (cancelled / failed panel), `EntraReturnTargetBrowserTests` (deep link, hostile link, Try again) | yes | yes | no (cannot complete an OIDC handshake here) |
 | SEC-1A2a full hostile / auth-surface / legitimate corpus, local sign-in, F6 auto-redirect | yes | no | no |

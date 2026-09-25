@@ -81,6 +81,29 @@ public sealed class HarnessSeeding(IServiceProvider liveServices)
         return userId.Value;
     }
 
+    /// <summary>
+    /// Gives an existing LOCAL operator a proven Entra link to a stub-directory identity (an operator who signs in with a
+    /// password and steps up with Microsoft). Idempotent: does nothing when that (tenant, object id) is already linked.
+    /// Returns the operator's user id.
+    /// </summary>
+    public async Task<string> LinkLocalOperatorToEntraAsync(string username, StubOidcSettings oidc, string objectId)
+    {
+        await using var scope = liveServices.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        var user = await users.GetByIdentityLinkAsync(IdentitySource.Local, username).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"No local operator '{username}'.");
+        var key = ProviderIdentityKey.Entra(oidc.TenantId, objectId);
+        if (await users.GetByIdentityLinkAsync(key).ConfigureAwait(false) is null)
+        {
+            var now = DateTimeOffset.UtcNow;
+            await users.AddIdentityLinkAsync(
+                user.Id,
+                new IdentityLink(IdentitySource.Entra, objectId, LastAuthenticatedAt: now, TenantId: oidc.TenantId, LinkedAt: now)).ConfigureAwait(false);
+        }
+
+        return user.Id.Value;
+    }
+
     /// <summary>Sets the persisted instance sign-in policy flag the login page reads through <c>GET /api/auth/sign-in-options</c>.</summary>
     public async Task SetAutoRedirectToEntraAsync(bool enabled)
     {

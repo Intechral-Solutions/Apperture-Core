@@ -3,6 +3,7 @@ using System.Text.Json;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
@@ -124,6 +125,14 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     private async Task OnTokenValidatedAsync(TokenValidatedContext ctx)
     {
         var identity = (ClaimsIdentity?)ctx.Principal?.Identity;
+        if (identity is not null)
+        {
+            // Session-assurance claims are only ever issued by this host. A token that happens to carry claims in that namespace
+            // (a tenant claims-mapping policy) must not become assurance on the session.
+            AuthenticationAssuranceClaims.Remove(identity);
+            RecentAccountVerificationClaims.Remove(identity);
+        }
+
         identity?.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra"));
 
         var isLinking = EntraLinkFlowConstants.IsLinkPurpose(ctx.Properties);
@@ -205,17 +214,40 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         }
     }
 
+    /// <summary>
+    /// Completes an Entra step-up on the identity provider's callback, which is a CROSS-SITE <c>form_post</c>: the browser
+    /// withholds the ordinary SameSite=Lax session cookie from it (SEC-1 finding F8), and this method never reads it. Nothing
+    /// about the operator comes from the ambient request (<c>HttpContext.User</c>, the cookie scheme). Everything comes from
+    /// the OIDC handler's protected state, which the framework has already unprotected and bound to this browser's
+    /// correlation cookie, and the identity comes from the id_token it just validated:
+    /// <list type="number">
+    /// <item>the continuation (initiating user, requested authentication context, session kind) is recovered from the protected
+    /// properties; if any part is missing the step-up is refused;</item>
+    /// <item><see cref="IEntraStepUpService"/> independently proves that the returned <c>tid</c> + <c>oid</c> is the initiating
+    /// user's own proven Entra link in the active tenant (no email, UPN or oid-alone fallback), and that the requested
+    /// authentication context was satisfied. It never links, relinks or provisions;</item>
+    /// <item>only then is a session of the initiating kind issued with the step-up assurance claims.</item>
+    /// </list>
+    /// </summary>
     private async Task CompleteStepUpAsync(TokenValidatedContext ctx, string objectId, string tenantId)
     {
         var stepUp = ctx.HttpContext.RequestServices.GetService<IEntraStepUpService>();
         var initiatingUserId = EntraLinkFlowConstants.GetInitiatingUserId(ctx.Properties);
-        var requested = EntraAuthenticationContextId.TryNormalize(
-            EntraStepUpFlowConstants.GetRequestedContextId(ctx.Properties)
-            ?? _entra.CurrentValue.AuthenticationContextId);
+        var sessionSource = EntraStepUpFlowConstants.GetSessionSource(ctx.Properties);
+        var requested = EntraAuthenticationContextId.TryNormalize(EntraStepUpFlowConstants.GetRequestedContextId(ctx.Properties));
 
-        if (stepUp is null || string.IsNullOrEmpty(initiatingUserId) || requested is null)
+        if (stepUp is null)
         {
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.NotConfigured);
+            return;
+        }
+
+        var clock = ctx.HttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        var stale = !EntraStepUpFlowConstants.IsFresh(ctx.Properties, clock.GetUtcNow());
+        if (string.IsNullOrEmpty(initiatingUserId) || sessionSource is null || requested is null || stale)
+        {
+            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, stale ? "reason=continuation_stale" : "reason=continuation_invalid");
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.ContinuationInvalid);
             return;
         }
 
@@ -237,28 +269,105 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
         }
 
-        var existing = await ctx.HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        if (existing.Succeeded != true || existing.Principal?.Identity is not ClaimsIdentity cookieIdentity)
+        var users = ctx.HttpContext.RequestServices.GetService<IUserRepository>();
+        var user = users is null ? null : await users.GetByIdAsync(new UserId(initiatingUserId), ctx.HttpContext.RequestAborted);
+        if (user is null)
         {
+            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=user_not_found");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
             return;
         }
 
-        var merged = (ClaimsIdentity)cookieIdentity.Clone();
+        var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
+        var redirect = ManagementUiRedirects.Build(_configuration, returnPath, "steppedUp", "1");
+        var now = DateTimeOffset.UtcNow;
+
+        if (sessionSource == EntraStepUpFlowConstants.SessionSourceEntra)
+        {
+            // An Entra session is re-issued exactly as a normal Entra sign-in issues it: the framework signs in the validated
+            // principal (whose tid + oid the step-up service just proved belong to the initiating user) with its saved tokens.
+            // Only the step-up assurance is added, and the continuation is dropped so it never rides in the session cookie.
+            if (ctx.Principal?.Identity is not ClaimsIdentity entraIdentity)
+            {
+                FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.InvalidIdentity);
+                return;
+            }
+
+            AuthenticationAssuranceClaims.Replace(
+                entraIdentity,
+                AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism,
+                now,
+                requested,
+                developmentSimulated);
+            ctx.Properties ??= new AuthenticationProperties();
+            EntraStepUpFlowConstants.RemoveContinuation(ctx.Properties);
+            ctx.Properties.RedirectUri = redirect;
+            EntraSignInChallenge.EnsureSafePostAuthenticationRedirect(ctx.Properties, _configuration);
+            return;
+        }
+
+        // A local session is re-issued from the user record, in the same shape local sign-in issues it, plus the assurance.
+        var localLink = user.IdentityLinks.FirstOrDefault(l => l.Source == IdentitySource.Local);
+        if (localLink is null || string.IsNullOrWhiteSpace(localLink.ExternalId))
+        {
+            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=no_local_identity");
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
+            return;
+        }
+
+        // Re-issuing a local session must honour the same gates local sign-in enforces: local sign-in enabled for the instance
+        // and an active local credential. (A disable that happened while the operator was at Microsoft must not mint a fresh session.)
+        var localOptions = ctx.HttpContext.RequestServices.GetService<IOptionsMonitor<LocalAuthOptions>>()?.CurrentValue;
+        var credentials = ctx.HttpContext.RequestServices.GetService<ILocalCredentialRepository>();
+        var credential = credentials is null ? null : await credentials.GetByUserIdAsync(user.Id, ctx.HttpContext.RequestAborted);
+        if (localOptions is not { Enabled: true } || credential is null || credential.IsDisabled)
+        {
+            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=local_session_unavailable");
+            FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.LocalSessionUnavailable);
+            return;
+        }
+
+        var localIdentity = LocalSessionIdentity.Create(user.DisplayName, localLink.ExternalId);
         AuthenticationAssuranceClaims.Replace(
-            merged,
+            localIdentity,
             AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism,
-            DateTimeOffset.UtcNow,
+            now,
             requested,
             developmentSimulated);
         await ctx.HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
-            new ClaimsPrincipal(merged),
-            existing.Properties);
+            new ClaimsPrincipal(localIdentity),
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = now.Add(LocalSessionIdentity.Lifetime) });
 
-        var returnPath = EntraStepUpFlowConstants.GetReturnPath(ctx.Properties);
-        ctx.Response.Redirect(ManagementUiRedirects.Build(_configuration, returnPath, "steppedUp", "1"));
+        ctx.Response.Redirect(redirect);
         ctx.HandleResponse();
+    }
+
+    /// <summary>Records a step-up refusal the step-up service never saw (its input was already unusable). No token, claim or state content.</summary>
+    private static async Task AppendStepUpAuditAsync(TokenValidatedContext ctx, string objectId, string? initiatingUserId, string reason)
+    {
+        var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
+        if (audit is null)
+            return;
+
+        var details = string.IsNullOrEmpty(initiatingUserId) ? $"oid={objectId} {reason}" : $"userId={initiatingUserId} oid={objectId} {reason}";
+        var record = new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            new ActorId(string.IsNullOrEmpty(initiatingUserId) ? objectId : initiatingUserId),
+            StrongAuthenticationAuditActionNames.StepUpFailed,
+            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
+            "auth",
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            details);
+        try
+        {
+            await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
+        }
+        catch
+        {
+            // Auditing must never block the refusal.
+        }
     }
 
     private async Task<bool> TryIssueAccessRequestSessionAsync(TokenValidatedContext ctx, string objectId, string tenantId)

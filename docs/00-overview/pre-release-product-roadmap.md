@@ -150,8 +150,9 @@ reset, cutting across several of them.
    **SEC-1.0 (the opt-in Playwright browser proof harness and the baseline reproduction of the browser findings) is
    delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1). **SEC-1A1 (centralized
    expired-session recovery) is implemented on that branch (gate §39), and **SEC-1A2a (the shared safe return-target policy,
-   the normal sign-in and failed/cancelled Entra sign-in flow) is implemented on it (gate §40); step-up continuation
-   (SEC-1A2b), SEC-1A3 and every SEC-1B slice have not started and SEC-1 is not complete.**
+   the normal sign-in and failed/cancelled Entra sign-in flow) is implemented on it (gate §40), and **SEC-1A2b (Entra step-up
+   continuation across the cross-site OIDC callback) is implemented on it (gate §41; real Entra and Safari remain manual checks);
+   SEC-1A3 and every SEC-1B slice have not started and SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must

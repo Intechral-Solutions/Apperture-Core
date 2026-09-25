@@ -124,6 +124,7 @@ public sealed class ManagementAuthEndpointsTests
         await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: null);
         using var client = Client(host);
         client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
 
         var response = await client.GetAsync("/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1");
 
@@ -138,6 +139,7 @@ public sealed class ManagementAuthEndpointsTests
         await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: "c1");
         using var client = Client(host);
         client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
 
         var response = await client.GetAsync("/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1");
 
@@ -367,6 +369,7 @@ public sealed class ManagementAuthEndpointsTests
         await using var host = await StartAsync(capture, entraEnabled: true, authenticationContextId: "c1", environment: "Production");
         using var client = Client(host);
         client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
         var (state, cookies) = await BeginChallengeAsync(client, "/signin/step-up?returnUrl=%2Fconfig%2Fgovernance%2Fusers%2Fusr-1%23roles");
 
         var response = await PostCallbackAsync(client, state, cookies, ("error", "access_denied"));

@@ -5,7 +5,8 @@ Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are se
 SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, SEC-1A1
 (centralized expired-session recovery) is implemented and proven in browsers, recorded in §39, and SEC-1A2a (the shared
 safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
-in §40. SEC-1A2b (step-up continuation), SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
+in §40, and SEC-1A2b (Entra step-up continuation across the cross-site callback, finding F8) is implemented and proven in Chromium and
+Firefox, recorded in §41. SEC-1A3 and every SEC-1B slice have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -48,7 +49,7 @@ Brief discrepancies found while verifying the brief:
 | F5 | The return-URL validator accepts `/\evil.example`, and the browser resolves it off-origin (**open redirect**). .NET `Uri` resolves it on-origin (verified in this session). | Reproduced in browsers by SEC-1.0 (§0.1) | 1A2a — **fixed (§40)** |
 | F6 | With auto-redirect to Entra enabled, `/login?error=…` redirects to Entra again, which can loop. **Corrected by SEC-1.0:** no loop; the feature effectively never fired on a real entry (N2). | Code fact (logic); loop **not reproduced** | 1A2a — **corrected and fixed (§40)**: the feature works, once, and never on an error |
 | F7 | In production, a cancelled or failed Entra sign-in (`OnRemoteFailure`) is unhandled, so the operator gets a raw 500 `problem+json` document on the API host. | Code fact; reproduced in browsers by SEC-1.0 | 1A2a — **fixed (§40)** |
-| F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). Reproduced on Chromium and Firefox by SEC-1.0 | **1A2b — not started; SEC-1A2a leaves it exactly as measured** |
+| F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). Reproduced on Chromium and Firefox by SEC-1.0 | 1A2b — **fixed in Chromium and Firefox (§41)**; real Entra and Safari remain manual checks |
 | F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
 | F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
 | F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 |
@@ -83,7 +84,7 @@ Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F
 | F5 | **Reproduced** (C full matrix; F/W the five decisive values) | 10 hostile values leave the origin in a real browser; the validator accepts all 10 (§38.2). `/\evil.example`, the TAB form and the CR LF form navigate to `http://evil.example/` on Chromium, Firefox **and** WebKit (signed-in `/login` bounce); the full 26-value matrix, and post-sign-in navigation, ran on Chromium. .NET `Uri` resolves every one on-origin. The host's `/signin` cannot leave the origin (authority is fixed) but turns them into a `//evil.example` **path** on the UI origin, and answers CR/LF with an unhandled 500. | `OpenRedirectBaselineTests` | 1A2a — **flipped** (§40): no hostile value escapes; all end on `/control/center` |
 | F6 | **Not reproduced** as a loop (C) | Auto-redirect is ON, host returns `/login?error=tenant_mismatch`: **0** provider round trips on a direct load of `/login`, on the host's own error redirect and on a protected-route reload. `Login.razor` only auto-redirects from `OnAfterRenderAsync(firstRender)` when the sign-in options are already loaded; on every real entry they are not. It fires exactly once when entered in-app (link from `/login/local`), and the error return is a document load, so it does not fire again. The hazard in the code is real; the observed behavior is "auto-redirect mostly never fires". **New (N2):** the feature itself is effectively dead on real entries. | `OidcFlowBaselineTests.F6_…` | 1A2a — **flipped** (§40): auto-redirect now fires once after the options load; the `error` guard, the recent-attempt marker and the bare-visit rule are pinned |
 | F7 | **Reproduced** (C) | Provider `access_denied` and `server_error` (Testing environment = the Production branch): the browser ends on `http://localhost:{api}/signin-oidc`, `POST … → 500`, `application/problem+json`, body `{"type":"https://httpstatuses.com/500","title":"An error occurred while processing your request.","status":500,"correlationId":…}`. One provider round trip, no loop. | `OidcFlowBaselineTests.F7_…` | 1A2a — **flipped** (§40): `error=cancelled` / `error=oidc`, stable panel, one 302 |
-| F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | **1A2b** (the baseline is unchanged by 1A2a and still pins `error=user_not_found`) |
+| F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | 1A2b — **flipped** (§41): the callback still arrives cross-site without the session cookie, and step-up now succeeds |
 | F9 | **Reproduced** (C) | With no operator input after load, the Toast poll at +7 h returned 200 **and re-issued the session cookie** (`Set-Cookie: .AspNetCore.Cookies … expires; samesite=lax`); the poll at +13 h was still 200 (and renewed again). Control: the original ticket replayed at +13 h → 401. | `SessionRenewalBaselineTests` | 1A3 |
 | F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 — **flipped** (401 half: one recovery, watcher stops) / 1A3 (renewal half, unchanged) |
 | F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 |
@@ -695,7 +696,7 @@ with a startup warning). There is no `Off`.
 - On error it shows a stable house error panel ("Sign-in with Microsoft didn't complete." / "Sign-in was cancelled."). The panel offers
   **Try again** (an explicit, manual Entra navigation) and, where the auth UI policy shows it, local sign-in.
 
-**Step-up callback (mandatory investigation and fix, F8):**
+**Step-up callback (mandatory investigation and fix, F8; implemented in SEC-1A2b, §41, following this design with the refinements recorded there):**
 - SEC-1.0 proves whether `CompleteStepUpAsync` receives the application cookie during the cross-site `form_post`.
 - If it does not, the continuation is redesigned so that the state step-up needs survives through **protected
   `AuthenticationProperties`** (OIDC `state`), which is already how the link flow carries `initiatingUserId`. The candidate design:
@@ -909,7 +910,7 @@ the header would break every UI mutation, so the two must land atomically. SEC-1
 |---|---|---|---|
 | **SEC-1.0 — browser proof harness** — **delivered 2026-09-24 (§0.1, §38)** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
 | **SEC-1A1 — session-loss detection and recovery** — **delivered (§39)** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
-| **SEC-1A2 — return URL and login/error/step-up** — **split; SEC-1A2a delivered (§40), SEC-1A2b (step-up continuation) not started** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
+| **SEC-1A2 — return URL and login/error/step-up** — **split; SEC-1A2a delivered (§40), SEC-1A2b (step-up continuation) delivered (§41)** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
 | **SEC-1A3 — background requests, renewal and capability refresh** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
 | **SEC-1B1 — server request-forgery policy** | `BrowserRequestTrustMiddleware` + options (exact trusted origins, Mode, startup validation), Rules U/G/N, exemption metadata on `Enroll` + OIDC path exemptions, `problem+json` 403, logging/meter, **client `X-Apperture-Request` header in the same change**, test-factory default handler, F18 pin, guards (exemptions, order, header literals) | 1.0 | §29.4 (I, S) |
 | **SEC-1B2 — endpoint verb cleanup and logout** | G1/G2 → POST (+ client); re-confirm G3–G5 and G9b classifications; `/signout` → POST with Rule N + hidden-form UI in three places; remove GET `/signout` and unused `POST auth/local/logout`; remove Ui.Server's dead `HttpClient`/`ManagementClient`/capabilities registrations; GET-classification guard | 1B1 | §29.4 verb/logout rows |
@@ -1187,7 +1188,7 @@ origin, which is what Rule U will compare.
 |---|---|
 | 1A1 | F1, F3, F4, F10 (401 half), simultaneous-401, history (review) |
 | 1A2a | F5 (flipped), F6 (flipped), F7 (flipped), N6 (flipped: a control character is refused, never a 500); N2 (the auto-redirect now works). **N1 is not changed** (§40.8). |
-| 1A2b | F8 (`StepUpCallbackBaselineTests`, unchanged so far) |
+| 1A2b | F8 (`StepUpCallbackBaselineTests`, flipped: §41) |
 | 1A3 | F9, F10 (poll half) |
 | 1B1 | F11 (same-site sibling form and fetch must be rejected), the Origin/Fetch-Metadata probe becomes the positive-path suite |
 | 1B3 | F16 (Secure), F13/F15 assertions |
@@ -1428,7 +1429,7 @@ new ticket's expiry from the real clock, so a browser test that advanced the coo
 ### 40.8 Findings left exactly as they were
 
 - **F8** (step-up): the `StepUpCallbackBaselineTests` baseline is untouched and still measures the cross-site `form_post` callback arriving without the
-  session cookie and ending `error=user_not_found`. **Handed to SEC-1A2b.** The ordinary session cookie was not loosened.
+  session cookie and ending `error=user_not_found`. **Handed to SEC-1A2b, which fixed it (§41).** The ordinary session cookie was not loosened.
 - **F9** / F10 renewal half (SEC-1A3), **F11** (1B1), **F12** side-effect GETs and `GET /signout` (1B2), **F13–F16** CORS, cookie and host hygiene
   (1B3), F17, F18: not touched. The A2a slice only swapped the validator behind the existing step-up and link return paths (and made their
   failure legs redirect); it did not change their continuation.
@@ -1464,3 +1465,111 @@ duration is the evidence that SQL ran; no separate database write-marker check w
 the suite uses them): **284 / 284 passed** in about 19 minutes (was 173 at SEC-1A1). The additions are the return-target matrix (three flows over the
 hostile, auth-surface and legitimate corpus, and the per-engine key cases), `EntraReturnTargetBrowserTests`, the flipped F6/F7 cases and the always-on
 corpus-versus-policy tests; the flipped F5/F6/F7/F2 tests replaced their baselines.
+
+---
+
+## 41. SEC-1A2b — Entra step-up continuation across the cross-site callback (2026-09-26)
+
+Scope: finding F8 only. Not touched: background renewal (SEC-1A3), request forgery and every other SEC-1B item, `N1`. The ordinary application
+session cookie was **not** loosened (still `SameSite=Lax`, `HttpOnly`; pinned by a unit test and a source guard).
+
+### 41.1 The failure mechanism (recap of §0.1 F8)
+
+Step-up starts as a top-level navigation (the Lax session cookie is sent). Microsoft returns by a cross-site `form_post`, which browsers send
+without a Lax cookie. The old `CompleteStepUpAsync` then called `AuthenticateAsync(Cookies)` to *merge the step-up assurance claims onto the
+existing session*; with no cookie it failed as `error=user_not_found`. Step-up therefore never worked in a browser, for any session kind. (The
+merge was also unsound: on a browser that did send the cookie, it layered the callback's assurance onto whatever session was there.)
+
+### 41.2 Architecture
+
+The callback no longer reads the ambient session at all. Everything comes from two trusted places: the OIDC handler's **protected state**
+(`AuthenticationProperties`, already unprotected and bound to this browser's correlation cookie, which is the mechanism account linking already
+uses for its initiating user) and the **validated id_token principal**.
+
+| Continuation item (protected `AuthenticationProperties`) | Why the callback needs it |
+|---|---|
+| purpose = step-up (existing) | so the state cannot be used as a link or sign-in (and vice versa); checked before any association service is reached |
+| initiating Apperture user id (existing key, shared with link) | who is stepping up |
+| requested authentication context (existing) | what the token must prove |
+| return path (existing), validated by the shared `LocalReturnUrl` policy | where to land; fragment kept, `steppedUp=1` inserted before it |
+| **session kind** `Local` or `Entra` (new) | to re-issue the same kind of session without the old cookie; a kind, never an authorization decision (permissions are evaluated per request) |
+| **`ExpiresUtc` = issue + 15 min** (new use of the built-in field) | the OIDC handler does **not** enforce the state's own expiry (proven by a test: a state expired three hours ago was accepted); the callback enforces it, and a state with no expiry is refused |
+
+Nothing else rides along: no credential, cookie content, token, claim dump or authorization decision (a unit test asserts the exact key set).
+A missing or unknown part of the continuation is refused as `continuation_invalid`.
+
+**Callback order.** (1) recover and validate the continuation, (2) `IEntraStepUpService.CompleteAsync` proves the returned identity, (3) load the
+initiating user, (4) re-issue the session, (5) redirect. Step 2 is the existing service, unchanged: identity key **`Source + TenantId(tid) +
+ExternalId(oid)`** looked up through `IUserRepository.FindIdentityLinkAsync`; the token's `tid` must equal the active registration's tenant; the
+link's owner must equal the initiating user (ordinal); the link must be proven; the requested `acrs` context must be present. No email, UPN, display
+name or oid-alone path exists (source guard), and the service never links, relinks or provisions (source guard + tests assert no identity-link write).
+
+**Re-issuing the session (step 4).**
+- *Entra session kind:* the framework signs in the validated principal (whose tid + oid step 2 just proved are the initiator's) with its saved tokens,
+  exactly as a normal Entra sign-in does; only the step-up assurance claims are added and the continuation (and the state's expiry) is removed so it
+  cannot become the session's expiry (the ticket keeps the normal 12 h).
+- *Local session kind:* rebuilt from the user record by the new `LocalSessionIdentity` (the one definition of the local session identity, now also
+  used by local sign-in), plus the assurance claims, persistent 12 h. Because a fresh session is minted, the callback re-applies the gates local
+  sign-in enforces: local sign-in enabled and an active local credential, else `local_session_unavailable` (review finding, fixed).
+- Emergency (break-glass) sessions and sessions of an unrecognised kind do not start Entra step-up (409, code `session_kind_unsupported`). This never
+  worked in a browser before, so nothing regresses.
+
+**Existing step-up model unchanged:** the grant is still the assurance claims (`apperture.auth.assurance.*`) on the session cookie, same mechanism, same
+recent-strong-authentication lifetime, evaluated by the same evaluator; native TOTP and recovery-code MFA and local sign-in are not touched.
+
+### 41.3 Identity binding, and what the callback does not do
+
+A callback cannot succeed on "state says user A": the returned identity must be A's own proven link in the active tenant, or the step-up is refused with
+`identity_mismatch` / `tenant_mismatch` / `unproven` / `authentication_context_not_satisfied` and **no** session change and no link write. Login-CSRF
+analysis: the callback now issues a session (before, it merged onto one). An attacker would have to place their own state, code and correlation/nonce
+cookies in a victim's browser, which requires setting the `.AspNetCore.Correlation.*` and `.Nonce.*` cookies on the victim; the residual risk is the same
+as the existing `/signin` and `/signin/link` callbacks, which already issue sessions, and even then the session is only the initiator's, after the
+initiator's own tid + oid was proven. Replay: the framework deletes the correlation and nonce cookies on first use and the code is single-use at the
+provider; the framework adds no replay store and none was added. The pending state is not bound to the initiating *session*: if the operator signs out
+while at Microsoft, completing Microsoft still yields a session, for the same user, after that user's own proof (accepted; the old design failed closed
+only because it always failed).
+
+### 41.4 Also fixed while here (review)
+
+- A local-session re-issue no longer bypasses the local-credential and local-auth-enabled gates (Important).
+- Normal Entra sign-in now strips session-assurance claims from the incoming id_token principal, so a tenant claims-mapping policy emitting
+  `apperture.auth.assurance.*` cannot forge assurance (step-up already replaced them).
+- The break-glass refusal has its own code (it reused `not_configured`).
+- Step-up audit: the existing service still records `StepUpSatisfied` for the identity proof; a later callback refusal (user gone, no local identity,
+  local session unavailable, stale or invalid continuation) appends its own `StepUpFailed` with a bounded `reason=` (no token, claim, state or cookie
+  content). A `satisfied` record therefore means "identity proven", and a session was issued only if no `failed` record follows it.
+- Recent-account-verification claims (a local password unlock) are not carried into the re-issued session: the safe direction (re-verify).
+- The local session's 12 h window is now counted from the step-up (before, it would have inherited the old ticket); a local sign-in has the same shape.
+
+### 41.5 Tests and evidence
+
+| Where | Proves |
+|---|---|
+| `EntraStepUpCallbackTests` (real OIDC handler, real `EntraStepUpService`, fake token endpoint / user store / audit; **39 tests**) | the callback with nonce + correlation cookies and **no session cookie** succeeds for both session kinds; a *different user's* session cookie on the request changes nothing; wrong user, wrong tenant, unknown identity, unproven link, missing context, missing/unknown/tampered/expired/expiry-less continuation, missing correlation cookie, replay, user gone, local credential disabled or absent, Entra-kind refusals: all refuse with no session and no link write; only the minimum keys ride in the state; hostile return targets fall back; account linking and normal sign-in (deep link with query + fragment, refused targets, cancellation) are unchanged |
+| `EntraStepUpSecurityGuardTests` | session cookies stay `SameSite=Lax`; no `SameSiteMode.None` in application source; the callback body never reads `AuthenticateAsync` / `HttpContext.User` / request cookies; the continuation lives only in OIDC `AuthenticationProperties`; the step-up identity path is tid + oid only and never links |
+| `StepUpCallbackBaselineTests` (**F8 flipped**, Chromium and Firefox) | in each browser: the callback is a cross-site POST carrying only OIDC flow cookies and **no session cookie**; step-up nevertheless succeeds for an Entra-signed-in and for a local-signed-in operator; `auth/me` shows the **same user** and the session kind kept, `hasRecentStrongAuthentication` false → true; the callback's own `Set-Cookie` is the session, `samesite=lax`; return page, query and fragment honored; no `user_not_found`; different-user, other-tenant, unknown-identity and no-context are refused with a bounded code, no session issued, the operator's own session untouched; a cancelled step-up returns with `error=oidc`, no loop; hostile return targets fall back to `/account` |
+
+WebKit is not run: Playwright's Windows WebKit cannot complete an OIDC handshake here (§38.4); it is not simulated. Safari is a manual item.
+
+### 41.6 Manual checks that remain (real Microsoft Entra, Safari)
+
+1. Configure a test tenant with an authentication context (Conditional Access) and set its id on the active registration. Sign in (locally with a linked
+   Microsoft account, and separately with Microsoft).
+2. From Account › Security (or a step-up-protected action), start **Verify with Microsoft**; complete real Microsoft authentication and the CA challenge.
+3. Confirm you land on the original page (path, query, fragment) with a success message, **not** `error=user_not_found`, and that the step-up-protected
+   operation now succeeds; `GET /api/auth/me` reports `hasRecentStrongAuthentication: true`.
+4. If practical, inspect the callback in the browser devtools: `POST /signin-oidc` carries only the OIDC correlation/nonce cookies, no `.AspNetCore.Cookies`,
+   and its response sets `.AspNetCore.Cookies` (`SameSite=Lax`).
+5. Cancel at Microsoft: you return to the same page with the bounded error and your session is intact.
+6. Wrong account (a Microsoft account linked to a different Apperture user, or unlinked): the step-up is refused (`identity_mismatch`), nothing changes.
+7. Repeat 2–3 on Safari (macOS and iOS) and confirm Safari's handling of the cross-site POST (it may or may not send the Lax cookie: the flow must work either way).
+8. Check the sign-in cookie sizes with and without saved tokens are unchanged for an Entra step-up (the framework re-issues the session with its tokens).
+
+### 41.7 Validation (final code, repo-local `artifacts/sec1a2b`)
+
+`dotnet build Apperture.slnx`: 0 errors. UnitTests 3 079 passed (was 3 034); ArchTests 38; Ui.Shared.Tests 1 381; Ui.Client.Tests 325;
+IntegrationTests 262 passed in about 6 minutes against the test SQL container (the soft-skip pattern returns in milliseconds, so the duration is the
+evidence that SQL ran; no separate database write-marker check was made). Browser suite (`APPERTURE_BROWSER_TESTS=1`, all engines where the suite uses
+them): **300 / 300 passed** in about 18 minutes (was 284 at SEC-1A2a; the single F8 baseline was replaced by 18 step-up cases). An independent
+read-only review found no Critical issue and one Important issue (the local-session gates, §41.2), fixed with tests; its Minor findings are addressed in
+§41.3–41.4 or accepted there.
