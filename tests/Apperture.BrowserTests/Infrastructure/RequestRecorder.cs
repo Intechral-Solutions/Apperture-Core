@@ -27,6 +27,7 @@ public sealed record ObservedRequest(
     bool SessionCookiePresent,
     IReadOnlyList<string> CookieNames,
     bool CustomHeaderPresent,
+    string? PlatformRequestHeaderValue,
     bool BackgroundHeaderPresent,
     IReadOnlyList<string> SetCookieSummaries)
 {
@@ -87,6 +88,7 @@ public sealed class RequestRecorder
             cookieHeader.Contains(SessionCookieName, StringComparison.Ordinal),
             CookieNamesOf(cookieHeader),
             request.Headers.ContainsKey(PlatformRequestHeader),
+            Header(request, PlatformRequestHeader),
             request.Headers.ContainsKey(BackgroundRequestHeader),
             setCookies!));
     }

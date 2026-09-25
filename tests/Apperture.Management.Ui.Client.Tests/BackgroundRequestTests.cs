@@ -86,6 +86,7 @@ public sealed class BackgroundRequestTests
         using var client = new HttpClient(handler);
         await client.SendAsync(request);
         request.Headers.Contains(BackgroundActivity.HeaderName).Should().BeFalse();
+        request.Headers.GetValues(BrowserRequest.HeaderName).Should().Equal(BrowserRequest.HeaderValue);
 
         release.SetResult();
         await background;
@@ -100,17 +101,20 @@ public sealed class BackgroundRequestTests
         using var client = new HttpClient(handler);
         await client.SendAsync(foreground);
         foreground.Headers.Contains(BackgroundActivity.HeaderName).Should().BeFalse();
+        foreground.Headers.GetValues(BrowserRequest.HeaderName).Should().Equal(BrowserRequest.HeaderValue);
 
         using (BackgroundRequest.Begin())
         {
             using var background = new HttpRequestMessage(HttpMethod.Get, "https://app.test/api/probe");
             await client.SendAsync(background);
             background.Headers.GetValues(BackgroundActivity.HeaderName).Should().Equal(BackgroundActivity.HeaderValue);
+            background.Headers.GetValues(BrowserRequest.HeaderName).Should().Equal(BrowserRequest.HeaderValue);
         }
 
         using var after = new HttpRequestMessage(HttpMethod.Get, "https://app.test/api/probe");
         await client.SendAsync(after);
         after.Headers.Contains(BackgroundActivity.HeaderName).Should().BeFalse();
+        after.Headers.GetValues(BrowserRequest.HeaderName).Should().Equal(BrowserRequest.HeaderValue);
     }
 
     private sealed class StubHandler : HttpMessageHandler

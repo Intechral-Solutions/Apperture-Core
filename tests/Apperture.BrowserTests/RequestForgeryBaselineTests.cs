@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Apperture.BrowserTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -30,14 +31,15 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
     // ---- F11 scenarios (Chromium; every observed fact is also asserted on the other engines below) ---------
 
     /// <summary>
-    /// Cross-site auto-submitting form. The request IS delivered and carries an Origin, but SameSite=Lax
-    /// withholds the session cookie, so the host answers 401 and nothing changes. This is the only thing
-    /// standing between a cross-site page and the mutation today (no server-side forgery check exists).
+    /// Cross-site auto-submitting form. SEC-1B1 rejects it with 403 before authentication, whether or not
+    /// the browser attached the session cookie. SameSite=Lax still withholds the cookie on Chromium and Firefox.
+    /// Playwright's WebKit-Windows build has been observed to attach it; the rejection does not depend on that.
     /// </summary>
-    [BrowserFact]
-    public async Task Cross_site_form_post_is_delivered_without_the_session_cookie_and_changes_nothing()
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task Cross_site_form_post_is_rejected_and_changes_nothing(BrowserEngine engine)
     {
-        var (context, victim) = await NewVictimAsync(BrowserEngine.Chromium);
+        var (context, victim) = await NewVictimAsync(engine);
         await using var lease = context;
         var target = await CreateDisposableAsync(context);
 
@@ -49,21 +51,23 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
         post.Origin.Should().Be(harness.Origins.CrossSiteAttacker);
         post.SecFetchSite.Should().Be("cross-site");
         post.SecFetchMode.Should().Be("navigate");
-        post.SessionCookiePresent.Should().BeFalse("SameSite=Lax withholds the cookie on a cross-site POST");
-        post.Status.Should().Be(401);
+        if (engine != BrowserEngine.WebKit)
+            post.SessionCookiePresent.Should().BeFalse("SameSite=Lax withholds the cookie on a cross-site POST");
+        post.Status.Should().Be(403, "an untrusted Origin is rejected before the cookie is consulted");
+        post.PlatformRequestHeaderValue.Should().BeNull("a plain form cannot add the platform header");
         (await StateAsync(context, target)).Should().Be("Active", "no mutation occurred");
     }
 
     /// <summary>
-    /// F11 — REPRODUCED. A page on a same-site sibling origin (any other <c>localhost:{port}</c> in dev; a
-    /// sibling subdomain in production) submits the same bodyless form: the cookie IS attached and the
-    /// disposable context is archived. FLIPS IN SEC-1B1 (Rule U): the request must be rejected 403 before
-    /// authentication, and the context must stay Active.
+    /// F11 — FLIPPED IN SEC-1B1. A page on a same-site sibling origin still sends the Lax cookie and a
+    /// different Origin, and it still cannot add the platform header. Rule U rejects the request with 403
+    /// and the disposable context stays Active.
     /// </summary>
-    [BrowserFact]
-    public async Task F11_same_site_sibling_form_post_carries_the_cookie_and_mutates_state()
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task F11_same_site_sibling_form_post_is_rejected_before_the_mutation(BrowserEngine engine)
     {
-        var (context, victim) = await NewVictimAsync(BrowserEngine.Chromium);
+        var (context, victim) = await NewVictimAsync(engine);
         await using var lease = context;
         var target = await CreateDisposableAsync(context);
 
@@ -75,20 +79,20 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
         post.SecFetchSite.Should().Be("same-site");
         post.SessionCookiePresent.Should().BeTrue("same-site requests carry the Lax cookie");
         post.CustomHeaderPresent.Should().BeFalse("a plain form cannot add a header");
-        post.Status.Should().Be(200);
-        (await StateAsync(context, target)).Should().Be("Archived", "the forged request took effect");
+        post.PlatformRequestHeaderValue.Should().BeNull();
+        post.Status.Should().Be(403);
+        (await StateAsync(context, target)).Should().Be("Active", "the forged request did not take effect");
     }
 
     /// <summary>
-    /// Cross-site fetch, simple request (no custom header, no body). Delivered; no cookie; 401; the
-    /// response is not readable (no CORS allowance). Unreadable ≠ harmless in general, but here the
-    /// cookie's absence is what prevents the effect. (Only the top-level form POST above isolates SameSite as
-    /// the reason: a cross-site fetch could also lose the cookie to a browser's third-party-cookie blocking.)
+    /// Cross-site fetch, simple request (no custom header, no body). Delivered and unreadable. SEC-1B1
+    /// rejects the untrusted Origin with 403 even when the cookie is absent.
     /// </summary>
-    [BrowserFact]
-    public async Task Cross_site_fetch_simple_request_is_delivered_without_the_cookie_and_is_unreadable()
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task Cross_site_fetch_simple_request_is_rejected_and_unreadable(BrowserEngine engine)
     {
-        var (context, victim) = await NewVictimAsync(BrowserEngine.Chromium);
+        var (context, victim) = await NewVictimAsync(engine);
         await using var lease = context;
         var target = await CreateDisposableAsync(context);
 
@@ -99,8 +103,9 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
         post.Origin.Should().Be(harness.Origins.CrossSiteAttacker);
         post.SecFetchSite.Should().Be("cross-site");
         post.SecFetchMode.Should().Be("cors");
-        post.SessionCookiePresent.Should().BeFalse();
-        post.Status.Should().Be(401);
+        if (engine != BrowserEngine.WebKit)
+            post.SessionCookiePresent.Should().BeFalse();
+        post.Status.Should().Be(403);
         outcome.Should().StartWith("blocked", "the response carries no Access-Control-Allow-Origin for this origin");
         (await StateAsync(context, target)).Should().Be("Active");
     }
@@ -126,14 +131,15 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
     }
 
     /// <summary>
-    /// F11 — REPRODUCED (fetch form). A same-site sibling origin's simple credentialed fetch is delivered
-    /// with the cookie and mutates state even though the page can never read the response.
-    /// FLIPS IN SEC-1B1.
+    /// F11 — FLIPPED IN SEC-1B1 (fetch form). A same-site sibling origin's simple credentialed fetch is
+    /// still delivered with the cookie, and the page still cannot read the response. The host now rejects
+    /// it with 403 and the context stays Active. CORS readability is not what stops the mutation.
     /// </summary>
-    [BrowserFact]
-    public async Task F11_same_site_sibling_simple_fetch_mutates_state_although_the_response_is_unreadable()
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task F11_same_site_sibling_simple_fetch_is_rejected_although_the_response_is_unreadable(BrowserEngine engine)
     {
-        var (context, victim) = await NewVictimAsync(BrowserEngine.Chromium);
+        var (context, victim) = await NewVictimAsync(engine);
         await using var lease = context;
         var target = await CreateDisposableAsync(context);
 
@@ -144,9 +150,10 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
         post.Origin.Should().Be(harness.Origins.SameSiteAttacker);
         post.SecFetchSite.Should().Be("same-site");
         post.SessionCookiePresent.Should().BeTrue();
-        post.Status.Should().Be(200);
-        outcome.Should().StartWith("blocked", "CORS hides the answer; it does not stop the request");
-        (await StateAsync(context, target)).Should().Be("Archived", "CORS readability is not CSRF protection");
+        post.Status.Should().Be(403);
+        post.PlatformRequestHeaderValue.Should().BeNull();
+        outcome.Should().StartWith("blocked", "CORS hides the answer; the host rejection is what stops the mutation");
+        (await StateAsync(context, target)).Should().Be("Active", "CORS readability is not CSRF protection");
     }
 
     /// <summary>The header D1 requires cannot be attached by a sibling origin either: its preflight is refused today by UiDev.</summary>
@@ -345,6 +352,49 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
             withFetchMetadata.Should().Be(rows.Count, "Chromium sends Fetch Metadata on every request");
     }
 
+    /// <summary>
+    /// A real Management UI mutation, not a hand-built fetch. The login POST and a later appearance PUT
+    /// both come from the single client pipeline, so they carry the UI origin and <c>X-Apperture-Request: 1</c>.
+    /// </summary>
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task Legitimate_ui_requests_carry_the_exact_origin_and_platform_header(BrowserEngine engine)
+    {
+        await harness.ResetAsync();
+        await using var context = await harness.NewContextAsync(engine);
+        var page = await context.NewPageAsync();
+        harness.Recorder.Clear();
+
+        await page.GotoAsync(harness.Origins.Ui + "/login/local?returnUrl=" + Uri.EscapeDataString("/control/center"));
+        await page.Locator("#local-login-username").FillAsync(BrowserHarness.OperatorUsername);
+        await page.Locator("#local-login-password").FillAsync(HarnessSeeding.Passphrase);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/control/center", StringComparison.Ordinal));
+        await TestSupport.EventuallyAsync(
+            () => harness.Recorder.Where(r => r.Method == "POST" && r.Path == "/api/auth/local/login").Any(),
+            "the local sign-in POST to reach the host");
+
+        var login = harness.Recorder.Where(r => r.Method == "POST" && r.Path == "/api/auth/local/login").Single();
+        login.Origin.Should().Be(harness.Origins.Ui);
+        login.PlatformRequestHeaderValue.Should().Be("1");
+        login.Status.Should().Be(200);
+        login.BackgroundHeaderPresent.Should().BeFalse("signing in is operator activity, not a background poll");
+
+        await page.WaitForShellAsync();
+        await page.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Appearance:") }).ClickAsync();
+        var putsBefore = harness.Recorder.Where(r => r.Method == "PUT" && r.Path == "/api/account/preferences").Count;
+        await page.GetByRole(AriaRole.Menuitemradio, new() { Name = "Dark" }).ClickAsync();
+        await TestSupport.EventuallyAsync(
+            () => harness.Recorder.Where(r => r.Method == "PUT" && r.Path == "/api/account/preferences").Count > putsBefore,
+            "the appearance change to save account preferences");
+
+        var put = harness.Recorder.Where(r => r.Method == "PUT" && r.Path == "/api/account/preferences").Last();
+        put.Origin.Should().Be(harness.Origins.Ui);
+        put.PlatformRequestHeaderValue.Should().Be("1");
+        put.Status.Should().Be(200);
+        output.Line("legitimate", $"[{engine}] login {login} preferences {put}");
+    }
+
     // ---- helpers -------------------------------------------------------------------------------------------
 
     private async Task<(IBrowserContext Context, IPage Page)> NewVictimAsync(BrowserEngine engine)
@@ -360,10 +410,9 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
     private async Task<Disposable> CreateDisposableAsync(IBrowserContext victim)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var response = await victim.APIRequest.PostAsync(harness.Origins.Api + "/api/resource-contexts", new()
-        {
-            DataObject = new { name = "Disposable Sample " + suffix, slug = "disposable-" + suffix, description = "Created for a browser test." },
-        });
+        var response = await victim.APIRequest.PostAsync(
+            harness.Origins.Api + "/api/resource-contexts",
+            harness.TrustedApiCall(new { name = "Disposable Sample " + suffix, slug = "disposable-" + suffix, description = "Created for a browser test." }));
         response.Status.Should().Be(201, "the harness creates a throwaway context to attack");
         var id = (await response.JsonAsync())!.Value.GetProperty("id").GetString()!;
         return new Disposable(id, $"/api/resource-contexts/{id}/archive");

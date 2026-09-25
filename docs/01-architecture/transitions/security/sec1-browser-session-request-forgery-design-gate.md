@@ -8,7 +8,8 @@ safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is
 in §40, and SEC-1A2b (Entra step-up continuation across the cross-site callback, finding F8) is implemented and proven in Chromium and
 Firefox, recorded in §41. An independent review of the A-series found one Important trust-boundary issue (I-1, external
 Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 (background
-requests do not renew the sliding session) is implemented and recorded in §43. Every SEC-1B slice has not started.** SEC-1 is not complete.
+requests do not renew the sliding session) is implemented and recorded in §43. SEC-1B1 (the platform browser
+request-forgery policy) is implemented and recorded in §44. SEC-1B2, SEC-1B3 and the remaining slices have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -54,14 +55,14 @@ Brief discrepancies found while verifying the brief:
 | F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). Reproduced on Chromium and Firefox by SEC-1.0 | 1A2b — **fixed in Chromium and Firefox (§41)**; real Entra and Safari remain manual checks |
 | F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
 | F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
-| F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 |
+| F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 — **fixed (§44)** |
 | F12 | Two GETs write Apperture state (Entra directory users/groups). `GET /signout` ends the session (§18.1). | Code fact | 1B2 |
 | F13 | `UiDev` credentialed CORS is applied in every environment. | Code fact | 1B3 |
 | F14 | `Management.Api` has a standalone `Program.cs` with allow-any-origin CORS, no auth, and a launch profile on the API's port 9000. There is no supported standalone deployment. | Code fact | 1B3 |
 | F15 | `Ui.Server` startup appends to the hard-coded file `f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log` in every environment. Leftover agent-log script and `appertureShell.debugLog` calls (an undefined function) remain. | Code fact | 1B3 |
 | F16 | Cookie `Secure` is `SameAsRequest` in every environment, and SameSite relies on the framework default. | Code fact | 1B3 |
 | F17 | 33 `ManagementClient` methods collapse 401/403 (sometimes 404) to `null`. | Code fact. Harmless once the handler owns 401 (F1); the 403 UX part is deferred (§37). | — |
-| F18 | Nullable `[FromBody]` POSTs accept an empty body (e.g. `procedures/{p}/launch` launches with defaults). | Believed from ASP.NET rules; **pinned by test in 1B1** | 1B1 |
+| F18 | Nullable `[FromBody]` POSTs accept an empty body (e.g. `procedures/{p}/launch` launches with defaults). | Pinned (§44): a trusted empty POST reaches the action; an untrusted one is 403 before it | 1B1 — **pinned** |
 
 ### 0.1 SEC-1.0 evidence register (2026-09-24)
 
@@ -89,7 +90,7 @@ Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F
 | F8 | **Reproduced** (C/F); **not measurable** on WebKit; **real Entra Unverified** | Cross-site `form_post` to `/signin-oidc` from `127.0.0.1` (`Sec-Fetch-Site: cross-site`, `Origin: http://127.0.0.1:{p}`, method POST). The callback carries **only** the OIDC nonce and correlation cookies; `.AspNetCore.Cookies` is absent, though it was sent on the step-up initiation moments earlier (a browser-initiated top-level navigation, `Sec-Fetch-Site: none`). `CompleteStepUpAsync` cannot authenticate the cookie scheme and step-up returns `/account/security?error=user_not_found`. | `StepUpCallbackBaselineTests` | 1A2b — **flipped** (§41): the callback still arrives cross-site without the session cookie, and step-up now succeeds |
 | F9 | **Reproduced** (C) | With no operator input after load, the Toast poll at +7 h returned 200 **and re-issued the session cookie** (`Set-Cookie: .AspNetCore.Cookies … expires; samesite=lax`); the poll at +13 h was still 200 (and renewed again). Control: the original ticket replayed at +13 h → 401. | `SessionRenewalBaselineTests` | 1A3 |
 | F10 | **Partial** | Toast watcher after expiry: next tick → `401`, no navigation, no toast (C). "Polls forever with backoff" is read from code; one 401 tick was observed. The `RunDetail` 2 s poll was **not exercised** (needs a Run; **Unverified**). | `F10_background_toast_poll_…` | 1A1 — **flipped** (401 half: one recovery, watcher stops) / 1A3 (renewal half, unchanged) |
-| F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 |
+| F11 | **Reproduced** for same-site; cross-site blocked by SameSite (C/F); **WebKit-Windows differs** | Same-site sibling (`localhost:{other port}`): bodyless form POST and simple credentialed fetch both arrive with the session cookie and **archive a disposable context** (`200`); response unreadable by CORS. Cross-site (`127.0.0.1`): delivered with `Origin` but **no cookie**, `401`, nothing changed (C/F). On Playwright's WebKit-Windows build the cookie **was** attached cross-site (§38.4). | `RequestForgeryBaselineTests` | 1B1 — **flipped (§44)**: same-site and cross-site unsafe requests are 403 and the context stays Active |
 | — | **Reproduced** (simultaneous 401) | Three tabs meet the expired session together: 3 × `401`, 3 error panels, **0** `auth/me` probes, **0** navigations to sign-in. (A single tab yields one 401 per navigation: pages issue calls sequentially.) | `Simultaneous_401_baseline_…` | 1A1 — **flipped** (per tab: one probe, one sign-in navigation) |
 | — | **Reproduced** (history) | Expired reload replaces the protected entry with `/login` (Back → previous document). After a local sign-in, Back returns to `/login/local`, which immediately bounces the signed-in operator forward again (Back is trapped). | `HistoryBaselineTests` | 1A1 (review) — **extended**: the reload case is unchanged; a third test pins the in-app-recovery history (§39). Local sign-in Back-bounce unchanged (1A2). |
 | F13 | **Partial** | The existing `UiDev` policy refuses both cross-site and same-site-sibling preflights: a custom-header JSON POST is never delivered (C), and neither is PUT/PATCH/DELETE (C/F/W). Its being active outside Development is a code fact, not browser-provable here. | `RequestForgeryBaselineTests` | 1B3 |
@@ -1647,3 +1648,85 @@ Renewal suppression is on the application cookie scheme, which is the scheme loc
 ### 43.4 Evidence
 
 `dotnet build Apperture.slnx`: 0 errors (repo-local `artifacts/sec1-a3-slnx`). UnitTests 3 090 passed. ArchTests 38. Ui.Shared.Tests 1 381. Ui.Client.Tests 333. `BackgroundSessionRenewalTests`: background requests do not re-issue the cookie for Local and Entra tickets, with and without step-up assurance; the next foreground request does; a background request after expiry is 401 and mints no cookie. Browser suite (`APPERTURE_BROWSER_TESTS=1`): **301 / 301 passed** in about 26 minutes. F9 is flipped (`SessionRenewalBaselineTests`): the passive toast poll at the renewal threshold does not `Set-Cookie`, the session then expires, and recovery reaches `/login`. The same threshold with an operator Refresh does re-issue the cookie. IntegrationTests: 154 passed and 108 failed because the SQL fixture could not open `127.0.0.1,58361` (`SqlAvailable = false`), not because of an auth assertion. I-2 (browser suite gated off in normal CI) stays open. SEC-1 is not complete.
+
+---
+
+## 44. SEC-1B1 — platform browser request-forgery policy (2026-09-25)
+
+Scope: finding F11, Rule U and Rule G, the platform request header, and the F18 empty-body pin. Not in this slice: Rule N and `GET /signout` (SEC-1B2), Graph side-effect GET conversion (SEC-1B2), `UiDev` CORS, cookie `Secure`, SameSite changes, and production HTTPS/loopback startup refusal (SEC-1B3). The application cookie stays `SameSite=Lax`. SEC-1 is not complete.
+
+### 44.1 Pipeline
+
+`UseManagementHostExceptionHandling` → `UseCors("UiDev")` → `UseBrowserRequestTrust` → `UseAuthentication` → `UseAuthorization` → endpoints.
+
+`BrowserRequestTrustMiddleware` runs after CORS, so a preflight is answered before the policy, and before authentication, so a rejection is always 403 and does not consult the session cookie. Endpoint metadata is available there: the enroll exemption is visible, which is the proof that routing has already selected the endpoint. A rejection does not call the rest of the pipeline, so the action, the audit store, and any remote call are not reached.
+
+`OPTIONS` is allowed and is never treated as a mutation. `UiDev` itself is unchanged (SEC-1B3).
+
+### 44.2 What an unsafe `/api` request must present
+
+Unsafe methods are everything except `GET`, `HEAD` and `OPTIONS`. `POST`, `PUT`, `PATCH` and `DELETE` are the product verbs; any other method fails closed under the same rules. The path is `/api` or `/api/…` (case-insensitive). A path such as `/apiv2` is not covered; a source guard shows every controller route is under `/api`.
+
+For a covered unsafe request, in order:
+
+1. **Exact `Origin`.** One value, parsed as an origin (scheme, host, port only). It must equal the origin parsed from the live `ShellUi:ManagementUiUrl` (`ManagementUiRedirects.ResolveBaseUrl`; development fallback `http://localhost:9001`). The comparison reads that configuration when the request is classified, the same value post-login redirects use. It is not taken from the request. A startup snapshot would miss a host that supplies the URL while the application is composed (the browser harness does). Scheme and host compare case-insensitively; the port is exact. No suffix match, no wildcard, no blanket localhost, no `Host` header. `http://localhost:9001` does not trust `http://localhost:9002`, `http://127.0.0.1:9001`, `https://localhost:9001`, or `http://evil.localhost:9001`. A missing `Origin` is rejected. The literal `null` does not parse and is rejected. A configured URL that is not an origin (a path, userinfo, query, or fragment) leaves the trusted set empty and every unsafe `/api` request is rejected. Startup logs that condition. It does not fail the process: refusing a missing, loopback, or non-HTTPS URL outside Development is SEC-1B3.
+2. **`X-Apperture-Request: 1`.** One value, ordinal match. Missing, wrong, empty, comma-joined, or duplicated values are rejected. The constant lives once in `Apperture.Shared.Kernel.BrowserRequest`. It is not a credential and it does not replace the Origin check.
+3. **`Sec-Fetch-Site: cross-site` is rejected** even when Origin and the header are otherwise valid. `same-origin`, `same-site`, `none`, and a missing header do not reject by themselves. `same-site` is not trusted: a sibling origin still fails the exact Origin check. More than one Fetch Metadata value fails closed.
+
+**Rule G.** `GET` and `HEAD` under `/api` are rejected only when `Sec-Fetch-Site` is `cross-site` (or ambiguous). They do not require Origin or the platform header.
+
+**Failure.** `403` `application/problem+json`, title `Request blocked`, extension code `request_origin_rejected`, plus the correlation id. Never 401, and no `WWW-Authenticate`. The recovery handler ignores it. The log records method, route template, rule id, a bounded Origin, `Sec-Fetch-Site`, `Sec-Fetch-Mode`, and the correlation id. It does not record cookies, the body, or the query. `Authenticated` in that log is the principal before `UseAuthentication`, so it is false on every rejection and does not reveal whether a cookie was present.
+
+`BrowserRequestTrust:Mode` is `Enforce` (default) or `ReportOnly`. Report-only is honoured only in Development. Anywhere else it is ignored and a startup warning says enforcement stays on. There is no `Off`. An unknown mode string is `Enforce`.
+
+### 44.3 Exemptions
+
+| Exempt | Why | Mechanism |
+|---|---|---|
+| `POST /api/enroll` | Runtime enrollment is a machine client. The token is in the body. There is no browser session. | `[BrowserRequestTrustExempt("runtime enrollment: machine client, token-authenticated")]` on `EnrollController.Enroll` only |
+| `/signin-oidc`, `/signout-callback-oidc`, `/signout-oidc` | IdP `form_post` and sign-out callbacks. The framework already checks state, correlation, and nonce. | Exact paths from the live `OpenIdConnectOptions` (`CallbackPath`, `SignedOutCallbackPath`, `RemoteSignOutPath`) |
+
+Those callback paths are already outside `/api`, so the `/api` rules do not apply to them. The path list is still applied first, so a later change that moved a callback under `/api` would not start demanding the browser header. `POST /api/enroll/invitation` and any other enroll path are not exempt. A `GET` does not inherit the enroll exemption. No auth controller is exempt. Local login, MFA, break-glass, and the other anonymous unsafe `/api` POSTs are covered. `GET /signout` is unchanged and remains SEC-1B2 (D2).
+
+### 44.4 Client
+
+`BrowserRequestHeadersHandler` is the only writer. Every Management UI request gets `X-Apperture-Request: 1`. A `BackgroundRequest` scope also gets `X-Apperture-Background: 1`, as before. Background traffic is not exempt from Rule U. Features, Razor pages, and `ManagementClient` do not set either header. The session-recovery probe stays a credentials-only `GET auth/me`; Rule G does not require the header, and a 403 still does not start recovery.
+
+The integration factory sends `Origin: http://localhost:9001` and `X-Apperture-Request: 1` by default, matching `ShellUi:ManagementUiUrl` in that host. Rejection tests remove both.
+
+### 44.5 Non-browser callers
+
+No supported cookie-authenticated HTTP client is blocked by this contract.
+
+- The CLI host bootstraps in process. `CliCommandService` takes `IManagementClient` and is not registered as an HTTP caller.
+- Runtime workers do not call these Management routes.
+- `POST /api/enroll` is the machine enrollment client and is the exemption above.
+- `Ui.Server`'s `HttpClient` is the dead prerender registration SEC-1B2 removes. The live shell is the WebAssembly client, which uses the handler.
+- Test hosts and Playwright's API client send the header on purpose. Attacker pages do not, and the browser context does not add it globally (that would leak onto the attacker).
+
+### 44.6 Independent review
+
+Critical: none. Important: none left open.
+
+Reviewed: middleware order and side-effect suppression; Origin parsing (scheme, host, port, userinfo, path, `null`, missing); sibling-origin and localhost versus `127.0.0.1`; header absence, wrong value, and duplicates; Fetch Metadata (`cross-site` rejects, missing does not, `same-site` is not a bypass); `OPTIONS`; exemption breadth; login POSTs still covered; background header interaction; 403 versus 401; `/api` path coverage; the `Management.Api` stub host (F14, still SEC-1B3, not a supported cookie deployment). Production HTTPS and non-loopback startup refusal stays SEC-1B3, as the slice boundary required. SameSite and CORS were not changed.
+
+### 44.7 Evidence
+
+`dotnet build Apperture.slnx`: 0 errors (repo-local `artifacts/sec1-b1-slnx`). UnitTests 3 125 passed (was 3 090). ArchTests 38. Ui.Shared.Tests 1 381. Ui.Client.Tests 333. IntegrationTests **272 passed, 0 failed, 0 skipped** in 10 m 6 s (`artifacts/sec1-b1-int-full`, collections serialized). SQL execution, read from the test container without putting credentials on a command line: `Apperture_IntegrationTests` last user update `2026-09-25 21:22:00` → `22:46:06`; `Apperture_ManagementGovernanceTests` `21:14:33` → `22:47:59`; server UTC `22:48:19`. A parallel run earlier in the same session resolved the governance fixture to LocalDB (trusted connection, no SQL user) because `SqlServerTestConfigurationTests` mutates process environment; four structure-browse assertions then failed for that reason and the governance catalog on the test container did not move. The serialized run is the one counted above.
+
+Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, and WebKit): **312 passed, 0 failed, 0 skipped** in 26 m 34 s (`artifacts/sec1-b1-browser`). Was 301 at SEC-1A3. F11 is flipped on all three engines (`RequestForgeryBaselineTests`): a same-site sibling form and simple fetch, and a cross-site form and simple fetch, are 403 and leave the disposable context Active. Playwright's WebKit-Windows build still attaches the Lax cookie to a cross-site POST; the rejection does not depend on that, and it is not Safari. A legitimate local sign-in POST and the appearance-menu PUT both carry `Origin` equal to the UI origin and `X-Apperture-Request: 1`. `GET /signout` (D2) is still the old characterization. Preflight tests are unchanged (CORS is SEC-1B3).
+
+Host proofs in `BrowserRequestTrustHttpTests`: a trusted login reaches the action (401 for a bad password) and writes the failure audit; the same login without Origin or the header is 403 and writes nothing; sibling Origin, wrong header, and `Sec-Fetch-Site: cross-site` are 403; a cross-site GET is 403 and a GET without Fetch Metadata is not; `OPTIONS`, `POST /signin-oidc`, and `GET /signout` are not `request_origin_rejected`; `POST /api/enroll` is exempt and the invitation and extra paths are not; an untrusted connection create or delete does not write a row or a `connection.created` audit; a trusted empty `POST` launch of a missing integration returns `404` `integration_not_found` (F18), and the untrusted one is 403.
+
+### 44.8 Findings left open
+
+| Id | Status |
+|---|---|
+| F11 | **Fixed.** Same-site sibling and cross-site form/fetch are 403 and do not mutate (Chromium, Firefox, WebKit) |
+| F12, D2 | **Open.** `GET /signout` and the Graph side-effect GETs. SEC-1B2 |
+| F13, F14, F15, F16 | **Open.** CORS, the `Management.Api` stub host, the Ui.Server debug write, cookie `Secure`. SEC-1B3 |
+| F18 | **Pinned.** Empty trusted POST reaches the action; untrusted POST does not |
+| I-2 | **Open.** The browser suite stays gated off in normal CI. SEC-1B4 / closure |
+| N1 | Unchanged |
+
+SEC-1 is not complete.

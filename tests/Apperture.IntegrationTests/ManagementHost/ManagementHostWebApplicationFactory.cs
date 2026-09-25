@@ -1,6 +1,7 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
+using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -29,6 +30,7 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
             {
                 [$"{LocalAuthOptions.SectionName}:Enabled"] = "true",
                 [$"{LocalAuthOptions.SectionName}:MinPasswordLength"] = "8",
+                [ManagementUiRedirectKey] = TrustedUiOrigin,
             });
         });
         builder.ConfigureServices(services =>
@@ -56,5 +58,19 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
 
             services.AddSingleton<IPostConfigureOptions<AuthenticationOptions>, ManagementTestAuthenticationPostConfigure>();
         });
+    }
+
+    /// <summary>
+    /// The origin Rule U compares. Matches <see cref="ManagementUiRedirectKey"/> so existing tests satisfy the browser contract.
+    /// Rejection tests remove these headers.
+    /// </summary>
+    public const string TrustedUiOrigin = "http://localhost:9001";
+
+    public const string ManagementUiRedirectKey = "ShellUi:ManagementUiUrl";
+
+    protected override void ConfigureClient(HttpClient client)
+    {
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Origin", TrustedUiOrigin);
+        client.DefaultRequestHeaders.TryAddWithoutValidation(BrowserRequest.HeaderName, BrowserRequest.HeaderValue);
     }
 }

@@ -13,7 +13,7 @@ is now kept); those now pin the safe return-target policy and the stable Entra e
 the session cookie, and Entra step-up now succeeds from the protected OIDC state (design gate §41), including the wrong-user,
 wrong-tenant, unknown-identity and missing-context refusals. **SEC-1A3 has flipped** F9 (`SessionRenewalBaselineTests`): background
 polls carry `X-Apperture-Background` and do not re-issue the session cookie; a user Refresh at the same threshold still does (design gate §43).
-Still characterizations of today's behavior, on purpose: F11 and the side-effect GET / CORS / cookie findings (SEC-1B).
+**SEC-1B1 has flipped** F11 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a same-site sibling and a cross-site form or simple fetch are rejected with 403 and do not mutate; a legitimate Management UI POST and PUT carry the exact UI `Origin` and `X-Apperture-Request: 1` (design gate §44). Still characterizations of today's behavior, on purpose: `GET /signout` (D2, SEC-1B2) and the CORS / cookie / host findings (SEC-1B3).
 
 ## Run it (one command)
 

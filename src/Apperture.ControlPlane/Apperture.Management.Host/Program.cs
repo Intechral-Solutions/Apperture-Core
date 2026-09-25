@@ -80,11 +80,13 @@ builder.Services.AddProofStudentReviewPersistenceAdapter();
 builder.Services.AddProofCampusNexusStudentReviewIntegration();
 builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
+builder.Services.AddBrowserRequestTrust(builder.Configuration, builder.Environment);
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 app.UseManagementHostExceptionHandling();
 app.UseCors("UiDev");
+app.UseBrowserRequestTrust();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

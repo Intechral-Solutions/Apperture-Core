@@ -124,6 +124,7 @@ public sealed class EnrollController : ControllerBase
     /// </summary>
     [HttpPost]
     [AllowAnonymous]
+    [BrowserRequestTrustExempt("runtime enrollment: machine client, token-authenticated")]
     public async ValueTask<ActionResult<EnrollmentResult>> Enroll(
         [FromBody] EnrollRequest request,
         CancellationToken cancellationToken)

@@ -336,14 +336,33 @@ public sealed class BrowserHarness : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Headers a non-browser harness call must send so it satisfies Rule U. Attacker pages do not use this:
+    /// they are real browser documents and send only what the browser sends.
+    /// </summary>
+    public APIRequestContextOptions TrustedApiCall(object? data = null) => new()
+    {
+        Headers = new Dictionary<string, string>
+        {
+            ["Origin"] = Origins.Ui,
+            [RequestRecorder.PlatformRequestHeader] = "1",
+        },
+        DataObject = data,
+    };
+
     /// <summary>Local sign-in through the real API, sharing the context's cookie jar. Redacts everything.</summary>
     public async Task SignInAsync(IBrowserContext context, string username = OperatorUsername, string password = HarnessSeeding.Passphrase)
     {
         var response = await context.APIRequest.PostAsync(
             Origins.Api + "/api/auth/local/login",
-            new APIRequestContextOptions { DataObject = new { username, password } }).ConfigureAwait(false);
+            TrustedApiCall(new { username, password })).ConfigureAwait(false);
         if (response.Status != 200)
-            throw new InvalidOperationException($"Harness sign-in failed with HTTP {response.Status}.");
+        {
+            var body = await response.TextAsync().ConfigureAwait(false);
+            var detail = body.Length <= 400 ? body : body[..400];
+            throw new InvalidOperationException(
+                $"Harness sign-in failed with HTTP {response.Status}. {detail}{Environment.NewLine}{Host.Logs.Dump()}");
+        }
     }
 
     private async Task WaitForApiAsync()
