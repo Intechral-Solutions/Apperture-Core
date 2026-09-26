@@ -51,7 +51,6 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         options.ClientSecret = e.ClientSecret;
         options.CallbackPath = e.CallbackPath;
         options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
-        options.RemoteSignOutPath = EntraSignOut.RemoteSignOutPath;
         options.SignedOutRedirectUri = ManagementUiRedirects.Build(_configuration, EntraLinkFlowConstants.LoginPath);
         options.ResponseType = "code";
         options.SaveTokens = true;
@@ -457,7 +456,6 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         options.ClientSecret = "Apperture-Entra-Disabled-Placeholder";
         options.CallbackPath = "/signin-oidc";
         options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
-        options.RemoteSignOutPath = EntraSignOut.RemoteSignOutPath;
         options.ResponseType = "code";
         options.Scope.Clear();
         options.Scope.Add("openid");

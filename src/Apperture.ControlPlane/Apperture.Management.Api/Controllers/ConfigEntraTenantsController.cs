@@ -371,32 +371,33 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         });
     }
 
-    [HttpGet("{id}/directory/users")]
+    // POST, not GET: each search calls Microsoft Graph with the stored secret and records the discovery outcome.
+    [HttpPost("{id}/directory/users")]
+    [Consumes("application/json")]
     [ProducesResponseType(typeof(EntraDirectoryUsersApiResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<EntraDirectoryUsersApiResponse>> ListDirectoryUsers(
+    public async Task<ActionResult<EntraDirectoryUsersApiResponse>> SearchDirectoryUsers(
         string id,
-        [FromQuery] string? search,
-        [FromQuery] int top = 25,
+        [FromBody] EntraDirectorySearchRequestBody request,
         CancellationToken cancellationToken = default)
     {
         if (!await AuthorizeReadAsync(cancellationToken))
             return Forbid();
 
-        return await SearchDirectoryUsersCoreAsync(id, search, top, cancellationToken);
+        return await SearchDirectoryUsersCoreAsync(id, request.Search, request.Top, cancellationToken);
     }
 
-    [HttpGet("{id}/directory/groups")]
+    [HttpPost("{id}/directory/groups")]
+    [Consumes("application/json")]
     [ProducesResponseType(typeof(EntraDirectoryGroupsApiResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<EntraDirectoryGroupsApiResponse>> ListDirectoryGroups(
+    public async Task<ActionResult<EntraDirectoryGroupsApiResponse>> SearchDirectoryGroups(
         string id,
-        [FromQuery] string? search,
-        [FromQuery] int top = 25,
+        [FromBody] EntraDirectorySearchRequestBody request,
         CancellationToken cancellationToken = default)
     {
         if (!await AuthorizeReadAsync(cancellationToken))
             return Forbid();
 
-        return await SearchDirectoryGroupsCoreAsync(id, search, top, cancellationToken);
+        return await SearchDirectoryGroupsCoreAsync(id, request.Search, request.Top, cancellationToken);
     }
 
     private async Task<ActionResult<EntraDirectoryUsersApiResponse>> SearchDirectoryUsersCoreAsync(

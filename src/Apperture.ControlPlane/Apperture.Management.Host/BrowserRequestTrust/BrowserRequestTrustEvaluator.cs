@@ -16,7 +16,8 @@ internal readonly record struct BrowserRequestTrustFacts(
     IReadOnlyList<string> Origins,
     IReadOnlyList<string> RequestHeaders,
     IReadOnlyList<string> FetchSites,
-    bool EndpointExempt);
+    bool EndpointExempt,
+    bool NavigationEndpoint = false);
 
 internal readonly record struct BrowserRequestTrustResult(bool Allowed, BrowserRequestTrustRule Rule)
 {
@@ -38,6 +39,9 @@ internal static class BrowserRequestTrustEvaluator
         if (IsOptions(facts.Method) || IsOidcCallback(facts.Path, options))
             return BrowserRequestTrustResult.Allow;
 
+        if (facts.NavigationEndpoint)
+            return EvaluateNavigation(facts, options);
+
         if (!IsApi(facts.Path))
             return BrowserRequestTrustResult.Allow;
 
@@ -47,11 +51,9 @@ internal static class BrowserRequestTrustEvaluator
         if (facts.EndpointExempt)
             return BrowserRequestTrustResult.Allow;
 
-        if (!TrySingle(facts.Origins, out var originText))
-            return BrowserRequestTrustResult.Reject(facts.Origins.Count == 0 ? BrowserRequestTrustRule.OriginMissing : BrowserRequestTrustRule.OriginRejected);
-
-        if (!BrowserOrigin.TryParse(originText, out var origin) || !options.TrustedOrigins.Any(trusted => trusted.Equals(origin)))
-            return BrowserRequestTrustResult.Reject(BrowserRequestTrustRule.OriginRejected);
+        var originCheck = CheckOrigin(facts, options);
+        if (!originCheck.Allowed)
+            return originCheck;
 
         if (!TrySingle(facts.RequestHeaders, out var header))
             return BrowserRequestTrustResult.Reject(facts.RequestHeaders.Count == 0 ? BrowserRequestTrustRule.HeaderMissing : BrowserRequestTrustRule.HeaderRejected);
@@ -61,6 +63,33 @@ internal static class BrowserRequestTrustEvaluator
 
         if (CrossSiteFetch(facts))
             return BrowserRequestTrustResult.Reject(BrowserRequestTrustRule.FetchMetadataCrossSite);
+
+        return BrowserRequestTrustResult.Allow;
+    }
+
+    /// <summary>
+    /// Rule N. A native navigation cannot carry the platform header, so an unsafe method is trusted on the exact Origin alone,
+    /// and a read is refused only when the browser says it came from another site.
+    /// </summary>
+    private static BrowserRequestTrustResult EvaluateNavigation(BrowserRequestTrustFacts facts, BrowserRequestTrustOptions options)
+    {
+        if (!IsSafeRead(facts.Method))
+        {
+            var originCheck = CheckOrigin(facts, options);
+            if (!originCheck.Allowed)
+                return originCheck;
+        }
+
+        return CrossSiteFetch(facts) ? BrowserRequestTrustResult.Reject(BrowserRequestTrustRule.FetchMetadataCrossSite) : BrowserRequestTrustResult.Allow;
+    }
+
+    private static BrowserRequestTrustResult CheckOrigin(BrowserRequestTrustFacts facts, BrowserRequestTrustOptions options)
+    {
+        if (!TrySingle(facts.Origins, out var originText))
+            return BrowserRequestTrustResult.Reject(facts.Origins.Count == 0 ? BrowserRequestTrustRule.OriginMissing : BrowserRequestTrustRule.OriginRejected);
+
+        if (!BrowserOrigin.TryParse(originText, out var origin) || !options.TrustedOrigins.Any(trusted => trusted.Equals(origin)))
+            return BrowserRequestTrustResult.Reject(BrowserRequestTrustRule.OriginRejected);
 
         return BrowserRequestTrustResult.Allow;
     }

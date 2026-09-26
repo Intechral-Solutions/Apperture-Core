@@ -40,9 +40,7 @@
                 <a href="@AccountUiRoutes.Preferences" class="ui-menu-item">Appearance</a>
                 <a href="@AccountUiRoutes.Account" class="ui-menu-item">Account</a>
                 <hr class="my-1 border-default" />
-                <button type="button" class="ui-menu-item" @onclick="SignOutAsync">
-                    Sign out
-                </button>
+                <SignOutForm ButtonClass="ui-menu-item">Sign out</SignOutForm>
             </div>
         }
     }
@@ -77,12 +75,6 @@
 
         Nav.NavigateTo("/login");
         return Task.CompletedTask;
-    }
-
-    private void SignOutAsync()
-    {
-        Menus.Close(TopBarMenuCoordinator.Ids.Account);
-        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
     }
 
     private static string SecondaryIdentity(MeResponse user)

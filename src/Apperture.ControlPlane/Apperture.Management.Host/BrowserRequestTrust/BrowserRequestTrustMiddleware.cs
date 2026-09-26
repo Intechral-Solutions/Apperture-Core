@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Apperture.Management.Host.ExceptionHandling;
@@ -95,12 +96,13 @@ internal sealed class BrowserRequestTrustMiddleware(RequestDelegate next, ILogge
         OpenIdConnectOptions oidc,
         IConfiguration configuration)
     {
-        var paths = new[]
+        var paths = new List<string>
         {
             oidc.CallbackPath.HasValue ? oidc.CallbackPath.Value! : "/signin-oidc",
             oidc.SignedOutCallbackPath.HasValue ? oidc.SignedOutCallbackPath.Value! : EntraSignOut.SignedOutCallbackPath,
-            oidc.RemoteSignOutPath.HasValue ? oidc.RemoteSignOutPath.Value! : EntraSignOut.RemoteSignOutPath,
         };
+        if (oidc.RemoteSignOutPath.HasValue)
+            paths.Add(oidc.RemoteSignOutPath.Value!);
 
         return new BrowserRequestTrustOptions
         {
@@ -121,7 +123,8 @@ internal sealed class BrowserRequestTrustMiddleware(RequestDelegate next, ILogge
             Values(request.Headers.Origin),
             Values(request.Headers[BrowserRequest.HeaderName]),
             Values(request.Headers["Sec-Fetch-Site"]),
-            endpoint?.Metadata.GetMetadata<BrowserRequestTrustExemptAttribute>() is not null);
+            endpoint?.Metadata.GetMetadata<BrowserRequestTrustExemptAttribute>() is not null,
+            endpoint?.Metadata.GetMetadata<NativeNavigationEndpoint>() is not null);
     }
 
     private static IReadOnlyList<string> Values(Microsoft.Extensions.Primitives.StringValues values)

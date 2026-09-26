@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -197,7 +198,7 @@ public sealed class ManagementAuthEndpointsTests
         await using var host = await StartAsync(capture, entraEnabled: false);
         using var client = Client(host);
 
-        var response = await client.GetAsync("/signout");
+        var response = await client.PostAsync("/signout", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
@@ -214,7 +215,7 @@ public sealed class ManagementAuthEndpointsTests
         client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Entra");
         client.DefaultRequestHeaders.Add("X-Test-Login-Hint", "opaque-session-hint");
 
-        var response = await client.GetAsync("/signout");
+        var response = await client.PostAsync("/signout", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().StartWith("https://idp.test/logout");
@@ -236,7 +237,7 @@ public sealed class ManagementAuthEndpointsTests
         client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
         client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
 
-        var response = await client.GetAsync("/signout");
+        var response = await client.PostAsync("/signout", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
@@ -250,11 +251,149 @@ public sealed class ManagementAuthEndpointsTests
         await using var host = await StartAsync(capture, entraEnabled: true);
         using var client = Client(host);
 
-        var response = await client.GetAsync("/signout");
+        var response = await client.PostAsync("/signout", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
         capture.SignOutRedirectUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Get_signout_is_method_not_allowed_and_leaves_the_session_alone()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Entra");
+
+        var response = await client.GetAsync("/signout");
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Headers.Location.Should().BeNull();
+        response.Headers.TryGetValues("Set-Cookie", out _).Should().BeFalse("a GET never clears a cookie");
+        capture.SignOutRedirectUri.Should().BeNull("a GET never starts the directory sign-out");
+    }
+
+    [Fact]
+    public void Rule_n_metadata_is_on_sign_out_step_up_and_link_and_sign_in_stays_open()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddRouting();
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddSingleton<IPrincipalContext, TestPrincipalContext>();
+        builder.Services.AddSingleton<IPrincipalToUserResolver, TestPrincipalToUserResolver>();
+        var app = builder.Build();
+        app.MapManagementAuthEndpoints();
+
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(e => (
+                Route: "/" + e.RoutePattern.RawText!.TrimStart('/'),
+                Methods: string.Join(",", e.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? []),
+                Navigation: e.Metadata.GetMetadata<NativeNavigationEndpoint>() is not null))
+            .ToList();
+
+        endpoints.Should().BeEquivalentTo(new[]
+        {
+            (Route: "/signin", Methods: "GET", Navigation: false),
+            (Route: "/signin/link", Methods: "GET", Navigation: true),
+            (Route: "/signin/step-up", Methods: "GET", Navigation: true),
+            (Route: "/signout", Methods: "POST", Navigation: true),
+        });
+    }
+
+    // ---- SEC-1B2: /signout-oidc is not a live RemoteSignOutPath; no request there can end a session ----------------------
+
+    private const string SessionCookie = ".AspNetCore.Cookies";
+    private const string HistoricalRemoteSignOutPath = "/signout-oidc";
+
+    /// <summary>Issues a real application cookie for a session that carries the given OIDC session claims.</summary>
+    private static async Task<string> SessionCookieAsync(HttpClient client, string? sid = null, string? iss = null)
+    {
+        var query = new List<string>();
+        if (sid is not null)
+            query.Add("sid=" + Uri.EscapeDataString(sid));
+        if (iss is not null)
+            query.Add("iss=" + Uri.EscapeDataString(iss));
+        var response = await client.GetAsync("/test/session" + (query.Count == 0 ? "" : "?" + string.Join("&", query)));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return string.Join("; ", response.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]).Where(c => c.StartsWith(SessionCookie, StringComparison.Ordinal)));
+    }
+
+    private static async Task<HttpResponseMessage> HistoricalRemoteSignOutAsync(HttpClient client, string cookie, string query = "")
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, HistoricalRemoteSignOutPath + query);
+        if (cookie.Length > 0)
+            request.Headers.Add("Cookie", cookie);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> HistoricalRemoteSignOutFormAsync(HttpClient client, string cookie, string body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, HistoricalRemoteSignOutPath)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/x-www-form-urlencoded"),
+        };
+        if (cookie.Length > 0)
+            request.Headers.Add("Cookie", cookie);
+        return await client.SendAsync(request);
+    }
+
+    private static bool ClearsSessionCookie(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var values)
+        && values.Any(v => v.StartsWith(SessionCookie + "=;", StringComparison.Ordinal) || (v.StartsWith(SessionCookie, StringComparison.Ordinal) && v.Contains("expires=Thu, 01 Jan 1970", StringComparison.OrdinalIgnoreCase)));
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_forged_front_channel_sign_out_cannot_end_a_local_session(bool entraEnabled)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled);
+        using var client = Client(host);
+        var cookie = await SessionCookieAsync(client);
+
+        foreach (var query in new[] { "", "?sid=anything&iss=https%3A%2F%2Fidp.test" })
+        {
+            var response = await HistoricalRemoteSignOutAsync(client, cookie, query);
+            ClearsSessionCookie(response).Should().BeFalse($"RemoteSignOutPath is empty (query '{query}')");
+        }
+    }
+
+    [Fact]
+    public async Task A_front_channel_sign_out_without_a_session_changes_nothing()
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true);
+        using var client = Client(host);
+
+        var response = await HistoricalRemoteSignOutAsync(client, cookie: "", "?sid=s-1&iss=https%3A%2F%2Fidp.test");
+
+        ClearsSessionCookie(response).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task No_get_or_form_post_to_the_historical_front_channel_path_ends_any_session(bool entraEnabled)
+    {
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled);
+        using var client = Client(host);
+
+        var local = await SessionCookieAsync(client);
+        var matching = await SessionCookieAsync(client, sid: "s-1", iss: "https://idp.test");
+        const string exact = "sid=s-1&iss=https%3A%2F%2Fidp.test";
+
+        foreach (var cookie in new[] { local, matching })
+        {
+            var get = await HistoricalRemoteSignOutAsync(client, cookie, "?" + exact);
+            var form = await HistoricalRemoteSignOutFormAsync(client, cookie, exact);
+            ClearsSessionCookie(get).Should().BeFalse("GET /signout-oidc is not a live RemoteSignOutPath");
+            ClearsSessionCookie(form).Should().BeFalse("a form POST to /signout-oidc is not a live RemoteSignOutPath");
+        }
     }
 
     // ---- SEC-1A2a: a cancelled or failed Microsoft sign-in never leaves the operator on a raw API error --------------------
@@ -526,6 +665,18 @@ public sealed class ManagementAuthEndpointsTests
         app.UseAuthorization();
         app.MapManagementAuthEndpoints();
         app.MapGet("/api/auth/me", () => Results.Ok(new { userId = "me" })).RequireAuthorization();
+        app.MapGet("/test/session", async (HttpContext ctx, string? sid, string? iss) =>
+        {
+            var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
+            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, LinkedUserId));
+            if (sid is not null)
+                identity.AddClaim(new Claim("sid", sid));
+            if (iss is not null)
+                identity.AddClaim(new Claim("iss", iss));
+            await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.SignInAsync(
+                ctx, CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+            return Results.Ok();
+        });
         await app.StartAsync();
         return app;
     }

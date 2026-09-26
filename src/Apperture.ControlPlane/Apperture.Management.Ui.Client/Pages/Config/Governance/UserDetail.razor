@@ -525,7 +525,7 @@
         _directoryMessage = null;
         try
         {
-            var result = await Client.GetEntraDirectoryUsersAsync(_directoryTenantId, _directorySearch, top: 25);
+            var result = await Client.SearchEntraDirectoryUsersAsync(_directoryTenantId, _directorySearch, top: 25);
             if (result is null)
             {
                 _directoryResults = Array.Empty<EntraDirectoryUserItemDto>();

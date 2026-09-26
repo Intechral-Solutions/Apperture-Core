@@ -1,6 +1,7 @@
 using Apperture.Management.Host;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -111,6 +112,82 @@ public sealed class BrowserRequestTrustEvaluatorTests
         BrowserRequestTrustEvaluator.Evaluate(facts, options).Allowed.Should().BeTrue();
     }
 
+    // ---- Rule N: host auth endpoints reached by native browser navigation (sign-out form, step-up, link) ----------------
+
+    public static TheoryData<string?, string?> NavigationPostAllows { get; } = new()
+    {
+        { Trusted, "same-origin" },
+        { Trusted, "same-site" },
+        { Trusted, "none" },
+        { Trusted, null },
+    };
+
+    [Theory]
+    [MemberData(nameof(NavigationPostAllows))]
+    public void A_navigation_post_from_the_trusted_origin_is_allowed_without_the_platform_header(string? origin, string? fetchSite)
+    {
+        Evaluate("POST", "/signout", origin, header: null, fetchSite, navigation: true).Allowed.Should().BeTrue();
+    }
+
+    public static TheoryData<string?, string?, string> NavigationPostRejects { get; } = new()
+    {
+        { null, "same-site", nameof(BrowserRequestTrustRule.OriginMissing) },
+        { "null", "same-origin", nameof(BrowserRequestTrustRule.OriginRejected) },
+        { "http://localhost:9002", "same-site", nameof(BrowserRequestTrustRule.OriginRejected) },
+        { "http://127.0.0.1:9001", "cross-site", nameof(BrowserRequestTrustRule.OriginRejected) },
+        { "https://evil.example", "cross-site", nameof(BrowserRequestTrustRule.OriginRejected) },
+        { Trusted, "cross-site", nameof(BrowserRequestTrustRule.FetchMetadataCrossSite) },
+    };
+
+    [Theory]
+    [MemberData(nameof(NavigationPostRejects))]
+    public void A_navigation_post_without_the_exact_trusted_origin_or_marked_cross_site_is_rejected(string? origin, string? fetchSite, string rule)
+    {
+        var result = Evaluate("POST", "/signout", origin, header: BrowserRequest.HeaderValue, fetchSite, navigation: true);
+        result.Allowed.Should().BeFalse("the platform header never substitutes for the Origin on a navigation endpoint");
+        result.Rule.ToString().Should().Be(rule);
+    }
+
+    [Fact]
+    public void A_navigation_post_with_two_origins_is_rejected()
+    {
+        var result = BrowserRequestTrustEvaluator.Evaluate(
+            new BrowserRequestTrustFacts("POST", "/signout", [Trusted, "http://localhost:9002"], [], [], false, NavigationEndpoint: true),
+            Options());
+        result.Rule.Should().Be(BrowserRequestTrustRule.OriginRejected);
+    }
+
+    [Theory]
+    [InlineData("GET", "cross-site", false)]
+    [InlineData("HEAD", "cross-site", false)]
+    [InlineData("GET", "Cross-Site", false)]
+    [InlineData("GET", "same-site", true)]
+    [InlineData("GET", "same-origin", true)]
+    [InlineData("GET", "none", true)]
+    [InlineData("GET", null, true)]
+    public void A_navigation_get_is_rejected_only_when_the_browser_says_cross_site(string method, string? fetchSite, bool allowed)
+    {
+        var result = Evaluate(method, "/signin/step-up", origin: null, header: null, fetchSite, navigation: true);
+        result.Allowed.Should().Be(allowed);
+        if (!allowed)
+            result.Rule.Should().Be(BrowserRequestTrustRule.FetchMetadataCrossSite);
+    }
+
+    [Fact]
+    public void A_navigation_get_with_ambiguous_fetch_metadata_is_rejected()
+    {
+        var result = BrowserRequestTrustEvaluator.Evaluate(
+            new BrowserRequestTrustFacts("GET", "/signin/link", [], [], ["same-origin", "cross-site"], false, NavigationEndpoint: true),
+            Options());
+        result.Allowed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_host_path_that_is_not_a_navigation_endpoint_stays_open()
+    {
+        Evaluate("GET", "/signin", origin: null, header: null, fetchSite: "cross-site").Allowed.Should().BeTrue();
+    }
+
     [Fact]
     public void Report_only_is_honoured_only_in_development()
     {
@@ -144,6 +221,55 @@ public sealed class BrowserRequestTrustEvaluatorTests
     }
 
     [Fact]
+    public async Task The_middleware_applies_rule_n_to_an_endpoint_carrying_navigation_metadata()
+    {
+        async Task<(bool Called, int Status)> SendAsync(string? origin)
+        {
+            var called = false;
+            var middleware = new BrowserRequestTrustMiddleware(_ =>
+            {
+                called = true;
+                return Task.CompletedTask;
+            }, NullLogger<BrowserRequestTrustMiddleware>.Instance);
+            var context = new DefaultHttpContext();
+            context.Request.Method = "POST";
+            context.Request.Path = "/SignOut/";
+            if (origin is not null)
+                context.Request.Headers.Origin = origin;
+            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new NativeNavigationEndpoint()), "sign-out"));
+            context.Response.Body = new MemoryStream();
+            await middleware.InvokeAsync(context, Options(), Configuration(), new FixedOidc());
+            return (called, context.Response.StatusCode);
+        }
+
+        (await SendAsync(origin: null)).Should().Be((false, StatusCodes.Status403Forbidden));
+        (await SendAsync("http://localhost:9002")).Should().Be((false, StatusCodes.Status403Forbidden));
+        (await SendAsync(Trusted)).Should().Be((true, StatusCodes.Status200OK), "the trusted origin passes without the platform header");
+    }
+
+    [Fact]
+    public async Task An_empty_remote_sign_out_path_does_not_exempt_the_historical_path()
+    {
+        var called = false;
+        var middleware = new BrowserRequestTrustMiddleware(_ =>
+        {
+            called = true;
+            return Task.CompletedTask;
+        }, NullLogger<BrowserRequestTrustMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/signout-oidc";
+        context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(new NativeNavigationEndpoint()), "historical-front-channel"));
+        context.Response.Body = new MemoryStream();
+
+        var oidc = new OpenIdConnectOptions { RemoteSignOutPath = PathString.Empty };
+        await middleware.InvokeAsync(context, Options(), Configuration(), new FixedOidc(oidc));
+
+        called.Should().BeFalse("an empty RemoteSignOutPath must not fall back to a constant /signout-oidc exemption");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
     public async Task Report_only_logs_and_still_calls_the_next_delegate()
     {
         var called = false;
@@ -168,9 +294,10 @@ public sealed class BrowserRequestTrustEvaluatorTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 
-    private static BrowserRequestTrustResult Evaluate(string method, string path, string? origin, string? header, string? fetchSite, bool exempt = false) =>
+    private static BrowserRequestTrustResult Evaluate(
+        string method, string path, string? origin, string? header, string? fetchSite, bool exempt = false, bool navigation = false) =>
         BrowserRequestTrustEvaluator.Evaluate(
-            new BrowserRequestTrustFacts(method, path, List(origin), List(header), List(fetchSite), exempt),
+            new BrowserRequestTrustFacts(method, path, List(origin), List(header), List(fetchSite), exempt, navigation),
             Options());
 
     private static BrowserRequestTrustOptions Options()
@@ -179,7 +306,7 @@ public sealed class BrowserRequestTrustEvaluatorTests
         return new BrowserRequestTrustOptions
         {
             TrustedOrigins = [origin],
-            OidcCallbackPaths = ["/signin-oidc", "/signout-callback-oidc", "/signout-oidc"],
+            OidcCallbackPaths = ["/signin-oidc", "/signout-callback-oidc"],
         };
     }
 
@@ -189,12 +316,12 @@ public sealed class BrowserRequestTrustEvaluatorTests
 
     private static IReadOnlyList<string> List(string? value) => value is null ? [] : [value];
 
-    private sealed class FixedOidc : IOptionsMonitor<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions>
+    private sealed class FixedOidc(OpenIdConnectOptions? current = null) : IOptionsMonitor<OpenIdConnectOptions>
     {
-        public Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions CurrentValue { get; } = new();
+        public OpenIdConnectOptions CurrentValue { get; } = current ?? new OpenIdConnectOptions();
 
-        public Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions Get(string? name) => CurrentValue;
+        public OpenIdConnectOptions Get(string? name) => CurrentValue;
 
-        public IDisposable? OnChange(Action<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<OpenIdConnectOptions, string?> listener) => null;
     }
 }

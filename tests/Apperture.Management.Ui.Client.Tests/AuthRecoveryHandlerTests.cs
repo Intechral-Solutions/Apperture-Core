@@ -92,7 +92,6 @@ public sealed class AuthRecoveryHandlerTests
     [InlineData("auth/me")]
     [InlineData("auth/local/login")]
     [InlineData("auth/local/mfa")]
-    [InlineData("auth/local/logout")]
     [InlineData("auth/break-glass")]
     [InlineData("auth/sign-in-options")]
     [InlineData("auth/forgot-password")]
@@ -136,7 +135,6 @@ public sealed class AuthRecoveryHandlerTests
     [InlineData("auth/me/anything", false)]
     [InlineData("auth/local/login", true)]
     [InlineData("auth/local/mfa", true)]
-    [InlineData("auth/local/logout", true)]
     // Session-authenticated (class of [Authorize]): a 401 here IS session loss and must report.
     [InlineData("auth/local/change-password", false)]
     [InlineData("auth/local/other", false)]

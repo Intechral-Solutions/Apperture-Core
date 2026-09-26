@@ -1,7 +1,10 @@
 using System.Reflection;
 using Apperture.Management.Api.Controllers;
+using Apperture.Management.Host;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 using Xunit;
@@ -106,6 +109,68 @@ public sealed class BrowserRequestTrustGuardTests
         }
 
         offenders.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The endpoints Management.Host actually routes (controllers + host auth endpoints), not the attribute templates. Every
+    /// unsafe endpoint must fall under a trust rule: Rule U (under <c>/api</c>) or Rule N (navigation metadata), with exactly one
+    /// exempt endpoint. A route that escapes both — a <c>~/</c> template, a method-level route, a new minimal POST — fails here.
+    /// </summary>
+    [Fact]
+    public void Every_routed_unsafe_endpoint_falls_under_rule_u_or_rule_n()
+    {
+        var endpoints = RoutedEndpoints();
+        endpoints.Should().NotBeEmpty();
+
+        var unsafeOutsideTrust = endpoints
+            .Where(e => e.Methods.Any(m => m is not ("GET" or "HEAD" or "OPTIONS")))
+            .Where(e => !e.Route.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && !e.Navigation)
+            .Select(e => $"{string.Join(",", e.Methods)} {e.Route}")
+            .ToList();
+        unsafeOutsideTrust.Should().BeEmpty();
+
+        endpoints.Where(e => !e.Route.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+            .Select(e => $"{string.Join(",", e.Methods)} {e.Route} navigation={e.Navigation}")
+            .Should().BeEquivalentTo(
+                "GET /signin navigation=False",
+                "GET /signin/link navigation=True",
+                "GET /signin/step-up navigation=True",
+                "POST /signout navigation=True");
+
+        endpoints.Where(e => e.Route.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && e.Navigation)
+            .Should().BeEmpty("an API endpoint never trades the platform header rule for Rule N");
+        endpoints.Where(e => e.Exempt).Select(e => $"{string.Join(",", e.Methods)} {e.Route}")
+            .Should().Equal("POST /api/Enroll");
+    }
+
+    [Fact]
+    public void Program_maps_only_the_endpoint_sources_the_coverage_guard_enumerates()
+    {
+        var program = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Host/Program.cs"));
+        System.Text.RegularExpressions.Regex.Matches(program, @"app\.Map\w*\(").Select(m => m.Value)
+            .Should().BeEquivalentTo("app.MapControllers(", "app.MapManagementAuthEndpoints(", "app.MapDefaultEndpoints(");
+    }
+
+    private static List<(string Route, IReadOnlyList<string> Methods, bool Navigation, bool Exempt)> RoutedEndpoints()
+    {
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
+        builder.Services.AddControllers().AddApplicationPart(typeof(EnrollController).Assembly);
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddSingleton<Apperture.Core.Application.Services.IPrincipalContext>(_ => null!);
+        builder.Services.AddSingleton<Apperture.Core.Application.Services.IPrincipalToUserResolver>(_ => null!);
+        var app = builder.Build();
+        app.MapControllers();
+        app.MapManagementAuthEndpoints();
+
+        return ((Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>()
+            .Select(e => (
+                Route: "/" + (e.RoutePattern.RawText ?? "").TrimStart('/'),
+                Methods: (IReadOnlyList<string>)(e.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.IHttpMethodMetadata>()?.HttpMethods.ToList() ?? []),
+                Navigation: e.Metadata.GetMetadata<NativeNavigationEndpoint>() is not null,
+                Exempt: e.Metadata.GetMetadata<BrowserRequestTrustExemptAttribute>() is not null))
+            .ToList();
     }
 
     private static bool IsApiTemplate(string? template) =>

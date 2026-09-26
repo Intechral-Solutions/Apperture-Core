@@ -350,6 +350,11 @@ public sealed class EntraStepUpCallbackTests
 
     private static bool Has(ClaimsPrincipal p, string type, string value) => p.Claims.Any(c => c.Type == type && c.Value == value);
 
+    private static bool ClearsSessionCookie(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var values)
+        && values.Any(v => v.StartsWith(SessionCookie + "=;", StringComparison.Ordinal)
+            || (v.StartsWith(SessionCookie, StringComparison.Ordinal) && v.Contains("expires=Thu, 01 Jan 1970", StringComparison.OrdinalIgnoreCase)));
+
     private void NoIdentityLinkWasWritten(Rig rig)
     {
         rig.Users.Verify(u => u.AddIdentityLinkAsync(It.IsAny<UserId>(), It.IsAny<IdentityLink>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -891,6 +896,50 @@ public sealed class EntraStepUpCallbackTests
         var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue();
         principal.Claims.Should().NotContain(c => c.Type == AuthenticationAssuranceClaims.MechanismClaimType, "a normal sign-in is not a step-up");
+    }
+
+    [Fact]
+    public async Task A_real_entra_session_is_not_cleared_by_the_historical_front_channel_path()
+    {
+        const string sessionId = "idp-session-1";
+        await using var rig = new Rig
+        {
+            TokenExtraClaims = new Dictionary<string, object> { ["sid"] = sessionId },
+        };
+        await rig.StartAsync();
+        var options = rig.App.Services.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>()
+            .Get(OpenIdConnectDefaults.AuthenticationScheme);
+        options.MapInboundClaims.Should().BeFalse("the host configuration keeps the token's own claim names");
+        options.RemoteSignOutPath.HasValue.Should().BeFalse("front-channel logout is disabled on the live options");
+
+        using var challengeResponse = await rig.Client.GetAsync("/signin?returnUrl=" + ReturnEscaped);
+        var state = QueryHelpers.ParseQuery(challengeResponse.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", challengeResponse.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+
+        var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        var (value, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        Has(principal, "sid", sessionId).Should().BeTrue("the id_token sid survives claim actions under its raw name");
+        Has(principal, "iss", Issuer).Should().BeFalse("ASP.NET Core ClaimActions delete iss before the cookie ticket is written");
+        principal.HasClaim(c => c.Type == ClaimTypes.Sid).Should().BeFalse("MapInboundClaims is false, so sid is not rewritten to the SOAP claim type");
+
+        var sessionCookie = SessionCookie + "=" + value;
+        var query = "?sid=" + Uri.EscapeDataString(sessionId) + "&iss=" + Uri.EscapeDataString(Issuer);
+        var body = "sid=" + sessionId + "&iss=" + Issuer;
+
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, "/signout-oidc" + query);
+        getRequest.Headers.Add("Cookie", sessionCookie);
+        using var getResponse = await rig.Client.SendAsync(getRequest);
+        ClearsSessionCookie(getResponse).Should().BeFalse("GET /signout-oidc is not a live RemoteSignOutPath");
+
+        using var formRequest = new HttpRequestMessage(HttpMethod.Post, "/signout-oidc")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded"),
+        };
+        formRequest.Headers.Add("Cookie", sessionCookie);
+        using var formResponse = await rig.Client.SendAsync(formRequest);
+        ClearsSessionCookie(formResponse).Should().BeFalse("a form POST to /signout-oidc is not a live RemoteSignOutPath");
     }
 
     [Theory]

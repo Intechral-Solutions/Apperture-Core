@@ -61,7 +61,6 @@ public static class AuthRecoveryExclusions
         // there IS session loss and must report.
         "auth/local/login",
         "auth/local/mfa",
-        "auth/local/logout",
         "auth/break-glass",
         "auth/sign-in-options",
         "auth/forgot-password",

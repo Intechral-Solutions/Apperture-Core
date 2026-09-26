@@ -15,7 +15,8 @@ using Microsoft.Extensions.Options;
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// Authentication endpoints: local login (username/password), who-am-I, and local logout. Sign-in/sign-out for Entra are handled by the host (GET /signin, /signout).
+/// Authentication endpoints: local login (username/password) and who-am-I. Microsoft sign-in (GET /signin) and every sign-out
+/// (the UI's form POST to /signout) are handled by the host.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -748,18 +749,6 @@ public sealed class AuthController : ControllerBase
             new CorrelationId(null),
             details);
         await _audit.AppendAsync(record, cancellationToken);
-    }
-
-    /// <summary>
-    /// Optional: clear cookie for local sign-out (same as signout for cookie).
-    /// </summary>
-    [HttpPost("local/logout")]
-    [AllowAnonymous]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> LocalLogout(CancellationToken cancellationToken)
-    {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return NoContent();
     }
 
     private static string? ResolveUserPrincipal(ClaimsPrincipal principal)

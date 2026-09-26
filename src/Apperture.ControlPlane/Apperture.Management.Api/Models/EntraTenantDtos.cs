@@ -181,6 +181,9 @@ public sealed class ValidateOpenIdResponse
     public EntraTenantListItemResponse Tenant { get; init; } = null!;
 }
 
+/// <summary>Body of a tenant directory search. It is a POST because the search calls Microsoft Graph and records the outcome.</summary>
+public sealed record EntraDirectorySearchRequestBody(string? Search, int Top = 25);
+
 public sealed class EntraDirectoryUserResponse
 {
     [JsonPropertyName("objectId")]

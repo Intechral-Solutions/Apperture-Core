@@ -27,9 +27,10 @@ internal static class ManagementAuthEndpoints
         // Self-service linking. Unlike /signin this requires an existing platform session: the local
         // principal identifies which user the Microsoft identity will be bound to, and is preserved
         // if linking fails.
-        app.MapGet("/signin/link", SignInLinkAsync);
-        app.MapGet("/signin/step-up", SignInStepUpAsync);
-        app.MapGet("/signout", SignOutAsync);
+        app.MapGet("/signin/link", SignInLinkAsync).WithMetadata(new NativeNavigationEndpoint());
+        app.MapGet("/signin/step-up", SignInStepUpAsync).WithMetadata(new NativeNavigationEndpoint());
+        // Ending the session is a state change, so it is a POST from the UI's sign-out form. There is no GET.
+        app.MapPost("/signout", SignOutAsync).WithMetadata(new NativeNavigationEndpoint());
         return app;
     }
 

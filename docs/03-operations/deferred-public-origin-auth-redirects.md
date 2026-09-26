@@ -12,9 +12,8 @@ Sign-in and sign-out are path-based on the **management host**, not the UI origi
 |------|------|
 | `GET /signin` | Entra challenge |
 | `/signin-oidc` | Entra redirect URI (sign-in) |
-| `GET /signout` | Clear cookie; optional Entra end-session |
-| `/signout-callback-oidc` | Entra redirect URI (sign-out) |
-| `/signout-oidc` | Front-channel logout |
+| `POST /signout` | Clear cookie; optional Entra end-session. A form POST from the trusted UI origin only (SEC-1 Rule N); there is no GET |
+| `/signout-callback-oidc` | Entra redirect URI (sign-out). Independent of front-channel logout |
 
 The browser then returns to the UI login page via `ManagementUiRedirects` (`ShellUi:ManagementUiUrl`). In development that defaults to `http://localhost:9001`.
 
@@ -24,7 +23,7 @@ Production is already documented as **same-origin**: UI + `/api` + `/signin` + `
 
 1. **`ShellUi:ManagementUiUrl` defaults to `http://localhost:9001`.** Unset in Azure or on a Windows service, post-login and post-logout bounce operators to localhost instead of the public UI.
 2. **No forwarded-headers middleware.** Behind App Service TLS or a reverse proxy in front of Kestrel, OIDC `redirect_uri` is built from the *incoming* request. Without `X-Forwarded-Proto` / `Host`, Microsoft sees `http://internal-name/signin-oidc` instead of `https://public-hostname/signin-oidc` and rejects it.
-3. **Azure and Windows appsettings examples** do not set public UI/host URLs or list the three Entra URLs.
+3. **Azure and Windows appsettings examples** do not set public UI/host URLs or list the Entra Redirect URIs.
 4. **CORS** on the host allows only `localhost:9001`. That is correct for same-origin production (CORS is unused) and will block a split-host production topology unless updated.
 
 `UseWindowsService()` is not wired. Public-origin handling must not depend on it so a later Kestrel Windows service still works.
@@ -45,11 +44,12 @@ Suggested behavior when this is implemented:
 - **Production:** require `ManagementUiUrl`, or derive from the current request (scheme / host / path base) so a custom Azure domain works without a second config key. Do not fall back to localhost.
 - **Forwarded headers:** enable behind Azure App Service and when a Windows reverse proxy is configured. Do not blindly trust `X-Forwarded-*` on a Kestrel port exposed to the internet.
 - **Cookies:** `SecurePolicy = Always` in Production. `SameSite=Lax` is enough for same-origin.
-- **Templates:** add the keys above to [appsettings.azure.json.example](../../deploy/config/examples/appsettings.azure.json.example) and [appsettings.windows.json.example](../../deploy/config/examples/appsettings.windows.json.example), plus Entra app registration URLs:
+- **Templates:** add the keys above to [appsettings.azure.json.example](../../deploy/config/examples/appsettings.azure.json.example) and [appsettings.windows.json.example](../../deploy/config/examples/appsettings.windows.json.example), plus Entra app registration Redirect URIs:
 
   - `{public-host}/signin-oidc`
   - `{public-host}/signout-callback-oidc`
-  - `{public-host}/signout-oidc` (front-channel logout)
+
+  Leave the Entra Front-channel logout URL empty. Apperture sessions end through `POST /signout` or expiry, not through Microsoft single sign-out from another application.
 
 ## Cover first (Azure + Windows/Kestrel)
 

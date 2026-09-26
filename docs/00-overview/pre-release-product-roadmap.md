@@ -153,7 +153,9 @@ reset, cutting across several of them.
    the normal sign-in and failed/cancelled Entra sign-in flow) is implemented on it (gate §40), and **SEC-1A2b (Entra step-up
    continuation across the cross-site OIDC callback) is implemented on it (gate §41; real Entra and Safari remain manual checks),
    SEC-1A3 (background requests do not renew the sliding session) is implemented on it (gate §43), and SEC-1B1 (the platform
-   browser request-forgery policy) is implemented on it (gate §44). SEC-1B2, SEC-1B3 and the remaining slices have not started.
+   browser request-forgery policy) is implemented on it (gate §44), and SEC-1B2 (sign-out as a trusted POST, Rule N for the
+   step-up and link navigations, the Entra directory searches as POST) is implemented on it (gate §45). SEC-1B3 and the remaining
+   slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

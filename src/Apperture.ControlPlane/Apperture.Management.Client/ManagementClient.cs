@@ -2083,12 +2083,6 @@ public sealed class ManagementClient : IManagementClient
         return dto ?? throw new InvalidOperationException("Emergency access response was empty.");
     }
 
-    public async Task LocalLogoutAsync(CancellationToken cancellationToken = default)
-    {
-        var response = await _http.PostAsync("auth/local/logout", content: null, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-    }
-
     public async Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default)
     {
         var response = await _http.PostAsJsonAsync("auth/local/change-password", request, cancellationToken).ConfigureAwait(false);
@@ -2514,17 +2508,16 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<ValidateOpenIdResponseDto>(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<EntraDirectoryUsersApiDto?> GetEntraDirectoryUsersAsync(
+    public async Task<EntraDirectoryUsersApiDto?> SearchEntraDirectoryUsersAsync(
         string id,
         string? search = null,
         int top = 25,
         CancellationToken cancellationToken = default)
     {
-        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/users?top={top}";
-        if (!string.IsNullOrEmpty(search))
-            url += $"&search={Uri.EscapeDataString(search)}";
-
-        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/users",
+            new EntraDirectorySearchRequestDto(search, top),
+            cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             return null;
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -2533,17 +2526,16 @@ public sealed class ManagementClient : IManagementClient
         return await response.Content.ReadFromJsonAsync<EntraDirectoryUsersApiDto>(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(
+    public async Task<EntraDirectoryGroupsApiDto?> SearchEntraDirectoryGroupsAsync(
         string id,
         string? search = null,
         int top = 25,
         CancellationToken cancellationToken = default)
     {
-        var url = $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/groups?top={top}";
-        if (!string.IsNullOrEmpty(search))
-            url += $"&search={Uri.EscapeDataString(search)}";
-
-        using var response = await _http.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.PostAsJsonAsync(
+            $"config/auth/entra-tenants/{Uri.EscapeDataString(id)}/directory/groups",
+            new EntraDirectorySearchRequestDto(search, top),
+            cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             return null;
         if (response.StatusCode == HttpStatusCode.NotFound)

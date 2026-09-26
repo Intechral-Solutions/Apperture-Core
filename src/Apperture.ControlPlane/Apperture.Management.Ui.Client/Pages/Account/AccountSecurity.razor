@@ -119,11 +119,7 @@
                         </p>
                     </div>
                     <div class="ui-settings-card__body">
-                        <button type="button"
-                                class="btn btn-secondary"
-                                @onclick="SignOut">
-                            Sign out
-                        </button>
+                        <SignOutForm ButtonClass="btn btn-secondary">Sign out</SignOutForm>
                     </div>
                 </section>
 
@@ -779,11 +775,6 @@
     {
         var local = me?.IdentityLinks.FirstOrDefault(l => string.Equals(l.Source, "Local", StringComparison.OrdinalIgnoreCase));
         return new PasswordEvaluationContext(Username: local?.DisplayLabel, DisplayName: me?.DisplayName);
-    }
-
-    private void SignOut()
-    {
-        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
     }
 
     private static string FormatSignInSource(string source) => source switch

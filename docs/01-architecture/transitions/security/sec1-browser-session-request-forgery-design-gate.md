@@ -9,7 +9,8 @@ in §40, and SEC-1A2b (Entra step-up continuation across the cross-site callback
 Firefox, recorded in §41. An independent review of the A-series found one Important trust-boundary issue (I-1, external
 Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 (background
 requests do not renew the sliding session) is implemented and recorded in §43. SEC-1B1 (the platform browser
-request-forgery policy) is implemented and recorded in §44. SEC-1B2, SEC-1B3 and the remaining slices have not started.** SEC-1 is not complete.
+request-forgery policy) is implemented and recorded in §44. SEC-1B2 (verb and sign-out cleanup, Rule N) is implemented and
+recorded in §45. SEC-1B3 and the remaining slices have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -56,7 +57,7 @@ Brief discrepancies found while verifying the brief:
 | F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
 | F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
 | F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 — **fixed (§44)** |
-| F12 | Two GETs write Apperture state (Entra directory users/groups). `GET /signout` ends the session (§18.1). | Code fact | 1B2 |
+| F12 | Two GETs write Apperture state (Entra directory users/groups). `GET /signout` ends the session (§18.1). | Code fact | 1B2 — **fixed (§45)** |
 | F13 | `UiDev` credentialed CORS is applied in every environment. | Code fact | 1B3 |
 | F14 | `Management.Api` has a standalone `Program.cs` with allow-any-origin CORS, no auth, and a launch profile on the API's port 9000. There is no supported standalone deployment. | Code fact | 1B3 |
 | F15 | `Ui.Server` startup appends to the hard-coded file `f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log` in every environment. Leftover agent-log script and `appertureShell.debugLog` calls (an undefined function) remain. | Code fact | 1B3 |
@@ -94,7 +95,7 @@ Playwright's Windows one, **not Safari**; see §38.4). "C" = Chromium only, "C/F
 | — | **Reproduced** (simultaneous 401) | Three tabs meet the expired session together: 3 × `401`, 3 error panels, **0** `auth/me` probes, **0** navigations to sign-in. (A single tab yields one 401 per navigation: pages issue calls sequentially.) | `Simultaneous_401_baseline_…` | 1A1 — **flipped** (per tab: one probe, one sign-in navigation) |
 | — | **Reproduced** (history) | Expired reload replaces the protected entry with `/login` (Back → previous document). After a local sign-in, Back returns to `/login/local`, which immediately bounces the signed-in operator forward again (Back is trapped). | `HistoryBaselineTests` | 1A1 (review) — **extended**: the reload case is unchanged; a third test pins the in-app-recovery history (§39). Local sign-in Back-bounce unchanged (1A2). |
 | F13 | **Partial** | The existing `UiDev` policy refuses both cross-site and same-site-sibling preflights: a custom-header JSON POST is never delivered (C), and neither is PUT/PATCH/DELETE (C/F/W). Its being active outside Development is a code fact, not browser-provable here. | `RequestForgeryBaselineTests` | 1B3 |
-| D2 | **Reproduced** (C) | A cross-site page's `location.href = '{api}/signout'`: `GET /signout`, `Sec-Fetch-Site: cross-site`, `Sec-Fetch-Mode: navigate`, session cookie sent, `302`; afterwards `GET /api/auth/me → 401` (the session really ended). | `RequestForgeryBaselineTests.D2_…` | 1B2 |
+| D2 | **Reproduced** (C) | A cross-site page's `location.href = '{api}/signout'`: `GET /signout`, `Sec-Fetch-Site: cross-site`, `Sec-Fetch-Mode: navigate`, session cookie sent, `302`; afterwards `GET /api/auth/me → 401` (the session really ended). | `RequestForgeryBaselineTests.D2_…` | 1B2 — **flipped (§45)**: `405`, nothing cleared, session still valid (C/F/W) |
 | F15 | **Observed** (developer machine only) | Starting the real Ui.Server touched the hard-coded, git-ignored `debug-4bd3d8.log` at the repository root (file mtime), as predicted. The path is absolute and machine-specific, so there is no automated test. | (side effect of the harness) | 1B3 |
 | F16 | **Corrected** | The session `Set-Cookie` is `.AspNetCore.Cookies=…; expires; path=/; samesite=lax; httponly` — SameSite=Lax is **explicit** (emitted by the cookie-authentication defaults), there is no `secure` and no `domain`. Chromium's "Lax+POST" grace period therefore does not apply. | `HarnessSmokeTests` | 1B3 (Secure) |
 | F12, F14, F17, F18, D3, D4 | **Not exercised** | Code facts with no browser dimension (F12's Graph GETs need a Graph endpoint; D3/D4 are future behavior: GET-safety classification and no-replay); their slices (1B2, 1B3, 1A1) own the tests. | — | — |
@@ -609,7 +610,7 @@ list genuinely narrow.
 |---|---|---|
 | `POST /api/enroll` | Machine-to-machine runtime enrollment; token in body; no cookie; no browser | Endpoint metadata `[BrowserRequestTrustExempt("runtime enrollment: machine client, token-authenticated")]` |
 | `/signin-oidc` (and a per-registration `CallbackPath` override) | Cross-site `form_post` from the IdP by design; framework state/correlation/nonce | Path list in options, derived from the live `OpenIdConnectOptions` |
-| `/signout-callback-oidc`, `/signout-oidc` | IdP-driven sign-out callbacks | Same |
+| `/signout-callback-oidc` | IdP post-logout redirect (`SignedOutCallbackPath`) | Same |
 
 No controller family is exempted. A guard test pins exactly this set, and each exemption has a positive test (it passes without browser
 headers) and a negative test (a neighbouring endpoint does not).
@@ -1684,7 +1685,7 @@ For a covered unsafe request, in order:
 | Exempt | Why | Mechanism |
 |---|---|---|
 | `POST /api/enroll` | Runtime enrollment is a machine client. The token is in the body. There is no browser session. | `[BrowserRequestTrustExempt("runtime enrollment: machine client, token-authenticated")]` on `EnrollController.Enroll` only |
-| `/signin-oidc`, `/signout-callback-oidc`, `/signout-oidc` | IdP `form_post` and sign-out callbacks. The framework already checks state, correlation, and nonce. | Exact paths from the live `OpenIdConnectOptions` (`CallbackPath`, `SignedOutCallbackPath`, `RemoteSignOutPath`) |
+| `/signin-oidc`, `/signout-callback-oidc` | IdP `form_post` and the post-logout redirect. The framework already checks state, correlation, and nonce. | Exact paths from the live `OpenIdConnectOptions` (`CallbackPath`, `SignedOutCallbackPath`). `RemoteSignOutPath` is empty and is not exempted |
 
 Those callback paths are already outside `/api`, so the `/api` rules do not apply to them. The path list is still applied first, so a later change that moved a callback under `/api` would not start demanding the browser header. `POST /api/enroll/invitation` and any other enroll path are not exempt. A `GET` does not inherit the enroll exemption. No auth controller is exempt. Local login, MFA, break-glass, and the other anonymous unsafe `/api` POSTs are covered. `GET /signout` is unchanged and remains SEC-1B2 (D2).
 
@@ -1728,5 +1729,149 @@ Host proofs in `BrowserRequestTrustHttpTests`: a trusted login reaches the actio
 | F18 | **Pinned.** Empty trusted POST reaches the action; untrusted POST does not |
 | I-2 | **Open.** The browser suite stays gated off in normal CI. SEC-1B4 / closure |
 | N1 | Unchanged |
+
+SEC-1 is not complete.
+
+---
+
+## 45. SEC-1B2 — verb cleanup, sign-out and Rule N (2026-09-26)
+
+Scope: F12 and D2, Rule N (§21), G1/G2 (§18.1), the re-confirmation of G3–G5 and G9b, the unused `POST auth/local/logout`, Ui.Server's dead
+client registrations, the GET-classification guard, and the framework's front-channel sign-out path (an item the independent SEC-1B1
+review carried into this slice; disabled in the B2 closeout). Not in this slice: `UiDev` CORS, cookie `Secure`, SameSite, production
+`ManagementUiUrl` validation, the `Management.Api` executable and the Ui.Server debug write (SEC-1B3), and the CI browser job (I-2).
+SEC-1 is not complete.
+
+### 45.1 Rule N, as built
+
+Rule N lives in the one server slot, `BrowserRequestTrustMiddleware`, and runs before authentication like Rule U. It is keyed on endpoint
+metadata (`NativeNavigationEndpoint`), not on a path string, so a route variant the router accepts (a trailing slash, another case) cannot
+slip past it. For an endpoint carrying that metadata:
+
+- an unsafe method needs one `Origin` that equals the trusted UI origin (the same parser and comparison as Rule U), and is refused on
+  `Sec-Fetch-Site: cross-site`;
+- `GET`/`HEAD` is refused on `Sec-Fetch-Site: cross-site` (or more than one value); an absent header, `none` (a typed or bookmarked
+  address), `same-origin` and `same-site` pass;
+- the platform header is **not** required: a top-level form or link navigation cannot carry it, and it would add nothing a sibling origin
+  could not also fail on the Origin check.
+
+Failure is the Rule U 403 (`request_origin_rejected`). The metadata is on exactly three endpoints: `POST /signout`, `GET /signin/step-up`,
+`GET /signin/link`. `GET /signin` stays open (§21). A navigation endpoint under `/api` would trade the header rule for Rule N, so the guard
+below forbids it.
+
+### 45.2 Sign-out (D2)
+
+- `/signout` is `MapPost` only; `GET /signout` is 405 from routing and clears nothing. The handler is unchanged (local session → `/login`;
+  Entra session → directory end-session, then `/login`).
+- The UI signs out through one atom, `SignOutForm`: a native `<form method="post" action="{host}/signout">` with a submit button whose
+  classes and label come from the caller, and no script handler. It replaces the four navigations to the sign-out URL: the account menu,
+  account security, the access-request page, and the SEC-1A1 account-unavailable surface ("Sign out" and "Sign in with a different
+  account"). No new JavaScript. The account menu no longer closes itself first; the document leaves as the form submits.
+- `POST auth/local/logout` (unused), `IManagementClient.LocalLogoutAsync` and its recovery exclusion are removed.
+  `POST access-requests/sign-out` stays under Rule U.
+
+### 45.3 The front-channel sign-out path (`/signout-oidc`) — gate amendment
+
+§21 listed `/signout-oidc` (the OIDC handler's `RemoteSignOutPath`) only as an exemption from Rule U. It is also a GET any page can navigate
+to. The framework's default handler compares `sid`/`iss` only when the session holds them, so a cross-site navigation to a live
+`RemoteSignOutPath` ended a local session (every local session holds neither claim). Removing `GET /signout` alone would not have closed D2.
+
+Closeout of this slice established a further fact against the earlier sid/iss-binding amendment: a real Entra sign-in through
+`AddAppertureAuthentication` (with `MapInboundClaims = false`) preserves `sid` under its raw name and does **not** preserve `iss`.
+ASP.NET Core's OpenID Connect `ClaimActions` delete `iss` (with the other token-envelope claims) after `OnTokenValidated` and before the
+cookie ticket is written. Apperture does not change `ClaimActions` or ticket shape solely to support remote front-channel logout.
+
+Entra advertises `frontchannel_logout_supported` but not session-bound front-channel logout. Microsoft's normal front-channel call is a
+cross-site iframe and therefore does not receive the SameSite=Lax Apperture authentication cookie. A live `RemoteSignOutPath` would
+therefore serve top-level navigations that legitimate Entra logout does not use.
+
+**Authoritative ruling.** `RemoteSignOutPath` is set to empty in the final OpenID Connect `PostConfigure`, after every ordinary
+configurer and whether or not Entra is enabled. `/signout-oidc` is not a live OIDC protocol endpoint. It is not exempted from browser
+request-trust by a constant fallback: the middleware includes a remote-sign-out path in the callback list only when the effective
+`RemoteSignOutPath.HasValue` is true. No unsolicited Entra front-channel request may terminate an Apperture session. Apperture sessions
+terminate through protected application-owned `POST /signout`, or through session expiry. `/signout-callback-oidc` (`SignedOutCallbackPath`)
+remains active and is independent of `RemoteSignOutPath`; application-owned Entra logout still redirects through Microsoft's end-session
+endpoint and returns there.
+
+This slice does not change SameSite, cookie `Secure`, `ClaimActions`, or `MapInboundClaims`. If true Entra front-channel / single-sign-out
+is required later, it needs a new design gate together with the relevant cross-site cookie architecture.
+
+### 45.4 Entra directory searches (G1/G2)
+
+`GET …/entra-tenants/{id}/directory/users|groups` called Microsoft Graph with the stored secret and wrote the registration's discovery
+outcome. Rule G would have refused only an explicit cross-site GET, so a same-site sibling could trigger both. They are now
+`POST …/directory/users|groups` with `[Consumes("application/json")]` and one typed body (`EntraDirectorySearchRequestBody(Search, Top = 25)`),
+so they sit under Rule U like every other mutation, with no second mechanism. Authorization is unchanged (`auth.configuration.read`). The
+client methods are `SearchEntraDirectoryUsersAsync`/`SearchEntraDirectoryGroupsAsync` (the search text is in the body, never the URL); the
+two directory pages and user detail call them.
+
+### 45.5 Re-confirmed GETs (§18.1)
+
+- G3 `GET /api/users/entra/directory`: Graph search plus local reads (users by identity link, pending requests). No write. Stays GET.
+- G4/G5 options: `PlatformConnectorDefinitionsOptionProvider` reads the catalog; `CampusNexusCampusesOptionProvider` resolves the slot and
+  lists campuses. No write. Stay GET.
+- G9b `GET /api/me/notifications` and `…/unread-count`: `EnsureInboxRowsForUserAsync` inserts only the reader's missing inbox rows, with the
+  delivery-time defaults. It never changes read, unread or dismissed state of an existing row. Stays GET.
+
+### 45.6 Ui.Server
+
+Ui.Server's `HttpClient`, `IManagementClient`, `DomainMenuService`, `IOperatorCapabilitiesService`, `IncludeCredentialsHandler`, the shell
+services and their options were never resolved (no prerender; `_Host` renders no component). They are removed, so the only Management UI
+HTTP pipeline is Ui.Client's, where the platform header is added. The debug startup write stays for SEC-1B3.
+
+### 45.7 Guards
+
+- `GetSafetyClassificationGuardTests`: every GET action that can reach a remote-calling or writing service (the directory, provisioning and
+  OpenID services, the option-provider coordinator, the inbox service, connection tools, connection management, the notification pipeline
+  tester) is listed with its §18.1 class. A new one fails until it is classified; a stale entry fails too. Audit appends are observation and
+  are not in the set.
+- `BrowserRequestTrustGuardTests.Every_routed_unsafe_endpoint_falls_under_rule_u_or_rule_n`: enumerates the endpoints Management.Host
+  really routes (controllers plus host auth endpoints, via `EndpointDataSource`), not attribute templates. Every unsafe endpoint is under
+  `/api` or carries Rule N; the non-`/api` set is exactly the four auth endpoints; no `/api` endpoint carries Rule N; the only exemption is
+  `POST /api/Enroll`. A companion check pins the `Map*` calls in `Program.cs` to the ones enumerated.
+- `SignOutSurfaceGuardTests`, `SignOutFormSourceGuardTests`, `UiServerHostRegistrationGuardTests`, `EntraDirectorySearchRequestForgeryTests`.
+
+### 45.8 Evidence
+
+`dotnet build Apperture.slnx`: 0 errors (repo-local `artifacts/sec1-b2-slnx`; the 47 warnings are pre-existing). UnitTests 3 176 (was
+3 177; the sid/iss-matching cases were removed). ArchTests 38. Ui.Shared.Tests 1 393. Ui.Client.Tests 333. IntegrationTests **283 passed, 0 failed** in 6 m 58 s
+(collections serialized, `artifacts/sec1-b2-int-full`). SQL execution, read from the test container without a credential on the command
+line: `Apperture_IntegrationTests` last user update `2026-09-26 15:41:29` → `20:01:09`; `Apperture_ManagementGovernanceTests`
+`15:34:38` → `19:55:47`; server time `20:05:13`.
+
+Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, WebKit): first full run **325 passed, 1 failed, 326 total** in 23 m 2 s
+(`artifacts/sec1-b2-browser-full`). The one failure was `SessionRenewalBaselineTests.F9_background_polling_does_not_renew_the_sliding_session_and_the_passive_tab_expires`: later-poll 401 and original-ticket replay 401 both succeeded, then `WaitForURLAsync("/login")` timed out at 60 s. Isolated re-run of that test: **1 passed, 0 failed** in 1 m 5 s. Disposition: A3 recovery-navigation flake under suite load, not a B2 product regression. Product proofs on all three engines:
+
+- D2 flipped: a cross-site `location.href = '{api}/signout'` carries the session cookie, gets 405 and no `Set-Cookie`; `auth/me` is 200
+  afterwards.
+- A cross-site sign-out form (`Origin: 127.0.0.1`, no cookie on Chromium/Firefox) and a same-site sibling form (`Origin: localhost:{other}`,
+  cookie attached) are both 403 with no `Set-Cookie`; `auth/me` is 200 afterwards.
+- A cross-site navigation to `/signout-oidc?sid=…&iss=…` carries the cookie, clears nothing; `auth/me` is 200 afterwards. The path is not a live `RemoteSignOutPath`.
+- A cross-site navigation to `/signin/step-up` or `/signin/link` arrives with `Sec-Fetch-Site: cross-site` (WebKit included) and is 403.
+- The account menu's sign-out is `POST /signout` with `Origin` = the UI origin, no `X-Apperture-Request`, `Sec-Fetch-Site: same-site`,
+  302 to the UI's `/login`, and `auth/me` is 401 afterwards. The account-unavailable surface's sign-out (F3 test) also lands on `/login`.
+
+Host proofs (`BrowserRequestTrustHttpTests`, real pipeline): trusted-origin sign-out without the header is 302 to `/login`; missing,
+`null`, sibling and cross-site origins (and a trusted origin marked cross-site) are 403 with no `Set-Cookie`; `GET /signout` is 405;
+cross-site step-up/link are 403 and `same-site`/`same-origin`/`none`/absent are not; `GET /signin` stays open; the directory searches,
+rejected (no origin, or a sibling origin) or sent as the old GET (405), make **no** Graph call and write **no** discovery outcome, and the
+trusted POST makes exactly one call and records the outcome. Unit proofs (`ManagementAuthEndpointsTests`, `EntraStepUpCallbackTests`): no GET
+or form POST to `/signout-oidc` ends a local session or a synthetic `sid`+`iss` session, with Entra on or off; a real Entra sign-in keeps
+`sid` and not `iss`, and the same historical path does not clear that ticket. The effective options have `RemoteSignOutPath.HasValue == false`.
+
+### 45.9 Findings
+
+| Id | Status |
+|---|---|
+| F12 | **Fixed.** G1/G2 are POST under Rule U; `GET /signout` is gone |
+| D2 | **Fixed.** Sign-out is a trusted POST; `RemoteSignOutPath` is empty (§45.3) |
+| F13, F14, F15, F16 | **Open.** SEC-1B3 |
+| I-2 | **Open.** SEC-1B4 / closure |
+
+Residuals, accepted: a same-site sibling can still navigate the operator to `/signin/step-up` (an audit append and a Microsoft prompt) or
+`/signin/link` (a Microsoft prompt that can only link the operator's own Microsoft identity); both are auth navigation under §18.1 and Rule N
+as approved. Browser engines without Fetch Metadata get no Rule N refusal on those two GETs. Entra/Microsoft front-channel single sign-out
+does not terminate an Apperture session: `RemoteSignOutPath` is empty, and the SameSite=Lax cookie is not sent on Microsoft's cross-site
+iframe anyway (§45.3). Sessions end through `POST /signout` or expiry.
 
 SEC-1 is not complete.

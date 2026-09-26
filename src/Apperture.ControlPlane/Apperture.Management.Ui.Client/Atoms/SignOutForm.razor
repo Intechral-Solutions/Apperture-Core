@@ -1,0 +1,14 @@
+@using Apperture.Management.Ui.Client.Services
+@inject ShellHostNavigation HostNav
+@inject NavigationManager Nav
+
+@* Sign-out is a state change, so it is a native form POST to the host. The browser sends the UI's Origin with it (Rule N).
+   There is no script handler: the page leaves as the form submits, and the host answers with the /login redirect. *@
+<form method="post" action="@HostNav.GetSignOutUrl(Nav)"><button type="submit" class="@ButtonClass">@ChildContent</button></form>
+
+@code {
+    /// <summary>The caller's button classes, so each surface keeps its own look.</summary>
+    [Parameter] public string? ButtonClass { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

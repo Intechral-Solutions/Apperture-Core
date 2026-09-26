@@ -1,58 +1,10 @@
-using Apperture.Management.Ui.Client.Services;
-using Apperture.Management.Ui.Client.Services;
-using Apperture.Management.Ui.Shared.Options;
-using Apperture.Management.Client;
-using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.Extensions.Options;
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
+// The shell page and the WebAssembly assets only. Nothing is prerendered, so this host resolves no UI service and has no
+// Management API client: every API call comes from the WebAssembly client's single pipeline (Ui.Client/Program.cs).
 builder.Services.AddRazorPages();
-
-// Register client services required for prerendering (NavRail, ControlPanel, etc.)
-builder.Services.Configure<ControlPanelMenuOptions>(
-    builder.Configuration.GetSection("ControlPanelMenuOptions"));
-builder.Services.Configure<ShellUiOptions>(
-    builder.Configuration.GetSection(ShellUiOptions.SectionName));
-
-var uiBaseAddress = builder.Configuration["ASPNETCORE_URLS"]?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()
-    ?? "http://localhost:9001";
-var apiBaseUrl = ManagementUiDevApiRouting.ResolveApiBaseUrl(
-    builder.Configuration["ApiBaseUrl"],
-    uiBaseAddress);
-if (!apiBaseUrl.EndsWith("/", StringComparison.Ordinal))
-    apiBaseUrl += "/";
-if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiUri))
-{
-    var uiBase = Uri.TryCreate(uiBaseAddress, UriKind.Absolute, out var parsedUi)
-        ? parsedUi
-        : new Uri("http://localhost:9001");
-    apiUri = new Uri(uiBase, apiBaseUrl);
-}
-
-builder.Services.AddScoped<IncludeCredentialsHandler>();
-
-builder.Services.AddScoped(sp =>
-{
-    var handler = sp.GetRequiredService<IncludeCredentialsHandler>();
-    handler.InnerHandler = new HttpClientHandler();
-    return new HttpClient(handler) { BaseAddress = apiUri };
-});
-builder.Services.AddScoped<IManagementClient>(sp => new ManagementClient(sp.GetRequiredService<HttpClient>()));
-
-builder.Services.AddScoped<DomainMenuService>(sp =>
-{
-    var httpClient = sp.GetRequiredService<HttpClient>();
-    var options = sp.GetRequiredService<IOptions<ControlPanelMenuOptions>>();
-    var logger = sp.GetRequiredService<ILogger<DomainMenuService>>();
-    return new DomainMenuService(httpClient, options, logger);
-});
-
-builder.Services.AddScoped<IOperatorCapabilitiesService, OperatorCapabilitiesService>();
-
-builder.Services.AddAppertureShellServices();
 
 var app = builder.Build();
 

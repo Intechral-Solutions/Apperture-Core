@@ -62,7 +62,7 @@
                 <button type="button" class="btn btn-primary w-full" @onclick="SignInWithMicrosoft">Sign in with Microsoft</button>
             }
 
-            <button type="button" class="btn btn-secondary w-full" @onclick="SignOut">Sign out</button>
+            <SignOutForm ButtonClass="btn btn-secondary w-full">Sign out</SignOutForm>
         </div>
     }
 </div>
@@ -112,9 +112,6 @@
         var host = HostNav.GetManagementHostBase(Nav);
         Nav.NavigateTo(new Uri(host, "signin").ToString(), forceLoad: true);
     }
-
-    private void SignOut() =>
-        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
 
     private static string TitleFor(string state) => state switch
     {

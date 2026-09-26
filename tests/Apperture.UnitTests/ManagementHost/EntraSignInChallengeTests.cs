@@ -108,7 +108,7 @@ public sealed class EntraSignInChallengeTests
         string[] hostAuthPaths =
         [
             "/signin", "/signin/link", "/signin/step-up", "/signin-oidc", "/signout",
-            EntraSignOut.SignedOutCallbackPath, EntraSignOut.RemoteSignOutPath,
+            EntraSignOut.SignedOutCallbackPath, "/signout-oidc",
             new EntraAuthOptions().CallbackPath,
             EntraLinkFlowConstants.LoginPath, EntraLinkFlowConstants.AccessRequestPath, "/login/local",
         ];

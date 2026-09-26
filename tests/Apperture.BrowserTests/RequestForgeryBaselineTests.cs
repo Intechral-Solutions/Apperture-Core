@@ -174,17 +174,16 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
     }
 
     /// <summary>
-    /// D2 baseline — REPRODUCED. <c>GET /signout</c> ends the session, and a Lax cookie rides ANY top-level GET
-    /// navigation, so a cross-site page can sign the operator out with one script line (logout CSRF).
-    /// FLIPS IN SEC-1B2: <c>/signout</c> becomes POST-only (GET → 405) behind Rule N (trusted Origin).
+    /// D2 — FLIPPED IN SEC-1B2 (was: <c>GET /signout</c> ended the session, and a Lax cookie rides any top-level GET navigation, so
+    /// one script line on a cross-site page signed the operator out). <c>/signout</c> is POST-only now: the same navigation still
+    /// carries the cookie, gets 405, clears nothing, and the session is still valid afterwards.
     /// </summary>
-    [BrowserFact]
-    public async Task D2_cross_site_get_signout_ends_the_session_today()
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task D2_a_cross_site_get_to_signout_no_longer_ends_the_session(BrowserEngine engine)
     {
-        await harness.ResetAsync();
-        // Intercepted context on purpose: the sign-out redirect lands on the real UI, which must talk to this run's API.
-        await using var context = await harness.NewContextAsync();
-        await harness.SignInAsync(context);
+        var (context, _) = await NewVictimAsync(engine);
+        await using var lease = context;
         harness.Attacker.Serve("/logout-bait.html",
             $"<!doctype html><title>bait</title><script>location.href='{harness.Origins.Api}/signout'</script>");
         harness.Recorder.Clear();
@@ -194,17 +193,150 @@ public sealed class RequestForgeryBaselineTests(BrowserHarness harness, ITestOut
         await TestSupport.EventuallyAsync(() => harness.Recorder.Where(r => r.Path == "/signout").Any(), "the forged sign-out navigation to reach the host");
         await Task.Delay(500);
 
-        var signout = harness.Recorder.Where(r => r.Path == "/signout").First();
+        var signout = harness.Recorder.Where(r => r.Path == "/signout").Single();
         var me = await context.APIRequest.GetAsync(harness.Origins.Api + "/api/auth/me");
-        output.Line("D2", signout.ToString());
-        output.Line("D2", $"session afterwards: GET /api/auth/me -> {me.Status}");
+        output.Line("D2", $"[{engine}] {signout}");
+        output.Line("D2", $"[{engine}] session afterwards: GET /api/auth/me -> {me.Status}");
 
         signout.Method.Should().Be("GET");
-        signout.SecFetchSite.Should().Be("cross-site");
-        signout.SecFetchMode.Should().Be("navigate");
-        signout.SessionCookiePresent.Should().BeTrue("a Lax cookie is sent on a cross-site top-level GET navigation");
+        if (engine != BrowserEngine.WebKit)
+            signout.SecFetchSite.Should().Be("cross-site");
+        signout.SessionCookiePresent.Should().BeTrue("a Lax cookie is still sent on a cross-site top-level GET navigation");
+        signout.Status.Should().Be(405, "there is no GET sign-out");
+        signout.SetCookieSummaries.Should().BeEmpty("nothing was cleared");
+        me.Status.Should().Be(200, "the session survived the forged navigation");
+    }
+
+    /// <summary>
+    /// SEC-1B2 Rule N. An auto-submitting sign-out form on another origin (a genuinely cross-site page, and a same-site sibling that
+    /// the Lax cookie still reaches) is refused on its Origin with 403, before the cookie handler runs.
+    /// </summary>
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task A_forged_sign_out_form_from_another_origin_is_403_and_the_session_survives(BrowserEngine engine)
+    {
+        foreach (var (label, origin) in new[] { ("cross-site", harness.Origins.CrossSiteAttacker), ("same-site sibling", harness.Origins.SameSiteAttacker) })
+        {
+            var (context, _) = await NewVictimAsync(engine);
+            await using var lease = context;
+            harness.Attacker.Serve("/sign-out-bait.html",
+                $"<!doctype html><title>bait</title><form id=\"f\" method=\"post\" action=\"{harness.Origins.Api}/signout\"></form><script>document.getElementById('f').submit()</script>");
+            harness.Recorder.Clear();
+
+            var page = await context.NewPageAsync();
+            await page.GotoAsync(origin + "/sign-out-bait.html", new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
+            await TestSupport.EventuallyAsync(() => harness.Recorder.Where(r => r.Path == "/signout" && r.Method == "POST").Any(), $"the {label} sign-out form to reach the host");
+            await Task.Delay(300);
+
+            var post = harness.Recorder.Where(r => r.Path == "/signout" && r.Method == "POST").Single();
+            var me = await context.APIRequest.GetAsync(harness.Origins.Api + "/api/auth/me");
+            output.Line("rule-n", $"[{engine}] {label} sign-out form: {post}; auth/me afterwards -> {me.Status}");
+
+            post.Origin.Should().Be(origin, $"[{engine}] {label}");
+            post.Status.Should().Be(403, $"[{engine}] {label}: an untrusted Origin is refused before the cookie is consulted");
+            post.SetCookieSummaries.Should().BeEmpty($"[{engine}] {label}");
+            if (label == "same-site sibling")
+                post.SessionCookiePresent.Should().BeTrue("a same-site sibling's form still carries the Lax cookie; the Origin is what refuses it");
+            me.Status.Should().Be(200, $"[{engine}] {label}: the session survived");
+        }
+    }
+
+    /// <summary>
+    /// SEC-1B2. <c>/signout-oidc</c> is not a live RemoteSignOutPath. A cross-site navigation to the historical
+    /// path leaves a local session untouched.
+    /// </summary>
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task A_cross_site_navigation_to_the_front_channel_sign_out_path_leaves_the_session_alone(BrowserEngine engine)
+    {
+        var (context, _) = await NewVictimAsync(engine);
+        await using var lease = context;
+        harness.Attacker.Serve("/front-channel-bait.html",
+            $"<!doctype html><title>bait</title><script>location.href='{harness.Origins.Api}/signout-oidc?sid=guess&iss=https%3A%2F%2Flogin.microsoftonline.com%2Fguess%2Fv2.0'</script>");
+        harness.Recorder.Clear();
+
+        var page = await context.NewPageAsync();
+        await page.GotoAsync(harness.Origins.CrossSiteAttacker + "/front-channel-bait.html", new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
+        await TestSupport.EventuallyAsync(() => harness.Recorder.Where(r => r.Path == "/signout-oidc").Any(), "the forged front-channel sign-out to reach the host");
+        await Task.Delay(500);
+
+        var request = harness.Recorder.Where(r => r.Path == "/signout-oidc").Single();
+        var me = await context.APIRequest.GetAsync(harness.Origins.Api + "/api/auth/me");
+        output.Line("front-channel", $"[{engine}] {request}; auth/me afterwards -> {me.Status}");
+
+        request.SessionCookiePresent.Should().BeTrue("the cross-site top-level navigation carries the Lax cookie");
+        request.SetCookieSummaries.Should().BeEmpty("the session cookie was not cleared");
+        me.Status.Should().Be(200, "the session survived");
+    }
+
+    /// <summary>
+    /// SEC-1B2 Rule N for the step-up and link navigations: a navigation the browser marks <c>Sec-Fetch-Site: cross-site</c> is
+    /// refused with 403 before the endpoint (no audit, no challenge). Chromium and Firefox send Fetch Metadata; where an engine does
+    /// not, the navigation is not refused on that ground (an absent header is never a rejection reason by itself).
+    /// </summary>
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task A_cross_site_navigation_to_step_up_or_link_is_refused_before_the_endpoint(BrowserEngine engine)
+    {
+        foreach (var path in new[] { "/signin/step-up", "/signin/link" })
+        {
+            var (context, _) = await NewVictimAsync(engine);
+            await using var lease = context;
+            harness.Attacker.Serve("/nav-bait.html", $"<!doctype html><title>bait</title><script>location.href='{harness.Origins.Api}{path}'</script>");
+            harness.Recorder.Clear();
+
+            var page = await context.NewPageAsync();
+            await page.GotoAsync(harness.Origins.CrossSiteAttacker + "/nav-bait.html", new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
+            await TestSupport.EventuallyAsync(() => harness.Recorder.Where(r => r.Path == path).Any(), $"the cross-site navigation to {path} to reach the host");
+            await Task.Delay(300);
+
+            var request = harness.Recorder.Where(r => r.Path == path).First();
+            output.Line("rule-n", $"[{engine}] cross-site navigation to {path}: {request}");
+
+            if (engine != BrowserEngine.WebKit)
+                request.SecFetchSite.Should().Be("cross-site", $"[{engine}] sends Fetch Metadata on navigations");
+            if (request.SecFetchSite == "cross-site")
+                request.Status.Should().Be(403, $"[{engine}] {path}: refused before the endpoint runs");
+            else
+                request.Status.Should().NotBe(403, $"[{engine}] {path}: an absent Sec-Fetch-Site is not a rejection reason by itself");
+        }
+    }
+
+    /// <summary>
+    /// SEC-1B2. A real operator sign-out from the account menu is a native form POST from the UI origin: the browser sends the UI's
+    /// Origin and no platform header (Rule N needs none), the host signs out and redirects to the UI's sign-in page.
+    /// </summary>
+    [BrowserTheory]
+    [MemberData(nameof(BrowserEngines.AllEngines), MemberType = typeof(BrowserEngines))]
+    public async Task Signing_out_from_the_account_menu_is_a_trusted_form_post_that_ends_the_session(BrowserEngine engine)
+    {
+        await harness.ResetAsync();
+        await using var context = await harness.NewContextAsync(engine);
+        var page = await context.NewPageAsync();
+        await page.GotoAsync(harness.Origins.Ui + "/login/local?returnUrl=" + Uri.EscapeDataString("/control/center"));
+        await page.Locator("#local-login-username").FillAsync(BrowserHarness.OperatorUsername);
+        await page.Locator("#local-login-password").FillAsync(HarnessSeeding.Passphrase);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in", Exact = true }).ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/control/center", StringComparison.Ordinal));
+        await page.WaitForShellAsync();
+        harness.Recorder.Clear();
+
+        await page.GetByRole(AriaRole.Button, new() { NameRegex = new Regex("^Account menu for") }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign out", Exact = true }).ClickAsync();
+        await page.WaitForURLAsync(u => new Uri(u).AbsolutePath == "/login", new() { Timeout = 30_000 });
+        await TestSupport.EventuallyAsync(() => harness.Recorder.Where(r => r.Path == "/signout").Any(), "the sign-out form POST to reach the host");
+
+        var signout = harness.Recorder.Where(r => r.Path == "/signout").Single();
+        var me = await context.APIRequest.GetAsync(harness.Origins.Api + "/api/auth/me");
+        output.Line("legitimate", $"[{engine}] sign-out {signout}; auth/me afterwards -> {me.Status}");
+
+        signout.Method.Should().Be("POST");
+        signout.Origin.Should().Be(harness.Origins.Ui);
+        signout.PlatformRequestHeaderValue.Should().BeNull("a form navigation carries no platform header, and Rule N does not require it");
+        signout.SessionCookiePresent.Should().BeTrue();
         signout.Status.Should().Be(302);
-        me.Status.Should().Be(401, "the forged sign-out really ended the session");
+        new Uri(page.Url).GetLeftPart(UriPartial.Authority).Should().Be(harness.Origins.Ui);
+        me.Status.Should().Be(401, "the session ended");
     }
 
     // ---- The three-engine Origin / Fetch Metadata probe -----------------------------------------------------
