@@ -8,33 +8,17 @@ builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
-// #region agent log
-try
+app.Use(async (context, next) =>
 {
-    var hostPath = Path.Combine(app.Environment.ContentRootPath, "Pages", "_Host.cshtml");
-    var hostText = File.Exists(hostPath) ? File.ReadAllText(hostPath) : "";
-    var payload = System.Text.Json.JsonSerializer.Serialize(new
+    context.Response.OnStarting(static state =>
     {
-        sessionId = "4bd3d8",
-        hypothesisId = "H1",
-        location = "Program.cs:startup",
-        message = "ui-server-start-host-file",
-        data = new
-        {
-            hostPath,
-            hasWebAssemblyPrerenderedAttr = hostText.Contains("render-mode=\"WebAssemblyPrerendered\"", StringComparison.Ordinal),
-            hasComponentTag = hostText.Contains("<component ", StringComparison.Ordinal),
-            hasWebAssemblyAttr = hostText.Contains("render-mode=\"WebAssembly\"", StringComparison.Ordinal),
-            singleRootClientMount = hostText.Contains("RootComponents.Add", StringComparison.Ordinal)
-                || hostText.Contains("do not emit <component", StringComparison.OrdinalIgnoreCase),
-            hostHead = hostText.Length > 280 ? hostText[..280] : hostText
-        },
-        timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-    });
-    await File.AppendAllTextAsync(@"f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log", payload + Environment.NewLine);
-}
-catch { /* debug ingest best-effort */ }
-// #endregion
+        var response = ((HttpContext)state).Response;
+        response.Headers.XFrameOptions = "DENY";
+        response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+        return Task.CompletedTask;
+    }, context);
+    await next();
+});
 
 if (!app.Environment.IsDevelopment())
 {

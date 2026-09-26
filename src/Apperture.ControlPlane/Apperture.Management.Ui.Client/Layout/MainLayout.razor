@@ -8,7 +8,6 @@
 @inject NavigationManager NavManager
 @inject SessionStateService SessionState
 @inject TopBarMenuCoordinator TopBarMenus
-@inject IJSRuntime Js
 
 <div id="main" class="flex h-screen bg-shell" @onclick="CloseTopBarMenus">
     <NavRail IsControlPanelOpen="@isControlPanelOpen"
@@ -56,15 +55,6 @@
         // UIX-2: NavRail alone rebuilds on menu Changed. Dual layout+rail SHC after
         // menus arrived orphaned components while Body/dashboard still rendered.
         ResolveAndUpdateCurrentDomain();
-        // #region agent log
-        _ = LogDebugAsync("MainLayout.razor:OnInitialized", "layout-init", "H3", new Dictionary<string, object?>
-        {
-            ["runId"] = "post-fix",
-            ["instanceId"] = GetHashCode(),
-            ["bodyReady"] = _bodyReady,
-            ["domain"] = currentDomainName
-        });
-        // #endregion
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -91,23 +81,9 @@
         if (_disposed)
             return;
 
-        // #region agent log
-        await LogDebugAsync("MainLayout.razor:KickoffMenus", "menus-load-start", "H5", new Dictionary<string, object?>
-        {
-            ["bodyReady"] = _bodyReady
-        });
-        // #endregion
-
         await DomainMenuService.LoadMenusAsync();
         if (_disposed)
             return;
-
-        // #region agent log
-        await LogDebugAsync("MainLayout.razor:KickoffMenus", "menus-load-done", "H5", new Dictionary<string, object?>
-        {
-            ["bodyReady"] = _bodyReady
-        });
-        // #endregion
 
         // Update domain field only — do not StateHasChanged yet (Body reveal is the SHC).
         ResolveAndUpdateCurrentDomain();
@@ -121,28 +97,8 @@
             return;
 
         _bodyReady = true;
-        // #region agent log
-        await LogDebugAsync("MainLayout.razor:RevealBody", "body-revealed", "H3", new Dictionary<string, object?>
-        {
-            ["bodyReady"] = true
-        });
-        // #endregion
         await InvokeAsync(StateHasChanged);
     }
-
-    // #region agent log
-    private async Task LogDebugAsync(string location, string message, string hypothesisId, Dictionary<string, object?> data)
-    {
-        try
-        {
-            await Js.InvokeVoidAsync("appertureShell.debugLog", location, message, hypothesisId, data);
-        }
-        catch
-        {
-            /* ignore */
-        }
-    }
-    // #endregion
 
     public void Dispose()
     {

@@ -10,7 +10,8 @@ Firefox, recorded in §41. An independent review of the A-series found one Impor
 Apperture-namespace claims on a validated Entra principal); that follow-up is recorded in §42. SEC-1A3 (background
 requests do not renew the sliding session) is implemented and recorded in §43. SEC-1B1 (the platform browser
 request-forgery policy) is implemented and recorded in §44. SEC-1B2 (verb and sign-out cleanup, Rule N) is implemented and
-recorded in §45. SEC-1B3 and the remaining slices have not started.** SEC-1 is not complete.
+recorded in §45. SEC-1B3 (CORS, cookie Secure, host hygiene, Management.Api class library) is implemented and
+recorded in §46. SEC-1B4 and the remaining slices have not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1865,7 +1866,7 @@ or form POST to `/signout-oidc` ends a local session or a synthetic `sid`+`iss` 
 |---|---|
 | F12 | **Fixed.** G1/G2 are POST under Rule U; `GET /signout` is gone |
 | D2 | **Fixed.** Sign-out is a trusted POST; `RemoteSignOutPath` is empty (§45.3) |
-| F13, F14, F15, F16 | **Open.** SEC-1B3 |
+| F13, F14, F15, F16 | **Fixed in SEC-1B3 (§46).** |
 | I-2 | **Open.** SEC-1B4 / closure |
 
 Residuals, accepted: a same-site sibling can still navigate the operator to `/signin/step-up` (an audit append and a Microsoft prompt) or
@@ -1873,5 +1874,76 @@ Residuals, accepted: a same-site sibling can still navigate the operator to `/si
 as approved. Browser engines without Fetch Metadata get no Rule N refusal on those two GETs. Entra/Microsoft front-channel single sign-out
 does not terminate an Apperture session: `RemoteSignOutPath` is empty, and the SameSite=Lax cookie is not sent on Microsoft's cross-site
 iframe anyway (§45.3). Sessions end through `POST /signout` or expiry.
+
+SEC-1 is not complete.
+
+---
+
+## 46. SEC-1B3 — CORS, cookie and host cleanup (2026-09-26)
+
+Scope: F13, F14, F15, F16, REQ-14–REQ-18, and the B2-deferred rule that a configured OIDC `CallbackPath` under `/api`
+must not become a Rule U exemption. Not in this slice: browser-suite CI (I-2 / SEC-1B4), forwarded-headers / public-origin
+topology beyond the Production `ManagementUiUrl` refusal, SameSite=None, RemoteSignOutPath, IAM-8, or navigation grouping.
+SEC-1 is not complete.
+
+### 46.1 UiDev CORS
+
+Registered and applied only when `IHostEnvironment.IsDevelopment()`. The allowed origin is the exact configured
+`ShellUi:ManagementUiUrl` (development fallback `http://localhost:9001`). The phantom `https://localhost:9001` origin is
+gone. Methods are `GET, POST, PUT, PATCH, DELETE`. Headers are `Content-Type`, `X-Apperture-Request`, and
+`X-Apperture-Background`. Credentials stay on. There is no `AllowAnyOrigin` and no `SetIsOriginAllowed`. Production and
+`Testing` register no CORS policy. The browser harness adds a test-only copy of the same policy against its ephemeral UI
+origin; that registration cannot be activated by a production composition.
+
+### 46.2 Production `ManagementUiUrl`
+
+`ManagementUiRedirects.EnsurePublicOrigin` runs at host startup. Production and Staging refuse a missing, loopback, HTTP,
+or non-origin value and name `ShellUi:ManagementUiUrl` in the exception. Development keeps the localhost fallback.
+`Testing` is the integration/browser HTTP topology and is not subjected to the public-origin refusal (plain-http hosts
+cannot satisfy it). This closes deferred-public-origin item 1 for `ManagementUiUrl` in Production.
+
+### 46.3 Cookies
+
+`ManagementCookiePolicyPostConfigure` sets `SameSite=Lax` and `HttpOnly` on every cookie-authentication scheme. Secure is
+`Always` in Production and Staging, `SameAsRequest` in Development and Testing. Lifetime and sliding behavior are
+unchanged. OIDC correlation/nonce cookies stay on framework defaults (`SameSite=None; Secure`). The pending-MFA cookie
+follows the same Secure rule. SameSite is not `None`.
+
+### 46.4 Host hygiene
+
+- `Apperture.Management.Api` is a class library (`OutputType=Library`, no `Program.cs`, no launch profile). The
+  `.vscode` "Management API" launch entry and the stub host test are gone. `generate-openapi.ps1` points at Management.Host.
+  AppHost already hosted Management.Host. D7 STOP was not hit: there is no supported standalone API deployment.
+- Ui.Server no longer writes `debug-4bd3d8.log`. The `_Layout` agent-log script and every `appertureShell.debugLog` call
+  are gone.
+- Both Management.Host and Ui.Server emit `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`.
+
+### 46.5 Callback-path fail-closed
+
+`WithCallbacks` adds a live OIDC callback path only when it is not under `/api`. `RemoteSignOutPath` is still empty and
+is still not exempted. `/signin-oidc` and `/signout-callback-oidc` remain protocol paths. A mistaken
+`CallbackPath=/api/auth/local/login` does not exempt that mutation from Rule U.
+
+### 46.6 Evidence
+
+`dotnet build Apperture.slnx`: 0 errors, 47 pre-existing warnings (`artifacts/sec1-b3-slnx`).
+
+UnitTests **3 199 passed**, 3 failed, 3 202 total (`artifacts/sec1-b3-unit3`). The three failures are `Epic77UatDocumentationTests`, which walk five levels from `AppContext.BaseDirectory` and therefore resolve `tests/` (or the repo parent) when `BaseOutputPath` is used; they are unrelated to B3 and pass under the default `bin/Debug/net10.0` layout. A first solo artifacts run had aborted after 2 098 passed with a test-host memory-mapping crash during parallel validation (`Failed to create RW mapping for RX memory`); the serialized re-run above is the counted result. An earlier default-bin attempt was blocked by `Apperture.RuntimeHost.Windows.WorkerHost` file locks. Cookie isolated-composition plus SameSite guard: 6/6 (`artifacts/sec1-b3-cookie`).
+
+ArchTests **38**. Ui.Shared.Tests **1 395** (was 1 393; `DebugInstrumentationGuardTests` and the Ui.Server debug-file fact). Ui.Client.Tests **333**.
+
+IntegrationTests **282 passed, 0 failed** in 9 m 33 s (collections serialized, `artifacts/sec1-b3-int-full`). One fewer than SEC-1B2 because the Management.Api stub-host test was removed. SQL execution, read from `apperture-test-sql` without a credential on the command line: `Apperture_IntegrationTests` last user update `2026-09-26 20:01:09` → `22:49:24`; `Apperture_ManagementGovernanceTests` `19:55:47` → `22:42:21`; server UTC `22:49:54`.
+
+Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, WebKit): first full run **324 passed, 2 failed, 326 total** in 32 m 45 s (`artifacts/sec1-b3-browser`). Both failures were `HarnessIsolationGuardTests` reacting to a temporary `InternalsVisibleTo` `Apperture.BrowserTests` on Management.Host (needed only while `UiDevCors` was internal). `UiDevCors` is public; that friend-assembly entry is gone. Isolation re-run: **4 passed** (`artifacts/sec1-b3-iso`). No F9 flake in this run. B3 does not invert browser session assertions; the suite confirms harness CORS and existing B1/B2 proofs still hold. I-2 (browser suite gated off in normal CI) stays open.
+
+### 46.7 Findings
+
+| Id | Status |
+|---|---|
+| F13 | **Fixed.** UiDev CORS is Development-only |
+| F14 | **Fixed.** Management.Api is a class library |
+| F15 | **Fixed.** Ui.Server debug write and agent-log calls are gone |
+| F16 | **Fixed.** SameSite=Lax is explicit; Secure is Always outside the local HTTP topology |
+| I-2 | **Open.** SEC-1B4 / closure |
 
 SEC-1 is not complete.

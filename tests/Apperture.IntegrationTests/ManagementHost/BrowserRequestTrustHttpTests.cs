@@ -94,6 +94,9 @@ public sealed class BrowserRequestTrustHttpTests
 
         var options = await client.SendAsync(new HttpRequestMessage(HttpMethod.Options, "/api/auth/local/login"));
         (await options.Content.ReadAsStringAsync()).Should().NotContain(BrowserRequestTrustRejection);
+        options.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse("Testing does not apply UiDev CORS");
+        options.Headers.GetValues("X-Frame-Options").Should().Contain("DENY");
+        options.Headers.GetValues("Content-Security-Policy").Should().Contain("frame-ancestors 'none'");
 
         var callback = await client.PostAsync("/signin-oidc", new StringContent(""));
         (await callback.Content.ReadAsStringAsync()).Should().NotContain(BrowserRequestTrustRejection);

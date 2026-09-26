@@ -49,12 +49,15 @@ public sealed class BrowserRequestTrustGuardTests
     public void Middleware_runs_after_cors_and_before_authentication()
     {
         var program = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Host/Program.cs"));
-        var cors = program.IndexOf("app.UseCors(\"UiDev\");", StringComparison.Ordinal);
+        var developmentCors = program.IndexOf("if (app.Environment.IsDevelopment())", StringComparison.Ordinal);
+        var cors = program.IndexOf("app.UseCors(UiDevCors.PolicyName);", StringComparison.Ordinal);
         var trust = program.IndexOf("app.UseBrowserRequestTrust();", StringComparison.Ordinal);
         var authentication = program.IndexOf("app.UseAuthentication();", StringComparison.Ordinal);
         var authorization = program.IndexOf("app.UseAuthorization();", StringComparison.Ordinal);
-        cors.Should().BeGreaterThan(0);
+        developmentCors.Should().BeGreaterThan(0);
+        cors.Should().BeGreaterThan(developmentCors);
         trust.Should().BeGreaterThan(cors);
+        program.Should().Contain("if (builder.Environment.IsDevelopment())");
         authentication.Should().BeGreaterThan(trust);
         authorization.Should().BeGreaterThan(authentication);
         program.Should().Contain("AddBrowserRequestTrust(builder.Configuration, builder.Environment)");

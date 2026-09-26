@@ -1,5 +1,7 @@
+using System.Net;
 using Apperture.Management.Ui.Shared.Auth;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace Apperture.Management.Host;
 
@@ -19,6 +21,47 @@ internal static class ManagementUiRedirects
         return string.IsNullOrWhiteSpace(configured)
             ? DevelopmentBaseUrl
             : configured.TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Production and Staging refuse a missing, loopback, or non-HTTPS UI origin. Development and Testing
+    /// keep the local HTTP fallback used by the split-host topology.
+    /// </summary>
+    public static void EnsurePublicOrigin(IConfiguration? configuration, IHostEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        if (!ManagementHostingEnvironment.RequiresPublicUiOrigin(environment))
+            return;
+
+        var configured = configuration?[BaseUrlConfigurationKey];
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            throw new InvalidOperationException(
+                "ShellUi:ManagementUiUrl is required in this environment. Set it to the public HTTPS UI origin (scheme, host and optional port only). A localhost fallback is not used.");
+        }
+
+        if (!Uri.TryCreate(configured.Trim(), UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !IsOriginPath(uri)
+            || IsLoopbackHost(uri.Host))
+        {
+            throw new InvalidOperationException(
+                "ShellUi:ManagementUiUrl must be an HTTPS origin (scheme, host and optional port only) and must not be a loopback address. Example: https://management.contoso.com");
+        }
+    }
+
+    private static bool IsOriginPath(Uri uri) =>
+        (uri.AbsolutePath == "/" || uri.AbsolutePath.Length == 0)
+        && string.IsNullOrEmpty(uri.Query)
+        && string.IsNullOrEmpty(uri.Fragment);
+
+    private static bool IsLoopbackHost(string host)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return IPAddress.TryParse(host, out var address) && IPAddress.IsLoopback(address);
     }
 
     /// <summary>

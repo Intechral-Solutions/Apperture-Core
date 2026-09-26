@@ -80,6 +80,9 @@ internal static class BrowserRequestTrustExtensions
                     "BrowserRequestTrust:Mode ReportOnly is ignored outside Development. Unsafe browser API requests are enforced.");
             }
 
+            var environment = app.ApplicationServices.GetRequiredService<IHostEnvironment>();
+            ManagementUiRedirects.EnsurePublicOrigin(configuration, environment);
+
             // Do not resolve OpenIdConnectOptions here. The browser harness points the authority at an http stub and
             // sets RequireHttpsMetadata only in its own Configure callback; creating the options during host start
             // runs the framework's HTTPS check before that callback is visible on the test-server twin.

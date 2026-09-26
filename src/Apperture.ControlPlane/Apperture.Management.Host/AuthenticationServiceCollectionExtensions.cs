@@ -29,6 +29,7 @@ public static class AuthenticationServiceCollectionExtensions
 
         services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();
+        services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>, ManagementCookiePolicyPostConfigure>();
 
         services.AddAuthentication()
             .AddCookie(CookieScheme, options =>

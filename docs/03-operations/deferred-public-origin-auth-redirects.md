@@ -41,7 +41,7 @@ Keep **one public origin** for UI, API, and Entra callbacks (for example `https:
 Suggested behavior when this is implemented:
 
 - **Development:** keep the localhost:9001 default.
-- **Production:** require `ManagementUiUrl`, or derive from the current request (scheme / host / path base) so a custom Azure domain works without a second config key. Do not fall back to localhost.
+- **Production:** `ShellUi:ManagementUiUrl` is required and must be an HTTPS non-loopback origin (SEC-1B3). Startup fails if it is missing, HTTP, loopback, or not an origin. Do not fall back to localhost.
 - **Forwarded headers:** enable behind Azure App Service and when a Windows reverse proxy is configured. Do not blindly trust `X-Forwarded-*` on a Kestrel port exposed to the internet.
 - **Cookies:** `SecurePolicy = Always` in Production. `SameSite=Lax` is enough for same-origin.
 - **Templates:** add the keys above to [appsettings.azure.json.example](../../deploy/config/examples/appsettings.azure.json.example) and [appsettings.windows.json.example](../../deploy/config/examples/appsettings.windows.json.example), plus Entra app registration Redirect URIs:

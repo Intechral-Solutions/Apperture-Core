@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = if ($env:APPERTURE_REPO_ROOT) { $env:APPERTURE_REPO_ROOT } else { (Get-Item $PSScriptRoot).Parent.Parent.FullName }
-$ApiProject = $ProjectPath ?? (Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Api\Apperture.Management.Api.csproj")
+$ApiProject = $ProjectPath ?? (Join-Path $RepoRoot "src\Apperture.ControlPlane\Apperture.Management.Host\Apperture.Management.Host.csproj")
 
 Write-Host "OpenAPI generation: not yet implemented." -ForegroundColor Yellow
 Write-Host "Options: add Swashbuckle/NSwag to the API, then use dotnet-openapi or nswag to generate spec/client to: $OutputPath" -ForegroundColor Gray

@@ -270,6 +270,27 @@ public sealed class BrowserRequestTrustEvaluatorTests
     }
 
     [Fact]
+    public async Task A_callback_path_under_api_does_not_exempt_an_unsafe_route()
+    {
+        var called = false;
+        var middleware = new BrowserRequestTrustMiddleware(_ =>
+        {
+            called = true;
+            return Task.CompletedTask;
+        }, NullLogger<BrowserRequestTrustMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/auth/local/login";
+        context.Response.Body = new MemoryStream();
+
+        var oidc = new OpenIdConnectOptions { CallbackPath = "/api/auth/local/login" };
+        await middleware.InvokeAsync(context, Options(), Configuration(), new FixedOidc(oidc));
+
+        called.Should().BeFalse("an /api CallbackPath must not become a Rule U exemption");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
     public async Task Report_only_logs_and_still_calls_the_next_delegate()
     {
         var called = false;

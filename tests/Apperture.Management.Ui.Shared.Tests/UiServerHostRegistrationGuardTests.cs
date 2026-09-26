@@ -34,6 +34,15 @@ public sealed class UiServerHostRegistrationGuardTests
         program.Should().Contain("app.MapFallbackToPage(\"/_Host\");");
     }
 
+    [Fact]
+    public void The_ui_server_startup_writes_no_debug_log_file()
+    {
+        var program = ReadProgram();
+        program.Should().NotContain("debug-4bd3d8.log");
+        program.Should().NotContain("File.AppendAllText");
+        program.Should().NotContain("appertureShell.debugLog");
+    }
+
     private static string ReadProgram()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

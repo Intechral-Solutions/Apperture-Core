@@ -2,14 +2,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Management API",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "build",
-      "projectPath": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Api/Apperture.Management.Api.csproj",
-      "cwd": "${workspaceFolder}/src/Apperture.ControlPlane/Apperture.Management.Api"
-    },
-    {
       "name": "Management Host (SQL-backed)",
       "type": "coreclr",
       "request": "launch",
@@ -31,8 +23,8 @@
   ],
   "compounds": [
     {
-      "name": "API + UI Server",
-      "configurations": ["Management API", "Management UI Server"]
+      "name": "Host + UI Server",
+      "configurations": ["Management Host (SQL-backed)", "Management UI Server"]
     }
   ]
 }

@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Api.Controllers;
@@ -723,14 +725,18 @@ public sealed class AuthController : ControllerBase
         _ = cancellationToken;
     }
 
-    private CookieOptions CreatePendingMfaCookieOptions() => new()
+    private CookieOptions CreatePendingMfaCookieOptions()
     {
-        HttpOnly = true,
-        IsEssential = true,
-        SameSite = SameSiteMode.Lax,
-        Secure = Request.IsHttps,
-        MaxAge = PendingMfaLoginTicketService.Lifetime
-    };
+        var environment = HttpContext.RequestServices.GetService<IHostEnvironment>();
+        return new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = environment is not null && !environment.IsDevelopment() && !environment.IsEnvironment("Testing"),
+            MaxAge = PendingMfaLoginTicketService.Lifetime
+        };
+    }
 
     private void ClearPendingMfaCookie()
     {

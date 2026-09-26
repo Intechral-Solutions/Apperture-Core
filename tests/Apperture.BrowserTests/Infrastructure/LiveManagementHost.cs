@@ -3,7 +3,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Management.Host;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,9 +24,8 @@ namespace Apperture.BrowserTests.Infrastructure;
 /// Everything this class adds is <b>test-only and lives in this assembly</b>: an observe-only request
 /// recorder, a controllable clock on the application cookie handler, an ephemeral Data Protection key ring
 /// (so the harness never touches the developer's key ring), the stub-OIDC configuration, the harness SQL
-/// database, and re-pointing the existing <c>UiDev</c> CORS policy's origin list at the harness UI origin.
-/// None of it can be activated by a production composition. The CORS substitution only swaps the origin
-/// string of the policy Program.cs registered; headers, methods and credentials remain production's.
+/// database, and a test-only CORS policy for this run's UI origin (product CORS is Development-only).
+/// None of it can be activated by a production composition.
 /// </para>
 /// </summary>
 public sealed class LiveManagementHost : WebApplicationFactory<ManagementHostWebApplicationFactoryEntryPoint>
@@ -115,14 +114,13 @@ public sealed class LiveManagementHost : WebApplicationFactory<ManagementHostWeb
                 OpenIdConnectDefaults.AuthenticationScheme,
                 options => options.RequireHttpsMetadata = false);
 
-            // Dev split-host CORS policy, unchanged except that its origin is this run's UI origin.
-            services.PostConfigure<CorsOptions>(options =>
+            // Testing has no product CORS. The harness is still a split-host browser, so it registers
+            // the same Development policy against this run's UI origin and applies it here only.
+            services.AddCors(options =>
             {
-                var policy = options.GetPolicy("UiDev")
-                    ?? throw new InvalidOperationException("Program.cs no longer registers the 'UiDev' CORS policy; the harness must be updated.");
-                policy.Origins.Clear();
-                policy.Origins.Add(_origins.Ui);
+                options.AddPolicy(UiDevCors.PolicyName, policy => UiDevCors.Configure(policy, _origins.Ui));
             });
+            services.AddSingleton<IStartupFilter>(new HarnessCorsStartupFilter());
         });
     }
 
@@ -161,6 +159,15 @@ public sealed class LiveManagementHost : WebApplicationFactory<ManagementHostWeb
         }
 
         base.Dispose(disposing);
+    }
+
+    private sealed class HarnessCorsStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.UseCors(UiDevCors.PolicyName);
+            next(app);
+        };
     }
 
     private sealed class HarnessBootstrapConnectionProfile(string connectionString) : IBootstrapConnectionProfile

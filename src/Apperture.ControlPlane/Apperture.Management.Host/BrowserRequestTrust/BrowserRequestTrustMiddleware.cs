@@ -96,13 +96,13 @@ internal sealed class BrowserRequestTrustMiddleware(RequestDelegate next, ILogge
         OpenIdConnectOptions oidc,
         IConfiguration configuration)
     {
-        var paths = new List<string>
-        {
-            oidc.CallbackPath.HasValue ? oidc.CallbackPath.Value! : "/signin-oidc",
-            oidc.SignedOutCallbackPath.HasValue ? oidc.SignedOutCallbackPath.Value! : EntraSignOut.SignedOutCallbackPath,
-        };
+        var paths = new List<string>();
+        AddProtocolCallback(paths, oidc.CallbackPath.HasValue ? oidc.CallbackPath.Value : "/signin-oidc");
+        AddProtocolCallback(
+            paths,
+            oidc.SignedOutCallbackPath.HasValue ? oidc.SignedOutCallbackPath.Value : EntraSignOut.SignedOutCallbackPath);
         if (oidc.RemoteSignOutPath.HasValue)
-            paths.Add(oidc.RemoteSignOutPath.Value!);
+            AddProtocolCallback(paths, oidc.RemoteSignOutPath.Value);
 
         return new BrowserRequestTrustOptions
         {
@@ -111,6 +111,18 @@ internal sealed class BrowserRequestTrustMiddleware(RequestDelegate next, ILogge
             ReportOnlyActive = options.ReportOnlyActive,
             ReportOnlyConfiguredButIgnored = options.ReportOnlyConfiguredButIgnored,
         };
+    }
+
+    /// <summary>
+    /// Protocol callback exemptions are exact configured OIDC paths outside <c>/api</c>. A callback
+    /// configured under <c>/api</c> must not punch a Rule U hole in an ordinary mutation route.
+    /// </summary>
+    internal static void AddProtocolCallback(List<string> paths, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || BrowserRequestTrustEvaluator.IsApi(path))
+            return;
+
+        paths.Add(path);
     }
 
     private static BrowserRequestTrustFacts Read(HttpContext context)

@@ -127,4 +127,4 @@ If SFTP is unreachable, Epic 59A tests fail fast with a message describing requi
 
 ## Related
 
-- Minimal **Management.Api**-only smoke test: `ManagementApiTests` + `ManagementApiStubWebApplicationFactory` (no governance — not a substitute for this harness).
+- Management.Api is a class library hosted by Management.Host. There is no standalone API stub host.
