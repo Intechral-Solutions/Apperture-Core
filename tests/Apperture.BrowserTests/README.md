@@ -13,7 +13,8 @@ is now kept); those now pin the safe return-target policy and the stable Entra e
 the session cookie, and Entra step-up now succeeds from the protected OIDC state (design gate §41), including the wrong-user,
 wrong-tenant, unknown-identity and missing-context refusals. **SEC-1A3 has flipped** F9 (`SessionRenewalBaselineTests`): background
 polls carry `X-Apperture-Background` and do not re-issue the session cookie; a user Refresh at the same threshold still does (design gate §43).
-**SEC-1B1 has flipped** F11 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a same-site sibling and a cross-site form or simple fetch are rejected with 403 and do not mutate; a legitimate Management UI POST and PUT carry the exact UI `Origin` and `X-Apperture-Request: 1` (design gate §44). **SEC-1B2 has flipped** D2 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a cross-site `GET /signout` is 405 and the session survives; a cross-site or same-site-sibling sign-out form is 403 on its Origin; a cross-site navigation to `/signout-oidc` clears nothing; a cross-site navigation to `/signin/step-up` or `/signin/link` is 403; the account menu's sign-out is a form POST with the UI `Origin` and no platform header (design gate §45). **SEC-1B3** moved product `UiDev` CORS to Development-only (design gate §46); this harness is `Testing`, so it registers a test-only copy of the same policy against the ephemeral UI origin. Cookie `Secure` stays `SameAsRequest` on this HTTP topology. Still open: browser-suite CI (SEC-1B4).
+**SEC-1B1 has flipped** F11 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a same-site sibling and a cross-site form or simple fetch are rejected with 403 and do not mutate; a legitimate Management UI POST and PUT carry the exact UI `Origin` and `X-Apperture-Request: 1` (design gate §44). **SEC-1B2 has flipped** D2 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a cross-site `GET /signout` is 405 and the session survives; a cross-site or same-site-sibling sign-out form is 403 on its Origin; a cross-site navigation to `/signout-oidc` clears nothing; a cross-site navigation to `/signin/step-up` or `/signin/link` is 403; the account menu's sign-out is a form POST with the UI `Origin` and no platform header (design gate §45). **SEC-1B3** moved product `UiDev` CORS to Development-only (design gate §46); this harness is `Testing`, so it registers a test-only copy of the same policy against the ephemeral UI origin. Cookie `Secure` stays `SameAsRequest` on this HTTP topology. **SEC-1B4** wires the suite as the blocking GitHub Actions
+job `browser-security` (design gate §47). The first remote Actions run is still the proof that the job executes.
 
 ## Run it (one command)
 
@@ -24,7 +25,11 @@ dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj
 
 Without `APPERTURE_BROWSER_TESTS=1` every browser test reports **Skipped**, no host/SQL/browser is started,
 and a normal `dotnet test Apperture.slnx` is unaffected (only the fast isolation guards in
-`HarnessIsolationGuardTests` run).
+`HarnessIsolationGuardTests` and `BrowserSecurityCiGuardTests` run).
+
+CI (SEC-1B4) uses the same invocation on `ubuntu-latest` with a SQL service container. The stable check name is
+`browser-security`. On failure it uploads the TRX under `artifacts/browser-security`. It does not set
+`APPERTURE_BROWSER_TESTS` on the ordinary `build-and-test` job.
 
 If your Aspire dev stack holds file locks on the normal `bin/` folders, build into an isolated, git-ignored
 folder first and run with `--no-build`:
@@ -138,6 +143,6 @@ item. Everything else runs on Chromium only, for runtime cost.
 The harness already records the platform request header (`X-Apperture-Request`), the background marker
 (`X-Apperture-Background`), `Origin`, `Sec-Fetch-*` and Set-Cookie attributes, so SEC-1B1 (Origin + header +
 Fetch Metadata) and SEC-1A3 (non-renewing background traffic). SEC-1B3 cookie Secure is proven at host
-configuration (Always in Production/Staging; SameAsRequest on this HTTP harness). The remaining invert is
-browser-suite CI (SEC-1B4). Signing in uses `POST /api/auth/local/login` through
+configuration (Always in Production/Staging; SameAsRequest on this HTTP harness). SEC-1B4 is the blocking
+`browser-security` CI job (I-2). Signing in uses `POST /api/auth/local/login` through
 `BrowserHarness.SignInAsync`; when Rule U lands, that one helper gains the trusted `Origin` and header.

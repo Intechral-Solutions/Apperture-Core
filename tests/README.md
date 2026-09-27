@@ -7,7 +7,7 @@
 | Apperture.Management.Ui.Shared.Tests | Static/source contract checks for shared UI |
 | Apperture.IntegrationTests | Integration tests (SQL Server, Management Host HTTP, SFTP) |
 | Apperture.EndToEndTests | Placeholder until real E2E workflow tests land |
-| Apperture.BrowserTests | Opt-in Playwright browser proof harness (SEC-1.0). Skipped unless `APPERTURE_BROWSER_TESTS=1`; see its [README](Apperture.BrowserTests/README.md) |
+| Apperture.BrowserTests | Opt-in Playwright browser proof harness (SEC-1.0). Skipped unless `APPERTURE_BROWSER_TESTS=1`. CI runs the suite as the blocking `browser-security` job; see its [README](Apperture.BrowserTests/README.md) |
 
 ## Integration test SQL (important)
 

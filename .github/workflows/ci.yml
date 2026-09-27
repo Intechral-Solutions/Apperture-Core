@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   build-and-test:
@@ -87,3 +87,75 @@ jobs:
         env:
           APPERTURE_TEST_SQL: ${{ format('Server=127.0.0.1,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
         run: dotnet test Apperture.slnx -c Release --no-build --verbosity normal
+
+  # Stable check name for branch protection: "browser-security".
+  # I-2 / SEC-1B4: the opt-in Playwright suite is a blocking gate, not part of `dotnet test Apperture.slnx`.
+  browser-security:
+    name: browser-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APPERTURE_CI_MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
+      APPERTURE_BROWSER_TESTS: "1"
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: ${{ env.APPERTURE_CI_MSSQL_SA_PASSWORD }}
+        ports:
+          - 1433:1433
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Wait for SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/1433) 2>/dev/null; then
+              echo "SQL Server port is open (attempt $i)"
+              break
+            fi
+            echo "Waiting for SQL Server port... ($i/60)"
+            sleep 2
+          done
+          sleep 8
+
+      - name: Restore
+        run: dotnet restore tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj
+
+      - name: Build
+        run: dotnet build tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj -c Release --no-restore
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-1.63.0
+
+      - name: Install Playwright browsers
+        run: pwsh tests/Apperture.BrowserTests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium firefox webkit
+
+      - name: Browser security suite
+        env:
+          APPERTURE_TEST_SQL_CONNECTION_STRING: ${{ format('Server=127.0.0.1,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
+        run: >
+          dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj
+          -c Release --no-build --verbosity normal
+          --logger "trx;LogFileName=browser-security.trx"
+          --results-directory artifacts/browser-security
+
+      - name: Upload browser-security results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-security-results
+          path: artifacts/browser-security
+          if-no-files-found: ignore

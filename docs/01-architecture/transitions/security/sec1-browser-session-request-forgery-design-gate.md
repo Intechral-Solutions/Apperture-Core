@@ -11,7 +11,8 @@ Apperture-namespace claims on a validated Entra principal); that follow-up is re
 requests do not renew the sliding session) is implemented and recorded in §43. SEC-1B1 (the platform browser
 request-forgery policy) is implemented and recorded in §44. SEC-1B2 (verb and sign-out cleanup, Rule N) is implemented and
 recorded in §45. SEC-1B3 (CORS, cookie Secure, host hygiene, Management.Api class library) is implemented and
-recorded in §46. SEC-1B4 and the remaining slices have not started.** SEC-1 is not complete.
+recorded in §46. SEC-1B4 (the blocking CI browser-security job for I-2) is implemented in the
+repository and recorded in §47; the first GitHub Actions execution is still the remote proof.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1944,6 +1945,62 @@ Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, WebKit): first fu
 | F14 | **Fixed.** Management.Api is a class library |
 | F15 | **Fixed.** Ui.Server debug write and agent-log calls are gone |
 | F16 | **Fixed.** SameSite=Lax is explicit; Secure is Always outside the local HTTP topology |
-| I-2 | **Open.** SEC-1B4 / closure |
+| I-2 | **Wired in SEC-1B4 (§47).** First GitHub Actions execution is still the remote proof. |
+
+SEC-1 is not complete.
+
+---
+
+## 47. SEC-1B4 — browser security CI gate (2026-09-26)
+
+Scope: I-2. The existing `Apperture.BrowserTests` suite becomes a blocking GitHub Actions job. Not in this slice:
+SEC-1C (ADR/closure audit), manual real-Entra or Safari smoke (§29.3 M / §38.6), HTTPS/`Secure` browser topology
+(the harness stays plain-http `Testing`; B3 already proved those at host configuration), SameSite=None, RemoteSignOutPath,
+IAM-8, or navigation grouping. Characterizations assigned to A1–B3 are already flipped; B4 does not reopen them.
+SEC-1 is not complete.
+
+### 47.1 Job
+
+Workflow: `.github/workflows/ci.yml`. Job id and check name: **`browser-security`**. Triggers: push and pull_request
+to `main` and `master` (the same events as `build-and-test`; `master` was added so the gate fires on this repository's
+historical default branch). Timeout: 60 minutes. No `continue-on-error`, no ignored exit codes, no retries.
+
+`build-and-test` still runs `dotnet test Apperture.slnx` **without** `APPERTURE_BROWSER_TESTS`, so isolation guards and
+`BrowserSecurityCiGuardTests` stay in the fast job and the suite stays opt-in there.
+
+### 47.2 How it runs
+
+Ubuntu runner, one SQL Server service container (same image and wait pattern as `build-and-test`). The job builds
+`tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj` (Release), installs Playwright 1.63.0 browsers
+(`chromium`, `firefox`, `webkit`, `--with-deps`) into `~/.cache/ms-playwright` (cached by OS + package version), then:
+
+```text
+APPERTURE_BROWSER_TESTS=1
+APPERTURE_TEST_SQL_CONNECTION_STRING=Server=127.0.0.1,1433;User Id=sa;Password=…;TrustServerCertificate=True
+dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj -c Release --no-build
+```
+
+The harness allocates ephemeral `localhost` / `127.0.0.1` origins, owns `Apperture_BrowserTests`, registers test-only
+CORS against the UI origin, and keeps `RemoteSignOutPath` disabled. One run at a time (existing exclusive lock). Expected
+runtime is about 30–35 minutes after browser install.
+
+On failure the job uploads `artifacts/browser-security` (TRX). The harness does not write Playwright traces or
+screenshots to disk; in-memory `PageTrace` diagnostics stay in the test log. The SA password is a CI-only service
+password, already used by `build-and-test`; TRX is test names and outcomes, not cookies or connection strings.
+
+### 47.3 Branch protection
+
+Repository YAML cannot mark the check required. After the first green remote run, maintainers should require the
+stable check name **`browser-security`**.
+
+### 47.4 Evidence
+
+Local: `ci.yml` parses as YAML. Always-on BrowserTests (no `APPERTURE_BROWSER_TESTS`): **68 passed** — `HarnessIsolationGuardTests` (4), `BrowserSecurityCiGuardTests` (1), `ReturnTargetCorpusPolicyTests` (63) (`artifacts/sec1-b4-guards`). `actionlint` is not installed in this workspace. The full Playwright suite was last run on the B3 tree (324 behavioral + 4 isolation); B4 does not change product or harness behavior, so that run is not repeated here. The first GitHub Actions execution of `browser-security` is still outstanding.
+
+### 47.5 Findings
+
+| Id | Status |
+|---|---|
+| I-2 | **Wired.** Blocking `browser-security` job in `ci.yml`. Remote proof pending. |
 
 SEC-1 is not complete.
