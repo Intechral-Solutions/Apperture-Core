@@ -156,10 +156,11 @@ reset, cutting across several of them.
    browser request-forgery policy) is implemented on it (gate §44), and SEC-1B2 (sign-out as a trusted POST, Rule N for the
    step-up and link navigations, the Entra directory searches as POST) is implemented on it (gate §45), and SEC-1B3 (Development-only
    CORS, Production `ManagementUiUrl` refusal, Secure cookies, Management.Api class library, Ui.Server debug cleanup) is implemented
-   on it (gate §46), and SEC-1B4 (the blocking `browser-security` CI job for I-2) is implemented on it (gate §47; first
-   GitHub Actions execution reached BrowserTests but failed at Management.Host startup on Ubuntu because the harness
-   inherited the Windows-only DPAPI secret default — test-scoped remediation in gate §47.6; Linux suite execution
-   remains unproven). SEC-1C and the remaining slices have not started.
+   on it (gate §46), and SEC-1B4 (the blocking `browser-security` CI job for I-2) is implemented on it (gate §47).
+   The first Ubuntu `browser-security` run failed at Management.Host startup on the Windows-only DPAPI secret default
+   (gate §47.6). The second Ubuntu `browser-security` run passed. The same workflow's `build-and-test` job failed:
+   IntegrationTests' Management Host still started without a non-Windows protector, so all 205 host cases failed and
+   the other 77 passed (gate §47.7). That job is not green. SEC-1C and the remaining slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

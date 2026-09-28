@@ -1,5 +1,6 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Host;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
@@ -7,12 +8,15 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.IntegrationTests.ManagementHost;
 
 /// <summary>
 /// Runs the real <see cref="Apperture.Management.Host"/> pipeline with test SQL bootstrap and test authentication.
+/// Replaces <see cref="ISecretProtector"/> so startup validation can succeed on Linux, where the production
+/// default is fail-closed DPAPI. The replacement lives in this assembly only.
 /// </summary>
 public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<ManagementHostWebApplicationFactoryEntryPoint>
 {
@@ -35,6 +39,13 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
         });
         builder.ConfigureServices(services =>
         {
+            // Program.cs calls AddAppertureSqlSecrets() with the production default (DPAPI on Windows;
+            // resolving it throws on Linux). SecretProtectorStartupValidationHostedService then probes the
+            // final registration. Replace it here so this test host can start on Ubuntu CI. There is no
+            // production, Testing, or plaintext fallback.
+            services.RemoveAll<ISecretProtector>();
+            services.AddSingleton<ISecretProtector>(new IntegrationTestSecretProtector());
+
             var toRemove = services.Where(d => d.ServiceType == typeof(IBootstrapConnectionProfile)).ToList();
             foreach (var d in toRemove)
                 services.Remove(d);

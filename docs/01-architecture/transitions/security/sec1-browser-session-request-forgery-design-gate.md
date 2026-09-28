@@ -2007,7 +2007,7 @@ The first GitHub Actions execution of `browser-security` **ran** and is recorded
 
 | Id | Status |
 |---|---|
-| I-2 | **Wired.** Blocking `browser-security` job in `ci.yml`. First remote run reached BrowserTests and failed at Management.Host startup (DPAPI). Linux execution of the suite is unproven. |
+| I-2 | **Browser job proven.** The second Ubuntu `browser-security` run passed. `build-and-test` on that same workflow failed (gate §47.7). The pull request is not green. SEC-1C has not started. |
 
 ### 47.6 First remote run — DPAPI host startup (2026-09-27)
 
@@ -2025,3 +2025,24 @@ This is CI/harness portability, not a failed browser security assertion. Remedia
 The `browser-security` job stays on Ubuntu, still installs Chromium, Firefox and WebKit, and still has no `continue-on-error`. Linux execution of the 327-test suite remains unproven until the next Actions run succeeds. SEC-1C has not started.
 
 SEC-1 is not complete.
+
+### 47.7 Second remote run — browser-security passed, build-and-test failed (2026-09-28)
+
+The second Ubuntu workflow run is the remote proof of `browser-security`. That job passed. The same workflow's existing `build-and-test` job failed. §47.6 stays the record of the first failed `browser-security` run. SEC-1C has not started. The pull request is not merge-green.
+
+`build-and-test` runs `dotnet test Apperture.slnx -c Release --no-build --verbosity normal`. IntegrationTests reported **282 total, 77 passed, 205 failed**. Those totals are not 205 independent authentication failures. Expanded test cases partition exactly as:
+
+| Bucket | Cases | Remote result |
+|---|---:|---|
+| `tests/Apperture.IntegrationTests/ManagementHost` (both host fixtures) | 205 | failed |
+| Every other IntegrationTests class | 77 | passed |
+
+The 77 include the SQL Server integration classes, so SQL readiness is not the primary failure. The 205 are every test whose collection fixture starts `ManagementHostWebApplicationFactory`. One host-startup failure is reported once per test.
+
+`ManagementHostWebApplicationFactory` did not replace `ISecretProtector`. `Program.cs` still calls `AddAppertureSqlSecrets()` with no protector. On Ubuntu the default descriptor throws `PlatformNotSupportedException` when resolved, and `SecretProtectorStartupValidationHostedService` resolves it during host start. `LiveManagementHost` already replaces that descriptor, which is why `browser-security` could pass on the same OS. Before §47.6's remediation, `AddAppertureSqlSecrets()` threw at registration on non-Windows, so this Management Host could not start on Linux then either. The remediation did not introduce the IntegrationTests gap; it closed the gap only in BrowserTests.
+
+Copilot's OIDC correlation, `message.State`, ticket-expiry, and data-protection notes are symptom-level. IntegrationTests do not run an OIDC sign-in round trip. `BrowserRequestTrustHttpTests` posts an empty body to `/signin-oidc` and asserts that path is not a request-trust rejection; the OIDC handler logs a missing state when that request is reached. Those lines are not the earliest failure. The host tests that never touch `/signin-oidc` are in the same 205. No CI data-protection key ring, retry, parallelism change, or SQL sleep change follows from this.
+
+The known IntegrationTests environment-variable race (`SqlServerTestConfigurationTests` mutating process environment while another collection resolves SQL) is a separate, earlier defect. A parallel run earlier in the same session failed four structure-browse assertions, not 205 (§44.7). "Collections serialized" in §44.7 and §46 names that counted local IntegrationTests invocation. The tree has no `xunit.runner.json` and no assembly-level `DisableTestParallelization`. `SqlServerIntegration` and `BootstrapHttp` set `DisableParallelization = true`. `ManagementHostGovernance` does not, so under default xUnit settings it can run beside `SqlServerTestConfigurationTests`. The exact serialized command was not recovered from the tree. CI does not pass an xUnit parallelization switch. `dotnet test` on a solution can run test projects concurrently, each in its own process; that does not share IntegrationTests' process environment and does not explain a failure set that is exactly the Management Host cases.
+
+Remediation is test-scoped and isolated from BrowserTests: `ManagementHostWebApplicationFactory` replaces `ISecretProtector` with `IntegrationTestSecretProtector` (AES-GCM, IntegrationTests assembly only). Production registration is unchanged: Windows still defaults to DPAPI; a non-Windows host with no replacement still fails startup validation. No plaintext, `Testing`, or CI fallback. `ci.yml` is unchanged. Another Ubuntu `build-and-test` run is required before B4 can close. `browser-security` does not need a product change for this defect; the workflow as a whole is still not green until `build-and-test` passes.
