@@ -1,4 +1,5 @@
 using System.Data;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using Apperture.ConnectorResolution;
 using Apperture.Core.Application.Connector;
@@ -305,6 +306,9 @@ public sealed class PlatformSqlStructureBrowserTests
     [InlineData(10060, ConnectionToolOutcome.RemoteUnavailable)]
     [InlineData(10061, ConnectionToolOutcome.RemoteUnavailable)]
     [InlineData(11001, ConnectionToolOutcome.RemoteUnavailable)]
+    [InlineData(111, ConnectionToolOutcome.RemoteUnavailable)]
+    [InlineData(110, ConnectionToolOutcome.RemoteUnavailable)]
+    [InlineData(104, ConnectionToolOutcome.RemoteUnavailable)]
     [InlineData(208, ConnectionToolOutcome.Failed)]
     [InlineData(0, ConnectionToolOutcome.Failed)]
     public void SF8_sql_error_numbers_map_to_the_remote_systems_own_answer(int number, ConnectionToolOutcome expected) =>
@@ -321,6 +325,42 @@ public sealed class PlatformSqlStructureBrowserTests
         result.Items.Should().BeEmpty();
         result.Message.Should().Be("The database could not be reached, or did not answer in time.");
         result.Message.Should().NotContain("db.example");
+    }
+
+    [Fact]
+    public async Task SF8_a_connection_refused_socket_is_the_remote_system_being_unreachable()
+    {
+        var rig = NewRig(configure: db => db.OpenFailure = new SocketException((int)SocketError.ConnectionRefused));
+
+        var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(), CancellationToken.None);
+
+        result.Outcome.Should().Be(ConnectionToolOutcome.RemoteUnavailable);
+        result.Message.Should().Be("The database could not be reached, or did not answer in time.");
+    }
+
+    [Fact]
+    public async Task SF8_an_unclassified_wrapper_still_follows_an_inner_connection_refused_socket()
+    {
+        var rig = NewRig(configure: db => db.OpenFailure = new InvalidOperationException(
+            "Data Source=db.example;Password=hunter2",
+            new SocketException((int)SocketError.ConnectionRefused)));
+
+        var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(), CancellationToken.None);
+
+        result.Outcome.Should().Be(ConnectionToolOutcome.RemoteUnavailable);
+        result.Message.Should().Be("The database could not be reached, or did not answer in time.");
+        System.Text.Json.JsonSerializer.Serialize(result).Should().NotContain("hunter2").And.NotContain("db.example");
+    }
+
+    [Fact]
+    public async Task SF8_a_socket_access_denied_stays_a_generic_failure()
+    {
+        var rig = NewRig(configure: db => db.OpenFailure = new SocketException((int)SocketError.AccessDenied));
+
+        var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(), CancellationToken.None);
+
+        result.Outcome.Should().Be(ConnectionToolOutcome.Failed);
+        result.Message.Should().Be("The structure request could not be completed.");
     }
 
     [Fact]

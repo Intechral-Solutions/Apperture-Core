@@ -164,7 +164,9 @@ reset, cutting across several of them.
    Entra-linking local-user setup returning 403 because the test client authenticated as the first local username
    rather than a platform administrator (gate §47.8). The fourth `build-and-test` threw because that catalog had
    ordinary users and no platform administrator, so first-admin bootstrap was already closed (gate §47.9).
-   That job is not green. SEC-1C and the remaining slices have not started.
+   The fifth `build-and-test` reached the SQL structure-browser unreachable proof, which returned Failed
+   instead of RemoteUnavailable on Ubuntu (gate §47.10). That job is not green. SEC-1C and the remaining
+   slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
