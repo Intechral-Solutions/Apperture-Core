@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Controllers;
 using Apperture.Persistence.SqlServer;
@@ -27,6 +28,18 @@ public sealed class ManagementHostEntraLinkingHttpTests
     {
         if (_fixture.ConnectionString is null || _fixture.Factory is null)
             throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+    }
+
+    [Fact]
+    public async Task Admin_client_creates_a_user_when_an_earlier_local_username_is_not_an_administrator()
+    {
+        AssertSqlAvailable();
+        var admin = await EnsureAdminClientAsync();
+        _ = await CreateLocalUserAsync(admin, $"aaa-{Guid.NewGuid():N}"[..16]);
+
+        var adminAgain = await EnsureAdminClientAsync();
+        var createdId = await CreateLocalUserAsync(adminAgain, $"bbb-{Guid.NewGuid():N}"[..16]);
+        createdId.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -283,8 +296,11 @@ public sealed class ManagementHostEntraLinkingHttpTests
             created.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
         }
 
+        // Ordinary local users can sort ahead of the administrator. user.manage follows the platform-admin role.
+        var platformAdminRoleId = BootstrapConstants.PlatformAdminRoleId;
         var link = await db.IdentityLinks
             .Where(l => l.Source == (int)IdentitySource.Local)
+            .Where(l => db.UserRoles.Any(r => r.UserId == l.UserId && r.RoleId == platformAdminRoleId))
             .OrderBy(l => l.ExternalId)
             .FirstAsync()
             .ConfigureAwait(false);

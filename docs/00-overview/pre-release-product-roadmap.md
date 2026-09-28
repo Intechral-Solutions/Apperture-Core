@@ -160,7 +160,9 @@ reset, cutting across several of them.
    The first Ubuntu `browser-security` run failed at Management.Host startup on the Windows-only DPAPI secret default
    (gate §47.6). The second Ubuntu `browser-security` run passed. The same workflow's `build-and-test` job failed:
    IntegrationTests' Management Host still started without a non-Windows protector, so all 205 host cases failed and
-   the other 77 passed (gate §47.7). That job is not green. SEC-1C and the remaining slices have not started.
+   the other 77 passed (gate §47.7). The third `build-and-test` started Management Host; the remaining failures were
+   Entra-linking local-user setup returning 403 because the test client authenticated as the first local username
+   rather than a platform administrator (gate §47.8). That job is not green. SEC-1C and the remaining slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
