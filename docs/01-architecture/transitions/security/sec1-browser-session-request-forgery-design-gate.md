@@ -2007,7 +2007,7 @@ The first GitHub Actions execution of `browser-security` **ran** and is recorded
 
 | Id | Status |
 |---|---|
-| I-2 | **Browser job proven.** The second Ubuntu `browser-security` run passed. The third `build-and-test` started Management Host and still failed during Entra-linking user setup (gate §47.8). The pull request is not green. SEC-1C has not started. |
+| I-2 | **Browser job proven.** The second Ubuntu `browser-security` run passed. The fourth `build-and-test` started Management Host, then Entra setup threw because the shared catalog had users and no platform administrator (gate §47.9). The pull request is not green. SEC-1C has not started. |
 
 ### 47.6 First remote run — DPAPI host startup (2026-09-27)
 
@@ -2062,3 +2062,19 @@ The class source has 11 facts, so it cannot emit 16 distinct xUnit failures. A f
 The latest local Windows IntegrationTests run of 286/286 used the long-lived catalog. Before it was dropped for this reproduction, its first local external id was `acct-admin-78819` and that user held `role-platform-administrator`. `acct-admin-*` sorts ahead of `dup-target-*`, so `EnsureAdminClientAsync` kept selecting an administrator. CI SQL is a new container, so no such row exists at the start. xUnit 2.9.3 orders cases by `UniqueID` (ordinal, stable for the same assembly), not by operating system. This is not an Origin, HTTPS, or header difference, and it is not the `ManagementHostGovernance` / `SqlServerTestConfigurationTests` environment-variable race: that race is a different collection, and this failure follows identity rows inside `BootstrapHttp`.
 
 Remediation stays in the test helper. `EnsureAdminClientAsync` now takes a local identity whose user has `role-platform-administrator`. A regression fact creates an earlier non-admin username and requires the next admin client to create another user. On the catalog that still had `dup-target-*` first, that class plus `BrowserRequestTrustHttpTests` passed 33, and the `BootstrapHttp` collection then passed 77. Production authorization, Rule U, Origin checking, and `X-Apperture-Request` are unchanged. `ci.yml` is unchanged. Another Ubuntu `build-and-test` is required before B4 can close.
+
+### 47.9 Fourth remote run — no platform administrator to select (2026-09-28)
+
+The fourth Ubuntu `build-and-test` still fails in IntegrationTests. `browser-security` is unchanged from the second run. SEC-1C has not started. The pull request is not green.
+
+`EnsureAdminClientAsync` now queries a local identity whose user has `role-platform-administrator`. On Ubuntu that query returned no row and `.FirstAsync()` threw `Sequence contains no elements`. Replacing that with `FirstOrDefaultAsync` would only change the exception text. The catalog had reached a state the helper did not handle.
+
+`FirstAdminBootstrapService.TryCreateFirstAdminAsync` returns `AlreadyExists` when `GetUserCountAsync` is greater than zero. `BootstrapSetupStatus.FromUserCount` sets `AllowsFirstAdmin` to false for the same gate. `POST /api/bootstrap/first-admin` then returns 409 `already_initialized`. Ordinary users with no platform administrator do not reopen bootstrap. An empty user table does. An existing platform administrator does not.
+
+`EnsureActiveRegistrationAsync` writes the Entra registration row only. It does not create users.
+
+`ManagementHostNotificationToastDeltaHttpTests.CreateUserClientAsync` inserts a local user and identity link directly, with no role assignment, and does not call first-admin. It shares `Apperture_BootstrapHttpTests` with the Entra tests. `ManagementHostBootstrapHttpTests.EnsureNoUsersAsync` can also delete every user, including the administrator, which makes the next direct insert the first platform user. Profile and account helpers call first-admin when the user table is empty before they add a second user.
+
+Local sequence on a dropped catalog: one toast test that calls `CreateUserClientAsync`, then one Entra test. The catalog then held one user, local external id `toast-delta-0857f59392e2`, and zero `role-platform-administrator` rows. `Admin_can_add_entra_link_to_existing_user` threw `Sequence contains no elements` from `EnsureAdminClientAsync`. The helper's `Users.AnyAsync()` check skipped first-admin because a user existed. The same DbContext observed that committed user; it did not hide an administrator. There was no administrator row to read.
+
+The helper now looks up the platform administrator in its own scope. When none exists and the user table is empty, it calls `POST /api/bootstrap/first-admin` and reads the new identity from a new scope. When users already exist, it throws `InvalidOperationException` stating that first-admin bootstrap is closed. The toast user factory calls that same helper before inserting an ordinary user, so an empty catalog receives its administrator through the product endpoint. After that change, the same toast test on a dropped catalog left `boot-admin-37ae7` as platform administrator and `toast-delta-4e3b33f38380` as an ordinary user. The closed-gate test removes the product-assigned role rows, expects that exception, and restores those rows so the shared catalog is not left without an administrator. It does not grant the role to the ordinary user. The `BootstrapHttp` collection then passed 78. Production bootstrap and authorization are unchanged. `ci.yml` is unchanged. Another Ubuntu `build-and-test` is required before B4 can close.

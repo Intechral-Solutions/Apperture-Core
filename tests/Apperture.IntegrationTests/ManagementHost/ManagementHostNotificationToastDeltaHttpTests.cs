@@ -287,6 +287,10 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
     /// </summary>
     private async Task<(HttpClient Client, string UserId)> CreateUserClientAsync()
     {
+        // An ordinary user must not be the first platform user. That would close first-admin
+        // bootstrap and leave the shared catalog without a platform administrator.
+        _ = await BootstrapHttpPlatformAdmin.EnsureLocalExternalIdAsync(_fixture.Factory!);
+
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
 

@@ -162,7 +162,9 @@ reset, cutting across several of them.
    IntegrationTests' Management Host still started without a non-Windows protector, so all 205 host cases failed and
    the other 77 passed (gate §47.7). The third `build-and-test` started Management Host; the remaining failures were
    Entra-linking local-user setup returning 403 because the test client authenticated as the first local username
-   rather than a platform administrator (gate §47.8). That job is not green. SEC-1C and the remaining slices have not started.
+   rather than a platform administrator (gate §47.8). The fourth `build-and-test` threw because that catalog had
+   ordinary users and no platform administrator, so first-admin bootstrap was already closed (gate §47.9).
+   That job is not green. SEC-1C and the remaining slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
