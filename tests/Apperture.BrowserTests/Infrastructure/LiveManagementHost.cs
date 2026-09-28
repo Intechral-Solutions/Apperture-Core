@@ -1,5 +1,6 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Management.Host;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -23,7 +24,8 @@ namespace Apperture.BrowserTests.Infrastructure;
 /// <para>
 /// Everything this class adds is <b>test-only and lives in this assembly</b>: an observe-only request
 /// recorder, a controllable clock on the application cookie handler, an ephemeral Data Protection key ring
-/// (so the harness never touches the developer's key ring), the stub-OIDC configuration, the harness SQL
+/// (so the harness never touches the developer's key ring), a harness-owned <c>ISecretProtector</c>
+/// (so SQL secrets can start on Linux CI without DPAPI), the stub-OIDC configuration, the harness SQL
 /// database, and a test-only CORS policy for this run's UI origin (product CORS is Development-only).
 /// None of it can be activated by a production composition.
 /// </para>
@@ -33,6 +35,7 @@ public sealed class LiveManagementHost : WebApplicationFactory<ManagementHostWeb
     private readonly HarnessOrigins _origins;
     private readonly string _connectionString;
     private readonly StubOidcSettings _oidc;
+    private readonly BrowserHarnessSecretProtector _secretProtector = new();
     private IHost? _kestrelHost;
     private bool _buildingTestServerTwin;
 
@@ -82,6 +85,13 @@ public sealed class LiveManagementHost : WebApplicationFactory<ManagementHostWeb
 
         builder.ConfigureServices(services =>
         {
+            // Program.cs calls AddAppertureSqlSecrets() with the production default (DPAPI on Windows;
+            // fail-closed when resolved on Linux). Replace it on both the TestServer twin and the
+            // Kestrel host so neither composition selects DPAPI. Always applied — the suite must
+            // not depend on Windows DPAPI.
+            services.RemoveAll<ISecretProtector>();
+            services.AddSingleton<ISecretProtector>(_secretProtector);
+
             if (_buildingTestServerTwin)
             {
                 // WebApplicationFactory demands a TestServer host, and the deferred-host machinery runs the entry

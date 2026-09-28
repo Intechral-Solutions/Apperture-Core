@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using Xunit;
@@ -66,6 +67,11 @@ public sealed class BrowserHarness : IAsyncLifetime
             Host = new LiveManagementHost(Origins, _connectionString, OidcSettings);
             // Touching Services forces WebApplicationFactory to build and start the host.
             _ = Host.Services;
+            if (Host.LiveServices.GetRequiredService<ISecretProtector>() is not BrowserHarnessSecretProtector)
+            {
+                throw new InvalidOperationException(
+                    "BrowserTests must use the harness ISecretProtector; the production DPAPI default is not selected.");
+            }
             await WaitForApiAsync().ConfigureAwait(false);
             AssertRecorderKnowsTheSessionCookie();
 

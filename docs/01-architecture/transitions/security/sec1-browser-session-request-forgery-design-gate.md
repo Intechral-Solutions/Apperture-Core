@@ -12,7 +12,9 @@ requests do not renew the sliding session) is implemented and recorded in §43. 
 request-forgery policy) is implemented and recorded in §44. SEC-1B2 (verb and sign-out cleanup, Rule N) is implemented and
 recorded in §45. SEC-1B3 (CORS, cookie Secure, host hygiene, Management.Api class library) is implemented and
 recorded in §46. SEC-1B4 (the blocking CI browser-security job for I-2) is implemented in the
-repository and recorded in §47; the first GitHub Actions execution is still the remote proof.** SEC-1 is not complete.
+repository and recorded in §47; the first GitHub Actions execution reached BrowserTests but failed at
+Management.Host startup (Windows-only DPAPI default). The test-scoped remediation is in §47.6. Linux
+execution of the 327-test suite remains unproven. I-2 is not remotely proven.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1945,7 +1947,7 @@ Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, WebKit): first fu
 | F14 | **Fixed.** Management.Api is a class library |
 | F15 | **Fixed.** Ui.Server debug write and agent-log calls are gone |
 | F16 | **Fixed.** SameSite=Lax is explicit; Secure is Always outside the local HTTP topology |
-| I-2 | **Wired in SEC-1B4 (§47).** First GitHub Actions execution is still the remote proof. |
+| I-2 | **Wired in SEC-1B4 (§47).** First remote run failed at host startup (DPAPI); Linux suite execution remains unproven. |
 
 SEC-1 is not complete.
 
@@ -1995,12 +1997,31 @@ stable check name **`browser-security`**.
 
 ### 47.4 Evidence
 
-Local: `ci.yml` parses as YAML. Always-on BrowserTests (no `APPERTURE_BROWSER_TESTS`): **68 passed** — `HarnessIsolationGuardTests` (4), `BrowserSecurityCiGuardTests` (1), `ReturnTargetCorpusPolicyTests` (63) (`artifacts/sec1-b4-guards`). `actionlint` is not installed in this workspace. The full Playwright suite was last run on the B3 tree (324 behavioral + 4 isolation); B4 does not change product or harness behavior, so that run is not repeated here. The first GitHub Actions execution of `browser-security` is still outstanding.
+Local: `ci.yml` parses as YAML. Always-on BrowserTests (no `APPERTURE_BROWSER_TESTS`): isolation, CI-job, and secret-protector guards passed in this remediation (8: `HarnessIsolationGuardTests` 4, `BrowserSecurityCiGuardTests` 1, `BrowserHarnessSecretProtectorTests` 3). `ReturnTargetCorpusPolicyTests` (63) were not re-run here. `actionlint` is not installed in this workspace.
+
+Local remediation (Windows): `SqlSecretsRegistrationTests` + `DpapiSecretProtectorTests` **8 passed**; `HarnessSmokeTests` with `APPERTURE_BROWSER_TESTS=1` **2 passed** (the live host resolved `BrowserHarnessSecretProtector`, not DPAPI). This proves the revised composition on a Windows development machine. It does **not** prove Ubuntu.
+
+The first GitHub Actions execution of `browser-security` **ran** and is recorded in [§47.6](#476-first-remote-run--dpapi-host-startup-2026-09-27). It is not a remote proof of the 327-test suite. I-2 is not remotely proven.
 
 ### 47.5 Findings
 
 | Id | Status |
 |---|---|
-| I-2 | **Wired.** Blocking `browser-security` job in `ci.yml`. Remote proof pending. |
+| I-2 | **Wired.** Blocking `browser-security` job in `ci.yml`. First remote run reached BrowserTests and failed at Management.Host startup (DPAPI). Linux execution of the suite is unproven. |
+
+### 47.6 First remote run — DPAPI host startup (2026-09-27)
+
+The first Ubuntu `browser-security` run reached the BrowserTests execution step. Management.Host failed during `BrowserHarness.InitializeAsync` / `LiveManagementHost.CreateHost`:
+
+```text
+System.PlatformNotSupportedException:
+Sql-backed secrets with DPAPI protector are supported only on Windows.
+```
+
+`Program.cs` calls `AddAppertureSqlSecrets()` with no protector. The default path selected `DpapiSecretProtector` and threw at **registration** on Linux, before `LiveManagementHost.ConfigureServices` could replace `ISecretProtector`. Reported totals (327 tests, 68 passed, 259 failed, ~9 seconds) are cascading host-startup failures, not 259 independent browser security assertions.
+
+This is CI/harness portability, not a failed browser security assertion. Remediation is test-scoped: `LiveManagementHost` replaces `ISecretProtector` with `BrowserHarnessSecretProtector` (AES-GCM, BrowserTests assembly only). Registration of the non-Windows default no longer throws (so WebApplicationFactory can replace the descriptor); a hosted startup validator then probes the **final** `ISecretProtector` so a real host without a supported protector still cannot start. Windows still defaults to DPAPI. `Program.cs` still calls `AddAppertureSqlSecrets()` with no arguments. There is no plaintext, `Testing`, or CI fallback.
+
+The `browser-security` job stays on Ubuntu, still installs Chromium, Firefox and WebKit, and still has no `continue-on-error`. Linux execution of the 327-test suite remains unproven until the next Actions run succeeds. SEC-1C has not started.
 
 SEC-1 is not complete.

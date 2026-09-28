@@ -26,6 +26,7 @@ public sealed class HarnessIsolationGuardTests
         nameof(StubOidcProvider),
         nameof(AttackerHost),
         nameof(LiveManagementHost),
+        nameof(BrowserHarnessSecretProtector),
     ];
 
     [Fact]
