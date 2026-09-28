@@ -166,12 +166,30 @@ public sealed class MeNotificationsController : ControllerBase
         if (userId is null)
             return Forbid();
 
-        // Captured before the store call below: the store's own ArgumentException guard can throw for a
-        // mismatched cursor pair, but IsBootstrap only cares what the caller sent, not whether it was valid.
-        var isBootstrap = afterCreatedAtUtc is null;
+        // Resolve from query-string presence, not from the bound DateTimeOffset?. A missing
+        // afterCreatedAtUtc must stay a bootstrap request even if the binder supplies a default
+        // timestamp. A real one-sided pair is a client error and must not reach the store.
+        if (!NotificationToastDeltaCursor.TryResolve(
+                Request.Query,
+                afterCreatedAtUtc,
+                afterId,
+                out var cursorCreatedAtUtc,
+                out var cursorId,
+                out var error))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Bad Request",
+                Type = "https://httpstatuses.com/400",
+                Detail = error,
+            });
+        }
+
+        var isBootstrap = cursorCreatedAtUtc is null;
 
         var rows = await _inboxStore
-            .ListToastDeltaAsync(userId, afterCreatedAtUtc, afterId, take: 50, cancellationToken)
+            .ListToastDeltaAsync(userId, cursorCreatedAtUtc, cursorId, take: 50, cancellationToken)
             .ConfigureAwait(false);
 
         var unreadCount = await _inboxStore.CountUnreadAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -193,8 +211,8 @@ public sealed class MeNotificationsController : ControllerBase
                 .ToList(),
             // No rows scanned this poll: fall back to the incoming cursor so the client doesn't lose
             // its position (a null cursor here would look indistinguishable from "start over").
-            NextAfterCreatedAtUtc = last?.CreatedAtUtc ?? afterCreatedAtUtc,
-            NextAfterId = last?.Id ?? afterId,
+            NextAfterCreatedAtUtc = last?.CreatedAtUtc ?? cursorCreatedAtUtc,
+            NextAfterId = last?.Id ?? cursorId,
             UnreadCount = unreadCount,
             IsBootstrap = isBootstrap,
         });

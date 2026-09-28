@@ -135,8 +135,12 @@ override table.
 ### Delta endpoint
 
 `GET api/me/notifications/toast-delta?afterCreatedAtUtc=&afterId=` (`MeNotificationsController`, added `3982473`,
-hardened `da26bb2`/`c7fe3c9`). Both query parameters are optional but must be both-or-neither; a mismatched pair
-throws (surfaced as HTTP 400). No user-identifying parameter — the caller is resolved server-side like every
+hardened `da26bb2`/`c7fe3c9`). Both query parameters are optional but must be both-or-neither. The HTTP action
+resolves the pair from query-string presence (a missing `afterCreatedAtUtc` is a
+bootstrap request even if model binding supplies a `DateTimeOffset`) and returns
+HTTP 400 ProblemDetails with a fixed detail when only one component is present.
+The store still rejects a mismatched pair as `ArgumentException` so programmatic
+callers cannot silently paginate incorrectly. No user-identifying parameter — the caller is resolved server-side like every
 other `api/me/*` action. `INotificationUserInboxStore` is injected directly into the controller for this one
 endpoint (bypassing `INotificationUserInboxService`) specifically to avoid the service layer's expensive
 repair/backfill scan on a 30-second polling path.
