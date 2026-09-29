@@ -37,7 +37,7 @@ Canonical current-state track list and near-term order: [`pre-release-product-ro
 
 **Current next (2026-09-29):** **LFC-1 — Connection/Schedule lifecycle cleanup.** IAM-8 and future
 navigation/grouping remain not started. SEC-1 engineering is merged; remaining SEC-1 environment-dependent
-smoke is pre-release/UAT, not a development blocker. **LFC-1.0 design gate is written. LFC-1.1 (schedule hard-delete) is implemented; LFC-1.2 and LFC-1.3 have not started** — [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
+smoke is pre-release/UAT, not a development blocker. **LFC-1.0 design gate is written. LFC-1.1 (schedule hard-delete) and LFC-1.2 (schedule detail delete UI) are implemented; LFC-1.3 has not started** — [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
 
 Highlights (thematic tracks, not the current execution order):
 

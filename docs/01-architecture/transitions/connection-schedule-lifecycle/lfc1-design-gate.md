@@ -1,7 +1,7 @@
 # LFC-1 — Connection / Schedule lifecycle cleanup — design gate
 
 Date: 2026-09-29
-Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete) is implemented; LFC-1.2 and LFC-1.3 have not started.** Implementation notes for 1.1 are in §24. The rulings in §3 are unchanged.
+Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete) and LFC-1.2 (schedule detail delete UI) are implemented; LFC-1.3 has not started.** Implementation notes for 1.1 are in §24 and for 1.2 in §25. The rulings in §3 are unchanged.
 Branch: `lfc-1-connection-schedule-lifecycle`
 Audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
 
@@ -641,3 +641,25 @@ Written with the schedule hard-delete implementation. Product rulings in §3 are
 **Not in this slice.** Schedule detail UI (LFC-1.2). Retired connection copy (LFC-1.3). No connection lifecycle change. No new permission. `DELETE /api/schedules/{id}` is an ordinary `/api` mutation and is not request-trust exempt.
 
 **SQL Server proof.** `ScheduleDeleteSqlServerTests` runs the graph delete, enabled refusal, history retention, gate-held Enable/Delete interleavings, definition-row assignment conflict, assignment-row state-update conflict, and the FK/cascade inspection against a real throwaway catalog. InMemory tests remain the unit-level stand-in.
+
+---
+
+## 25. LFC-1.2 implementation notes
+
+Written with the schedule detail delete UI. Product rulings in §3 and the §15.1 copy contract are unchanged. No schedule-delete service, repository, audit, permission, or connection-lifecycle change.
+
+**Where.** Schedule detail only. The list is unchanged. There is no new create flow.
+
+**Who sees Delete.** An operator with `schedule.manage` sees **Delete** only when the loaded schedule is disabled. The button opens the shared confirm dialog. An enabled schedule does not offer that button. The toolbar instead says "Disable the schedule before deleting it." Enable and Disable stay the existing actions. An operator who cannot manage schedules sees neither the button nor that prompt.
+
+**Confirm.** Title `Delete schedule?`, confirm label `Delete schedule`, destructive emphasis, shared `ConfirmActionDialog`. The body says the named schedule is permanently removed and the action cannot be undone. Supporting text says current assignments and live scheduling state are removed, past firings and the runs they started stay in history, and opening this schedule from those records will no longer be available. Cancel sends no request.
+
+**Success.** `DELETE /api/schedules/{id}` 204 shows the success toast "Schedule deleted." and navigates to `/schedules`. The page does not reload the deleted detail.
+
+**409.** The client surfaces the API error ("Cannot delete schedule: it is still enabled. Disable it first."). The page reloads the detail, leaves it in place, and lets the dialog stay open with that error. After the reload shows Enabled, Delete is no longer offered. A later confirm while the dialog is still open does not call delete again.
+
+**404.** The dialog closes. The page shows the existing "Schedule not found" empty state and a warning toast, "This schedule no longer exists." There is no success toast and no further confirm.
+
+**403 and other failures.** The exception propagates into the shared dialog, which stays open and shows the client message. A 403 message is the status text and does not add the schedule id or name. The schedule stays on the page. Nothing is removed before the API succeeds.
+
+**Validation.** `ScheduleDetailDeleteRenderTests` (10) render the real page and drive the same handlers the buttons call. `ManagementClientScheduleDeleteTests` (4) cover `DELETE /api/schedules/{id}`, 204, 409, 404, and 403. LFC-1.3 has not started.

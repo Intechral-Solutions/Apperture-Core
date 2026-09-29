@@ -1,4 +1,5 @@
 @page "/schedules/{ScheduleId}"
+@using System.Net
 @using Apperture.Management.Client
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
@@ -45,6 +46,23 @@
                         @onclick="DisableAsync">
                     Disable
                 </button>
+                @if (_detail is { Enabled: false })
+                {
+                    <button type="button"
+                            id="schedule-delete-trigger"
+                            class="ui-toolbar-btn ui-toolbar-btn--danger"
+                            disabled="@_loading"
+                            aria-label="Delete schedule"
+                            @onclick="OpenDeleteConfirmAsync">
+                        Delete
+                    </button>
+                }
+                else if (_detail is { Enabled: true })
+                {
+                    <p id="schedule-delete-unavailable" class="m-0 text-xs text-muted">
+                        Disable the schedule before deleting it.
+                    </p>
+                }
             }
             @if (_capabilities?.CanManageRecovery == true)
             {
@@ -387,6 +405,21 @@
     }
 </div>
 
+<ConfirmActionDialog IsOpen="@_confirmDeleteOpen"
+                     Title="Delete schedule?"
+                     ConfirmLabel="Delete schedule"
+                     Emphasis="ConfirmActionEmphasis.Destructive"
+                     OnConfirm="ConfirmDeleteAsync"
+                     OnConfirmed="CloseDeleteConfirmAsync"
+                     OnCancel="CancelDeleteAsync">
+    <ChildContent>
+        Deleting <strong>@(string.IsNullOrWhiteSpace(_detail?.Name) ? "this schedule" : _detail!.Name)</strong> permanently removes it. This cannot be undone.
+    </ChildContent>
+    <Details>
+        <p>Current assignments and live scheduling state are removed. Past firings and the runs they started stay in history. Opening this schedule from those records will no longer be available.</p>
+    </Details>
+</ConfirmActionDialog>
+
 @code {
     [Parameter] public string ScheduleId { get; set; } = "";
 
@@ -406,6 +439,10 @@
     private bool _editEnabled;
     private string? _dataLoadKey;
     private bool _moveDialogOpen;
+    private bool _confirmDeleteOpen;
+
+    private bool CanDeleteSchedule =>
+        _capabilities?.CanManageSchedules == true && _detail is { Enabled: false };
 
     private string ScheduleHeaderTitle =>
         string.IsNullOrWhiteSpace(_detail?.Name) ? "Schedule" : _detail!.Name;
@@ -561,6 +598,83 @@
             await Client.DisableScheduleAsync(ScheduleId);
             return "Schedule disabled.";
         });
+    }
+
+    // Public so a render test can drive them the same way a click does.
+    public async Task OpenDeleteConfirmAsync()
+    {
+        if (!CanDeleteSchedule)
+            return;
+
+        _confirmDeleteOpen = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task CancelDeleteAsync()
+    {
+        _confirmDeleteOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task CloseDeleteConfirmAsync()
+    {
+        _confirmDeleteOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task ConfirmDeleteAsync()
+    {
+        if (_capabilities?.CanManageSchedules != true || _detail is null)
+            return;
+
+        if (_detail.Enabled)
+        {
+            if (_confirmDeleteOpen)
+            {
+                throw new HttpRequestException(
+                    "Cannot delete schedule: it is still enabled. Disable it first.",
+                    null,
+                    HttpStatusCode.Conflict);
+            }
+
+            return;
+        }
+
+        try
+        {
+            await Client.DeleteScheduleAsync(ScheduleId);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            try
+            {
+                await LoadAsync(preserveActionFeedback: true);
+            }
+            catch (HttpRequestException)
+            {
+                // A failed refresh must not drop the schedule already on screen.
+            }
+
+            await InvokeAsync(StateHasChanged);
+            throw;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _confirmDeleteOpen = false;
+            _detail = null;
+            _editing = false;
+            _error = null;
+            _actionMessage = null;
+            _validationErrors = null;
+            Toasts.Show(ToastSeverity.Warning, "This schedule no longer exists.");
+            PublishShellTitle();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Toasts.Show(ToastSeverity.Success, "Schedule deleted.");
+        _confirmDeleteOpen = false;
+        Nav.NavigateTo("/schedules");
     }
 
     private async Task TriggerRunCycleAsync()
