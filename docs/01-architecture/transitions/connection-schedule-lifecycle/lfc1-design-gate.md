@@ -1,7 +1,7 @@
 # LFC-1 — Connection / Schedule lifecycle cleanup — design gate
 
 Date: 2026-09-29
-Status: **LFC-1.0 design gate written. Implementation has not started.**
+Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete) is implemented; LFC-1.2 and LFC-1.3 have not started.** Implementation notes for 1.1 are in §24. The rulings in §3 are unchanged.
 Branch: `lfc-1-connection-schedule-lifecycle`
 Audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
 
@@ -619,3 +619,25 @@ Each stop from the LFC-1.0 brief was checked. None fired. The gate is allowed to
 | Another unfinished epic is required first | **Not hit.** Integration delete, archive, movement, and the connection workspace are already shipped. IAM-8 and navigation grouping are not prerequisites. |
 
 If implementation discovers a current-state `ScheduleId` reference that section 6 does not list, stop and extend the matrix before deleting rows. Do not cascade it silently.
+
+---
+
+## 24. LFC-1.1 implementation notes
+
+Written with the schedule hard-delete implementation. Product rulings in §3 are unchanged.
+
+**Atomicity.** `DeleteScheduleAsync` checks the actor first (no gate, no audit when there is no actor). It then opens a transaction on a relational provider, acquires `IResourceOwnershipMutationGate`, and re-reads the definition with `GetByIdForUpdateAsync` (`UPDLOCK, ROWLOCK` on SQL Server). Enabled refuses. Disabled deletes schedule-state rows, assignments, then the definition in that same transaction. There is no foreign key from assignments, states, or runs onto `ScheduleDefinitions`; the explicit delete order is the integrity rule. `ScheduleDefinitions.ResourceContextId` points at `ResourceContexts` with `ON DELETE RESTRICT` and does not cascade when the schedule row is removed.
+
+**Enable race.** Enable takes the same ownership gate before it can set `Enabled`. A unit test flips the row to enabled inside `AcquireAsync` and asserts the delete then refuses and leaves the assignment in place. That is the deterministic stand-in for the SQL application lock. InMemory does not take `UPDLOCK`.
+
+**Assignment insert.** `AssignToRuntimePlaneAsync` now takes the same definition row lock and fails if the definition is gone, so an insert cannot land underneath a delete that holds the lock, and cannot recreate an assignment after the delete commits.
+
+**Cursor writes.** `DeleteDisabledScheduleGraphAsync` takes `UPDLOCK, ROWLOCK` on the schedule's assignment rows before it reads or removes their schedule-state rows. `UpdateStateAsync` takes the same lock on the assignment for the whole upsert, inside its own transaction when it is not already enlisted. Those locks conflict, so a cursor cannot commit after the delete has locked the assignment, and a cursor that committed earlier is included in the delete. When the assignment row is gone, `UpdateStateAsync` does not insert one. InMemory does not take `UPDLOCK`; the unit test proves the post-delete no-op. A claim that already passed due-evaluation can still insert a `ScheduleRun` for a deleted id; that row is history, and the due evaluator will not select the schedule again because the definition and assignment are gone.
+
+**Audit.** `schedule.deleted` and `schedule.delete_rejected` are appended after the transaction completes, the same relationship as `integration.deleted`. Success-audit failure can surface after the rows are already gone. Rejection-audit failure happens while the schedule is still enabled. Unknown ids and missing actors write neither event. Schedule create, update, enable, and disable remain unaudited.
+
+**Archive.** `BlocksArchive` is unchanged. A disabled schedule on an archived Application can be deleted. Enable on an archived Application still throws `ResourceContextArchivedException`.
+
+**Not in this slice.** Schedule detail UI (LFC-1.2). Retired connection copy (LFC-1.3). No connection lifecycle change. No new permission. `DELETE /api/schedules/{id}` is an ordinary `/api` mutation and is not request-trust exempt.
+
+**SQL Server proof.** `ScheduleDeleteSqlServerTests` runs the graph delete, enabled refusal, history retention, gate-held Enable/Delete interleavings, definition-row assignment conflict, assignment-row state-update conflict, and the FK/cascade inspection against a real throwaway catalog. InMemory tests remain the unit-level stand-in.

@@ -269,7 +269,54 @@ public sealed class SqlScheduleRepository : IScheduleRepository
 
     public async ValueTask UpdateStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct = default)
     {
-        var e = await _db.ScheduleStates.FirstOrDefaultAsync(x => x.AssignmentId == assignmentId, ct);
+        // Relational providers lock the assignment row for the whole upsert. Delete holds that same
+        // UPDLOCK until the assignment and its cursor are gone, so this method cannot insert a cursor
+        // for an assignment the delete has already decided to remove.
+        if (_db.Database.IsRelational() && _db.Database.CurrentTransaction is null)
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                _db.ChangeTracker.Clear();
+                await using var tx = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+                if (!await AssignmentHeldForStateWriteAsync(assignmentId, ct).ConfigureAwait(false))
+                    return;
+                await UpsertScheduleStateAsync(assignmentId, state, ct).ConfigureAwait(false);
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+            return;
+        }
+
+        if (!await AssignmentHeldForStateWriteAsync(assignmentId, ct).ConfigureAwait(false))
+            return;
+        await UpsertScheduleStateAsync(assignmentId, state, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// True when the assignment row exists. On SQL Server the read takes <c>UPDLOCK, ROWLOCK</c> and
+    /// holds it to the end of the ambient transaction (or the transaction <see cref="UpdateStateAsync"/>
+    /// just opened).
+    /// </summary>
+    private async Task<bool> AssignmentHeldForStateWriteAsync(string assignmentId, CancellationToken ct)
+    {
+        if (_db.Database.IsRelational())
+        {
+            var rows = await _db.ScheduleAssignments
+                .FromSqlInterpolated($"SELECT * FROM [ScheduleAssignments] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {assignmentId}")
+                .AsNoTracking()
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            return rows.Count > 0;
+        }
+
+        return await _db.ScheduleAssignments.AsNoTracking()
+            .AnyAsync(a => a.Id == assignmentId, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task UpsertScheduleStateAsync(string assignmentId, ScheduleStateUpdate state, CancellationToken ct)
+    {
+        var e = await _db.ScheduleStates.FirstOrDefaultAsync(x => x.AssignmentId == assignmentId, ct).ConfigureAwait(false);
         if (e is null)
         {
             _db.ScheduleStates.Add(new ScheduleStateEntity
@@ -290,7 +337,7 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             if (state.LastOutcomeReason is not null) e.LastOutcomeReason = state.LastOutcomeReason;
             if (state.LastSuccessfulDispatchUtc.HasValue) e.LastSuccessfulDispatchUtc = state.LastSuccessfulDispatchUtc;
         }
-        await _db.SaveChangesAsync(ct);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
     public async ValueTask<ScheduleState?> GetStateAsync(string assignmentId, CancellationToken ct = default)
@@ -350,6 +397,57 @@ public sealed class SqlScheduleRepository : IScheduleRepository
             ?? throw new InvalidOperationException($"Schedule {id.Value} not found.");
         entity.ResourceContextId = resourceContextId.Value;
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<DisabledScheduleGraphDeleteResult> DeleteDisabledScheduleGraphAsync(ScheduleId id, CancellationToken cancellationToken = default)
+    {
+        // No FK from ScheduleAssignments, ScheduleStates, or ScheduleRuns to ScheduleDefinitions.
+        // ScheduleDefinitions.ResourceContextId points outward at ResourceContexts (ON DELETE RESTRICT)
+        // and does not cascade when this row is removed. Historical tables are intentionally not touched.
+        var definition = await _db.ScheduleDefinitions.FirstOrDefaultAsync(e => e.Id == id.Value, cancellationToken).ConfigureAwait(false);
+        if (definition is null || definition.Enabled)
+            return new DisabledScheduleGraphDeleteResult(Deleted: false, AssignmentsRemoved: 0);
+
+        // Lock assignment rows before reading cursors. UpdateStateAsync takes the same UPDLOCK, so it
+        // cannot commit a new cursor after this point, and a cursor it committed earlier is in this read.
+        List<string> assignmentIds;
+        if (_db.Database.IsRelational())
+        {
+            var locked = await _db.ScheduleAssignments
+                .FromSqlInterpolated($"SELECT * FROM [ScheduleAssignments] WITH (UPDLOCK, ROWLOCK) WHERE [ScheduleId] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            assignmentIds = locked.Select(a => a.Id).ToList();
+        }
+        else
+        {
+            assignmentIds = await _db.ScheduleAssignments.AsNoTracking()
+                .Where(a => a.ScheduleId == id.Value)
+                .Select(a => a.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (assignmentIds.Count > 0)
+        {
+            var states = await _db.ScheduleStates
+                .Where(s => assignmentIds.Contains(s.AssignmentId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _db.ScheduleStates.RemoveRange(states);
+
+            var assignments = await _db.ScheduleAssignments
+                .Where(a => a.ScheduleId == id.Value)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _db.ScheduleAssignments.RemoveRange(assignments);
+        }
+
+        _db.ScheduleDefinitions.Remove(definition);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return new DisabledScheduleGraphDeleteResult(Deleted: true, AssignmentsRemoved: assignmentIds.Count);
     }
 
     private static ScheduleDefinition ToDefinition(ScheduleDefinitionEntity e)

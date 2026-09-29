@@ -253,6 +253,37 @@ public sealed class SchedulesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Hard-deletes a disabled schedule. Enabled schedules are refused. Historical firings are retained.
+    /// </summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken = default)
+    {
+        if (!await _scheduleGovernance.CanManageAsync(cancellationToken))
+            return Forbid();
+        try
+        {
+            await _scheduleManagement.DeleteScheduleAsync(new ScheduleId(id), cancellationToken);
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ScheduleDeleteRejectedException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
     /// <summary>Advisory preview of moving this Schedule to another ResourceContext (design gate §8.2).</summary>
     [HttpGet("{id}/ownership/move-preview")]
     public async Task<IActionResult> GetOwnershipMovePreview(

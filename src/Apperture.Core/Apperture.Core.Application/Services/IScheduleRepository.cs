@@ -132,7 +132,26 @@ public interface IScheduleRepository
     /// shared request-scoped context, and leaves no tracked state behind for an execution-strategy retry.
     /// </remarks>
     ValueTask SetResourceContextIdAsync(ScheduleId id, ResourceContextId resourceContextId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a disabled schedule's live graph: schedule-state rows for its assignments, those
+    /// assignments, then the definition. Does nothing when the definition is missing or still enabled.
+    /// Does not touch <c>ScheduleRuns</c> or any other historical table. There is no foreign key from
+    /// assignments, states, or runs to the definition, so this order is the integrity rule.
+    /// </summary>
+    /// <remarks>
+    /// Call inside the same transaction as <see cref="GetByIdForUpdateAsync"/>. The row lock plus the
+    /// caller's ownership gate is what makes the enabled check stable. The default throws so test doubles
+    /// that never delete keep compiling. The production repository implements the delete.
+    /// </remarks>
+    ValueTask<DisabledScheduleGraphDeleteResult> DeleteDisabledScheduleGraphAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("DeleteDisabledScheduleGraphAsync is not implemented by this schedule repository.");
 }
+
+/// <summary>Result of <see cref="IScheduleRepository.DeleteDisabledScheduleGraphAsync"/>.</summary>
+/// <param name="Deleted">True when the disabled definition row was removed.</param>
+/// <param name="AssignmentsRemoved">Assignment rows removed with it. Zero when <paramref name="Deleted"/> is false.</param>
+public readonly record struct DisabledScheduleGraphDeleteResult(bool Deleted, int AssignmentsRemoved);
 
 /// <summary>
 /// Schedule run record for persistence. Epic 28.

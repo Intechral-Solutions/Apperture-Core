@@ -2,9 +2,11 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Persistence.SqlServer;
+using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -74,7 +76,9 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             _setupResourceContexts,
             integrationRepository,
             _db,
-            new SqlResourceOwnershipMutationGate(_db));
+            new SqlResourceOwnershipMutationGate(_db),
+            new NullPrincipalContext(),
+            new NullAuditService());
 
         var recordingResourceContextRepository = new RecordingResourceContextRepository(new SqlResourceContextRepository(_db), _tracker);
         var recordingResourceContexts = new ResourceContextService(recordingResourceContextRepository, TimeProvider.System);
@@ -87,7 +91,9 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             recordingResourceContexts,
             integrationRepository,
             _db,
-            Gate);
+            Gate,
+            new NullPrincipalContext(),
+            new NullAuditService());
     }
 
     private ManagementServiceTestHarness.RecordingResourceOwnershipMutationGate Gate { get; }
@@ -136,6 +142,20 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
     private sealed class StubClaimOptions : ISchedulerClaimOptions
     {
         public int ClaimLeaseMinutes => 5;
+    }
+
+    private sealed class NullPrincipalContext : IPrincipalContext
+    {
+        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IActor?>(null);
+    }
+
+    private sealed class NullAuditService : IAuditService
+    {
+        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     /// <summary>

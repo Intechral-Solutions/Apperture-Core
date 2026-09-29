@@ -122,7 +122,9 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             ResourceContexts,
             integrationRepository,
             Db,
-            ownershipGate);
+            ownershipGate,
+            new AlwaysActor(),
+            Mock.Of<IAuditService>());
         _schedules = schedules;
 
         _auditService = new SqlAuditService(Db);
