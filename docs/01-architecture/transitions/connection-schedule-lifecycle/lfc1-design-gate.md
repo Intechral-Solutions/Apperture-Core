@@ -1,11 +1,12 @@
 # LFC-1 — Connection / Schedule lifecycle cleanup — design gate
 
 Date: 2026-09-29
-Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete), LFC-1.2 (schedule detail delete UI), and LFC-1.3 (retired connection copy) are implemented.** Planned implementation slices are complete. Epic closure has not been run. Implementation notes for 1.1 are in §24, for 1.2 in §25, and for 1.3 in §26. The rulings in §3 are unchanged.
+Status: **Complete and merge-ready.** LFC-1.0–LFC-1.3 satisfy the §3 rulings. Closure audit is §27. Product rulings in §3 are unchanged.
 Branch: `lfc-1-connection-schedule-lifecycle`
-Audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
+LFC-1.0 audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
+Implementation HEAD at closure: `a1f883585ea5d9a7d2d83d1feb81ed7c2e66569f`
 
-This document is the lifecycle contract for later slices. It does not change product behavior. No delete endpoint, migration, UI change, or ADR is authorized by LFC-1.0 itself.
+This document began as the LFC-1.0 lifecycle contract. LFC-1.0 itself authorized no product change. Later slices implemented the contract. §2 is the inventory at the LFC-1.0 audited HEAD; supersession notes record what later slices changed.
 
 Everything below is grounded in the repository at that commit. Where an older note said IAM-8, INT-1, JOB-1, or SDK work was "next," the current roadmap wins: LFC-1 is the selected core-platform body, and IAM-8 and navigation / cross-context grouping stay not started.
 
@@ -80,6 +81,8 @@ There is no `connection.manage` permission. There is no hard-delete route.
 
 **Code fact. Persistence.** Table `ScheduleDefinitions`. Foreign key: `ResourceContextId` → `ResourceContexts`, `ON DELETE RESTRICT`. `IntegrationId` is an indexed string with no FK. `IScheduleRepository` has no delete.
 
+**Supersession (LFC-1.1).** The repository now exposes `DeleteDisabledScheduleGraphAsync`. There is still no tombstone, undelete, or schema flag. See §24.
+
 **Code fact. Logical references (no FK to `ScheduleDefinitions`).**
 
 | Store | Column | Role |
@@ -96,15 +99,23 @@ There is no `connection.manage` permission. There is no hard-delete route.
 
 **Code fact. Service and API.** `IScheduleManagementService` exposes get, list, create, update, assign, enable, and disable. Repo search finds no `DeleteSchedule` / `RemoveSchedule`. `POST /api/schedules` rejects a missing `IntegrationId` and tells the caller to use `POST /api/integrations/{integrationId}/schedules`. The UI create page uses that integration route (`ScheduleCreate.razor`). Schedule detail offers Edit, Enable, Disable, and Move for standalone schedules. Attached schedules move only with the Integration. There is no delete control.
 
+**Supersession (LFC-1.1 / LFC-1.2).** `DeleteScheduleAsync` and `DELETE /api/schedules/{id}` exist. Schedule detail offers confirmed Delete for a disabled manageable schedule. `POST /api/schedules` still requires `IntegrationId`. Standalone create remains unexposed. See §24 and §25.
+
 **Code fact. Authorization.** The only schedule permission is instance-scoped `schedule.manage` (`ActionConstants.ScheduleManage`, `ScheduleGovernanceService.CanManageAsync`). Enable, disable, update, create, and schedule move all use it.
+
+**Supersession (LFC-1.1).** Delete uses the same `schedule.manage` check. There is still no `schedule.delete` permission.
 
 **Code fact. Enable vs disable.** Enable (and a PATCH that flips `Enabled` from false to true) acquires `IResourceOwnershipMutationGate` and refuses when the owning context is archived (`ApplyGatedScheduleTransitionAsync`). Disable is an ordinary update and is allowed on an archived context. The due evaluator skips disabled definitions.
 
 **Code fact. Integration delete.** `DeleteIntegrationAsync` counts `ScheduleDefinitions` rows for that `IntegrationId` and refuses when the count is greater than zero, before any other cleanup (`IntegrationManagementService`). The inventory's "Clearable by" cell for that row is still empty.
 
+**Supersession (LFC-1.1).** Integration delete still counts remaining schedule rows and still does not cascade. Operators clear that blocker by deleting the disabled schedule first. The Integration delete API itself is unchanged.
+
 ### 2.3 Application archive and context
 
 **Code fact.** `ResourceContextService.ArchiveAsync` refuses when `BlocksArchive` is true. The operator message tells them to retire integrations, retire active connections, and disable enabled schedules. Retired connections and disabled schedules may remain on an archived Application. D2 calls that outcome semantically correct, and defers the inability to delete Connections and Schedules to later work. CTX-3 must not have added delete merely to make archive reachable; movement and the refined rule already did that.
+
+**Supersession (LFC-1).** `BlocksArchive` is unchanged. Disabled-schedule delete is optional cleanup, not an archive requirement. Connection hard-delete remains rejected; retired connections may still remain on an archived Application.
 
 Live means: Integration `State != Retired` (Active and Inactive both count), Connection `State == Active`, Schedule `Enabled == true`.
 
@@ -604,6 +615,8 @@ LFC-1.1 is first because it is the smaller, clearer capability and it is the one
 
 **Epic complete** when 1.1–1.3 meet those criteria and no connection hard-delete or un-retire path exists.
 
+**Closure (2026-09-29).** Those criteria are met. See §27.
+
 ---
 
 ## 23. STOP conditions
@@ -683,3 +696,32 @@ Written with the retired-connection copy correction. Product rulings in §3 are 
 **Not in this slice.** Epic closure. §2.1 still records the pre-1.3 notice as the audited code fact; the supersession note there points here.
 
 Planned implementation slices 1.1–1.3 are complete. Closing the epic is a separate audit.
+
+**Supersession (closure).** The closure audit is §27. LFC-1 is complete and merge-ready.
+
+---
+
+## 27. Closure audit (2026-09-29)
+
+Read-only reconciliation of HEAD `a1f883585ea5d9a7d2d83d1feb81ed7c2e66569f` against the §3 rulings and the §22 acceptance criteria. No product or test source was changed in this closeout.
+
+**Ruling: complete and merge-ready.** Binding LFC-1 requirements are satisfied. IAM-8 and navigation / grouping were not started.
+
+| Slice | Result |
+|---|---|
+| LFC-1.0 | Rulings R1–R12 remain the contract. |
+| LFC-1.1 | `DELETE /api/schedules/{id}` hard-deletes a disabled schedule; enabled is 409; missing 404; unauthorized 403. Live graph (definition, assignments, states) is removed in one gated transaction. History is retained. Integration delete stays non-cascading and becomes reachable after the schedule row is gone. |
+| LFC-1.2 | Disabled manageable schedules offer confirmed delete from detail. Enabled schedules must be disabled first. 204 leaves for `/schedules`. 409 / 404 / 403 match §25. |
+| LFC-1.3 | Connection lifecycle is unchanged. Retired copy now matches resolver and readiness. No Restore or Delete Connection control. |
+
+**Verified unchanged.** No connection hard-delete, un-retire, secret deactivation on retire, automatic binding revoke, per-fire snapshots, standalone schedule authoring, archive-predicate redesign, HSK-D state filters, `schedule.delete` permission, or request-trust exemption.
+
+**Known non-blockers, not closure failures.**
+
+- §17 asked a seeded `PlatformEvents` row to survive delete. The delete path does not touch that table; unit tests seed `ScheduleRuns`, idempotency keys, notification instances, and a prior audit row instead. Retention of platform events is by omission.
+- `IResourceOwnershipMutationGate` remarks still say “eleven paths” and do not name `DeleteScheduleAsync`. The method does acquire the gate. Comment-only drift; not a behavior defect.
+- `ResourceContextServiceTests.Archive_SucceedsWhenOnlyRetiredOrDisabledResourcesRemain` still comments that disabled schedules are “never deletable.” The archive predicate is unchanged.
+- Gate-timeout HTTP mapping for delete matches enable: a completed concurrent enable is 409 `delete_rejected`; a lock wait timeout is not given a dedicated 409 mapper. Pre-existing enable pattern, not a new LFC-1 contract hole.
+- No new ADR. This gate remains the lifecycle contract.
+
+**CI.** Not required to close the epic. One post-close CI run is worthwhile only as the pre-merge checkpoint, not because a cross-project risk was found without local coverage.

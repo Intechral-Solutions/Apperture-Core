@@ -31,12 +31,11 @@ are complete, manually smoke-tested, and merged to `master` — see
 remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
 reset, cutting across several of them.
 
-**Current next (2026-09-29):** **LFC-1 — Connection/Schedule lifecycle cleanup.** SEC-1 engineering is merged
-to `master`. Items 0–7a of the 2026-09-18 sequence are complete as engineering. **IAM-8 (item 7b) and
-navigation / cross-context grouping (item 8) remain not started** and are **not** being started now. LFC-1 is
-a deliberate prioritization of unfinished core-platform functionality over that older written order. The
-2026-09-18 reset had ranked Connection/Schedule lifecycle *below* IAM-8 and grouping; this does **not** claim
-that ranking already placed LFC-1 first. **LFC-1.0 (2026-09-29):** the design gate is written. **LFC-1.1** (disabled-schedule hard-delete), **LFC-1.2** (schedule detail delete UI), and **LFC-1.3** (retired connection copy) are implemented. Planned implementation slices are complete; epic closure has not been run. Lifecycle rulings live in the gate, not in this roadmap:
+**Current next (2026-09-29):** none selected. **LFC-1 — Connection/Schedule lifecycle cleanup is complete
+and merge-ready** on branch `lfc-1-connection-schedule-lifecycle`. SEC-1 engineering is merged to `master`.
+Items 0–7a of the 2026-09-18 sequence are complete as engineering. **IAM-8 (item 7b) and navigation /
+cross-context grouping (item 8) remain not started** and are **not** selected by this closeout. LFC-1.0–LFC-1.3
+closed against the design gate:
 [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
 
 0. **Roadmap/documentation reset** — this reset (2026-09-18).
@@ -289,8 +288,10 @@ Wizard foundation (Track 8, deferred, legitimate future value, not prioritized);
 already been first; it is a later, explicit prioritization of unfinished core platform functionality over IAM-8
 (item 7b) and future navigation/grouping (item 8), both of which remain not started. Delete and un-retire
 rulings are recorded in the [LFC-1.0 design gate](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md),
-not in this roadmap. LFC-1.1, LFC-1.2, and LFC-1.3 are implemented. Planned implementation slices are complete; epic closure has not been run. The other re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard,
-Context-scoped IAM) stay deferred/parked as written.
+not in this roadmap. LFC-1.1, LFC-1.2, and LFC-1.3 are implemented. **Supersession (2026-09-29, LFC-1
+closure):** LFC-1 is complete and merge-ready; this closeout does not select IAM-8 or grouping. The other
+re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard, Context-scoped IAM) stay deferred/parked
+as written.
 
 **The visual workflow designer is not an active roadmap item.** It has only ever appeared as an
 engineering-side non-goal (ADR-0032, Epic-57, CTX-3B closures) — never as approved product scope. It stays

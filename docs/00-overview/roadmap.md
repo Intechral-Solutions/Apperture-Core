@@ -8,7 +8,7 @@ Apperture is past a **foundation baseline** (Stabilization + Scheduling & Worker
 | ----- | ------- | ------ |
 | Foundation / Stabilization | Reliability floor, auth, notifications, operator shell triage | **Complete** (S1–S13) |
 | Scheduling & Worker Management foundation | Dispatch, TZ, heartbeat observe, schedule readiness, lifecycle quarantine | **Complete** (SWM-1–SWM-12) |
-| Pre-release product development | Major product tracks (UI, demos, systems model, business data, Azure, etc.) | **Active.** Current next: **LFC-1** — see [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md) |
+| Pre-release product development | Major product tracks (UI, demos, systems model, business data, Azure, etc.) | **Active.** **LFC-1 complete and merge-ready**; next epic not selected — see [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md) |
 | Final release readiness | Packaging, RC validation, security, ship docs | **Deferred** until major product tracks land |
 
 Do **not** use “release candidate,” “v1 ready,” or “release-ready” for the current foundation baseline. See:
@@ -35,9 +35,10 @@ Worker process lifecycle remains **externally managed** (SWM-9/12). Do not resto
 
 Canonical current-state track list and near-term order: [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md).
 
-**Current next (2026-09-29):** **LFC-1 — Connection/Schedule lifecycle cleanup.** IAM-8 and future
-navigation/grouping remain not started. SEC-1 engineering is merged; remaining SEC-1 environment-dependent
-smoke is pre-release/UAT, not a development blocker. **LFC-1.0 design gate is written. LFC-1.1 (schedule hard-delete), LFC-1.2 (schedule detail delete UI), and LFC-1.3 (retired connection copy) are implemented. Planned implementation slices are complete; epic closure has not been run** — [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
+**Current next (2026-09-29):** none selected. **LFC-1 is complete and merge-ready** on
+`lfc-1-connection-schedule-lifecycle`. IAM-8 and future navigation/grouping remain not started and are not
+selected here. SEC-1 engineering is merged; remaining SEC-1 environment-dependent smoke is pre-release/UAT,
+not a development blocker. Closure: [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md) §27.
 
 Highlights (thematic tracks, not the current execution order):
 

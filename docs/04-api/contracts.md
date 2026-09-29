@@ -36,6 +36,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | PATCH | `/api/schedules/{id}` | Update schedule (Epic 38). Body: UpdateScheduleRequestBody (Name?, RecurrenceExpression?, TimeZone?, Enabled?). Returns 200 with ScheduleDto; 400 with errors on validation failure. Target is immutable. |
 | POST | `/api/schedules/{id}/enable` | Enable schedule |
 | POST | `/api/schedules/{id}/disable` | Disable schedule |
+| DELETE | `/api/schedules/{id}` | Hard-delete a disabled schedule (LFC-1). Success **204**. Enabled **409** `{ "error": "Cannot delete schedule: it is still enabled. Disable it first." }`. Missing **404**. Unauthorized **403**. No request body. Historical firings are retained. |
 | GET | `/api/environments` | Inspect the current environment (authorization gated) |
 | GET | `/api/runtime-instances` | Inspect governed runtime capabilities (validated capability ids + kind) list (authorization gated) |
 | GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect governed runtime capabilities for one runtime (capabilityId + kind) (authorization gated) |
@@ -59,7 +60,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 - **Create** (`POST /api/schedules`): Body `CreateScheduleRequestBody` with `Name`, `RecurrenceExpression`, `TimeZone` (default `UTC`), `Enabled` (default `true`), `TargetJobType` (0=Workflow, 1=Operation), `TargetJobConfiguration` (JSON: `{"workflowDefinitionId":"..."}` or `{"operationDefinitionId":"..."}`). Optional: `ExecutionPolicyRef`, `RuntimePlaneId` (default `local`). On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **201** with `ScheduleDto` in body.
 - **Update** (`PATCH /api/schedules/{id}`): Body `UpdateScheduleRequestBody` with optional `Name`, `RecurrenceExpression`, `TimeZone`, `Enabled`. Target (kind, configuration) is immutable: if `TargetJobType` or `TargetJobConfiguration` is provided, returns **400** with `"Target cannot be changed after creation"`. On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **200** with updated `ScheduleDto` in body.
 - **Validation**: Cron via Cronos format; timezone via IANA IDs; target config must be valid JSON with required key for chosen `TargetJobType`.
-- **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). Create and edit are not audited (consistent with enable/disable).
+- **Delete** (`DELETE /api/schedules/{id}`): No body. Disabled schedules return **204** after removing the definition, assignments, and assignment state. Enabled schedules return **409** and are not removed. Missing ids return **404**. Historical `ScheduleRuns`, start-request idempotency keys, audit rows, and notification instances that cite the schedule id are retained. There is no tombstone and no undelete. `POST /api/schedules` still requires `IntegrationId`.
+- **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). There is no `schedule.delete` permission. Create, edit, enable, and disable are not audited. Successful delete appends `schedule.deleted`; an authorized attempt on an enabled schedule appends `schedule.delete_rejected`. Unknown ids and unauthorized callers write neither.
 
 ## Recovery API (Epic 31)
 
