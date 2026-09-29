@@ -167,7 +167,12 @@ reset, cutting across several of them.
    The fifth `build-and-test` reached the SQL structure-browser unreachable proof, which returned Failed
    instead of RemoteUnavailable on Ubuntu (gate §47.10). The sixth `build-and-test` reached six
    toast-delta failures where a partial composite cursor hit `SqlNotificationUserInboxStore`
-   (gate §47.11). That job is not green. SEC-1C and the remaining slices have not started.
+   (gate §47.11). The seventh `build-and-test` reports six IntegrationTests failures that Copilot
+   attributed to an SA password mismatch; the checked-in workflow is not truncated, 283 tests
+   connected to SQL, and the six failures are governance Launch/Start 403s plus the unreachable
+   SQL outcome (gate §47.12). The thirteen Ui.Shared link/breadcrumb failures in that same job are a Unix
+   file-URI parse of rooted app paths (gate §47.13). That job is not green. SEC-1C and the remaining
+   slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

@@ -447,7 +447,7 @@ public sealed class ManagementHostGovernanceHttpTests
                 integrationId,
                 parameters = new Dictionary<string, object?> { ["name"] = "epic60-manual" }
             });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain("not active");
     }
@@ -479,7 +479,7 @@ public sealed class ManagementHostGovernanceHttpTests
             {
                 integrationId
             });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain("not active");
     }
@@ -495,7 +495,7 @@ public sealed class ManagementHostGovernanceHttpTests
             {
                 parameters = new Dictionary<string, object?> { ["message"] = "missing-integration" }
             });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain("IntegrationId is required");
     }
@@ -511,7 +511,7 @@ public sealed class ManagementHostGovernanceHttpTests
             {
                 parameters = new Dictionary<string, object?> { ["name"] = "missing-integration" }
             });
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain("IntegrationId is required");
     }
@@ -880,7 +880,7 @@ public sealed class ManagementHostGovernanceHttpTests
         var wf = await client.PostAsJsonAsync(
             $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
             new { parameters = new Dictionary<string, object?> { ["name"] = "Epic56B" } });
-        wf.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        wf.StatusCode.Should().Be(HttpStatusCode.Accepted, await wf.Content.ReadAsStringAsync());
         var wfJson = await wf.Content.ReadAsStringAsync();
         using (var wfDoc = JsonDocument.Parse(wfJson))
         {
@@ -891,7 +891,7 @@ public sealed class ManagementHostGovernanceHttpTests
         var op = await client.PostAsJsonAsync(
             $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
             new { parameters = new Dictionary<string, object?> { ["message"] = "Epic56B-op" } });
-        op.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        op.StatusCode.Should().Be(HttpStatusCode.Accepted, await op.Content.ReadAsStringAsync());
         var opJson = await op.Content.ReadAsStringAsync();
         using (var opDoc = JsonDocument.Parse(opJson))
         {
@@ -917,7 +917,7 @@ public sealed class ManagementHostGovernanceHttpTests
         var wf = await client.PostAsJsonAsync(
             $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
             new { parameters = new Dictionary<string, object?> { ["name"] = wfParamValue } });
-        wf.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        wf.StatusCode.Should().Be(HttpStatusCode.Accepted, await wf.Content.ReadAsStringAsync());
         string? wfRunId;
         using (var launchDoc = JsonDocument.Parse(await wf.Content.ReadAsStringAsync()))
         {
@@ -942,7 +942,7 @@ public sealed class ManagementHostGovernanceHttpTests
         var op = await client.PostAsJsonAsync(
             $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
             new { parameters = new Dictionary<string, object?> { ["message"] = opParamValue } });
-        op.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        op.StatusCode.Should().Be(HttpStatusCode.Accepted, await op.Content.ReadAsStringAsync());
         string? opRunId;
         using (var opLaunchDoc = JsonDocument.Parse(await op.Content.ReadAsStringAsync()))
         {

@@ -24,7 +24,8 @@ public sealed class ManagementShellOrientationTracker
             return "/";
 
         var raw = navigationUri.Trim();
-        if (Uri.TryCreate(raw, UriKind.Absolute, out var absolute))
+        // Rooted app paths are not absolute. On Unix they parse as file URIs and encode '?'/'#' into the path.
+        if (AppNavigationUri.TryGetHttpAbsolute(raw, out var absolute))
             return string.IsNullOrEmpty(absolute.Query)
                 ? absolute.AbsolutePath
                 : absolute.AbsolutePath + absolute.Query;

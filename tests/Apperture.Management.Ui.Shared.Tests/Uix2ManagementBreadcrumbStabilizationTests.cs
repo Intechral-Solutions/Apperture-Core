@@ -216,6 +216,9 @@ public sealed class Uix2ManagementBreadcrumbStabilizationTests
             .Should().Be("/runs/r1?from=x");
         ManagementShellOrientationTracker.GetObservationKey("/runs/r1?from=x#frag")
             .Should().Be("/runs/r1?from=x");
+        // A rooted path must not be treated as a file URI (Unix Uri.TryCreate Absolute encodes '?' into the path).
+        ManagementShellOrientationTracker.GetObservationKey("/runs/r1?from=demo-customer&fromKey=C-100")
+            .Should().Be("/runs/r1?from=demo-customer&fromKey=C-100");
     }
 
     [Fact]

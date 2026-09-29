@@ -555,6 +555,23 @@ public sealed class PlatformSqlStructureBrowserTests
         rig.Factory.Verify(f => f.Create(It.IsAny<Connection>(), It.IsAny<ResolvedConnectionMaterial>()), Times.Never);
     }
 
+    [Fact]
+    public void DescribeFailureShape_records_types_and_numbers_without_exception_text()
+    {
+        const string secret = "Server=secret.example;Password=hidden-value";
+        var inner = new SocketException((int)SocketError.ConnectionRefused);
+        var outer = new InvalidOperationException(secret, inner);
+
+        var shape = PlatformSqlStructureBrowser.DescribeFailureShape(outer);
+
+        shape.Should().Contain("InvalidOperationException");
+        shape.Should().Contain("SocketException");
+        shape.Should().Contain("SocketError=ConnectionRefused");
+        shape.Should().NotContain(secret);
+        shape.Should().NotContain("hidden-value");
+        shape.Should().NotContain("secret.example");
+    }
+
     // Provider identity -----------------------------------------------------------------------------
 
     [Fact]

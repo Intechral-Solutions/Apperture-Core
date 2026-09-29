@@ -243,7 +243,9 @@ public static class AffectedRecordNavigation
         query = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         var raw = navigationUri.Trim();
-        if (Uri.TryCreate(raw, UriKind.Absolute, out var absolute))
+        // Only an explicit http(s) URI is absolute. On Unix, Uri.TryCreate("/runs/r1?from=x", Absolute)
+        // succeeds as a file URI and percent-encodes '?' and '#' into AbsolutePath, which drops the query.
+        if (AppNavigationUri.TryGetHttpAbsolute(raw, out var absolute))
         {
             path = string.IsNullOrEmpty(absolute.AbsolutePath) ? "/" : absolute.AbsolutePath;
             ParseQueryInto(absolute.Query, query);

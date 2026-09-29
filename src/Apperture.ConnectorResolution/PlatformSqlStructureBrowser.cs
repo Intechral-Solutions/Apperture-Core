@@ -8,6 +8,8 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.ConnectorResolution;
 
@@ -52,15 +54,18 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
     private readonly ISecretResolver _secretResolver;
     private readonly IConnectorClientFactory<IDbConnection> _factory;
     private readonly SqlStructureBrowserOptions _options;
+    private readonly ILogger _logger;
 
     public PlatformSqlStructureBrowser(
         ISecretResolver secretResolver,
         IConnectorClientFactory<IDbConnection> factory,
-        SqlStructureBrowserOptions? options = null)
+        SqlStructureBrowserOptions? options = null,
+        ILogger<PlatformSqlStructureBrowser>? logger = null)
     {
         _secretResolver = secretResolver;
         _factory = factory;
         _options = options ?? new SqlStructureBrowserOptions();
+        _logger = logger ?? NullLogger<PlatformSqlStructureBrowser>.Instance;
     }
 
     /// <inheritdoc />
@@ -202,6 +207,14 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         catch (Exception ex)
         {
             var (outcome, message) = Classify(ex);
+            if (outcome == ConnectionToolOutcome.Failed)
+            {
+                // Structural only: type names and numeric codes. Never the exception text, server, or connection string.
+                _logger.LogWarning(
+                    "SQL structure classification unresolved. Shape={Shape}",
+                    DescribeFailureShape(ex));
+            }
+
             return Failure<T>(outcome, message, limit);
         }
     }
@@ -234,6 +247,38 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
 
     private static SqlStructureResult<T> Failure<T>(ConnectionToolOutcome outcome, string message, int limit) =>
         new(outcome, [], Truncated: false, limit, message);
+
+    /// <summary>
+    /// Type names and numeric codes only. Does not include exception messages, servers, or connection strings.
+    /// </summary>
+    internal static string DescribeFailureShape(Exception exception)
+    {
+        var parts = new List<string>(4);
+        for (var current = exception; current is not null && parts.Count < 6; current = current.InnerException)
+        {
+            var piece = current.GetType().FullName ?? current.GetType().Name;
+            switch (current)
+            {
+                case SqlException sql:
+                    var errorNumbers = new List<int>(sql.Errors.Count);
+                    foreach (SqlError error in sql.Errors)
+                        errorNumbers.Add(error.Number);
+                    piece += $" Number={sql.Number} Class={sql.Class} State={sql.State} ErrorNumbers=[{string.Join(",", errorNumbers)}]";
+                    break;
+                case SocketException socket:
+                    piece += $" SocketError={socket.SocketErrorCode} ErrorCode={socket.ErrorCode}";
+                    break;
+                case Win32Exception win32:
+                    piece += $" NativeError={win32.NativeErrorCode}";
+                    break;
+            }
+
+            piece += $" HResult=0x{current.HResult:X8}";
+            parts.Add(piece);
+        }
+
+        return string.Join(" | ", parts);
+    }
 
     internal static (ConnectionToolOutcome Outcome, string Message) Classify(Exception exception)
     {
