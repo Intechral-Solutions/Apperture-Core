@@ -8,8 +8,6 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.ConnectorResolution;
 
@@ -54,18 +52,15 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
     private readonly ISecretResolver _secretResolver;
     private readonly IConnectorClientFactory<IDbConnection> _factory;
     private readonly SqlStructureBrowserOptions _options;
-    private readonly ILogger _logger;
 
     public PlatformSqlStructureBrowser(
         ISecretResolver secretResolver,
         IConnectorClientFactory<IDbConnection> factory,
-        SqlStructureBrowserOptions? options = null,
-        ILogger<PlatformSqlStructureBrowser>? logger = null)
+        SqlStructureBrowserOptions? options = null)
     {
         _secretResolver = secretResolver;
         _factory = factory;
         _options = options ?? new SqlStructureBrowserOptions();
-        _logger = logger ?? NullLogger<PlatformSqlStructureBrowser>.Instance;
     }
 
     /// <inheritdoc />
@@ -207,14 +202,6 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         catch (Exception ex)
         {
             var (outcome, message) = Classify(ex);
-            if (outcome == ConnectionToolOutcome.Failed)
-            {
-                // Structural only: type names and numeric codes. Never the exception text, server, or connection string.
-                _logger.LogWarning(
-                    "SQL structure classification unresolved. Shape={Shape}",
-                    DescribeFailureShape(ex));
-            }
-
             return Failure<T>(outcome, message, limit);
         }
     }
@@ -248,42 +235,11 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
     private static SqlStructureResult<T> Failure<T>(ConnectionToolOutcome outcome, string message, int limit) =>
         new(outcome, [], Truncated: false, limit, message);
 
-    /// <summary>
-    /// Type names and numeric codes only. Does not include exception messages, servers, or connection strings.
-    /// </summary>
-    internal static string DescribeFailureShape(Exception exception)
-    {
-        var parts = new List<string>(4);
-        for (var current = exception; current is not null && parts.Count < 6; current = current.InnerException)
-        {
-            var piece = current.GetType().FullName ?? current.GetType().Name;
-            switch (current)
-            {
-                case SqlException sql:
-                    var errorNumbers = new List<int>(sql.Errors.Count);
-                    foreach (SqlError error in sql.Errors)
-                        errorNumbers.Add(error.Number);
-                    piece += $" Number={sql.Number} Class={sql.Class} State={sql.State} ErrorNumbers=[{string.Join(",", errorNumbers)}]";
-                    break;
-                case SocketException socket:
-                    piece += $" SocketError={socket.SocketErrorCode} ErrorCode={socket.ErrorCode}";
-                    break;
-                case Win32Exception win32:
-                    piece += $" NativeError={win32.NativeErrorCode}";
-                    break;
-            }
-
-            piece += $" HResult=0x{current.HResult:X8}";
-            parts.Add(piece);
-        }
-
-        return string.Join(" | ", parts);
-    }
-
     internal static (ConnectionToolOutcome Outcome, string Message) Classify(Exception exception)
     {
-        // Microsoft.Data.SqlClient reports the same closed-port failure as a Win32/SQL number on Windows and as
-        // Number = 0 wrapping a SocketException on Linux. Walk the chain; do not stop at an unclassified SqlException.
+        // Walk the chain so a real inner transport signal is not hidden by an unclassified SqlException.
+        // Number 0, including a Linux closed-port SqlException whose inner SocketException is SocketError.Success,
+        // stays Failed. Do not treat that opaque shape as unreachable.
         for (var current = exception; current is not null; current = current.InnerException)
         {
             if (current is SqlException sql)
@@ -332,9 +288,9 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         18456 or 18452 or 4060 or 916 or 229 or 230 or 262 or 297 or 300 => ConnectionToolOutcome.RemoteDenied,
 
         // Timeout expired, general network errors, server not found or not listening, connection dropped.
-        // 111/110/104/101/113 are POSIX TCP errno values SqlClient may copy onto Number on Linux.
+        // Windows and Winsock numbers only. 1225 is the closed-port number SqlClient produced on Windows.
+        // POSIX errno values are not mapped: they were not observed on SqlException.Number.
         -2 or -1 or 2 or 20 or 26 or 40 or 53 or 64 or 121 or 233 or 258
-            or 111 or 110 or 104 or 101 or 113
             or 1225 or 1226 or 1231 or 1232 or 10051 or 10053 or 10054 or 10060 or 10061 or 10065 or 11001
             => ConnectionToolOutcome.RemoteUnavailable,
 

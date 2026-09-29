@@ -306,9 +306,11 @@ public sealed class PlatformSqlStructureBrowserTests
     [InlineData(10060, ConnectionToolOutcome.RemoteUnavailable)]
     [InlineData(10061, ConnectionToolOutcome.RemoteUnavailable)]
     [InlineData(11001, ConnectionToolOutcome.RemoteUnavailable)]
-    [InlineData(111, ConnectionToolOutcome.RemoteUnavailable)]
-    [InlineData(110, ConnectionToolOutcome.RemoteUnavailable)]
-    [InlineData(104, ConnectionToolOutcome.RemoteUnavailable)]
+    [InlineData(111, ConnectionToolOutcome.Failed)]
+    [InlineData(110, ConnectionToolOutcome.Failed)]
+    [InlineData(104, ConnectionToolOutcome.Failed)]
+    [InlineData(101, ConnectionToolOutcome.Failed)]
+    [InlineData(113, ConnectionToolOutcome.Failed)]
     [InlineData(208, ConnectionToolOutcome.Failed)]
     [InlineData(0, ConnectionToolOutcome.Failed)]
     public void SF8_sql_error_numbers_map_to_the_remote_systems_own_answer(int number, ConnectionToolOutcome expected) =>
@@ -356,6 +358,19 @@ public sealed class PlatformSqlStructureBrowserTests
     public async Task SF8_a_socket_access_denied_stays_a_generic_failure()
     {
         var rig = NewRig(configure: db => db.OpenFailure = new SocketException((int)SocketError.AccessDenied));
+
+        var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(), CancellationToken.None);
+
+        result.Outcome.Should().Be(ConnectionToolOutcome.Failed);
+        result.Message.Should().Be("The structure request could not be completed.");
+    }
+
+    [Fact]
+    public async Task SF8_a_socket_success_code_stays_a_generic_failure()
+    {
+        // The Ubuntu closed-port capture was SqlException Number=0 around SocketError.Success.
+        // That inner code is not a refused, timed-out, or unreachable transport signal.
+        var rig = NewRig(configure: db => db.OpenFailure = new SocketException((int)SocketError.Success));
 
         var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(), CancellationToken.None);
 
@@ -553,23 +568,6 @@ public sealed class PlatformSqlStructureBrowserTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         rig.Factory.Verify(f => f.Create(It.IsAny<Connection>(), It.IsAny<ResolvedConnectionMaterial>()), Times.Never);
-    }
-
-    [Fact]
-    public void DescribeFailureShape_records_types_and_numbers_without_exception_text()
-    {
-        const string secret = "Server=secret.example;Password=hidden-value";
-        var inner = new SocketException((int)SocketError.ConnectionRefused);
-        var outer = new InvalidOperationException(secret, inner);
-
-        var shape = PlatformSqlStructureBrowser.DescribeFailureShape(outer);
-
-        shape.Should().Contain("InvalidOperationException");
-        shape.Should().Contain("SocketException");
-        shape.Should().Contain("SocketError=ConnectionRefused");
-        shape.Should().NotContain(secret);
-        shape.Should().NotContain("hidden-value");
-        shape.Should().NotContain("secret.example");
     }
 
     // Provider identity -----------------------------------------------------------------------------

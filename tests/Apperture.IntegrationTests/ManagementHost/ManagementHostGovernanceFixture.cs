@@ -235,8 +235,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
     }
 
     /// <summary>
-    /// <see cref="IProcedureRegistryService"/> only indexes procedures from modules passing <see cref="Apperture.ModuleSdk.Abstractions.IModuleActivationFilter"/>;
-    /// without an enabled install row, governance procedure tests see an empty catalog.
+    /// Keeps the HelloWorld install row for activation-filter reads after startup.
+    /// The permission catalog is snapshotted earlier by <see cref="GovernanceHarnessModuleEnablementHostedService"/>;
+    /// inserting the row only here leaves <c>workflow.execute</c> unknown on a fresh catalog.
     /// </summary>
     private static async Task EnsureHelloWorldModuleEnabledForHarnessAsync(AppertureDbContext db)
     {

@@ -171,8 +171,12 @@ reset, cutting across several of them.
    attributed to an SA password mismatch; the checked-in workflow is not truncated, 283 tests
    connected to SQL, and the six failures are governance Launch/Start 403s plus the unreachable
    SQL outcome (gate §47.12). The thirteen Ui.Shared link/breadcrumb failures in that same job are a Unix
-   file-URI parse of rooted app paths (gate §47.13). That job is not green. SEC-1C and the remaining
-   slices have not started.
+   file-URI parse of rooted app paths (gate §47.13). The eighth `build-and-test` proved that URI fix
+   (Ui.Shared 1395/1395) and passed `browser-security`. The same six IntegrationTests failures remained.
+   A fresh governance catalog reproduces them: HelloWorld is enabled after the permission catalog snapshot,
+   so `workflow.execute` is unknown and launch is `workflow_start_forbidden`. The Ubuntu closed-port SQL
+   shape is Number 0 with `SocketError.Success` and is not classified as unreachable (gate §47.14).
+   That job is not green. SEC-1C and the remaining slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

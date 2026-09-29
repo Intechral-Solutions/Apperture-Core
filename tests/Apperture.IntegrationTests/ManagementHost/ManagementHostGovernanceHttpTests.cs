@@ -4,9 +4,19 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Apperture.ControlPlane.Security;
 using Apperture.ControlPlane.Security.Models;
+using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Identity;
+using Apperture.Core.Domain.Operations;
+using Apperture.ModuleSdk.Abstractions;
+using Apperture.Persistence.SqlServer;
+using Apperture.RuntimePlane.Abstractions;
+using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Apperture.IntegrationTests.ManagementHost;
@@ -862,6 +872,77 @@ public sealed class ManagementHostGovernanceHttpTests
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
         doc.RootElement.GetProperty("code").GetString().Should().Be("integration_hard_blocked");
+    }
+
+    [Fact]
+    public async Task Procedure_launcher_start_authority_is_known_and_granted_before_launch()
+    {
+        AssertSqlAvailable();
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+
+        var link = await db.IdentityLinks.SingleOrDefaultAsync(l =>
+            l.ExternalId == ManagementGovernanceTestConstants.ExternalProcedureLauncher &&
+            l.Source == (int)IdentitySource.Local);
+        link.Should().NotBeNull("the launcher external id must resolve to a local user");
+        link!.UserId.Should().Be(ManagementGovernanceTestConstants.UserProcedureLauncher);
+
+        var membership = await db.UserRoles.SingleOrDefaultAsync(ur =>
+            ur.UserId == link.UserId && ur.RoleId == ManagementGovernanceTestConstants.RoleProcedureLauncher);
+        membership.Should().NotBeNull("the launcher user must hold rolgovernproclaunch00001");
+
+        var role = await db.Roles.SingleAsync(r => r.Id == ManagementGovernanceTestConstants.RoleProcedureLauncher);
+        role.PermissionsJson.Should().Contain("\"action\":\"workflow.execute\"");
+        role.PermissionsJson.Should().Contain("\"resourceType\":\"WorkflowInstance\"");
+        role.PermissionsJson.Should().Contain("\"scopeKey\":\"module:Sample.HelloWorld\"");
+        role.PermissionsJson.Should().Contain("\"action\":\"operation.execute\"");
+        role.PermissionsJson.Should().Contain("\"resourceType\":\"OperationDefinition\"");
+        role.PermissionsJson.Should().Contain("\"action\":\"integration.read\"");
+
+        var environmentId = scope.ServiceProvider.GetRequiredService<IEnvironmentContext>().EnvironmentId;
+        var install = await db.ModuleInstallationStates.SingleOrDefaultAsync(m =>
+            m.EnvironmentId == environmentId && m.ModuleId == ManagementGovernanceTestConstants.HelloWorldModuleId);
+        install.Should().NotBeNull($"Sample.HelloWorld must be installed for environment '{environmentId}'");
+        install!.Enabled.Should().BeTrue();
+
+        var catalog = scope.ServiceProvider.GetRequiredService<IResourceDescriptorRegistry>().GetPermissionDescriptors(null);
+        catalog.Should().Contain(p =>
+            p.Action == "workflow.execute" &&
+            p.Resource != null &&
+            p.Resource.ResourceType == "WorkflowInstance" &&
+            p.Resource.ScopeKey == "module:Sample.HelloWorld",
+            "IsKnown fails closed when this catalog entry was not registered at host start");
+        catalog.Should().Contain(p =>
+            p.Action == "operation.execute" &&
+            p.Resource != null &&
+            p.Resource.ResourceType == "OperationDefinition" &&
+            p.Resource.ScopeKey == "module:Sample.HelloWorld",
+            "IsKnown fails closed when this catalog entry was not registered at host start");
+
+        var definition = await scope.ServiceProvider.GetRequiredService<IWorkflowDefinitionResolver>()
+            .GetByIdAsync(new WorkflowDefinitionId("Sample.HelloWorld.HelloWorld"));
+        definition.Should().NotBeNull("the activation filter must see the enabled HelloWorld install");
+        var workflowPermission = definition!.RequiredPermissions.Should().ContainSingle().Subject;
+        workflowPermission.Action.Should().Be("workflow.execute");
+        workflowPermission.Resource!.ResourceType.Should().Be("WorkflowInstance");
+        workflowPermission.Resource.ScopeKey.Should().Be("module:Sample.HelloWorld");
+
+        var operation = await scope.ServiceProvider.GetRequiredService<IOperationRegistryService>()
+            .GetOperationAsync(new OperationId("Sample.HelloWorld.DoWork"));
+        operation.Should().NotBeNull();
+        var operationPermission = operation!.RequiredPermissions.Should().ContainSingle().Subject;
+        operationPermission.Action.Should().Be("operation.execute");
+        operationPermission.Resource!.ResourceType.Should().Be("OperationDefinition");
+        operationPermission.Resource.ScopeKey.Should().Be("module:Sample.HelloWorld");
+
+        var actor = new HumanActor(
+            new ActorId(ManagementGovernanceTestConstants.ExternalProcedureLauncher),
+            preferredIdentitySource: IdentitySource.Local);
+        var evaluator = scope.ServiceProvider.GetRequiredService<IExecutablePermissionEvaluator>();
+        (await evaluator.EvaluateAllAsync(actor, definition.RequiredPermissions!)).Should().BeTrue(
+            "catalog, user resolution, role membership, grant, and scope must all allow workflow start");
+        (await evaluator.EvaluateAllAsync(actor, operation.RequiredPermissions)).Should().BeTrue(
+            "catalog, user resolution, role membership, grant, and scope must all allow operation start");
     }
 
     [Fact]

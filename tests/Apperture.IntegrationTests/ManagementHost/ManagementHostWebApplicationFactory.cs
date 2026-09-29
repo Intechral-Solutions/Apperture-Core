@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.IntegrationTests.ManagementHost;
@@ -68,6 +69,22 @@ public sealed class ManagementHostWebApplicationFactory : WebApplicationFactory<
                     _ => { });
 
             services.AddSingleton<IPostConfigureOptions<AuthenticationOptions>, ManagementTestAuthenticationPostConfigure>();
+
+            // Permission registration reads enabled modules once, at this service's slot. The fixture
+            // inserts the HelloWorld install row only after the first request, which is too late for a
+            // fresh catalog. Keep this service in the original registration index so it still runs after
+            // migrations and before platform-admin role repair.
+            var permissionRegistration = services
+                .Select((descriptor, index) => (descriptor, index))
+                .Where(x => x.descriptor.ServiceType == typeof(IHostedService)
+                            && x.descriptor.ImplementationType == typeof(ModulePermissionRegistrationHostedService))
+                .ToList();
+            for (var i = permissionRegistration.Count - 1; i >= 0; i--)
+            {
+                var (descriptor, index) = permissionRegistration[i];
+                services.Remove(descriptor);
+                services.Insert(index, ServiceDescriptor.Singleton<IHostedService, GovernanceHarnessModuleEnablementHostedService>());
+            }
         });
     }
 
