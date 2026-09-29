@@ -11,6 +11,7 @@ using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Sample.HelloWorld;
 using Xunit;
 
@@ -187,16 +188,7 @@ public sealed class Epic36MultiHostSchedulerTests
         });
         await db.SaveChangesAsync();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
-        services.AddScoped<IResourceContextService, ResourceContextService>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
-        services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
+        var services = CreateScheduleManagementServices(db);
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var mgmt = scope.ServiceProvider.GetRequiredService<IScheduleManagementService>();
@@ -249,16 +241,7 @@ public sealed class Epic36MultiHostSchedulerTests
         var claim = await repo.GetInProgressRunClaimAsync("a1");
         claim.Should().BeNull();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
-        services.AddScoped<IResourceContextService, ResourceContextService>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
-        services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
+        var services = CreateScheduleManagementServices(db);
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var detail = await scope.ServiceProvider.GetRequiredService<IScheduleManagementService>()
             .GetScheduleWithExecutionStateAsync(new ScheduleId("s1"), new RuntimePlaneId("local"));
@@ -284,16 +267,7 @@ public sealed class Epic36MultiHostSchedulerTests
         });
         await db.SaveChangesAsync();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(db);
-        services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
-        services.AddSingleton<ISchedulerClaimOptions>(new DefaultSchedulerClaimOptions(5));
-        services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IResourceContextRepository, SqlResourceContextRepository>();
-        services.AddScoped<IResourceContextService, ResourceContextService>();
-        services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
-        services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
-        services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
+        var services = CreateScheduleManagementServices(db);
 
         await using var scope = services.BuildServiceProvider().CreateAsyncScope();
         var mgmt = scope.ServiceProvider.GetRequiredService<IScheduleManagementService>();
@@ -320,6 +294,23 @@ public sealed class Epic36MultiHostSchedulerTests
         });
         await db.SaveChangesAsync();
 
+        var services = CreateScheduleManagementServices(db);
+
+        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
+        var mgmt = scope.ServiceProvider.GetRequiredService<IScheduleManagementService>();
+        var detail = await mgmt.GetScheduleWithExecutionStateAsync(new ScheduleId("s1"), new RuntimePlaneId("local"));
+
+        detail!.InProgressClaim.Should().NotBeNull();
+        detail.InProgressClaim!.IsStale.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Resolves <see cref="SqlScheduleManagementService"/> for claim-projection facts.
+    /// LFC-1.1 added <see cref="IPrincipalContext"/> and <see cref="IAuditService"/> to that
+    /// constructor; these GET paths do not use them, matching ownership-harness <c>Mock.Of</c> wiring.
+    /// </summary>
+    private static ServiceCollection CreateScheduleManagementServices(AppertureDbContext db)
+    {
         var services = new ServiceCollection();
         services.AddSingleton(db);
         services.AddScoped<IScheduleRepository, SqlScheduleRepository>();
@@ -329,14 +320,10 @@ public sealed class Epic36MultiHostSchedulerTests
         services.AddScoped<IResourceContextService, ResourceContextService>();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IResourceOwnershipMutationGate, SqlResourceOwnershipMutationGate>();
+        services.AddSingleton(Mock.Of<IPrincipalContext>());
+        services.AddSingleton(Mock.Of<IAuditService>());
         services.AddScoped<IScheduleManagementService, SqlScheduleManagementService>();
-
-        await using var scope = services.BuildServiceProvider().CreateAsyncScope();
-        var mgmt = scope.ServiceProvider.GetRequiredService<IScheduleManagementService>();
-        var detail = await mgmt.GetScheduleWithExecutionStateAsync(new ScheduleId("s1"), new RuntimePlaneId("local"));
-
-        detail!.InProgressClaim.Should().NotBeNull();
-        detail.InProgressClaim!.IsStale.Should().BeFalse();
+        return services;
     }
 
     private static ServiceCollection CreateServices(AppertureDbContext db, string hostId, int claimLeaseMinutes = 5)
