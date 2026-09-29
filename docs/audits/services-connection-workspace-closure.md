@@ -1,11 +1,14 @@
 # Services (Connection workspace) — implementation closure
 
 Date: 2026-09-24
-Branch: `services-connection-workspace` (eight plan commits plus review follow-ups; not merged, not pushed)
 Design authority: [Services design gate](../01-architecture/transitions/components-services-catalog/services-design-gate.md)
 (D-S1…D-S4), with the [Components design gate](../01-architecture/transitions/components-services-catalog/components-design-gate.md)
 as production input.
 Decision record: [ADR-0044](../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md).
+
+**Current state (2026-09-29):** Services implementation (SVC-1…SVC-8) is **complete and on `master`.**
+
+**Closeout-session record (2026-09-24):** Branch `services-connection-workspace` (eight plan commits plus review follow-ups; not merged, not pushed at that session).
 
 **Status: Services implementation (SVC-1…SVC-8) is complete.** "Services" delivered no Service entity: it evolved the
 existing Connection workspace, closed the Connection audit gap, retired the duplicate Connectors tab, and added one

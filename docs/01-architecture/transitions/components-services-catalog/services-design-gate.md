@@ -1,7 +1,7 @@
 # Services — design gate
 
 Date: 2026-09-23
-Status: **Design gate complete and approved (2026-09-23). Implemented 2026-09-24 (SVC-1…SVC-8, branch `services-connection-workspace`, not merged) — see §35, [ADR-0044](../../../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md) and the [closure](../../../audits/services-connection-workspace-closure.md).** The text below is the design as approved and is left as written; §35 records where implementation differs from it.
+Status: **Design gate complete and approved (2026-09-23). Implemented 2026-09-24 (SVC-1…SVC-8); on `master` as of later merge.** Closeout-session branch was `services-connection-workspace` (not yet merged at the implementation closeout) — see §35, [ADR-0044](../../../02-decisions/ADR-0044-connection-workspace-and-browse-authorization.md) and the [closure](../../../audits/services-connection-workspace-closure.md). The text below is the design as approved and is left as written; §35 records where implementation differs from it.
 Audited HEAD: `2fa08573ccf01222257526a482394b1170a9e37f` (`master`, clean tree).
 
 > **Update (2026-09-23): Components implementation is complete** ([closure](../../../audits/components-catalog-closure.md)).

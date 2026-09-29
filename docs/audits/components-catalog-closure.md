@@ -1,12 +1,14 @@
 # Components catalog — implementation closure
 
 Date: 2026-09-23
-Branch: `components-catalog` (six plan commits plus review follow-ups; not merged, not pushed)
-Design authority: [Components design gate](../01-architecture/transitions/components-services-catalog/components-design-gate.md),
-[Services design gate §31](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
 Decision record: [ADR-0043](../02-decisions/ADR-0043-component-catalog-read-model.md).
 
-**Status: Components implementation (CMP-1…CMP-6, with CMP-X) is complete. Services implementation (SVC-1…SVC-8)
+**Current state (2026-09-29):** Components (CMP-1…CMP-6, CMP-X) and Services (SVC-1…SVC-8) are both **complete and on `master`**.
+
+**Closeout-session record (2026-09-23):** Branch `components-catalog` (six plan commits plus review follow-ups; not merged, not pushed at that session). Design authority: [Components design gate](../01-architecture/transitions/components-services-catalog/components-design-gate.md),
+[Services design gate §31](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
+
+**Status at that session: Components implementation (CMP-1…CMP-6, with CMP-X) is complete. Services implementation (SVC-1…SVC-8)
 has not started.**
 
 > **Update (2026-09-24): Services implementation is complete** — see

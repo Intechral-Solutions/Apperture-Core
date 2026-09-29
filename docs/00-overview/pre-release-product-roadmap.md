@@ -31,13 +31,28 @@ are complete, manually smoke-tested, and merged to `master` — see
 remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
 reset, cutting across several of them.
 
+**Current next (2026-09-29):** **LFC-1 — Connection/Schedule lifecycle cleanup.** SEC-1 engineering is merged
+to `master`. Items 0–7a of the 2026-09-18 sequence are complete as engineering. **IAM-8 (item 7b) and
+navigation / cross-context grouping (item 8) remain not started** and are **not** being started now. LFC-1 is
+a deliberate prioritization of unfinished core-platform functionality over that older written order. The
+2026-09-18 reset had ranked Connection/Schedule lifecycle *below* IAM-8 and grouping; this does **not** claim
+that ranking already placed LFC-1 first. No lifecycle design, delete semantics, or implementation is recorded
+here — only the scheduling choice.
+
 0. **Roadmap/documentation reset** — this reset (2026-09-18).
 1. **Operator UX housekeeping** — four parts:
-   - **1A** small polish: remove the View onboarding hint, Module-detail "Integrations using this Module"
-     (via a reusable query, not throwaway plumbing), live create-form validity, confirmed-trivial debt
-     cleanup.
-   - **1B** Resource movement dialog UX: structured sections (Will move / Used by / Blocked by / History),
-     target-select theming fix, Context display names instead of raw ids in operator-facing copy.
+   - **1A** small polish (**HSK-A**) — **complete in current code (no separate operator-smoke closure;
+     unlike 1C/1D this row is reconciled from repository evidence, not a new smoke claim):** View onboarding
+     hint removed (the one-time selector hint is gone from `src/`; the CTX-3 design gate records
+     [HSK-A removed it](../01-architecture/transitions/resource-contexts/ctx3-design-gate.md)); Module detail
+     shows "Integrations using this module" via a reusable query
+     (`ModuleDetail.razor`); live create-form validity for connector-required fields
+     (`ConnectorConnectionFieldValidation`). Confirmed-trivial debt cleanup was in the same body.
+   - **1B** Resource movement dialog UX (**HSK-B**) — **complete in current code (no separate operator-smoke
+     closure; reconciled from repository evidence, not a new smoke claim):** structured sections (Will move /
+     Used by / Blocked by / History) on `MoveOwnershipDialog.razor` / `MoveOwnershipPresenter`; Context
+     display names instead of raw ids ([ADR-0041](../02-decisions/ADR-0041-human-readable-identity-policy.md#implementation-status)
+     records that HSK-B moved the movement dialog to display names).
    - **1C** Context slug/human-readable routing, first stage (`?context=` URLs) — **complete (HSK-C,
      2026-09-20; operator smoke passed)**: new links emit the slug, id URLs stay valid and
      canonicalize to the slug, the API and localStorage keep the canonical id, no alias history. See
@@ -145,13 +160,15 @@ reset, cutting across several of them.
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
 7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **design gate complete and approved (2026-09-24);
    engineering closure complete (SEC-1C, 2026-09-29); independent final review passed with only non-blocking findings;
-   pending operator smoke and merge.** Decision record: [`ADR-0045`](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md);
+   engineering merged to `master`.** Remaining environment-dependent operator smoke (real Entra, Safari, and the
+   closure checklist) is **pre-release / UAT validation**, not active engineering, and is **not** claimed passed.
+   Decision record: [`ADR-0045`](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md);
    closure and evidence: [`sec1-browser-session-security-closure.md`](../audits/sec1-browser-session-security-closure.md).
    Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
    are in
    [`sec1-browser-session-request-forgery-design-gate.md`](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md).
    **SEC-1.0 (the opt-in Playwright browser proof harness and the baseline reproduction of the browser findings) is
-   delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1). **SEC-1A1 (centralized
+   delivered** (originally on branch `sec-1-browser-security`; now on `master`) with its evidence recorded in the gate (§0.1). **SEC-1A1 (centralized
    expired-session recovery) is implemented on that branch (gate §39), and **SEC-1A2a (the shared safe return-target policy,
    the normal sign-in and failed/cancelled Entra sign-in flow) is implemented on it (gate §40), and **SEC-1A2b (Entra step-up
    continuation across the cross-site OIDC callback) is implemented on it (gate §41; real Entra and Safari remain manual checks),
@@ -189,9 +206,10 @@ reset, cutting across several of them.
    SEC-1C (ADR-0045 and the closure audit) is complete (gate §48): every binding requirement is closed, residuals and
    deferrals are recorded, and the operator smoke checklist is prepared but not executed. N1 (`context=all` in captured
    return targets) is a closed design clarification, not a security finding: it is benign on-origin application state
-   and is preserved. SEC-1 is not Done: operator smoke and merge remain.**
-   Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
-   7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
+   and is preserved. **Engineering is merged.** Remaining operator smoke is pre-release/UAT and is not claimed passed.**
+   Sequenced after Services (item 7) in the 2026-09-18 order, numbered
+   7a so existing references to item 8 stay valid. IAM-8 (7b) and grouping (8) were written next after SEC-1;
+   they remain not started and are not current next (see **Current next**, 2026-09-29). It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must
    **audit the existing Entra/local sign-in and return-URL behaviour first and reuse/finish that infrastructure where
    possible** before designing anything new. The gate, not this entry, chooses the mechanisms.
@@ -215,14 +233,20 @@ reset, cutting across several of them.
      authentication; which APIs should and should not require protection; and the existing **`UiDev` CORS policy** — in particular
      whether credentialed `localhost` origin access can ever be active outside the intended development environment.
    Neither concern is implemented on the Services branch, and neither is a prerequisite for merging it.
-7b. **IAM-8 — Custom Role Lifecycle** — **future body; not started, not designed.** Sequenced after SEC-1 (item 7a) and
-   before navigation / cross-context grouping (item 8); numbered 7b so references to item 8 stay valid. Bounded scope:
+7b. **IAM-8 — Custom Role Lifecycle** — **future body; not started, not designed; not current next.** The 2026-09-18
+   sequence placed this after SEC-1 (item 7a) and before navigation / cross-context grouping (item 8); numbered 7b so
+   references to item 8 stay valid. That written order is **not** being followed as the next engineering body
+   (see **Current next**, 2026-09-29). Bounded scope:
    create user-defined roles; edit their permission grants; delete user-created roles; built-in/system roles are protected
    from edit and deletion; show a role's assignments/usage before deletion; refuse a deletion that would leave active
    assignments invalid or orphaned; audit the create/update/delete lifecycle. It is **not** Context-scoped IAM (that stays
    deferred, below) and does not change the authorization evaluation model. Its own design gate chooses the mechanisms.
-8. **Navigation / cross-context grouping design** — after Components and Services stabilize (and after SEC-1, item 7a, and IAM-8, item 7b),
-   so the rail doesn't move twice. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
+8. **Navigation / cross-context grouping design** — **not started; not current next.** Distinct from **NAV-1**, the
+   completed Management UI **rail** overhaul (`docs/01-architecture/transitions/nav-overhaul/`; Control Center /
+   Integrations / Business Data / Config). Item 8 is a later, undesigned **cross-context organizational grouping**
+   layer — not a second rail rewrite and not NAV-1 leftover work. The 2026-09-18 sequence placed it after Components
+   and Services (and after SEC-1, item 7a, and IAM-8, item 7b) so the rail would not move twice; that remains the
+   constraint if/when this body runs. **Direction updated 2026-09-22:** this is *not* a plan to replace the ResourceContext/
    View selector with an Application-centric one. The existing ResourceContext/View dropdown is **retained
    broadly as-is**, and ResourceContext remains the ownership/scoping boundary for Applications and Shared.
    This gate will instead explore a **separate cross-context organizational grouping layer** — departments,
@@ -252,13 +276,20 @@ note is pre-audit):
 [`components-design-gate.md`](../01-architecture/transitions/components-services-catalog/components-design-gate.md)
 and [`services-design-gate.md`](../01-architecture/transitions/components-services-catalog/services-design-gate.md).
 
-**Re-ranked below this sequence:** Connection/Schedule lifecycle cleanup (one combined item; the Services design
-gate has now clarified Connection's future operator role — Connection detail becomes the operator workspace, and
+**Re-ranked below this sequence (2026-09-18):** Connection/Schedule lifecycle cleanup (one combined item; the Services
+design gate has now clarified Connection's future operator role — Connection detail becomes the operator workspace, and
 `ConnectionState` remains Active/Retired with no un-retire);
 Business Data final architecture (Track 5, gated — closed, no second entity type currently proposed);
 Dashboard Panels (indefinitely parked — no chart library exists anywhere in the repo, no owner); Shared
 Wizard foundation (Track 8, deferred, legitimate future value, not prioritized); Context-scoped IAM
 (deferred until a concrete security/product need appears — not merely because ResourceContexts now exist).
+
+**Supersession (2026-09-29):** of those re-ranked items, **LFC-1 — Connection/Schedule lifecycle cleanup** is the
+**selected next core-platform body**. That choice does **not** rewrite the 2026-09-18 ranking as if LFC-1 had
+already been first; it is a later, explicit prioritization of unfinished core platform functionality over IAM-8
+(item 7b) and future navigation/grouping (item 8), both of which remain not started. No delete/un-retire
+rulings are made here. The other re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard,
+Context-scoped IAM) stay deferred/parked as written.
 
 **The visual workflow designer is not an active roadmap item.** It has only ever appeared as an
 engineering-side non-goal (ADR-0032, Epic-57, CTX-3B closures) — never as approved product scope. It stays
@@ -269,7 +300,7 @@ as something they did *not* build remain accurate as written.
 
 ## Track 1 — Product Experience & UI Overhaul
 
-- Navigation / product shell
+- Navigation / product shell — **NAV-1 rail overhaul is complete** (Control Center / Integrations / Business Data / Config). That shipped rail is **not** near-term item 8 (cross-context grouping), which is future, undesigned, and not started.
 - Layout system
 - Progressive disclosure
 - Settings panels coherence
@@ -304,7 +335,8 @@ smoke are complete; Track 6 closed via JOB-1 — see [`../audits/job1-failed-wor
 **Supersession (2026-08-18):** **AUP-1** delivered Track 2 — see [`../audits/aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).
 ~~Next product handoff: **UIX-7 — Visual Language and Theme Overhaul**, with the account area as its
 flagship reference surface.~~ — **delivered** (`docs/audits/uix7-visual-language-theme-overhaul.md`);
-superseded as "next" by the 2026-09-18 post-CTX execution order above.
+superseded as "next" by the 2026-09-18 post-CTX execution order, and as of 2026-09-29 by **LFC-1** (see
+**Current next** above). Historical UIX-7 text that names **INT-1** as next is a later-superseded handoff, not current scheduling.
 
 ---
 
@@ -345,7 +377,7 @@ quiet hours, and non-email channels — none of which the delivery pipeline impl
 ~~**Next product epic:** **AUP-1 — Account, Profile, and Personal Preferences**.~~ — **delivered 2026-08-18**, see [`aup1-account-profile-personal-preferences.md`](../audits/aup1-account-profile-personal-preferences.md).  
 ~~**Next product epic:** **UIX-7 — Visual Language and Theme Overhaul**.~~ — **delivered**
 (`docs/audits/uix7-visual-language-theme-overhaul.md`); superseded as "next" by the 2026-09-18 post-CTX
-execution order above.
+execution order, and as of 2026-09-29 by **LFC-1** (see **Current next** above).
 
 ~~**Next epic:** **SDK-3A Operation Itemization Persistence & Writer**~~ — **superseded:** SDK-3A–3D, SDK-4A–4C, SDK-5*, SDK-6*, SDK-7 delivered; JOB-1 closed Track 6.
 
@@ -363,13 +395,14 @@ concepts that the post-CTX reset now separates:
   describes (see next line) — those are different shapes and CTX only delivered the former.
 - **Systems** (ADR-0034's "logical grouping layer above Integrations") — still deferred, no forcing
   evidence, unaffected by CTX.
-- **Service abstraction / Service explorers / Metadata browsing** — still not started. Reframed 2026-09-18:
+- **Service abstraction / Service explorers / Metadata browsing** — **complete** (design gate 2026-09-23;
+  implementation SVC-1…SVC-8, 2026-09-24). Reframed 2026-09-18:
   a Service is an operator-facing abstraction over a *configured Connection* (not a Systems-style grouping
   of many Integrations); the live-browse/metadata-exploration idea folds into this, not into Components. See
   the near-term execution order above and
   [`components-services-catalog/README.md`](../01-architecture/transitions/components-services-catalog/README.md)
-  for the full hypothesis. **Its design gate is complete (2026-09-23; near-term item 5) and Components
-  implementation and Services implementation are complete (items 6 and 7).**
+  for the full hypothesis. **~~still not started~~** was the 2026-09-18 sentence; it is superseded by near-term
+  items 5–7 (both design gates and both implementations complete).
 - **Connection grouping** — not currently an independent planned deliverable; reconsider during the
   Services design gate if a concrete grouping requirement emerges. Distinct from the **cross-context
   organizational grouping** layer now recorded under near-term item 8, which is about organizational areas
