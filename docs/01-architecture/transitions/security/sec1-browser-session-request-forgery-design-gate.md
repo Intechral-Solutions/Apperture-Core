@@ -11,10 +11,12 @@ Apperture-namespace claims on a validated Entra principal); that follow-up is re
 requests do not renew the sliding session) is implemented and recorded in §43. SEC-1B1 (the platform browser
 request-forgery policy) is implemented and recorded in §44. SEC-1B2 (verb and sign-out cleanup, Rule N) is implemented and
 recorded in §45. SEC-1B3 (CORS, cookie Secure, host hygiene, Management.Api class library) is implemented and
-recorded in §46. SEC-1B4 (the blocking CI browser-security job for I-2) is implemented in the
-repository and recorded in §47; the first GitHub Actions execution reached BrowserTests but failed at
-Management.Host startup (Windows-only DPAPI default). The test-scoped remediation is in §47.6. Linux
-execution of the 327-test suite remains unproven. I-2 is not remotely proven.** SEC-1 is not complete.
+recorded in §46. SEC-1B4 (the blocking CI browser-security job for I-2) is **complete** and recorded in §47: the
+first GitHub Actions execution reached BrowserTests but failed at Management.Host startup (Windows-only DPAPI
+default, §47.6), and a sequence of remediation runs (§47.6–§47.15) led to a final pull-request workflow in which
+both `build-and-test` and `browser-security` passed on Ubuntu (§47.16). The `master` ruleset lists both as required
+checks, but GitHub does not enforce it on this private repository under the current plan, so both checks are
+procedurally required before merge (§47.16). SEC-1C has not started.** SEC-1 is not complete.
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -1947,7 +1949,7 @@ Browser suite (`APPERTURE_BROWSER_TESTS=1`, Chromium, Firefox, WebKit): first fu
 | F14 | **Fixed.** Management.Api is a class library |
 | F15 | **Fixed.** Ui.Server debug write and agent-log calls are gone |
 | F16 | **Fixed.** SameSite=Lax is explicit; Secure is Always outside the local HTTP topology |
-| I-2 | **Wired in SEC-1B4 (§47).** First remote run failed at host startup (DPAPI); Linux suite execution remains unproven. |
+| I-2 | **Wired in SEC-1B4 (§47).** First remote run failed at host startup (DPAPI); Linux suite execution remains unproven. *(Status at SEC-1B3; closed in §47.16.)* |
 
 SEC-1 is not complete.
 
@@ -1993,7 +1995,8 @@ password, already used by `build-and-test`; TRX is test names and outcomes, not 
 ### 47.3 Branch protection
 
 Repository YAML cannot mark the check required. After the first green remote run, maintainers should require the
-stable check name **`browser-security`**.
+stable check name **`browser-security`**. That was done: the `master` ruleset now requires both `build-and-test`
+and `browser-security`. GitHub does not currently enforce it on this private repository (§47.16).
 
 ### 47.4 Evidence
 
@@ -2001,13 +2004,14 @@ Local: `ci.yml` parses as YAML. Always-on BrowserTests (no `APPERTURE_BROWSER_TE
 
 Local remediation (Windows): `SqlSecretsRegistrationTests` + `DpapiSecretProtectorTests` **8 passed**; `HarnessSmokeTests` with `APPERTURE_BROWSER_TESTS=1` **2 passed** (the live host resolved `BrowserHarnessSecretProtector`, not DPAPI). This proves the revised composition on a Windows development machine. It does **not** prove Ubuntu.
 
-The first GitHub Actions execution of `browser-security` **ran** and is recorded in [§47.6](#476-first-remote-run--dpapi-host-startup-2026-09-27). It is not a remote proof of the 327-test suite. I-2 is not remotely proven.
+The first GitHub Actions execution of `browser-security` **ran** and is recorded in [§47.6](#476-first-remote-run--dpapi-host-startup-2026-09-27). It is not a remote proof of the 327-test suite. I-2 was not remotely proven at that point; §47.16 records the later proof.
 
 ### 47.5 Findings
 
 | Id | Status |
 |---|---|
 | I-2 | **Browser job proven.** The second Ubuntu `browser-security` run passed. The fifth `build-and-test` reached the SQL structure-browser unreachable proof, which returned Failed instead of RemoteUnavailable (gate §47.10). The pull request is not green. SEC-1C has not started. |
+| I-2 (final) | **Closed by SEC-1B4.** The final pull-request workflow was green: `build-and-test` and `browser-security` both passed on Ubuntu (§47.16). Automatic branch-rule enforcement is a separate, plan-dependent matter. |
 
 ### 47.6 First remote run — DPAPI host startup (2026-09-27)
 
@@ -2159,6 +2163,31 @@ That commit does not change browser or session-recovery product code. Its diff i
 
 The invariant in §12, REQ-1, and §39.6 is one coordinator probe and one full-page navigation. Account Security calls `Session.RefreshAsync` from `OnInitializedAsync`. That `auth/me` is the application client, so it carries `X-Apperture-Request` and `AuthRecoveryHandler` excludes it. The session raises `UnauthorizedDuringRefresh`, and the coordinator issues one probe on a separate client that has no recovery handler and does not send that header. A parallel 401 can start that probe first and navigate before the page refresh's response is recorded, which is why the old count was sometimes one. When the refresh response lands first, the old count was two. Neither shape is a second recovery decision. The two-second delay in the fact is after the sign-in URL and the expired copy are already visible; `RecoveryProbes` cuts at the first `/login` document, so a longer sleep cannot remove a response already before that document. It stays, because `SignInDocuments` reads the whole trace and the delay is the existing settle for a second navigation. It is not the fix.
 
-`RecoveryProbes` now counts `auth/me` fetches before that document that do not carry `X-Apperture-Request`: the coordinator re-check. The page refresh and the sign-in boot check both carry the header. A second coordinator probe would still be a second item. `ContainSingle()` is unchanged. With the probe response held for two seconds only as a local characterization (that route was removed), the page trace showed both 401s before `/login` — platform header, then no platform header, neither background — and `RecoveryProbes` returned the one credentials-only call. Three unforced runs after the filter, then eight more, passed with that single probe. The cleaned fact, the rest of `SessionRecoveryBrowserTests`, and `SessionExpiryBaselineTests` then passed together, 11/11, on Chromium. Another Ubuntu `browser-security` run is required before B4 can close. SEC-1C has not started.
+`RecoveryProbes` now counts `auth/me` fetches before that document that do not carry `X-Apperture-Request`: the coordinator re-check. The page refresh and the sign-in boot check both carry the header. A second coordinator probe would still be a second item. `ContainSingle()` is unchanged. With the probe response held for two seconds only as a local characterization (that route was removed), the page trace showed both 401s before `/login` — platform header, then no platform header, neither background — and `RecoveryProbes` returned the one credentials-only call. Three unforced runs after the filter, then eight more, passed with that single probe. The cleaned fact, the rest of `SessionRecoveryBrowserTests`, and `SessionExpiryBaselineTests` then passed together, 11/11, on Chromium. Another Ubuntu `browser-security` run was required before B4 could close; it is recorded in §47.16. SEC-1C has not started.
+
+### 47.16 Closeout — final workflow green, ruleset configured but not enforced (2026-09-29)
+
+The latest pull-request workflow on `sec-1-browser-security`, after the remediation sequence recorded in §47.6–§47.15, completed fully green on the GitHub Actions Ubuntu environment:
+
+| Check | Result |
+|---|---|
+| `build-and-test` | **Passed** |
+| `browser-security` | **Passed** |
+
+This is the first branch state on which the complete relevant workflow is green. The Actions run number of that final run is not recorded in this repository and is deliberately not stated here. §47.6–§47.15 are unchanged and remain the historical record: the gate did not pass on its first attempt. It failed at host startup (DPAPI, §47.6), and `build-and-test` then failed through the sequence of causes in §47.7–§47.14. `browser-security` failed once more on the ninth run, on the Account Security recovery fact's probe count (§47.15).
+
+**What is remotely proven.** The `browser-security` job runs on Ubuntu, executes the BrowserTests security suite (Chromium, Firefox and WebKit), fails the workflow when the suite fails (§47.6 and §47.15 are red runs of that job), and passes when the suite is healthy. `build-and-test` passed on the same branch state. I-2 (the browser suite gated off in normal CI) is closed. The stable check names are **`build-and-test`** and **`browser-security`**. `ci.yml` was not edited after `a79a1ba`.
+
+**Branch ruleset.** A GitHub ruleset targeting `master` lists both `build-and-test` and `browser-security` as required status checks. GitHub reports that rulesets are not enforced on this private repository until the organization account is upgraded to GitHub Team. So:
+
+| Layer | State |
+|---|---|
+| CI enforcement mechanism (`browser-security` fails the workflow when the suite fails) | Implemented and remotely proven |
+| GitHub server-side branch-rule enforcement on `master` | Configured, but not enforced under the current plan; GitHub is not currently blocking merges when a check is red |
+| Merge policy | Procedural: the project owner does not merge unless both `build-and-test` and `browser-security` are green |
+
+The ruleset is kept in place so that it is enforced automatically if the organization gains the capability or the repository or collaboration model changes. No status-check configuration is missing, and this is not an outstanding SEC-1B4 engineering task.
+
+**SEC-1B4 is complete.** No further B4 code or workflow work remains. SEC-1C (the ADR and closure audit) has **not** started, and SEC-1 as a whole is not complete until SEC-1C.
 
 

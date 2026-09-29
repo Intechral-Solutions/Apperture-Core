@@ -178,8 +178,12 @@ reset, cutting across several of them.
    shape is Number 0 with `SocketError.Success` and is not classified as unreachable (gate §47.14).
    The ninth `build-and-test` passed. `browser-security` failed one Account Security recovery fact
    because the trace counted that page's own `auth/me` refresh together with the one coordinator probe
-   (gate §47.15). The assertion is still a single probe. That job is not green. SEC-1C and the remaining
-   slices have not started.
+   (gate §47.15). The assertion is still a single probe. The final pull-request workflow then passed both
+   `build-and-test` and `browser-security` on Ubuntu, so **SEC-1B4 is complete** and I-2 is closed (gate §47.16).
+   The `master` ruleset is configured to require `build-and-test` and `browser-security`. GitHub does not
+   currently enforce rulesets for this private organization repository under the current plan, so both
+   checks are procedurally required before merge until automatic enforcement becomes available. The
+   next step is SEC-1C (ADR and closure audit); it has not started, and neither have the remaining slices.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

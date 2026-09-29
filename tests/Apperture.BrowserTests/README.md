@@ -16,7 +16,9 @@ polls carry `X-Apperture-Background` and do not re-issue the session cookie; a u
 **SEC-1B1 has flipped** F11 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a same-site sibling and a cross-site form or simple fetch are rejected with 403 and do not mutate; a legitimate Management UI POST and PUT carry the exact UI `Origin` and `X-Apperture-Request: 1` (design gate §44). **SEC-1B2 has flipped** D2 (`RequestForgeryBaselineTests`, Chromium, Firefox and WebKit): a cross-site `GET /signout` is 405 and the session survives; a cross-site or same-site-sibling sign-out form is 403 on its Origin; a cross-site navigation to `/signout-oidc` clears nothing; a cross-site navigation to `/signin/step-up` or `/signin/link` is 403; the account menu's sign-out is a form POST with the UI `Origin` and no platform header (design gate §45). **SEC-1B3** moved product `UiDev` CORS to Development-only (design gate §46); this harness is `Testing`, so it registers a test-only copy of the same policy against the ephemeral UI origin. Cookie `Secure` stays `SameAsRequest` on this HTTP topology. **SEC-1B4** wires the suite as the blocking GitHub Actions
 job `browser-security` (design gate §47). The first remote Actions run reached BrowserTests and failed at
 Management.Host startup (Windows-only DPAPI default); that is CI/harness portability, not a failed browser
-security assertion (gate §47.6). Linux execution of the suite remains unproven.
+security assertion (gate §47.6). The final pull-request workflow passed `browser-security` and `build-and-test` on
+Ubuntu, so the job is remotely proven and B4 is complete (gate §47.16). The `master` ruleset requires both checks
+but is not enforced by GitHub under the current plan, so both are procedurally required before merge.
 
 ## Run it (one command)
 
