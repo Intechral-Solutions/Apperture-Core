@@ -189,4 +189,34 @@ public sealed class ConfigurationReadinessEvaluatorTests
             r.Code == ConfigurationReadinessReasonCodes.OptionalDependencyUnavailable
             && r.Severity == ConfigurationReadinessSeverity.Advisory);
     }
+
+    [Fact]
+    public void EvaluateIntegration_a_retired_connection_cannot_be_enabled()
+    {
+        var contributor = new TestContributor(connections: [RequiredConnection("Warehouse")]);
+        var evidence = new ConfigurationEvidenceSnapshot(
+            true,
+            true,
+            new Dictionary<string, object?>(),
+            new Dictionary<string, SecretPresenceState>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            new Dictionary<string, ConnectionEvidenceSnapshot>
+            {
+                ["Warehouse"] = new(IsBound: true, IsDisabled: true),
+            },
+            []);
+
+        var result = ConfigurationReadinessEvaluator.EvaluateIntegration(
+            contributor.GetSettingDefinitions(),
+            contributor.GetConnectionRequirements(),
+            evidence,
+            EvaluatedAt);
+
+        var reason = result.Reasons.Should().ContainSingle(r => r.Code == ConfigurationReadinessReasonCodes.ConnectionDisabled).Which;
+        reason.Message.Should().Contain("retired").And.Contain("cannot be used");
+        reason.Message.Should().NotContainEquivalentOf("disabled");
+        reason.RemediationHint.Should().Contain("another connection");
+        reason.RemediationHint.Should().Contain("cannot be brought back");
+        reason.RemediationHint.Should().NotContainEquivalentOf("Enable");
+    }
 }

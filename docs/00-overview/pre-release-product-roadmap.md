@@ -36,7 +36,7 @@ to `master`. Items 0–7a of the 2026-09-18 sequence are complete as engineering
 navigation / cross-context grouping (item 8) remain not started** and are **not** being started now. LFC-1 is
 a deliberate prioritization of unfinished core-platform functionality over that older written order. The
 2026-09-18 reset had ranked Connection/Schedule lifecycle *below* IAM-8 and grouping; this does **not** claim
-that ranking already placed LFC-1 first. **LFC-1.0 (2026-09-29):** the design gate is written. **LFC-1.1** (disabled-schedule hard-delete) and **LFC-1.2** (schedule detail delete UI) are implemented; LFC-1.3 has **not** started. Lifecycle rulings live in the gate, not in this roadmap:
+that ranking already placed LFC-1 first. **LFC-1.0 (2026-09-29):** the design gate is written. **LFC-1.1** (disabled-schedule hard-delete), **LFC-1.2** (schedule detail delete UI), and **LFC-1.3** (retired connection copy) are implemented. Planned implementation slices are complete; epic closure has not been run. Lifecycle rulings live in the gate, not in this roadmap:
 [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
 
 0. **Roadmap/documentation reset** — this reset (2026-09-18).
@@ -289,7 +289,7 @@ Wizard foundation (Track 8, deferred, legitimate future value, not prioritized);
 already been first; it is a later, explicit prioritization of unfinished core platform functionality over IAM-8
 (item 7b) and future navigation/grouping (item 8), both of which remain not started. Delete and un-retire
 rulings are recorded in the [LFC-1.0 design gate](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md),
-not in this roadmap. LFC-1.1 and LFC-1.2 are implemented; LFC-1.3 has **not** started. The other re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard,
+not in this roadmap. LFC-1.1, LFC-1.2, and LFC-1.3 are implemented. Planned implementation slices are complete; epic closure has not been run. The other re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard,
 Context-scoped IAM) stay deferred/parked as written.
 
 **The visual workflow designer is not an active roadmap item.** It has only ever appeared as an

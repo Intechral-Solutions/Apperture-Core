@@ -230,10 +230,10 @@ public static class ConfigurationReadinessEvaluator
                     mustHave
                         ? ConfigurationReadinessReasonCodes.ConnectionDisabled
                         : ConfigurationReadinessReasonCodes.OptionalDependencyUnavailable,
-                    $"Connection '{connection.DisplayName}' is disabled.",
+                    $"Connection '{connection.DisplayName}' is retired and cannot be used.",
                     severity,
                     ConnectionKey: connection.Key,
-                    RemediationHint: "Enable the bound connection or select another."));
+                    RemediationHint: "Select another connection. A retired connection cannot be brought back."));
                 continue;
             }
 

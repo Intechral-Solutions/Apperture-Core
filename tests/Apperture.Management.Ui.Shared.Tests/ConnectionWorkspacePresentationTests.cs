@@ -152,6 +152,33 @@ public sealed class ConnectionWorkspacePresentationTests
     }
 
     [Fact]
+    public void Retired_copy_says_bindings_stay_recorded_and_do_not_keep_working()
+    {
+        var notice = ConnectionWorkspacePresentation.RetiredNotice;
+        notice.Should().Contain("no longer available for active use");
+        notice.Should().Contain("no longer eligible for new bindings");
+        notice.Should().Contain("may still be listed");
+        notice.Should().Contain("stay in place and do not resolve until they are changed");
+        notice.Should().NotContainEquivalentOf("keep working");
+        notice.Should().NotContainEquivalentOf("un-retire");
+        notice.Should().NotContainEquivalentOf("restore");
+        notice.Should().NotContainEquivalentOf("secret");
+
+        var confirm = ConnectionWorkspacePresentation.RetireConfirmConsequence
+            + " "
+            + ConnectionWorkspacePresentation.RetireConfirmDetails;
+        confirm.Should().Contain("cannot be undone");
+        confirm.Should().Contain("not deleted");
+        confirm.Should().Contain("stay recorded");
+        confirm.Should().Contain("will not be able to use this connection");
+        confirm.Should().Contain("History for this connection remains");
+        confirm.Should().NotContainEquivalentOf("keep working");
+        confirm.Should().NotContainEquivalentOf("automatically removed");
+        confirm.Should().NotContainEquivalentOf("secret");
+        confirm.Should().NotContainEquivalentOf("un-retire");
+    }
+
+    [Fact]
     public void A_failed_verification_is_reported_as_a_fact_not_a_gate()
     {
         var health = ConnectionWorkspacePresentation.Health(Connection(status: "Failed"));

@@ -289,10 +289,10 @@
                      OnConfirmed="() => _confirmRetireOpen = false"
                      OnCancel="() => _confirmRetireOpen = false">
     <ChildContent>
-        Retiring <strong>@(_connection?.Name ?? "this connection")</strong> stops it being eligible for new bindings.
+        Retiring <strong>@(_connection?.Name ?? "this connection")</strong> @ConnectionWorkspacePresentation.RetireConfirmConsequence
     </ChildContent>
     <Details>
-        Existing bindings keep working until they are changed.
+        @ConnectionWorkspacePresentation.RetireConfirmDetails
     </Details>
 </ConfirmActionDialog>
 
@@ -548,6 +548,18 @@
         await LoadAsync();
         Toasts.Show(ToastSeverity.Success, "Connection moved.");
     }
+
+    // Public so a render test can open the same dialog the Retire button opens, and confirm through the same handler.
+    public async Task OpenRetireConfirmAsync()
+    {
+        if (!CanRetire)
+            return;
+
+        _confirmRetireOpen = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public Task ConfirmRetireAsync() => RetireAsync();
 
     // UIX-6: failures propagate so the confirmation dialog stays open with the reason.
     private async Task RetireAsync()

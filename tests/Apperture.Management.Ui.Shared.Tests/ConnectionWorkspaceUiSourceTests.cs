@@ -219,6 +219,23 @@ public sealed class ConnectionWorkspaceUiSourceTests
     }
 
     [Fact]
+    public void Retire_copy_comes_from_presentation_and_does_not_say_bindings_keep_working()
+    {
+        var visible = Visible(ReadRepoFile(Detail));
+
+        visible.Should().Contain("ConnectionWorkspacePresentation.RetiredNotice");
+        visible.Should().Contain("ConnectionWorkspacePresentation.RetireConfirmConsequence");
+        visible.Should().Contain("ConnectionWorkspacePresentation.RetireConfirmDetails");
+        visible.Should().Contain("Title=\"Retire connection?\"");
+        visible.Should().Contain("ConfirmLabel=\"Retire connection\"");
+        visible.Should().NotContain("keep working");
+        visible.Should().NotContain("Un-retire");
+        visible.Should().NotContain("Unretire");
+        visible.Should().NotContain("Delete connection");
+        visible.Should().NotContain("Restore");
+    }
+
+    [Fact]
     public void Actions_are_offered_only_when_nothing_is_in_error()
     {
         var content = ReadRepoFile(Detail);

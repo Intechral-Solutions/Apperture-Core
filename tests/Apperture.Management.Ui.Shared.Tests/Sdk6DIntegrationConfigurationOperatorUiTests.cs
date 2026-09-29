@@ -104,6 +104,29 @@ public sealed class Sdk6DIntegrationConfigurationOperatorUiTests
     }
 
     [Fact]
+    public void MapIssueCopy_for_a_retired_connection_does_not_offer_activation()
+    {
+        var issue = new IntegrationReadinessIssueDto(
+            "connection_inactive",
+            "Connection 'Warehouse' (conn-1) for slot 'Sql' is retired and can no longer be used.",
+            "Sql",
+            "binding-1",
+            "conn-1",
+            "Blocking");
+
+        var view = IntegrationConfigurationOperatorUiHelpers.MapReadinessIssue(issue, "int-1");
+
+        view.Title.Should().Be("Connection retired");
+        view.Explanation.Should().Contain("retired").And.Contain("can no longer be used");
+        view.RemediationHint.Should().Contain("Bind a different connection");
+        view.RemediationHint.Should().Contain("remove this binding");
+        view.RemediationHint.Should().Contain("cannot be brought back");
+        view.RemediationHint.Should().NotContainEquivalentOf("Activate");
+        view.RemediationHint.Should().NotContainEquivalentOf("Enable");
+        view.RemediationHint.Should().NotContainEquivalentOf("keep working");
+    }
+
+    [Fact]
     public void GroupIssuesByCategory_suppresses_binding_not_eligible_when_cross_context_shares_binding_id()
     {
         var issues = new[]

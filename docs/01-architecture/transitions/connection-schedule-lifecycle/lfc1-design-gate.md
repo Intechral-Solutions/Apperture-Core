@@ -1,7 +1,7 @@
 # LFC-1 — Connection / Schedule lifecycle cleanup — design gate
 
 Date: 2026-09-29
-Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete) and LFC-1.2 (schedule detail delete UI) are implemented; LFC-1.3 has not started.** Implementation notes for 1.1 are in §24 and for 1.2 in §25. The rulings in §3 are unchanged.
+Status: **LFC-1.0 design gate written. LFC-1.1 (schedule hard-delete), LFC-1.2 (schedule detail delete UI), and LFC-1.3 (retired connection copy) are implemented.** Planned implementation slices are complete. Epic closure has not been run. Implementation notes for 1.1 are in §24, for 1.2 in §25, and for 1.3 in §26. The rulings in §3 are unchanged.
 Branch: `lfc-1-connection-schedule-lifecycle`
 Audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
 
@@ -65,6 +65,8 @@ There is no `connection.manage` permission. There is no hard-delete route.
 **Code fact. Runtime after retire.** `SlotBoundResolver` returns null when `connection.State != Active`. `IntegrationDispatchReadinessEvaluator` raises blocking `ConnectionInactive` for a bound connection that is not Active, and `ConnectionMissing` when the id does not resolve. New bindings are offered only from active connections (`BindingEligibilityService` / `GetActiveAsync`). Existing binding rows are left in place.
 
 **Code fact. UI.** Connection detail offers Retire, with a confirm dialog, only when the caller has `connection.delete` and the connection is not already retired (`ConnectionDetail.razor`). Retired detail is read-only. `ConnectionWorkspacePresentation.RetiredNotice` says existing bindings keep working until they are changed. That sentence disagrees with the resolver and the readiness evaluator.
+
+**Supersession (LFC-1.3).** The retired-notice sentence in the paragraph above was the copy at the audited HEAD. It is no longer the product copy. See §26.
 
 **Code fact. Archive.** `BlocksArchive` is `LiveIntegrations + ActiveConnections + EnabledSchedules > 0` (`ResourceContextOwnershipSummary`). A retired connection does not block archive. The summary comment records the current inability to delete as the reason those rows are ignored, not as a separate archive predicate.
 
@@ -662,4 +664,22 @@ Written with the schedule detail delete UI. Product rulings in §3 and the §15.
 
 **403 and other failures.** The exception propagates into the shared dialog, which stays open and shows the client message. A 403 message is the status text and does not add the schedule id or name. The schedule stays on the page. Nothing is removed before the API succeeds.
 
-**Validation.** `ScheduleDetailDeleteRenderTests` (10) render the real page and drive the same handlers the buttons call. `ManagementClientScheduleDeleteTests` (4) cover `DELETE /api/schedules/{id}`, 204, 409, 404, and 403. LFC-1.3 has not started.
+**Validation.** `ScheduleDetailDeleteRenderTests` (10) render the real page and drive the same handlers the buttons call. `ManagementClientScheduleDeleteTests` (4) cover `DELETE /api/schedules/{id}`, 204, 409, 404, and 403. Retired connection copy is §26.
+
+---
+
+## 26. LFC-1.3 implementation notes
+
+Written with the retired-connection copy correction. Product rulings in §3 are unchanged. No connection state transition, API, permission, persistence, secret, binding, archive, or schedule-delete change.
+
+**What changed.** Operator copy only.
+
+- The retired notice no longer says existing bindings keep working. It says the connection is retired and read-only, no longer available for active use, not eligible for new bindings, and that existing bindings may still be listed, stay in place, and do not resolve until they are changed.
+- The retire confirmation says retirement is permanent and cannot be undone, the connection is not deleted, existing bindings stay recorded but will not be able to use it until they are changed, and history for the connection remains. The shared confirm dialog, the Retire label, and caution emphasis are unchanged.
+- Readiness copy for a retired connection no longer tells the operator to activate or enable it. It says to bind a different connection or remove the binding, and that a retired connection cannot be brought back.
+
+**Unchanged.** `DELETE /api/connections/{id}` still retires and returns 204. There is no un-retire and no connection hard-delete. The workspace offers neither Restore nor Delete connection. Secrets stay associated with the retained connection. Binding rows are not revoked or retargeted. Resolution and readiness still treat a non-Active connection as unusable. `BlocksArchive` is unchanged: an active connection blocks archive, and a retired connection does not. Schedule delete is untouched.
+
+**Not in this slice.** Epic closure. §2.1 still records the pre-1.3 notice as the audited code fact; the supersession note there points here.
+
+Planned implementation slices 1.1–1.3 are complete. Closing the epic is a separate audit.

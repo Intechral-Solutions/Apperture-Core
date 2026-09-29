@@ -27,8 +27,17 @@ public static class ConnectionWorkspacePresentation
         + "and testing and editing are unavailable until the connector is registered.";
 
     public const string RetiredNotice =
-        "This connection is retired. It is read-only here and no longer eligible for new bindings; existing bindings keep "
-        + "working until they are changed.";
+        "This connection is retired. It is read-only here and no longer available for active use. "
+        + "It is no longer eligible for new bindings. Existing bindings may still be listed; they stay in place and do not resolve until they are changed.";
+
+    /// <summary>Follows the connection name in the retire confirmation: retirement is terminal and the connection is kept.</summary>
+    public const string RetireConfirmConsequence =
+        "permanently retires it. This cannot be undone, and the connection is not deleted.";
+
+    public const string RetireConfirmDetails =
+        "It will no longer be available for active use, and new bindings cannot target it. "
+        + "Existing bindings stay recorded but will not be able to use this connection until they are changed. "
+        + "History for this connection remains.";
 
     public static string SecretPresence(bool isSet) => isSet ? SecretSet : SecretNotSet;
 
