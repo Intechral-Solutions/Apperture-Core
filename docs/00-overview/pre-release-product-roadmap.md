@@ -144,8 +144,8 @@ reset, cutting across several of them.
    [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
 7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **design gate complete and approved (2026-09-24);
-   engineering closure complete (SEC-1C, 2026-09-29); pending the independent final security review, operator smoke and
-   merge.** Decision record: [`ADR-0045`](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md);
+   engineering closure complete (SEC-1C, 2026-09-29); independent final review passed with only non-blocking findings;
+   pending operator smoke and merge.** Decision record: [`ADR-0045`](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md);
    closure and evidence: [`sec1-browser-session-security-closure.md`](../audits/sec1-browser-session-security-closure.md).
    Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
    are in
@@ -189,7 +189,7 @@ reset, cutting across several of them.
    SEC-1C (ADR-0045 and the closure audit) is complete (gate §48): every binding requirement is closed, residuals and
    deferrals are recorded, and the operator smoke checklist is prepared but not executed. N1 (`context=all` in captured
    return targets) is a closed design clarification, not a security finding: it is benign on-origin application state
-   and is preserved. SEC-1 is not Done: the independent final security review, operator smoke and merge remain.**
+   and is preserved. SEC-1 is not Done: operator smoke and merge remain.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must

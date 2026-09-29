@@ -8,11 +8,12 @@ Decision record: [ADR-0045](../02-decisions/ADR-0045-browser-session-recovery-an
 
 **Status: SEC-1 engineering closure is complete (SEC-1C).** Every binding requirement is implemented and evidenced, every
 finding is resolved or recorded below as an accepted residual or an explicit deferral, and the browser-security CI gate is
-remotely proven. **SEC-1 is not Done.** Three steps remain and none is claimed here:
+remotely proven. The independent final whole-body security review passed with **no Critical and no Important findings**
+(ruling: **SAFE WITH MINOR NON-BLOCKING FOLLOW-UP**). Engineering is not reopened. **SEC-1 is not Done.** Two steps remain
+and none is claimed here:
 
-1. the independent final whole-body SEC-1 security review;
-2. operator smoke (the checklist at the end of this document; not executed);
-3. merge to `master` (both required checks green at that time).
+1. operator smoke (the checklist at the end of this document; not executed);
+2. merge to `master` (both required checks green at that time).
 
 ## What shipped
 
@@ -47,10 +48,10 @@ remotely proven. **SEC-1 is not Done.** Three steps remain and none is claimed h
 | REQ-9 | Step-up proven in the harness; continuation via protected OIDC properties; `SameSite` not weakened | 1A2b | `EntraStepUpCallbackTests`; `EntraStepUpSecurityGuardTests`; `StepUpCallbackBaselineTests` (Chromium, Firefox) | Real Entra and Safari: operator smoke | Closed in the harness |
 | REQ-10 | Background requests marked centrally, never renew; timer guard | 1A3 | `BackgroundRequest`, `OnCheckSlidingExpiration`; `BackgroundRequestTests`, `BackgroundSessionRenewalTests`, `BackgroundPollerGuardTests`; `SessionRenewalBaselineTests` (F9 flipped) | `browser-security` green | Closed |
 | REQ-11 | Rule U on every browser-facing unsafe `/api` request, anonymous included; 403, before authentication | 1B1 | `BrowserRequestTrustEvaluatorTests`; `BrowserRequestTrustHttpTests` (no action, audit or row on rejection); `RequestForgeryBaselineTests` (F11, three engines) | `build-and-test` and `browser-security` green | Closed |
-| REQ-12 | Exemptions exactly `POST /api/enroll` and the OIDC protocol paths; positive and negative tests | 1B1, 1B2, 1B3 | `BrowserRequestTrustGuardTests` (routed unsafe endpoints; the only attribute exemption is enroll); `BrowserRequestTrustHttpTests` (enroll exempt, invitation not; callbacks not rejected); callback-under-`/api` fail-closed (§46.5). `/signout-oidc` is not exempt because it is not live (§45.3 amendment) | `build-and-test` green | Closed |
+| REQ-12 | Exemptions exactly `POST /api/enroll`, `/signin-oidc` (sign-in callback) and `/signout-callback-oidc` (signed-out callback); positive and negative tests. `RemoteSignOutPath` is disabled; `/signout-oidc` is not live and is not exempted | 1B1, 1B2, 1B3 | `BrowserRequestTrustGuardTests` (routed unsafe endpoints; the only attribute exemption is enroll); `BrowserRequestTrustHttpTests` (enroll exempt, invitation not; callbacks not rejected); callback-under-`/api` fail-closed (§46.5). `/signout-oidc` is not exempt because it is not live (§45.3 amendment) | `build-and-test` green | Closed |
 | REQ-13 | G1/G2 POST; `/signout` POST (GET 405); GET classification frozen | 1B2 | `GetSafetyClassificationGuardTests`; `EntraDirectorySearchRequestForgeryTests`; `SignOutSurfaceGuardTests`; `SignOutFormSourceGuardTests`; `RequestForgeryBaselineTests` (D2 flipped, three engines) | `browser-security` green | Closed |
 | REQ-14 | `UiDev` Development-only with exact origin; never any-origin with credentials | 1B3 | `UiDevCorsTests`; `BrowserRequestTrustGuardTests` (CORS position); `BrowserRequestTrustHttpTests` (`Testing` returns no allow headers) | `build-and-test` green | Closed |
-| REQ-15 | Explicit `SameSite=Lax`; `Secure` outside Development; HttpOnly and host-only kept | 1B3 | `ManagementCookiePolicyTests`; `EntraStepUpSecurityGuardTests` (no `SameSiteMode.None`) | HTTPS browser topology not exercised (harness is plain-http `Testing`); proven at host configuration | Closed |
+| REQ-15 | Explicit `SameSite=Lax`; `Secure=Always` outside Development/`Testing`; HttpOnly and host-only kept | 1B3 | `ManagementCookiePolicyTests`; `EntraStepUpSecurityGuardTests` (no `SameSiteMode.None`) | HTTPS browser topology not exercised (harness is plain-http `Testing`); proven at host configuration | Closed |
 | REQ-16 | `Management.Api` a class library (D7) | 1B3 | `OutputType=Library`, no `Program.cs`, no launch profile; D7 STOP not hit | — | Closed |
 | REQ-17 | Ui.Server file write and agent-log instrumentation removed | 1B3 | `UiServerHostRegistrationGuardTests`; `DebugInstrumentationGuardTests` | — | Closed |
 | REQ-18 | Outside Development, startup refuses a missing, loopback or non-HTTPS `ManagementUiUrl` | 1B3 | `ManagementUiRedirects.EnsurePublicOrigin`; `ManagementUiUrlValidationTests`. As built, the rule applies to every environment except Development and `Testing` | — | Closed |
@@ -146,9 +147,14 @@ From §37 and the slice records; none is an open SEC-1 failure.
   currently have.
 - IAM-8 custom role lifecycle (roadmap 7b) and navigation / cross-context grouping (roadmap 8).
 
+Independent final review follow-ups (2026-09-29; **non-blocking**; not implemented here): Rule G inventory/guard
+strengthening (MINOR-1); CI executed-browser-count enforcement or wait-loop changes (MINOR-5); Testing-environment
+hardening (MINOR-6); CI image/action SHA pinning. These stay deferred with the §37 items above.
+
 ## Security architecture consistency review (SEC-1C, read-only)
 
-An internal consistency pass across slice boundaries. It is not the independent final review.
+An internal consistency pass across slice boundaries. It is not the independent final review. That review later completed
+with only non-blocking findings (SAFE WITH MINOR NON-BLOCKING FOLLOW-UP); see status above.
 
 | Boundary | Result |
 |---|---|
@@ -188,8 +194,10 @@ No unresolved defect was found.
   since `a79a1ba`.
 - The mechanism is proven: `browser-security` has failed the workflow when the suite failed (§47.6, §47.15) and passed when
   it was healthy.
-- Both checks passed on Ubuntu on the final pull-request workflow of this branch (§47.16). The last code-bearing commit is
-  `43079b3`; `04dbc94` changed documentation only. The run id is not recorded in the repository.
+- Both checks passed on Ubuntu on the final pull-request workflow of this branch (§47.16). The last **product-code**
+  commit (product behavior) is `43079b3`. `04dbc94` changed documentation only. SEC-1C (`e28b9e6`, current HEAD at
+  engineering closure) changed documentation and added one Ui.Server source-guard test; it did not change product
+  behavior. That HEAD is not claimed as a remote-CI pass. The run id is not recorded in the repository.
 - The `master` ruleset lists `build-and-test` and `browser-security` as required. GitHub does **not** enforce rulesets on
   this private organization repository under the current plan, so it is not blocking merges today.
 - Merge policy is procedural: do not merge unless both checks are green. This is not unfinished SEC-1 engineering work.
@@ -218,7 +226,7 @@ Add `--artifacts-path artifacts/<name>` when a running dev stack locks the defau
 | Latest full local run | SEC-1B3, 2026-09-26: build 0 errors; UnitTests 3 199 passed, 3 failed (`Epic77UatDocumentationTests`, an artifacts-path layout effect; they pass under the default layout); ArchTests 38; Ui.Shared.Tests 1 395; Ui.Client.Tests 333; IntegrationTests 282/282 (serialized); BrowserTests 324/326, the two failures an isolation guard reacting to a temporary friend assembly, removed and re-run 4/4 | §46.6 |
 | Local during B4 | Focused runs only (per remediation), recorded per run | §47.4–§47.15 |
 | Latest remote with counts | Run 8 (`1098364`): Ui.Shared.Tests 1 395/1 395, IntegrationTests 283/289, `browser-security` passed. Run 9 (`3af711e`): `build-and-test` passed; `browser-security` 329/330 | §47.14, §47.15 |
-| Final remote | Both checks passed after `43079b3`; counts and run id not recorded | §47.16 |
+| Final remote | Both checks passed after the last product-code commit `43079b3`; counts and run id not recorded. SEC-1C HEAD is later and is not a claimed remote-CI pass | §47.16 |
 | SEC-1C | Documentation plus one source-guard fact; `UiServerHostRegistrationGuardTests` 11 passed, 0 failed (local, Windows) | §48 |
 
 The gate does not require a new full local run for SEC-1C: §32 assigns documentation and a closure audit with evidence, and
@@ -226,27 +234,153 @@ REQ-19 requires citing the evidence. The full suites were not re-run for this do
 
 ## Operator smoke checklist (pending; not executed)
 
-Consolidated from the committed manual items (§29.3 M, §38.6, §41.6). Run against a rebuilt, restarted stack.
+Consolidated from the committed manual items (§29.3 M, §38.6, §41.6) and the independent final review's required
+manual coverage. Run against a rebuilt, restarted stack on this branch. Do not inspect database rows or source. Record
+pass/fail and a one-line observation per step.
 
-1. **Expired session, in app.** Sign in, let the session expire (or delete the cookie), click Refresh on a list page: one
-   navigation to sign-in with "Your session has expired", then back to the same page (path, query, fragment) after sign-in.
-2. **Sign-out.** Sign out from the account menu, Account › Security and the access-request page: each lands on `/login`;
-   Back does not show protected data.
-3. **Real Entra sign-in and cancel.** Sign in with Microsoft from a deep link and land on it. Cancel at Microsoft: the
-   stable "Sign-in was cancelled" panel with Try again, no loop, no raw error document.
-4. **Real Entra step-up (test tenant with an authentication context).** From Account › Security, Verify with Microsoft:
-   return to the original page with success; `auth/me` shows `hasRecentStrongAuthentication: true`; the callback
-   `POST /signin-oidc` carries only OIDC flow cookies and sets the session cookie (`SameSite=Lax`). Cancel returns with the
-   bounded error and the session intact. A Microsoft account linked to another user is refused (`identity_mismatch`).
-   Check the OIDC state size against a real authorize URL.
-5. **Safari (macOS and iOS).** Repeat 3–4 and a cross-site form POST attempt.
-6. **`RunDetail` poll.** Enable Poll on a run, expire the session: one recovery, no 2 s 401 storm.
-7. **Development-only failure redirect.** Cancel a real sign-in in a dev stack: `/login?error=…` with no `detail` parameter.
-8. **Ordinary mutations.** Create and retire a Connection; mark a notification read; change appearance — all succeed (no
-   "Request blocked").
+The application/session cookie is named `.AspNetCore.Cookies`. That is **not** the OIDC `state` parameter and not the
+short-lived nonce/correlation cookies. The gate does not define a numeric cookie-size threshold: for an Entra session
+(saved tokens) the size after step-up must stay comparable to the size before (the framework re-issues the session with
+its tokens).
 
-## What remains after SEC-1C
+### Prerequisites — which steps need what
 
-1. Independent final whole-body SEC-1 security review.
-2. Operator smoke (above).
-3. Merge, with `build-and-test` and `browser-security` green on the merged state.
+| Tag | Needed |
+|---|---|
+| All | Rebuilt, restarted Management UI and Management.Host from this branch |
+| **Real Entra** | Test tenant with an authentication context (Conditional Access) on the active registration; a Microsoft account linked to an Apperture user |
+| **Local credentials** | An Apperture user who can sign in with username/password **and** has a linked Microsoft account |
+| **Safari** | macOS Safari and iOS Safari |
+| **DevTools** | Browser developer tools: Application/Storage → Cookies, and Network |
+| **HTTPS Staging** | A safe Staging or production-like HTTPS deployment. Do **not** disrupt a live production instance for the configuration-failure check |
+
+**How to read the session cookie (DevTools).** Chrome/Edge: Application → Cookies → the Management host origin →
+`.AspNetCore.Cookies` (note Size, or Value length). Firefox: Storage → Cookies. Network: the `Set-Cookie` header on
+sign-in or step-up. **How to read `auth/me`.** Network → `GET /api/auth/me` JSON. Use `signInSource` (`Local` or `Entra`)
+and `hasRecentStrongAuthentication`. Do not inspect tokens or claims beyond that JSON.
+
+A safe ordinary deep-link for recovery/return tests: `/runs?status=failed#notes` (query **and** fragment; not an
+auth/protocol path). If that list is empty, `/connections?context=all#section` is equally valid.
+
+### 1. Expired session, in app
+
+- **Start:** signed in (local or Entra). Open `/runs?status=failed#notes` (or another ordinary list route with query and fragment).
+- **Action:** let the session expire, or delete `.AspNetCore.Cookies`, then click Refresh on that page.
+- **Expect:** exactly one navigation to `/login` with "Your session has expired". After sign-in, land on the **same**
+  path, query, and fragment.
+- **Record:** starting URL; landing URL after sign-in (including `#fragment`).
+
+### 2. Application sign-out (local or mixed UI surfaces)
+
+- **Start:** signed in.
+- **Action:** sign out from (a) the account menu, (b) Account › Security, (c) the access-request page. Use the normal
+  Sign out control (a form POST to `/signout`). After each, use the browser Back button.
+- **Expect:** each attempt lands on `/login`. Back does not show protected content.
+- **Record:** which three surfaces were used; Back result.
+
+### 3. Real Entra sign-in, deep link, cancel, and OIDC error wording — **Real Entra**
+
+- **Start:** signed out. Open a deep link that is an ordinary application route with **both** query and fragment, for
+  example `/runs?status=failed#notes`.
+- **Action:** Sign in with Microsoft and complete the real Microsoft flow. Repeat from the same kind of deep link and
+  **cancel** at Microsoft. If a non-cancel failure is easy (close the Microsoft tab mid-flow), do that once too.
+- **Expect:** successful sign-in lands on that same path + query + fragment. Cancel lands on `/login?error=cancelled`
+  with the house panel "Sign-in was cancelled" and **Try again**. Any other handled failure lands on
+  `/login?error=oidc` with "Sign-in with Microsoft didn't complete." The URL carries **only** that fixed code: **no
+  `detail` query parameter**, no Microsoft/provider error text in the address bar or on the page, no raw host error
+  document, no auto-redirect loop.
+- **Record:** success landing URL (query + fragment); cancel/failure URL (confirm `error=cancelled` or `error=oidc` and
+  the absence of `detail=`).
+
+### 4. Protected-state step-up from a LOCAL session — **Real Entra**, **Local credentials**, **DevTools**
+
+- **Start:** sign in with **local username/password** on an account that has a linked Microsoft identity. Confirm
+  `GET /api/auth/me` `signInSource` is `Local`. Open Account (`/account`). Secured account is locked. In DevTools, note
+  the `.AspNetCore.Cookies` size.
+- **Action:** choose **Verify with Microsoft**. Complete the real Microsoft flow and the Conditional Access challenge.
+  After return, **do the protected action** (save or change contact email, or change the local password if that control
+  is available). Do not stop at the unlocked overlay. Cancel once at Microsoft as a negative check.
+- **Expect:** return to Account with success (`steppedUp=1`, not `error=user_not_found`). You remain on a **local**
+  session (`signInSource` still `Local`; you are not now in a Microsoft-only session). `hasRecentStrongAuthentication`
+  is true **and** the protected save/change succeeds. Note the cookie size (for comparison with the Entra-with-tokens
+  cookie in step 5). Cancel: bounded error, session still local and intact.
+- **Record:** before/after `signInSource`; before/after cookie size; which protected action succeeded.
+
+### 5. Protected-state step-up from an ENTRA session — **Real Entra**, **DevTools**
+
+- **Start:** sign out, then sign in **with Microsoft** (Entra session). Confirm `signInSource` is `Entra`. Open Account.
+  Note `.AspNetCore.Cookies` size **before** step-up (this cookie includes saved tokens).
+- **Action:** **Verify with Microsoft**, complete the real Microsoft flow and CA. After return, **perform the protected
+  action** (same as step 4). Optionally inspect `POST /signin-oidc`: it should carry OIDC flow cookies, not the old
+  session cookie, and the response should `Set-Cookie` `.AspNetCore.Cookies` with `SameSite=Lax`. Once, use a Microsoft
+  account linked to a **different** Apperture user (expect `identity_mismatch`).
+- **Expect:** success return to Account; `signInSource` still `Entra`; `hasRecentStrongAuthentication` true; the
+  protected action succeeds. After step-up the session-cookie size stays **comparable to the pre-step-up Entra cookie**
+  (framework re-issues the session with its saved tokens; no numeric threshold). Wrong account: `identity_mismatch`,
+  nothing changes.
+- **Record:** before/after `signInSource`; before/after cookie size (this is §41.6 #8); protected action result.
+
+### 6. Safari (macOS and iOS) — **Safari**, **Real Entra**
+
+- **Start:** Safari on macOS, then iOS.
+- **Action:** repeat step 3 (sign-in + cancel) and steps 4–5 (step-up from both session kinds, including the protected
+  action). From another origin, submit a cross-site form POST toward a Management `/api` mutation.
+- **Expect:** the same observable results as Chromium/Edge/Firefox. The cross-site form POST does not mutate. Step-up
+  must work whether or not Safari sends the Lax cookie on the callback.
+- **Record:** engines/devices; any difference from desktop Chromium.
+
+### 7. `RunDetail` poll
+
+- **Start:** signed in; open a run that can Poll.
+- **Action:** enable Poll, then expire the session (or delete the cookie).
+- **Expect:** one recovery navigation, not a 2-second 401 storm in Network.
+- **Record:** whether a 401 storm appeared.
+
+### 8. Ordinary mutations
+
+- **Start:** signed in on the Management UI origin.
+- **Action:** create and retire a Connection; mark a notification read; change appearance.
+- **Expect:** all succeed. No "Request blocked".
+- **Record:** which three mutations were used.
+
+### 9. Real Entra logout — **Real Entra**
+
+- **Start:** a real **Entra-authenticated** session (signed in with Microsoft).
+- **Action:** sign out through the normal UI (account menu Sign out → `POST /signout`). Watch Network. After landing,
+  press Back.
+- **Expect:** Microsoft end-session runs (navigation to the Microsoft logout URL). Return through
+  `/signout-callback-oidc`. Land at `/login`. Back does not show protected content.
+- **Record:** that end-session, `/signout-callback-oidc`, `/login`, and Back were observed.
+
+### 10. Disabled front-channel endpoint — **Real Entra** (or any signed-in session on the deployed host)
+
+- **Start:** sign in again (any session kind). Do **not** re-enable front-channel logout.
+- **Action:** in the same browser, navigate to `{deployed-host}/signout-oidc?sid=test&iss=https://login.microsoftonline.com/test/v2.0`
+  (the historical path; it is not live). Then refresh a protected page.
+- **Expect:** the host answers not-found (404). The existing Apperture session remains active.
+- **Record:** status shown; still signed in afterwards.
+
+### 11. HTTPS deployment-boundary — **HTTPS Staging**, **DevTools**
+
+Use Staging or a disposable production-like HTTPS host. Do **not** change configuration on a live production instance.
+
+1. **Session `Set-Cookie`.** Sign in and, in Network, inspect `.AspNetCore.Cookies` `Set-Cookie`. **Expect:** `Secure`,
+   `HttpOnly`, and `SameSite=Lax` (or `samesite=lax`).
+2. **No product CORS.** Inspect a normal `/api` response (not a Development UI). **Expect:** no
+   `Access-Control-Allow-Origin` header.
+3. **Clickjacking headers.** Inspect a Management.Host response and a Ui.Server (shell page) response. **Expect both:**
+   `X-Frame-Options: DENY` and CSP containing `frame-ancestors 'none'`.
+4. **Invalid `ManagementUiUrl` (safe test host only).** On a disposable Staging/test instance, set
+   `ShellUi:ManagementUiUrl` to a public **HTTP** URL (or omit it / use loopback) and start Management.Host. **Expect:**
+   startup refuses. Restore the valid HTTPS origin afterwards.
+- **Record:** the four observations; which host was used for (4).
+
+### 12. Optional — account-unavailable sign-out
+
+Already covered in the browser suite. Optional here: from the "Your account isn't available in Apperture" surface,
+choose Sign out (or Sign in with a different account) and confirm `/login`. Not required to close smoke.
+
+## What remains after the independent final review
+
+1. Operator smoke (above). Next lifecycle step; do not reopen SEC-1 engineering.
+2. Merge, with `build-and-test` and `browser-security` green on the merged state.

@@ -11,6 +11,8 @@ Implemented (Epic 2). Real human authentication for the control plane: Microsoft
 - **Flow:** Unauthenticated request to protected endpoint → redirect to `GET /signin` → Challenge(OpenIdConnect) → redirect to Entra → callback `/signin-oidc` → `OnTokenValidated` adds claim `http://schemas.apperture/identity_source` = `Entra` → SignIn with Cookie. Subsequent requests carry the cookie; `ClaimsPrincipalToActorMapper` and `SqlPrincipalToUserResolver` use `identity_source` and resolve to platform user.
 - **Sign-out:** `GET /signout` calls SignOut(Cookie). Optional OIDC sign-out for single sign-out not implemented in this epic.
 
+  Current architecture (supersedes this bullet): see [ADR-0045](ADR-0045-browser-session-recovery-and-request-trust.md) and SEC-1. Sign-out is `POST /signout` (`GET /signout` is 405). Entra sessions federate Microsoft end-session and return through `/signout-callback-oidc`. `RemoteSignOutPath` is disabled; `/signout-oidc` is not live.
+
 ## Local username/password approach
 
 - **Storage:** Table `LocalCredentials` (UserId FK, PasswordHash, Salt, Algorithm, IsDisabled, RowVersion). One credential per user. `ILocalCredentialRepository`, `SqlLocalCredentialRepository`. Password hashing via `ILocalPasswordHasher` / `LocalPasswordHasher` (PBKDF2-HMAC-SHA256, 100_000 iterations). Do not use ISecretStore for user passwords.

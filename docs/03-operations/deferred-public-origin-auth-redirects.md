@@ -36,7 +36,7 @@ Keep **one public origin** for UI, API, and Entra callbacks (for example `https:
 
 | Setting | Process | Meaning |
 |---------|---------|---------|
-| `ShellUi:ManagementUiUrl` | Management.Host | Public **UI** origin for post-login / post-logout redirects. Never default to localhost outside Development. |
+| `ShellUi:ManagementUiUrl` | Management.Host | Public **UI** origin for post-login / post-logout redirects. Never default to localhost outside Development and `Testing`. |
 | `ShellUi:ManagementHostUrl` | Management.Host | Public **UI** origin for email deep links (already used). Same value as `ManagementUiUrl` in same-origin deploys. The names collide with the UI setting below. |
 | `ShellUi:ManagementHostUrl` | UI (WASM) | Public **API/host** origin for `/signin` and `/signout`. Empty when same-origin (page origin is the host). |
 

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted. Engineering closure 2026-09-29 (SEC-1C). SEC-1 as a whole is pending the final independent security review,
-operator smoke and merge. Design and rulings D1–D9: the
+Accepted. Engineering closure 2026-09-29 (SEC-1C). Independent final review: SAFE WITH MINOR NON-BLOCKING FOLLOW-UP.
+SEC-1 as a whole is pending operator smoke and merge. Design and rulings D1–D9: the
 [SEC-1 design gate](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md)
 (approved 2026-09-24; as-built records §38–§47). Requirement closure, residuals and evidence:
 [`sec1-browser-session-security-closure.md`](../audits/sec1-browser-session-security-closure.md). Supersedes, as a pattern,

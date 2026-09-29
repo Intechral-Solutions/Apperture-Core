@@ -1,7 +1,9 @@
 # SEC-1 — Browser Session & Request-Forgery Hardening — design gate
 
 Date: 2026-09-24
-Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). Implementation is in progress:
+Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). SEC-1 engineering closure is
+complete (SEC-1C, §48). The independent final whole-body security review passed with only non-blocking findings (SAFE WITH
+MINOR NON-BLOCKING FOLLOW-UP). Operator smoke and merge remain. SEC-1 is not Done.** Implementation record:
 SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, SEC-1A1
 (centralized expired-session recovery) is implemented and proven in browsers, recorded in §39, and SEC-1A2a (the shared
 safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
@@ -17,8 +19,8 @@ default, §47.6), and a sequence of remediation runs (§47.6–§47.15) led to a
 both `build-and-test` and `browser-security` passed on Ubuntu (§47.16). The `master` ruleset lists both as required
 checks, but GitHub does not enforce it on this private repository under the current plan, so both checks are
 procedurally required before merge (§47.16). SEC-1C (ADR-0045 and the closure audit) is **complete** and recorded in §48:
-SEC-1 engineering closure is complete. SEC-1 is **not Done**: the independent final security review, operator smoke and
-merge remain ([closure audit](../../../audits/sec1-browser-session-security-closure.md)).**
+SEC-1 engineering closure is complete. The independent final review has passed with only non-blocking findings. SEC-1 is
+**not Done**: operator smoke and merge remain ([closure audit](../../../audits/sec1-browser-session-security-closure.md)).
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -889,7 +891,7 @@ Legend: **U** unit · **I** integration · **S** static guard · **B** browser (
 - No agent-log script or `appertureShell.debugLog` call remains.
 - `Management.Api` has no entry point (`OutputType=Library`, no `Program.cs`).
 - `frame-ancestors`/`X-Frame-Options` headers are present on both hosts.
-- Outside Development, startup fails on a missing, loopback or HTTP `ManagementUiUrl`.
+- Outside Development and `Testing`, startup fails on a missing, loopback or HTTP `ManagementUiUrl`.
 
 ## 30. Performance / reliability — approved
 
@@ -912,7 +914,7 @@ Legend: **U** unit · **I** integration · **S** static guard · **B** browser (
   **Never** cookies, whole header sets, bodies, query strings or tokens. There is a meter `apperture.browser_trust.rejected` (by rule).
   **There are no audit records** for forgery attempts: they are not operator actions, and anonymous floods would pollute the audit trail.
 - **Auth recovery:** client-side only. There is no server audit of routine expiry. The loop breaker writes one browser console warning.
-- **OIDC remote failure:** existing host logging. `detail` never appears in URLs outside Development.
+- **OIDC remote failure:** existing host logging. `detail` never appears in URLs (amended §26 / §40.5: no `detail` in any environment).
 - **Return URLs are never logged** (they can identify the records an operator was viewing).
 
 ---
@@ -1045,13 +1047,13 @@ keeps renewing. All recurring and automatic requests are audited (§10, §16), a
 | REQ-9 | Step-up proven in the harness. If the ordinary cookie is required on the cross-site callback, step-up continues via protected OIDC properties. SameSite is not weakened. |
 | REQ-10 | Background requests are marked centrally and never renew the sliding session. Every timer-driven API call is covered by a guard. |
 | REQ-11 | Rule U (exact Origin + platform header + cross-site rejection) on every browser-facing unsafe `/api` request, anonymous ones included. It returns 403, never 401, and runs before authentication. |
-| REQ-12 | Exemptions are exactly `POST /api/enroll` and the OIDC callback/sign-out paths. Each has a positive and a negative test. |
+| REQ-12 | Exemptions are exactly `POST /api/enroll`, `/signin-oidc`, and `/signout-callback-oidc`. `RemoteSignOutPath` is disabled; `/signout-oidc` is not live. Each has a positive and a negative test. |
 | REQ-13 | GET safety: G1/G2 become POST; `/signout` becomes POST (GET → 405); the §18.1 classification is frozen by a guard. |
 | REQ-14 | `UiDev` is Development-only with an exact configured origin. There is never any-origin with credentials. Production activation is impossible and tested. |
-| REQ-15 | SameSite=Lax is explicit. Secure is always set outside Development. HttpOnly and host-only are preserved. |
+| REQ-15 | SameSite=Lax is explicit. Secure is always set outside Development and `Testing`. HttpOnly and host-only are preserved. |
 | REQ-16 | `Management.Api` becomes a class library under the D7 STOP condition. |
 | REQ-17 | The Ui.Server startup filesystem write and the debug agent-log instrumentation are removed. |
-| REQ-18 | Outside Development, startup fails on a missing, loopback or non-HTTPS `ManagementUiUrl`. |
+| REQ-18 | Outside Development and `Testing`, startup fails on a missing, loopback or non-HTTPS `ManagementUiUrl`. |
 | REQ-19 | Browser findings are called defects only after SEC-1.0 evidence. The closure audit cites the evidence. |
 
 ## 37. Deferred concerns (outside SEC-1)
@@ -1192,13 +1194,20 @@ origin, which is what Rule U will compare.
 
 ### 38.6 Remaining uncertainty and the manual tests it needs
 
+**Current operator smoke (supersedes the Development-only `detail=` row below).** The executable checklist is in the
+[closure audit](../../../audits/sec1-browser-session-security-closure.md). OIDC failure recovery uses a **fixed error
+code only**: `/login?error=cancelled` or `/login?error=oidc`. There is **no `detail` query parameter** in any environment
+(§26 amendment, §40.5). The browser must not show provider error text. HTTPS cookie/CORS/clickjacking/`ManagementUiUrl`
+checks, step-up from both session kinds, real Entra logout, and deep links with query **and** fragment are in that
+checklist, not here.
+
 | Item | Why the harness cannot settle it | Manual test |
 |---|---|---|
 | Real Entra step-up (F8) | The stub proves the browser withholds the cookie; it cannot prove Microsoft's flow, `acrs`, or that a redesigned continuation satisfies Conditional Access | Configure a test tenant with an authentication context; from a signed-in session run `/signin/step-up`; confirm the return lands with `steppedUp=1` (after 1A2/1A2b) and, before the fix, `error=user_not_found` |
 | Safari (F8, F11) | Playwright's WebKit build here is not Safari | Repeat the cross-site form POST and the step-up on macOS/iOS Safari |
 | `RunDetail` 2 s poll (F10) | Needs a Run; the Toast watcher covers the class | Enable "Poll" on a run, expire the session, watch the 401 cadence |
-| HTTPS topology, `Secure` cookies, `UiDev` outside Development | Harness is plain-http `Testing` | SEC-1B3/1B4 integration + smoke |
-| Development-only OIDC failure redirect | Not run in the Development environment | Cancel a real sign-in in a dev stack; observe `/login?error=oidc&detail=` |
+| HTTPS topology, `Secure` cookies, `UiDev` outside Development | Harness is plain-http `Testing` | SEC-1B3/1B4 integration + smoke. **Current smoke:** closure-audit HTTPS Staging step (Secure / HttpOnly / SameSite=Lax; no product `Access-Control-Allow-Origin`; clickjacking headers on both hosts; invalid `ManagementUiUrl` on a disposable host). As built, Development **and** `Testing` are the local HTTP topology. |
+| Development-only OIDC failure redirect | Not run in the Development environment | ~~Cancel a real sign-in in a dev stack; observe `/login?error=oidc&detail=`~~ **Superseded:** cancel or fail a real sign-in; land on `/login?error=cancelled` or `/login?error=oidc` with **no `detail` parameter** (any environment). |
 
 ### 38.7 Which slice inverts which baseline
 
@@ -1786,9 +1795,11 @@ below forbids it.
 
 ### 45.3 The front-channel sign-out path (`/signout-oidc`) — gate amendment
 
-§21 listed `/signout-oidc` (the OIDC handler's `RemoteSignOutPath`) only as an exemption from Rule U. It is also a GET any page can navigate
-to. The framework's default handler compares `sid`/`iss` only when the session holds them, so a cross-site navigation to a live
-`RemoteSignOutPath` ended a local session (every local session holds neither claim). Removing `GET /signout` alone would not have closed D2.
+The original §21 listed `/signout-oidc` (the OIDC handler's `RemoteSignOutPath`) as a Rule U exemption. **Current §21 no longer
+lists it:** the live exemptions are `/signin-oidc` and `/signout-callback-oidc` only. `/signout-oidc` is also a GET any page can
+navigate to. The framework's default handler compares `sid`/`iss` only when the session holds them, so a cross-site navigation to a
+live `RemoteSignOutPath` ended a local session (every local session holds neither claim). Removing `GET /signout` alone would not
+have closed D2.
 
 Closeout of this slice established a further fact against the earlier sid/iss-binding amendment: a real Entra sign-in through
 `AddAppertureAuthentication` (with `MapInboundClaims = false`) preserves `sid` under its raw name and does **not** preserve `iss`.
@@ -2244,7 +2255,8 @@ full local run is SEC-1B3 (§46.6); the latest remote proof is §47.16.
 
 ### 48.4 Lifecycle
 
-**SEC-1 engineering closure is complete. SEC-1 is not Done.** Remaining, in order: the independent final whole-body
-security review, operator smoke (closure audit checklist), and merge with `build-and-test` and `browser-security` green.
+**SEC-1 engineering closure is complete. The independent final whole-body security review passed with only non-blocking
+findings (SAFE WITH MINOR NON-BLOCKING FOLLOW-UP). SEC-1 is not Done.** Remaining, in order: operator smoke (closure
+audit checklist), and merge with `build-and-test` and `browser-security` green. Do not reopen SEC-1 engineering.
 
 
