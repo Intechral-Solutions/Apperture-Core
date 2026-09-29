@@ -13,8 +13,10 @@ public static class RecoveryEvidence
         trace.Documents.Where(d => d.Uri.AbsolutePath == "/login").ToArray();
 
     /// <summary>
-    /// <c>auth/me</c> fetches made from <paramref name="fromIndex"/> up to (not including) the first document load of
-    /// <c>/login</c>: the tab's own recovery re-checks, not the new sign-in document's boot check.
+    /// Coordinator <c>auth/me</c> re-checks from <paramref name="fromIndex"/> up to (not including) the first document
+    /// load of <c>/login</c>. The credentials-only probe client does not send <c>X-Apperture-Request</c>. A page
+    /// <c>Session.RefreshAsync</c> uses the application client, so it does, and the pipeline excludes that 401 from
+    /// recovery. The sign-in document's own boot check is after this cut.
     /// </summary>
     public static IReadOnlyList<TracedResponse> RecoveryProbes(this PageTrace trace, int fromIndex)
     {
@@ -22,7 +24,9 @@ public static class RecoveryEvidence
         var signIn = Array.FindIndex(slice, r => r.ResourceType == "document" && r.Uri.AbsolutePath == "/login");
         var beforeSignIn = signIn < 0 ? slice : slice[..signIn];
         return beforeSignIn
-            .Where(r => r.ResourceType is "fetch" or "xhr" && r.Url.Contains("/api/auth/me", StringComparison.Ordinal))
+            .Where(r => r.ResourceType is "fetch" or "xhr"
+                && r.Url.Contains("/api/auth/me", StringComparison.Ordinal)
+                && !r.CarriesPlatformRequest)
             .ToArray();
     }
 

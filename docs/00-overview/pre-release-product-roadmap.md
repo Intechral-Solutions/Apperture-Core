@@ -176,7 +176,10 @@ reset, cutting across several of them.
    A fresh governance catalog reproduces them: HelloWorld is enabled after the permission catalog snapshot,
    so `workflow.execute` is unknown and launch is `workflow_start_forbidden`. The Ubuntu closed-port SQL
    shape is Number 0 with `SocketError.Success` and is not classified as unreachable (gate §47.14).
-   That job is not green. SEC-1C and the remaining slices have not started.
+   The ninth `build-and-test` passed. `browser-security` failed one Account Security recovery fact
+   because the trace counted that page's own `auth/me` refresh together with the one coordinator probe
+   (gate §47.15). The assertion is still a single probe. That job is not green. SEC-1C and the remaining
+   slices have not started.
    SEC-1 is not complete.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both

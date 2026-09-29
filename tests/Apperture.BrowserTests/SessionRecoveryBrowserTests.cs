@@ -72,8 +72,9 @@ public sealed class SessionRecoveryBrowserTests(BrowserHarness harness, ITestOut
 
     /// <summary>
     /// Opening a page that refreshes the session itself (Account &gt; Security) after expiry recovers through the same
-    /// single path: reason=expired, one probe, one full-page navigation. (The unit tests pin the case where
-    /// <c>auth/me</c> itself answers the page's refresh, which the HTTP pipeline excludes.)
+    /// single path: reason=expired, one coordinator probe, one full-page navigation. The page refresh is an
+    /// <c>auth/me</c> the pipeline excludes; <c>RecoveryProbes</c> counts the credentials-only re-check only.
+    /// (The unit tests pin the case where <c>auth/me</c> itself answers the page's refresh.)
     /// </summary>
     [BrowserFact]
     public async Task Opening_Account_Security_after_expiry_recovers_with_reason_expired_and_one_navigation()

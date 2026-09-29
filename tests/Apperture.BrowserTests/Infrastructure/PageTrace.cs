@@ -4,11 +4,18 @@ using Microsoft.Playwright;
 namespace Apperture.BrowserTests.Infrastructure;
 
 /// <summary>One HTTP response the page received (a navigation hop, a fetch/XHR, or a sub-resource).</summary>
-public sealed record TracedResponse(string Method, string Url, int Status, string ResourceType)
+public sealed record TracedResponse(
+    string Method,
+    string Url,
+    int Status,
+    string ResourceType,
+    bool CarriesPlatformRequest = false,
+    bool CarriesBackgroundMarker = false)
 {
     public Uri Uri => new(Url);
 
-    public override string ToString() => $"{Method} {Url} -> {Status} ({ResourceType})";
+    public override string ToString() =>
+        $"{Method} {Url} -> {Status} ({ResourceType}) platform={CarriesPlatformRequest} background={CarriesBackgroundMarker}";
 }
 
 /// <summary>
@@ -33,7 +40,14 @@ public sealed class PageTrace
         page.Response += (_, response) =>
         {
             var request = response.Request;
-            _responses.Enqueue(new TracedResponse(request.Method, response.Url, response.Status, request.ResourceType));
+            var headers = request.Headers;
+            _responses.Enqueue(new TracedResponse(
+                request.Method,
+                response.Url,
+                response.Status,
+                request.ResourceType,
+                CarriesHeader(headers, "x-apperture-request"),
+                CarriesHeader(headers, "x-apperture-background")));
         };
         page.Console += (_, message) => _console.Enqueue($"[{message.Type}] {message.Text}");
         page.PageError += (_, error) => _console.Enqueue($"[pageerror] {error}");
@@ -50,6 +64,9 @@ public sealed class PageTrace
 
     /// <summary>Document (navigation) responses only, i.e. the redirect chain the browser followed.</summary>
     public IReadOnlyList<TracedResponse> Documents => Responses.Where(r => r.ResourceType == "document").ToArray();
+
+    private static bool CarriesHeader(IDictionary<string, string> headers, string name) =>
+        headers.TryGetValue(name, out var value) && value.Length > 0;
 
     public IReadOnlyList<TracedResponse> ApiCalls(string pathContains) =>
         Responses.Where(r => r.ResourceType is "fetch" or "xhr" && r.Url.Contains(pathContains, StringComparison.Ordinal)).ToArray();
