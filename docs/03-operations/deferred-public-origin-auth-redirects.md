@@ -2,6 +2,8 @@
 
 **Status:** Deferred until closer to launch. Local split-host (UI `:9001`, management host/API `:9000`) is enough for current development. Do not implement hostname handling until the surrounding hosting architecture is settled.
 
+**Done by SEC-1B3** ([ADR-0045](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md)): the `ShellUi:ManagementUiUrl` startup refusal, Development-only CORS, and `Secure` cookies (items 1 and 4 below, and the Production and Cookies bullets). Forwarded headers, templates, Docker/IIS, split-host production and the key ring remain deferred.
+
 Related: [S2D-iam2-strong-authentication.md](../02-decisions/S2D-iam2-strong-authentication.md), [management-platform-configuration.md](management-platform-configuration.md), deploy templates under [deploy/config/examples/](../../deploy/config/examples/).
 
 ## What already works
@@ -21,10 +23,10 @@ Production is already documented as **same-origin**: UI + `/api` + `/signin` + `
 
 ## Why this will break on real hostnames
 
-1. **`ShellUi:ManagementUiUrl` defaults to `http://localhost:9001`.** Unset in Azure or on a Windows service, post-login and post-logout bounce operators to localhost instead of the public UI.
+1. **`ShellUi:ManagementUiUrl` defaults to `http://localhost:9001`.** Unset in Azure or on a Windows service, post-login and post-logout bounce operators to localhost instead of the public UI. *Done (SEC-1B3): the localhost fallback applies only in Development and `Testing`. Every other environment refuses to start on a missing, HTTP, loopback or non-origin value. The same value is the only `Origin` trusted for unsafe browser API requests.*
 2. **No forwarded-headers middleware.** Behind App Service TLS or a reverse proxy in front of Kestrel, OIDC `redirect_uri` is built from the *incoming* request. Without `X-Forwarded-Proto` / `Host`, Microsoft sees `http://internal-name/signin-oidc` instead of `https://public-hostname/signin-oidc` and rejects it.
 3. **Azure and Windows appsettings examples** do not set public UI/host URLs or list the Entra Redirect URIs.
-4. **CORS** on the host allows only `localhost:9001`. That is correct for same-origin production (CORS is unused) and will block a split-host production topology unless updated.
+4. **CORS** on the host allows only `localhost:9001`. That is correct for same-origin production (CORS is unused) and will block a split-host production topology unless updated. *Done (SEC-1B3): the `UiDev` policy is registered and applied only in Development, for the configured UI origin. No other environment has a CORS policy. A split-host production topology still needs its own CORS and `SameSite` design.*
 
 `UseWindowsService()` is not wired. Public-origin handling must not depend on it so a later Kestrel Windows service still works.
 
@@ -43,7 +45,7 @@ Suggested behavior when this is implemented:
 - **Development:** keep the localhost:9001 default.
 - **Production:** `ShellUi:ManagementUiUrl` is required and must be an HTTPS non-loopback origin (SEC-1B3). Startup fails if it is missing, HTTP, loopback, or not an origin. Do not fall back to localhost.
 - **Forwarded headers:** enable behind Azure App Service and when a Windows reverse proxy is configured. Do not blindly trust `X-Forwarded-*` on a Kestrel port exposed to the internet.
-- **Cookies:** `SecurePolicy = Always` in Production. `SameSite=Lax` is enough for same-origin.
+- **Cookies:** `SecurePolicy = Always` in Production. `SameSite=Lax` is enough for same-origin. *(Done in SEC-1B3 for every environment except Development and `Testing`.)*
 - **Templates:** add the keys above to [appsettings.azure.json.example](../../deploy/config/examples/appsettings.azure.json.example) and [appsettings.windows.json.example](../../deploy/config/examples/appsettings.windows.json.example), plus Entra app registration Redirect URIs:
 
   - `{public-host}/signin-oidc`

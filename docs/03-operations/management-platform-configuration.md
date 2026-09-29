@@ -99,7 +99,8 @@ Each ASP.NET Core host uses the default configuration chain (simplified):
 | `Notifications` | `Notification*Options` | Evaluation, instances, delivery, email SMTP |
 | `AttentionIncidents` | `AttentionIncidentObservationOptions` | Observation loop |
 | `ApiBaseUrl` | UI `HttpClient` / WASM | Relative `/api` when API and UI share origin |
-| `ShellUi` | `ShellUiOptions` | Entra sign-in, management host URL for redirects |
+| `ShellUi` | `ShellUiOptions` | Entra sign-in, management host URL for redirects. On Management.Host, `ShellUi:ManagementUiUrl` is the exact public UI origin: post-login/post-logout redirects use it, and it is the only `Origin` trusted for unsafe browser API requests. Outside Development and `Testing` it is required and must be HTTPS and non-loopback, or the host refuses to start |
+| `BrowserRequestTrust` | Management.Host | `Mode`: `Enforce` (default) or `ReportOnly`. `ReportOnly` is honoured only in Development and is ignored with a startup warning elsewhere. There is no `Off` |
 | `ControlPanelMenuOptions` | `ControlPanelMenuOptions` | Menu JSON source |
 
 ## Dev setup (one story)
@@ -201,7 +202,8 @@ To verify the catalog at runtime (after Management.Host is up), call `GET /api/c
 - **Baseline:** committed `Management.Host/appsettings.json` (safe production defaults).
 - **Overrides:** environment variables, mounted files, or platform-specific settings (Azure App Service, Windows service install directory). Document instance-specific values outside git.
 - **Topology templates:** [deploy/config/examples/](../../deploy/config/examples/) for docker-dev, Windows, and Azure starting points.
-- **Public hostnames / Entra redirects:** not wired yet. Launch notes: [deferred-public-origin-auth-redirects.md](deferred-public-origin-auth-redirects.md).
+- **Public UI origin:** set `ShellUi:ManagementUiUrl` to the public HTTPS UI origin. Management.Host refuses to start without it outside Development and `Testing`; the example templates do not set it yet. Authentication cookies are `Secure` in those environments.
+- **Public hostnames / Entra redirects:** forwarded headers and Entra redirect registration are not wired yet. Launch notes: [deferred-public-origin-auth-redirects.md](deferred-public-origin-auth-redirects.md).
 
 ## UI configuration rules
 

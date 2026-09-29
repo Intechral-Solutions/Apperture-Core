@@ -79,7 +79,8 @@ the **hosts** are fixed on purpose: SameSite is decided by *site*, not port, so 
 
 Lifecycle: everything is created once (xunit collection fixture) and disposed once. The only child process
 is Ui.Server; it is tracked by PID, assigned to a Windows kill-on-close **job object** (so even an aborted test
-run cannot orphan it) and killed by exact handle on disposal. No `taskkill`/`Stop-Process` by name is ever
+run cannot orphan it; on Linux, including CI, there is no job object and the exact-handle kill below is the only
+mechanism) and killed by exact handle on disposal. No `taskkill`/`Stop-Process` by name is ever
 used. Playwright's own driver and browsers exit with the test process. Host and Ui.Server output is kept in
 memory and printed only on startup failure.
 
@@ -146,9 +147,10 @@ item. Everything else runs on Chromium only, for runtime cost.
 
 ## Compatibility with the approved design (D1–D9)
 
-The harness already records the platform request header (`X-Apperture-Request`), the background marker
-(`X-Apperture-Background`), `Origin`, `Sec-Fetch-*` and Set-Cookie attributes, so SEC-1B1 (Origin + header +
-Fetch Metadata) and SEC-1A3 (non-renewing background traffic). SEC-1B3 cookie Secure is proven at host
-configuration (Always in Production/Staging; SameAsRequest on this HTTP harness). SEC-1B4 is the blocking
-`browser-security` CI job (I-2). Signing in uses `POST /api/auth/local/login` through
-`BrowserHarness.SignInAsync`; when Rule U lands, that one helper gains the trusted `Origin` and header.
+The harness records the platform request header (`X-Apperture-Request`), the background marker
+(`X-Apperture-Background`), `Origin`, `Sec-Fetch-*` and Set-Cookie attributes, which is what the SEC-1B1 (Origin +
+header + Fetch Metadata) and SEC-1A3 (non-renewing background traffic) proofs assert. SEC-1B3 cookie Secure is proven
+at host configuration (Always outside Development and `Testing`; SameAsRequest on this HTTP harness). SEC-1B4 is the
+blocking `browser-security` CI job (I-2). Signing in uses `POST /api/auth/local/login` through
+`BrowserHarness.SignInAsync`, which sends the trusted `Origin` and `X-Apperture-Request: 1` like the real client.
+Requirement closure and the remaining manual items: [SEC-1 closure audit](../../docs/audits/sec1-browser-session-security-closure.md).

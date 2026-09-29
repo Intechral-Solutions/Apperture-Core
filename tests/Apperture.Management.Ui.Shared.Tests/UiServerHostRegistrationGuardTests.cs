@@ -43,6 +43,14 @@ public sealed class UiServerHostRegistrationGuardTests
         program.Should().NotContain("appertureShell.debugLog");
     }
 
+    [Fact]
+    public void The_ui_server_refuses_to_be_framed()
+    {
+        var program = ReadProgram();
+        program.Should().Contain("response.Headers.XFrameOptions = \"DENY\";");
+        program.Should().Contain("response.Headers.ContentSecurityPolicy = \"frame-ancestors 'none'\";");
+    }
+
     private static string ReadProgram()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

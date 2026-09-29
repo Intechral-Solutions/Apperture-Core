@@ -16,7 +16,9 @@ first GitHub Actions execution reached BrowserTests but failed at Management.Hos
 default, §47.6), and a sequence of remediation runs (§47.6–§47.15) led to a final pull-request workflow in which
 both `build-and-test` and `browser-security` passed on Ubuntu (§47.16). The `master` ruleset lists both as required
 checks, but GitHub does not enforce it on this private repository under the current plan, so both checks are
-procedurally required before merge (§47.16). SEC-1C has not started.** SEC-1 is not complete.
+procedurally required before merge (§47.16). SEC-1C (ADR-0045 and the closure audit) is **complete** and recorded in §48:
+SEC-1 engineering closure is complete. SEC-1 is **not Done**: the independent final security review, operator smoke and
+merge remain ([closure audit](../../../audits/sec1-browser-session-security-closure.md)).**
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -43,7 +45,7 @@ Brief discrepancies found while verifying the brief:
 - **IAM-8 was absent from committed documentation.** It is now added to the roadmap as item 7b, after SEC-1 and before navigation /
   cross-context grouping (item 8). That keeps the existing item-8 references valid.
 - The transitions README did not list this set. It is updated with this gate. The README's missing rows for `components-services-catalog/`
-  and `resource-contexts/` are pre-existing and left for SEC-1C or a housekeeping pass.
+  and `resource-contexts/` are pre-existing and left for SEC-1C or a housekeeping pass. *(Added in SEC-1C, §48.)*
 - `UiDev` CORS is not merely "present broadly": it is **applied unconditionally** (`app.UseCors("UiDev")`), with a hard-coded origin list.
 
 ---
@@ -60,16 +62,21 @@ Brief discrepancies found while verifying the brief:
 | F6 | With auto-redirect to Entra enabled, `/login?error=…` redirects to Entra again, which can loop. **Corrected by SEC-1.0:** no loop; the feature effectively never fired on a real entry (N2). | Code fact (logic); loop **not reproduced** | 1A2a — **corrected and fixed (§40)**: the feature works, once, and never on an error |
 | F7 | In production, a cancelled or failed Entra sign-in (`OnRemoteFailure`) is unhandled, so the operator gets a raw 500 `problem+json` document on the API host. | Code fact; reproduced in browsers by SEC-1.0 | 1A2a — **fixed (§40)** |
 | F8 | Step-up reads the ordinary SameSite=Lax session cookie inside Microsoft's cross-site `form_post` callback. | Code fact (dependency). Reproduced on Chromium and Firefox by SEC-1.0 | 1A2b — **fixed in Chromium and Firefox (§41)**; real Entra and Safari remain manual checks |
-| F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 |
-| F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half) |
+| F9 | Background polling renews the 12 h sliding cookie, so a passive tab never idles out. | Code fact (renewal eligibility). The observed lifetime is a browser finding. | 1A3 — **fixed (§43)** |
+| F10 | The Toast watcher polls forever after a 401 (300 s backoff). `RunDetail` polling hits 401 every 2 s. | Code fact | 1A1 (401 half — **fixed, §39**) / 1A3 (renewal half — **fixed, §43**) |
 | F11 | There is no request-forgery layer. 33 bodyless POSTs, one multipart POST and several nullable-body POSTs can be driven by a plain form from any same-site origin. | Code fact. Cookie attachment is a **browser finding**. | 1B1 — **fixed (§44)** |
 | F12 | Two GETs write Apperture state (Entra directory users/groups). `GET /signout` ends the session (§18.1). | Code fact | 1B2 — **fixed (§45)** |
-| F13 | `UiDev` credentialed CORS is applied in every environment. | Code fact | 1B3 |
-| F14 | `Management.Api` has a standalone `Program.cs` with allow-any-origin CORS, no auth, and a launch profile on the API's port 9000. There is no supported standalone deployment. | Code fact | 1B3 |
-| F15 | `Ui.Server` startup appends to the hard-coded file `f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log` in every environment. Leftover agent-log script and `appertureShell.debugLog` calls (an undefined function) remain. | Code fact | 1B3 |
-| F16 | Cookie `Secure` is `SameAsRequest` in every environment, and SameSite relies on the framework default. | Code fact | 1B3 |
-| F17 | 33 `ManagementClient` methods collapse 401/403 (sometimes 404) to `null`. | Code fact. Harmless once the handler owns 401 (F1); the 403 UX part is deferred (§37). | — |
+| F13 | `UiDev` credentialed CORS is applied in every environment. | Code fact | 1B3 — **fixed (§46)** |
+| F14 | `Management.Api` has a standalone `Program.cs` with allow-any-origin CORS, no auth, and a launch profile on the API's port 9000. There is no supported standalone deployment. | Code fact | 1B3 — **fixed (§46)** |
+| F15 | `Ui.Server` startup appends to the hard-coded file `f:\Code\Apperture\Apperture-Core\debug-4bd3d8.log` in every environment. Leftover agent-log script and `appertureShell.debugLog` calls (an undefined function) remain. | Code fact | 1B3 — **fixed (§46)** |
+| F16 | Cookie `Secure` is `SameAsRequest` in every environment, and SameSite relies on the framework default. | Code fact | 1B3 — **fixed (§46)** |
+| F17 | 33 `ManagementClient` methods collapse 401/403 (sometimes 404) to `null`. | Code fact. Harmless once the handler owns 401 (F1); the 403 UX part is deferred (§37). | — (deferred, §37) |
 | F18 | Nullable `[FromBody]` POSTs accept an empty body (e.g. `procedures/{p}/launch` launches with defaults). | Pinned (§44): a trusted empty POST reaches the action; an untrusted one is 403 before it | 1B1 — **pinned** |
+| I-1 | External `http://schemas.apperture/` claims on a validated Entra principal were trusted (A-series review). | Code fact | 1A2b follow-up — **fixed (§42)** |
+| I-2 | The browser suite was gated off in normal CI (A-series review). | Code fact | 1B4 — **fixed (§47.16)** |
+
+Final state of every finding, including the harness-discovered N1–N6, residuals and deferrals: [closure audit](../../../audits/sec1-browser-session-security-closure.md)
+(§48). N1 (View selector `context=all` in return targets) is a closed design clarification, not a security finding: the value is benign on-origin application state and is preserved.
 
 ### 0.1 SEC-1.0 evidence register (2026-09-24)
 
@@ -386,7 +393,7 @@ Reuse the existing carriers:
   - session/local storage (not visible to the host redirect, cross-tab bleed, races);
   - server temp state (no server session exists);
   - a new OIDC property (`RedirectUri` already is that property).
-- Return targets are stable routes. They carry no View-selector or future-grouping state.
+- Return targets are stable routes. Safe captured targets may preserve ordinary application-local query state, including the View selector's `context=all`. Return-target validation governs destination safety; it does not strip benign on-origin UI state merely because it appears in the query string. Query parameters that participate in authentication protocol handling, or that would otherwise make the destination unsafe, remain governed by their specific validation rules.
 
 ## 14. Open-redirect protection — approved (mandatory item)
 
@@ -921,12 +928,12 @@ the header would break every UI mutation, so the two must land atomically. SEC-1
 | **SEC-1.0 — browser proof harness** — **delivered 2026-09-24 (§0.1, §38)** | `tests/Apperture.BrowserTests` (opt-in Playwright): self-hosted Management.Host + Ui.Server, stub OIDC provider on `127.0.0.1`, attacker pages, session-loss helpers, three-engine Origin probe. **Characterization tests** for F1, F3, F4, F5, F6, F8, F9, F11 and return-target/history behavior. Records which findings are proven and updates §0. No production behavior change. | — | Harness self-tests + characterizations |
 | **SEC-1A1 — session-loss detection and recovery** — **delivered (§39)** | `AuthRecoveryHandler`, `SessionRecoveryCoordinator` (probe, single-flight, exclusions, public-route inertness, loop breaker, `reason=expired` panel), `SessionStateService.MarkSignedOut` + distinct availability/identity states, service-unavailable surface (D8), account-unavailable surface (D5), `GetAccessRequestSessionAsync` 5xx fix, `[Authorize]` coverage guard | 1.0 | §29.1 |
 | **SEC-1A2 — return URL and login/error/step-up** — **split; SEC-1A2a delivered (§40), SEC-1A2b (step-up continuation) delivered (§41)** | `LocalReturnUrl` (shared; both old validators deleted; single-validator guard), fragment capture, reserved paths; `OnRemoteFailure` always handled; login error panel + no auto-redirect on `error` / recent marker; **step-up continuation per §26 if F8 is proven**. *If step-up needs the redesign, split it out as SEC-1A2b so the return-URL fix is not held back.* | 1.0 | §29.2, §29.3 |
-| **SEC-1A3 — background requests, renewal and capability refresh** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
-| **SEC-1B1 — server request-forgery policy** | `BrowserRequestTrustMiddleware` + options (exact trusted origins, Mode, startup validation), Rules U/G/N, exemption metadata on `Enroll` + OIDC path exemptions, `problem+json` 403, logging/meter, **client `X-Apperture-Request` header in the same change**, test-factory default handler, F18 pin, guards (exemptions, order, header literals) | 1.0 | §29.4 (I, S) |
-| **SEC-1B2 — endpoint verb cleanup and logout** | G1/G2 → POST (+ client); re-confirm G3–G5 and G9b classifications; `/signout` → POST with Rule N + hidden-form UI in three places; remove GET `/signout` and unused `POST auth/local/logout`; remove Ui.Server's dead `HttpClient`/`ManagementClient`/capabilities registrations; GET-classification guard | 1B1 | §29.4 verb/logout rows |
-| **SEC-1B3 — CORS, cookie and host cleanup** | `UiDev` Development-only + exact configured origin + narrowed methods/headers + any-origin guard; explicit `SameSite=Lax`; `SecurePolicy=Always` outside Development (all three cookies); `frame-ancestors`/`X-Frame-Options`; **`Management.Api` → class library** (drop `Program.cs`, launch profile, `.vscode` entry, stub host test; repoint the placeholder `generate-openapi.ps1` at Management.Host) under the D7 STOP condition; **remove the Ui.Server debug filesystem write, the `_Layout` agent-log script and `appertureShell.debugLog` calls** | 1B1 | §29.5, §29.6, §29.7 |
-| **SEC-1B4 — browser and integration security proof** | Flip every remaining characterization; run the full §29 B matrix against rebuilt, restarted hosts; manual real-Entra smoke (§29.3 M) | all above | — |
-| **SEC-1C — docs and closure** | ADR (browser request trust + session recovery + GET-safety rule); update `next-stage-platform-auth.md`, ADR-0042 (watcher: background, non-renewing), ADR-0044 (its POST+JSON measure is superseded as a pattern by SEC-1), deferred-public-origin (CORS/cookie/`ManagementUiUrl` parts done), decisions index, transitions README; closure audit with evidence; roadmap status | all | — |
+| **SEC-1A3 — background requests, renewal and capability refresh** — **delivered (§43)** | `BrowserRequestHeadersHandler` background part + `BackgroundRequest` scope; Toast watcher, `RunDetail` poll and automatic unread-count refresh marked; host `OnCheckSlidingExpiration` (D9); timer guard; sign-in full-load guard; single-watcher test | 1A1 (header handler: 1B1 or 1A3, whichever lands first creates it) | §29.1 background rows, §29.6 renewal rows |
+| **SEC-1B1 — server request-forgery policy** — **delivered (§44)** | `BrowserRequestTrustMiddleware` + options (exact trusted origins, Mode, startup validation), Rules U/G/N, exemption metadata on `Enroll` + OIDC path exemptions, `problem+json` 403, logging/meter, **client `X-Apperture-Request` header in the same change**, test-factory default handler, F18 pin, guards (exemptions, order, header literals) | 1.0 | §29.4 (I, S) |
+| **SEC-1B2 — endpoint verb cleanup and logout** — **delivered (§45)** | G1/G2 → POST (+ client); re-confirm G3–G5 and G9b classifications; `/signout` → POST with Rule N + hidden-form UI in three places; remove GET `/signout` and unused `POST auth/local/logout`; remove Ui.Server's dead `HttpClient`/`ManagementClient`/capabilities registrations; GET-classification guard | 1B1 | §29.4 verb/logout rows |
+| **SEC-1B3 — CORS, cookie and host cleanup** — **delivered (§46)** | `UiDev` Development-only + exact configured origin + narrowed methods/headers + any-origin guard; explicit `SameSite=Lax`; `SecurePolicy=Always` outside Development (all three cookies); `frame-ancestors`/`X-Frame-Options`; **`Management.Api` → class library** (drop `Program.cs`, launch profile, `.vscode` entry, stub host test; repoint the placeholder `generate-openapi.ps1` at Management.Host) under the D7 STOP condition; **remove the Ui.Server debug filesystem write, the `_Layout` agent-log script and `appertureShell.debugLog` calls** | 1B1 | §29.5, §29.6, §29.7 |
+| **SEC-1B4 — browser and integration security proof** — **delivered as the CI gate (§47)** | Flip every remaining characterization; run the full §29 B matrix against rebuilt, restarted hosts; manual real-Entra smoke (§29.3 M). *As delivered, B4 was scoped to I-2 (§47): each earlier slice had already flipped its characterizations, and the suite runs on every pull request as the blocking `browser-security` job. The manual real-Entra and Safari items moved to operator smoke after SEC-1C (closure audit checklist).* | all above | — |
+| **SEC-1C — docs and closure** — **delivered (§48)** | ADR (browser request trust + session recovery + GET-safety rule); update `next-stage-platform-auth.md`, ADR-0042 (watcher: background, non-renewing), ADR-0044 (its POST+JSON measure is superseded as a pattern by SEC-1), deferred-public-origin (CORS/cookie/`ManagementUiUrl` parts done), decisions index, transitions README; closure audit with evidence; roadmap status | all | — |
 
 SEC-1A and SEC-1B are independent after SEC-1.0 and may interleave. No slice is a platform-wide change in one task.
 
@@ -1021,6 +1028,7 @@ keeps renewing. All recurring and automatic requests are audited (§10, §16), a
   They meet at one client pipeline and one server middleware slot. There is no omnibus security service.
 - **Next step: SEC-1.0.** No production fix lands before its characterization tests exist for the finding it addresses.
 - SEC-1 is **not** complete. Only the design gate is.
+- *(Readiness as of 2026-09-24. Current state: every slice is delivered and engineering closure is complete, §48.)*
 
 ## 36. Implementation requirements (binding)
 
@@ -2188,6 +2196,55 @@ This is the first branch state on which the complete relevant workflow is green.
 
 The ruleset is kept in place so that it is enforced automatically if the organization gains the capability or the repository or collaboration model changes. No status-check configuration is missing, and this is not an outstanding SEC-1B4 engineering task.
 
-**SEC-1B4 is complete.** No further B4 code or workflow work remains. SEC-1C (the ADR and closure audit) has **not** started, and SEC-1 as a whole is not complete until SEC-1C.
+**SEC-1B4 is complete.** No further B4 code or workflow work remains. SEC-1C (the ADR and closure audit) has **not** started, and SEC-1 as a whole is not complete until SEC-1C. *(SEC-1C is recorded in §48.)*
+
+---
+
+## 48. SEC-1C — documentation and closure (2026-09-29)
+
+Scope, from §32: the ADR, the named documentation updates, the closure audit with evidence, and roadmap status. No product
+behavior changed. Not in this slice: the independent final security review, operator smoke, merge, IAM-8, navigation
+grouping, and every item in §37.
+
+### 48.1 Delivered
+
+- [ADR-0045](../../../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md): browser session recovery, request
+  trust (Rules U, G, N) and the GET-safety rule, as built.
+- [Closure audit](../../../audits/sec1-browser-session-security-closure.md): requirement closure matrix (REQ-1…REQ-19),
+  final finding register (F1–F18, D2, I-1, I-2, N1–N6), accepted residuals, deferrals, the cross-slice consistency review,
+  the test-only infrastructure audit, CI and ruleset state, evidence reconciliation, and the pending operator smoke
+  checklist.
+- ADR-0042 addendum (the Toast watcher is background and non-renewing; a 401 goes to session recovery). ADR-0044 status
+  note (its POST + JSON measure is superseded as a pattern by ADR-0045). `next-stage-platform-auth.md`,
+  `deferred-public-origin-auth-redirects.md` (items 1 and 4 done by SEC-1B3), `management-platform-configuration.md`
+  (`ShellUi:ManagementUiUrl` and `BrowserRequestTrust:Mode`), the decisions index, the transitions README (security row;
+  the missing `components-services-catalog/` and `resource-contexts/` rows), the BrowserTests README, and roadmap item 7a.
+- One §29.7 evidence gap closed: Ui.Server emitted `X-Frame-Options: DENY` and `frame-ancestors 'none'` but no test asserted
+  it. `UiServerHostRegistrationGuardTests.The_ui_server_refuses_to_be_framed` now does.
+- In this gate: the §0 register carries final statuses (and I-1, I-2), the §32 table marks every slice delivered and records
+  the B4 scope as delivered, and §35 points here. §13 now records that safe captured return targets may preserve ordinary
+  application-local query state, including `context=all`; N1 is closed as a design clarification. Per-slice finding tables
+  (§39.5, §40.8, §43.3, §44.8, §45.9, §46.7, §47.5) are as of their slice and are not rewritten.
+
+### 48.2 Results
+
+Every binding requirement is closed. No unresolved defect was found in the consistency review. Layer substitutions (a §29 B
+row evidenced by unit tests or by construction) are listed in the closure audit rather than claimed as browser proof.
+**N1** (the View selector's `context=all` in captured return targets) is a closed design clarification, not a security
+finding: it is benign on-origin application-local UI state, preserved by the safe-return-target model; §13 records that
+and no product-code change was required. N4 (the development client resolves any loopback UI to API port 9000) is a
+development-topology observation outside the requirements; Rule U makes a mis-pointed UI fail closed on mutations.
+
+### 48.3 Validation
+
+`git diff --check`. The new guard fact, run with its class: `UiServerHostRegistrationGuardTests` **11 passed, 0 failed**
+(repo-local `artifacts/sec1c-uishared`). The full suites were not
+re-run: §32 assigns documentation and a closure audit, and REQ-19 requires citing evidence, not regenerating it. The latest
+full local run is SEC-1B3 (§46.6); the latest remote proof is §47.16.
+
+### 48.4 Lifecycle
+
+**SEC-1 engineering closure is complete. SEC-1 is not Done.** Remaining, in order: the independent final whole-body
+security review, operator smoke (closure audit checklist), and merge with `build-and-test` and `browser-security` green.
 
 
