@@ -26,12 +26,20 @@ var apiUri = apiBaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
     : new Uri(new Uri(builder.HostEnvironment.BaseAddress), apiBaseUrl.TrimStart('/'));
 
 builder.Services.AddScoped<IncludeCredentialsHandler>();
+builder.Services.AddScoped<BrowserRequestHeadersHandler>();
+builder.Services.AddSessionRecovery(apiUri);
 
+// The single HttpClient pipeline every Management UI request uses. Order matters:
+// IncludeCredentialsHandler -> BrowserRequestHeadersHandler -> AuthRecoveryHandler -> HttpClientHandler.
 builder.Services.AddScoped(sp =>
 {
-    var handler = sp.GetRequiredService<IncludeCredentialsHandler>();
-    handler.InnerHandler = new HttpClientHandler();
-    return new HttpClient(handler) { BaseAddress = apiUri };
+    var credentials = sp.GetRequiredService<IncludeCredentialsHandler>();
+    var headers = sp.GetRequiredService<BrowserRequestHeadersHandler>();
+    var recovery = sp.GetRequiredService<AuthRecoveryHandler>();
+    credentials.InnerHandler = headers;
+    headers.InnerHandler = recovery;
+    recovery.InnerHandler = new HttpClientHandler();
+    return new HttpClient(credentials) { BaseAddress = apiUri };
 });
 
 builder.Services.AddScoped<DomainMenuService>(sp =>

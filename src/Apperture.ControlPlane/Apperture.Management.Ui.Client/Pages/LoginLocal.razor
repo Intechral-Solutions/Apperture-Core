@@ -25,26 +25,23 @@
             <LocalLoginFormSection ReturnPath="@_returnPath" />
         </div>
         <p class="mt-4 text-center text-xs text-muted">
-            <a class="underline hover:text-heading" href="/login@(string.IsNullOrEmpty(_rawReturnQuery) ? "" : "?" + _rawReturnQuery)">Back to main sign-in</a>
+            <a class="underline hover:text-heading" href="/login@(_returnQuery.Length == 0 ? "" : "?" + _returnQuery)">Back to main sign-in</a>
         </p>
     }
 </div>
 
 @code {
     private Apperture.Management.Client.AuthSignInOptionsDto? _opts => SignInOptions.Current;
+    /// <summary>The validated return target (shared <see cref="LocalReturnUrl"/> policy), or null for the default route.</summary>
     private string? _returnPath;
-    private string? _rawReturnQuery;
+    private string _returnQuery = "";
 
     protected override async Task OnInitializedAsync()
     {
         if (SignInOptions.Current is null)
             await SignInOptions.RefreshAsync();
 
-        var raw = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
-        if (raw is not null)
-        {
-            _returnPath = LoginRouteHelper.NormalizeReturnUrl(raw);
-            _rawReturnQuery = $"returnUrl={Uri.EscapeDataString(raw)}";
-        }
+        _returnPath = LoginRouteHelper.ReadReturnTarget(Nav.Uri);
+        _returnQuery = LoginRouteHelper.BuildReturnQuery(_returnPath);
     }
 }

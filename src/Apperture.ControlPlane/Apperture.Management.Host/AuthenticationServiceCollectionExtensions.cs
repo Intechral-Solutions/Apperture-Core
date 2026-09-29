@@ -3,6 +3,7 @@ using Apperture.Core.Application.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,7 @@ public static class AuthenticationServiceCollectionExtensions
 
         services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();
+        services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>, ManagementCookiePolicyPostConfigure>();
 
         services.AddAuthentication()
             .AddCookie(CookieScheme, options =>
@@ -57,8 +59,6 @@ public static class AuthenticationServiceCollectionExtensions
                     options.CallbackPath = "/signin-oidc";
                 if (!options.SignedOutCallbackPath.HasValue)
                     options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
-                if (!options.RemoteSignOutPath.HasValue)
-                    options.RemoteSignOutPath = EntraSignOut.RemoteSignOutPath;
                 options.ResponseType ??= "code";
                 if (options.Scope.Count == 0)
                 {
@@ -66,6 +66,14 @@ public static class AuthenticationServiceCollectionExtensions
                     options.Scope.Add("profile");
                 }
             });
+
+        // After every configurer, including when Entra is disabled. Front-channel logout is off: the SameSite=Lax
+        // cookie is not sent on Microsoft's cross-site iframe, so a live RemoteSignOutPath would only serve top-level
+        // navigations that Entra itself does not use.
+        services.PostConfigure<OpenIdConnectOptions>(OpenIdConnectScheme, options =>
+        {
+            options.RemoteSignOutPath = PathString.Empty;
+        });
 
         return services;
     }

@@ -56,6 +56,67 @@ public sealed class EntraSignInChallengeTests
         properties.RedirectUri.Should().Be("http://localhost:9001/control/center");
     }
 
+    [Theory]
+    [InlineData("/connections/abc?x=1#notes", "http://localhost:9001/connections/abc?x=1#notes")]
+    [InlineData("/connections/abc#notes", "http://localhost:9001/connections/abc#notes")]
+    [InlineData("/connections/a%2Fb?q=a%20b", "http://localhost:9001/connections/a%2Fb?q=a%20b")]
+    [InlineData("/components/connector/Apperture.Platform.Sql", "http://localhost:9001/components/connector/Apperture.Platform.Sql")]
+    public void A_path_query_and_fragment_return_target_reaches_the_redirect_uri_unchanged(string returnUrl, string expected) =>
+        EntraSignInChallenge.CreateProperties(Config(), returnUrl).RedirectUri.Should().Be(expected);
+
+    [Theory]
+    [InlineData("/\\evil.example")]
+    [InlineData("/\t/evil.example")]
+    [InlineData("/\r\n/evil.example")]
+    [InlineData(" /\\evil.example")]
+    [InlineData("/login?returnUrl=%2F%5Cevil.example")]
+    [InlineData("/%5Cevil.example")]
+    [InlineData("/.//evil.example")]
+    public void The_hostile_corpus_never_becomes_a_redirect_uri(string returnUrl) =>
+        EntraSignInChallenge.CreateProperties(Config(), returnUrl).RedirectUri.Should().Be("http://localhost:9001/control/center");
+
+    [Fact]
+    public void The_redirect_uri_authority_is_always_the_configured_ui_origin()
+    {
+        var properties = EntraSignInChallenge.CreateProperties(Config("https://ui.example.com"), "/connections/abc?next=https://evil.example#x");
+
+        properties.RedirectUri.Should().StartWith("https://ui.example.com/");
+        new Uri(properties.RedirectUri!).Host.Should().Be("ui.example.com");
+    }
+
+    [Theory]
+    [InlineData("/account", "steppedUp", "1", "http://localhost:9001/account?steppedUp=1")]
+    [InlineData("/x?a=1", "steppedUp", "1", "http://localhost:9001/x?a=1&steppedUp=1")]
+    // The parameter is inserted before the fragment, or it would be swallowed by it.
+    [InlineData("/x#notes", "steppedUp", "1", "http://localhost:9001/x?steppedUp=1#notes")]
+    [InlineData("/x?a=1#notes", "error", "oidc", "http://localhost:9001/x?a=1&error=oidc#notes")]
+    [InlineData("/login", "error", "cancelled", "http://localhost:9001/login?error=cancelled")]
+    public void A_query_parameter_is_added_before_any_fragment(string path, string key, string value, string expected) =>
+        ManagementUiRedirects.Build(Config(), path, key, value).Should().Be(expected);
+
+    [Theory]
+    [InlineData("//evil.example")]
+    [InlineData("/\\evil.example")]
+    [InlineData("evil.example")]
+    public void Build_falls_back_to_the_ui_root_for_a_path_that_is_not_a_browser_stable_local_path(string path) =>
+        ManagementUiRedirects.Build(Config(), path).Should().Be("http://localhost:9001/");
+
+    [Fact]
+    public void The_shared_reserved_list_covers_every_host_auth_surface()
+    {
+        // Drift guard: the shared policy (Ui.Shared) cannot reference Host constants, so pin it against them here.
+        string[] hostAuthPaths =
+        [
+            "/signin", "/signin/link", "/signin/step-up", "/signin-oidc", "/signout",
+            EntraSignOut.SignedOutCallbackPath, "/signout-oidc",
+            new EntraAuthOptions().CallbackPath,
+            EntraLinkFlowConstants.LoginPath, EntraLinkFlowConstants.AccessRequestPath, "/login/local",
+        ];
+
+        foreach (var path in hostAuthPaths)
+            Apperture.Management.Ui.Shared.Auth.LocalReturnUrl.IsReservedAuthPath(path).Should().BeTrue(path);
+    }
+
     [Fact]
     public void EnsureSafe_replaces_the_host_signin_loop_target()
     {

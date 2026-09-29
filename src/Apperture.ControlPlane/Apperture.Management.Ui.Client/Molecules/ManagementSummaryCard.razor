@@ -1,5 +1,4 @@
 @inject NavigationManager Nav
-@inject IJSRuntime Js
 
 @if (!string.IsNullOrWhiteSpace(Href))
 {
@@ -60,36 +59,11 @@ else
     private void OnNavigateClick()
     {
         var href = Href;
-        // #region agent log
-        _ = LogNavAsync("click-scheduled", href);
-        // #endregion
         _ = InvokeAsync(async () =>
         {
             await Task.Delay(1);
-            // #region agent log
-            await LogNavAsync("navigate-before", href);
-            // #endregion
             if (!string.IsNullOrWhiteSpace(href))
                 Nav.NavigateTo(href);
-            // #region agent log
-            await LogNavAsync("navigate-after", href);
-            // #endregion
         });
     }
-
-    // #region agent log
-    private async Task LogNavAsync(string message, string? href)
-    {
-        try
-        {
-            await Js.InvokeVoidAsync(
-                "appertureShell.debugLog",
-                "ManagementSummaryCard.razor:OnNavigateClick",
-                message,
-                "H4",
-                new Dictionary<string, object?> { ["href"] = href });
-        }
-        catch { /* ignore */ }
-    }
-    // #endregion
 }

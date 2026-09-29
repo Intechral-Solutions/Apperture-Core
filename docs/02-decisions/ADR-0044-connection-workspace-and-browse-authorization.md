@@ -7,6 +7,13 @@ Accepted (delivered 2026-09-24). Design and rulings: the
 (approved 2026-09-23, rulings D-S1…D-S4). Implementation account and evidence:
 [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md).
 
+**Addendum (SEC-1, 2026-09-29).** The request-forgery paragraph under *The SQL structure browser* records the measure these
+endpoints shipped with: POST, a required JSON body and the `SameSite=Lax` cookie. That measure is **superseded as a
+pattern** by the platform-wide browser request trust in
+[ADR-0045](ADR-0045-browser-session-recovery-and-request-trust.md): every unsafe `/api` request, these included, now needs
+the exact configured UI `Origin` and the platform request header, and explicit cross-site Fetch Metadata is refused. The
+endpoints keep POST and the JSON contract; new endpoints must not copy the per-endpoint measure as their protection.
+
 ## Context
 
 The roadmap called for a "Service" capability: an operator experience over one configured Connection (settings,

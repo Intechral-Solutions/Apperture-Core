@@ -144,9 +144,52 @@ reset, cutting across several of them.
    [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md). An arbitrary SQL/query console,
    row preview, SFTP/Campus Nexus tools and capability advertisement remain future work, each behind its own gate.
 7a. **SEC-1 — Browser Session & Request-Forgery Hardening** — **design gate complete and approved (2026-09-24);
-   implementation not started.** Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
-   (beginning with a browser-proof harness, SEC-1.0) are in
+   engineering closure complete (SEC-1C, 2026-09-29); independent final review passed with only non-blocking findings;
+   pending operator smoke and merge.** Decision record: [`ADR-0045`](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md);
+   closure and evidence: [`sec1-browser-session-security-closure.md`](../audits/sec1-browser-session-security-closure.md).
+   Rulings D1–D9, the approved architecture and the SEC-1.0…SEC-1C implementation slices
+   are in
    [`sec1-browser-session-request-forgery-design-gate.md`](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md).
+   **SEC-1.0 (the opt-in Playwright browser proof harness and the baseline reproduction of the browser findings) is
+   delivered** on branch `sec-1-browser-security` with its evidence recorded in the gate (§0.1). **SEC-1A1 (centralized
+   expired-session recovery) is implemented on that branch (gate §39), and **SEC-1A2a (the shared safe return-target policy,
+   the normal sign-in and failed/cancelled Entra sign-in flow) is implemented on it (gate §40), and **SEC-1A2b (Entra step-up
+   continuation across the cross-site OIDC callback) is implemented on it (gate §41; real Entra and Safari remain manual checks),
+   SEC-1A3 (background requests do not renew the sliding session) is implemented on it (gate §43), and SEC-1B1 (the platform
+   browser request-forgery policy) is implemented on it (gate §44), and SEC-1B2 (sign-out as a trusted POST, Rule N for the
+   step-up and link navigations, the Entra directory searches as POST) is implemented on it (gate §45), and SEC-1B3 (Development-only
+   CORS, Production `ManagementUiUrl` refusal, Secure cookies, Management.Api class library, Ui.Server debug cleanup) is implemented
+   on it (gate §46), and SEC-1B4 (the blocking `browser-security` CI job for I-2) is implemented on it (gate §47).
+   The first Ubuntu `browser-security` run failed at Management.Host startup on the Windows-only DPAPI secret default
+   (gate §47.6). The second Ubuntu `browser-security` run passed. The same workflow's `build-and-test` job failed:
+   IntegrationTests' Management Host still started without a non-Windows protector, so all 205 host cases failed and
+   the other 77 passed (gate §47.7). The third `build-and-test` started Management Host; the remaining failures were
+   Entra-linking local-user setup returning 403 because the test client authenticated as the first local username
+   rather than a platform administrator (gate §47.8). The fourth `build-and-test` threw because that catalog had
+   ordinary users and no platform administrator, so first-admin bootstrap was already closed (gate §47.9).
+   The fifth `build-and-test` reached the SQL structure-browser unreachable proof, which returned Failed
+   instead of RemoteUnavailable on Ubuntu (gate §47.10). The sixth `build-and-test` reached six
+   toast-delta failures where a partial composite cursor hit `SqlNotificationUserInboxStore`
+   (gate §47.11). The seventh `build-and-test` reports six IntegrationTests failures that Copilot
+   attributed to an SA password mismatch; the checked-in workflow is not truncated, 283 tests
+   connected to SQL, and the six failures are governance Launch/Start 403s plus the unreachable
+   SQL outcome (gate §47.12). The thirteen Ui.Shared link/breadcrumb failures in that same job are a Unix
+   file-URI parse of rooted app paths (gate §47.13). The eighth `build-and-test` proved that URI fix
+   (Ui.Shared 1395/1395) and passed `browser-security`. The same six IntegrationTests failures remained.
+   A fresh governance catalog reproduces them: HelloWorld is enabled after the permission catalog snapshot,
+   so `workflow.execute` is unknown and launch is `workflow_start_forbidden`. The Ubuntu closed-port SQL
+   shape is Number 0 with `SocketError.Success` and is not classified as unreachable (gate §47.14).
+   The ninth `build-and-test` passed. `browser-security` failed one Account Security recovery fact
+   because the trace counted that page's own `auth/me` refresh together with the one coordinator probe
+   (gate §47.15). The assertion is still a single probe. The final pull-request workflow then passed both
+   `build-and-test` and `browser-security` on Ubuntu, so **SEC-1B4 is complete** and I-2 is closed (gate §47.16).
+   The `master` ruleset is configured to require `build-and-test` and `browser-security`. GitHub does not
+   currently enforce rulesets for this private organization repository under the current plan, so both
+   checks are procedurally required before merge until automatic enforcement becomes available.
+   SEC-1C (ADR-0045 and the closure audit) is complete (gate §48): every binding requirement is closed, residuals and
+   deferrals are recorded, and the operator smoke checklist is prepared but not executed. N1 (`context=all` in captured
+   return targets) is a closed design clarification, not a security finding: it is benign on-origin application state
+   and is preserved. SEC-1 is not Done: operator smoke and merge remain.**
    Sequenced after Services (item 7) and **before** IAM-8 (item 7b) and navigation / cross-context grouping (item 8). Numbered
    7a so existing references to item 8 stay valid. It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must

@@ -19,6 +19,7 @@ public static class AppertureUiShellServiceCollectionExtensions
         services.AddScoped<INotificationToastWatcher, NotificationToastWatcher>();
         services.AddScoped<SessionStateService>();
         services.AddScoped<AuthSignInOptionsService>();
+        services.AddScoped<ILoginAutoRedirectMarker, SessionStorageLoginAutoRedirectMarker>();
         services.AddScoped<ShellBootstrapState>();
         services.AddScoped<ShellHostNavigation>();
         services.AddScoped<ShellOrientationService>();

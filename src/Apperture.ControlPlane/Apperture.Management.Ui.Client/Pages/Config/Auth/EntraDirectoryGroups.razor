@@ -110,7 +110,7 @@
         _busy = true;
         try
         {
-            _result = await Client.GetEntraDirectoryGroupsAsync(
+            _result = await Client.SearchEntraDirectoryGroupsAsync(
                 RegistrationId,
                 string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
                 50);

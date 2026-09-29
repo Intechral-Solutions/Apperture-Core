@@ -17,6 +17,15 @@ public static class EntraStepUpFailureCodes
     public const string IdentityMismatch = "identity_mismatch";
     public const string AuthenticationContextNotSatisfied = "authentication_context_not_satisfied";
     public const string Unproven = "unproven";
+
+    /// <summary>The OIDC state did not carry the step-up continuation the callback requires (or carried an unknown one).</summary>
+    public const string ContinuationInvalid = "continuation_invalid";
+
+    /// <summary>The initiating session was a local one, and local sign-in is no longer available to that account (disabled instance-wide or credential disabled).</summary>
+    public const string LocalSessionUnavailable = "local_session_unavailable";
+
+    /// <summary>Step-up is not offered to this kind of session (emergency access, or a kind this build does not recognise). Initiation only.</summary>
+    public const string SessionKindUnsupported = "session_kind_unsupported";
 }
 
 /// <summary>Completes an Entra strong-authentication step-up after the OIDC callback.</summary>

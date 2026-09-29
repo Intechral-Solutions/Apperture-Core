@@ -624,9 +624,6 @@ public interface IManagementClient
 
     Task<EmergencyAccessPostureDto> GetEmergencyAccessAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Clears auth cookie (204).</summary>
-    Task LocalLogoutAsync(CancellationToken cancellationToken = default);
-
     /// <summary>Self-service local password change (204). Throws <see cref="HttpRequestException"/> on failure.</summary>
     Task ChangeLocalPasswordAsync(ChangeLocalPasswordRequest request, CancellationToken cancellationToken = default);
 
@@ -737,11 +734,11 @@ public interface IManagementClient
     /// <summary>Validates OpenID metadata for an Entra registration. Throws on 403/404.</summary>
     Task<ValidateOpenIdResponseDto?> ValidateEntraTenantOpenIdAsync(string id, CancellationToken cancellationToken = default);
 
-    /// <summary>Browses Entra directory users via Graph (discovery only).</summary>
-    Task<EntraDirectoryUsersApiDto?> GetEntraDirectoryUsersAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
+    /// <summary>Searches Entra directory users via Graph (POST: records the discovery outcome). Returns null on 401/403/404.</summary>
+    Task<EntraDirectoryUsersApiDto?> SearchEntraDirectoryUsersAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
 
-    /// <summary>Browses Entra directory groups via Graph (discovery only).</summary>
-    Task<EntraDirectoryGroupsApiDto?> GetEntraDirectoryGroupsAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
+    /// <summary>Searches Entra directory groups via Graph (POST: records the discovery outcome). Returns null on 401/403/404.</summary>
+    Task<EntraDirectoryGroupsApiDto?> SearchEntraDirectoryGroupsAsync(string id, string? search = null, int top = 25, CancellationToken cancellationToken = default);
 
     // --- Managed contacts (Epic 76) ---
 
@@ -2036,6 +2033,9 @@ public sealed record EntraDirectoryGroupItemDto(
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("mailNickname")] string? MailNickname,
     [property: JsonPropertyName("description")] string? Description);
+
+/// <summary>Body of a tenant directory search: the search text and page size.</summary>
+public sealed record EntraDirectorySearchRequestDto(string? Search, int Top = 25);
 
 public sealed record EntraDirectoryUsersApiDto(
     [property: JsonPropertyName("success")] bool Success,

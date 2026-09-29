@@ -499,7 +499,9 @@ public sealed class ResourceContextViewState(
         query[QueryParamName] = contextValue;
 
         var parts = query.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}");
-        return $"{uri.GetLeftPart(UriPartial.Path)}?{string.Join("&", parts)}";
+        // The fragment is not part of the query and is kept: dropping it here silently removed an operator's #anchor from the
+        // address bar, and with it from any sign-in return target captured afterwards (SEC-1A2a fragment preservation).
+        return $"{uri.GetLeftPart(UriPartial.Path)}?{string.Join("&", parts)}{uri.Fragment}";
     }
 
     public ValueTask DisposeAsync()

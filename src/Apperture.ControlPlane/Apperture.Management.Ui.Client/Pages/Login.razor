@@ -8,18 +8,40 @@
 @inject AuthSignInOptionsService SignInOptions
 @inject ShellHostNavigation HostNav
 @inject NavigationManager Nav
+@inject ILoginAutoRedirectMarker AutoRedirectMarker
 
 <div class="mx-auto max-w-md ui-section-panel p-6">
     <PageHeader Title="Sign in"
                 Subtitle="Sign in to the Apperture management console." />
 
-    @if (_accountNotLinkedError)
+    @if (_sessionExpired && _error == LoginErrorKind.None)
+    {
+        <PageMessage Kind="PageMessageKind.Info" Message="Your session has expired. Sign in to continue." />
+    }
+
+    @if (_error == LoginErrorKind.AccountNotLinked)
     {
         <PageMessage Kind="PageMessageKind.Error" Message="That Microsoft account is not connected to an Apperture user. Ask an administrator to link it, or sign in with your Apperture username and password." />
     }
-    else if (_oidcError)
+    else if (_error == LoginErrorKind.Cancelled)
     {
-        <PageMessage Kind="PageMessageKind.Error" Message="Microsoft sign-in did not complete. You can try again or use local sign-in if it is available." />
+        <PageMessage Kind="PageMessageKind.Error" Message="Sign-in was cancelled. You can try again or use local sign-in if it is available." />
+    }
+    else if (_error == LoginErrorKind.SignInFailed)
+    {
+        <PageMessage Kind="PageMessageKind.Error" Message="Sign-in with Microsoft didn't complete. You can try again or use local sign-in if it is available." />
+    }
+
+    @if (_error is LoginErrorKind.Cancelled or LoginErrorKind.SignInFailed && _opts is { EntraSignInEnabled: true })
+    {
+        <div class="mt-3">
+            <button type="button" class="btn btn-secondary" @onclick="GoEntra">Try again</button>
+        </div>
+    }
+
+    @if (_autoRedirecting)
+    {
+        <p class="mt-3 text-xs text-muted" role="status">Redirecting to Microsoft sign-in…</p>
     }
 
     @if (SignInOptions.LastError is not null)
@@ -67,7 +89,7 @@
                 @if (!_opts.ShowLocalSignInInPrimaryChooser && _opts.LocalSignInEnabled)
                 {
                     <p class="text-center text-sm">
-                        <a class="text-body underline hover:text-heading" href="/login/local@(string.IsNullOrEmpty(_rawReturnQuery) ? "" : "?" + _rawReturnQuery)">Sign-in problems — use local sign-in</a>
+                        <a class="text-body underline hover:text-heading" href="/login/local@(_returnQuery.Length == 0 ? "" : "?" + _returnQuery)">Sign-in problems — use local sign-in</a>
                     </p>
                 }
             }
@@ -81,67 +103,69 @@
 
 @code {
     private Apperture.Management.Client.AuthSignInOptionsDto? _opts => SignInOptions.Current;
+
+    /// <summary>The validated return target (shared <see cref="LocalReturnUrl"/> policy), or null for the default route.</summary>
     private string? _returnPath;
-    private string? _rawReturnQuery;
-    private bool _autoRedirected;
-    private bool _oidcError;
-    private bool _accountNotLinkedError;
+    private string _returnQuery = "";
+    private LoginErrorKind _error;
+    private bool _sessionExpired;
+    private bool _arrivedFromApp;
+    private bool _autoRedirectEvaluated;
+    private bool _autoRedirecting;
 
     protected override async Task OnInitializedAsync()
     {
+        // Everything the URL says is read before the (slow) options request, so the error panel is there from the first paint.
+        _sessionExpired = LoginRouteHelper.IsExpiredReason(Nav.Uri);
+        _error = LoginRouteHelper.ReadLoginError(Nav.Uri);
+        _arrivedFromApp = LoginRouteHelper.ArrivedFromApp(Nav.Uri);
+
+        // Only a target the shared policy accepts is ever kept or passed on: to the local form, to /login/local, or to Entra.
+        _returnPath = LoginRouteHelper.ReadReturnTarget(Nav.Uri);
+        _returnQuery = LoginRouteHelper.BuildReturnQuery(_returnPath);
+
         if (SignInOptions.Current is null)
             await SignInOptions.RefreshAsync();
-
-        var u = new Uri(Nav.Uri);
-        var q = u.Query.TrimStart('?');
-        foreach (var part in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var i = part.IndexOf('=');
-            if (i <= 0)
-                continue;
-            if (!part[..i].Equals("error", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var error = Uri.UnescapeDataString(part[(i + 1)..]);
-            if (error.Equals("account_not_linked", StringComparison.OrdinalIgnoreCase))
-            {
-                _accountNotLinkedError = true;
-                break;
-            }
-
-            if (error.Equals("oidc", StringComparison.OrdinalIgnoreCase))
-            {
-                _oidcError = true;
-                break;
-            }
-        }
-
-        var raw = LoginRouteHelper.GetReturnUrlRaw(Nav.Uri);
-        if (raw is not null)
-        {
-            _returnPath = LoginRouteHelper.NormalizeReturnUrl(raw);
-            _rawReturnQuery = $"returnUrl={Uri.EscapeDataString(raw)}";
-        }
     }
 
+    /// <summary>
+    /// The automatic redirect to Microsoft (an operator-configured policy). Evaluated once, on the first render after the
+    /// sign-in options are known: the options arrive after the first render, so a first-render-only check never saw them.
+    /// </summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _autoRedirected || _opts is null)
+        if (_autoRedirectEvaluated || _opts is null)
             return;
-        if (_opts.AutoRedirectToEntra && _opts.EntraSignInEnabled)
+
+        _autoRedirectEvaluated = true;
+        var recent = await AutoRedirectMarker.WasRecentAsync();
+        if (!LoginAutoRedirectPolicy.ShouldRedirect(
+                optionsLoaded: true,
+                _opts.AutoRedirectToEntra,
+                _opts.EntraSignInEnabled,
+                _error,
+                _arrivedFromApp,
+                recent))
         {
-            _autoRedirected = true;
-            await GoEntraAsync();
+            return;
         }
+
+        await AutoRedirectMarker.MarkAsync();
+        _autoRedirecting = true;
+        StateHasChanged();
+        GoEntra();
     }
 
     private Task GoEntraAsync()
     {
-        var host = HostNav.GetManagementHostBase(Nav);
-        var relative = string.IsNullOrEmpty(_returnPath)
-            ? "signin"
-            : "signin?returnUrl=" + Uri.EscapeDataString(_returnPath);
-        Nav.NavigateTo(new Uri(host, relative).ToString(), forceLoad: true);
+        GoEntra();
         return Task.CompletedTask;
+    }
+
+    private void GoEntra()
+    {
+        var host = HostNav.GetManagementHostBase(Nav);
+        var relative = _returnQuery.Length == 0 ? "signin" : "signin?" + _returnQuery;
+        Nav.NavigateTo(new Uri(host, relative).ToString(), forceLoad: true);
     }
 }

@@ -7,6 +7,7 @@
 | Apperture.Management.Ui.Shared.Tests | Static/source contract checks for shared UI |
 | Apperture.IntegrationTests | Integration tests (SQL Server, Management Host HTTP, SFTP) |
 | Apperture.EndToEndTests | Placeholder until real E2E workflow tests land |
+| Apperture.BrowserTests | Opt-in Playwright browser proof harness (SEC-1.0). Skipped unless `APPERTURE_BROWSER_TESTS=1`. CI runs the suite as the blocking `browser-security` job; see its [README](Apperture.BrowserTests/README.md) |
 
 ## Integration test SQL (important)
 
@@ -48,3 +49,5 @@ dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj
 ```
 
 See [Apperture.IntegrationTests/README-ManagementHostGovernance.md](Apperture.IntegrationTests/README-ManagementHostGovernance.md) for SFTP variables.
+
+The Management Host factory replaces `ISecretProtector` with a test-only AES-GCM protector in this assembly so the host can start where Windows DPAPI is unavailable. Production registration is unchanged: `Program.cs` still calls `AddAppertureSqlSecrets()` with no protector, and a non-Windows host that does not replace it fails startup validation.

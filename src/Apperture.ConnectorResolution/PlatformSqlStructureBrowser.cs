@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
+using System.Net.Sockets;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
@@ -235,22 +237,45 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
 
     internal static (ConnectionToolOutcome Outcome, string Message) Classify(Exception exception)
     {
-        if (exception is SqlException sql)
+        // Walk the chain so a real inner transport signal is not hidden by an unclassified SqlException.
+        // Number 0, including a Linux closed-port SqlException whose inner SocketException is SocketError.Success,
+        // stays Failed. Do not treat that opaque shape as unreachable.
+        for (var current = exception; current is not null; current = current.InnerException)
         {
-            foreach (SqlError error in sql.Errors)
+            if (current is SqlException sql)
             {
-                var outcome = ClassifySqlNumber(error.Number);
-                if (outcome != ConnectionToolOutcome.Failed)
-                    return (outcome, MessageFor(outcome));
-            }
+                foreach (SqlError error in sql.Errors)
+                {
+                    var fromError = ClassifySqlNumber(error.Number);
+                    if (fromError != ConnectionToolOutcome.Failed)
+                        return (fromError, MessageFor(fromError));
+                }
 
-            var byNumber = ClassifySqlNumber(sql.Number);
-            return (byNumber, MessageFor(byNumber));
+                var fromNumber = ClassifySqlNumber(sql.Number);
+                if (fromNumber != ConnectionToolOutcome.Failed)
+                    return (fromNumber, MessageFor(fromNumber));
+            }
+            else if (current is TimeoutException)
+            {
+                return (ConnectionToolOutcome.RemoteUnavailable, UnavailableMessage);
+            }
+            else if (current is OperationCanceledException)
+            {
+                // Caller cancellation is filtered before Classify. A leftover cancel is the provider's own connect timeout.
+                return (ConnectionToolOutcome.RemoteUnavailable, UnavailableMessage);
+            }
+            else if (current is SocketException socket && IsRemoteUnavailableSocket(socket.SocketErrorCode))
+            {
+                return (ConnectionToolOutcome.RemoteUnavailable, UnavailableMessage);
+            }
+            else if (current is Win32Exception win32
+                     && ClassifySqlNumber(win32.NativeErrorCode) == ConnectionToolOutcome.RemoteUnavailable)
+            {
+                return (ConnectionToolOutcome.RemoteUnavailable, UnavailableMessage);
+            }
         }
 
-        return exception is TimeoutException or OperationCanceledException
-            ? (ConnectionToolOutcome.RemoteUnavailable, UnavailableMessage)
-            : (ConnectionToolOutcome.Failed, FailedMessage);
+        return (ConnectionToolOutcome.Failed, FailedMessage);
     }
 
     /// <summary>
@@ -263,12 +288,28 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         18456 or 18452 or 4060 or 916 or 229 or 230 or 262 or 297 or 300 => ConnectionToolOutcome.RemoteDenied,
 
         // Timeout expired, general network errors, server not found or not listening, connection dropped.
+        // Windows and Winsock numbers only. 1225 is the closed-port number SqlClient produced on Windows.
+        // POSIX errno values are not mapped: they were not observed on SqlException.Number.
         -2 or -1 or 2 or 20 or 26 or 40 or 53 or 64 or 121 or 233 or 258
             or 1225 or 1226 or 1231 or 1232 or 10051 or 10053 or 10054 or 10060 or 10061 or 10065 or 11001
             => ConnectionToolOutcome.RemoteUnavailable,
 
         _ => ConnectionToolOutcome.Failed
     };
+
+    private static bool IsRemoteUnavailableSocket(SocketError error) => error is
+        SocketError.ConnectionRefused
+        or SocketError.TimedOut
+        or SocketError.HostNotFound
+        or SocketError.TryAgain
+        or SocketError.NetworkUnreachable
+        or SocketError.HostUnreachable
+        or SocketError.NetworkDown
+        or SocketError.AddressNotAvailable
+        or SocketError.ConnectionReset
+        or SocketError.ConnectionAborted
+        or SocketError.Shutdown
+        or SocketError.NotConnected;
 
     private static string MessageFor(ConnectionToolOutcome outcome) => outcome switch
     {

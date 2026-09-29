@@ -1,5 +1,4 @@
 @using Apperture.Management.Ui.Client.Services
-@using Microsoft.JSInterop
 @inject ThemeService ThemeService
 @inject SessionStateService SessionStateService
 @inject AuthSignInOptionsService AuthSignInOptionsService
@@ -8,7 +7,6 @@
 @inject ShellBootstrapState ShellBootstrap
 @inject ResourceContextViewState ViewState
 @inject INotificationToastWatcher Watcher
-@inject IJSRuntime Js
 
 <AuthRouteGate>
     <Router AppAssembly="@typeof(App).Assembly">
@@ -39,10 +37,6 @@
 
     private async Task BootstrapAsync()
     {
-        // #region agent log
-        try { await Js.InvokeVoidAsync("appertureShell.debugLog", "App.razor:BootstrapAsync", "bootstrap-start", "H3", new { runId = "post-fix", instanceId = GetHashCode() }); } catch { /* ignore */ }
-        // #endregion
-
         try
         {
             await ThemeService.InitializeAsync();
@@ -100,9 +94,5 @@
 
         // UIX-2: only then allow AuthRouteGate to mount MainLayout (with capabilities).
         ShellBootstrap.MarkReady();
-
-        // #region agent log
-        try { await Js.InvokeVoidAsync("appertureShell.debugLog", "App.razor:BootstrapAsync", "bootstrap-markReady", "H3", new { runId = "post-fix", instanceId = GetHashCode(), shellBootstrapReady = true }); } catch { /* ignore */ }
-        // #endregion
     }
 }

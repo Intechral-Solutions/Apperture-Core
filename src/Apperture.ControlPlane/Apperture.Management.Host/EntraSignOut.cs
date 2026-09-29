@@ -25,12 +25,6 @@ internal static class EntraSignOut
     public const string SignedOutCallbackPath = "/signout-callback-oidc";
 
     /// <summary>
-    /// Front-channel logout path for the Entra app registration (Microsoft loads this when the
-    /// operator signs out of the directory from another application).
-    /// </summary>
-    public const string RemoteSignOutPath = "/signout-oidc";
-
-    /// <summary>
     /// Entra optional ID-token claim. Its value is the only safe <c>logout_hint</c>; UPN and email
     /// make Microsoft show the account picker.
     /// </summary>

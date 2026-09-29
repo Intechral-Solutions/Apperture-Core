@@ -8,6 +8,18 @@ Accepted (delivered as Toast-B, 2026-09-22). Builds on [ADR-0037](./ADR-0037-pla
 `NotificationUserPreferences` sketch — see the addendum added to that ADR alongside this one. Full phase-by-phase
 account, test evidence and known gaps: [`toast-b-notification-toast-integration.md`](../audits/toast-b-notification-toast-integration.md).
 
+**Addendum (SEC-1, 2026-09-29).** Two watcher behaviors below changed with
+[ADR-0045](ADR-0045-browser-session-recovery-and-request-trust.md):
+
+- **Background and non-renewing.** Each timer-driven poll runs inside a `BackgroundRequest` scope, so the request carries
+  `X-Apperture-Background: 1` and does not renew the sliding session. A passive tab now idles out after 12 h without
+  operator activity. The unread count fetched on first paint and on session change is also background; the count fetched
+  when the operator opens the menu is not.
+- **A 401 ends the watcher through session recovery.** The watcher does not special-case 401. The client pipeline reports
+  it to the one session-recovery coordinator and waits for its decision (one probe, one full-page sign-in). When the probe
+  confirms the loss, the session is marked expired and the watcher stops polling, so the 30 s → 300 s backoff below keeps
+  operating only for failures that do not end the session.
+
 ## Context
 
 ADR-0037 shipped a durable, multi-channel notification pipeline (definitions, staged rules, subscriptions,
@@ -135,8 +147,12 @@ override table.
 ### Delta endpoint
 
 `GET api/me/notifications/toast-delta?afterCreatedAtUtc=&afterId=` (`MeNotificationsController`, added `3982473`,
-hardened `da26bb2`/`c7fe3c9`). Both query parameters are optional but must be both-or-neither; a mismatched pair
-throws (surfaced as HTTP 400). No user-identifying parameter — the caller is resolved server-side like every
+hardened `da26bb2`/`c7fe3c9`). Both query parameters are optional but must be both-or-neither. The HTTP action
+resolves the pair from query-string presence (a missing `afterCreatedAtUtc` is a
+bootstrap request even if model binding supplies a `DateTimeOffset`) and returns
+HTTP 400 ProblemDetails with a fixed detail when only one component is present.
+The store still rejects a mismatched pair as `ArgumentException` so programmatic
+callers cannot silently paginate incorrectly. No user-identifying parameter — the caller is resolved server-side like every
 other `api/me/*` action. `INotificationUserInboxStore` is injected directly into the controller for this one
 endpoint (bypassing `INotificationUserInboxService`) specifically to avoid the service layer's expensive
 repair/backfill scan on a 30-second polling path.

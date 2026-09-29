@@ -119,11 +119,7 @@
                         </p>
                     </div>
                     <div class="ui-settings-card__body">
-                        <button type="button"
-                                class="btn btn-secondary"
-                                @onclick="SignOut">
-                            Sign out
-                        </button>
+                        <SignOutForm ButtonClass="btn btn-secondary">Sign out</SignOutForm>
                     </div>
                 </section>
 
@@ -509,6 +505,10 @@
             "authentication_context_not_satisfied" => "Microsoft did not report the configured authentication context.",
             "not_configured" => "Microsoft sign-in is not configured for this instance.",
             "invalid_identity" => "Microsoft did not return the directory identifiers Apperture requires.",
+            "continuation_invalid" => "The verification could not be matched to the request that started it. Start verification again.",
+            "user_not_found" => "Your Apperture account could not be found for this verification. Sign in again.",
+            "local_session_unavailable" => "Password sign-in is no longer available for your account, so verification could not continue. Sign in again.",
+            "unproven" => "Your connected Microsoft account has not been proven yet. Sign in with it once, then try again.",
             _ => "Connecting your Microsoft account did not complete. You are still signed in with your existing method."
         };
     }
@@ -775,11 +775,6 @@
     {
         var local = me?.IdentityLinks.FirstOrDefault(l => string.Equals(l.Source, "Local", StringComparison.OrdinalIgnoreCase));
         return new PasswordEvaluationContext(Username: local?.DisplayLabel, DisplayName: me?.DisplayName);
-    }
-
-    private void SignOut()
-    {
-        Nav.NavigateTo(HostNav.GetSignOutUrl(Nav), forceLoad: true);
     }
 
     private static string FormatSignInSource(string source) => source switch

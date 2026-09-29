@@ -31,15 +31,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.Services.AddManagementHostExceptionHandling();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddCors(options =>
+if (builder.Environment.IsDevelopment())
 {
-    options.AddPolicy("UiDev", policy =>
-        policy
-            .WithOrigins("http://localhost:9001", "https://localhost:9001")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials());
-});
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy(UiDevCors.PolicyName, policy =>
+            UiDevCors.Configure(policy, ManagementUiRedirects.ResolveBaseUrl(builder.Configuration)));
+    });
+}
 builder.Services.AddAppertureBootstrap(builder.Configuration);
 builder.Services.AddAppertureDTFx();
 builder.Services.AddApperturePersistence(
@@ -80,11 +79,23 @@ builder.Services.AddProofStudentReviewPersistenceAdapter();
 builder.Services.AddProofCampusNexusStudentReviewIntegration();
 builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
+builder.Services.AddBrowserRequestTrust(builder.Configuration, builder.Environment);
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 app.UseManagementHostExceptionHandling();
-app.UseCors("UiDev");
+if (app.Environment.IsDevelopment())
+    app.UseCors(UiDevCors.PolicyName);
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(static state =>
+    {
+        ClickjackingHeaders.Apply(((HttpContext)state).Response);
+        return Task.CompletedTask;
+    }, context);
+    await next();
+});
+app.UseBrowserRequestTrust();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

@@ -33,42 +33,6 @@
     <script src="js/apperture-shell.js"></script>
     <script src="js/control-panel-resize.js"></script>
     <script src="js/toast-host.js"></script>
-    @* #region agent log *@
-    <script>
-        (function () {
-            function snap() {
-                var app = document.getElementById('app');
-                var html = app ? (app.innerHTML || '') : '';
-                var stamp = 'pass18-singleroot';
-                if (window.appertureShell && window.appertureShell.debugLog) {
-                    window.appertureShell.debugLog('_Layout.cshtml:pre-wasm', 'host-dom-before-wasm', 'H1', {
-                        buildStamp: stamp,
-                        appChildCount: app ? app.childNodes.length : -1,
-                        appHtmlLen: html.length,
-                        appHtmlHead: html.slice(0, 240),
-                        bodyIdIsApp: document.body && document.body.id === 'app',
-                        hasBlazorComment: html.indexOf('blazor') >= 0 || html.indexOf('Blazor') >= 0
-                    });
-                }
-            }
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', snap);
-            } else {
-                snap();
-            }
-            window.addEventListener('load', function () {
-                var app = document.getElementById('app');
-                var html = app ? (app.innerHTML || '') : '';
-                if (window.appertureShell && window.appertureShell.debugLog) {
-                    window.appertureShell.debugLog('_Layout.cshtml:load', 'host-dom-after-load', 'H2', {
-                        appHtmlLen: html.length,
-                        appHtmlHead: html.slice(0, 240)
-                    });
-                }
-            });
-        })();
-    </script>
-    @* #endregion *@
 </head>
 <body>
     @* Blazor root must not be <body> — that would replace the boot script node. *@

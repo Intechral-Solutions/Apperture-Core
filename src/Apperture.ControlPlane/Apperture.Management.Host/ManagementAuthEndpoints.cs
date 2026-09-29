@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.Management.Ui.Shared.Auth;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -26,9 +27,10 @@ internal static class ManagementAuthEndpoints
         // Self-service linking. Unlike /signin this requires an existing platform session: the local
         // principal identifies which user the Microsoft identity will be bound to, and is preserved
         // if linking fails.
-        app.MapGet("/signin/link", SignInLinkAsync);
-        app.MapGet("/signin/step-up", SignInStepUpAsync);
-        app.MapGet("/signout", SignOutAsync);
+        app.MapGet("/signin/link", SignInLinkAsync).WithMetadata(new NativeNavigationEndpoint());
+        app.MapGet("/signin/step-up", SignInStepUpAsync).WithMetadata(new NativeNavigationEndpoint());
+        // Ending the session is a state change, so it is a POST from the UI's sign-out form. There is no GET.
+        app.MapPost("/signout", SignOutAsync).WithMetadata(new NativeNavigationEndpoint());
         return app;
     }
 
@@ -118,13 +120,32 @@ internal static class ManagementAuthEndpoints
             return;
         }
 
+        // The kind of session that is starting the step-up. It travels in the protected OIDC state so the cross-site callback
+        // can re-issue that kind of session without the (Lax, therefore absent) session cookie. An emergency (break-glass)
+        // session, or a session of an unrecognised kind, does not use Entra step-up.
+        var sessionSource = ctx.User.FindFirst(ClaimsPrincipalToActorMapper.IdentitySourceClaimType)?.Value;
+        var isBreakGlass = string.Equals(ctx.User.FindFirst(ClaimsPrincipalToActorMapper.BreakGlassClaimType)?.Value, "1", StringComparison.Ordinal);
+        if (isBreakGlass
+            || (!string.Equals(sessionSource, EntraStepUpFlowConstants.SessionSourceLocal, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(sessionSource, EntraStepUpFlowConstants.SessionSourceEntra, StringComparison.OrdinalIgnoreCase)))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status409Conflict;
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                message = "Microsoft step-up verification is not available for this kind of session.",
+                code = EntraStepUpFailureCodes.SessionKindUnsupported
+            });
+            return;
+        }
+
+        sessionSource = string.Equals(sessionSource, EntraStepUpFlowConstants.SessionSourceEntra, StringComparison.OrdinalIgnoreCase)
+            ? EntraStepUpFlowConstants.SessionSourceEntra
+            : EntraStepUpFlowConstants.SessionSourceLocal;
+
         var evaluator = ctx.RequestServices.GetService<IAuthenticationAssuranceEvaluator>();
         if (evaluator?.Evaluate(ctx.User) is { RequirementSatisfied: true, IsRecent: true })
         {
-            var alreadyPath = ManagementUiRedirects.NormalizeRelativePath(returnUrl)
-                ?? EntraStepUpFlowConstants.DefaultReturnPath;
-            if (EntraSignInChallenge.IsReservedAuthPath(alreadyPath))
-                alreadyPath = EntraStepUpFlowConstants.DefaultReturnPath;
+            var alreadyPath = LocalReturnUrl.Validate(returnUrl) ?? EntraStepUpFlowConstants.DefaultReturnPath;
             ctx.Response.Redirect(ManagementUiRedirects.Build(configuration, alreadyPath, "steppedUp", "1"));
             return;
         }
@@ -153,6 +174,6 @@ internal static class ManagementAuthEndpoints
 
         await ctx.ChallengeAsync(
             OpenIdConnectDefaults.AuthenticationScheme,
-            EntraStepUpFlowConstants.CreateChallengeProperties(configuration, userId.Value, requestedContext, returnUrl));
+            EntraStepUpFlowConstants.CreateChallengeProperties(configuration, userId.Value, requestedContext, returnUrl, sessionSource));
     }
 }

@@ -10,12 +10,15 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Api.Controllers;
 
 /// <summary>
-/// Authentication endpoints: local login (username/password), who-am-I, and local logout. Sign-in/sign-out for Entra are handled by the host (GET /signin, /signout).
+/// Authentication endpoints: local login (username/password) and who-am-I. Microsoft sign-in (GET /signin) and every sign-out
+/// (the UI's form POST to /signout) are handled by the host.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -706,10 +709,7 @@ public sealed class AuthController : ControllerBase
         string? assuranceMechanism,
         CancellationToken cancellationToken)
     {
-        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
-        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        var identity = LocalSessionIdentity.Create(user.DisplayName, normalizedUsername);
         if (!string.IsNullOrWhiteSpace(assuranceMechanism))
         {
             AuthenticationAssuranceClaims.Replace(identity, assuranceMechanism, DateTimeOffset.UtcNow, providerContext: null);
@@ -719,20 +719,24 @@ public sealed class AuthController : ControllerBase
         var props = new AuthenticationProperties
         {
             IsPersistent = true,
-            ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
+            ExpiresUtc = DateTimeOffset.UtcNow.Add(LocalSessionIdentity.Lifetime)
         };
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
         _ = cancellationToken;
     }
 
-    private CookieOptions CreatePendingMfaCookieOptions() => new()
+    private CookieOptions CreatePendingMfaCookieOptions()
     {
-        HttpOnly = true,
-        IsEssential = true,
-        SameSite = SameSiteMode.Lax,
-        Secure = Request.IsHttps,
-        MaxAge = PendingMfaLoginTicketService.Lifetime
-    };
+        var environment = HttpContext.RequestServices.GetService<IHostEnvironment>();
+        return new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = environment is not null && !environment.IsDevelopment() && !environment.IsEnvironment("Testing"),
+            MaxAge = PendingMfaLoginTicketService.Lifetime
+        };
+    }
 
     private void ClearPendingMfaCookie()
     {
@@ -751,18 +755,6 @@ public sealed class AuthController : ControllerBase
             new CorrelationId(null),
             details);
         await _audit.AppendAsync(record, cancellationToken);
-    }
-
-    /// <summary>
-    /// Optional: clear cookie for local sign-out (same as signout for cookie).
-    /// </summary>
-    [HttpPost("local/logout")]
-    [AllowAnonymous]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> LocalLogout(CancellationToken cancellationToken)
-    {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return NoContent();
     }
 
     private static string? ResolveUserPrincipal(ClaimsPrincipal principal)

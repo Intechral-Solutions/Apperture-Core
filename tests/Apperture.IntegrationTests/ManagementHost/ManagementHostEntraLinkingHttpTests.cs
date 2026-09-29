@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
-using Apperture.Core.Domain.Identity;
+using Apperture.Core.Application;
 using Apperture.Management.Api.Controllers;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
@@ -27,6 +27,58 @@ public sealed class ManagementHostEntraLinkingHttpTests
     {
         if (_fixture.ConnectionString is null || _fixture.Factory is null)
             throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+    }
+
+    [Fact]
+    public async Task Admin_client_fails_when_platform_users_exist_without_an_administrator()
+    {
+        AssertSqlAvailable();
+        await using (var scope = _fixture.Factory!.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            if (!await db.Users.AnyAsync())
+                _ = await EnsureAdminClientAsync();
+        }
+
+        var roleId = BootstrapConstants.PlatformAdminRoleId;
+        List<string> adminUserIds;
+        await using (var scope = _fixture.Factory!.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            var rows = await db.UserRoles.Where(r => r.RoleId == roleId).ToListAsync();
+            adminUserIds = rows.Select(r => r.UserId).ToList();
+            adminUserIds.Should().NotBeEmpty();
+            db.UserRoles.RemoveRange(rows);
+            await db.SaveChangesAsync();
+        }
+
+        try
+        {
+            var act = async () => await EnsureAdminClientAsync();
+            var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+            thrown.Which.Message.Should().Contain("first-admin bootstrap is closed");
+        }
+        finally
+        {
+            await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            var present = await db.UserRoles.Where(r => r.RoleId == roleId).Select(r => r.UserId).ToListAsync();
+            foreach (var userId in adminUserIds.Except(present))
+                db.UserRoles.Add(new UserRoleEntity { UserId = userId, RoleId = roleId });
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Admin_client_creates_a_user_when_an_earlier_local_username_is_not_an_administrator()
+    {
+        AssertSqlAvailable();
+        var admin = await EnsureAdminClientAsync();
+        _ = await CreateLocalUserAsync(admin, $"aaa-{Guid.NewGuid():N}"[..16]);
+
+        var adminAgain = await EnsureAdminClientAsync();
+        var createdId = await CreateLocalUserAsync(adminAgain, $"bbb-{Guid.NewGuid():N}"[..16]);
+        createdId.Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -272,24 +324,8 @@ public sealed class ManagementHostEntraLinkingHttpTests
     private async Task<HttpClient> EnsureAdminClientAsync()
     {
         await EnsureActiveRegistrationAsync();
-        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        if (!await db.Users.AnyAsync().ConfigureAwait(false))
-        {
-            var bootstrap = _fixture.Factory.CreateClient();
-            var created = await bootstrap.PostAsJsonAsync(
-                "/api/bootstrap/first-admin",
-                new FirstAdminRequest("Entra Link Admin", "Local", $"entra-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
-            created.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
-        }
-
-        var link = await db.IdentityLinks
-            .Where(l => l.Source == (int)IdentitySource.Local)
-            .OrderBy(l => l.ExternalId)
-            .FirstAsync()
-            .ConfigureAwait(false);
-
-        return CreateTestClient(link.ExternalId, "Local");
+        var externalId = await BootstrapHttpPlatformAdmin.EnsureLocalExternalIdAsync(_fixture.Factory!);
+        return CreateTestClient(externalId, "Local");
     }
 
     private async Task<string> CreateLocalUserAsync(HttpClient adminClient, string username)

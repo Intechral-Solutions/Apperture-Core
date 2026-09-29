@@ -81,13 +81,24 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         var (client, _) = await CreateUserClientAsync();
 
         // afterCreatedAtUtc set, afterId omitted: violates the "both or neither" composite cursor
-        // contract. The store's ArgumentException guard (SqlNotificationUserInboxStore.ListToastDeltaAsync)
-        // is expected to surface as HTTP 400 via ManagementHostExceptionHandler's ArgumentException mapping.
+        // contract. The HTTP boundary rejects this before the store; the body is ProblemDetails
+        // with a fixed detail, not the persistence ArgumentException text.
         var path = $"{Route}?afterCreatedAtUtc={Uri.EscapeDataString(DateTimeOffset.UtcNow.ToString("O"))}";
 
         var response = await client.GetAsync(path);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertRejectedCursorAsync(response);
+    }
+
+    [Fact]
+    public async Task Id_only_cursor_is_rejected_with_400()
+    {
+        AssertSqlAvailable();
+        var (client, _) = await CreateUserClientAsync();
+
+        var response = await client.GetAsync($"{Route}?afterId={Uri.EscapeDataString("inbox-toastdelta-test")}");
+
+        await AssertRejectedCursorAsync(response);
     }
 
     // --- 3. Cursor round trip ---
@@ -266,10 +277,18 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         DateTimeOffset? afterCreatedAtUtc,
         string? afterId)
     {
+        // Same both-or-neither construction as ManagementClient.GetNotificationToastDeltaAsync.
+        // Do not omit a blank afterId while still sending the timestamp; that is the partial
+        // cursor the store rejects.
+        if ((afterCreatedAtUtc is null) != (afterId is null))
+            throw new ArgumentException(
+                "afterCreatedAtUtc and afterId must both be provided or both be null; the composite cursor requires both or neither.",
+                nameof(afterId));
+
         var query = new List<string>();
         if (afterCreatedAtUtc is not null)
             query.Add($"afterCreatedAtUtc={Uri.EscapeDataString(afterCreatedAtUtc.Value.ToString("O"))}");
-        if (!string.IsNullOrWhiteSpace(afterId))
+        if (afterId is not null)
             query.Add($"afterId={Uri.EscapeDataString(afterId)}");
         var path = query.Count > 0 ? $"{Route}?{string.Join("&", query)}" : Route;
 
@@ -280,6 +299,18 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         return dto!;
     }
 
+    private static async Task AssertRejectedCursorAsync(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain(NotificationToastDeltaCursor.MismatchedPairDetail);
+        body.Should().NotContain("Parameter 'afterId'");
+        body.Should().NotContain("Parameter 'afterCreatedAtUtc'");
+        body.Should().NotContain("SqlNotificationUserInboxStore");
+        body.Should().NotContain("ListToastDeltaAsync");
+    }
+
     /// <summary>
     /// Creates a brand-new, isolated linked user (bypassing the shared "first admin" bootstrap) so
     /// each test's seeded inbox data cannot leak into or be polluted by another test sharing this
@@ -287,6 +318,10 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
     /// </summary>
     private async Task<(HttpClient Client, string UserId)> CreateUserClientAsync()
     {
+        // An ordinary user must not be the first platform user. That would close first-admin
+        // bootstrap and leave the shared catalog without a platform administrator.
+        _ = await BootstrapHttpPlatformAdmin.EnsureLocalExternalIdAsync(_fixture.Factory!);
+
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
 

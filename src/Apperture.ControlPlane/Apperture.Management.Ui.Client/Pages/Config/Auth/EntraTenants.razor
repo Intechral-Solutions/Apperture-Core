@@ -122,9 +122,10 @@
                     <label class="block text-xs">Callback path (optional)<input class="ui-input mt-1" @bind="_editingCallbackPath" /></label>
                     <p class="text-xs text-muted">
                         Register these URLs on the Entra app, on the management host (not the UI origin):
-                        the sign-in callback (default <code class="ui-inline-code">/signin-oidc</code>),
-                        the sign-out callback <code class="ui-inline-code">/signout-callback-oidc</code> as a Redirect URI,
-                        and <code class="ui-inline-code">/signout-oidc</code> as Front-channel logout URL.
+                        the sign-in callback (default <code class="ui-inline-code">/signin-oidc</code>)
+                        and the sign-out callback <code class="ui-inline-code">/signout-callback-oidc</code> as Redirect URIs.
+                        Leave the Front-channel logout URL empty. Signing out of Microsoft from another application
+                        does not end an Apperture session; operators sign out here, or the session expires.
                         To skip the Microsoft account picker on sign-out, add the <code class="ui-inline-code">login_hint</code>
                         optional claim to the ID token (Token configuration → optional claims). Sign-out still
                         returns to Apperture without that claim.

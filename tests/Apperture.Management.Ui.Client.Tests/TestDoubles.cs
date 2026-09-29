@@ -42,6 +42,9 @@ internal sealed class TestNavigationManager : NavigationManager
 {
     public List<(string Uri, bool Replace)> Navigations { get; } = new();
 
+    /// <summary>Full-page (<c>forceLoad</c>) navigations only: a document load that discards all WASM state.</summary>
+    public List<string> FullPageLoads { get; } = new();
+
     public TestNavigationManager(string baseUri, string uri) => Initialize(baseUri, uri);
 
     /// <summary>Moves the simulated address bar without raising LocationChanged, mimicking a fresh page load/new tab.</summary>
@@ -50,6 +53,8 @@ internal sealed class TestNavigationManager : NavigationManager
     protected override void NavigateToCore(string uri, NavigationOptions options)
     {
         Navigations.Add((uri, options.ReplaceHistoryEntry));
+        if (options.ForceLoad)
+            FullPageLoads.Add(uri);
         Uri = ToAbsoluteUri(uri).ToString();
         // Blazor WebAssembly raises LocationChanged synchronously from inside NavigateTo -- this is
         // exactly the reentrancy Critical #2's fix guards against.

@@ -172,7 +172,7 @@
             _loadError = null;
         try
         {
-            _result = await Client.GetEntraDirectoryUsersAsync(
+            _result = await Client.SearchEntraDirectoryUsersAsync(
                 RegistrationId,
                 string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
                 50);

@@ -318,8 +318,12 @@ public sealed class ManagementHostConnectionToolsHttpTests
     }
 
     [Fact]
-    public async Task An_unreachable_server_is_a_200_with_a_fixed_unavailable_outcome()
+    public async Task An_unreachable_server_is_a_200_with_a_fixed_safe_outcome_and_no_endpoint_details()
     {
+        // 127.0.0.1,1 is a closed local port, not a cross-platform transport oracle. Windows SqlClient
+        // reports 1225 and the classifier returns RemoteUnavailable. Ubuntu reports SqlException Number=0
+        // with SocketError.Success, which stays Failed. Both answers are fixed sentences and must not
+        // leak the endpoint. Known transport codes are covered by PlatformSqlStructureBrowserTests.
         var (author, _, browser, _) = await SetUpAsync();
         var target = new SqlConnectionStringBuilder(_fixture.ConnectionString!);
         var id = await CreateSqlConnectionAsync(author, Password(_fixture.ConnectionString!), "127.0.0.1,1", target.InitialCatalog);
@@ -328,8 +332,13 @@ public sealed class ManagementHostConnectionToolsHttpTests
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(Json);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        json.GetProperty("outcome").GetString().Should().Be("RemoteUnavailable", json.GetRawText());
-        json.GetProperty("message").GetString().Should().Be("The database could not be reached, or did not answer in time.");
+        var outcome = json.GetProperty("outcome").GetString();
+        var message = json.GetProperty("message").GetString();
+        outcome.Should().BeOneOf("RemoteUnavailable", "Failed");
+        message.Should().Be(outcome == "RemoteUnavailable"
+            ? "The database could not be reached, or did not answer in time."
+            : "The structure request could not be completed.");
+        json.GetProperty("items").GetArrayLength().Should().Be(0);
         json.GetRawText().Should().NotContain("127.0.0.1");
     }
 
