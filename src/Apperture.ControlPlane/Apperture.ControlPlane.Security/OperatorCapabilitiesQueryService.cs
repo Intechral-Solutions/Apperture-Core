@@ -163,6 +163,11 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.ResourceContextManage,
                 ResourceTypeConstants.ResourceContext,
                 cancellationToken).ConfigureAwait(false);
+            var canManageRoles = await EvaluateAsync(
+                actor,
+                ActionConstants.RoleManage,
+                ResourceTypeConstants.Role,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -194,7 +199,8 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManageUsers,
                 canManageCredentials,
                 canManageResourceContexts,
-                canBrowseConnections);
+                canBrowseConnections,
+                canManageRoles);
         }
         catch (OperationCanceledException ex)
         {

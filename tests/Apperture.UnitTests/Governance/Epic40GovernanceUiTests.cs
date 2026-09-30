@@ -34,9 +34,11 @@ public sealed class Epic40GovernanceUiTests
     [Fact]
     public void SystemRoleReadOnlyNotice_ExplainsNonEditability()
     {
-        const string expectedNotice = "System roles are not editable from this UI. Their permissions are managed by the platform.";
-        expectedNotice.Should().Contain("not editable", "UI must block edit affordance for system roles");
-        expectedNotice.Should().Contain("this UI", "scope is explicit");
+        var detail = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Governance/RoleDetail.razor"));
+        const string expectedNotice = "This built-in role cannot be changed or deleted.";
+        detail.Should().Contain(expectedNotice);
+        expectedNotice.Should().Contain("cannot be changed");
+        expectedNotice.Should().Contain("deleted");
     }
 
     [Fact]
@@ -88,5 +90,14 @@ public sealed class Epic40GovernanceUiTests
         request.Permissions.Should().HaveCount(2);
         request.Permissions.Should().Contain(p => p.Action == "user.read");
         request.Permissions.Should().Contain(p => p.Action == "audit.read");
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+            dir = dir.Parent;
+        dir.Should().NotBeNull();
+        return dir!.FullName;
     }
 }

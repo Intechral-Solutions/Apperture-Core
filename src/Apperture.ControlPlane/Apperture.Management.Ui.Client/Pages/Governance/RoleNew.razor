@@ -1,0 +1,265 @@
+@page "/config/governance/roles/new"
+@layout ConfigLayout
+@using System.Net
+@using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Organisms
+@inject IManagementClient Client
+@inject IOperatorCapabilitiesService Capabilities
+@inject IToastService Toasts
+@inject NavigationManager Nav
+
+<div class="p-4 ui-page-stack">
+    <PageHeader Eyebrow="Config — Governance"
+                Title="New role"
+                Subtitle="Create a role. Permissions are optional and can be chosen now only when you can assign them.">
+        <Toolbar>
+            <a href="/config/governance/roles" class="ui-toolbar-btn">Back to roles</a>
+        </Toolbar>
+    </PageHeader>
+
+    @if (!_capabilitiesLoaded)
+    {
+        <LoadingState Message="Loading…" />
+    }
+    else if (_capabilities?.CanManageRoles != true)
+    {
+        <ForbiddenState Message="You do not have permission to create roles." />
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <ErrorState Message="@_error" />
+        }
+
+        <form @onsubmit="SubmitCreateAsync" @onsubmit:preventDefault>
+            <ManagementSection Title="Role details" Layer="ManagementSection.UiLayer.Detail">
+                <div class="space-y-4 text-sm text-body">
+                    <div>
+                        <label class="block text-xs text-muted" for="role-create-name">Name</label>
+                        <input id="role-create-name"
+                               class="ui-input mt-1"
+                               @bind="_name"
+                               @bind:event="oninput"
+                               disabled="@_saving"
+                               required
+                               aria-required="true"
+                               maxlength="256"
+                               autocomplete="off"
+                               placeholder="e.g. Operators" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-muted" for="role-create-description">Description</label>
+                        <textarea id="role-create-description"
+                                  class="ui-input mt-1 w-full"
+                                  @bind="_description"
+                                  disabled="@_saving"
+                                  maxlength="512"
+                                  rows="3"
+                                  placeholder="Optional"></textarea>
+                    </div>
+
+                    @if (_capabilities?.CanAssignPermissions == true)
+                    {
+                        <fieldset class="space-y-2">
+                            <legend class="block text-xs text-muted">Initial permissions</legend>
+                            <p class="text-xs text-muted">Optional. Leave everything unchecked to create the role with no permissions.</p>
+                            @if (_catalog is null)
+                            {
+                                @if (!string.IsNullOrEmpty(_catalogError))
+                                {
+                                    <p class="text-xs text-muted" role="status">@_catalogError You can still create the role and add permissions later.</p>
+                                }
+                                else
+                                {
+                                    <LoadingState Message="Loading catalog…" />
+                                }
+                            }
+                            else
+                            {
+                                <div class="max-h-96 overflow-y-auto space-y-2">
+                                    @foreach (var perm in _catalog.Permissions)
+                                    {
+                                        var key = PermissionKey(perm);
+                                        var fieldId = PermissionFieldId(key);
+                                        <div class="flex items-center gap-2 py-1">
+                                            <input type="checkbox"
+                                                   id="@fieldId"
+                                                   checked="@_selectedPermissions.Contains(key)"
+                                                   disabled="@_saving"
+                                                   @onchange="@(() => ToggleInitialPermission(key))" />
+                                            <label for="@fieldId" class="text-sm font-mono">@perm.Action @(perm.ResourceType ?? "") @(perm.ScopeKey ?? "")</label>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </fieldset>
+                    }
+                    else
+                    {
+                        <p class="text-xs text-muted" id="role-create-empty-grants">
+                            You can create this role without permissions. Someone who can assign permissions can add them later.
+                        </p>
+                    }
+
+                    <FormValidationFeedback Visible="@_showFormAttention" Message="@_validationMessage" />
+
+                    <div class="flex gap-2 pt-2">
+                        <button type="submit"
+                                class="btn btn-primary"
+                                disabled="@_saving">
+                            @(_saving ? "Creating…" : "Create role")
+                        </button>
+                        <a href="/config/governance/roles" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </div>
+            </ManagementSection>
+        </form>
+    }
+</div>
+
+@code {
+    private const int NameMaxLength = 256;
+    private const int DescriptionMaxLength = 512;
+
+    private OperatorCapabilitiesDto? _capabilities;
+    private GovernanceDescriptorResponse? _catalog;
+    private bool _capabilitiesLoaded;
+    private bool _saving;
+    private bool _showFormAttention;
+    private string? _error;
+    private string? _catalogError;
+    private string _validationMessage = "Role name is required.";
+    private string _name = "";
+    private string _description = "";
+    private readonly HashSet<string> _selectedPermissions = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _capabilities = await Capabilities.GetCapabilitiesAsync();
+        }
+        catch
+        {
+            _capabilities = new OperatorCapabilitiesDto(false, false, false, false, false);
+        }
+
+        _capabilitiesLoaded = true;
+        if (_capabilities?.CanManageRoles == true && _capabilities.CanAssignPermissions)
+            await LoadCatalogAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        try
+        {
+            _catalog = await Client.GetGovernanceDescriptorsAsync();
+            if (_catalog is null)
+                _catalogError = "The permission catalog could not be loaded.";
+        }
+        catch (HttpRequestException)
+        {
+            _catalogError = "The permission catalog could not be loaded.";
+        }
+    }
+
+    public void SetCreateDraft(string name, string? description)
+    {
+        _name = name;
+        _description = description ?? "";
+    }
+
+    public void ToggleInitialPermission(string key)
+    {
+        if (_selectedPermissions.Contains(key))
+            _selectedPermissions.Remove(key);
+        else
+            _selectedPermissions.Add(key);
+    }
+
+    public async Task SubmitCreateAsync()
+    {
+        if (_capabilities?.CanManageRoles != true || _saving)
+            return;
+
+        _error = null;
+        _showFormAttention = false;
+        if (!TryNormalize(out var name, out var description))
+        {
+            _showFormAttention = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var created = await Client.CreateRoleAsync(new CreateRoleRequest(name, description, SelectedGrants()));
+            Toasts.Show(ToastSeverity.Success, "Role created.", "Governance");
+            Nav.NavigateTo("/config/governance/roles/" + Uri.EscapeDataString(created.Id));
+        }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.DuplicateName)
+        {
+            _error = "A role with this name already exists.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _error = "You do not have permission to create roles.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private IReadOnlyList<RolePermissionDto>? SelectedGrants()
+    {
+        if (_capabilities?.CanAssignPermissions != true || _catalog is null || _selectedPermissions.Count == 0)
+            return null;
+
+        return _catalog.Permissions
+            .Where(p => _selectedPermissions.Contains(PermissionKey(p)))
+            .Select(p => new RolePermissionDto(p.Action, p.ResourceType, p.ScopeKey))
+            .ToList();
+    }
+
+    private bool TryNormalize(out string name, out string? description)
+    {
+        name = _name.Trim();
+        description = string.IsNullOrWhiteSpace(_description) ? null : _description.Trim();
+        if (name.Length == 0)
+        {
+            _validationMessage = "Role name is required.";
+            return false;
+        }
+
+        if (name.Length > NameMaxLength)
+        {
+            _validationMessage = "Role name must be 256 characters or fewer.";
+            return false;
+        }
+
+        if (description is { Length: > DescriptionMaxLength })
+        {
+            _validationMessage = "Role description must be 512 characters or fewer.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string PermissionKey(PermissionCatalogEntryDto permission) =>
+        $"{permission.Action}|{permission.ResourceType ?? ""}|{permission.ScopeKey ?? ""}";
+
+    private static string PermissionFieldId(string key) => "role-grant-" + key.Replace('|', '-');
+}
