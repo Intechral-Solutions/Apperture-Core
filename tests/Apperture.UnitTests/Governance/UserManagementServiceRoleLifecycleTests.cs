@@ -141,6 +141,26 @@ public sealed class UserManagementServiceRoleLifecycleTests
     }
 
     [Fact]
+    public async Task UpdateRoleMetadata_rejects_duplicate_name_and_leaves_the_row()
+    {
+        var harness = Harness.Create();
+        await harness.Service.CreateRoleAsync("Operators");
+        var second = await harness.Service.CreateRoleAsync("Reviewers", "Keep");
+        harness.Audit.Actions.Clear();
+
+        var act = () => harness.Service.UpdateRoleMetadataAsync(second.Id, "  operators  ", "Changed").AsTask();
+
+        var ex = await act.Should().ThrowAsync<RoleLifecycleException>();
+        ex.Which.Code.Should().Be(RoleLifecycleErrorCodes.DuplicateName);
+        var stored = await harness.Roles.GetAsync(second.Id);
+        stored!.Name.Should().Be("Reviewers");
+        stored.Description.Should().Be("Keep");
+        harness.Roles.MetadataUpdates.Should().BeEmpty();
+        harness.Audit.Actions.Should().NotContain(GovernanceAuditActionNames.RoleMetadataUpdated);
+        harness.Audit.Actions.Should().NotContain(GovernanceAuditActionNames.RoleMutationRejected);
+    }
+
+    [Fact]
     public async Task SetRolePermissions_refuses_system_role_without_writing_grants()
     {
         var harness = Harness.Create();
