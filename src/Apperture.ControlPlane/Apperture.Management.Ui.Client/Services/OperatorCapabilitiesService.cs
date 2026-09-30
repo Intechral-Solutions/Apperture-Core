@@ -150,5 +150,6 @@ public sealed class OperatorCapabilitiesService : IOperatorCapabilitiesService
         && !d.CanCreateConnections && !d.CanUpdateConnections && !d.CanRetireConnections
         && !d.CanViewManagedContacts && !d.CanManageManagedContacts && !d.CanImportManagedContacts
         && !d.CanViewNotificationDefinitions && !d.CanManageNotificationDefinitions && !d.CanUpdateIntegrations
-        && !d.CanViewPlatformSettings && !d.CanManagePlatformSettings && !d.CanManageUsers;
+        && !d.CanViewPlatformSettings && !d.CanManagePlatformSettings && !d.CanManageUsers
+        && !d.CanManageRoles;
 }

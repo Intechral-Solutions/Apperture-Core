@@ -1719,6 +1719,8 @@ public sealed class ManagementClient : IManagementClient
     public async Task SetRolePermissionsAsync(string roleId, SetRolePermissionsRequest request, CancellationToken cancellationToken = default)
     {
         var response = await _http.PutAsJsonAsync($"roles/{Uri.EscapeDataString(roleId)}/permissions", request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Conflict)
+            throw await ReadRoleLifecycleConflictAsync(response, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.NotFound)
         {
             var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
@@ -1727,6 +1729,91 @@ public sealed class ManagementClient : IManagementClient
         if (response.StatusCode == HttpStatusCode.Forbidden)
             throw new HttpRequestException("Not authorized to assign permissions.", null, HttpStatusCode.Forbidden);
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<RoleDetailDto> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync("roles", request, ApiJsonWriteOptions, cancellationToken).ConfigureAwait(false);
+        await ThrowIfRoleLifecycleFailedAsync(response, "Not authorized to manage roles.", cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadFromJsonAsync<RoleDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return body ?? throw new InvalidOperationException("Create role succeeded without a role.");
+    }
+
+    public async Task<RoleDetailDto> UpdateRoleMetadataAsync(string roleId, UpdateRoleMetadataRequest request, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PatchAsJsonAsync(
+            $"roles/{Uri.EscapeDataString(roleId)}",
+            request,
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        await ThrowIfRoleLifecycleFailedAsync(response, "Not authorized to manage roles.", cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadFromJsonAsync<RoleDetailDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        return body ?? throw new InvalidOperationException("Update role succeeded without a role.");
+    }
+
+    public async Task DeleteRoleAsync(string roleId, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync($"roles/{Uri.EscapeDataString(roleId)}", cancellationToken).ConfigureAwait(false);
+        await ThrowIfRoleLifecycleFailedAsync(response, "Not authorized to manage roles.", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RoleAssignmentsDto?> GetRoleAssignmentsAsync(string roleId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.GetAsync($"roles/{Uri.EscapeDataString(roleId)}/assignments", cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException("Not authorized to read role assignments.", null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RoleAssignmentsDto>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ThrowIfRoleLifecycleFailedAsync(HttpResponseMessage response, string forbiddenMessage, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+        if (response.StatusCode == HttpStatusCode.Conflict)
+            throw await ReadRoleLifecycleConflictAsync(response, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.BadRequest || response.StatusCode == HttpStatusCode.NotFound)
+        {
+            var msg = await TryGetMessageFromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(msg ?? "Request failed.");
+        }
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new HttpRequestException(forbiddenMessage, null, HttpStatusCode.Forbidden);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private static async Task<RoleLifecycleConflictException> ReadRoleLifecycleConflictAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var code = "conflict";
+        string? message = null;
+        int? assignmentCount = null;
+        try
+        {
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (TryGetPropertyIgnoreCase(root, "error", out var error) && error.ValueKind == JsonValueKind.String)
+                    code = string.IsNullOrWhiteSpace(error.GetString()) ? code : error.GetString()!;
+                if (TryGetPropertyIgnoreCase(root, "message", out var msg) && msg.ValueKind == JsonValueKind.String)
+                    message = msg.GetString();
+                if (TryGetPropertyIgnoreCase(root, "assignmentCount", out var count)
+                    && count.ValueKind == JsonValueKind.Number
+                    && count.TryGetInt32(out var n))
+                    assignmentCount = n;
+            }
+        }
+        catch (JsonException)
+        {
+            /* fall through */
+        }
+
+        return new RoleLifecycleConflictException(code, message ?? "The role could not be changed.", assignmentCount);
     }
 
     public async Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default)

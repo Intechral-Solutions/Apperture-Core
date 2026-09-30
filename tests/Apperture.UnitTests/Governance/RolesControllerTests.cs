@@ -1,9 +1,12 @@
+using System.Reflection;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
@@ -54,6 +57,26 @@ public sealed class RolesControllerTests
         var result = await controller.SetPermissions("role-1", request, CancellationToken.None);
 
         result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task SetPermissions_WhenSystemRole_Returns409()
+    {
+        var userManagement = new StubUserManagementService(setThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.SystemRole,
+            "This built-in role cannot be changed or deleted."));
+        var controller = new RolesController(userManagement);
+        var request = new SetRolePermissionsRequest([new RolePermissionDto("user.read", "User", "instance")]);
+
+        var result = await controller.SetPermissions("role-platform-administrator", request, CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.SystemRole,
+            message = "This built-in role cannot be changed or deleted.",
+            assignmentCount = (int?)null
+        });
     }
 
     [Fact]
@@ -202,14 +225,360 @@ public sealed class RolesControllerTests
         lastPermissions.Should().NotContain(p => p.Action == "audit.read");
     }
 
+    [Fact]
+    public async Task Create_WhenAccepted_Returns201WithDetailAndCurrentAssignmentCount()
+    {
+        var role = SampleRole();
+        var userManagement = new StubUserManagementService(
+            createdRole: role,
+            assignments: new RoleAssignmentList(1, [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Create(
+            new CreateRoleRequest("Operators", "Desk", [new RolePermissionDto("user.read", "User", "instance")]),
+            CancellationToken.None);
+
+        var created = result.Result.Should().BeOfType<CreatedAtActionResult>().Subject;
+        created.StatusCode.Should().Be(StatusCodes.Status201Created);
+        created.ActionName.Should().Be(nameof(RolesController.Get));
+        created.RouteValues.Should().NotBeNull();
+        created.RouteValues!["id"].Should().Be("role-abc");
+        var detail = created.Value.Should().BeOfType<RoleDetailDto>().Subject;
+        detail.Id.Should().Be("role-abc");
+        detail.Name.Should().Be("Operators");
+        detail.Description.Should().Be("Desk");
+        detail.IsSystemRole.Should().BeFalse();
+        detail.AssignmentCount.Should().Be(1);
+        detail.Permissions.Should().ContainSingle(p => p.Action == "user.read");
+    }
+
+    [Fact]
+    public async Task Create_ForwardsNameDescriptionAndPermissionsOnly()
+    {
+        var userManagement = new StubUserManagementService(createdRole: SampleRole());
+        var controller = new RolesController(userManagement);
+
+        await controller.Create(
+            new CreateRoleRequest("  Operators  ", "  Desk  ", [new RolePermissionDto("user.read", "User", "instance")]),
+            CancellationToken.None);
+
+        userManagement.CreatedName.Should().Be("  Operators  ");
+        userManagement.CreatedDescription.Should().Be("  Desk  ");
+        userManagement.CreatedPermissions.Should().ContainSingle(p =>
+            p.Action == "user.read"
+            && p.Resource!.ResourceType == "User"
+            && p.Resource.ScopeKey == "instance");
+        typeof(CreateRoleRequest).GetProperties().Select(p => p.Name)
+            .Should().BeEquivalentTo("Name", "Description", "Permissions");
+    }
+
+    [Fact]
+    public async Task Create_WhenPermissionsOmitted_ForwardsNullGrants()
+    {
+        var userManagement = new StubUserManagementService(createdRole: SampleRole());
+        var controller = new RolesController(userManagement);
+
+        await controller.Create(new CreateRoleRequest("Operators"), CancellationToken.None);
+
+        userManagement.CreatedPermissions.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_WhenDuplicateName_Returns409()
+    {
+        var userManagement = new StubUserManagementService(createThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.DuplicateName,
+            "A role with this name already exists."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Create(new CreateRoleRequest("Operators"), CancellationToken.None);
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.DuplicateName,
+            message = "A role with this name already exists.",
+            assignmentCount = (int?)null
+        });
+    }
+
+    [Fact]
+    public async Task Create_WhenInvalid_Returns400()
+    {
+        var userManagement = new StubUserManagementService(createThrows: new InvalidOperationException("Role name is required."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Create(new CreateRoleRequest(" "), CancellationToken.None);
+
+        var badRequest = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value.Should().BeEquivalentTo(new { message = "Role name is required." });
+    }
+
+    [Fact]
+    public async Task Create_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(createThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Create(new CreateRoleRequest("Operators"), CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenAccepted_Returns200WithCurrentAssignmentCount()
+    {
+        var role = SampleRole(name: "Renamed", description: null);
+        var userManagement = new StubUserManagementService(
+            updatedRole: role,
+            assignments: new RoleAssignmentList(2, [
+                new RoleAssignmentHolder(new UserId("user-1"), "Ada"),
+                new RoleAssignmentHolder(new UserId("user-2"), "Grace")
+            ]));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata("role-abc", new UpdateRoleMetadataRequest("Renamed", null), CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var detail = ok.Value.Should().BeOfType<RoleDetailDto>().Subject;
+        detail.Name.Should().Be("Renamed");
+        detail.Description.Should().BeNull();
+        detail.AssignmentCount.Should().Be(2);
+        userManagement.UpdatedName.Should().Be("Renamed");
+        userManagement.UpdatedDescription.Should().BeNull();
+        typeof(UpdateRoleMetadataRequest).GetProperties().Select(p => p.Name)
+            .Should().BeEquivalentTo("Name", "Description");
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenSystemRole_Returns409()
+    {
+        var userManagement = new StubUserManagementService(updateThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.SystemRole,
+            "This built-in role cannot be changed or deleted."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata(
+            "role-platform-administrator",
+            new UpdateRoleMetadataRequest("Renamed", "Nope"),
+            CancellationToken.None);
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.SystemRole,
+            message = "This built-in role cannot be changed or deleted.",
+            assignmentCount = (int?)null
+        });
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenDuplicateName_Returns409()
+    {
+        var userManagement = new StubUserManagementService(updateThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.DuplicateName,
+            "A role with this name already exists."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata("role-abc", new UpdateRoleMetadataRequest("Platform Administrator", null), CancellationToken.None);
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.DuplicateName,
+            message = "A role with this name already exists.",
+            assignmentCount = (int?)null
+        });
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenMissing_Returns404()
+    {
+        var userManagement = new StubUserManagementService(updateThrows: new InvalidOperationException("Role role-missing not found."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata("role-missing", new UpdateRoleMetadataRequest("Operators", null), CancellationToken.None);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(updateThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata("role-abc", new UpdateRoleMetadataRequest("Operators", null), CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task UpdateMetadata_WhenInvalid_Returns400()
+    {
+        var userManagement = new StubUserManagementService(updateThrows: new InvalidOperationException("Role description must be 512 characters or fewer."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.UpdateMetadata("role-abc", new UpdateRoleMetadataRequest("Operators", new string('x', 513)), CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Delete_WhenUnassigned_Returns204AndDoesNotRemoveAssignments()
+    {
+        var userManagement = new StubUserManagementService();
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Delete("role-abc", CancellationToken.None);
+
+        result.Should().BeOfType<NoContentResult>();
+        userManagement.DeleteCalled.Should().BeTrue();
+        userManagement.RemoveRoleCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Delete_WhenSystemRole_Returns409()
+    {
+        var userManagement = new StubUserManagementService(deleteThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.SystemRole,
+            "This built-in role cannot be changed or deleted."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Delete("role-platform-administrator", CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.SystemRole,
+            message = "This built-in role cannot be changed or deleted.",
+            assignmentCount = (int?)null
+        });
+        userManagement.RemoveRoleCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Delete_WhenAssignmentsRemain_Returns409WithCount()
+    {
+        var userManagement = new StubUserManagementService(deleteThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.AssignmentsRemain,
+            "This role still has assignments and cannot be deleted.",
+            assignmentCount: 3));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Delete("role-abc", CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.AssignmentsRemain,
+            message = "This role still has assignments and cannot be deleted.",
+            assignmentCount = 3
+        });
+        userManagement.RemoveRoleCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Delete_WhenMissing_Returns404()
+    {
+        var userManagement = new StubUserManagementService(deleteThrows: new InvalidOperationException("Role role-missing not found."));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Delete("role-missing", CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Delete_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(deleteThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Delete("role-abc", CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GetAssignments_ReturnsHolderIdentityAndCount()
+    {
+        var userManagement = new StubUserManagementService(assignments: new RoleAssignmentList(
+            5,
+            [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.GetAssignments("role-abc", CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var body = ok.Value.Should().BeOfType<RoleAssignmentsDto>().Subject;
+        body.Count.Should().Be(5);
+        body.Holders.Should().ContainSingle(h => h.UserId == "user-1" && h.DisplayName == "Ada");
+        typeof(RoleAssignmentHolderDto).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name)
+            .Should().BeEquivalentTo("UserId", "DisplayName");
+    }
+
+    [Fact]
+    public async Task GetAssignments_WhenMissing_Returns404()
+    {
+        var userManagement = new StubUserManagementService(assignments: null, assignmentsConfigured: true);
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.GetAssignments("role-missing", CancellationToken.None);
+
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetAssignments_WhenUnauthorized_Returns403()
+    {
+        var userManagement = new StubUserManagementService(assignmentsThrows: new UnauthorizedAccessException("deny"));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.GetAssignments("role-abc", CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Get_AssignmentCountComesFromCurrentAssignments()
+    {
+        var userManagement = new StubUserManagementService(
+            role: SampleRole(),
+            assignments: new RoleAssignmentList(4, [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+        var controller = new RolesController(userManagement);
+
+        var result = await controller.Get("role-abc", CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var detail = ok.Value.Should().BeOfType<RoleDetailDto>().Subject;
+        detail.AssignmentCount.Should().Be(4);
+    }
+
+    private static Role SampleRole(string name = "Operators", string? description = "Desk") =>
+        new(
+            new RoleId("role-abc"),
+            name,
+            description,
+            [new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance"))],
+            IsSystemRole: false);
+
     private sealed class StubUserManagementService : IUserManagementService
     {
         private readonly Exception? _setThrows;
         private readonly Exception? _getPermissionsThrows;
         private readonly Exception? _getRolesThrows;
         private readonly Exception? _getRoleThrows;
-        private readonly IReadOnlyList<Apperture.Core.Domain.Identity.Role> _roles;
-        private readonly Apperture.Core.Domain.Identity.Role? _role;
+        private readonly Exception? _createThrows;
+        private readonly Exception? _updateThrows;
+        private readonly Exception? _deleteThrows;
+        private readonly Exception? _assignmentsThrows;
+        private readonly IReadOnlyList<Role> _roles;
+        private readonly Role? _role;
+        private readonly Role? _createdRole;
+        private readonly Role? _updatedRole;
+        private readonly RoleAssignmentList? _assignments;
+        private readonly bool _assignmentsConfigured;
         private readonly Action<IReadOnlyList<PermissionDescriptor>>? _onSetPermissions;
 
         public StubUserManagementService(
@@ -217,9 +586,17 @@ public sealed class RolesControllerTests
             Exception? getPermissionsThrows = null,
             Exception? getRolesThrows = null,
             Exception? getRoleThrows = null,
-            IReadOnlyList<Apperture.Core.Domain.Identity.Role>? roles = null,
-            Apperture.Core.Domain.Identity.Role? role = null,
-            Action<IReadOnlyList<PermissionDescriptor>>? onSetPermissions = null)
+            IReadOnlyList<Role>? roles = null,
+            Role? role = null,
+            Action<IReadOnlyList<PermissionDescriptor>>? onSetPermissions = null,
+            Exception? createThrows = null,
+            Role? createdRole = null,
+            Exception? updateThrows = null,
+            Role? updatedRole = null,
+            Exception? deleteThrows = null,
+            Exception? assignmentsThrows = null,
+            RoleAssignmentList? assignments = null,
+            bool assignmentsConfigured = false)
         {
             _setThrows = setThrows;
             _getPermissionsThrows = getPermissionsThrows;
@@ -228,7 +605,29 @@ public sealed class RolesControllerTests
             _roles = roles ?? [];
             _role = role;
             _onSetPermissions = onSetPermissions;
+            _createThrows = createThrows;
+            _createdRole = createdRole;
+            _updateThrows = updateThrows;
+            _updatedRole = updatedRole;
+            _deleteThrows = deleteThrows;
+            _assignmentsThrows = assignmentsThrows;
+            _assignments = assignments;
+            _assignmentsConfigured = assignmentsConfigured || assignments is not null;
         }
+
+        public string? CreatedName { get; private set; }
+
+        public string? CreatedDescription { get; private set; }
+
+        public IReadOnlyList<PermissionDescriptor>? CreatedPermissions { get; private set; }
+
+        public string? UpdatedName { get; private set; }
+
+        public string? UpdatedDescription { get; private set; }
+
+        public bool DeleteCalled { get; private set; }
+
+        public bool RemoveRoleCalled { get; private set; }
 
         public ValueTask<(IReadOnlyList<Apperture.Core.Domain.Identity.User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(((IReadOnlyList<Apperture.Core.Domain.Identity.User>)([]), 0));
@@ -264,6 +663,50 @@ public sealed class RolesControllerTests
             _onSetPermissions?.Invoke(permissions);
         }
 
+        public ValueTask<Role> CreateRoleAsync(
+            string name,
+            string? description = null,
+            IReadOnlyList<PermissionDescriptor>? permissions = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (_createThrows is not null)
+                throw _createThrows;
+            CreatedName = name;
+            CreatedDescription = description;
+            CreatedPermissions = permissions;
+            return ValueTask.FromResult(_createdRole ?? throw new InvalidOperationException("stub create role missing"));
+        }
+
+        public ValueTask<Role> UpdateRoleMetadataAsync(
+            RoleId roleId,
+            string name,
+            string? description,
+            CancellationToken cancellationToken = default)
+        {
+            if (_updateThrows is not null)
+                throw _updateThrows;
+            UpdatedName = name;
+            UpdatedDescription = description;
+            return ValueTask.FromResult(_updatedRole ?? throw new InvalidOperationException("stub updated role missing"));
+        }
+
+        public ValueTask DeleteRoleAsync(RoleId roleId, CancellationToken cancellationToken = default)
+        {
+            if (_deleteThrows is not null)
+                throw _deleteThrows;
+            DeleteCalled = true;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<RoleAssignmentList?> GetRoleAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default)
+        {
+            if (_assignmentsThrows is not null)
+                throw _assignmentsThrows;
+            if (_assignmentsConfigured)
+                return ValueTask.FromResult(_assignments);
+            return ValueTask.FromResult<RoleAssignmentList?>(new RoleAssignmentList(0, []));
+        }
+
         public ValueTask<Apperture.Core.Domain.Identity.UserId> CreateUserAsync(
             string displayName,
             Apperture.Core.Domain.Identity.IdentitySource source,
@@ -283,8 +726,11 @@ public sealed class RolesControllerTests
         public ValueTask AssignRoleAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
-        public ValueTask RemoveRoleAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
+        public ValueTask RemoveRoleAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default)
+        {
+            RemoveRoleCalled = true;
             throw new NotImplementedException();
+        }
 
         public ValueTask SetLocalPasswordAsync(Apperture.Core.Domain.Identity.UserId userId, string newPassword, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();

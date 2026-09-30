@@ -100,6 +100,116 @@ public sealed class SqlRoleRepository : IRoleRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async ValueTask CreateAsync(Role role, CancellationToken cancellationToken = default)
+    {
+        _db.Roles.Add(new RoleEntity
+        {
+            Id = role.Id.Value,
+            Name = role.Name,
+            Description = role.Description,
+            PermissionsJson = SerializePermissions(role.Permissions),
+            IsSystemRole = false
+        });
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("A role with this name already exists.", ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask UpdateMetadataAsync(RoleId roleId, string name, string? description, CancellationToken cancellationToken = default)
+    {
+        var entity = await _db.Roles.FirstOrDefaultAsync(e => e.Id == roleId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        entity.Name = name;
+        entity.Description = description;
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("A role with this name already exists.", ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<RoleUnassignedDeleteResult> TryDeleteUnassignedAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        if (_db.Database.IsRelational() && _db.Database.CurrentTransaction is null)
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                _db.ChangeTracker.Clear();
+                await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+                var result = await DeleteUnassignedCoreAsync(roleId, cancellationToken);
+                if (result.Outcome == RoleUnassignedDeleteOutcome.Deleted)
+                    await tx.CommitAsync(cancellationToken);
+                return result;
+            });
+        }
+
+        return await DeleteUnassignedCoreAsync(roleId, cancellationToken);
+    }
+
+    private async ValueTask<RoleUnassignedDeleteResult> DeleteUnassignedCoreAsync(RoleId roleId, CancellationToken cancellationToken)
+    {
+        RoleEntity? entity;
+        if (_db.Database.IsRelational())
+        {
+            var locked = await _db.Roles
+                .FromSqlInterpolated($"SELECT * FROM [Roles] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {roleId.Value}")
+                .ToListAsync(cancellationToken);
+            entity = locked.SingleOrDefault();
+        }
+        else
+        {
+            entity = await _db.Roles.FirstOrDefaultAsync(e => e.Id == roleId.Value, cancellationToken);
+        }
+
+        if (entity is null)
+            return new RoleUnassignedDeleteResult(RoleUnassignedDeleteOutcome.NotFound);
+
+        int assignmentCount;
+        if (_db.Database.IsRelational())
+        {
+            var assignments = await _db.UserRoles
+                .FromSqlInterpolated($"SELECT * FROM [UserRoles] WITH (UPDLOCK, HOLDLOCK) WHERE [RoleId] = {roleId.Value}")
+                .ToListAsync(cancellationToken);
+            assignmentCount = assignments.Count;
+        }
+        else
+        {
+            assignmentCount = await _db.UserRoles.CountAsync(ur => ur.RoleId == roleId.Value, cancellationToken);
+        }
+
+        if (assignmentCount > 0)
+            return new RoleUnassignedDeleteResult(RoleUnassignedDeleteOutcome.AssignmentsRemain, assignmentCount, entity.Name);
+
+        _db.Roles.Remove(entity);
+        await _db.SaveChangesAsync(cancellationToken);
+        return new RoleUnassignedDeleteResult(RoleUnassignedDeleteOutcome.Deleted, 0, entity.Name);
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is Microsoft.Data.SqlClient.SqlException sql && sql.Number is 2601 or 2627)
+                return true;
+        }
+
+        return false;
+    }
+
     private static Role ToDomain(RoleEntity e)
     {
         var permissions = DeserializePermissions(e.PermissionsJson);

@@ -31,11 +31,12 @@ are complete, manually smoke-tested, and merged to `master` — see
 remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
 reset, cutting across several of them.
 
-**Current next (2026-09-29):** none selected. **LFC-1 — Connection/Schedule lifecycle cleanup is complete
-and merge-ready** on branch `lfc-1-connection-schedule-lifecycle`. SEC-1 engineering is merged to `master`.
-Items 0–7a of the 2026-09-18 sequence are complete as engineering. **IAM-8 (item 7b) and navigation /
-cross-context grouping (item 8) remain not started** and are **not** selected by this closeout. LFC-1.0–LFC-1.3
-closed against the design gate:
+**Current next:** none selected (2026-09-30). **IAM-8 — Custom Role Lifecycle** (item 7b) is **complete and
+merge-ready**; not merged. This closeout does not select a next epic. LFC-1 is complete and merged to
+`master`. SEC-1 engineering is merged to `master`. Items 0–7a of the 2026-09-18 sequence are complete as
+engineering. **Navigation / cross-context grouping (item 8) is not selected.** Gate:
+[`iam8-design-gate.md`](../01-architecture/transitions/custom-role-lifecycle/iam8-design-gate.md).
+LFC-1.0–LFC-1.3 closed against
 [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
 
 0. **Roadmap/documentation reset** — this reset (2026-09-18).
@@ -207,8 +208,8 @@ closed against the design gate:
    return targets) is a closed design clarification, not a security finding: it is benign on-origin application state
    and is preserved. **Engineering is merged.** Remaining operator smoke is pre-release/UAT and is not claimed passed.**
    Sequenced after Services (item 7) in the 2026-09-18 order, numbered
-   7a so existing references to item 8 stay valid. IAM-8 (7b) and grouping (8) were written next after SEC-1;
-   they remain not started and are not current next (see **Current next**, 2026-09-29). It is one architecture/security body with two related concerns, both
+   7a so existing references to item 8 stay valid. IAM-8 (7b) and grouping (8) were written next after SEC-1.
+   Grouping remains not started. IAM-8 is now the selected design-gated body (see **Current next**). It is one architecture/security body with two related concerns, both
    surfaced during Services operator smoke and deliberately **kept out of the Services branch**. Its design gate must
    **audit the existing Entra/local sign-in and return-URL behaviour first and reuse/finish that infrastructure where
    possible** before designing anything new. The gate, not this entry, chooses the mechanisms.
@@ -232,14 +233,16 @@ closed against the design gate:
      authentication; which APIs should and should not require protection; and the existing **`UiDev` CORS policy** — in particular
      whether credentialed `localhost` origin access can ever be active outside the intended development environment.
    Neither concern is implemented on the Services branch, and neither is a prerequisite for merging it.
-7b. **IAM-8 — Custom Role Lifecycle** — **future body; not started, not designed; not current next.** The 2026-09-18
-   sequence placed this after SEC-1 (item 7a) and before navigation / cross-context grouping (item 8); numbered 7b so
-   references to item 8 stay valid. That written order is **not** being followed as the next engineering body
-   (see **Current next**, 2026-09-29). Bounded scope:
+7b. **IAM-8 — Custom Role Lifecycle** — **selected next core-platform body (2026-09-29).** IAM-8.0 design
+   gate is written; implementation has not started. The 2026-09-18 sequence placed this after SEC-1 and before
+   navigation / cross-context grouping; grouping is **not** selected by this choice. Bounded scope:
    create user-defined roles; edit their permission grants; delete user-created roles; built-in/system roles are protected
    from edit and deletion; show a role's assignments/usage before deletion; refuse a deletion that would leave active
    assignments invalid or orphaned; audit the create/update/delete lifecycle. It is **not** Context-scoped IAM (that stays
-   deferred, below) and does not change the authorization evaluation model. Its own design gate chooses the mechanisms.
+   deferred, below) and does not change the authorization evaluation model. Contract:
+   [`iam8-design-gate.md`](../01-architecture/transitions/custom-role-lifecycle/iam8-design-gate.md).
+   **Closure (2026-09-30):** IAM-8.0–IAM-8.4 satisfy that gate. IAM-8 is complete and merge-ready. This closeout
+   does not select a next epic. Grouping remains not started.
 8. **Navigation / cross-context grouping design** — **not started; not current next.** Distinct from **NAV-1**, the
    completed Management UI **rail** overhaul (`docs/01-architecture/transitions/nav-overhaul/`; Control Center /
    Integrations / Business Data / Config). Item 8 is a later, undesigned **cross-context organizational grouping**
@@ -283,7 +286,7 @@ Dashboard Panels (indefinitely parked — no chart library exists anywhere in th
 Wizard foundation (Track 8, deferred, legitimate future value, not prioritized); Context-scoped IAM
 (deferred until a concrete security/product need appears — not merely because ResourceContexts now exist).
 
-**Supersession (2026-09-29):** of those re-ranked items, **LFC-1 — Connection/Schedule lifecycle cleanup** is the
+**Supersession (2026-09-29):** of those re-ranked items, **LFC-1 — Connection/Schedule lifecycle cleanup** was the
 **selected next core-platform body**. That choice does **not** rewrite the 2026-09-18 ranking as if LFC-1 had
 already been first; it is a later, explicit prioritization of unfinished core platform functionality over IAM-8
 (item 7b) and future navigation/grouping (item 8), both of which remain not started. Delete and un-retire
@@ -292,6 +295,14 @@ not in this roadmap. LFC-1.1, LFC-1.2, and LFC-1.3 are implemented. **Supersessi
 closure):** LFC-1 is complete and merge-ready; this closeout does not select IAM-8 or grouping. The other
 re-ranked items (Track 5 remainder, Dashboard Panels, Shared Wizard, Context-scoped IAM) stay deferred/parked
 as written.
+
+**Supersession (post-LFC-1 merge):** LFC-1 engineering is on `master`. That closeout did not select a next epic.
+
+**Supersession (2026-09-29, IAM-8 selection):** **IAM-8** is the selected next core-platform body. Only the
+design gate is written. Navigation / cross-context grouping (item 8) stays unselected.
+
+**Supersession (2026-09-30, IAM-8 closure):** IAM-8 is complete and merge-ready. This closeout does not select
+a next epic. Navigation / cross-context grouping (item 8) stays unselected. Context-scoped IAM stays deferred.
 
 **The visual workflow designer is not an active roadmap item.** It has only ever appeared as an
 engineering-side non-goal (ADR-0032, Epic-57, CTX-3B closures) — never as approved product scope. It stays

@@ -32,6 +32,17 @@
                     Edit permissions
                 </button>
             }
+            @if (CanManageThisRole && !_editing)
+            {
+                <button type="button"
+                        id="role-delete-trigger"
+                        class="ui-toolbar-btn ui-toolbar-btn--danger"
+                        disabled="@_loading"
+                        aria-label="@DeleteTriggerLabel"
+                        @onclick="OpenDeleteConfirmAsync">
+                    Delete
+                </button>
+            }
             <a href="@Epic33UiDisplayHelpers.GetGovernanceAuditLink()" class="ui-toolbar-btn">View governance audit history</a>
             <button type="button"
                     class="ui-toolbar-btn"
@@ -129,17 +140,95 @@
     {
         <div class="grid gap-4">
             <ManagementSection Title="Details" Layer="ManagementSection.UiLayer.Summary">
-                <MetadataGrid>
-                    <MetadataItem Label="Name" Value="@_detail.Name" />
-                    <MetadataItem Label="Description" Value="@(_detail.Description ?? "-")" />
-                    <MetadataItem Label="System role" Value="@(_detail.IsSystemRole ? "Yes" : "No")" />
-                </MetadataGrid>
                 @if (_detail.IsSystemRole)
                 {
-                    <div class="mt-3 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body">
-                        System roles are not editable from this UI. Their permissions are managed by the platform.
+                    <MetadataGrid>
+                        <MetadataItem Label="Id" Monospace="true" Value="@_detail.Id" />
+                        <MetadataItem Label="Name" Value="@_detail.Name" />
+                        <MetadataItem Label="Description" Value="@(_detail.Description ?? "-")" />
+                        <MetadataItem Label="System role" Value="Yes" />
+                    </MetadataGrid>
+                    <div id="role-system-notice" class="mt-3 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs text-body">
+                        This built-in role cannot be changed or deleted.
                     </div>
                 }
+                else if (CanManageThisRole)
+                {
+                    <form @onsubmit="SaveMetadataAsync" @onsubmit:preventDefault>
+                        <div class="space-y-4 text-sm text-body">
+                            <MetadataGrid>
+                                <MetadataItem Label="Id" Monospace="true" Value="@_detail.Id" />
+                                <MetadataItem Label="System role" Value="No" />
+                            </MetadataGrid>
+                            <div>
+                                <label class="block text-xs text-muted" for="role-name">Name</label>
+                                <input id="role-name"
+                                       class="ui-input mt-1"
+                                       @bind="_nameDraft"
+                                       @bind:event="oninput"
+                                       disabled="@_savingMetadata"
+                                       required
+                                       aria-required="true"
+                                       maxlength="256"
+                                       autocomplete="off"
+                                       aria-describedby="@(_metadataError is null ? null : "role-metadata-error")" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-muted" for="role-description">Description</label>
+                                <textarea id="role-description"
+                                          class="ui-input mt-1 w-full"
+                                          @bind="_descriptionDraft"
+                                          disabled="@_savingMetadata"
+                                          maxlength="512"
+                                          rows="3"></textarea>
+                            </div>
+                            @if (!string.IsNullOrEmpty(_metadataError))
+                            {
+                                <p id="role-metadata-error" class="text-xs text-body" role="alert">@_metadataError</p>
+                            }
+                            <FormValidationFeedback Visible="@_showMetadataAttention" Message="@_metadataValidation" />
+                            <button type="submit"
+                                    class="btn btn-primary"
+                                    disabled="@_savingMetadata">
+                                @(_savingMetadata ? "Saving…" : "Save details")
+                            </button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <MetadataGrid>
+                        <MetadataItem Label="Id" Monospace="true" Value="@_detail.Id" />
+                        <MetadataItem Label="Name" Value="@_detail.Name" />
+                        <MetadataItem Label="Description" Value="@(_detail.Description ?? "-")" />
+                        <MetadataItem Label="System role" Value="No" />
+                    </MetadataGrid>
+                }
+            </ManagementSection>
+
+            <ManagementSection Title="People with this role" Layer="ManagementSection.UiLayer.Detail">
+                <div id="role-assignments">
+                    <p id="@(LiveAssignmentCount == 0 ? "role-assignments-empty" : null)" class="text-sm text-body">@AssignmentSummary</p>
+                    @if (CanManageThisRole && LiveAssignmentCount > 0)
+                    {
+                        <p class="mt-2 text-xs text-muted">This role cannot be deleted until those assignments are removed. Deletion does not remove assignments.</p>
+                    }
+                    @if (!string.IsNullOrEmpty(_assignmentsError))
+                    {
+                        <p class="mt-2 text-xs text-muted" role="status">@_assignmentsError</p>
+                    }
+                    else if (_assignments is { Holders.Count: > 0 })
+                    {
+                        <ul class="mt-2 divide-y divide-default text-sm">
+                            @foreach (var holder in _assignments.Holders)
+                            {
+                                <li class="py-2">
+                                    <a href="@UserHref(holder.UserId)" class="underline text-sm">@holder.DisplayName</a>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
             </ManagementSection>
 
             <ManagementSection Title="Granted permissions" Layer="ManagementSection.UiLayer.Detail">
@@ -176,19 +265,101 @@
     }
 </div>
 
+@if (_detail is not null && _confirmDeleteOpen)
+{
+    <ConfirmActionDialog IsOpen="true"
+                         Title="@DeleteDialogTitle"
+                         ConfirmLabel="Delete role"
+                         ConfirmDisabled="@(!CanCommitDelete)"
+                         Emphasis="@(CanCommitDelete ? ConfirmActionEmphasis.Destructive : ConfirmActionEmphasis.Standard)"
+                         OnConfirm="ConfirmDeleteAsync"
+                         OnConfirmed="CloseDeleteConfirmAsync"
+                         OnCancel="CancelDeleteAsync">
+        <ChildContent>
+            @if (CanCommitDelete)
+            {
+                <span>Deleting <strong>@_detail.Name</strong> permanently removes it. It cannot be restored.</span>
+            }
+            else
+            {
+                <span>@BlockedDeleteMessage(LiveAssignmentCount)</span>
+            }
+        </ChildContent>
+        <Details>
+            @if (CanCommitDelete)
+            {
+                <p>People who hold this role must be changed to another role before it can be deleted. No one holds it now.</p>
+            }
+            else
+            {
+                <p>Change these people's roles first. Deleting this role does not remove their assignments.</p>
+                @if (_assignments is { Holders.Count: > 0 })
+                {
+                    <ul class="mt-2 space-y-1">
+                        @foreach (var holder in _assignments.Holders)
+                        {
+                            <li><a href="@UserHref(holder.UserId)" class="underline text-sm">@holder.DisplayName</a></li>
+                        }
+                    </ul>
+                }
+            }
+        </Details>
+    </ConfirmActionDialog>
+}
+
 @code {
+    private const int NameMaxLength = 256;
+    private const int DescriptionMaxLength = 512;
+    private const string BuiltInRoleNotice = "This built-in role cannot be changed or deleted.";
+
     [Parameter] public string RoleId { get; set; } = "";
 
     private RoleDetailDto? _detail;
+    private RoleAssignmentsDto? _assignments;
     private GovernanceDescriptorResponse? _catalog;
     private bool _loading;
+    private bool _savingMetadata;
     private bool _forbidden;
     private string? _error;
+    private string? _metadataError;
+    private string _metadataValidation = "Role name is required.";
+    private bool _showMetadataAttention;
+    private string? _assignmentsError;
     private bool _editing;
+    private bool _confirmDeleteOpen;
     private HashSet<string> _selectedPermissions = new();
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private string? _dataLoadKey;
+    private string _nameDraft = "";
+    private string _descriptionDraft = "";
+
+    private bool CanManageThisRole =>
+        _capabilities?.CanManageRoles == true && _detail is { IsSystemRole: false };
+
+    /// <summary>Set when delete reports assignments the last read had not shown yet. Cleared once a later read agrees.</summary>
+    private int? _unconfirmedAssignmentCount;
+
+    private int LiveAssignmentCount =>
+        _unconfirmedAssignmentCount
+        ?? _assignments?.Count
+        ?? _detail?.AssignmentCount
+        ?? 0;
+
+    private bool CanCommitDelete => CanManageThisRole && LiveAssignmentCount == 0;
+
+    private string DeleteDialogTitle => CanCommitDelete ? "Delete role?" : "Role cannot be deleted";
+
+    private string DeleteTriggerLabel => CanCommitDelete
+        ? "Delete role"
+        : "Role cannot be deleted while people hold it";
+
+    private string AssignmentSummary => LiveAssignmentCount switch
+    {
+        0 => "No one holds this role.",
+        1 => "Assigned to 1 person.",
+        _ => $"Assigned to {LiveAssignmentCount} people."
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -206,6 +377,7 @@
             return;
         _dataLoadKey = key;
         _detail = null;
+        _assignments = null;
         await LoadAsync();
     }
 
@@ -217,11 +389,21 @@
         _error = null;
         _forbidden = false;
         _editing = false;
+        _unconfirmedAssignmentCount = null;
+        _metadataError = null;
+        _showMetadataAttention = false;
         try
         {
             _detail = await Client.GetRoleAsync(RoleId);
             if (_detail is null)
+            {
+                _assignments = null;
                 _error = "Role not found.";
+                return;
+            }
+
+            SyncDraftsFromDetail();
+            await LoadAssignmentsAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
@@ -238,21 +420,54 @@
         }
     }
 
+    private async Task LoadAssignmentsAsync()
+    {
+        try
+        {
+            _assignments = await Client.GetRoleAssignmentsAsync(RoleId);
+            _assignmentsError = _assignments is null ? "Assignments could not be loaded." : null;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _assignments = null;
+            _assignmentsError = "You do not have permission to view who holds this role.";
+        }
+        catch (HttpRequestException)
+        {
+            _assignments = null;
+            _assignmentsError = "Assignments could not be loaded.";
+        }
+    }
+
+    private void SyncDraftsFromDetail()
+    {
+        if (_detail is null)
+            return;
+        _nameDraft = _detail.Name;
+        _descriptionDraft = _detail.Description ?? "";
+    }
+
     private void PublishShellTitle() =>
         ShellOrientation.PublishForCurrentUri(
             Nav,
             EntityShellTitles.Detail(_detail?.Name, "Role"),
             subtitle: null);
 
-    private async Task StartEdit()
+    public async Task StartEdit()
     {
-        if (_detail is null || _detail.IsSystemRole) return;
+        if (_detail is null || _detail.IsSystemRole || _capabilities?.CanAssignPermissions != true) return;
         _error = null;
         _loading = true;
         try
         {
             var fresh = await Client.GetRoleAsync(RoleId);
             if (fresh is null) { _error = "Role not found."; return; }
+            if (fresh.IsSystemRole)
+            {
+                _detail = fresh;
+                return;
+            }
+
             _detail = fresh;
             _catalog = await Client.GetGovernanceDescriptorsAsync();
             if (_catalog is null) { _error = "Failed to load permission catalog."; return; }
@@ -266,6 +481,7 @@
         finally
         {
             _loading = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -307,6 +523,13 @@
             Toasts.Show(ToastSeverity.Success, "Permissions saved for this role.", "Governance");
             await LoadAsync();
         }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.SystemRole)
+        {
+            _editing = false;
+            _catalog = null;
+            await LoadAsync();
+            Toasts.Show(ToastSeverity.Error, BuiltInRoleNotice, "Save permissions");
+        }
         catch (InvalidOperationException ex)
         {
             _error = ex.Message;
@@ -327,4 +550,204 @@
             _loading = false;
         }
     }
+
+    public void SetMetadataDraft(string name, string? description)
+    {
+        _nameDraft = name;
+        _descriptionDraft = description ?? "";
+    }
+
+    public async Task SaveMetadataAsync()
+    {
+        if (!CanManageThisRole || _detail is null || _savingMetadata)
+            return;
+
+        _metadataError = null;
+        _showMetadataAttention = false;
+        if (!TryNormalizeMetadata(out var name, out var description))
+        {
+            _showMetadataAttention = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _savingMetadata = true;
+        try
+        {
+            _detail = await Client.UpdateRoleMetadataAsync(RoleId, new UpdateRoleMetadataRequest(name, description));
+            SyncDraftsFromDetail();
+            await LoadAssignmentsAsync();
+            Toasts.Show(ToastSeverity.Success, "Role details saved.", "Governance");
+            PublishShellTitle();
+        }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.DuplicateName)
+        {
+            _metadataError = "A role with this name already exists.";
+        }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.SystemRole)
+        {
+            await LoadAsync();
+            _metadataError = BuiltInRoleNotice;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _metadataError = "You do not have permission to change this role.";
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowRoleGone();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _metadataError = ex.Message;
+        }
+        catch (HttpRequestException ex)
+        {
+            _metadataError = ex.Message;
+        }
+        finally
+        {
+            _savingMetadata = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool TryNormalizeMetadata(out string name, out string? description)
+    {
+        name = _nameDraft.Trim();
+        description = string.IsNullOrWhiteSpace(_descriptionDraft) ? null : _descriptionDraft.Trim();
+        if (name.Length == 0)
+        {
+            _metadataValidation = "Role name is required.";
+            return false;
+        }
+
+        if (name.Length > NameMaxLength)
+        {
+            _metadataValidation = "Role name must be 256 characters or fewer.";
+            return false;
+        }
+
+        if (description is { Length: > DescriptionMaxLength })
+        {
+            _metadataValidation = "Role description must be 512 characters or fewer.";
+            return false;
+        }
+
+        return true;
+    }
+
+    public async Task OpenDeleteConfirmAsync()
+    {
+        if (!CanManageThisRole)
+            return;
+
+        _confirmDeleteOpen = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task CancelDeleteAsync()
+    {
+        _confirmDeleteOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task CloseDeleteConfirmAsync()
+    {
+        _confirmDeleteOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task ConfirmDeleteAsync()
+    {
+        if (!CanManageThisRole || _detail is null)
+            return;
+
+        if (LiveAssignmentCount > 0)
+            return;
+
+        try
+        {
+            await Client.DeleteRoleAsync(RoleId);
+        }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.AssignmentsRemain)
+        {
+            var reported = ex.AssignmentCount is > 0 ? ex.AssignmentCount.Value : 1;
+            await ReloadAfterDeleteConflictAsync();
+            if (_assignments is not { Count: > 0 })
+                _unconfirmedAssignmentCount = reported;
+            var count = _assignments is { Count: > 0 } ? _assignments.Count : reported;
+            await InvokeAsync(StateHasChanged);
+            throw new InvalidOperationException(BlockedDeleteMessage(count));
+        }
+        catch (RoleLifecycleConflictException ex) when (ex.Code == RoleLifecycleConflictException.SystemRole)
+        {
+            await ReloadAfterDeleteConflictAsync();
+            _confirmDeleteOpen = false;
+            Toasts.Show(ToastSeverity.Error, BuiltInRoleNotice, "Delete role");
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw new HttpRequestException("You do not have permission to delete this role.", ex, HttpStatusCode.Forbidden);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            ShowRoleGone();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowRoleGone();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Toasts.Show(ToastSeverity.Success, "Role deleted.", "Governance");
+        _confirmDeleteOpen = false;
+        Nav.NavigateTo("/config/governance/roles");
+    }
+
+    private async Task ReloadAfterDeleteConflictAsync()
+    {
+        try
+        {
+            var fresh = await Client.GetRoleAsync(RoleId);
+            if (fresh is null)
+            {
+                ShowRoleGone();
+                return;
+            }
+
+            _detail = fresh;
+            SyncDraftsFromDetail();
+            await LoadAssignmentsAsync();
+            PublishShellTitle();
+        }
+        catch (HttpRequestException)
+        {
+            // Keep the role already on screen. The conflict message still explains the refusal.
+        }
+    }
+
+    private void ShowRoleGone()
+    {
+        _confirmDeleteOpen = false;
+        _editing = false;
+        _detail = null;
+        _assignments = null;
+        _error = "Role not found.";
+        Toasts.Show(ToastSeverity.Warning, "This role no longer exists.", "Delete role");
+        PublishShellTitle();
+    }
+
+    private static string BlockedDeleteMessage(int count) =>
+        count == 1
+            ? "This role is assigned to 1 person. Remove that assignment before deleting it. Deletion does not remove assignments."
+            : $"This role is assigned to {count} people. Remove those assignments before deleting it. Deletion does not remove assignments.";
+
+    private static string UserHref(string userId) =>
+        "/config/governance/users/" + Uri.EscapeDataString(userId);
 }

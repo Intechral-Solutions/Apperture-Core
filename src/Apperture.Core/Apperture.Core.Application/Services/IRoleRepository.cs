@@ -48,4 +48,24 @@ public interface IRoleRepository
     /// Updates the permissions for a role. Replaces PermissionsJson.
     /// </summary>
     ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts a user-created role row, including its initial permission JSON, in one save.
+    /// Throws <see cref="InvalidOperationException"/> when the name collides with <c>IX_Roles_Name</c>.
+    /// </summary>
+    ValueTask CreateAsync(Role role, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Replaces name and description. Does not change permissions or <c>IsSystemRole</c>.
+    /// Throws <see cref="InvalidOperationException"/> when the role is missing or the name collides.
+    /// </summary>
+    ValueTask UpdateMetadataAsync(RoleId roleId, string name, string? description, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Deletes the role row only when a locked assignment count is zero. Never removes assignments.
+    /// </summary>
+    ValueTask<RoleUnassignedDeleteResult> TryDeleteUnassignedAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }

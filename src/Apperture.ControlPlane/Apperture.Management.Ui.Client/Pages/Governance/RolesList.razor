@@ -13,6 +13,10 @@
                 Title="Roles"
                 Subtitle="Platform roles and their permission grants. Use the permission catalog to browse available actions and resources.">
         <Toolbar>
+            @if (_capabilities?.CanManageRoles == true)
+            {
+                <a href="/config/governance/roles/new" class="ui-toolbar-btn">Create role</a>
+            }
             <button type="button"
                     class="ui-toolbar-btn"
                     disabled="@_loading"
