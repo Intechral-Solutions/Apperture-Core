@@ -142,4 +142,14 @@ public static class ActionConstants
     public const string ScheduleOwnershipMovedOut = "schedule.ownership.moved_out";
     public const string ScheduleOwnershipMovedIn = "schedule.ownership.moved_in";
     public const string ScheduleOwnershipMoveRejected = "schedule.ownership.move_rejected";
+
+    /// <summary>
+    /// LFC-1.1: audit action for a completed schedule hard-delete. Written after the delete commits.
+    /// </summary>
+    public const string ScheduleDeleted = "schedule.deleted";
+
+    /// <summary>
+    /// LFC-1.1: audit action for an authorized delete that was refused because the schedule is still enabled.
+    /// </summary>
+    public const string ScheduleDeleteRejected = "schedule.delete_rejected";
 }

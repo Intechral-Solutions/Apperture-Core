@@ -1,7 +1,9 @@
 # Components / Resource Catalog / Services — approved boundary rulings
 
 Date: 2026-09-18 (post-CTX roadmap reset)
-Status: **Approved product/roadmap rulings, not yet a design gate.** This is a short planning note
+Status: **Historical planning note (2026-09-18).** Both design gates have run; Components and Services are **implemented and on `master`.** The sentence below is the original note status and is not current scheduling.
+
+**Original 2026-09-18 status (superseded):** Approved product/roadmap rulings, not yet a design gate. This is a short planning note
 recording the conceptual boundary future design work must start from — it is deliberately not a full ADR
 and does not specify implementation. The Components design gate and the Services design gate (see
 [`pre-release-product-roadmap.md`](../../../00-overview/pre-release-product-roadmap.md)'s near-term

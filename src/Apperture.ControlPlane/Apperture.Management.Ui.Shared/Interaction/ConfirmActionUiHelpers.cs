@@ -6,7 +6,7 @@ public enum ConfirmActionEmphasis
     /// <summary>Reversible or low-consequence change.</summary>
     Standard,
 
-    /// <summary>Consequential but recoverable (clears an override, retires a resource).</summary>
+    /// <summary>Consequential change short of removing the resource (clears an override, retires a connection). Retirement itself cannot be undone.</summary>
     Caution,
 
     /// <summary>Removes or permanently changes platform configuration.</summary>

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Microsoft.AspNetCore.Http;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -280,6 +281,78 @@ public sealed class SchedulesControllerTests
         result.Result.Should().BeOfType<ForbidResult>();
     }
 
+    [Fact]
+    public async Task Delete_WhenCanManageFalse_Returns403WithoutCallingDelete()
+    {
+        var scheduleManagement = new DeleteStub();
+        var controller = NewController(scheduleManagement, canManage: false);
+
+        var result = await controller.Delete("sch-1", CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+        scheduleManagement.Called.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Delete_WhenDisabled_Returns204()
+    {
+        var scheduleManagement = new DeleteStub();
+        var controller = NewController(scheduleManagement, canManage: true);
+
+        var result = await controller.Delete("sch-1", CancellationToken.None);
+
+        result.Should().BeOfType<NoContentResult>();
+        scheduleManagement.Called.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Delete_WhenEnabled_Returns409()
+    {
+        var scheduleManagement = new DeleteStub { Error = new ScheduleDeleteRejectedException(new ScheduleId("sch-1")) };
+        var controller = NewController(scheduleManagement, canManage: true);
+
+        var result = await controller.Delete("sch-1", CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        conflict.Value.Should().BeEquivalentTo(new { error = ScheduleDeleteRejectedException.EnabledMessage });
+    }
+
+    [Fact]
+    public async Task Delete_WhenMissing_Returns404()
+    {
+        var scheduleManagement = new DeleteStub { Error = new InvalidOperationException("Schedule sch-1 not found.") };
+        var controller = NewController(scheduleManagement, canManage: true);
+
+        var result = await controller.Delete("missing", CancellationToken.None);
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    private static SchedulesController NewController(IScheduleManagementService schedules, bool canManage) =>
+        new(
+            new StubScheduleGovernanceService(canManage),
+            schedules,
+            new ScheduleValidationService(),
+            PassthroughCreateTimeZoneDefaults.Instance,
+            StubSchedulerStatusQueryService.Healthy,
+            ResourceContextTestFactory.SharedOnly(),
+            Mock.Of<IResourceOwnershipMoveService>());
+
+    private sealed class DeleteStub : StubScheduleManagementService
+    {
+        public bool Called { get; private set; }
+        public Exception? Error { get; init; }
+
+        public override ValueTask DeleteScheduleAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
+        {
+            Called = true;
+            if (Error is not null)
+                throw Error;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class ListCapableStubScheduleManagementService : IScheduleManagementService
     {
         public ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
@@ -430,7 +503,7 @@ public sealed class SchedulesControllerTests
             ValueTask.FromResult<ScheduleWithExecutionState?>(null);
     }
 
-    private sealed class StubScheduleManagementService : IScheduleManagementService
+    private class StubScheduleManagementService : IScheduleManagementService
     {
         public ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<ScheduleDefinition?>(null);
@@ -451,6 +524,9 @@ public sealed class SchedulesControllerTests
             throw new NotSupportedException();
 
         public ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public virtual ValueTask DeleteScheduleAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default) =>

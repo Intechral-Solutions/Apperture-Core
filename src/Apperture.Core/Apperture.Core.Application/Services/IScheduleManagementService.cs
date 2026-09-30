@@ -78,6 +78,19 @@ public interface IScheduleManagementService
     ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Hard-deletes a disabled schedule, its assignments, and those assignments' schedule-state cursors.
+    /// Historical firings and run evidence are retained.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">No authenticated actor.</exception>
+    /// <exception cref="ScheduleDeleteRejectedException">The schedule is still enabled.</exception>
+    /// <exception cref="InvalidOperationException">The schedule does not exist.</exception>
+    /// <remarks>
+    /// The default throws so in-memory test doubles keep compiling. The production service implements the delete.
+    /// </remarks>
+    ValueTask DeleteScheduleAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("DeleteScheduleAsync is not implemented by this schedule service.");
+
+    /// <summary>
     /// Gets schedule assignments for a runtime plane.
     /// </summary>
     ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default);

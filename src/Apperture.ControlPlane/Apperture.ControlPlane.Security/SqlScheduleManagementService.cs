@@ -1,10 +1,13 @@
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Persistence.SqlServer;
+using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
@@ -21,6 +24,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     private readonly IIntegrationRepository _integrationRepository;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
+    private readonly IPrincipalContext _principalContext;
+    private readonly IAuditService _audit;
 
     public SqlScheduleManagementService(
         IScheduleRepository repo,
@@ -29,7 +34,9 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         IResourceContextService resourceContexts,
         IIntegrationRepository integrationRepository,
         AppertureDbContext db,
-        IResourceOwnershipMutationGate ownershipGate)
+        IResourceOwnershipMutationGate ownershipGate,
+        IPrincipalContext principalContext,
+        IAuditService audit)
     {
         _repo = repo;
         _claimOptions = claimOptions;
@@ -38,6 +45,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         _integrationRepository = integrationRepository;
         _db = db;
         _ownershipGate = ownershipGate;
+        _principalContext = principalContext;
+        _audit = audit;
     }
 
     public async ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
@@ -230,16 +239,33 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
 
     public async ValueTask<ScheduleAssignment> AssignToRuntimePlaneAsync(ScheduleId scheduleId, RuntimePlaneId runtimePlaneId, string? policyOverrides, CancellationToken cancellationToken = default)
     {
-        var id = Guid.NewGuid().ToString("N")[..24];
-        var assignment = new ScheduleAssignment(
-            new ScheduleAssignmentId(id),
-            scheduleId,
-            runtimePlaneId,
-            policyOverrides,
-            DesiredVersion: 1,
-            AppliedVersion: 0);
-        await _repo.AddAssignmentAsync(assignment, cancellationToken);
-        return assignment;
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            _db.ChangeTracker.Clear();
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Same definition row lock delete holds. An assignment insert blocks until that transaction
+            // commits, then fails if the definition is gone, so a delete cannot leave a new assignment behind.
+            _ = await _repo.GetByIdForUpdateAsync(scheduleId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+
+            var id = Guid.NewGuid().ToString("N")[..24];
+            var assignment = new ScheduleAssignment(
+                new ScheduleAssignmentId(id),
+                scheduleId,
+                runtimePlaneId,
+                policyOverrides,
+                DesiredVersion: 1,
+                AppliedVersion: 0);
+            await _repo.AddAssignmentAsync(assignment, cancellationToken).ConfigureAwait(false);
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return assignment;
+        }).ConfigureAwait(false);
     }
 
     public async ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
@@ -289,4 +315,105 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         }
         return new ScheduleWithExecutionState(def, state, claim);
     }
+
+    /// <inheritdoc />
+    public async ValueTask DeleteScheduleAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
+    {
+        // Authorization for schedules is instance-scoped schedule.manage, enforced by the controller
+        // before this method runs (same as enable/disable). A missing actor still fails here, before
+        // any read or audit, so a direct caller cannot delete anonymously.
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var attempt = await strategy.ExecuteAsync(async () =>
+        {
+            _db.ChangeTracker.Clear();
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            // Same application lock Enable uses. Enable cannot commit Enabled=true between this
+            // acquisition and the locked re-read, and this delete cannot remove a row Enable has
+            // already decided to turn on.
+            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+
+            var fresh = await _repo.GetByIdForUpdateAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+            if (fresh is null)
+                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.NotFound, null, 0);
+
+            if (fresh.Enabled)
+                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Enabled, fresh, 0);
+
+            // Archived owning contexts are allowed. Delete does not call the reactivation guard:
+            // removing a disabled schedule does not make anything live.
+            var removed = await _repo.DeleteDisabledScheduleGraphAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+            if (!removed.Deleted)
+            {
+                var again = await _repo.GetDefinitionAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+                if (again is { Enabled: true })
+                    return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Enabled, again, 0);
+                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.NotFound, null, 0);
+            }
+
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Deleted, fresh, removed.AssignmentsRemoved);
+        }).ConfigureAwait(false);
+
+        // Audit is after the transaction, matching integration.deleted: the SQL delete and the audit
+        // append do not share a commit. A lost success-audit row is preferred to refusing a delete
+        // that has already committed. A rejection audit failure happens before any row is removed,
+        // so the schedule is still enabled and the caller can retry.
+        switch (attempt.Kind)
+        {
+            case ScheduleDeleteAttemptKind.NotFound:
+                throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+            case ScheduleDeleteAttemptKind.Enabled:
+                await AppendDeleteAuditAsync(actor, attempt.Definition!, ActionConstants.ScheduleDeleteRejected, "rejected", assignmentsRemoved: null, cancellationToken).ConfigureAwait(false);
+                throw new ScheduleDeleteRejectedException(scheduleId);
+            case ScheduleDeleteAttemptKind.Deleted:
+                await AppendDeleteAuditAsync(actor, attempt.Definition!, ActionConstants.ScheduleDeleted, "succeeded", attempt.AssignmentsRemoved, cancellationToken).ConfigureAwait(false);
+                return;
+            default:
+                throw new InvalidOperationException($"Unexpected schedule delete outcome for {scheduleId.Value}.");
+        }
+    }
+
+    private async ValueTask AppendDeleteAuditAsync(
+        IActor actor,
+        ScheduleDefinition definition,
+        string action,
+        string outcome,
+        int? assignmentsRemoved,
+        CancellationToken cancellationToken)
+    {
+        var integrationPhrase = definition.IntegrationId is { } integrationId
+            ? $"integration {integrationId.Value}"
+            : "no integration";
+        var details = assignmentsRemoved is { } count
+            ? $"Deleted schedule '{definition.Name}' ({definition.Id.Value}); {integrationPhrase}; removed {count} assignment(s)."
+            : $"Cannot delete schedule '{definition.Name}' ({definition.Id.Value}); {integrationPhrase}; it is still enabled.";
+        await _audit.AppendAsync(new AuditRecord(
+            new AuditRecordId(Guid.NewGuid().ToString("N")),
+            actor.Id,
+            action,
+            new ResourceDescriptor(ResourceTypeConstants.Schedule, definition.Id.Value),
+            Outcome: outcome,
+            DateTimeOffset.UtcNow,
+            new CorrelationId(null),
+            Details: details,
+            ScheduleId: definition.Id.Value,
+            ResourceContextId: definition.ResourceContextId?.Value), cancellationToken).ConfigureAwait(false);
+    }
+
+    private enum ScheduleDeleteAttemptKind
+    {
+        NotFound,
+        Enabled,
+        Deleted
+    }
+
+    private sealed record ScheduleDeleteAttempt(ScheduleDeleteAttemptKind Kind, ScheduleDefinition? Definition, int AssignmentsRemoved);
 }

@@ -483,6 +483,12 @@ public interface IManagementClient
     Task DisableScheduleAsync(string id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Hard-deletes a disabled schedule. Historical runs stay. Throws <see cref="HttpRequestException"/>
+    /// for 403, 404, and 409; a 409 means the schedule is still enabled.
+    /// </summary>
+    Task DeleteScheduleAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a schedule. Epic 38. Throws <see cref="ScheduleValidationException"/> on 400.
     /// </summary>
     Task<ScheduleDto> CreateScheduleAsync(CreateScheduleRequest request, CancellationToken cancellationToken = default);

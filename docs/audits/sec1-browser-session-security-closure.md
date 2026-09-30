@@ -1,19 +1,21 @@
 # SEC-1 — Browser session & request-forgery hardening — engineering closure
 
 Date: 2026-09-29
-Branch: `sec-1-browser-security` (not merged; nothing pushed by SEC-1C)
 Design authority: [SEC-1 design gate](../01-architecture/transitions/security/sec1-browser-session-request-forgery-design-gate.md)
 (rulings D1–D9, requirements REQ-1…REQ-19; as-built records §38–§48).
 Decision record: [ADR-0045](../02-decisions/ADR-0045-browser-session-recovery-and-request-trust.md).
 
-**Status: SEC-1 engineering closure is complete (SEC-1C).** Every binding requirement is implemented and evidenced, every
-finding is resolved or recorded below as an accepted residual or an explicit deferral, and the browser-security CI gate is
-remotely proven. The independent final whole-body security review passed with **no Critical and no Important findings**
-(ruling: **SAFE WITH MINOR NON-BLOCKING FOLLOW-UP**). Engineering is not reopened. **SEC-1 is not Done.** Two steps remain
-and none is claimed here:
+**Current state (2026-09-29):** SEC-1 **engineering is merged to `master`.** Engineering is not reopened.
+Remaining environment-dependent operator smoke (the checklist at the end of this document; real Entra; Safari)
+is **pre-release / UAT validation**, not active engineering. Those checks are **not** claimed passed here.
 
-1. operator smoke (the checklist at the end of this document; not executed);
-2. merge to `master` (both required checks green at that time).
+**Closeout-session record (SEC-1C, same day, before merge):** Branch `sec-1-browser-security` (not yet merged;
+nothing pushed by SEC-1C). **SEC-1 engineering closure is complete (SEC-1C).** Every binding requirement is
+implemented and evidenced, every finding is resolved or recorded below as an accepted residual or an explicit
+deferral, and the browser-security CI gate is remotely proven. The independent final whole-body security review
+passed with **no Critical and no Important findings** (ruling: **SAFE WITH MINOR NON-BLOCKING FOLLOW-UP**).
+At that session two steps still remained and none was claimed: (1) operator smoke (checklist not executed);
+(2) merge to `master`. Merge has since happened. Operator smoke remains unexecuted UAT.
 
 ## What shipped
 

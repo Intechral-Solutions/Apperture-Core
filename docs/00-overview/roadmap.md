@@ -8,7 +8,7 @@ Apperture is past a **foundation baseline** (Stabilization + Scheduling & Worker
 | ----- | ------- | ------ |
 | Foundation / Stabilization | Reliability floor, auth, notifications, operator shell triage | **Complete** (S1–S13) |
 | Scheduling & Worker Management foundation | Dispatch, TZ, heartbeat observe, schedule readiness, lifecycle quarantine | **Complete** (SWM-1–SWM-12) |
-| Pre-release product development | Major product tracks (UI, demos, systems model, business data, Azure, etc.) | **Upcoming / active next** |
+| Pre-release product development | Major product tracks (UI, demos, systems model, business data, Azure, etc.) | **Active.** **LFC-1 complete and merge-ready**; next epic not selected — see [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md) |
 | Final release readiness | Packaging, RC validation, security, ship docs | **Deferred** until major product tracks land |
 
 Do **not** use “release candidate,” “v1 ready,” or “release-ready” for the current foundation baseline. See:
@@ -33,9 +33,14 @@ Worker process lifecycle remains **externally managed** (SWM-9/12). Do not resto
 
 ## Pre-release product development (next)
 
-Canonical track list: [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md).
+Canonical current-state track list and near-term order: [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md).
 
-Highlights:
+**Current next (2026-09-29):** none selected. **LFC-1 is complete and merge-ready** on
+`lfc-1-connection-schedule-lifecycle`. IAM-8 and future navigation/grouping remain not started and are not
+selected here. SEC-1 engineering is merged; remaining SEC-1 environment-dependent smoke is pre-release/UAT,
+not a development blocker. Closure: [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md) §27.
+
+Highlights (thematic tracks, not the current execution order):
 
 - Product Experience & UI Overhaul
 - User Profile & Preferences
@@ -46,8 +51,10 @@ Highlights:
 - Azure / Deployment Foundation
 - Module UI / configuration / template foundations
 
-**Recommended next implementation track (PFB-1):** SDK & Demo Module Validation.  
-**SDK-3A in progress / foundation** — durable OperationGroup/Item store + writer (see design audit). **Next after 3A: SDK-3B read APIs.**
+~~**Recommended next implementation track (PFB-1):** SDK & Demo Module Validation.~~
+~~**SDK-3A in progress / foundation** — durable OperationGroup/Item store + writer (see design audit). **Next after 3A: SDK-3B read APIs.**~~
+
+Those two lines are **historical (PFB-1 era)** and must not be used for scheduling. SDK-3A–3D, SDK-4*, SDK-5*, SDK-6*, SDK-7, JOB-1, CTX, Components, Services, and SEC-1 have since closed. See the pre-release roadmap **Current next** block.
 
 ## Deferred until after major product work
 

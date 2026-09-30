@@ -269,7 +269,7 @@ public sealed class IntegrationDispatchReadinessEvaluator : IIntegrationDispatch
                 {
                     issues.Add(NewBlockingIssue(
                         IntegrationReadinessIssueCodes.ConnectionInactive,
-                        $"Connection '{connection.Name}' ({connId.Value}) for slot '{slot.SlotName}' is not Active.",
+                        $"Connection '{connection.Name}' ({connId.Value}) for slot '{slot.SlotName}' is retired and can no longer be used.",
                         slot.SlotName,
                         binding.Id.Value,
                         connId.Value));

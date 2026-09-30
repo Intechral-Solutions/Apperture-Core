@@ -147,6 +147,19 @@ public sealed class BrowserRequestTrustGuardTests
     }
 
     [Fact]
+    public void Delete_schedule_is_an_ordinary_unsafe_api_route_under_rule_u()
+    {
+        var match = RoutedEndpoints()
+            .Where(e => e.Methods.Contains("DELETE") && e.Route.StartsWith("/api/schedules/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        match.Should().ContainSingle();
+        match[0].Route.Should().Be("/api/schedules/{id}");
+        match[0].Exempt.Should().BeFalse();
+        match[0].Navigation.Should().BeFalse();
+    }
+
+    [Fact]
     public void Program_maps_only_the_endpoint_sources_the_coverage_guard_enumerates()
     {
         var program = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Host/Program.cs"));

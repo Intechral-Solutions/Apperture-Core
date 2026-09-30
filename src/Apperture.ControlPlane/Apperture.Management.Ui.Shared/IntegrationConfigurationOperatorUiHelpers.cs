@@ -436,9 +436,9 @@ public static class IntegrationConfigurationOperatorUiHelpers
                 message,
                 "Update the binding to reference an existing connection."),
             "connection_inactive" => (
-                "Connection inactive",
+                "Connection retired",
                 message,
-                "Activate the connection or bind a different one."),
+                "Bind a different connection, or remove this binding. A retired connection cannot be brought back."),
             "connection_unverified" or "connection_verification_unverified" => (
                 "Connection not verified",
                 message,

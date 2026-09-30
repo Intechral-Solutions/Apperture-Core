@@ -1277,6 +1277,12 @@ public sealed class ManagementClient : IManagementClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task DeleteScheduleAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var response = await _http.DeleteAsync($"schedules/{Uri.EscapeDataString(id)}", cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ScheduleDto> CreateScheduleAsync(CreateScheduleRequest request, CancellationToken cancellationToken = default)
     {
         var body = new

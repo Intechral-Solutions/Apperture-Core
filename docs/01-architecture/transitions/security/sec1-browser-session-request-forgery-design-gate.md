@@ -3,7 +3,9 @@
 Date: 2026-09-24
 Status: **Design gate complete and approved (2026-09-24). Rulings D1–D9 are settled (§33). SEC-1 engineering closure is
 complete (SEC-1C, §48). The independent final whole-body security review passed with only non-blocking findings (SAFE WITH
-MINOR NON-BLOCKING FOLLOW-UP). Operator smoke and merge remain. SEC-1 is not Done.** Implementation record:
+MINOR NON-BLOCKING FOLLOW-UP). Engineering is merged to `master` (2026-09-29).** Remaining environment-dependent operator
+smoke (real Entra, Safari, closure checklist) is **pre-release / UAT validation**, not active engineering, and is **not**
+claimed passed. Implementation record:
 SEC-1.0 (browser proof harness and baseline reproduction) is delivered, with its evidence in §0.1 and §38, SEC-1A1
 (centralized expired-session recovery) is implemented and proven in browsers, recorded in §39, and SEC-1A2a (the shared
 safe return-target policy, normal sign-in and failed/cancelled Entra sign-in) is implemented and proven in browsers, recorded
@@ -19,8 +21,9 @@ default, §47.6), and a sequence of remediation runs (§47.6–§47.15) led to a
 both `build-and-test` and `browser-security` passed on Ubuntu (§47.16). The `master` ruleset lists both as required
 checks, but GitHub does not enforce it on this private repository under the current plan, so both checks are
 procedurally required before merge (§47.16). SEC-1C (ADR-0045 and the closure audit) is **complete** and recorded in §48:
-SEC-1 engineering closure is complete. The independent final review has passed with only non-blocking findings. SEC-1 is
-**not Done**: operator smoke and merge remain ([closure audit](../../../audits/sec1-browser-session-security-closure.md)).
+SEC-1 engineering closure is complete. The independent final review has passed with only non-blocking findings.
+**Current state (2026-09-29):** engineering is **merged to `master`**. Remaining operator smoke is pre-release/UAT
+and is not claimed passed ([closure audit](../../../audits/sec1-browser-session-security-closure.md)).
 Audited HEAD: `0424877e985a80d8a956c395ce1f84e892059a8c` (`master`, clean tree).
 
 Required inputs consumed: [pre-release-product-roadmap.md](../../../00-overview/pre-release-product-roadmap.md) (item 7a),
@@ -2256,7 +2259,9 @@ full local run is SEC-1B3 (§46.6); the latest remote proof is §47.16.
 ### 48.4 Lifecycle
 
 **SEC-1 engineering closure is complete. The independent final whole-body security review passed with only non-blocking
-findings (SAFE WITH MINOR NON-BLOCKING FOLLOW-UP). SEC-1 is not Done.** Remaining, in order: operator smoke (closure
-audit checklist), and merge with `build-and-test` and `browser-security` green. Do not reopen SEC-1 engineering.
+findings (SAFE WITH MINOR NON-BLOCKING FOLLOW-UP).** Closeout-session remaining steps were operator smoke (closure
+audit checklist) and merge with `build-and-test` and `browser-security` green. **Current state (2026-09-29):**
+engineering is merged to `master`. Remaining operator smoke is pre-release/UAT and is not claimed passed. Do not
+reopen SEC-1 engineering.
 
 

@@ -11,4 +11,6 @@ Working record of the operator information-architecture change that **shipped**.
 
 ## Status
 
-**Complete.** Canonical rail: Control Center (logo), Integrations, Business Data, Config (gear). Operations, Automation, Connections, and Dashboard are not rail domains.
+**Complete (NAV-1).** Canonical rail: Control Center (logo), Integrations, Business Data, Config (gear). Operations, Automation, Connections, and Dashboard are not rail domains.
+
+This completed **rail** overhaul is **not** the future **cross-context organizational grouping** body recorded as near-term item 8 in [`pre-release-product-roadmap.md`](../../../00-overview/pre-release-product-roadmap.md). Item 8 is undesigned and not started; do not treat this folder as that work.
