@@ -1,14 +1,15 @@
 # LFC-1 — Connection / Schedule lifecycle cleanup — design gate
 
 Date: 2026-09-29
-Status: **Complete and merge-ready.** LFC-1.0–LFC-1.3 satisfy the §3 rulings. Closure audit is §27. Product rulings in §3 are unchanged.
+Status: **Complete. Merged to `master`.** LFC-1.0–LFC-1.3 satisfy the §3 rulings. Closure audit is §27 (recorded merge-ready at closeout). Product rulings in §3 are unchanged.
 Branch: `lfc-1-connection-schedule-lifecycle`
+Merge to `master`: `776a2bd8c9c46dcf3686947ea26f93e09eadbc19` (Merge pull request #2 from Intechral-Solutions/lfc-1-connection-schedule-lifecycle)
 LFC-1.0 audited HEAD: `4c725ba8ad4362dbc15a7cfef935aa5579922270`
 Implementation HEAD at closure: `a1f883585ea5d9a7d2d83d1feb81ed7c2e66569f`
 
 This document began as the LFC-1.0 lifecycle contract. LFC-1.0 itself authorized no product change. Later slices implemented the contract. §2 is the inventory at the LFC-1.0 audited HEAD; supersession notes record what later slices changed.
 
-Everything below is grounded in the repository at that commit. Where an older note said IAM-8, INT-1, JOB-1, or SDK work was "next," the current roadmap wins: LFC-1 is the selected core-platform body, and IAM-8 and navigation / cross-context grouping stay not started.
+Everything below is grounded in the repository at the commits cited above unless a supersession note says otherwise. Where an older note in this gate said IAM-8, INT-1, JOB-1, or SDK work was "next," that reflected earlier roadmap text. At the 2026-09-29 closeout, LFC-1 was the selected core-platform body; IAM-8 and navigation / cross-context grouping were not started. **Current scheduling:** see [`pre-release-product-roadmap.md`](../../00-overview/pre-release-product-roadmap.md) **Current next** — no next epic selected; LFC-1 is merged to `master`.
 
 Labels used throughout:
 
