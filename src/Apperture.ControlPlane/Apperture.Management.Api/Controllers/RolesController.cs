@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
@@ -36,14 +37,14 @@ public sealed class RolesController : ControllerBase
             var roles = await _userManagement.GetRolesAsync(cancellationToken);
             return Ok(roles.Select(r => new RoleDto(r.Id.Value, r.Name, r.Description, r.IsSystemRole)).ToList());
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (IsRoleFailure(ex))
         {
-            return Forbid();
+            return MapRoleFailure(ex);
         }
     }
 
     /// <summary>
-    /// Gets a role by id with its granted permissions. Requires user.read.
+    /// Gets a role by id with its granted permissions and current assignment count. Requires user.read.
     /// </summary>
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(RoleDetailDto), StatusCodes.Status200OK)]
@@ -54,17 +55,120 @@ public sealed class RolesController : ControllerBase
     {
         try
         {
-            var role = await _userManagement.GetRoleAsync(new Apperture.Core.Domain.Identity.RoleId(id), cancellationToken);
+            var role = await _userManagement.GetRoleAsync(new RoleId(id), cancellationToken);
             if (role is null)
                 return NotFound();
-            var permissions = role.Permissions
-                .Select(p => new RolePermissionEntryDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
-                .ToList();
-            return Ok(new RoleDetailDto(role.Id.Value, role.Name, role.Description, role.IsSystemRole, permissions));
+            var assignments = await _userManagement.GetRoleAssignmentsAsync(role.Id, cancellationToken);
+            if (assignments is null)
+                return NotFound();
+            return Ok(ToDetail(role, assignments.Count));
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (IsRoleFailure(ex))
         {
-            return Forbid();
+            return MapRoleFailure(ex);
+        }
+    }
+
+    /// <summary>
+    /// Creates a user-created role. Requires role.manage. Non-empty initial grants also require permission.assign.
+    /// </summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(RoleDetailDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RoleDetailDto>> Create([FromBody] CreateRoleRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var role = await _userManagement.CreateRoleAsync(
+                request.Name,
+                request.Description,
+                ToPermissionDescriptors(request.Permissions),
+                cancellationToken);
+            var assignments = await _userManagement.GetRoleAssignmentsAsync(role.Id, cancellationToken);
+            var detail = ToDetail(role, assignments?.Count ?? 0);
+            return CreatedAtAction(nameof(Get), new { id = role.Id.Value }, detail);
+        }
+        catch (Exception ex) when (IsRoleFailure(ex))
+        {
+            return MapRoleFailure(ex);
+        }
+    }
+
+    /// <summary>
+    /// Updates role name and description. Requires role.manage. Does not replace grants.
+    /// </summary>
+    [HttpPatch("{id}")]
+    [ProducesResponseType(typeof(RoleDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RoleDetailDto>> UpdateMetadata(string id, [FromBody] UpdateRoleMetadataRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var roleId = new RoleId(id);
+            var role = await _userManagement.UpdateRoleMetadataAsync(roleId, request.Name, request.Description, cancellationToken);
+            var assignments = await _userManagement.GetRoleAssignmentsAsync(role.Id, cancellationToken);
+            return Ok(ToDetail(role, assignments?.Count ?? 0));
+        }
+        catch (Exception ex) when (IsRoleFailure(ex))
+        {
+            return MapRoleFailure(ex);
+        }
+    }
+
+    /// <summary>
+    /// Hard-deletes a user-created role with zero assignments. Requires role.manage.
+    /// Does not remove assignments.
+    /// </summary>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _userManagement.DeleteRoleAsync(new RoleId(id), cancellationToken);
+            return NoContent();
+        }
+        catch (Exception ex) when (IsRoleFailure(ex))
+        {
+            return MapRoleFailure(ex);
+        }
+    }
+
+    /// <summary>
+    /// Lists current holders for delete confirmation. Requires the same user.read check as role detail.
+    /// Returns only user id and display name.
+    /// </summary>
+    [HttpGet("{id}/assignments")]
+    [ProducesResponseType(typeof(RoleAssignmentsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RoleAssignmentsDto>> GetAssignments(string id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var assignments = await _userManagement.GetRoleAssignmentsAsync(new RoleId(id), cancellationToken);
+            if (assignments is null)
+                return NotFound();
+            var holders = assignments.Holders
+                .Select(h => new RoleAssignmentHolderDto(h.UserId.Value, h.DisplayName))
+                .ToList();
+            return Ok(new RoleAssignmentsDto(assignments.Count, holders));
+        }
+        catch (Exception ex) when (IsRoleFailure(ex))
+        {
+            return MapRoleFailure(ex);
         }
     }
 
@@ -76,12 +180,12 @@ public sealed class RolesController : ControllerBase
     {
         try
         {
-            var permissions = await _userManagement.GetRolePermissionsAsync(new Apperture.Core.Domain.Identity.RoleId(id), cancellationToken);
+            var permissions = await _userManagement.GetRolePermissionsAsync(new RoleId(id), cancellationToken);
             return Ok(permissions.Select(ToRolePermission).ToList());
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (IsRoleFailure(ex))
         {
-            return Forbid();
+            return MapRoleFailure(ex);
         }
     }
 
@@ -91,6 +195,7 @@ public sealed class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetPermissions(string id, [FromBody] SetRolePermissionsRequest request, CancellationToken cancellationToken = default)
     {
         if (request.Permissions is null)
@@ -99,26 +204,45 @@ public sealed class RolesController : ControllerBase
         try
         {
             await _userManagement.SetRolePermissionsAsync(
-                new Apperture.Core.Domain.Identity.RoleId(id),
+                new RoleId(id),
                 request.Permissions.Select(ToPermissionDescriptor).ToList(),
                 cancellationToken);
             return NoContent();
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception ex) when (IsRoleFailure(ex))
         {
-            return Forbid();
-        }
-        catch (RoleLifecycleException ex)
-        {
-            return Conflict(new { error = ex.Code, message = ex.Message, assignmentCount = ex.AssignmentCount });
-        }
-        catch (InvalidOperationException ex)
-        {
-            if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
-                return NotFound(new { message = ex.Message });
-            return BadRequest(new { message = ex.Message });
+            return MapRoleFailure(ex);
         }
     }
+
+    private static RoleDetailDto ToDetail(Role role, int assignmentCount)
+    {
+        var permissions = role.Permissions
+            .Select(p => new RolePermissionEntryDto(p.Action, p.Resource?.ResourceType, p.Resource?.ScopeKey))
+            .ToList();
+        return new RoleDetailDto(role.Id.Value, role.Name, role.Description, role.IsSystemRole, permissions, assignmentCount);
+    }
+
+    private static IReadOnlyList<PermissionDescriptor>? ToPermissionDescriptors(IReadOnlyList<RolePermissionDto>? permissions) =>
+        permissions?.Select(ToPermissionDescriptor).ToList();
+
+    private static bool IsRoleFailure(Exception ex) =>
+        ex is UnauthorizedAccessException or RoleLifecycleException or InvalidOperationException;
+
+    private static ActionResult MapRoleFailure(Exception ex) => ex switch
+    {
+        UnauthorizedAccessException => new ForbidResult(),
+        RoleLifecycleException lifecycle => new ConflictObjectResult(new
+        {
+            error = lifecycle.Code,
+            message = lifecycle.Message,
+            assignmentCount = lifecycle.AssignmentCount
+        }),
+        InvalidOperationException invalid when invalid.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            => new NotFoundObjectResult(new { message = invalid.Message }),
+        InvalidOperationException invalid => new BadRequestObjectResult(new { message = invalid.Message }),
+        _ => throw ex
+    };
 
     private static RolePermissionDto ToRolePermission(PermissionDescriptor permission) =>
         new(
@@ -139,3 +263,12 @@ public sealed class RolesController : ControllerBase
 public sealed record RoleDto(string Id, string Name, string? Description, bool IsSystemRole = false);
 public sealed record RolePermissionDto(string Action, string? ResourceType, string? ScopeKey);
 public sealed record SetRolePermissionsRequest(IReadOnlyList<RolePermissionDto> Permissions);
+
+/// <summary>Create body. Id and system-role flag are not accepted.</summary>
+public sealed record CreateRoleRequest(
+    string Name,
+    string? Description = null,
+    IReadOnlyList<RolePermissionDto>? Permissions = null);
+
+/// <summary>Metadata body. Grants are not accepted.</summary>
+public sealed record UpdateRoleMetadataRequest(string Name, string? Description);

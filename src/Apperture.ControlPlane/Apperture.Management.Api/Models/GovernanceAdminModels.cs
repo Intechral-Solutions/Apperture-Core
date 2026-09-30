@@ -27,7 +27,20 @@ public sealed record RoleDetailDto(
     string Name,
     string? Description,
     bool IsSystemRole,
-    IReadOnlyList<RolePermissionEntryDto> Permissions);
+    IReadOnlyList<RolePermissionEntryDto> Permissions,
+    int AssignmentCount = 0);
+
+/// <summary>
+/// Current holders of a role, for delete confirmation. Not a user directory.
+/// </summary>
+public sealed record RoleAssignmentsDto(
+    int Count,
+    IReadOnlyList<RoleAssignmentHolderDto> Holders);
+
+/// <summary>
+/// Identity shown when confirming whether a role can be deleted.
+/// </summary>
+public sealed record RoleAssignmentHolderDto(string UserId, string DisplayName);
 
 /// <summary>
 /// A single permission granted to a role.

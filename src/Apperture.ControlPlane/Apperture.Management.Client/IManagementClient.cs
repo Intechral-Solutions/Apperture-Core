@@ -978,8 +978,25 @@ public interface IManagementClient
     /// <summary>Gets a role by id with its granted permissions. Requires user.read.</summary>
     Task<RoleDetailDto?> GetRoleAsync(string roleId, CancellationToken cancellationToken = default);
 
-    /// <summary>Replaces the role's full permission set. Requires permission.assign. Throws on 400/403/404.</summary>
+    /// <summary>Replaces the role's full permission set. Requires permission.assign. Throws on 400/403/404/409.</summary>
     Task SetRolePermissionsAsync(string roleId, SetRolePermissionsRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a user-created role. Requires role.manage. Non-empty permissions also require permission.assign.
+    /// </summary>
+    Task<RoleDetailDto> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates role name and description only. Requires role.manage.</summary>
+    Task<RoleDetailDto> UpdateRoleMetadataAsync(string roleId, UpdateRoleMetadataRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Hard-deletes a user-created role that has no assignments. Requires role.manage.</summary>
+    Task DeleteRoleAsync(string roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists current holders for delete confirmation. Uses the same user.read check as role detail.
+    /// Returns null when the role is missing.
+    /// </summary>
+    Task<RoleAssignmentsDto?> GetRoleAssignmentsAsync(string roleId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a paginated page of users. Requires user.read.</summary>
     Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
@@ -1064,13 +1081,49 @@ public sealed record RoleDetailDto(
     string Name,
     string? Description,
     bool IsSystemRole,
-    IReadOnlyList<RolePermissionEntryDto> Permissions);
+    IReadOnlyList<RolePermissionEntryDto> Permissions,
+    int AssignmentCount = 0);
 
 public sealed record RolePermissionEntryDto(string Action, string? ResourceType, string? ScopeKey);
 
 public sealed record RolePermissionDto(string Action, string? ResourceType, string? ScopeKey);
 
 public sealed record SetRolePermissionsRequest(IReadOnlyList<RolePermissionDto> Permissions);
+
+public sealed record CreateRoleRequest(
+    string Name,
+    string? Description = null,
+    IReadOnlyList<RolePermissionDto>? Permissions = null);
+
+public sealed record UpdateRoleMetadataRequest(string Name, string? Description);
+
+/// <summary>Current holders of a role. Count is the live assignment total used for delete.</summary>
+public sealed record RoleAssignmentsDto(int Count, IReadOnlyList<RoleAssignmentHolderDto> Holders);
+
+/// <summary>User identity shown on role delete confirmation.</summary>
+public sealed record RoleAssignmentHolderDto(string UserId, string DisplayName);
+
+/// <summary>
+/// Role lifecycle conflict from the Management API. <see cref="Code"/> is the stable API error
+/// (<c>system_role</c>, <c>assignments_remain</c>, or <c>duplicate_name</c>).
+/// </summary>
+public sealed class RoleLifecycleConflictException : Exception
+{
+    public const string SystemRole = "system_role";
+    public const string AssignmentsRemain = "assignments_remain";
+    public const string DuplicateName = "duplicate_name";
+
+    public RoleLifecycleConflictException(string code, string message, int? assignmentCount = null)
+        : base(message)
+    {
+        Code = code;
+        AssignmentCount = assignmentCount;
+    }
+
+    public string Code { get; }
+
+    public int? AssignmentCount { get; }
+}
 
 public sealed record UserListResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<UserListDto> Items,
