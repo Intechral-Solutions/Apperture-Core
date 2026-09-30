@@ -138,33 +138,239 @@ public sealed class UserManagementService : IUserManagementService
         if (role is null)
             throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
-        if (permissions is { Count: > 0 })
-        {
-            for (var i = 0; i < permissions.Count; i++)
-            {
-                var p = permissions[i];
-                try
-                {
-                    if (!_descriptorRegistry.IsPermissionRegistered(p))
-                        throw new InvalidOperationException(
-                            $"Permission at index {i} is not in the canonical governance catalog: Action={p.Action}, Resource={FormatResource(p.Resource)}. " +
-                            "Only permissions registered at platform or module startup may be assigned to roles.");
-                }
-                catch (InvalidOperationException ex) when (ex.Message.Contains("is not in the canonical") == false)
-                {
-                    throw new InvalidOperationException(
-                        $"Permission at index {i} is malformed: {ex.Message}. Action={p.Action}, Resource={FormatResource(p.Resource)}.",
-                        ex);
-                }
-            }
-        }
+        if (role.IsSystemRole)
+            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+
+        ValidateCatalogPermissions(permissions);
 
         await _roleRepository.UpdatePermissionsAsync(roleId, permissions, cancellationToken);
         await AppendAuditAsync(GovernanceAuditActionNames.PermissionAssignmentUpdated, actorId, roleId.Value, $"roleId={roleId.Value} permissionCount={permissions.Count}", cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<Role> CreateRoleAsync(
+        string name,
+        string? description = null,
+        IReadOnlyList<PermissionDescriptor>? permissions = null,
+        CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequireRoleManageAsync(cancellationToken);
+        var grants = permissions ?? Array.Empty<PermissionDescriptor>();
+        if (grants.Count > 0)
+            await RequirePermissionAssignAsync(cancellationToken);
+
+        var normalizedName = NormalizeRoleName(name);
+        var normalizedDescription = NormalizeRoleDescription(description);
+        ValidateCatalogPermissions(grants);
+        await EnsureRoleNameAvailableAsync(normalizedName, excludeRoleId: null, cancellationToken);
+
+        var role = new Role(
+            NewUserCreatedRoleId(),
+            normalizedName,
+            normalizedDescription,
+            grants,
+            IsSystemRole: false);
+
+        try
+        {
+            await _roleRepository.CreateAsync(role, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
+        {
+            throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
+        }
+
+        await AppendAuditAsync(
+            GovernanceAuditActionNames.RoleCreated,
+            actorId,
+            role.Id.Value,
+            $"roleId={role.Id.Value} name={role.Name} permissionCount={grants.Count}",
+            cancellationToken);
+        return role;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<Role> UpdateRoleMetadataAsync(
+        RoleId roleId,
+        string name,
+        string? description,
+        CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequireRoleManageAsync(cancellationToken);
+        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
+        if (role is null)
+            throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        if (role.IsSystemRole)
+            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+
+        var normalizedName = NormalizeRoleName(name);
+        var normalizedDescription = NormalizeRoleDescription(description);
+        await EnsureRoleNameAvailableAsync(normalizedName, roleId, cancellationToken);
+
+        try
+        {
+            await _roleRepository.UpdateMetadataAsync(roleId, normalizedName, normalizedDescription, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
+        {
+            throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
+        }
+
+        var updated = role with { Name = normalizedName, Description = normalizedDescription };
+        await AppendAuditAsync(
+            GovernanceAuditActionNames.RoleMetadataUpdated,
+            actorId,
+            roleId.Value,
+            $"roleId={roleId.Value} name={normalizedName}",
+            cancellationToken);
+        return updated;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask DeleteRoleAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequireRoleManageAsync(cancellationToken);
+        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
+        if (role is null)
+            throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        if (role.IsSystemRole)
+            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+
+        var result = await _roleRepository.TryDeleteUnassignedAsync(roleId, cancellationToken);
+        switch (result.Outcome)
+        {
+            case RoleUnassignedDeleteOutcome.NotFound:
+                throw new InvalidOperationException($"Role {roleId.Value} not found.");
+            case RoleUnassignedDeleteOutcome.AssignmentsRemain:
+                await AppendAuditAsync(
+                    GovernanceAuditActionNames.RoleMutationRejected,
+                    actorId,
+                    roleId.Value,
+                    $"roleId={roleId.Value} reason=assignments_remain assignmentCount={result.AssignmentCount}",
+                    cancellationToken);
+                throw new RoleLifecycleException(
+                    RoleLifecycleErrorCodes.AssignmentsRemain,
+                    "This role still has assignments and cannot be deleted.",
+                    result.AssignmentCount);
+            case RoleUnassignedDeleteOutcome.Deleted:
+                await AppendAuditAsync(
+                    GovernanceAuditActionNames.RoleDeleted,
+                    actorId,
+                    roleId.Value,
+                    $"roleId={roleId.Value} name={result.Name ?? role.Name}",
+                    cancellationToken);
+                return;
+            default:
+                throw new InvalidOperationException($"Unexpected role delete outcome {result.Outcome}.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<RoleAssignmentList?> GetRoleAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        await RequireUserReadAsync(cancellationToken);
+        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
+        if (role is null)
+            return null;
+
+        var userIds = await _roleRepository.ListUserIdsWithRoleAsync(roleId, cancellationToken);
+        var holders = new List<RoleAssignmentHolder>(userIds.Count);
+        foreach (var userId in userIds)
+        {
+            var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+            holders.Add(new RoleAssignmentHolder(userId, user?.DisplayName ?? userId.Value));
+        }
+
+        return new RoleAssignmentList(holders.Count, holders);
+    }
+
     private static string FormatResource(ResourceDescriptor? r) =>
         r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
+
+    private void ValidateCatalogPermissions(IReadOnlyList<PermissionDescriptor> permissions)
+    {
+        if (permissions is not { Count: > 0 })
+            return;
+
+        for (var i = 0; i < permissions.Count; i++)
+        {
+            var p = permissions[i];
+            try
+            {
+                if (!_descriptorRegistry.IsPermissionRegistered(p))
+                    throw new InvalidOperationException(
+                        $"Permission at index {i} is not in the canonical governance catalog: Action={p.Action}, Resource={FormatResource(p.Resource)}. " +
+                        "Only permissions registered at platform or module startup may be assigned to roles.");
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("is not in the canonical") == false)
+            {
+                throw new InvalidOperationException(
+                    $"Permission at index {i} is malformed: {ex.Message}. Action={p.Action}, Resource={FormatResource(p.Resource)}.",
+                    ex);
+            }
+        }
+    }
+
+    private static string NormalizeRoleName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("Role name is required.");
+        var trimmed = name.Trim();
+        if (trimmed.Length > 256)
+            throw new InvalidOperationException("Role name must be 256 characters or fewer.");
+        return trimmed;
+    }
+
+    private static string? NormalizeRoleDescription(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+        var trimmed = description.Trim();
+        if (trimmed.Length > 512)
+            throw new InvalidOperationException("Role description must be 512 characters or fewer.");
+        return trimmed;
+    }
+
+    private async ValueTask EnsureRoleNameAvailableAsync(string name, RoleId? excludeRoleId, CancellationToken cancellationToken)
+    {
+        var roles = await _roleRepository.GetAllAsync(cancellationToken);
+        if (roles.Any(r =>
+                string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)
+                && (excludeRoleId is null || r.Id.Value != excludeRoleId.Value)))
+        {
+            throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
+        }
+    }
+
+    private static RoleId NewUserCreatedRoleId()
+    {
+        RoleId id;
+        do
+        {
+            id = new RoleId("role-" + Guid.NewGuid().ToString("N"));
+        }
+        while (string.Equals(id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal));
+        return id;
+    }
+
+    private static bool IsDuplicateRoleName(InvalidOperationException ex) =>
+        ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase);
+
+    private async ValueTask<RoleLifecycleException> RefuseSystemRoleMutationAsync(
+        ActorId actorId,
+        RoleId roleId,
+        CancellationToken cancellationToken)
+    {
+        await AppendAuditAsync(
+            GovernanceAuditActionNames.RoleMutationRejected,
+            actorId,
+            roleId.Value,
+            $"roleId={roleId.Value} reason=system_role",
+            cancellationToken);
+        return new RoleLifecycleException(
+            RoleLifecycleErrorCodes.SystemRole,
+            "This built-in role cannot be changed or deleted.");
+    }
 
     /// <inheritdoc />
     public async ValueTask<UserId> CreateUserAsync(
@@ -598,6 +804,20 @@ public sealed class UserManagementService : IUserManagementService
             null, null, cancellationToken);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to manage credentials.");
+        return new ActorId(actor.Id.Value);
+    }
+
+    private async ValueTask<ActorId> RequireRoleManageAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+        var allowed = await _auth.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.RoleManage, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            null, null, cancellationToken);
+        if (!allowed)
+            throw new UnauthorizedAccessException("Not authorized to manage roles.");
         return new ActorId(actor.Id.Value);
     }
 

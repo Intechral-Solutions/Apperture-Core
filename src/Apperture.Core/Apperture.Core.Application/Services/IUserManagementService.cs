@@ -41,6 +41,40 @@ public interface IUserManagementService
     ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Creates a user-created role and optional initial grants in one operation. Requires role.manage.
+    /// Non-empty initial grants also require permission.assign. Empty grants are allowed.
+    /// </summary>
+    ValueTask<Role> CreateRoleAsync(
+        string name,
+        string? description = null,
+        IReadOnlyList<PermissionDescriptor>? permissions = null,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Updates name and description only. Requires role.manage. System roles are refused.
+    /// </summary>
+    ValueTask<Role> UpdateRoleMetadataAsync(
+        RoleId roleId,
+        string name,
+        string? description,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Hard-deletes a user-created role with zero assignments. Requires role.manage.
+    /// Does not unassign users. System roles and assigned roles are refused.
+    /// </summary>
+    ValueTask DeleteRoleAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Lists current holders of a role. Requires user.read. Returns null when the role is missing.
+    /// </summary>
+    ValueTask<RoleAssignmentList?> GetRoleAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
     /// Creates a new user with one initial identity link. Local source requires a password hashed through
     /// the platform hasher (not a hash supplied by the caller). Requires user.manage.
     /// </summary>

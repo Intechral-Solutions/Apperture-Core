@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Management.Api.Models;
 using Apperture.Shared.Kernel;
@@ -106,6 +107,10 @@ public sealed class RolesController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (RoleLifecycleException ex)
+        {
+            return Conflict(new { error = ex.Code, message = ex.Message, assignmentCount = ex.AssignmentCount });
         }
         catch (InvalidOperationException ex)
         {

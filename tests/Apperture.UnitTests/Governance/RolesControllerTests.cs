@@ -57,6 +57,26 @@ public sealed class RolesControllerTests
     }
 
     [Fact]
+    public async Task SetPermissions_WhenSystemRole_Returns409()
+    {
+        var userManagement = new StubUserManagementService(setThrows: new RoleLifecycleException(
+            RoleLifecycleErrorCodes.SystemRole,
+            "This built-in role cannot be changed or deleted."));
+        var controller = new RolesController(userManagement);
+        var request = new SetRolePermissionsRequest([new RolePermissionDto("user.read", "User", "instance")]);
+
+        var result = await controller.SetPermissions("role-platform-administrator", request, CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new
+        {
+            error = RoleLifecycleErrorCodes.SystemRole,
+            message = "This built-in role cannot be changed or deleted.",
+            assignmentCount = (int?)null
+        });
+    }
+
+    [Fact]
     public async Task SetPermissions_WhenValid_Succeeds()
     {
         var userManagement = new StubUserManagementService();

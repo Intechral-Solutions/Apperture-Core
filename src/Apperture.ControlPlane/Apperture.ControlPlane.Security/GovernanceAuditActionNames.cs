@@ -8,6 +8,10 @@ public static class GovernanceAuditActionNames
     public const string RoleAssigned = "governance.role.assignment.created";
     public const string RoleRemoved = "governance.role.assignment.removed";
     public const string PermissionAssignmentUpdated = "governance.permission.assignment.updated";
+    public const string RoleCreated = "governance.role.created";
+    public const string RoleMetadataUpdated = "governance.role.metadata.updated";
+    public const string RoleDeleted = "governance.role.deleted";
+    public const string RoleMutationRejected = "governance.role.mutation_rejected";
     public const string BreakGlassAdminOperation = "governance.break_glass.admin_operation";
 
     // Runtime enrollment (operator control surface)
