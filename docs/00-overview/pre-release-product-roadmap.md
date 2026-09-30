@@ -31,10 +31,10 @@ are complete, manually smoke-tested, and merged to `master` — see
 remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
 reset, cutting across several of them.
 
-**Current next:** **IAM-8 — Custom Role Lifecycle** (item 7b). **IAM-8.0 design gate is written;
-implementation has not started.** LFC-1 is complete and merged to `master`. SEC-1 engineering is merged to
-`master`. Items 0–7a of the 2026-09-18 sequence are complete as engineering. **Navigation / cross-context
-grouping (item 8) is not selected.** Gate:
+**Current next:** none selected (2026-09-30). **IAM-8 — Custom Role Lifecycle** (item 7b) is **complete and
+merge-ready**; not merged. This closeout does not select a next epic. LFC-1 is complete and merged to
+`master`. SEC-1 engineering is merged to `master`. Items 0–7a of the 2026-09-18 sequence are complete as
+engineering. **Navigation / cross-context grouping (item 8) is not selected.** Gate:
 [`iam8-design-gate.md`](../01-architecture/transitions/custom-role-lifecycle/iam8-design-gate.md).
 LFC-1.0–LFC-1.3 closed against
 [`lfc1-design-gate.md`](../01-architecture/transitions/connection-schedule-lifecycle/lfc1-design-gate.md).
@@ -241,6 +241,8 @@ LFC-1.0–LFC-1.3 closed against
    assignments invalid or orphaned; audit the create/update/delete lifecycle. It is **not** Context-scoped IAM (that stays
    deferred, below) and does not change the authorization evaluation model. Contract:
    [`iam8-design-gate.md`](../01-architecture/transitions/custom-role-lifecycle/iam8-design-gate.md).
+   **Closure (2026-09-30):** IAM-8.0–IAM-8.4 satisfy that gate. IAM-8 is complete and merge-ready. This closeout
+   does not select a next epic. Grouping remains not started.
 8. **Navigation / cross-context grouping design** — **not started; not current next.** Distinct from **NAV-1**, the
    completed Management UI **rail** overhaul (`docs/01-architecture/transitions/nav-overhaul/`; Control Center /
    Integrations / Business Data / Config). Item 8 is a later, undesigned **cross-context organizational grouping**
@@ -298,6 +300,9 @@ as written.
 
 **Supersession (2026-09-29, IAM-8 selection):** **IAM-8** is the selected next core-platform body. Only the
 design gate is written. Navigation / cross-context grouping (item 8) stays unselected.
+
+**Supersession (2026-09-30, IAM-8 closure):** IAM-8 is complete and merge-ready. This closeout does not select
+a next epic. Navigation / cross-context grouping (item 8) stays unselected. Context-scoped IAM stays deferred.
 
 **The visual workflow designer is not an active roadmap item.** It has only ever appeared as an
 engineering-side non-goal (ADR-0032, Epic-57, CTX-3B closures) — never as approved product scope. It stays

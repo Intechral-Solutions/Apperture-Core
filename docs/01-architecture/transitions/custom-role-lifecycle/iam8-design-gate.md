@@ -1,10 +1,12 @@
 # IAM-8 — Custom role lifecycle — design gate
 
 Date: 2026-09-29
-Status: **IAM-8.0 design gate.** Selected next core-platform body. Implementation has not started.
+Status: **Complete and merge-ready (2026-09-30).** IAM-8.0–IAM-8.4 satisfy the binding rulings. Closure audit is §20. Not merged. This closeout does not select a next epic. Product rulings in §2 are unchanged.
+Branch: `iam-8.5-role-lifecycle-closure`
+Implementation HEAD at closure: `cb60c7b7282543061a9e87e439db5743672aac5a`
 Scope: complete create, metadata edit, and delete for the existing instance-scoped role model. Do not redesign authorization evaluation.
 
-This gate is the lifecycle contract. Product rulings below are binding. Later slices implement them. They do not reopen Context-scoped IAM, permission evaluation, or cross-context grouping.
+This gate is the lifecycle contract. Product rulings below are binding. §1 records the hole at the 2026-09-29 gate. Later slices closed it. §20 is the closure audit. Those rulings do not reopen Context-scoped IAM, permission evaluation, or cross-context grouping.
 
 Labels:
 
@@ -364,3 +366,58 @@ IAM-8 is complete only when all of the following are true:
 - The closure audit records that grouping was not started.
 
 Until that closure, roadmap status is: **selected, design gate written, implementation not started.**
+
+**Closure (2026-09-30).** Those criteria are met. See §20. This closeout does not select a next epic.
+
+---
+
+## 20. Closure audit (2026-09-30)
+
+Read-only reconciliation of implementation HEAD `cb60c7b7282543061a9e87e439db5743672aac5a` against the §2 rulings and the §19 acceptance criteria. No product or test source was changed in this closeout.
+
+**Ruling: complete and merge-ready.** Binding IAM-8 requirements are satisfied. Grouping, Context-scoped IAM, Entra/SCIM, navigation, and SEC-1 UAT were not started.
+
+| Slice | Result |
+|---|---|
+| IAM-8.0 | Rulings R1–R9 remain the contract. |
+| IAM-8.1 | `UserManagementService` creates, renames, replaces grants, lists assignments, and hard-deletes. System-role mutation is refused in the service. Delete does not call unassign. |
+| IAM-8.2 | `RolesController` matches §13, including 409 `system_role` and `assignments_remain`. `IManagementClient` maps those conflicts. No new permission constant. |
+| IAM-8.3 | Role list offers create. Detail edits metadata, lists holders, confirms delete, and leaves for the role list. System roles stay read-only. Blocked delete does not call the API. |
+| IAM-8.4 | Committed SQL Server tests assert assign-versus-delete with no product change. They require a key-range lock from `UPDLOCK`/`HOLDLOCK` on `UserRoles`, and they assert `FK_UserRoles_Roles_RoleId` is `NO_ACTION`. |
+
+| Gate area | Result |
+|---|---|
+| Role identity | Satisfied. Server-generated `role-` plus 32 lowercase hex. Not the display name. Not `role-platform-administrator`. |
+| Naming and uniqueness | Satisfied. Trim, length, empty description to null. Conflict on the existing unique name index. |
+| Create | Satisfied. One insert carries the initial grants. Empty grants do not require `permission.assign`. Non-empty grants do. |
+| Metadata update | Satisfied. Name and description only. Separate from grant replacement. |
+| Permission replacement | Satisfied. Existing PUT. System roles refuse before `UpdatePermissionsAsync` and do not write `governance.permission.assignment.updated`. |
+| System-role immutability | Satisfied. Service, API, and UI. `IsSystemRole` is not client-supplied. Create stores false. |
+| Delete, zero assignments, no implicit unassignment | Satisfied. Count under the lifecycle locks. Assignments are not deleted. A second delete of a missing id is not found. |
+| Assignment visibility | Satisfied. Detail includes `assignmentCount`. Holders come from `GET /api/roles/{id}/assignments`. |
+| Hard-delete / no tombstone | Satisfied. No lifecycle column and no migration. Audit rows are kept. |
+| Platform-administrator invariants | Satisfied. Role delete cannot remove the system role. Last-administrator protection remains on user-assignment removal. Seed repair still calls `UpdatePermissionsAsync` directly. |
+| Authorization | Satisfied. `role.manage` for create, metadata, and delete. `permission.assign` for grants. `user.read` for reads and assignment listing. Evaluator implication list unchanged. |
+| Audit | Satisfied. Success and authorized-refusal events in §10. Unauthorized and not-found paths do not write lifecycle audits. |
+| Persistence and history | Satisfied. Delete re-reads the row inside the transaction. Client version is not required. |
+| API, client, and UI | Satisfied. Status codes in §13. Client conflict codes match. UI copy is operator language. No new rail item. |
+| Accessibility | Satisfied against this gate. Fields are labeled, errors use alert text, and delete uses the existing confirm dialog. |
+| Concurrency | Satisfied. Assign-versus-delete cannot leave a `UserRoles` row for a deleted role. |
+| Test and proof | Satisfied for engineering closure. See the evidence note below. |
+| Explicit non-goals | Intentionally out of scope, and not present in the IAM-8 diff. |
+
+**Verified unchanged.** `RbacAuthorizationPolicyEvaluator` was not modified. No `role.create`, `role.delete`, or `role.update` permission. No ResourceContext-scoped grants, grouping, department, domain, Entra/SCIM, bulk unassign, archive, or tombstone. No SEC-1 request-trust exemption. `RemoveRoleAsync` last-administrator refusal was not edited.
+
+**Known non-blockers, not closure failures.**
+
+- `TryDeleteUnassignedAsync` does not re-check `IsSystemRole`. The service refuses a system role before that call. A direct repository delete of an unassigned system role is not an API path.
+- The in-memory name pre-check compares with ordinal case-insensitivity. The unique index remains the conflict authority. Collation was not changed.
+- Metadata update and grant replacement do not send `RowVersion`. §11 allows last-write-wins when the client does not send a version.
+- Create is a page at `/config/governance/roles/new`, linked from the list. It is not a rail item.
+- The blocked-delete dialog keeps a disabled **Delete role** label. It does not call delete, and the explanation includes the assignment count.
+- `duplicate_name` is an additional stable 409 code. The gate required conflict for a duplicate name, and named `system_role` and `assignments_remain`.
+- No new ADR. This gate remains the lifecycle contract.
+
+**Evidence.** This closeout inspected the committed service, repository, API, client, UI, and tests. It did not re-run those suites. IAM-8.1 service and repository tests cover id generation, system-role refusal, assigned-delete refusal, zero-assignment delete, trimmed duplicate names, empty description, catalog rejection, and unauthorized create with no lifecycle audit. IAM-8.2 covers the §13 status codes. IAM-8.3 covers hidden system-role controls, blocked-delete copy, and navigation to the role list after delete. IAM-8.4 covers the SQL Server assign-versus-delete invariant and the restrict foreign key. That set is sufficient for engineering closure.
+
+**CI.** Not required to record this closure. One deliberate remote CI / PR run is warranted as the pre-merge checkpoint: the body is merge-ready authorization work, and that run would execute the full suite, including the SQL Server concurrency proof, on a clean agent. It is not warranted merely because another slice was committed. Do not push as part of this closeout.
