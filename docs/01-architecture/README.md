@@ -16,9 +16,10 @@
 | [runtime-step-execution.md](runtime-step-execution.md) | Step execution context; slot-bound dependency resolution in workflow steps; disposal and failure semantics |
 | [control-plane.md](control-plane.md) | Management API, UI, responsibilities |
 | [control-panel-ui.md](control-panel-ui.md) | Management shell (rail + Control Panel) |
-| [instance-plane.md](instance-plane.md) | Worker, SQL enqueue/claim/inline execution today; DTFx as future adapter; one module per process |
+| [instance-plane.md](instance-plane.md) | Worker, SQL enqueue/claim/inline execution today; DTFx as future adapter; module/process isolation as a future deployment option |
+| [rc1-program-gate.md](rc1-program-gate.md) | **RC1 program contract:** RC1 definition, decisions, deferrals, epic sequence |
 | [tenancy-model.md](tenancy-model.md) | Single-tenant Instance, auditability |
-| [federated-instance-relationships.md](federated-instance-relationships.md) | Federated cross-instance trust, scoped delegation, and auditable management boundary |
+| [federated-instance-relationships.md](federated-instance-relationships.md) | **Withdrawn (ADR-0046).** Historical design for federated cross-instance trust; not planned |
 | [durable-workflows.md](durable-workflows.md) | Portable workflow model, persistence |
 | [runtime-backends.md](runtime-backends.md) | DTFx vs Durable Functions adapters |
 | [instance-owned-scheduling.md](instance-owned-scheduling.md) | Portable scheduling model with instance-owned execution |

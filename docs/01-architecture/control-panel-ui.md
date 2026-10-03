@@ -5,8 +5,8 @@ The Control Panel UI provides the navigation shell for the Apperture Management 
 ## Layout
 
 - **Icon rail** — Fixed left rail (w-17) with icon buttons for each domain. Each button is either:
-  - A direct navigation link (when the domain has a single item)
-  - A domain opener that opens the Control Panel
+  - A domain opener that opens the Control Panel. Today a middle-domain button only opens the panel; it does not navigate. The logo and the Config gear open the panel and also navigate to their home page.
+  - (Corrected 2026-10-03: an earlier version said a button navigates directly when its domain has a single item, which the code never did. NAV-2 will give every domain a default destination; see [rc1-program-gate.md](rc1-program-gate.md).)
 
 - **Control Panel** — Sliding side panel that shows submenu items for the selected domain. Slides in from the rail with translate-x animation (~300ms).
 

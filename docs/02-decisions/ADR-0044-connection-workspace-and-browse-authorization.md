@@ -7,6 +7,15 @@ Accepted (delivered 2026-09-24). Design and rulings: the
 (approved 2026-09-23, rulings D-S1…D-S4). Implementation account and evidence:
 [`services-connection-workspace-closure.md`](../audits/services-connection-workspace-closure.md).
 
+**Amendment (RC1 program gate, 2026-10-03, decision D-14).** The section *"Service" is architectural language, never a
+product noun or a type* is amended in one respect only: **"Services" may be an operator-facing navigation-domain label.**
+The rail may carry a Services domain whose first item is "All Connections" (see the
+[ADR-0040 supersession note](ADR-0040-operator-information-architecture.md)). Everything else in that section stands for
+RC1: there is no Service entity, table, id, `ResourceContextId`, lifecycle, route (`/services`, `/services/{id}`), list,
+permission (`service.read`, `service.manage`, `service.browse`) or type. `/connections` and `/connections/{id}` remain the
+list and the workspace. A richer Service abstraction is a long-term direction with no design; it is not introduced by the
+navigation label. Contract: [rc1-program-gate.md](../01-architecture/rc1-program-gate.md).
+
 **Addendum (SEC-1, 2026-09-29).** The request-forgery paragraph under *The SQL structure browser* records the measure these
 endpoints shipped with: POST, a required JSON body and the `SameSite=Lax` cookie. That measure is **superseded as a
 pattern** by the platform-wide browser request trust in

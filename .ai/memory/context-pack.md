@@ -10,8 +10,8 @@ Apperture Core is an open-core automation/integration platform whose core is a d
 
 1. Workflow-centric orchestration (not message-based)
 2. Single-tenant Instance per deployment
-3. One module per compute process
-4. Portable workflow model with DTFx and Durable Functions adapters
+3. Module/process isolation is a supported deployment option, not a current invariant (one worker may host several modules today)
+4. Portable workflow model; DTFx and Durable Functions adapters are a design intent and are not implemented (today: SQL start-request queue with inline execution)
 5. Scheduling triggers workflows only; never executes steps
 
 ## Current phase

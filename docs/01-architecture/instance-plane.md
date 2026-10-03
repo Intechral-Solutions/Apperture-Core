@@ -7,7 +7,7 @@ Folder layout: `Apperture.RuntimePlane` (shared engine), `Apperture.RuntimeHost`
 ## On-prem (RuntimeHost.Windows)
 
 - **WorkerHost** — **Current:** SQL-backed durable enqueue (`IWorkflowStartDispatchService` / dispatch stack), claim of start requests, and **inline** step execution via `IWorkflowExecutor` / engine. **Future:** DTFx adapter when wired for orchestration (see [Epic 73 ADR](../02-decisions/Epic73-execution-hot-path-and-host-roles.md)).
-- **ModuleHost** — One module per process boundary
+- **ModuleHost** — Stub today. Intended home of a one-module-per-process boundary, which is a supported future deployment option and not a current invariant (see [rc1-program-gate.md](rc1-program-gate.md), D-23)
 - **InstanceAgent** — Local instance management endpoint/service
 - **SchedulerHost** — Stub in current deployment; schedule dispatch runs in WorkerHost via `IScheduleDispatchRunner`
 

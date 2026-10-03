@@ -17,10 +17,11 @@
 - Workflow definitions and step semantics are backend-agnostic.
 - DTFx-specific or Durable Functions-specific concerns belong in adapters, not in the portable model.
 
-## Do not run multiple modules in one process (on-prem)
+## Do not assume a module is alone in its process, and do not prevent isolating one
 
-- One module per worker process.
-- Do not load multiple modules into a single Worker.Host instance.
+- Amended 2026-10-03 (RC1 program gate, decision D-23): one module per worker process is a supported future deployment option, not a current invariant.
+- Today one Worker.Host hosts several modules. That is accepted for RC1.
+- Do not write module or platform code that depends on a module being alone in its process, or that would prevent running one module per worker later (a worker module-selection mechanism can provide that topology).
 
 ## Do not mix control plane and instance plane
 

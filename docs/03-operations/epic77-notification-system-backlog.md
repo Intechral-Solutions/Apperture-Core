@@ -75,7 +75,7 @@ Completed in NTF-C. Historical notes remain in [NTF-C closure](../01-architectur
 ### P5 — Platform alignment
 
 - Align `CanManageIntegrations` vs `CanUpdateIntegrations` across integration UI where safe
-- Federated child→parent notifications (ADR-0010 transport)
+- ~~Federated child→parent notifications (ADR-0010 transport)~~ — withdrawn with federation (ADR-0046)
 
 ---
 

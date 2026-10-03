@@ -2,6 +2,8 @@
 
 ## Status
 
+**Federation note (2026-10-03):** references in this ADR to federated child-to-parent notifications, ADR-0010 and a "federation outbox" are withdrawn with federation ([ADR-0046](./ADR-0046-external-organization-access-and-federation-withdrawal.md)). The rest of this ADR is unaffected.
+
 Accepted (notification foundation delivered in Epic 77). **NTF-C (2026-09-10) completed legacy Attention email removal** — production delivery is the platform pipeline only (activation, reminder, escalation, resolved). Module SDK authoring conventions: [ADR-0038](./ADR-0038-platform-signals-sdk-conventions.md). The Context table below is the pre-cutover landscape. **User preferences addendum (2026-09-22):** the `NotificationUserPreferences` sketch in §5 and §10 below was superseded by the simpler tri-state model actually shipped — see the addendum before *Consequences*, and [ADR-0042](./ADR-0042-notification-to-toast-channel-model.md).
 
 ## Context

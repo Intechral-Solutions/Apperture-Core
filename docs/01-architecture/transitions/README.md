@@ -1,6 +1,6 @@
 # Architecture transitions
 
-Working records for **in-flight** architecture changes. These files are **not** the current contract.
+Working records for **in-flight** architecture changes. These files are **not** the current contract, with one stated exception: where a completed body has no ADR yet, its design gate remains the contract until it is promoted. That currently applies to the **IAM-8** and **LFC-1** design gates below; their promotion to ADRs is scheduled as RC1 validation documentation work (see [rc1-program-gate.md](../rc1-program-gate.md) section 8).
 
 Use this folder when a subsystem is about to be restructured and you need a snapshot, a proposed target, and notes on what will move — without putting that material on the architecture index as if it were already true.
 
@@ -16,7 +16,7 @@ When the change is done: fold the outcome into an ADR and the real architecture 
 
 | Set | Status |
 |-----|--------|
-| [custom-role-lifecycle/](custom-role-lifecycle/) | **IAM-8 complete and merge-ready (2026-09-30).** [IAM-8.0 design gate](custom-role-lifecycle/iam8-design-gate.md) is the lifecycle contract; closure is §20. Not merged. Not Context-scoped IAM. Grouping is not part of this work. This closeout does not select a next epic. |
+| [custom-role-lifecycle/](custom-role-lifecycle/) | **IAM-8 complete and merge-ready (2026-09-30).** [IAM-8.0 design gate](custom-role-lifecycle/iam8-design-gate.md) is the lifecycle contract; closure is §20. **Merged to `master`** (PR #3, 2026-09-30). Not Context-scoped IAM. Grouping is not part of this work. This closeout does not select a next epic. |
 | [connection-schedule-lifecycle/](connection-schedule-lifecycle/) | **LFC-1 complete; engineering merged to `master`.** [LFC-1.0 design gate](connection-schedule-lifecycle/lfc1-design-gate.md) is the lifecycle contract; closure is §27. **LFC-1.1** (disabled-schedule hard-delete), **LFC-1.2** (schedule detail delete UI), and **LFC-1.3** (retired connection copy) are implemented. |
 | [nav-overhaul/](nav-overhaul/) | **NAV-1 complete.** Management UI **rail** overhaul shipped (Control Center / Integrations / Business Data / Config). This is **not** the future **cross-context grouping** body (pre-release roadmap item 8), which is undesigned and not started. |
 | [application-contexts/](application-contexts/) | Evidence snapshot of current surfaces before any Application/Context planning |

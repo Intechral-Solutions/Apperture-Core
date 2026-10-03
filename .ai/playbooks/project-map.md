@@ -28,8 +28,8 @@ Apperture-Core/
 | Shared | Kernel, Security, Observability, Serialization | IDs, Result types, errors, time, cross-cutting concerns |
 | Core | Domain, Application, Security.Secrets | Domain model (Environment, Module, User, Role, etc.); application service contracts; secret store/resolver abstractions |
 | Runtime plane | Abstractions, Engine, Persistence.SqlServer, DTFx, DurableFunctions | Portable workflow model, backend-agnostic logic, adapters |
-| Runtime host (Windows) | WorkerHost, ModuleHost, InstanceAgent, SchedulerHost | On-prem execution, one module per process, local mgmt, schedule triggers |
-| Runtime host (Azure) | Template, Shared | One module per Function App scaffolding |
+| Runtime host (Windows) | WorkerHost, ModuleHost, InstanceAgent, SchedulerHost | On-prem execution (WorkerHost is real; ModuleHost, InstanceAgent and SchedulerHost are stubs), local mgmt, schedule triggers |
+| Runtime host (Azure) | Template, Shared | Scaffold only; outside RC1 support |
 | Module SDK | Abstractions, SDK, Testing | Module interfaces, helpers, test harness |
 | Control plane | Management Api, Host, Client, UI | API, composition, typed client, Blazor WASM |
 

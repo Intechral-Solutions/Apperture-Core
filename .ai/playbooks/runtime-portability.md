@@ -22,7 +22,7 @@ This model must be implementable by both on-prem and cloud adapters.
 - Hosted in Worker Service
 - SQL Server is the persistence store (first-class)
 - Worker runs polling/execution loops as needed
-- One module per worker process
+- One worker process may host several modules today; one module per worker process is a supported future deployment option, not a current invariant
 
 ## Cloud: Durable Functions adapter
 

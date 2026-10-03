@@ -53,4 +53,11 @@ Live contract: [control-panel-ui.md](../01-architecture/control-panel-ui.md). De
 
 - Historical Epics 98–101 remain valid as prior steps; this ADR supersedes their rail/home orientation.
 - Later work (Integration Operations Hub, ResourceContext, Resource Catalog, final Business Data collections, Dashboard Panels, Applications/Services) is explicitly out of scope.
+- **2026-10-03 (RC1 program gate, decisions D-14 and D-15): partial supersession.** The rail and menu placement in this ADR are superseded as follows; the change is implemented by the NAV-2 epic and is **not yet in code**.
+  - The rail gains a fifth domain, **Services**. Target order: Control Center, Integrations, Services, Business Data, Config.
+  - **Rule 2 is superseded in part.** Runs move from the Control Center menu to the Integrations domain as "All Runs". Blocked work remains the derived facet `/runs?status=blocked`. Scheduler cycle stays on Control Center.
+  - **Rule 3 is superseded in part.** Schedules join the Integrations domain as "All Schedules". Connections join the Services domain as "All Connections". They are now reachable from the rail. They keep their own models.
+  - **URLs do not move.** `/runs`, `/schedules`, `/connections` and their children keep their paths. Only menu placement, owning domain and breadcrumb roots change.
+  - Rules 1, 4, 5, 6, 7 and 8 stand. Rule 8 now reads against five known rail domains.
+  - See [rc1-program-gate.md](../01-architecture/rc1-program-gate.md) and the [ADR-0044 amendment](ADR-0044-connection-workspace-and-browse-authorization.md).
 - **2026-09-13 (CTX-3A):** Application workspaces (ResourceContext-backed) landed as an organizational *view* — a top-bar "View" selector plus a Config → Applications management page — with no change to this ADR's rail (still four domains) or Control Panel structure. The selector is shell chrome, not a fifth domain; see `docs/01-architecture/transitions/resource-contexts/ctx3-design-gate.md` §1 and §3.1, and the CTX-3A closure report.

@@ -3,7 +3,11 @@
 **Purpose:** Major product tracks that remain **before** any Final Release Readiness phase.  
 **Baseline:** Stabilization S1–S13 and SWM-1–SWM-12 are **closed**. See [`../audits/pfb1-product-foundation-baseline-audit.md`](../audits/pfb1-product-foundation-baseline-audit.md).
 
-This is **not** a release-candidate plan. Completing a row does not make Apperture “v1 ready” until **Final Release Readiness** is intentionally run at the end.
+**Supersession (2026-10-03, RC1 program gate).** The sentence that this document "is not a release-candidate plan"
+described its state before the post-IAM-8 reorientation. The **RC1 program** section below is now the current plan. Its
+contract is [`../01-architecture/rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). The older sections are
+kept as the thematic map and as provenance; where they conflict with the RC1 program section, that section governs.
+Completing a row in the thematic tracks still does not make Apperture release-ready; RC1 is reached only through RCV-1.
 
 ---
 
@@ -14,12 +18,110 @@ This is **not** a release-candidate plan. Completing a row does not make Appertu
   Stabilization S1–S13
   SWM-1–SWM-12
         ↓
-[Pre-release product development]  ← current planning horizon
-  UI · Profile · Demos/SDK · Systems · Business data · Job ops · Azure · Module UI
+[Pre-release product development complete through IAM-8]
+  UI · Profile · Demos/SDK · Contexts · Components · Services · SEC-1 · LFC-1 · IAM-8
         ↓
-[Final Release Readiness]  ← deferred
-  Packaging · smoke automation · security · docs · RC validation
+[RC1 program]  ← current (gate approved 2026-10-03)
+  Identity · Audit · Authorization · Navigation · Actions · Lists · Module runtime · Operability
+        ↓
+[RC1 validation (RCV-1)]
+  Smoke automation · security review · docs · tag
+        ↓
+[Post-RC1 design gates and later product expansion]
 ```
+
+---
+
+## RC1 program (current, 2026-10-03)
+
+**Contract:** [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). It holds the RC1 definition, every
+Decision, and what remains a Direction, a Candidate or Deferred. **Evidence:**
+[`rc1-architecture-audit-and-program-plan.md`](../audits/rc1-architecture-audit-and-program-plan.md) and
+[`rc1-supplemental-reconciliation-addendum.md`](../audits/rc1-supplemental-reconciliation-addendum.md) (working records;
+the gate governs where they differ).
+
+### Current / next
+
+**RC-0 (program gate) is complete.** No implementation epic has been started. The first bodies, when the product owner
+instructs, are **IAM-9.0** (identity foundation design gate), **QW-1** (quick wins) and **LST-1.0** (list and query
+design gate). They can run in parallel.
+
+IAM-8 is complete and **merged to `master`** (PR #3, `5cfa901`). Earlier statements in this document that IAM-8 is
+"not merged" are superseded.
+
+### What RC1 means
+
+A real release-candidate milestone: feature-complete and upgrade-safe on one supported topology (Windows Server, SQL
+Server, three hosts as Windows Services), with a security-reviewed identity and audit core, a coherent operator
+experience, and a module SDK labelled preview. Azure and Docker or Linux production hosting are not RC1-supported
+targets; they remain architectural goals. Full definition: gate section 2.
+
+### Near-term core platform (Track A, security)
+
+| Order | Epic | Outcome |
+| ----- | ---- | ------- |
+| A1 | **IAM-9** Identity foundation | Username for every user; user id as session and audit identity; one user reference; user search |
+| A2 | **AUD-1** Audit hardening | Stable actor, target, category and severity, structured details; coverage of administrative and operator actions; noise separation |
+| A3 | **IAM-10** Authorization hardening | Escalation paths closed; human-readable permission definitions; `operational_team.manage`; scope-composition design settled |
+| A4 | **IAM-11** User lifecycle and credential recovery | Disable; decommission (tombstone); administrator-initiated reset; return to local access; sign-in throttling |
+
+### UI and platform consistency (Track B, experience)
+
+| Order | Epic | Outcome |
+| ----- | ---- | ------- |
+| B1 | **QW-1** Quick wins | Drawer toggle glyph; browser titles; chronological Runs; Notification Diagnostics clean-up |
+| B2 | **NAV-2** Navigation registry and shell | One registry; Services domain; Runs and Schedules under Integrations; icons; rail behaviour; tree primitive; typed locators. URLs do not move. |
+| B3 | **ACT-1** Entity actions | One toolbar model; pending and double-submit behaviour; content stays visible on refresh |
+| B4 | **LST-1** Lists and query | Paging contracts; query lifecycle; list state and pager; selector; correctness fixes; team membership. Packages 1.0, 1.1, 1.2 and 1.6 run alongside NAV-2. |
+
+### Platform and operability (Track C)
+
+| Order | Epic | Outcome |
+| ----- | ---- | ------- |
+| C1 | **SDK-8** Module runtime correctness | Missing-handler failure; step timeout and lease renewal; registration validation; preview statement |
+| C2 | **ID-1** Identifier hygiene | Ordered ids for new high-volume rows; no migration project |
+| C3 | **OPS-1** Operability baseline | Windows Service hosting; health; explicit migration; backup and restore; first-admin hardening; release engineering |
+
+### Pre-release and UAT
+
+**RCV-1 Release-candidate validation** follows all three tracks: honest SQL tests, one real end-to-end run test,
+functional browser smoke, accessibility baseline, upgrade test, the outstanding SEC-1 and IAM operator smoke runbooks,
+a whole-product security review, and documentation regeneration. This is what Track 9 below now means.
+
+### Data, query and search (post-RC1)
+
+| Body | Kind | Depends on |
+| ---- | ---- | ---------- |
+| **LST-2** List presentation layer (columns, sortable headers, filter controls, row action, virtualization) | Design gate | LST-1 and ACT-1 shipped |
+| **SRCH-1** Platform search | Design gate. **Direction only:** begin by evaluating federation over existing authorized reads; a projection for Business Data only once a record model exists. SQL full-text, a search-index abstraction and an external search engine are not selected. | POL-1, AUD-1 |
+
+### Shared platform services (post-RC1)
+
+| Body | Kind | Depends on |
+| ---- | ---- | ---------- |
+| **NAV-3** Navigation provenance (drill-through breadcrumbs) | Design before RC1; implementation after | NAV-2 |
+| **POL-1** Policies and data authority, including platform notes | Design gate | IAM-10.0 |
+| **MUI-1** Module UI panels and wizards | Design gate | SDK-8.0 |
+| **MOD-1** Module installation and coordinated restart | Security design gate | SDK-8, OPS-1 |
+| **CLI-2** Operator CLI and environment trust | Security design gate | A non-interactive API credential |
+
+### Deferred architectural directions
+
+| Item | Status | Trigger |
+| ---- | ------ | ------- |
+| Cross-context organizational grouping (item 8 below) | **Deferred, retained** | A concrete workflow naming resources that span contexts. Model, membership and product term remain undecided. NAV-2 changes the rail now; item 8 inherits the navigation registry and adds no second rail rewrite. |
+| Context-scoped IAM (implementation) | **Deferred, retained** | Application-confined guest access. The design scope is settled in IAM-10.0. No context scope constant is added to code in RC1. |
+| **PLK-1** Protected lookup | **Deferred, dormant** | A real customer requirement. Separate from search; needs a dedicated security gate. |
+| **CAL-1** Platform calendar | **Deferred Candidate** | A concrete first consumer. Not ScheduleDefinitions. No RC1 seam. |
+| Federation | **Withdrawn** | [ADR-0046](../02-decisions/ADR-0046-external-organization-access-and-federation-withdrawal.md) |
+| Additional Entra tenants | Deferred | An external organization that needs its own tenant |
+| Personal-data erasure | Deferred | A regulatory or privacy requirement |
+
+### Later product expansion
+
+Metrics, dashboards, Workspaces (name unsettled), a richer Service abstraction, a script runtime, Business Rules, a
+workflow designer, a module authoring tool and AI capabilities. None has a design. Seams RC1 preserves for them are
+listed in the audit's section Q and the addendum's section M.
 
 ---
 
@@ -31,7 +133,10 @@ are complete, manually smoke-tested, and merged to `master` — see
 remain the broad thematic map; this section is the concrete near-term execution order agreed in the post-CTX
 reset, cutting across several of them.
 
-**Current next:** none selected (2026-09-30). **IAM-8 — Custom Role Lifecycle** (item 7b) is **complete and
+**Supersession (2026-10-03):** this section is the historical 2026-09-18 sequence. Every item in it except item 8 is
+complete, and item 8 stays deferred. The current plan is the **RC1 program** section above. IAM-8 is merged to `master`.
+
+**Current next (as written 2026-09-30, superseded above):** none selected. **IAM-8 — Custom Role Lifecycle** (item 7b) is **complete and
 merge-ready**; not merged. This closeout does not select a next epic. LFC-1 is complete and merged to
 `master`. SEC-1 engineering is merged to `master`. Items 0–7a of the 2026-09-18 sequence are complete as
 engineering. **Navigation / cross-context grouping (item 8) is not selected.** Gate:
@@ -488,6 +593,9 @@ promotion; these stay deferred, not prioritized.
 
 Do **not** start this track as a substitute for product completeness. On-prem/dev Aspire + Manage.ps1 remains the foundation path.
 
+**RC1 ruling (2026-10-03):** Azure is **outside RC1 support**, and remains an architectural goal. The RC1-supported
+production topology is Windows Server, SQL Server and three hosts as Windows Services, delivered by **OPS-1**.
+
 ---
 
 ## Track 8 — Module UI / configuration / template foundations
@@ -517,6 +625,11 @@ Only after major product tracks above are materially complete:
 
 **Reserve the phrases “release readiness,” “release candidate,” and “v1 ready” for this track.**
 
+**RC1 ruling (2026-10-03):** this track is now defined. Packaging and installers are **OPS-1**. Smoke automation,
+security review, docs completion and release-candidate validation are **RCV-1**. Security work is no longer left to the
+end: the identity, audit and authorization epics run first. The RC1 exit criteria are in
+[`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) section 2.
+
 ---
 
 ## Explicitly out of immediate scope
@@ -524,7 +637,7 @@ Only after major product tracks above are materially complete:
 | Item | Why |
 | ---- | --- |
 | Management-owned WorkerHost start/stop | SWM-9/12 deferred; externally managed |
-| Claiming Windows Service / Azure as shipped | Scaffold / future tracks only |
+| Claiming Windows Service / Azure as shipped | Scaffold / future tracks only. Windows Service hosting becomes real in OPS-1; Azure stays outside RC1. |
 | Reopening S1–S13 or SWM-1–12 | Closed unless regression |
 | Premature RC tagging | Product work incomplete |
 
@@ -535,6 +648,7 @@ Only after major product tracks above are materially complete:
 | Doc | Role |
 | --- | ---- |
 | [`roadmap.md`](roadmap.md) | Stage overview |
+| [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) | RC1 program contract: decisions, deferrals, epic sequence |
 | [`pfb1-product-foundation-baseline-audit.md`](../audits/pfb1-product-foundation-baseline-audit.md) | Foundation baseline + next-track recommendation |
 | [`stabilization-closure-check.md`](../audits/stabilization-closure-check.md) | S1–S13 closed |
 | SWM ADRs under `docs/02-decisions/` | Scheduling & worker foundation closed |
