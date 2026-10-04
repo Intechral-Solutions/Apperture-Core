@@ -16,6 +16,7 @@ When the change is done: fold the outcome into an ADR and the real architecture 
 
 | Set | Status |
 |-----|--------|
+| [identity-foundation/](identity-foundation/) | **IAM-9.0 design gate approved with amendments (2026-10-03).** [IAM-9.0 design gate](identity-foundation/iam9-design-gate.md) covers username, session and actor identity, user reference and user search. No implementation started; IAM-9.1 awaits an explicit start instruction. |
 | [custom-role-lifecycle/](custom-role-lifecycle/) | **IAM-8 complete and merge-ready (2026-09-30).** [IAM-8.0 design gate](custom-role-lifecycle/iam8-design-gate.md) is the lifecycle contract; closure is §20. **Merged to `master`** (PR #3, 2026-09-30). Not Context-scoped IAM. Grouping is not part of this work. This closeout does not select a next epic. |
 | [connection-schedule-lifecycle/](connection-schedule-lifecycle/) | **LFC-1 complete; engineering merged to `master`.** [LFC-1.0 design gate](connection-schedule-lifecycle/lfc1-design-gate.md) is the lifecycle contract; closure is §27. **LFC-1.1** (disabled-schedule hard-delete), **LFC-1.2** (schedule detail delete UI), and **LFC-1.3** (retired connection copy) are implemented. |
 | [nav-overhaul/](nav-overhaul/) | **NAV-1 complete.** Management UI **rail** overhaul shipped (Control Center / Integrations / Business Data / Config). This is **not** the future **cross-context grouping** body (pre-release roadmap item 8), which is undesigned and not started. |
