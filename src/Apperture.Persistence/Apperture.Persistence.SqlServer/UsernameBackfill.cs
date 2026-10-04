@@ -203,18 +203,28 @@ public static partial class UsernameBackfill
     {
         var owners = new SortedDictionary<string, (HashSet<string> UserIds, DateTimeOffset FirstAt)>(StringComparer.Ordinal);
         await using (var command = Command(connection, null, """
-            SELECT [At], [Details] FROM AuditLogs WHERE [Action] = @action ORDER BY [Id];
+            SELECT [Id], [At], [Details] FROM AuditLogs WHERE [Action] = @action ORDER BY [Id];
             """, ("@action", RecoveryAccessCanonicalizedAuditAction)))
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (reader.IsDBNull(1) || !TryParseCanonicalization(reader.GetString(1), out var userId, out var previous))
+                var at = reader.GetFieldValue<DateTimeOffset>(1);
+                if (reader.IsDBNull(2) || !TryParseCanonicalization(reader.GetString(2), out var userId, out var previous))
+                {
+                    // Never guessed at: nothing is recorded from a row that cannot be read exactly. The
+                    // details text is not logged; the audit row id is enough to find it.
+                    report.PreviousRecoveryAccessNamesSkipped++;
+                    logger.LogWarning(
+                        "Recovery Access canonicalization audit row {AuditLogId} from {At} could not be interpreted; no earlier username was added to the username ledger from it.",
+                        reader.GetInt64(0),
+                        at);
                     continue;
+                }
+
                 if (previous == UsernamePolicy.RecoveryAccessUsername)
                     continue;
 
-                var at = reader.GetFieldValue<DateTimeOffset>(0);
                 if (owners.TryGetValue(previous, out var existing))
                 {
                     existing.UserIds.Add(userId);
@@ -563,6 +573,9 @@ public sealed class UsernameBackfillReport
 
     public int PreviousRecoveryAccessNamesRecorded { get; set; }
 
-    /// <summary>Earlier Recovery Access names not recorded: ambiguous, owner missing, or held by another user.</summary>
+    /// <summary>
+    /// Earlier Recovery Access names not recorded: ambiguous, owner missing, held by another user, or from a
+    /// canonicalization audit row that could not be interpreted.
+    /// </summary>
     public int PreviousRecoveryAccessNamesSkipped { get; set; }
 }

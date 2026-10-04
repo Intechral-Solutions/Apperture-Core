@@ -162,7 +162,7 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
         string externalId,
         DateTimeOffset? lastAuthenticatedAt)
     {
-        db.Users.Add(new UserEntity
+        db.AddUsersWithCurrentUsernames(new UserEntity
         {
             Id = userId,
             Username = externalId,

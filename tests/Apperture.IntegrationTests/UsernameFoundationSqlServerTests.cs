@@ -204,11 +204,14 @@ public sealed class UsernameFoundationSqlServerTests
         first.Generated.Should().Be(6);
         first.GeneratedWithSuffix.Should().Be(2, "alice-2 and user-2");
         first.PreviousRecoveryAccessNamesRecorded.Should().Be(1, "pat.admin");
-        first.PreviousRecoveryAccessNamesSkipped.Should().Be(2, "'alice' is held by another user and 'shared.name' is ambiguous");
+        first.PreviousRecoveryAccessNamesSkipped.Should().Be(
+            4,
+            "'alice' is held by another user, 'shared.name' is ambiguous, 'Mixed.Case' is not canonical and one row cannot be read");
 
         second.LocalPreserved.Should().Be(0);
         second.Generated.Should().Be(0);
         second.PreviousRecoveryAccessNamesRecorded.Should().Be(0);
+        second.PreviousRecoveryAccessNamesSkipped.Should().Be(4, "the same historical rows are still reported, and still not acted on");
 
         // Simulate a start interrupted between the ledger and the Users write (not possible inside one
         // transaction, but the step must still converge): the user's current ledger row is kept.
@@ -260,6 +263,8 @@ public sealed class UsernameFoundationSqlServerTests
             .Should().BeEquivalentTo(new[] { ("pat.admin", "u_ra|backfill_previous") });
         (await ScalarAsync<string>(scratch.ConnectionString, "SELECT UserId FROM UsernameLedger WHERE Username = N'alice';")).Should().Be("u_local");
         (await ScalarAsync<int>(scratch.ConnectionString, "SELECT COUNT(*) FROM UsernameLedger WHERE Username = N'shared.name';")).Should().Be(0);
+        (await ScalarAsync<int>(scratch.ConnectionString, "SELECT COUNT(*) FROM UsernameLedger WHERE Username = N'mixed.case';"))
+            .Should().Be(0, "a name that cannot be read exactly is never guessed at or claimed");
 
         // One audit row per generated name, by the system actor.
         (await ScalarAsync<int>(scratch.ConnectionString,
@@ -518,14 +523,17 @@ public sealed class UsernameFoundationSqlServerTests
         LegacyLinkSql("e_boot2", "u_boot2", 0, "22222222-2222-2222-2222-222222222222", "tenant-1", null, null, "2026-02-05") +
         // Entra-only whose generated base collides with a Local user.
         LegacyUserSql("u_entra_collide", "Alice from Entra", false) + LegacyLinkSql("e_collide", "u_entra_collide", 0, "oid-collide", "tenant-1", "alice@contoso.com", null, "2026-02-06") +
-        // Canonicalization history: one safe previous name, one now held by another user, one ambiguous.
+        // Canonicalization history: one safe previous name, one now held by another user, one ambiguous,
+        // one written with a non-canonical (mixed-case) name, and one that cannot be read at all.
         """
         INSERT INTO AuditLogs (At, Actor, Action, Details) VALUES
           ('2026-01-10', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=pat.admin; Resource=ResourceDescriptor { ResourceType = user, ScopeKey = instance }'),
           ('2026-01-11', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=alice'),
           ('2026-01-12', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=shared.name'),
           ('2026-01-13', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_local previousUsername=shared.name'),
-          ('2026-01-14', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=breakglass');
+          ('2026-01-14', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=breakglass'),
+          ('2026-01-15', N'emergency-cli', N'emergency.access.canonicalized', N'userId=u_ra previousUsername=Mixed.Case'),
+          ('2026-01-16', N'emergency-cli', N'emergency.access.canonicalized', N'canonical identity applied');
         """;
 
     private static string LegacyUserSql(string id, string displayName, bool recoveryAccess) =>

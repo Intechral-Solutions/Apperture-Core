@@ -68,6 +68,28 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
         }
 
         await SeedAsync().ConfigureAwait(false);
+        await RequireUsernameLedgerInvariantAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The governance catalog persists across runs. Users seeded into it by an older harness, without a
+    /// current username ledger row, are a state production can no longer create, so the run stops here
+    /// instead of testing against it.
+    /// </summary>
+    private async Task RequireUsernameLedgerInvariantAsync()
+    {
+        await using var scope = Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+
+        var broken = await UsernameLedgerTestSeeding.FindUsersBreakingUsernameLedgerInvariantAsync(db).ConfigureAwait(false);
+        if (broken.Count == 0)
+            return;
+
+        var catalog = new SqlConnectionStringBuilder(ConnectionString).InitialCatalog;
+        throw new InvalidOperationException(
+            $"The persistent test catalog '{catalog}' has {broken.Count} user(s) without exactly one current username ledger row matching Users.Username " +
+            $"(for example {string.Join(", ", broken.Take(5))}). It was seeded by an older harness. " +
+            $"Drop the '{catalog}' database; the next run recreates and reseeds it.");
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -146,7 +168,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.AddRange(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserAuthNoPerms,
@@ -321,7 +343,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserProcedureLauncher,
@@ -366,7 +388,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
@@ -421,7 +443,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationAuthoring,

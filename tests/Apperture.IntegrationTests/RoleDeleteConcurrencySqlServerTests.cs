@@ -242,7 +242,7 @@ public sealed class RoleDeleteConcurrencySqlServerTests
         var roleId = "role-" + Guid.NewGuid().ToString("N");
         var userId = "user-" + Guid.NewGuid().ToString("N")[..16];
         await using var db = fixture.NewDb();
-        db.Users.Add(new UserEntity
+        db.AddUsersWithCurrentUsernames(new UserEntity
         {
             Id = userId,
             Username = userId,
