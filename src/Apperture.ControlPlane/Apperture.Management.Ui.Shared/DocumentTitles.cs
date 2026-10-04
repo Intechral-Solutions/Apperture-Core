@@ -78,11 +78,35 @@ public static class DocumentTitles
         string normalizedPath,
         string? nearestParentLabel)
     {
-        var route = EntityShellTitles.LooksLikeRouteKey(routeTitle, normalizedPath)
+        var route = LabelIsTheUrlKey(routeTitle, normalizedPath)
             ? nearestParentLabel
             : routeTitle;
 
         return Compose(pageTitle, route, nearestParentLabel);
+    }
+
+    private const string KeyProbe = "zzurlkeyprobe";
+
+    /// <summary>
+    /// True when the route rule labels the page with the URL's own last segment (a record key), as opposed to a real
+    /// label that merely matches the segment (<c>/runs</c> is labelled "Runs"). Decided by asking the resolver what it
+    /// would label the same route with a probe value as the last segment: a rule that echoes the segment echoes the probe.
+    /// </summary>
+    private static bool LabelIsTheUrlKey(string? routeTitle, string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(routeTitle)
+            || !EntityShellTitles.LooksLikeRouteKey(routeTitle, normalizedPath))
+        {
+            return false;
+        }
+
+        var segments = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+            return false;
+
+        segments[^1] = KeyProbe;
+        var probed = ManagementBreadcrumbResolver.ResolveOrientation("/" + string.Join('/', segments));
+        return string.Equals(probed.Title, KeyProbe, StringComparison.Ordinal);
     }
 
     /// <summary>Trims, collapses whitespace and returns null for blank input.</summary>
@@ -133,6 +157,13 @@ public static class DocumentTitles
         if (value.Length <= max)
             return value;
 
-        return value[..(max - Ellipsis.Length)].TrimEnd() + Ellipsis;
+        var cut = max - Ellipsis.Length;
+
+        // Never end on half of a surrogate pair (an emoji or other character outside the BMP),
+        // which would leave a malformed character in the tab title.
+        if (cut > 0 && char.IsHighSurrogate(value[cut - 1]))
+            cut--;
+
+        return value[..cut].TrimEnd() + Ellipsis;
     }
 }

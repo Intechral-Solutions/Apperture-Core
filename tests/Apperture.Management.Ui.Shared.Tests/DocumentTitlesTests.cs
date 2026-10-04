@@ -70,6 +70,35 @@ public sealed class DocumentTitlesTests
         loaded.Should().NotContain("BK-1042");
     }
 
+    /// <summary>
+    /// The shell's real path through the resolver. A route label that merely equals the last URL segment
+    /// ("Runs" at /runs) is a label, not a record key, so list pages must stay plain.
+    /// </summary>
+    [Theory]
+    [InlineData("/runs", "Runs", "Runs")]
+    [InlineData("/connections", "Connections", "Connections")]
+    [InlineData("/config/governance/users", "Users", "Users")]
+    [InlineData("/account/profile", "Profile", "Profile")]
+    [InlineData("/config/notifications/instances", "Notification instances", "Notification instances")]
+    [InlineData("/connections/conn-1", "Payroll DB", "Connection — Payroll DB")]
+    [InlineData("/runs/run-1", "import-students", "Run — import-students")]
+    [InlineData("/integrations/int-1", "Student Information System", "Integration — Student Information System")]
+    [InlineData("/integrations/int-1/runs", "Student Information System", "Runs — Student Information System")]
+    [InlineData("/integrations/int-1/connections", "Student Information System", "Connections — Student Information System")]
+    [InlineData("/config/governance/users/u1", "alice", "User — alice")]
+    [InlineData("/business-data/customers/BK-1042", "Alice Smith", "Customers — Alice Smith")]
+    public void The_shell_composes_the_expected_title_for_real_routes(string path, string pageTitle, string expected)
+    {
+        var orientation = ManagementBreadcrumbResolver.ResolveOrientation(path);
+
+        DocumentTitles.ComposeForRoute(
+                pageTitle,
+                orientation.Title,
+                EntityShellTitles.NormalizePath(path),
+                orientation.Parents.LastOrDefault()?.Label)
+            .Should().Be(expected);
+    }
+
     [Fact]
     public void ComposeForRoute_keeps_an_ordinary_route_label()
     {
@@ -110,6 +139,72 @@ public sealed class DocumentTitlesTests
 
         title!.Length.Should().BeLessThanOrEqualTo(DocumentTitles.MaxLength);
         title.Should().EndWith("…");
+    }
+
+    [Theory]
+    [InlineData("😀")]            // astral: a surrogate pair (2 UTF-16 units)
+    [InlineData("a😀")]           // pair straddles a different boundary
+    [InlineData("𝒜")]             // astral letter
+    public void Compose_never_cuts_through_a_surrogate_pair(string unit)
+    {
+        // Repeat so that, at every plausible cut point, one of the units straddles it.
+        foreach (var name in Enumerable.Range(40, 24).Select(n => string.Concat(Enumerable.Repeat(unit, n))))
+        {
+            foreach (var title in new[]
+                     {
+                         DocumentTitles.Compose(name, "Connection", "Connections"),
+                         DocumentTitles.Compose(name, "Connection"),
+                         DocumentTitles.Compose(name, null),
+                     })
+            {
+                title.Should().NotBeNull();
+                title!.Length.Should().BeLessThanOrEqualTo(DocumentTitles.MaxLength);
+                AssertWellFormed(title);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("Payroll \"Q3\" — <north> & south's")]
+    [InlineData("name\twith\ttabs\nand a newline")]
+    [InlineData("עברית ‏RTL‏ name")]
+    [InlineData("  ...  ")]
+    [InlineData("——— — ———")]
+    public void Compose_keeps_unusual_punctuation_and_scripts_intact(string name)
+    {
+        var title = DocumentTitles.Compose(name, "Connection", "Connections");
+
+        title.Should().NotBeNull();
+        title.Should().StartWith("Connection — ");
+        title.Should().NotContainAny("\t", "\n", "\r");
+        AssertWellFormed(title!);
+    }
+
+    [Fact]
+    public void Compose_with_a_very_long_lead_still_returns_a_well_formed_short_title()
+    {
+        var title = DocumentTitles.Compose("Name", new string('L', 80), null);
+
+        title!.Length.Should().BeLessThanOrEqualTo(DocumentTitles.MaxLength);
+        title.Should().EndWith("…");
+        AssertWellFormed(title);
+    }
+
+    /// <summary>Valid UTF-16: no lone surrogate halves.</summary>
+    private static void AssertWellFormed(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (char.IsHighSurrogate(s[i]))
+            {
+                (i + 1 < s.Length && char.IsLowSurrogate(s[i + 1])).Should().BeTrue($"high surrogate at {i} must be followed by a low surrogate in '{s}'");
+                i++;
+            }
+            else
+            {
+                char.IsLowSurrogate(s[i]).Should().BeFalse($"unpaired low surrogate at {i} in '{s}'");
+            }
+        }
     }
 
     [Theory]
