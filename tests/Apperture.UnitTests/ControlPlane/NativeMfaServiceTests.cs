@@ -82,7 +82,7 @@ public sealed class NativeMfaServiceTests
     public async Task Emergency_user_requires_mfa_even_before_enrollment()
     {
         var harness = Harness.Create();
-        var user = new User(new UserId("usr-e"), "Emergency", [], [], IsBreakGlassEligible: true);
+        var user = new User(new UserId("usr-e"), "Emergency", [], [], IsBreakGlassEligible: true) { Username = "emergency" };
         (await harness.Mfa.IsRequiredAsync(user)).Should().BeTrue();
     }
 

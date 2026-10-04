@@ -69,6 +69,7 @@ public static class UserProvisioningErrorCodes
     public const string RequestNotPending = "user.provisioning.request_not_pending";
     public const string RequestNotFound = "user.provisioning.request_not_found";
     public const string DisplayNameRequired = "user.provisioning.display_name_required";
+    public const string UsernameGenerationExhausted = UsernameErrorCodes.GenerationExhausted;
 }
 
 public static class UserProvisioningAuditActionNames

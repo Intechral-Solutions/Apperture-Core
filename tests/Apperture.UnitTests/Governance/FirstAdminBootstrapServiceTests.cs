@@ -40,6 +40,36 @@ public sealed class FirstAdminBootstrapServiceTests
         users.Added.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task TryCreateFirstAdminAsync_assigns_the_normalized_sign_in_name_as_username_and_local_link()
+    {
+        var users = new CapturingUserRepository();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "  Admin  ", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.Success);
+        var user = users.Added.Should().ContainSingle().Subject;
+        user.Username.Should().Be("admin", "admin is not reserved and is the natural first-admin name");
+        user.IdentityLinks.Should().ContainSingle(l => l.Source == IdentitySource.Local)
+            .Which.ExternalId.Should().Be(user.Username);
+    }
+
+    [Theory]
+    [InlineData("jane@contoso.com", UsernameErrorCodes.Invalid)]
+    [InlineData("ab", UsernameErrorCodes.Invalid)]
+    [InlineData("system", UsernameErrorCodes.Reserved)]
+    public async Task TryCreateFirstAdminAsync_refuses_a_name_that_fails_the_username_policy(string username, string code)
+    {
+        var users = new CapturingUserRepository();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+
+        var act = async () => await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
+
+        (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(code);
+        users.Added.Should().BeEmpty();
+    }
+
     private sealed class CapturingUserRepository : IUserRepository
     {
         public List<User> Added { get; } = [];

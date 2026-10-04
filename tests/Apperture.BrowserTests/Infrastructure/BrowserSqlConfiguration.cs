@@ -69,7 +69,7 @@ public static class BrowserSqlConfiguration
     {
         var options = new DbContextOptionsBuilder<AppertureDbContext>().UseSqlServer(scratchConnectionString).Options;
         await using var db = new AppertureDbContext(options);
-        await db.Database.MigrateAsync().ConfigureAwait(false);
+        await AppertureDatabaseMigrator.MigrateAsync(db).ConfigureAwait(false);
     }
 
     private static string? ReadFromRepoEnvFile()

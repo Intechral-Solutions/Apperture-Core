@@ -24,13 +24,18 @@ public sealed class HarnessSeeding(IServiceProvider liveServices)
         var credentials = scope.ServiceProvider.GetRequiredService<ILocalCredentialRepository>();
         var hasher = scope.ServiceProvider.GetRequiredService<ILocalPasswordHasher>();
 
+        // Same rule as every production creation path: the sign-in name is a policy-conforming username.
+        var normalized = UsernamePolicy.RequireNewAssignment(username);
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var user = new User(
             userId,
             displayName,
-            [new IdentityLink(IdentitySource.Local, username, LastAuthenticatedAt: null)],
+            [new IdentityLink(IdentitySource.Local, normalized, LastAuthenticatedAt: null)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        {
+            Username = normalized
+        };
         await users.AddAsync(user).ConfigureAwait(false);
 
         var (hash, salt) = hasher.HashPassword(Passphrase);
@@ -71,13 +76,17 @@ public sealed class HarnessSeeding(IServiceProvider liveServices)
         var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var now = DateTimeOffset.UtcNow;
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
-        var user = new User(
-            userId,
-            displayName,
-            [new IdentityLink(IdentitySource.Entra, objectId, LastAuthenticatedAt: now, TenantId: oidc.TenantId, LinkedAt: now)],
-            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: false);
-        await users.AddAsync(user).ConfigureAwait(false);
+        await new UsernameService(users).AddWithGeneratedUsernameAsync(
+            username => new User(
+                userId,
+                displayName,
+                [new IdentityLink(IdentitySource.Entra, objectId, LastAuthenticatedAt: now, TenantId: oidc.TenantId, LinkedAt: now)],
+                [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+                IsBreakGlassEligible: false)
+            {
+                Username = username
+            },
+            new UsernameGenerationSources(UserPrincipalName: null, Mail: null, DisplayName: displayName)).ConfigureAwait(false);
         return userId.Value;
     }
 

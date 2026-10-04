@@ -42,7 +42,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var prefix = $"ep37.ordered.{Guid.NewGuid():N}.";
@@ -91,7 +91,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var prefix = $"ep37.actionprefix.{Guid.NewGuid():N}.";
@@ -137,7 +137,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var runId = "ep37-run-" + Guid.NewGuid().ToString("N")[..8];
@@ -182,7 +182,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         await using (var scope = provider.CreateAsyncScope())
@@ -233,7 +233,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var prefix = $"ep37.outcome.{Guid.NewGuid():N}.";
@@ -276,7 +276,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var testPrefix = $"test.{Guid.NewGuid():N}.";
@@ -317,7 +317,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var moduleId = "ep37-mod-" + Guid.NewGuid().ToString("N")[..6];
@@ -358,7 +358,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var scheduleId = "ep37-sched-" + Guid.NewGuid().ToString("N")[..6];
@@ -403,7 +403,7 @@ public sealed class AuditTimelineSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var prefix = $"ep37.backfill.{Guid.NewGuid():N}.";

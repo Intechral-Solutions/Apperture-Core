@@ -51,7 +51,7 @@ public sealed class RunsBlockedFacetSqlServerTests
                     SqlServerTestConfiguration.DescribeConnectionFailure());
             }
 
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
 
             foreach (var (runId, status, failureSummary) in new[]
             {

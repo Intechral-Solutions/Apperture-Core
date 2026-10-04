@@ -23,7 +23,8 @@ public sealed class SqlPrincipalToUserResolverTests
             "Operator",
             [new IdentityLink(IdentitySource.Entra, Oid, null, TenantA)],
             [],
-            false);
+            false)
+        { Username = "operator" };
         var repo = new Mock<IUserRepository>();
         repo.Setup(r => r.GetByIdentityLinkAsync(
                 It.Is<ProviderIdentityKey>(k =>
@@ -77,7 +78,7 @@ public sealed class SqlPrincipalToUserResolverTests
     public async Task ResolveUserIdAsync_with_preferred_source_updates_matching_link_only()
     {
         var userId = new UserId("user-1");
-        var user = new User(userId, "Operator", [new IdentityLink(IdentitySource.Local, "local-1", null)], [], false);
+        var user = new User(userId, "Operator", [new IdentityLink(IdentitySource.Local, "local-1", null)], [], false) { Username = "local-1" };
         var repo = new Mock<IUserRepository>();
         repo.Setup(r => r.GetByIdentityLinkAsync(IdentitySource.Local, "local-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);

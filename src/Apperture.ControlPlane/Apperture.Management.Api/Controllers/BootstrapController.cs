@@ -97,6 +97,17 @@ public sealed class BootstrapController : ControllerBase
                 BootstrapErrorCodes.InvalidRequest,
                 setupStatus.Initialized));
         }
+        catch (UsernameException ex)
+        {
+            await AppendBootstrapAuditAsync(
+                AuditActionFirstAdminRejectedInvalidRequest,
+                "Username rejected by policy",
+                cancellationToken);
+            return BadRequest(new BootstrapErrorResponse(
+                ex.Message,
+                BootstrapErrorCodes.InvalidRequest,
+                setupStatus.Initialized));
+        }
 
         return result.Kind switch
         {

@@ -28,6 +28,7 @@ public sealed class UserProvisioningServiceTests
             new EntraDirectoryProvisioningRequest("reg-1", Oid, SendWelcomeEmail: true));
 
         var user = harness.Users.Added.Should().ContainSingle().Subject;
+        user.Username.Should().Be("jane", "generated from the UPN local part, never the object id");
         user.EmailAddress.Should().BeNull();
         user.EmailVerifiedAtUtc.Should().BeNull();
         user.IdentityLinks.Should().ContainSingle(l =>
@@ -95,9 +96,10 @@ public sealed class UserProvisioningServiceTests
             "Existing",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, Tid, "reg-1")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "existing" });
 
-        var act = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+        var act =() => harness.Service.ProvisionFromEntraDirectoryAsync(
             new EntraDirectoryProvisioningRequest("reg-1", Oid)).AsTask();
 
         var ex = await act.Should().ThrowAsync<UserProvisioningException>();
@@ -114,7 +116,8 @@ public sealed class UserProvisioningServiceTests
             "Other tenant",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, OtherTid, "reg-other")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "existing" });
 
         var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
             new EntraDirectoryProvisioningRequest("reg-1", Oid));
@@ -135,7 +138,8 @@ public sealed class UserProvisioningServiceTests
             [],
             IsBreakGlassEligible: false,
             EmailAddress: "jane@contoso.com",
-            EmailVerifiedAtUtc: DateTimeOffset.UtcNow));
+            EmailVerifiedAtUtc: DateTimeOffset.UtcNow)
+        { Username = "existing" });
 
         var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
             new EntraDirectoryProvisioningRequest("reg-1", Oid));
@@ -212,6 +216,18 @@ public sealed class UserProvisioningServiceTests
         harness.Requests.Items["req-1"].Status.Should().Be(EntraAccessRequestStatus.Approved);
         harness.Requests.Items["req-1"].ProvisionedUserId.Should().Be(result.UserId.Value);
         harness.Users.Added.Single().EmailAddress.Should().BeNull();
+        harness.Users.Added.Single().Username.Should().Be("jane", "generated from the request's UPN snapshot");
+    }
+
+    [Fact]
+    public async Task Directory_provision_of_a_guest_skips_the_ext_upn_and_uses_mail_then_display_name()
+    {
+        var harness = Harness.Create();
+        harness.Directory.User = DirectoryUser(mail: null, upn: "jane_contoso.com#EXT#@tenant.onmicrosoft.com");
+
+        await harness.Service.ProvisionFromEntraDirectoryAsync(new EntraDirectoryProvisioningRequest("reg-1", Oid));
+
+        harness.Users.Added.Should().ContainSingle().Which.Username.Should().Be("jane.smith");
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
                     continue;
                 }
 
-                await db.Database.MigrateAsync();
+                await AppertureDatabaseMigrator.MigrateAsync(db);
                 return (db, options);
             }
             catch
@@ -165,6 +165,7 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
         db.Users.Add(new UserEntity
         {
             Id = userId,
+            Username = externalId,
             DisplayName = "Operator"
         });
         db.IdentityLinks.Add(new IdentityLinkEntity

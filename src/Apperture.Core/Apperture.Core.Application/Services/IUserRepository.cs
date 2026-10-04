@@ -47,7 +47,10 @@ public interface IUserRepository
         ValueTask.FromResult<User?>(null);
 
     /// <summary>
-    /// Adds a new user.
+    /// Adds a new user together with its username ledger row, in one transaction. The username must be
+    /// canonical and policy-shaped, and a Local link (at most one) must use the username as its external
+    /// id. Throws <see cref="UsernameException"/> with <see cref="UsernameErrorCodes.Taken"/> when any
+    /// user holds or has ever held the name; nothing is persisted in that case.
     /// </summary>
     ValueTask AddAsync(User user, CancellationToken cancellationToken = default);
 
@@ -86,17 +89,31 @@ public interface IUserRepository
     ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates display name and the Local identity ExternalId in one SaveChanges. Does not recreate
-    /// the user, local credential, TOTP, or recovery-code rows. Throws when another user already
-    /// owns <paramref name="newLocalUsername"/>.
+    /// Moves a user from <paramref name="expectedCurrentUsername"/> to <paramref name="newUsername"/> in one
+    /// transaction: retires the current ledger row with <paramref name="retiredReason"/>, reactivates the
+    /// user's own retired row for the new name or inserts a new one, and updates <c>Users.Username</c> and
+    /// the Local link's external id. Optionally sets the display name in the same transaction. Policy checks
+    /// belong to the caller (<see cref="UsernameService"/>); this method enforces ownership only.
+    /// Throws <see cref="UsernameException"/> with <see cref="UsernameErrorCodes.Taken"/> when another user
+    /// holds or held the name, or <see cref="UsernameErrorCodes.ConcurrentChange"/> when the user's username
+    /// is no longer <paramref name="expectedCurrentUsername"/>. Does not touch credentials, roles or sessions.
     /// </summary>
-    ValueTask ApplyCanonicalLocalIdentityAsync(
+    ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
         UserId userId,
-        string displayName,
-        string currentLocalUsername,
-        string newLocalUsername,
+        string expectedCurrentUsername,
+        string newUsername,
+        string retiredReason,
+        string? newDisplayName = null,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+
+    /// <summary>
+    /// The ledger row for a canonical username, current or retired, or null when no user has ever held it.
+    /// </summary>
+    ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(
+        string username,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<UsernameLedgerEntry?>(null);
 
     /// <summary>
     /// The designated emergency-access user, if any. v1 allows at most one.
@@ -105,7 +122,9 @@ public interface IUserRepository
         ValueTask.FromResult<User?>(null);
 
     /// <summary>
-    /// Adds an identity link to an existing user. ExternalId for Local must be normalized (trim, lowercase) by the caller.
+    /// Adds an identity link to an existing user. ExternalId for Local must equal the user's username
+    /// (otherwise <see cref="UsernameException"/> with <see cref="UsernameErrorCodes.Mismatch"/>), and a user
+    /// has at most one Local link.
     /// Throws if a matching identity already exists for any user (Local: source + external id; Entra: source + tenant + oid).
     /// </summary>
     ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
@@ -171,3 +190,30 @@ public interface IUserRepository
 /// An identity link together with the platform user that owns it.
 /// </summary>
 public sealed record IdentityLinkOwner(UserId UserId, IdentityLink Link);
+
+/// <summary>
+/// One username ever assigned, permanently bound to <paramref name="UserId"/>. Null
+/// <paramref name="RetiredAtUtc"/> means it is the user's current username.
+/// </summary>
+public sealed record UsernameLedgerEntry(
+    string Username,
+    UserId UserId,
+    DateTimeOffset AssignedAtUtc,
+    DateTimeOffset? RetiredAtUtc,
+    string? RetiredReason)
+{
+    public bool IsCurrent => RetiredAtUtc is null;
+}
+
+/// <summary>What a username change did.</summary>
+public enum UsernameChangeOutcome
+{
+    /// <summary>The user already had that username; only the display name may have changed.</summary>
+    Unchanged,
+
+    /// <summary>A name never held before was assigned.</summary>
+    Assigned,
+
+    /// <summary>One of the user's own retired names was reactivated.</summary>
+    Reclaimed,
+}

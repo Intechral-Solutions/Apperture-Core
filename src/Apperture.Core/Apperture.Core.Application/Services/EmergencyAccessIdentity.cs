@@ -9,7 +9,7 @@ namespace Apperture.Core.Application.Services;
 public static class EmergencyAccessIdentity
 {
     /// <summary>Reserved local username. Normalized form is identical (trim + lowercase).</summary>
-    public const string LocalUsername = "breakglass";
+    public const string LocalUsername = UsernamePolicy.RecoveryAccessUsername;
 
     /// <summary>Operator-facing display name for the recovery principal.</summary>
     public const string DisplayName = "Recovery Access";
@@ -19,11 +19,15 @@ public static class EmergencyAccessIdentity
 
     public static string NormalizedLocalUsername => LocalUsername;
 
+    /// <summary>
+    /// True for the Recovery Access username only. The wider reserved list for new assignments is
+    /// <see cref="UsernamePolicy.ReservedNames"/>.
+    /// </summary>
     public static bool IsReservedLocalUsername(string? username)
     {
         if (string.IsNullOrWhiteSpace(username))
             return false;
-        return string.Equals(username.Trim(), LocalUsername, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(UsernamePolicy.Normalize(username), LocalUsername, StringComparison.Ordinal);
     }
 
     /// <summary>The designated emergency user is system-managed; ordinary user-administration must not mutate it.</summary>
@@ -36,6 +40,7 @@ public static class EmergencyAccessIdentity
     {
         var local = LocalUsernameOf(user);
         return string.Equals(user.DisplayName, DisplayName, StringComparison.Ordinal)
+            && string.Equals(user.Username, LocalUsername, StringComparison.Ordinal)
             && string.Equals(local, LocalUsername, StringComparison.Ordinal);
     }
 

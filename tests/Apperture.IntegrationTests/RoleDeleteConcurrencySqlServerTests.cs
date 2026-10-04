@@ -245,6 +245,7 @@ public sealed class RoleDeleteConcurrencySqlServerTests
         db.Users.Add(new UserEntity
         {
             Id = userId,
+            Username = userId,
             DisplayName = "Pat Lee",
             IsBreakGlassEligible = false
         });

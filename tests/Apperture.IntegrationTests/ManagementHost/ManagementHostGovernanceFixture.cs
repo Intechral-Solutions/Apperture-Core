@@ -150,24 +150,28 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserAuthNoPerms,
+                Username = ManagementGovernanceTestConstants.ExternalAuthNoPerms,
                 DisplayName = "Governance test — auth no perms",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserConnectorReader,
+                Username = ManagementGovernanceTestConstants.ExternalConnectorCatalogReader,
                 DisplayName = "Governance test — connector reader",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationReader,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationReader,
                 DisplayName = "Governance test — integration reader",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationSchedule,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationScheduleOperator,
                 DisplayName = "Governance test — integration schedule op",
                 IsBreakGlassEligible = false
             });
@@ -321,6 +325,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserProcedureLauncher,
+                Username = ManagementGovernanceTestConstants.ExternalProcedureLauncher,
                 DisplayName = "Governance test — procedure launcher",
                 IsBreakGlassEligible = false
             });
@@ -365,6 +370,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
+                Username = ManagementGovernanceTestConstants.ExternalWorkflowOnlyProcedureLauncher,
                 DisplayName = "Governance test — workflow-only procedure launcher",
                 IsBreakGlassEligible = false
             });
@@ -419,6 +425,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationAuthoring,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator,
                 DisplayName = "Governance test — integration authoring",
                 IsBreakGlassEligible = false
             });

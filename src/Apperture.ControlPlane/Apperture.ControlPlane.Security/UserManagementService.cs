@@ -403,6 +403,8 @@ public sealed class UserManagementService : IUserManagementService
                     EmergencyAccessErrorCodes.ReservedUsername,
                     "That username is reserved for Emergency Access.");
             }
+            // A new Local user's sign-in name is a new username assignment.
+            UsernamePolicy.RequireNewAssignment(linkExternalId);
             if (sendSetupInvitation)
             {
                 if (!string.IsNullOrEmpty(password))
@@ -437,7 +439,10 @@ public sealed class UserManagementService : IUserManagementService
             displayName.Trim(),
             new[] { new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null) },
             Array.Empty<RoleId>(),
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        {
+            Username = linkExternalId
+        };
 
         await _userRepository.AddAsync(user, cancellationToken);
 
@@ -545,6 +550,14 @@ public sealed class UserManagementService : IUserManagementService
                 $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId}",
                 cancellationToken);
             return;
+        }
+
+        // A Local link's external id is the user's username; it is not chosen separately.
+        if (source == IdentitySource.Local && !string.Equals(linkExternalId, user.Username, StringComparison.Ordinal))
+        {
+            throw new UsernameException(
+                UsernameErrorCodes.Mismatch,
+                "A local sign-in must use this user's existing username.");
         }
 
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);

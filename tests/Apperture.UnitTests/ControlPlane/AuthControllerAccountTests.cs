@@ -291,7 +291,8 @@ public sealed class AuthControllerAccountTests
             "No Local Link",
             [new IdentityLink(IdentitySource.Entra, "entra-oid-abcd", null)],
             [],
-            false);
+            false)
+        { Username = "no.local.link" };
         var controller = NewController(
             actor: new HumanActor(new ActorId("entra-oid-abcd"), "entra-oid-abcd", isBreakGlassSession: false),
             resolvedUserId: TestUserId,
@@ -382,7 +383,8 @@ public sealed class AuthControllerAccountTests
             "Account Test User",
             [new IdentityLink(IdentitySource.Local, LocalUsername, DateTimeOffset.UtcNow)],
             [new RoleId("rol_platform_admin")],
-            false);
+            false)
+        { Username = LocalUsername };
 
     private static DefaultHttpContext HttpContextWithLocalClaims(string username)
     {

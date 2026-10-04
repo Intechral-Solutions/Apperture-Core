@@ -22,7 +22,8 @@ public sealed class UserManagementServiceIdentityLinkTests
             "Operator",
             [new IdentityLink(IdentitySource.Entra, "entra-oid-same", null)],
             [],
-            false);
+            false)
+        { Username = "operator" };
         var repo = new InMemoryUserRepository(user);
         var service = NewService(repo);
 
@@ -36,8 +37,8 @@ public sealed class UserManagementServiceIdentityLinkTests
     {
         var targetId = new UserId("usr-target");
         var repo = new InMemoryUserRepository(
-            new User(targetId, "Target", [new IdentityLink(IdentitySource.Local, "target-local", null)], [], false),
-            new User(new UserId("usr-other"), "Other", [new IdentityLink(IdentitySource.Entra, "entra-oid-taken", null)], [], false));
+            new User(targetId, "Target", [new IdentityLink(IdentitySource.Local, "target-local", null)], [], false) { Username = "target-local" },
+            new User(new UserId("usr-other"), "Other", [new IdentityLink(IdentitySource.Entra, "entra-oid-taken", null)], [], false) { Username = "usr-other" });
         var service = NewService(repo);
 
         Func<Task> act = async () =>
@@ -56,7 +57,8 @@ public sealed class UserManagementServiceIdentityLinkTests
             "Operator",
             [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
             [],
-            false);
+            false)
+        { Username = "operator" };
         var repo = new InMemoryUserRepository(user);
         var service = NewService(repo, new StubEntraAssociation());
 
@@ -73,7 +75,7 @@ public sealed class UserManagementServiceIdentityLinkTests
     {
         var userId = new UserId("usr-pending");
         var repo = new InMemoryUserRepository(
-            new User(userId, "Operator", [new IdentityLink(IdentitySource.Local, "operator", null)], [], false));
+            new User(userId, "Operator", [new IdentityLink(IdentitySource.Local, "operator", null)], [], false) { Username = "operator" });
         var service = NewService(repo, new StubEntraAssociation());
 
         await service.AddIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
@@ -92,7 +94,8 @@ public sealed class UserManagementServiceIdentityLinkTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            true));
+            true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
         var service = NewService(repo, new StubEntraAssociation());
 
         Func<Task> act = async () =>
@@ -112,7 +115,8 @@ public sealed class UserManagementServiceIdentityLinkTests
             "Operator",
             [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
             [],
-            false));
+            false)
+        { Username = "usr-ordinary" });
         var service = NewService(repo);
 
         Func<Task> act = async () =>
@@ -121,6 +125,30 @@ public sealed class UserManagementServiceIdentityLinkTests
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.ReservedUsername);
         repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_local_link_must_use_the_users_username()
+    {
+        var userId = new UserId("usr-entra-only");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Jane Doe",
+            [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
+            [],
+            false)
+        { Username = "jane.doe" });
+        var service = NewService(repo);
+
+        Func<Task> mismatch = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Local, "jane", CancellationToken.None);
+
+        (await mismatch.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.Mismatch);
+        repo.IdentityLinkAddCount.Should().Be(0);
+
+        await service.AddIdentityLinkAsync(userId, IdentitySource.Local, "  Jane.Doe ", CancellationToken.None);
+
+        repo.AddedLinks.Should().ContainSingle(l => l.Source == IdentitySource.Local && l.ExternalId == "jane.doe");
     }
 
     [Fact]
@@ -135,7 +163,8 @@ public sealed class UserManagementServiceIdentityLinkTests
                 new IdentityLink(IdentitySource.Entra, FirstOid, LastAuthenticatedAt: null, TenantId: TenantId)
             ],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            false));
+            false)
+        { Username = "operator" });
         var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
 
         Func<Task> act = async () =>
@@ -157,7 +186,8 @@ public sealed class UserManagementServiceIdentityLinkTests
                 new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)
             ],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            false));
+            false)
+        { Username = "operator" });
         var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
 
         Func<Task> act = async () =>

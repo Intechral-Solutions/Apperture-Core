@@ -943,7 +943,7 @@ public sealed class ManagementHostAccountProfileHttpTests
         var externalId = $"second-{Guid.NewGuid():N}"[..24];
         const string displayName = "Second Operator";
 
-        db.Users.Add(new UserEntity { Id = userId, DisplayName = displayName, IsBreakGlassEligible = false });
+        db.Users.Add(new UserEntity { Id = userId, Username = externalId, DisplayName = displayName, IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity
         {
             Id = Guid.NewGuid().ToString("N")[..24],

@@ -270,7 +270,7 @@ public sealed class BrowserRequestTrustHttpTests
             PermissionsJson = """[{"action":"auth.configuration.read","resource":{"resourceType":"InstanceConfiguration","scopeKey":"instance"}}]""",
             IsSystemRole = false,
         });
-        db.Users.Add(new UserEntity { Id = userId, DisplayName = externalId, IsBreakGlassEligible = false });
+        db.Users.Add(new UserEntity { Id = userId, Username = externalId, DisplayName = externalId, IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity { Id = "link-" + externalId, UserId = userId, Source = (int)IdentitySource.Local, ExternalId = externalId });
         db.UserRoles.Add(new UserRoleEntity { UserId = userId, RoleId = roleId });
         await db.SaveChangesAsync();
@@ -471,7 +471,7 @@ public sealed class BrowserRequestTrustHttpTests
             PermissionsJson = """[{"action":"connection.create","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.read","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.update","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.delete","resource":{"resourceType":"Connection","scopeKey":"instance"}}]""",
             IsSystemRole = false,
         });
-        db.Users.Add(new UserEntity { Id = userId, DisplayName = externalId, IsBreakGlassEligible = false });
+        db.Users.Add(new UserEntity { Id = userId, Username = externalId, DisplayName = externalId, IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity { Id = "link-" + externalId, UserId = userId, Source = (int)IdentitySource.Local, ExternalId = externalId });
         db.UserRoles.Add(new UserRoleEntity { UserId = userId, RoleId = roleId });
         await db.SaveChangesAsync();

@@ -41,7 +41,7 @@ public sealed class WorkflowExternalControlSqlServerTests
             if (!canConnect)
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
 
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
             db.WorkflowInstances.Add(new WorkflowInstanceEntity
             {
                 Id = instanceId,

@@ -190,6 +190,14 @@ public sealed class UsersController : ControllerBase
         {
             return BadRequest(new { message = ex.Message, code = ex.Code });
         }
+        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+        catch (UsernameException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
             return Conflict(new { message = ex.Message });
@@ -277,6 +285,10 @@ public sealed class UsersController : ControllerBase
             return Conflict(new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
         catch (IdentityLinkException ex)
+        {
+            return BadRequest(new IdentityLinkErrorResponse(ex.Message, ex.Code));
+        }
+        catch (UsernameException ex)
         {
             return BadRequest(new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }

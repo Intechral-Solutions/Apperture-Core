@@ -43,7 +43,7 @@ public sealed class ScheduleRunExistsSqlServerTests
             return null;
         }
 
-        await db.Database.MigrateAsync();
+        await AppertureDatabaseMigrator.MigrateAsync(db);
         return db;
     }
 

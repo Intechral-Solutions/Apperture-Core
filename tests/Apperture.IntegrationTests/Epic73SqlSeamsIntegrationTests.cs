@@ -58,7 +58,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
 
         await using (var platform = new AppertureDbContext(platformOptions))
         {
-            await platform.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(platform);
             (await platform.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
         }
 
@@ -120,7 +120,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
             .Options;
 
         var platform = new AppertureDbContext(platformOptions);
-        await platform.Database.MigrateAsync();
+        await AppertureDatabaseMigrator.MigrateAsync(platform);
 
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddDebug());

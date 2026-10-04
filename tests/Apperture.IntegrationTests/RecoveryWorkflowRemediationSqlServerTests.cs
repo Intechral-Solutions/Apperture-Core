@@ -57,7 +57,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
                     SqlServerTestConfiguration.DescribeConnectionFailure());
             }
 
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
             db.WorkflowInstances.Add(new WorkflowInstanceEntity
             {
                 Id = instanceId,

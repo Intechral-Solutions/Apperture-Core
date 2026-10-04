@@ -6,6 +6,13 @@ namespace Apperture.Persistence.SqlServer;
 public sealed class UserEntity
 {
     public string Id { get; set; } = "";
+
+    /// <summary>
+    /// Canonical username; a denormalized copy of the user's current <see cref="UsernameLedgerEntity"/> row.
+    /// Case-insensitive unique through an explicit collation.
+    /// </summary>
+    public string Username { get; set; } = "";
+
     public string DisplayName { get; set; } = "";
     public string? EmailAddress { get; set; }
     public DateTimeOffset? EmailVerifiedAtUtc { get; set; }

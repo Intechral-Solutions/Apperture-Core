@@ -162,7 +162,8 @@ public sealed class EntraIdentityAssociationServiceTests
             EmergencyAccessIdentity.DisplayName,
             [LocalLink(EmergencyAccessIdentity.LocalUsername)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var outcome = await harness.Service.CompleteLinkAsync(new UserId("emerg-1"), Assertion());
 
@@ -328,7 +329,10 @@ public sealed class EntraIdentityAssociationServiceTests
         new(IdentitySource.Local, username, Now.AddDays(-10));
 
     private static User NewUser(string id, params IdentityLink[] links) =>
-        new(new UserId(id), "Operator", links, Array.Empty<RoleId>(), IsBreakGlassEligible: false);
+        new(new UserId(id), "Operator", links, Array.Empty<RoleId>(), IsBreakGlassEligible: false)
+        {
+            Username = links.FirstOrDefault(l => l.Source == IdentitySource.Local)?.ExternalId ?? id,
+        };
 
     private sealed class Harness
     {

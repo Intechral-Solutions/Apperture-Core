@@ -222,7 +222,8 @@ public sealed class EntraStepUpCallbackTests
                 new IdentityLink(IdentitySource.Entra, oid, DateTimeOffset.UtcNow.AddDays(-1), TenantId: ActiveTenant),
             ],
             [],
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        { Username = username };
 
         /// <summary>Whether the (tenant, object id) belongs to A or B. Matches on tenant AND object id: never on object id alone.</summary>
         private IdentityLinkOwner? FindOwner(ProviderIdentityKey key)

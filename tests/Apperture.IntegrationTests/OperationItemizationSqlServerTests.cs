@@ -42,7 +42,7 @@ public sealed class OperationItemizationSqlServerTests
             return null;
         }
 
-        await db.Database.MigrateAsync();
+        await AppertureDatabaseMigrator.MigrateAsync(db);
         return db;
     }
 

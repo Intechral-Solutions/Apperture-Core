@@ -32,7 +32,7 @@ public sealed class BootstrapHttpFixture : IAsyncLifetime
 
         await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        await db.Database.MigrateAsync().ConfigureAwait(false);
+        await AppertureDatabaseMigrator.MigrateAsync(db).ConfigureAwait(false);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

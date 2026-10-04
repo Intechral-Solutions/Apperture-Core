@@ -111,23 +111,18 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
         var pendingLink = await _association.BuildPendingAdminLinkAsync(objectId!, registration, cancellationToken);
         var userId = NewUserId();
-        var user = new User(
-            userId,
-            displayName,
-            [pendingLink],
-            [],
-            IsBreakGlassEligible: false);
-
-        try
-        {
-            await _users.AddAsync(user, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UserProvisioningException(
-                UserProvisioningErrorCodes.DuplicateIdentity,
-                "That Microsoft identity is already an Apperture user.");
-        }
+        await AddWithGeneratedUsernameAsync(
+            username => new User(
+                userId,
+                displayName,
+                [pendingLink],
+                [],
+                IsBreakGlassEligible: false)
+            {
+                Username = username
+            },
+            new UsernameGenerationSources(directoryUser.UserPrincipalName, directoryUser.Mail, displayName),
+            cancellationToken);
 
         var roleAssigned = await TryAssignRoleAsync(userId, request.InitialRoleId, cancellationToken);
         await AuditAsync(
@@ -229,17 +224,13 @@ public sealed class UserProvisioningService : IUserProvisioningService
             MailSnapshot: accessRequest.MailSnapshot);
 
         var userId = NewUserId();
-        var user = new User(userId, displayName, [link], [], IsBreakGlassEligible: false);
-        try
-        {
-            await _users.AddAsync(user, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UserProvisioningException(
-                UserProvisioningErrorCodes.DuplicateIdentity,
-                "That Microsoft identity is already an Apperture user.");
-        }
+        await AddWithGeneratedUsernameAsync(
+            username => new User(userId, displayName, [link], [], IsBreakGlassEligible: false) { Username = username },
+            new UsernameGenerationSources(
+                accessRequest.UserPrincipalNameSnapshot,
+                accessRequest.MailSnapshot,
+                accessRequest.DisplayNameSnapshot),
+            cancellationToken);
 
         var roleAssigned = await TryAssignRoleAsync(userId, request.InitialRoleId, cancellationToken);
         var approved = accessRequest with
@@ -415,6 +406,31 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 details),
             cancellationToken);
         _ = resourceId;
+    }
+
+    /// <summary>
+    /// Persists a new Entra user under a generated username (UPN, mail, display name, then <c>user</c>;
+    /// never the object id). A failed add reserves no name.
+    /// </summary>
+    private async ValueTask AddWithGeneratedUsernameAsync(
+        Func<string, User> buildUser,
+        UsernameGenerationSources sources,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await new UsernameService(_users).AddWithGeneratedUsernameAsync(buildUser, sources, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UserProvisioningException(
+                UserProvisioningErrorCodes.DuplicateIdentity,
+                "That Microsoft identity is already an Apperture user.");
+        }
+        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.GenerationExhausted)
+        {
+            throw new UserProvisioningException(UserProvisioningErrorCodes.UsernameGenerationExhausted, ex.Message);
+        }
     }
 
     private static UserId NewUserId() => new(Guid.NewGuid().ToString("N")[..24]);

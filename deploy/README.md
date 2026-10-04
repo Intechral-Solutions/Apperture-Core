@@ -144,4 +144,6 @@ When EF Core migrations exist:
 dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
 ```
 
+The Management Host applies migrations itself at startup, and that is the supported path for a database that already has users. Between two of the migrations it runs a data step that gives every user a username. `dotnet ef database update` cannot run that step: on a database with users it stops with a message asking you to start the Management Host, which then completes the upgrade. An empty database migrates fully either way.
+
 See [docs/00-overview/roadmap.md](../docs/00-overview/roadmap.md).

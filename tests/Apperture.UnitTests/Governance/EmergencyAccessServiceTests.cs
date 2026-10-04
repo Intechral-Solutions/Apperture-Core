@@ -91,6 +91,7 @@ public sealed class EmergencyAccessServiceTests
         var user = harness.Users.Get(userId.Value)!;
         user.IsBreakGlassEligible.Should().BeTrue();
         user.DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
+        user.Username.Should().Be(UsernamePolicy.RecoveryAccessUsername);
         user.IdentityLinks.Should().ContainSingle(l =>
             l.Source == IdentitySource.Local && l.ExternalId == EmergencyAccessIdentity.LocalUsername);
         user.AssignedRoleIds.Should().Contain(AdminRole);
@@ -141,6 +142,8 @@ public sealed class EmergencyAccessServiceTests
         user.IsBreakGlassEligible.Should().BeTrue();
         user.DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
         EmergencyAccessIdentity.LocalUsernameOf(user).Should().Be(EmergencyAccessIdentity.LocalUsername);
+        user.Username.Should().Be(EmergencyAccessIdentity.LocalUsername, "canonicalization is a rename through the username foundation");
+        harness.Audit.Details.Should().Contain(d => d.Contains("previousUsername=oldglass"));
         harness.Credentials.Disabled["emerg-1"].Should().BeFalse();
         harness.Mfa.Enrolled["emerg-1"].Should().BeTrue();
         harness.Mfa.UnusedCodes["emerg-1"].Should().Be(9);
@@ -158,7 +161,8 @@ public sealed class EmergencyAccessServiceTests
             "Other",
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, Now)],
             [],
-            false));
+            false)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
 
@@ -178,7 +182,8 @@ public sealed class EmergencyAccessServiceTests
             "Other",
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, Now)],
             [],
-            false));
+            false)
+        { Username = EmergencyAccessIdentity.LocalUsername });
         harness.Credentials.Seed("emerg-1", disabled: false);
         harness.Mfa.Enrolled["emerg-1"] = true;
         harness.Mfa.UnusedCodes["emerg-1"] = 4;
@@ -216,7 +221,8 @@ public sealed class EmergencyAccessServiceTests
         displayName ?? "Platform Administrator",
         [new IdentityLink(IdentitySource.Local, username ?? id, Now)],
         [AdminRole],
-        designated);
+        designated)
+    { Username = username ?? id };
 
     private sealed class Harness
     {
@@ -260,7 +266,8 @@ public sealed class EmergencyAccessServiceTests
                 "Operator",
                 [new IdentityLink(IdentitySource.Local, "operator", Now)],
                 [],
-                false));
+                false)
+            { Username = "operator" });
             harness.Credentials.Seed("usr-1", disabled: false);
             return harness;
         }
@@ -288,26 +295,45 @@ public sealed class EmergencyAccessServiceTests
             _users[user.Id.Value] = user;
             return ValueTask.CompletedTask;
         }
-        public ValueTask ApplyCanonicalLocalIdentityAsync(
+        public ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
             UserId userId,
-            string displayName,
-            string currentLocalUsername,
-            string newLocalUsername,
+            string expectedCurrentUsername,
+            string newUsername,
+            string retiredReason,
+            string? newDisplayName = null,
             CancellationToken cancellationToken = default)
         {
             var user = _users[userId.Value];
+            if (!string.Equals(user.Username, expectedCurrentUsername, StringComparison.Ordinal))
+                throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "The username changed concurrently.");
             var owner = _users.Values.FirstOrDefault(u =>
-                u.IdentityLinks.Any(l => l.Source == IdentitySource.Local && l.ExternalId == newLocalUsername));
-            if (owner is not null && owner.Id.Value != userId.Value)
-                throw new InvalidOperationException("An identity link with this source and external id already exists.");
+                u.Id.Value != userId.Value
+                && (u.Username == newUsername
+                    || u.IdentityLinks.Any(l => l.Source == IdentitySource.Local && l.ExternalId == newUsername)));
+            if (owner is not null)
+                throw new UsernameException(UsernameErrorCodes.Taken, "The username is already taken.");
             var links = user.IdentityLinks
                 .Select(l =>
-                    l.Source == IdentitySource.Local && l.ExternalId == currentLocalUsername
-                        ? l with { ExternalId = newLocalUsername }
+                    l.Source == IdentitySource.Local && l.ExternalId == expectedCurrentUsername
+                        ? l with { ExternalId = newUsername }
                         : l)
                 .ToList();
-            _users[userId.Value] = user with { DisplayName = displayName, IdentityLinks = links };
-            return ValueTask.CompletedTask;
+            _users[userId.Value] = user with
+            {
+                Username = newUsername,
+                DisplayName = newDisplayName ?? user.DisplayName,
+                IdentityLinks = links,
+            };
+            return ValueTask.FromResult(
+                string.Equals(expectedCurrentUsername, newUsername, StringComparison.Ordinal)
+                    ? UsernameChangeOutcome.Unchanged
+                    : UsernameChangeOutcome.Assigned);
+        }
+        public ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(string username, CancellationToken cancellationToken = default)
+        {
+            var holder = _users.Values.FirstOrDefault(u => u.Username == username);
+            return ValueTask.FromResult<UsernameLedgerEntry?>(
+                holder is null ? null : new UsernameLedgerEntry(holder.Username, holder.Id, Now, null, null));
         }
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));

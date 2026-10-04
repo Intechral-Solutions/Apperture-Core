@@ -597,8 +597,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
-
                     b.HasIndex("Source", "ExternalId")
                         .IsUnique()
                         .HasDatabaseName("UX_IdentityLinks_Local_Source_ExternalId")
@@ -608,6 +606,12 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_IdentityLinks_Entra_Source_TenantId_ExternalId")
                         .HasFilter("[Source] = 0 AND [TenantId] IS NOT NULL");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_IdentityLinks_UserId");
+
+                    b.HasIndex(new[] { "UserId" }, "UX_IdentityLinks_Local_UserId")
+                        .IsUnique()
+                        .HasFilter("[Source] = 1");
 
                     b.ToTable("IdentityLinks", null, t =>
                         {
@@ -3047,6 +3051,12 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EmailAddress")
@@ -3058,6 +3068,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_Users_EmergencyAccess")
                         .HasFilter("[IsBreakGlassEligible] = 1");
+
+                    b.HasIndex("Username")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_Username");
 
                     b.ToTable("Users", (string)null);
                 });
@@ -3230,6 +3244,43 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("UserTotpCredentials", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UsernameLedgerEntity", b =>
+                {
+                    b.Property<string>("Username")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
+                    b.Property<DateTimeOffset>("AssignedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("RetiredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RetiredReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Username")
+                        .HasName("PK_UsernameLedger");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_UsernameLedger_UserId");
+
+                    b.HasIndex(new[] { "UserId" }, "UX_UsernameLedger_Current_UserId")
+                        .IsUnique()
+                        .HasFilter("[RetiredAtUtc] IS NULL");
+
+                    b.ToTable("UsernameLedger", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_UsernameLedger_RetiredReason", "([RetiredAtUtc] IS NULL AND [RetiredReason] IS NULL) OR ([RetiredAtUtc] IS NOT NULL AND [RetiredReason] IN (N'rename', N'canonicalization', N'backfill_previous'))");
+                        });
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.WorkflowCancelRequestEntity", b =>
@@ -3708,6 +3759,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpCredentialEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UsernameLedgerEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
                         .WithMany()

@@ -249,6 +249,8 @@ Historical post-Aspire assessment (pre-108/109): [epic107-post-aspire-assessment
   dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
   ```
 
+  On a database that already has users, this stops before the username migration completes, because the username data step runs only inside the Management Host's startup migration (`AppertureDatabaseMigrator`). Start the Management Host to finish.
+
 **Platform settings (Phase 1 delivered):** [platform-settings-registry.md](../01-architecture/platform-settings-registry.md). Instance UI: `/config/platform-settings` (category tabs; Epic 120 demo gallery). Integration Detail UI: `/integrations/{integrationId}/settings` (Epic 119). Option providers and scoped settings: [platform-settings-option-providers-and-scopes.md](../01-architecture/platform-settings-option-providers-and-scopes.md) and [integration-scoped-settings.md](../01-architecture/integration-scoped-settings.md).
 
 **Development-only — settings input gallery (Epic 120):** On the Management host, demo settings (`demo.settings.*`) appear when `ASPNETCORE_ENVIRONMENT=Development` or when `PlatformSettings:DemoGallery:Enabled` is `true` in configuration. They are not production controls and are not registered on WorkerHost. Remove by deleting `PlatformSettingDemoDefinitionRegistry` and the gated registry merge.
