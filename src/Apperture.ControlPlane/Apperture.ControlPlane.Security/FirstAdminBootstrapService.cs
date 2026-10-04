@@ -54,6 +54,9 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         if (source == IdentitySource.Entra)
             return FirstAdminBootstrapResult.DuplicateIdentityLink;
 
+        // The first admin's sign-in name is a new username assignment (throws UsernameException).
+        UsernamePolicy.RequireNewAssignment(linkExternalId);
+
         var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
         if (existing is not null)
             return FirstAdminBootstrapResult.DuplicateIdentityLink;
@@ -64,7 +67,10 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
             displayName,
             new[] { new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null) },
             new[] { new RoleId(BootstrapConstants.PlatformAdminRoleId) },
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        {
+            Username = linkExternalId
+        };
 
         if (source == IdentitySource.Local && !string.IsNullOrEmpty(password) &&
             _localCredentialRepository is not null && _passwordHasher is not null)
@@ -99,5 +105,6 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
 /// </summary>
 public static class LocalAuthHelpers
 {
-    public static string NormalizeUsername(string username) => username.Trim().ToLowerInvariant();
+    /// <summary>The single username normalization; see <see cref="UsernamePolicy.Normalize"/>.</summary>
+    public static string NormalizeUsername(string username) => UsernamePolicy.Normalize(username);
 }

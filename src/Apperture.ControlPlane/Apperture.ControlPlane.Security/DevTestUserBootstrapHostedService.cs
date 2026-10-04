@@ -87,15 +87,34 @@ public sealed class DevTestUserBootstrapHostedService : IHostedService
             return;
         }
 
+        if (UsernamePolicy.CheckNewAssignment(username) != UsernameAssignmentCheck.Valid)
+        {
+            _logger?.LogWarning(
+                "Dev test user {Username} not created: a new username must be 3 to 64 lowercase letters, digits, '.', '-' or '_', start with a letter, end with a letter or digit, and not be reserved.",
+                username);
+            return;
+        }
+
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var user = new User(
             userId,
             displayName,
             new[] { new IdentityLink(IdentitySource.Local, username, LastAuthenticatedAt: null) },
             new[] { new RoleId(BootstrapConstants.PlatformAdminRoleId) },
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        {
+            Username = username
+        };
 
-        await userRepo.AddAsync(user, cancellationToken);
+        try
+        {
+            await userRepo.AddAsync(user, cancellationToken);
+        }
+        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+        {
+            _logger?.LogWarning("Dev test user {Username} not created: that username belongs, or once belonged, to another user.", username);
+            return;
+        }
 
         if (!string.IsNullOrEmpty(opts.Password) && localCredRepo is not null && passwordHasher is not null)
         {

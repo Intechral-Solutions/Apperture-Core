@@ -42,7 +42,7 @@ public sealed class ManagementHostBootstrapHttpTests
         var client = _fixture.Factory!.CreateClient();
         var response = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
+            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..20], "unique-local-passphrase"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var body = await response.Content.ReadFromJsonAsync<FirstAdminResponse>();
@@ -107,7 +107,7 @@ public sealed class ManagementHostBootstrapHttpTests
 
         var create = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
-            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..16], "unique-local-passphrase"));
+            new FirstAdminRequest("Bootstrap Admin", "Local", $"bootstrap-admin-{Guid.NewGuid():N}"[..20], "unique-local-passphrase"));
         create.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
     }
 
@@ -127,6 +127,8 @@ public sealed class ManagementHostBootstrapHttpTests
         db.UserRoles.RemoveRange(db.UserRoles);
         db.IdentityLinks.RemoveRange(db.IdentityLinks);
         db.LocalCredentials.RemoveRange(db.LocalCredentials);
+        // Test-only reset: the product never deletes users, so the ledger restricts it.
+        db.UsernameLedger.RemoveRange(db.UsernameLedger);
         db.Users.RemoveRange(db.Users);
         await db.SaveChangesAsync();
     }

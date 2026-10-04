@@ -328,7 +328,7 @@ public sealed class ManagementHostNotificationToastDeltaHttpTests
         var userId = $"usr_{Guid.NewGuid():N}"[..24];
         var externalId = $"toast-delta-{Guid.NewGuid():N}"[..24];
 
-        db.Users.Add(new UserEntity { Id = userId, DisplayName = "Toast Delta Test User", IsBreakGlassEligible = false });
+        db.AddUsersWithCurrentUsernames(new UserEntity { Id = userId, Username = externalId, DisplayName = "Toast Delta Test User", IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity
         {
             Id = Guid.NewGuid().ToString("N")[..24],

@@ -40,7 +40,7 @@ public sealed class InventoryContextFilteringSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         // The unique test tag must NOT be prepended before the meaningful action prefix -- doing so
@@ -99,7 +99,7 @@ public sealed class InventoryContextFilteringSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         var marker = Guid.NewGuid().ToString("N");
@@ -155,7 +155,7 @@ public sealed class InventoryContextFilteringSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
 
             db.ResourceContexts.Add(new ResourceContextEntity
             {

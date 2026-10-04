@@ -132,12 +132,9 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
         var normalizedUsername = EmergencyAccessIdentity.NormalizedLocalUsername;
         var existing = await _users.GetByIdentityLinkAsync(IdentitySource.Local, normalizedUsername, cancellationToken);
-        if (existing is not null)
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UsernameConflict,
-                "The reserved username is already assigned to a user that is not the emergency account. Resolve the conflict before provisioning Recovery Access.");
-        }
+        var ledgerOwner = await _users.FindUsernameLedgerEntryAsync(normalizedUsername, cancellationToken);
+        if (existing is not null || ledgerOwner is not null)
+            throw ProvisionUsernameConflict();
 
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var user = new User(
@@ -145,9 +142,19 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, normalizedUsername, LastAuthenticatedAt: null)],
             [role.Id],
-            IsBreakGlassEligible: true);
+            IsBreakGlassEligible: true)
+        {
+            Username = normalizedUsername
+        };
 
-        await _users.AddAsync(user, cancellationToken);
+        try
+        {
+            await _users.AddAsync(user, cancellationToken);
+        }
+        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+        {
+            throw ProvisionUsernameConflict();
+        }
         var (hash, salt) = _hasher.HashPassword(password);
         await _credentials.SetPasswordAsync(userId, hash, salt, _hasher.AlgorithmName, cancellationToken);
 
@@ -170,22 +177,29 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
 
         await EnsureCanTakeCanonicalUsernameAsync(designated, cancellationToken);
 
-        var currentLocal = EmergencyAccessIdentity.LocalUsernameOf(designated)
-            ?? throw new EmergencyAccessException(
+        if (EmergencyAccessIdentity.LocalUsernameOf(designated) is null)
+        {
+            throw new EmergencyAccessException(
                 EmergencyAccessErrorCodes.LocalCredentialRequired,
                 "The emergency account must have an enabled local username and password.");
+        }
 
-        await _users.ApplyCanonicalLocalIdentityAsync(
-            designated.Id,
-            EmergencyAccessIdentity.DisplayName,
-            currentLocal,
-            EmergencyAccessIdentity.NormalizedLocalUsername,
-            cancellationToken);
+        // A system rename through the shared username foundation: the previous name is retired but stays
+        // bound to this user, and the Local link moves with the username in the same transaction.
+        var previousUsername = designated.Username;
+        try
+        {
+            await new UsernameService(_users).ApplyRecoveryAccessIdentityAsync(designated, cancellationToken);
+        }
+        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+        {
+            throw CanonicalUsernameConflict();
+        }
 
         await AuditAsync(
             EmergencyAccessAuditActionNames.Canonicalized,
             CliActorId,
-            $"userId={designated.Id.Value} previousUsername={currentLocal}",
+            $"userId={designated.Id.Value} previousUsername={previousUsername}",
             cancellationToken);
     }
 
@@ -290,21 +304,35 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     private async ValueTask EnsureCanTakeCanonicalUsernameAsync(User user, CancellationToken cancellationToken)
     {
         if (await HasCanonicalUsernameConflictAsync(user, cancellationToken))
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UsernameConflict,
-                "The reserved username is already assigned to another user. The emergency account was not changed. Resolve the conflict before applying the canonical Recovery Access identity.");
-        }
+            throw CanonicalUsernameConflict();
     }
 
+    /// <summary>
+    /// True when another user holds the Recovery Access username as a Local sign-in name, or owns it in
+    /// the username ledger (current or retired). A ledger name is never reassigned to a different user.
+    /// </summary>
     private async ValueTask<bool> HasCanonicalUsernameConflictAsync(User user, CancellationToken cancellationToken)
     {
         var owner = await _users.GetByIdentityLinkAsync(
             IdentitySource.Local,
             EmergencyAccessIdentity.NormalizedLocalUsername,
             cancellationToken);
-        return owner is not null && !string.Equals(owner.Id.Value, user.Id.Value, StringComparison.Ordinal);
+        if (owner is not null && !string.Equals(owner.Id.Value, user.Id.Value, StringComparison.Ordinal))
+            return true;
+
+        var ledger = await _users.FindUsernameLedgerEntryAsync(EmergencyAccessIdentity.NormalizedLocalUsername, cancellationToken);
+        return ledger is not null && !string.Equals(ledger.UserId.Value, user.Id.Value, StringComparison.Ordinal);
     }
+
+    private static EmergencyAccessException CanonicalUsernameConflict() =>
+        new(
+            EmergencyAccessErrorCodes.UsernameConflict,
+            "The reserved username is already assigned to another user. The emergency account was not changed. Resolve the conflict before applying the canonical Recovery Access identity.");
+
+    private static EmergencyAccessException ProvisionUsernameConflict() =>
+        new(
+            EmergencyAccessErrorCodes.UsernameConflict,
+            "The reserved username is already assigned to a user that is not the emergency account. Resolve the conflict before provisioning Recovery Access.");
 
     private static bool IsPlatformAdministrator(User user) =>
         user.AssignedRoleIds.Any(r =>

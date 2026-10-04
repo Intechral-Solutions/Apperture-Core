@@ -52,7 +52,8 @@ public sealed class AccountProfileServiceTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
             [],
-            true));
+            true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var profile = await fixture.Service.GetProfileAsync(Owner);
 
@@ -72,7 +73,8 @@ public sealed class AccountProfileServiceTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
             [],
-            true));
+            true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var act = () => fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-b").AsTask();
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
@@ -742,8 +744,8 @@ public sealed class AccountProfileServiceTests
         public Fixture()
         {
             Users = new InMemoryUserRepository(
-                new User(Owner, "Owner Person", [new IdentityLink(IdentitySource.Local, "owner", null)], [], false),
-                new User(Other, "Other Person", [new IdentityLink(IdentitySource.Local, "other", null)], [], false));
+                new User(Owner, "Owner Person", [new IdentityLink(IdentitySource.Local, "owner", null)], [], false) { Username = "owner" },
+                new User(Other, "Other Person", [new IdentityLink(IdentitySource.Local, "other", null)], [], false) { Username = "other" });
 
             Preferences = new InMemoryUserPreferencesRepository();
             Images = new InMemoryUserProfileImageStore();

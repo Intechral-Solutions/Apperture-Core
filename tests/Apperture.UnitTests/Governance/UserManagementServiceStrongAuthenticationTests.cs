@@ -97,7 +97,8 @@ public sealed class UserManagementServiceStrongAuthenticationTests
             "Operator",
             [new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow)],
             [],
-            false);
+            false)
+        { Username = "operator" };
         return new UserManagementService(
             new StubPrincipal(),
             new StubResolver(),

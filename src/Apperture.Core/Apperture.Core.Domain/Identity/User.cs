@@ -24,6 +24,14 @@ public sealed record User(
     DateTimeOffset? EmailVerifiedAtUtc = null,
     string? PendingEmailAddress = null)
 {
+    /// <summary>
+    /// The user's one canonical, human-facing username (trimmed, lower-case). Unique across every name
+    /// any user has ever held. Not the immutable identity: that is <see cref="Id"/>. A Local identity
+    /// link's external id always equals this value. Names that predate the current username policy are
+    /// kept verbatim, so a stored value is not guaranteed to be URL-safe or policy-conforming.
+    /// </summary>
+    public required string Username { get; init; }
+
     public UserAvatar EffectiveAvatar => Avatar ?? UserAvatar.Default;
 
     /// <summary>Verified Apperture contact destination. Never an authentication key.</summary>

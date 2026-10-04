@@ -165,7 +165,7 @@ public sealed class AccountDomainModelTests
     [Fact]
     public void A_user_loaded_without_an_avatar_still_reports_the_default()
     {
-        var user = new User(new UserId("usr_1"), "Someone", [], [], false);
+        var user = new User(new UserId("usr_1"), "Someone", [], [], false) { Username = "someone" };
 
         user.EffectiveAvatar.Should().Be(UserAvatar.Default);
     }

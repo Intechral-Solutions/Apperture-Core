@@ -7,7 +7,7 @@ public static class AuditSystemActionPrefixes
     [
         "auth.", "user.", "credential.", "identity_link.", "auth_admin.", "account.",
         "governance.", "audit.read.", "module.lifecycle.",
-        "platform.settings.", "emergency.", "entra."
+        "platform.settings.", "emergency.", "entra.", "identity."
     ];
 
     public static bool Matches(string? action) =>

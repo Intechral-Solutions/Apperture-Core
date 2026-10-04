@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Optional IHostedService that runs EF Core Migrate() on startup.
+/// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>.
 /// Register via AddApperturePersistenceMigrationsOnStartup when migrations should run automatically.
 /// </summary>
 internal sealed class PersistenceMigrationHostedService : IHostedService
@@ -45,7 +45,8 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
                     pending[^1]);
             }
 
-            await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+            // Includes the username backfill data step; readiness is reported only after all of it.
+            await AppertureDatabaseMigrator.MigrateAsync(db, _logger, cancellationToken).ConfigureAwait(false);
             _migrationCompletion.IsComplete = true;
             _logger.LogInformation("Database migrations applied successfully.");
         }

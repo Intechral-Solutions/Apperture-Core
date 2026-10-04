@@ -33,7 +33,8 @@ public sealed class EntraProvisioningDirectoryServiceTests
             "Existing",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, Tid, "reg-1")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "existing" });
         harness.Requests.Seed(new EntraAccessRequest(
             "req-1", "reg-1", Tid, OtherOid, "Pat", "pat@contoso.com", "pat@contoso.com", "Member",
             DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, EntraAccessRequestStatus.Pending));
@@ -59,7 +60,8 @@ public sealed class EntraProvisioningDirectoryServiceTests
             "Other tenant",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, "99999999-8888-7777-6666-555555555555", "reg-other")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "other.tenant" });
         harness.Discovery.Users =
         [
             new EntraDirectoryUser(Oid, "Jane", "jane@contoso.com", "jane@contoso.com", "Member", true)
@@ -108,7 +110,8 @@ public sealed class EntraProvisioningDirectoryServiceTests
             "Jane",
             [new IdentityLink(IdentitySource.Local, "jane@contoso.com", DateTimeOffset.UtcNow)],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "jane@contoso.com" });
 
         var page = await harness.Service.SearchAsync("reg-1", "jane@contoso.com", null, 25);
 

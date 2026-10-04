@@ -22,7 +22,8 @@ public sealed class Epic39GovernanceAdminTests
             "Alice",
             [new IdentityLink(IdentitySource.Local, "alice", null)],
             [new RoleId("r1")],
-            false);
+            false)
+        { Username = "alice" };
         var perm = new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance"));
         var role = new Role(new RoleId("r1"), "Admin", null, [perm], false);
         var userManagement = new StubUserManagement(user);
@@ -74,7 +75,8 @@ public sealed class Epic39GovernanceAdminTests
             "Alice",
             [new IdentityLink(IdentitySource.Local, "alice", null)],
             [new RoleId("r1"), new RoleId("r2")],
-            false);
+            false)
+        { Username = "alice" };
         var perm1 = new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance"));
         var perm2 = new PermissionDescriptor("audit.read", new ResourceDescriptor("AuditPolicy", "instance"));
         var role1 = new Role(new RoleId("r1"), "Admin", null, [perm1], false);

@@ -47,7 +47,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
 
         var userId = "user-" + externalId;
         db.Roles.Add(new RoleEntity { Id = roleId, Name = "Connection tools test " + externalId, Description = "test", PermissionsJson = Permissions(actions), IsSystemRole = false });
-        db.Users.Add(new UserEntity { Id = userId, DisplayName = externalId, IsBreakGlassEligible = false });
+        db.AddUsersWithCurrentUsernames(new UserEntity { Id = userId, Username = externalId, DisplayName = externalId, IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity { Id = "link-" + externalId, UserId = userId, Source = (int)IdentitySource.Local, ExternalId = externalId });
         db.UserRoles.Add(new UserRoleEntity { UserId = userId, RoleId = roleId });
         await db.SaveChangesAsync();

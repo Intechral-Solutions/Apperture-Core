@@ -88,9 +88,18 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
     {
+        RequireNewUserIdentity(user);
+
+        foreach (var link in user.IdentityLinks)
+        {
+            if (await IdentityExistsAsync(link, cancellationToken))
+                throw new InvalidOperationException("An identity link with this source and external id already exists.");
+        }
+
         var userEntity = new UserEntity
         {
             Id = user.Id.Value,
+            Username = user.Username,
             DisplayName = user.DisplayName,
             IsBreakGlassEligible = user.IsBreakGlassEligible,
             DisplayTimeZoneId = user.DisplayTimeZoneId,
@@ -99,25 +108,217 @@ public sealed class SqlUserRepository : IUserRepository
             PendingEmailAddress = user.PendingEmailAddress
         };
         ApplyAvatar(userEntity, user.Avatar);
-        _db.Users.Add(userEntity);
 
-        foreach (var link in user.IdentityLinks)
+        // The user row, its ledger row, links and roles commit in one SaveChanges, so a name is never
+        // left reserved by a user that failed to persist.
+        var added = new List<object>
         {
-            if (await IdentityExistsAsync(link, cancellationToken))
-                throw new InvalidOperationException("An identity link with this source and external id already exists.");
-            _db.IdentityLinks.Add(ToEntity(user.Id, link));
-        }
-
-        foreach (var roleId in user.AssignedRoleIds)
-        {
-            _db.UserRoles.Add(new UserRoleEntity
+            userEntity,
+            new UsernameLedgerEntity
             {
+                Username = user.Username,
                 UserId = user.Id.Value,
-                RoleId = roleId.Value
-            });
+                AssignedAtUtc = DateTimeOffset.UtcNow
+            }
+        };
+        added.AddRange(user.IdentityLinks.Select(link => ToEntity(user.Id, link)));
+        added.AddRange(user.AssignedRoleIds.Select(roleId => new UserRoleEntity
+        {
+            UserId = user.Id.Value,
+            RoleId = roleId.Value
+        }));
+
+        foreach (var entity in added)
+            _db.Add(entity);
+
+        try
+        {
+            await SaveIdentityChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            Detach(added);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Defensive invariant for every creation path: a new user carries a canonical, policy-shaped
+    /// username, and its Local link (at most one) mirrors that username.
+    /// </summary>
+    private static void RequireNewUserIdentity(User user)
+    {
+        if (string.IsNullOrWhiteSpace(user.Username)
+            || !UsernamePolicy.IsCanonical(user.Username)
+            || !UsernamePolicy.IsValidFormat(user.Username))
+        {
+            throw new ArgumentException(
+                "A new user needs a canonical username that satisfies the username policy.",
+                nameof(user));
         }
 
-        await SaveIdentityChangesAsync(cancellationToken);
+        var localLinks = user.IdentityLinks.Where(l => l.Source == IdentitySource.Local).ToList();
+        if (localLinks.Count > 1)
+            throw new ArgumentException("A user can have at most one Local identity link.", nameof(user));
+        if (localLinks.Count == 1 && !string.Equals(localLinks[0].ExternalId, user.Username, StringComparison.Ordinal))
+        {
+            throw new UsernameException(
+                UsernameErrorCodes.Mismatch,
+                "A Local identity link must use the user's username.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+        UserId userId,
+        string expectedCurrentUsername,
+        string newUsername,
+        string retiredReason,
+        string? newDisplayName = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!UsernamePolicy.IsCanonical(newUsername) || !UsernamePolicy.IsValidFormat(newUsername))
+            throw new ArgumentException("The new username must be canonical and satisfy the username policy.", nameof(newUsername));
+
+        // Retry-on-failure is enabled, so an explicit transaction must run inside the execution strategy.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(
+            async ct =>
+            {
+                var tracked = new List<object>();
+                try
+                {
+                    await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                    var outcome = await ChangeUsernameCoreAsync(
+                        userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, tracked, ct);
+                    await _db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return outcome;
+                }
+                catch (Exception ex) when (IsUsernameUniqueViolation(ex))
+                {
+                    Detach(tracked);
+                    throw new UsernameException(
+                        UsernameErrorCodes.Taken,
+                        "That username belongs, or once belonged, to another user.");
+                }
+                catch (Exception ex) when (ex is DbUpdateConcurrencyException || IsCurrentUsernameIndexViolation(ex))
+                {
+                    Detach(tracked);
+                    throw new UsernameException(
+                        UsernameErrorCodes.ConcurrentChange,
+                        "The user was changed by another operation. Reload and try again.");
+                }
+                catch
+                {
+                    Detach(tracked);
+                    throw;
+                }
+            },
+            cancellationToken);
+    }
+
+    private async Task<UsernameChangeOutcome> ChangeUsernameCoreAsync(
+        UserId userId,
+        string expectedCurrentUsername,
+        string newUsername,
+        string retiredReason,
+        string? newDisplayName,
+        List<object> tracked,
+        CancellationToken cancellationToken)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(e => e.Id == userId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+        tracked.Add(user);
+        if (!string.Equals(user.Username, expectedCurrentUsername, StringComparison.Ordinal))
+        {
+            throw new UsernameException(
+                UsernameErrorCodes.ConcurrentChange,
+                "The user's username changed. Reload and try again.");
+        }
+
+        var outcome = UsernameChangeOutcome.Unchanged;
+        if (!string.Equals(user.Username, newUsername, StringComparison.Ordinal))
+        {
+            var now = DateTimeOffset.UtcNow;
+            var current = user.Username;
+
+            // Retire first: the filtered one-current-name-per-user index allows only one live row.
+            var retired = await _db.UsernameLedger
+                .Where(l => l.Username == current && l.UserId == userId.Value && l.RetiredAtUtc == null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(l => l.RetiredAtUtc, now)
+                        .SetProperty(l => l.RetiredReason, retiredReason),
+                    cancellationToken);
+            if (retired != 1)
+            {
+                throw new UsernameException(
+                    UsernameErrorCodes.ConcurrentChange,
+                    "The user's current username is not recorded as current. Reload and try again.");
+            }
+
+            // Reclaim only this user's own retired name. A row owned by anyone else is never touched,
+            // and the insert below then collides on the ledger primary key.
+            var reclaimed = await _db.UsernameLedger
+                .Where(l => l.Username == newUsername && l.UserId == userId.Value && l.RetiredAtUtc != null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(l => l.RetiredAtUtc, (DateTimeOffset?)null)
+                        .SetProperty(l => l.RetiredReason, (string?)null),
+                    cancellationToken);
+            if (reclaimed == 0)
+            {
+                // Written immediately, before Users and the Local link, so the ledger primary key is what
+                // decides that a name is taken (EF would otherwise order the link update first).
+                await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $"INSERT INTO [UsernameLedger] ([Username], [UserId], [AssignedAtUtc], [RetiredAtUtc], [RetiredReason]) VALUES ({newUsername}, {userId.Value}, {now}, NULL, NULL)",
+                    cancellationToken);
+                outcome = UsernameChangeOutcome.Assigned;
+            }
+            else
+            {
+                outcome = UsernameChangeOutcome.Reclaimed;
+            }
+
+            user.Username = newUsername;
+
+            // The Local link's external id mirrors the username (at most one Local link per user).
+            var localLink = await _db.IdentityLinks.FirstOrDefaultAsync(
+                l => l.UserId == userId.Value && l.Source == (int)IdentitySource.Local,
+                cancellationToken);
+            if (localLink is not null)
+            {
+                localLink.ExternalId = newUsername;
+                tracked.Add(localLink);
+            }
+        }
+
+        if (newDisplayName is not null)
+            user.DisplayName = newDisplayName;
+
+        return outcome;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(
+        string username,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return null;
+
+        var row = await _db.UsernameLedger.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Username == username, cancellationToken);
+        return row is null
+            ? null
+            : new UsernameLedgerEntry(row.Username, new UserId(row.UserId), row.AssignedAtUtc, row.RetiredAtUtc, row.RetiredReason);
+    }
+
+    private void Detach(IEnumerable<object> entities)
+    {
+        foreach (var entity in entities)
+            _db.Entry(entity).State = EntityState.Detached;
     }
 
     /// <inheritdoc />
@@ -133,42 +334,6 @@ public sealed class SqlUserRepository : IUserRepository
         entity.EmailVerifiedAtUtc = user.EmailVerifiedAtUtc;
         entity.PendingEmailAddress = user.PendingEmailAddress;
         ApplyAvatar(entity, user.Avatar);
-        await _db.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask ApplyCanonicalLocalIdentityAsync(
-        UserId userId,
-        string displayName,
-        string currentLocalUsername,
-        string newLocalUsername,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = await _db.Users.FirstOrDefaultAsync(e => e.Id == userId.Value, cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
-
-        var localLink = await _db.IdentityLinks.FirstOrDefaultAsync(
-            l => l.UserId == userId.Value
-                && l.Source == (int)IdentitySource.Local
-                && l.ExternalId == currentLocalUsername,
-            cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId.Value} has no matching local identity.");
-
-        if (!string.Equals(localLink.ExternalId, newLocalUsername, StringComparison.Ordinal))
-        {
-            var taken = await _db.IdentityLinks.AnyAsync(
-                l => l.Source == (int)IdentitySource.Local && l.ExternalId == newLocalUsername,
-                cancellationToken);
-            if (taken)
-            {
-                throw new InvalidOperationException(
-                    "An identity link with this source and external id already exists.");
-            }
-
-            localLink.ExternalId = newLocalUsername;
-        }
-
-        entity.DisplayName = displayName;
         await _db.SaveChangesAsync(cancellationToken);
     }
 
@@ -298,9 +463,7 @@ public sealed class SqlUserRepository : IUserRepository
         if (await IdentityExistsAsync(source, externalId, tenantId: null, cancellationToken))
             throw new InvalidOperationException("An identity link with this source and external id already exists.");
 
-        var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
-        if (!userExists)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
+        await RequireLinkTargetAsync(userId, source, externalId, cancellationToken);
 
         _db.IdentityLinks.Add(new IdentityLinkEntity
         {
@@ -320,12 +483,34 @@ public sealed class SqlUserRepository : IUserRepository
         if (await IdentityExistsAsync(link, cancellationToken))
             throw new InvalidOperationException("An identity link with this source and external id already exists.");
 
-        var userExists = await _db.Users.AnyAsync(u => u.Id == userId.Value, cancellationToken);
-        if (!userExists)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
+        await RequireLinkTargetAsync(userId, link.Source, link.ExternalId, cancellationToken);
 
         _db.IdentityLinks.Add(ToEntity(userId, link));
         await SaveIdentityChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// The user must exist, and a Local link must use the user's username as its external id. The
+    /// one-Local-link-per-user index rejects a second Local link at the database.
+    /// </summary>
+    private async ValueTask RequireLinkTargetAsync(
+        UserId userId,
+        IdentitySource source,
+        string externalId,
+        CancellationToken cancellationToken)
+    {
+        var username = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId.Value)
+            .Select(u => u.Username)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+
+        if (source == IdentitySource.Local && !string.Equals(externalId, username, StringComparison.Ordinal))
+        {
+            throw new UsernameException(
+                UsernameErrorCodes.Mismatch,
+                "A Local identity link must use the user's username.");
+        }
     }
 
     /// <inheritdoc />
@@ -458,24 +643,44 @@ public sealed class SqlUserRepository : IUserRepository
         {
             await _db.SaveChangesAsync(cancellationToken);
         }
+        catch (DbUpdateException ex) when (IsUsernameUniqueViolation(ex))
+        {
+            throw new UsernameException(
+                UsernameErrorCodes.Taken,
+                "That username belongs, or once belonged, to another user.");
+        }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
             throw new InvalidOperationException("An identity link with this source and external id already exists.", ex);
         }
     }
 
-    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    private static bool IsUniqueConstraintViolation(Exception ex) => FindUniqueViolation(ex) is not null;
+
+    /// <summary>The ledger primary key or <c>UX_Users_Username</c>: the name is or was someone else's.</summary>
+    private static bool IsUsernameUniqueViolation(Exception ex)
     {
-        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
+        var message = FindUniqueViolation(ex)?.Message;
+        return message is not null
+            && (message.Contains("PK_UsernameLedger", StringComparison.Ordinal)
+                || message.Contains("UX_Users_Username", StringComparison.Ordinal));
+    }
+
+    private static bool IsCurrentUsernameIndexViolation(Exception ex) =>
+        FindUniqueViolation(ex)?.Message.Contains("UX_UsernameLedger_Current_UserId", StringComparison.Ordinal) == true;
+
+    private static Microsoft.Data.SqlClient.SqlException? FindUniqueViolation(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
         {
-            if (inner is Microsoft.Data.SqlClient.SqlException sql
+            if (current is Microsoft.Data.SqlClient.SqlException sql
                 && (sql.Number == 2601 || sql.Number == 2627))
             {
-                return true;
+                return sql;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static IdentityLinkEntity ToEntity(UserId userId, IdentityLink link) => new()
@@ -524,7 +729,10 @@ public sealed class SqlUserRepository : IUserRepository
                 userEntity.AvatarImageKey),
             userEntity.EmailAddress,
             userEntity.EmailVerifiedAtUtc,
-            userEntity.PendingEmailAddress);
+            userEntity.PendingEmailAddress)
+        {
+            Username = userEntity.Username
+        };
     }
 
     /// <inheritdoc />

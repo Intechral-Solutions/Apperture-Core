@@ -37,6 +37,7 @@ public sealed class UserManagementServiceCreateUserTests
         user!.DisplayName.Should().Be("Operator");
         user.IdentityLinks.Should().ContainSingle(l =>
             l.Source == IdentitySource.Local && l.ExternalId == "operator");
+        user.Username.Should().Be("operator", "the normalized sign-in name is the username");
         user.AssignedRoleIds.Should().BeEmpty();
         harness.Hasher.LastPassword.Should().Be("unique-local-passphrase");
         harness.Credentials.Hashes[userId.Value].Should().Be("h");
@@ -55,6 +56,23 @@ public sealed class UserManagementServiceCreateUserTests
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already exists*");
         harness.Users.Added.Should().HaveCount(1);
+    }
+
+    [Theory]
+    [InlineData("jane@contoso.com", UsernameErrorCodes.Invalid)]
+    [InlineData("op", UsernameErrorCodes.Invalid)]
+    [InlineData("op-", UsernameErrorCodes.Invalid)]
+    [InlineData("system", UsernameErrorCodes.Reserved)]
+    [InlineData("worker", UsernameErrorCodes.Reserved)]
+    public async Task CreateUser_requires_a_new_username_to_satisfy_the_policy(string username, string code)
+    {
+        var harness = Harness.Create();
+
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, username, "unique-local-passphrase").AsTask();
+
+        (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(code);
+        harness.Users.Added.Should().BeEmpty();
+        harness.Credentials.Hashes.Should().BeEmpty();
     }
 
     [Fact]
@@ -144,7 +162,8 @@ public sealed class UserManagementServiceCreateUserTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var (page, total) = await harness.Service.GetUserPageAsync(0, 20);
 
@@ -162,7 +181,8 @@ public sealed class UserManagementServiceCreateUserTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var user = await harness.Service.GetUserByIdAsync(new UserId("emerg-1"));
 
@@ -180,7 +200,8 @@ public sealed class UserManagementServiceCreateUserTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var (page, total) = await harness.Service.GetUserPageAsync(1, 1);
 
@@ -198,7 +219,8 @@ public sealed class UserManagementServiceCreateUserTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
-            IsBreakGlassEligible: true);
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername };
         harness.Users.Seed(emergency);
         harness.Credentials.Hashes["emerg-1"] = "h";
         harness.Credentials.Disabled["emerg-1"] = false;

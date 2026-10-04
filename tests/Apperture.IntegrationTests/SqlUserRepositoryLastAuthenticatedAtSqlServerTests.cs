@@ -48,7 +48,7 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
                     continue;
                 }
 
-                await db.Database.MigrateAsync();
+                await AppertureDatabaseMigrator.MigrateAsync(db);
                 return (db, options);
             }
             catch
@@ -162,9 +162,10 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
         string externalId,
         DateTimeOffset? lastAuthenticatedAt)
     {
-        db.Users.Add(new UserEntity
+        db.AddUsersWithCurrentUsernames(new UserEntity
         {
             Id = userId,
+            Username = externalId,
             DisplayName = "Operator"
         });
         db.IdentityLinks.Add(new IdentityLinkEntity

@@ -99,17 +99,28 @@ public static class BootstrapPlatformAdminAssignment
                         : p.DisplayName.Trim();
 
                     var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
-                    var user = new User(
-                        userId,
-                        displayName,
-                        [new IdentityLink(IdentitySource.Entra, externalId, LastAuthenticatedAt: null, TenantId: tenantId)],
-                        [adminRoleId],
-                        IsBreakGlassEligible: false);
 
-                    await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
+                    // Configuration names only tid + oid, so the username comes from a configured display
+                    // name or falls back to "user". The default display text (with the oid) is never used.
+                    var user = await new UsernameService(userRepository).AddWithGeneratedUsernameAsync(
+                        username => new User(
+                            userId,
+                            displayName,
+                            [new IdentityLink(IdentitySource.Entra, externalId, LastAuthenticatedAt: null, TenantId: tenantId)],
+                            [adminRoleId],
+                            IsBreakGlassEligible: false)
+                        {
+                            Username = username
+                        },
+                        new UsernameGenerationSources(
+                            UserPrincipalName: null,
+                            Mail: null,
+                            DisplayName: string.IsNullOrWhiteSpace(p.DisplayName) ? null : displayName),
+                        cancellationToken).ConfigureAwait(false);
                     logger?.LogInformation(
-                        "Created user {UserId} for bootstrap principal {Source}/{TenantId}/{ExternalId} with Platform Administrator role.",
+                        "Created user {UserId} ({Username}) for bootstrap principal {Source}/{TenantId}/{ExternalId} with Platform Administrator role.",
                         userId.Value,
+                        user.Username,
                         source,
                         tenantId,
                         externalId);
@@ -130,6 +141,15 @@ public static class BootstrapPlatformAdminAssignment
                         continue;
                     }
 
+                    if (UsernamePolicy.CheckNewAssignment(externalId) != UsernameAssignmentCheck.Valid)
+                    {
+                        logger?.LogWarning(
+                            "Bootstrap principal {Source}/{ExternalId} skipped: a new local username must be 3 to 64 lowercase letters, digits, '.', '-' or '_', start with a letter, end with a letter or digit, and not be reserved.",
+                            source,
+                            externalId);
+                        continue;
+                    }
+
                     var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
                         ? $"Bootstrap administrator ({externalId})"
                         : p.DisplayName.Trim();
@@ -140,9 +160,23 @@ public static class BootstrapPlatformAdminAssignment
                         displayName,
                         [new IdentityLink(source, externalId, LastAuthenticatedAt: null)],
                         [adminRoleId],
-                        IsBreakGlassEligible: false);
+                        IsBreakGlassEligible: false)
+                    {
+                        Username = externalId
+                    };
 
-                    await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+                    {
+                        logger?.LogWarning(
+                            "Bootstrap principal {Source}/{ExternalId} skipped: that username belongs, or once belonged, to another user.",
+                            source,
+                            externalId);
+                        continue;
+                    }
                     logger?.LogInformation(
                         "Created user {UserId} for bootstrap principal {Source}/{ExternalId} with Platform Administrator role.",
                         userId.Value,

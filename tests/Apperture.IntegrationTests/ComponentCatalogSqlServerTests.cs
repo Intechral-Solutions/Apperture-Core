@@ -45,7 +45,7 @@ public sealed class ComponentCatalogSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
 
             var now = DateTimeOffset.UtcNow;
             NotificationDefinitionEntity Row(string id, string origin, string scope, string? module) => new()
@@ -121,7 +121,7 @@ public sealed class ComponentCatalogSqlServerTests
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
-            await db.Database.MigrateAsync();
+            await AppertureDatabaseMigrator.MigrateAsync(db);
 
             var repository = scope.ServiceProvider.GetRequiredService<IConnectionRepository>();
             Connection Make(string id, ConnectorDefinitionId connector, ConnectionState state) =>

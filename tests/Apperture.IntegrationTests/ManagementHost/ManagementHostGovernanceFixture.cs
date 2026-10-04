@@ -68,6 +68,28 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
         }
 
         await SeedAsync().ConfigureAwait(false);
+        await RequireUsernameLedgerInvariantAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The governance catalog persists across runs. Users seeded into it by an older harness, without a
+    /// current username ledger row, are a state production can no longer create, so the run stops here
+    /// instead of testing against it.
+    /// </summary>
+    private async Task RequireUsernameLedgerInvariantAsync()
+    {
+        await using var scope = Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+
+        var broken = await UsernameLedgerTestSeeding.FindUsersBreakingUsernameLedgerInvariantAsync(db).ConfigureAwait(false);
+        if (broken.Count == 0)
+            return;
+
+        var catalog = new SqlConnectionStringBuilder(ConnectionString).InitialCatalog;
+        throw new InvalidOperationException(
+            $"The persistent test catalog '{catalog}' has {broken.Count} user(s) without exactly one current username ledger row matching Users.Username " +
+            $"(for example {string.Join(", ", broken.Take(5))}). It was seeded by an older harness. " +
+            $"Drop the '{catalog}' database; the next run recreates and reseeds it.");
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -146,28 +168,32 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.AddRange(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserAuthNoPerms,
+                Username = ManagementGovernanceTestConstants.ExternalAuthNoPerms,
                 DisplayName = "Governance test — auth no perms",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserConnectorReader,
+                Username = ManagementGovernanceTestConstants.ExternalConnectorCatalogReader,
                 DisplayName = "Governance test — connector reader",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationReader,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationReader,
                 DisplayName = "Governance test — integration reader",
                 IsBreakGlassEligible = false
             },
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationSchedule,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationScheduleOperator,
                 DisplayName = "Governance test — integration schedule op",
                 IsBreakGlassEligible = false
             });
@@ -317,10 +343,11 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserProcedureLauncher,
+                Username = ManagementGovernanceTestConstants.ExternalProcedureLauncher,
                 DisplayName = "Governance test — procedure launcher",
                 IsBreakGlassEligible = false
             });
@@ -361,10 +388,11 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserWorkflowOnlyProcedureLauncher,
+                Username = ManagementGovernanceTestConstants.ExternalWorkflowOnlyProcedureLauncher,
                 DisplayName = "Governance test — workflow-only procedure launcher",
                 IsBreakGlassEligible = false
             });
@@ -415,10 +443,11 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 IsSystemRole = false
             });
 
-        db.Users.Add(
+        db.AddUsersWithCurrentUsernames(
             new UserEntity
             {
                 Id = ManagementGovernanceTestConstants.UserIntegrationAuthoring,
+                Username = ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator,
                 DisplayName = "Governance test — integration authoring",
                 IsBreakGlassEligible = false
             });

@@ -67,7 +67,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 new IdentityLink(IdentitySource.Entra, "33333333-3333-3333-3333-333333333333", Now)
             ],
             [AdminRole],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = "admin" });
 
         var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
 
@@ -86,7 +87,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
             "Emergency Administrator",
             [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
             [AdminRole],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = "breakglass" });
         harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
         harness.Roles.UserIds.Add(new UserId("emerg-1"));
 
@@ -109,7 +111,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
             "Emergency Administrator",
             [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
             [AdminRole],
-            IsBreakGlassEligible: true));
+            IsBreakGlassEligible: true)
+        { Username = "breakglass" });
         harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
         harness.Roles.UserIds.Add(new UserId("emerg-1"));
 
@@ -128,7 +131,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
             "Emergency Administrator",
             [new IdentityLink(IdentitySource.Local, "breakglass", Now)],
             [AdminRole],
-            IsBreakGlassEligible: true);
+            IsBreakGlassEligible: true)
+        { Username = "breakglass" };
         harness.Users.Seed(user);
         harness.Credentials.Seed("emerg-1", "hash-e", disabled: false);
         var cred = await harness.Credentials.GetByUserIdAsync(new UserId("emerg-1"));
@@ -190,7 +194,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
             "Second Administrator",
             [new IdentityLink(IdentitySource.Local, "admin2", Now)],
             [AdminRole],
-            false));
+            false)
+        { Username = "admin2" });
         harness.Credentials.Seed("admin-2", "hash-other", disabled: false);
         harness.Roles.UserIds.Add(new UserId("admin-2"));
         harness.Audit.Actions.Clear();
@@ -250,7 +255,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                     new IdentityLink(IdentitySource.Entra, "33333333-3333-3333-3333-333333333333", Now)
                 ],
                 [],
-                false));
+                false)
+            { Username = "operator" });
             harness.Credentials.Seed("usr-1", "hash-original", alreadyDisabled);
             return harness;
         }
@@ -266,7 +272,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                     new IdentityLink(IdentitySource.Entra, "33333333-3333-3333-3333-333333333333", Now)
                 ],
                 [AdminRole],
-                false));
+                false)
+            { Username = "admin" });
             harness.Credentials.Seed("admin-1", "hash-original", disabled: false);
             harness.Roles.UserIds.Add(new UserId("admin-1"));
             return harness;
@@ -280,7 +287,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 "Second Administrator",
                 [new IdentityLink(IdentitySource.Local, "admin2", Now)],
                 [AdminRole],
-                false));
+                false)
+            { Username = "admin2" });
             harness.Credentials.Seed("admin-2", "hash-other", disabled: false);
             harness.Roles.UserIds.Add(new UserId("admin-2"));
             return harness;

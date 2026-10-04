@@ -90,7 +90,8 @@ public sealed class EntraAccessRequestServiceTests
             "Jane",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, Tid, "reg-1")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "jane" });
 
         var snapshot = await harness.Service.GetSessionSnapshotAsync(Principal());
         snapshot.State.Should().Be(EntraAccessRequestSessionStates.AlreadyProvisioned);
@@ -109,7 +110,8 @@ public sealed class EntraAccessRequestServiceTests
             "Other tenant",
             [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, "99999999-8888-7777-6666-555555555555", "reg-other")],
             [],
-            IsBreakGlassEligible: false));
+            IsBreakGlassEligible: false)
+        { Username = "other.tenant" });
 
         var snapshot = await harness.Service.GetSessionSnapshotAsync(Principal());
         snapshot.State.Should().Be(EntraAccessRequestSessionStates.Eligible);

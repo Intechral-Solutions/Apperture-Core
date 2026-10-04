@@ -8,6 +8,13 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public class AppertureDbContext : DbContext
 {
+    /// <summary>
+    /// Declared on <c>Users.Username</c> and <c>UsernameLedger.Username</c> so username uniqueness stays
+    /// case-insensitive even on a server or Azure SQL database created with a case-sensitive default.
+    /// Comparing these columns with a column of another collation needs an explicit <c>COLLATE</c>.
+    /// </summary>
+    public const string UsernameCollation = "Latin1_General_100_CI_AS";
+
     public AppertureDbContext(DbContextOptions<AppertureDbContext> options) : base(options) { }
 
     public DbSet<WorkflowInstanceEntity> WorkflowInstances => Set<WorkflowInstanceEntity>();
@@ -45,6 +52,7 @@ public class AppertureDbContext : DbContext
     public DbSet<BindingEntity> Bindings => Set<BindingEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<IdentityLinkEntity> IdentityLinks => Set<IdentityLinkEntity>();
+    public DbSet<UsernameLedgerEntity> UsernameLedger => Set<UsernameLedgerEntity>();
     public DbSet<RoleEntity> Roles => Set<RoleEntity>();
     public DbSet<UserRoleEntity> UserRoles => Set<UserRoleEntity>();
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
@@ -676,6 +684,10 @@ public class AppertureDbContext : DbContext
             e.ToTable("Users");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Username).HasMaxLength(256).UseCollation(UsernameCollation);
+            e.HasIndex(x => x.Username)
+                .HasDatabaseName("UX_Users_Username")
+                .IsUnique();
             e.Property(x => x.DisplayName).HasMaxLength(256);
             e.Property(x => x.EmailAddress).HasMaxLength(512);
             e.Property(x => x.PendingEmailAddress).HasMaxLength(512);
@@ -742,6 +754,27 @@ public class AppertureDbContext : DbContext
                 .IsUnique()
                 .HasDatabaseName("UX_IdentityLinks_Entra_Source_TenantId_ExternalId")
                 .HasFilter("[Source] = 0 AND [TenantId] IS NOT NULL");
+            // Named explicitly so the filtered one-Local-link index below is not mistaken for the FK index.
+            e.HasIndex(x => x.UserId, "IX_IdentityLinks_UserId");
+            e.HasIndex(x => x.UserId, "UX_IdentityLinks_Local_UserId")
+                .IsUnique()
+                .HasFilter("[Source] = 1");
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UsernameLedgerEntity>(e =>
+        {
+            e.ToTable("UsernameLedger", t => t.HasCheckConstraint(
+                "CK_UsernameLedger_RetiredReason",
+                "([RetiredAtUtc] IS NULL AND [RetiredReason] IS NULL) OR ([RetiredAtUtc] IS NOT NULL AND [RetiredReason] IN (N'rename', N'canonicalization', N'backfill_previous'))"));
+            e.HasKey(x => x.Username).HasName("PK_UsernameLedger");
+            e.Property(x => x.Username).HasMaxLength(256).UseCollation(UsernameCollation);
+            e.Property(x => x.UserId).HasMaxLength(64);
+            e.Property(x => x.RetiredReason).HasMaxLength(32);
+            e.HasIndex(x => x.UserId, "IX_UsernameLedger_UserId");
+            e.HasIndex(x => x.UserId, "UX_UsernameLedger_Current_UserId")
+                .IsUnique()
+                .HasFilter("[RetiredAtUtc] IS NULL");
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 

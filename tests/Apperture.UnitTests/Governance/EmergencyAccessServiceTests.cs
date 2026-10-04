@@ -91,6 +91,7 @@ public sealed class EmergencyAccessServiceTests
         var user = harness.Users.Get(userId.Value)!;
         user.IsBreakGlassEligible.Should().BeTrue();
         user.DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
+        user.Username.Should().Be(UsernamePolicy.RecoveryAccessUsername);
         user.IdentityLinks.Should().ContainSingle(l =>
             l.Source == IdentitySource.Local && l.ExternalId == EmergencyAccessIdentity.LocalUsername);
         user.AssignedRoleIds.Should().Contain(AdminRole);
@@ -141,6 +142,8 @@ public sealed class EmergencyAccessServiceTests
         user.IsBreakGlassEligible.Should().BeTrue();
         user.DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
         EmergencyAccessIdentity.LocalUsernameOf(user).Should().Be(EmergencyAccessIdentity.LocalUsername);
+        user.Username.Should().Be(EmergencyAccessIdentity.LocalUsername, "canonicalization is a rename through the username foundation");
+        harness.Audit.Details.Should().Contain(d => d.Contains("previousUsername=oldglass"));
         harness.Credentials.Disabled["emerg-1"].Should().BeFalse();
         harness.Mfa.Enrolled["emerg-1"].Should().BeTrue();
         harness.Mfa.UnusedCodes["emerg-1"].Should().Be(9);
@@ -158,7 +161,8 @@ public sealed class EmergencyAccessServiceTests
             "Other",
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, Now)],
             [],
-            false));
+            false)
+        { Username = EmergencyAccessIdentity.LocalUsername });
 
         var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
 
@@ -178,7 +182,8 @@ public sealed class EmergencyAccessServiceTests
             "Other",
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, Now)],
             [],
-            false));
+            false)
+        { Username = EmergencyAccessIdentity.LocalUsername });
         harness.Credentials.Seed("emerg-1", disabled: false);
         harness.Mfa.Enrolled["emerg-1"] = true;
         harness.Mfa.UnusedCodes["emerg-1"] = 4;
@@ -211,12 +216,51 @@ public sealed class EmergencyAccessServiceTests
         harness.Users.Get("admin-2")!.IsBreakGlassEligible.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Designation_is_refused_when_another_user_owns_a_retired_breakglass_ledger_row()
+    {
+        // A former Recovery Access holder was renamed away from breakglass: no current username or Local
+        // link exposes the name any more, but the ledger still binds it to them.
+        var harness = Harness.WithAdmin("admin-1");
+        harness.Users.Seed(Admin("former-ra", designated: false, username: "former.admin"));
+        harness.Users.SeedRetiredLedgerEntry(EmergencyAccessIdentity.LocalUsername, "former-ra");
+
+        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli")).AsTask();
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
+        var candidate = harness.Users.Get("admin-1")!;
+        candidate.IsBreakGlassEligible.Should().BeFalse("the refusal happens before any designation change");
+        candidate.Username.Should().Be("admin-1");
+        harness.Users.LedgerEntry(EmergencyAccessIdentity.LocalUsername)!.UserId.Value.Should().Be("former-ra");
+        harness.Audit.Actions.Should().NotContain(EmergencyAccessAuditActionNames.Designated);
+    }
+
+    [Fact]
+    public async Task Provision_is_refused_when_another_user_owns_a_retired_breakglass_ledger_row()
+    {
+        var harness = Harness.Empty();
+        harness.Roles.RoleExists = true;
+        harness.Users.Seed(Admin("former-ra", designated: false, username: "former.admin"));
+        harness.Users.SeedRetiredLedgerEntry(EmergencyAccessIdentity.LocalUsername, "former-ra");
+
+        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
+        harness.Users.AddAttempts.Should().Be(0, "the ledger pre-check refuses before any user is written");
+        harness.Users.All.Should().NotContain(u => u.IsBreakGlassEligible);
+        harness.Users.LedgerEntry(EmergencyAccessIdentity.LocalUsername)!.UserId.Value.Should().Be("former-ra");
+        harness.Credentials.Disabled.Should().BeEmpty();
+    }
+
     private static User Admin(string id, bool designated, string? username = null, string? displayName = null) => new(
         new UserId(id),
         displayName ?? "Platform Administrator",
         [new IdentityLink(IdentitySource.Local, username ?? id, Now)],
         [AdminRole],
-        designated);
+        designated)
+    { Username = username ?? id };
 
     private sealed class Harness
     {
@@ -260,18 +304,45 @@ public sealed class EmergencyAccessServiceTests
                 "Operator",
                 [new IdentityLink(IdentitySource.Local, "operator", Now)],
                 [],
-                false));
+                false)
+            { Username = "operator" });
             harness.Credentials.Seed("usr-1", disabled: false);
             return harness;
         }
     }
 
+    /// <summary>
+    /// In-memory users plus a username ledger kept separately from current usernames, so a retired name
+    /// can be owned by a user who no longer holds it (and has no Local link exposing it).
+    /// </summary>
     private sealed class RecordingUsers : IUserRepository
     {
         private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
-        public void Seed(User user) => _users[user.Id.Value] = user;
+        private readonly Dictionary<string, UsernameLedgerEntry> _ledger = new(StringComparer.Ordinal);
+
+        public int AddAttempts { get; private set; }
+
+        /// <summary>Stores the user and makes its username its current ledger row (retiring any previous one).</summary>
+        public void Seed(User user)
+        {
+            _users[user.Id.Value] = user;
+            RetireCurrent(user.Id, except: user.Username);
+            _ledger[user.Username] = new UsernameLedgerEntry(user.Username, user.Id, Now, null, null);
+        }
+
+        /// <summary>A retired ledger row owned by <paramref name="ownerId"/>, independent of any current username.</summary>
+        public void SeedRetiredLedgerEntry(string username, string ownerId) =>
+            _ledger[username] = new UsernameLedgerEntry(username, new UserId(ownerId), Now, Now, UsernameRetiredReasons.Rename);
+
+        public UsernameLedgerEntry? LedgerEntry(string username) => _ledger.GetValueOrDefault(username);
         public User? Get(string id) => _users.GetValueOrDefault(id);
         public IReadOnlyCollection<User> All => _users.Values;
+
+        private void RetireCurrent(UserId userId, string except)
+        {
+            foreach (var entry in _ledger.Values.Where(e => e.UserId == userId && e.IsCurrent && e.Username != except).ToList())
+                _ledger[entry.Username] = entry with { RetiredAtUtc = Now, RetiredReason = UsernameRetiredReasons.Rename };
+        }
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.Count);
         public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
         public ValueTask<User?> FindDesignatedEmergencyUserAsync(CancellationToken cancellationToken = default) =>
@@ -280,7 +351,11 @@ public sealed class EmergencyAccessServiceTests
             ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(l => l.Source == source && l.ExternalId == externalId)));
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
-            _users[user.Id.Value] = user;
+            AddAttempts++;
+            // As the ledger primary key: a name anyone holds or held is taken.
+            if (_ledger.ContainsKey(user.Username))
+                throw new UsernameException(UsernameErrorCodes.Taken, "The username is already taken.");
+            Seed(user);
             return ValueTask.CompletedTask;
         }
         public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default)
@@ -288,27 +363,40 @@ public sealed class EmergencyAccessServiceTests
             _users[user.Id.Value] = user;
             return ValueTask.CompletedTask;
         }
-        public ValueTask ApplyCanonicalLocalIdentityAsync(
+        public ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
             UserId userId,
-            string displayName,
-            string currentLocalUsername,
-            string newLocalUsername,
+            string expectedCurrentUsername,
+            string newUsername,
+            string retiredReason,
+            string? newDisplayName = null,
             CancellationToken cancellationToken = default)
         {
             var user = _users[userId.Value];
-            var owner = _users.Values.FirstOrDefault(u =>
-                u.IdentityLinks.Any(l => l.Source == IdentitySource.Local && l.ExternalId == newLocalUsername));
-            if (owner is not null && owner.Id.Value != userId.Value)
-                throw new InvalidOperationException("An identity link with this source and external id already exists.");
+            if (!string.Equals(user.Username, expectedCurrentUsername, StringComparison.Ordinal))
+                throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "The username changed concurrently.");
+            // As the ledger primary key: a name owned, current or retired, by another user is taken.
+            if (_ledger.TryGetValue(newUsername, out var owned) && owned.UserId != userId)
+                throw new UsernameException(UsernameErrorCodes.Taken, "The username is already taken.");
+            var reclaimed = owned is not null && !string.Equals(expectedCurrentUsername, newUsername, StringComparison.Ordinal);
             var links = user.IdentityLinks
                 .Select(l =>
-                    l.Source == IdentitySource.Local && l.ExternalId == currentLocalUsername
-                        ? l with { ExternalId = newLocalUsername }
+                    l.Source == IdentitySource.Local && l.ExternalId == expectedCurrentUsername
+                        ? l with { ExternalId = newUsername }
                         : l)
                 .ToList();
-            _users[userId.Value] = user with { DisplayName = displayName, IdentityLinks = links };
-            return ValueTask.CompletedTask;
+            Seed(user with
+            {
+                Username = newUsername,
+                DisplayName = newDisplayName ?? user.DisplayName,
+                IdentityLinks = links,
+            });
+            return ValueTask.FromResult(
+                string.Equals(expectedCurrentUsername, newUsername, StringComparison.Ordinal)
+                    ? UsernameChangeOutcome.Unchanged
+                    : reclaimed ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned);
         }
+        public ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(string username, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_ledger.GetValueOrDefault(username));
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;

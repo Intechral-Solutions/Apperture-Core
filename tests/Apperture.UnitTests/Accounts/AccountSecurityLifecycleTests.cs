@@ -144,7 +144,8 @@ public sealed class AccountSecurityLifecycleTests
             [],
             IsBreakGlassEligible: false,
             EmailAddress: "shared@example.com",
-            EmailVerifiedAtUtc: DateTimeOffset.UtcNow);
+            EmailVerifiedAtUtc: DateTimeOffset.UtcNow)
+        { Username = "other" };
         var harness = Harness.LocalUser(extraUsers: [other]);
 
         var act = () => harness.Contact.RequestAsync(harness.User.Id, "shared@example.com", null).AsTask();
@@ -169,7 +170,8 @@ public sealed class AccountSecurityLifecycleTests
                 MailSnapshot: "directory@example.com",
                 UserPrincipalNameSnapshot: "upn@example.com")],
             [],
-            IsBreakGlassEligible: false);
+            IsBreakGlassEligible: false)
+        { Username = "entra.user" };
         var harness = Harness.ForUser(user);
 
         var snapshot = await harness.Contact.GetAsync(user.Id);
@@ -297,7 +299,8 @@ public sealed class AccountSecurityLifecycleTests
             [],
             IsBreakGlassEligible: true,
             EmailAddress: "recovery@example.com",
-            EmailVerifiedAtUtc: DateTimeOffset.UtcNow);
+            EmailVerifiedAtUtc: DateTimeOffset.UtcNow)
+        { Username = EmergencyAccessIdentity.LocalUsername };
         var entraOnly = new User(
             new UserId("usr-entra-only"),
             "Entra only",
@@ -305,14 +308,16 @@ public sealed class AccountSecurityLifecycleTests
             [],
             IsBreakGlassEligible: false,
             EmailAddress: "entra@example.com",
-            EmailVerifiedAtUtc: DateTimeOffset.UtcNow);
+            EmailVerifiedAtUtc: DateTimeOffset.UtcNow)
+        { Username = "entra.only" };
         var unverified = new User(
             new UserId("usr-unverified"),
             "Unverified",
             [new IdentityLink(IdentitySource.Local, "unverified", DateTimeOffset.UtcNow)],
             [],
             IsBreakGlassEligible: false,
-            PendingEmailAddress: "pending@example.com");
+            PendingEmailAddress: "pending@example.com")
+        { Username = "unverified" };
         var harness = Harness.LocalUser(extraUsers: [recovery, entraOnly, unverified]);
         await harness.Credentials.SetPasswordAsync(recovery.Id, "h", "s", "x");
         await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
@@ -354,7 +359,8 @@ public sealed class AccountSecurityLifecycleTests
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, DateTimeOffset.UtcNow)],
             [],
-            IsBreakGlassEligible: true);
+            IsBreakGlassEligible: true)
+        { Username = EmergencyAccessIdentity.LocalUsername };
         var harness = Harness.ForUser(recovery);
 
         var contact = () => harness.Contact.RequestAsync(recovery.Id, "recovery@example.com", null).AsTask();
@@ -409,7 +415,8 @@ public sealed class AccountSecurityLifecycleTests
                 "Local user",
                 [new IdentityLink(IdentitySource.Local, "localuser", DateTimeOffset.UtcNow)],
                 [],
-                IsBreakGlassEligible: false);
+                IsBreakGlassEligible: false)
+            { Username = "localuser" };
             return ForUser(user, password, withCredential, extraUsers, accountVerification);
         }
 

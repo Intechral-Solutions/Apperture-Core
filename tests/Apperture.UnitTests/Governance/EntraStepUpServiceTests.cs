@@ -112,7 +112,7 @@ public sealed class EntraStepUpServiceTests
     }
 
     private static User User(string id, IdentityLink link) =>
-        new(new UserId(id), "Operator", [link], [], false);
+        new(new UserId(id), "Operator", [link], [], false) { Username = id };
 
     private static IdentityLink EntraLink(string oid, bool proven) =>
         new(IdentitySource.Entra, oid, proven ? Now : null, ActiveTenantId, "reg-1", Now);

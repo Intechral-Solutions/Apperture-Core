@@ -244,7 +244,7 @@ public sealed class UserManagementServiceRoleLifecycleTests
         var harness = Harness.Create();
         var created = await harness.Service.CreateRoleAsync("Operators");
         var userId = new UserId("user-holders");
-        harness.Users.Seed(new User(userId, "Pat Lee", [], [], IsBreakGlassEligible: false));
+        harness.Users.Seed(new User(userId, "Pat Lee", [], [], IsBreakGlassEligible: false) { Username = "pat.lee" });
         await harness.Roles.AssignToUserAsync(userId, created.Id);
 
         var list = await harness.Service.GetRoleAssignmentsAsync(created.Id);
