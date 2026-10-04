@@ -109,7 +109,8 @@ a whole-product security review, and documentation regeneration. This is what Tr
 
 | Item | Status | Trigger |
 | ---- | ------ | ------- |
-| Cross-context organizational grouping (item 8 below) | **Deferred, retained** | A concrete workflow naming resources that span contexts. Model, membership and product term remain undecided. NAV-2 changes the rail now; item 8 inherits the navigation registry and adds no second rail rewrite. |
+| Workspaces | **Direction; implementation deferred** | The preferred long-term direction for cross-context operational experiences ([RC1 gate](../01-architecture/rc1-program-gate.md) 4.1 and 4.3). Presentation, not a grant; ResourceContext stays ownership and view, not authorization. Name unsettled. Needs its own design gate and a product trigger. NAV-2 changes the rail now; a later Workspace design builds on the navigation registry and adds no second rail rewrite. |
+| Cross-context organizational grouping (item 8 below) | **No longer an independently planned body** | The Workspace direction supersedes item 8 as the planned product approach to cross-context operational experiences. Grouping is kept only as a possible primitive the Workspace design may need, with its own design gate if so. |
 | Context-scoped IAM (implementation) | **Deferred, retained** | Application-confined guest access. The design scope is settled in IAM-10.0. No context scope constant is added to code in RC1. |
 | **PLK-1** Protected lookup | **Deferred, dormant** | A real customer requirement. Separate from search; needs a dedicated security gate. |
 | **CAL-1** Platform calendar | **Deferred Candidate** | A concrete first consumer. Not ScheduleDefinitions. No RC1 seam. |
@@ -119,7 +120,7 @@ a whole-product security review, and documentation regeneration. This is what Tr
 
 ### Later product expansion
 
-Metrics, dashboards, Workspaces (name unsettled), a richer Service abstraction, a script runtime, Business Rules, a
+Metrics, dashboards, Workspaces (a Direction; see Deferred architectural directions; name unsettled), a richer Service abstraction, a script runtime, Business Rules, a
 workflow designer, a module authoring tool and AI capabilities. None has a design. Seams RC1 preserves for them are
 listed in the audit's section Q and the addendum's section M.
 
@@ -134,7 +135,8 @@ remain the broad thematic map; this section is the concrete near-term execution 
 reset, cutting across several of them.
 
 **Supersession (2026-10-03):** this section is the historical 2026-09-18 sequence. Every item in it except item 8 is
-complete, and item 8 stays deferred. The current plan is the **RC1 program** section above. IAM-8 is merged to `master`.
+complete. The Workspace direction supersedes item 8 as the planned product approach to cross-context operational
+experiences. The current plan is the **RC1 program** section above. IAM-8 is merged to `master`.
 
 **Current next (as written 2026-09-30, superseded above):** none selected. **IAM-8 — Custom Role Lifecycle** (item 7b) is **complete and
 merge-ready**; not merged. This closeout does not select a next epic. LFC-1 is complete and merged to
@@ -348,7 +350,16 @@ LFC-1.0–LFC-1.3 closed against
    [`iam8-design-gate.md`](../01-architecture/transitions/custom-role-lifecycle/iam8-design-gate.md).
    **Closure (2026-09-30):** IAM-8.0–IAM-8.4 satisfy that gate. IAM-8 is complete and merge-ready. This closeout
    does not select a next epic. Grouping remains not started.
-8. **Navigation / cross-context grouping design** — **not started; not current next.** Distinct from **NAV-1**, the
+8. **Navigation / cross-context grouping design** — **superseded (2026-10-03); not a planned body.**
+   **Supersession (2026-10-03):** the Workspace direction supersedes item 8 as the planned product approach to
+   cross-context operational experiences ([RC1 gate](../01-architecture/rc1-program-gate.md) 4.1). Cross-context
+   grouping is kept only as a possible underlying primitive that the Workspace design may discover it needs, with its own
+   design gate if so. Departments, responsibilities and operational areas are expected to be addressed through
+   Workspaces, not through a new ResourceContext Kind. The text below is the 2026-09-22 direction, kept as provenance.
+   Its ownership and authorization constraints remain binding on any later design: not ResourceContext ownership, not
+   authorization, not resource identity; `/connections` stays stable; `connection.browse` is never derived from
+   grouping or Workspace membership.
+   Distinct from **NAV-1**, the
    completed Management UI **rail** overhaul (`docs/01-architecture/transitions/nav-overhaul/`; Control Center /
    Integrations / Business Data / Config). Item 8 is a later, undesigned **cross-context organizational grouping**
    layer — not a second rail rewrite and not NAV-1 leftover work. The 2026-09-18 sequence placed it after Components
@@ -418,7 +429,7 @@ as something they did *not* build remain accurate as written.
 
 ## Track 1 — Product Experience & UI Overhaul
 
-- Navigation / product shell — **NAV-1 rail overhaul is complete** (Control Center / Integrations / Business Data / Config). That shipped rail is **not** near-term item 8 (cross-context grouping), which is future, undesigned, and not started.
+- Navigation / product shell — **NAV-1 rail overhaul is complete** (Control Center / Integrations / Business Data / Config). That shipped rail is **not** near-term item 8 (cross-context grouping), which the post-RC1 Workspace direction now supersedes.
 - Layout system
 - Progressive disclosure
 - Settings panels coherence
@@ -522,9 +533,9 @@ concepts that the post-CTX reset now separates:
   for the full hypothesis. **~~still not started~~** was the 2026-09-18 sentence; it is superseded by near-term
   items 5–7 (both design gates and both implementations complete).
 - **Connection grouping** — not currently an independent planned deliverable; reconsider during the
-  Services design gate if a concrete grouping requirement emerges. Distinct from the **cross-context
-  organizational grouping** layer now recorded under near-term item 8, which is about organizational areas
-  spanning ResourceContexts, not about grouping Connections.
+  Services design gate if a concrete grouping requirement emerges. Distinct from the **Workspace**
+  direction, which supersedes near-term item 8, and from any grouping primitive a Workspace design may later need.
+  Neither is about grouping Connections.
 - **Resource Catalog** (referenced by ADR-0040 as a separate future concept, never actually a bullet in this
   track) is **retired as a standalone roadmap concept** — its metadata/discoverability responsibility moves
   into Components (which may adapt and aggregate relevant operator-visible definitions behind a catalog

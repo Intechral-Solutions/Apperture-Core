@@ -116,6 +116,7 @@ RC1 is reached when all of these hold:
 | List presentation (LST-2) | Shared composable presentation primitives with query-specific data strategies. No single smart table. |
 | Views, quick filters, advanced filters | A view is a different dataset. A quick filter restricts the same dataset. Long-tail filters sit behind a filter control. Conventions are settled in LST-2. |
 | Loading animation assets | Settle the component contract first. Specific assets are chosen later, with a licence check. |
+| Workspaces | Ruling 2026-10-03. The preferred long-term product direction for cross-context operational experiences. A Workspace is a curated experience around a role, responsibility, team or use case. It may surface resources, dashboards, operations and related views drawn from several ResourceContexts. Operational Teams may later define or default to a Workspace. A Workspace is presentation, not a grant. It may be associated with a ResourceContext to decide where it is surfaced, listed or presented. That association does not grant data access and does not make ResourceContext an authorization boundary. It is not described as resource ownership. The Workspace design gate settles persistence and ownership. The Workspace direction supersedes pre-release roadmap item 8 as the planned product approach to cross-context operational experiences. Departments, responsibilities, operational areas and similar organizational concepts are expected to be addressed here, not through a new ResourceContext Kind. |
 
 ### 4.2 Not adopted at present
 
@@ -130,12 +131,12 @@ These are not selected. They are not rejected forever.
 
 | Item | Status | Trigger or dependency |
 |---|---|---|
-| Cross-context organizational grouping | Deferred | A concrete workflow that names resources spanning contexts and is neither "All" nor a team's routing. Model, membership and product term remain undecided. |
+| Workspace implementation | Deferred | Its own design gate and a product trigger. The direction is in 4.1. The word "Workspace" is not frozen into any API or domain contract until the naming collision with the Connection workspace and Application views is deliberately resolved. No Workspace body is in RC1 or in section 7. |
+| Cross-context organizational grouping | No longer an independently planned body (2026-10-03) | Kept only as a possible underlying primitive that the Workspace design may discover it needs. If that design proves a reusable, persistent grouping or membership model is independently necessary, it gets its own design gate then. No such primitive is ResourceContext ownership or authorization. |
 | Context-scoped authorization (implementation) | Deferred | Application-confined guest access. Design scope is settled in IAM-10.0. |
 | Platform calendar (CAL-1) | Deferred Candidate | A concrete first consumer. No calendar seam is built in RC1. It is never conflated with ScheduleDefinitions. |
 | Protected lookup (PLK-1) | Deferred, dormant | A real customer requirement for lookup by a protected identifier. None exists today. |
 | Personal-data erasure | Deferred | A regulatory or privacy requirement. |
-| Workspaces | Deferred (long-term concept kept) | The word "Workspace" is not frozen into any API or domain contract until the naming collision with the Connection workspace and Application views is deliberately resolved. |
 | Additional Entra tenants | Deferred | An external-organization customer that needs its own tenant. |
 | Systems grouping (ADR-0034), Dashboard Panels, shared Wizard, Track 5 remainder | Deferred, unchanged | As recorded in the pre-release roadmap. |
 | Optimistic notification read and unread | R3 | May ship in RC1 only if it does not delay RC1. |
@@ -154,7 +155,8 @@ These are not selected. They are not rejected forever.
 - **"Calendar"** already names three deferred items in existing documents: calendar or date-period schedule authoring with a schedule designer; a module "calendar / event signal SDK"; and a UI temporal-filter convention. A business-time platform calendar would be a fourth meaning and needs its own term before anything is written about it.
 - **"Schedule"** means a cron-triggered workflow start only.
 - **"Service"** is a navigation-domain label and architectural language. It is not an entity.
-- **"Workspace"** currently means the Connection workspace and, informally, Application views.
+- **"Workspace"** currently means the Connection workspace and, informally, Application views. The Workspaces direction (4.1) would be a further meaning, which is why the term is not yet frozen.
+- **ResourceContext Kind.** The current ownership kinds are Shared and Application. Department is not an anticipated Kind. References to a future Department kind in the CTX design gates are historical provenance, not current direction. Any proposal for another Kind needs its own design gate and an independent ownership use case.
 
 ## 5. Program sequence (Decision)
 
