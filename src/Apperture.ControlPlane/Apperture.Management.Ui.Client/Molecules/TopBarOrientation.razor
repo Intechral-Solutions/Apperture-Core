@@ -6,6 +6,13 @@
 @inject NavigationManager Nav
 @inject ShellOrientationService ShellOrientation
 
+@* Browser tab and history title: the same title the top bar shows, qualified by the route label
+   (for example "Connection — <name>"). It updates when a page publishes its record name. *@
+@if (!string.IsNullOrWhiteSpace(_documentTitle))
+{
+    <PageTitle>@_documentTitle</PageTitle>
+}
+
 <div class="ui-topbar-orientation min-w-0">
     <ManagementBreadcrumbs Items="@_parents" />
     @if (!string.IsNullOrWhiteSpace(_title) || !string.IsNullOrWhiteSpace(_subtitle))
@@ -28,6 +35,7 @@
     private IReadOnlyList<BreadcrumbItem> _parents = [];
     private string? _title;
     private string? _subtitle;
+    private string? _documentTitle;
     private bool _disposed;
     private bool _listenToLocation;
     private bool _acceptPageContext;
@@ -156,5 +164,11 @@
         {
             _subtitle = route.Subtitle;
         }
+
+        _documentTitle = DocumentTitles.ComposeForRoute(
+            _title,
+            route.Title,
+            path,
+            _parents.Count > 0 ? _parents[^1].Label : null);
     }
 }

@@ -15,7 +15,7 @@
 <div class="p-4 ui-page-stack">
     <PageHeader Eyebrow="Control Center"
                 Title="Runs"
-                Subtitle="Run history and remediation. Prioritize failures and recent outcomes; open a row for actions and diagnostics.">
+                Subtitle="Run history, newest first. Filter by status or needs attention to focus on outcomes; open a row for actions and diagnostics.">
         <Toolbar>
             <label class="block text-xs text-muted">
                 Status
@@ -351,11 +351,8 @@
             if (_runs is null)
                 return [];
 
-            var sorted = RunScheduleOperatorUiHelpers.SortRunsForTriage(_runs);
-            if (!_showProblemsOnly)
-                return sorted;
-
-            return sorted.Where(RunScheduleOperatorUiHelpers.RunNeedsAttention);
+            // Server order (newest first) is kept; "Needs attention" filters but never reorders.
+            return RunScheduleOperatorUiHelpers.FilterRunsForDisplay(_runs, _showProblemsOnly);
         }
     }
 

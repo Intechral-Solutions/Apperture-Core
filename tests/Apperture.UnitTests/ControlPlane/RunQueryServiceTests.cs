@@ -48,6 +48,40 @@ public sealed class RunQueryServiceTests
     }
 
     [Fact]
+    public async Task ListRunsAsync_ReturnsNewestFirst_regardless_of_status()
+    {
+        // Runs are chronological by default. A failed run must not be ranked ahead of a newer run.
+        var now = DateTimeOffset.UtcNow;
+        var db = NewDb();
+        (string Id, string Status, DateTimeOffset At)[] seeded =
+        [
+            ("r-oldest-failed", WorkflowLifecycleStatusNames.Failed, now.AddHours(-3)),
+            ("r-newest-completed", WorkflowLifecycleStatusNames.Completed, now),
+            ("r-middle-running", WorkflowLifecycleStatusNames.Running, now.AddHours(-1)),
+            ("r-newer-failed", WorkflowLifecycleStatusNames.Failed, now.AddMinutes(-10)),
+        ];
+        foreach (var (id, status, at) in seeded)
+        {
+            db.OperationRuns.Add(new OperationRunEntity
+            {
+                Id = id, WorkflowInstanceId = "i-" + id, DefinitionId = "op.def", Status = status, CreatedAt = at
+            });
+            db.OperationStartRequests.Add(new OperationStartRequestEntity
+            {
+                RunId = id, OperationInstanceId = "i-" + id, OperationDefinitionId = "op.def",
+                CreatedAt = at, Status = WorkflowLifecycleStatusNames.Requested
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var list = await NewService(db).ListRunsAsync();
+
+        list.Select(r => r.RunId).Should().Equal(
+            "r-newest-completed", "r-newer-failed", "r-middle-running", "r-oldest-failed");
+        list.Select(r => r.CreatedAt).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
     public async Task ListRunsAsync_OperationRun_IncludesIntegrationAndProcedureId()
     {
         var db = NewDb();

@@ -2393,8 +2393,8 @@ textarea.ui-input {
   box-shadow: inset 0 0 0 1px var(--color-accent-line);
 }
 
-.ui-hamburger-line {
-  background-color: var(--color-hamburger-line);
+.ui-hamburger-icon {
+  color: var(--color-hamburger-line);
 }
 
 /* Config gear: larger than domain icons; fill most of the rail tile. */

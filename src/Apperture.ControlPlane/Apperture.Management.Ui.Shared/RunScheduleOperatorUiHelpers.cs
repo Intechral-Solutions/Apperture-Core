@@ -84,10 +84,15 @@ public static class RunScheduleOperatorUiHelpers
         return colon > 0 ? rest[..colon] : rest;
     }
 
-    public static IReadOnlyList<RunSummaryDto> SortRunsForTriage(IEnumerable<RunSummaryDto> runs) =>
-        runs.OrderBy(RunAttentionRank)
-            .ThenByDescending(r => r.CreatedAt)
-            .ToList();
+    /// <summary>
+    /// Rows to show in a run list. Runs are presented in the order the server returned them
+    /// (newest first by creation time): attention or failure never reorders the list. "Needs attention"
+    /// only filters, and the original relative order is preserved.
+    /// </summary>
+    public static IReadOnlyList<RunSummaryDto> FilterRunsForDisplay(
+        IEnumerable<RunSummaryDto> runs,
+        bool needsAttentionOnly) =>
+        (needsAttentionOnly ? runs.Where(RunNeedsAttention) : runs).ToList();
 
     public static int CountProblematicRuns(IEnumerable<RunSummaryDto> runs) =>
         runs.Count(RunNeedsAttention);
