@@ -38,8 +38,9 @@ Worker process lifecycle remains **externally managed** (SWM-9/12). Do not resto
 
 Canonical current-state track list and near-term order: [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md).
 
-**Current (2026-10-03):** the **RC1 program**. Its gate (RC-0) is complete and no implementation epic has started.
-First bodies, on the product owner's instruction: IAM-9.0, QW-1 and LST-1.0. Contract:
+**Current (2026-10-03):** the **RC1 program**. Its gate (RC-0) is complete. The first bodies have run on the
+`rc1-foundation` branch: IAM-9.0 and LST-1.0 (design gates, approved with amendments, not yet implemented) and QW-1
+(implemented). No other epic has started. Contract:
 [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). IAM-8 and LFC-1 are complete and merged to `master`.
 Workspaces are a Direction with implementation deferred; that direction supersedes the earlier cross-context
 grouping item. Context-scoped IAM stays deferred. SEC-1 engineering is merged; its remaining

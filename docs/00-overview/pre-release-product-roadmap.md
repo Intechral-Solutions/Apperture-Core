@@ -42,9 +42,10 @@ the gate governs where they differ).
 
 ### Current / next
 
-**RC-0 (program gate) is complete.** No implementation epic has been started. The first bodies, when the product owner
-instructs, are **IAM-9.0** (identity foundation design gate), **QW-1** (quick wins) and **LST-1.0** (list and query
-design gate). They can run in parallel.
+**RC-0 (program gate) is complete.** The first three bodies have been run on the `rc1-foundation` branch:
+**IAM-9.0** (identity foundation design gate) and **LST-1.0** (list and query design gate) are approved with
+amendments and have no implementation yet, and **QW-1** (quick wins) is implemented. IAM-9.1 and LST-1.1 each wait for
+an explicit start instruction. No other epic has been started.
 
 IAM-8 is complete and **merged to `master`** (PR #3, `5cfa901`). Earlier statements in this document that IAM-8 is
 "not merged" are superseded.
