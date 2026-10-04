@@ -407,7 +407,7 @@ Handlers are typically constructed with `new`. You may pass dependencies via han
 
 > **Planned:** DI-backed handler factory (Epic 103A — document only; handlers must still use context-only signals).
 
-Startup checks: `WorkerHostStartupValidation` validates module list, signal manifests, and that every workflow step has a registered handler.
+Startup checks: `WorkerHostStartupValidation` validates the module list and signal manifests. **Known gap (2026-10-03):** it does not yet verify that every workflow step has a registered handler, and a step with no handler currently records as completed. Both are fixed by the SDK-8 epic; until then, verify handler registration in module tests.
 
 ### Operations (MVP contract)
 

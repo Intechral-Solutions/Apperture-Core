@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Proposed, partly withdrawn (2026-10-03). The relationship-authorization leg is withdrawn by [ADR-0046](ADR-0046-external-organization-access-and-federation-withdrawal.md). The separation of human authentication from service authentication stands.
 
 ## Context
 

@@ -1,5 +1,9 @@
 # Federated External Instance Relationships
 
+> **Withdrawn (2026-10-03).** This design is not planned and was never implemented. It is kept as history. Federation was
+> withdrawn from the active roadmap by [ADR-0046](../02-decisions/ADR-0046-external-organization-access-and-federation-withdrawal.md),
+> which also records how external-organization access works instead. Do not implement anything from this document.
+
 ## 1. Executive summary
 
 Apperture should add cross-instance collaboration as a **federated control model** where each instance remains an independent security, data, and operational boundary. Parent-child is the first business scenario, but it must be implemented through a generalized external relationship domain so the platform can later support observer, peer, provider/customer, and auditor topologies without redesigning core contracts.

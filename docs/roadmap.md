@@ -1,6 +1,15 @@
-# Roadmap
+# Roadmap (historical phase notes)
+
+> **This file is not the roadmap.** The authoritative sequencing document is
+> [`00-overview/pre-release-product-roadmap.md`](00-overview/pre-release-product-roadmap.md), and the RC1 program contract is
+> [`01-architecture/rc1-program-gate.md`](01-architecture/rc1-program-gate.md). This file keeps two older phase outlines
+> for provenance.
 
 ## Federated External Instance Collaboration Phases
+
+> **Withdrawn (2026-10-03).** Federation is withdrawn from the active roadmap by
+> [ADR-0046](02-decisions/ADR-0046-external-organization-access-and-federation-withdrawal.md). None of Phases 1 to 4 was
+> implemented and none is planned. The text below is history.
 
 ### Phase 1: Parent-child relationship MVP (observe-first)
 
@@ -69,6 +78,11 @@ Acceptance criteria:
 - Federated orchestration patterns remain API-bound and do not introduce direct plane bypass.
 
 ## Secrets and Key Management Phases
+
+> **Status (2026-10-03).** Not part of the RC1 program. Phase 1 is delivered and exceeded: the SQL secret store and
+> resolver are real, with a DPAPI protector on Windows. Phase 2 is partial: a Key Vault resolver exists for the Azure
+> runtime host; the Key Vault store is a stub. Phases 3 and 4 are not started and have no owner. A non-DPAPI protector is
+> a prerequisite for any non-Windows production host, which is outside RC1 support.
 
 ### Phase 1: DB Secret Store + Protector + Resolver (interfaces first)
 

@@ -1,15 +1,25 @@
+@using Blazor.Heroicons.Solid
 @using Microsoft.AspNetCore.Components.Web
 
+@* The label names the action, not the glyph. Closed shows the menu icon; open shows a close (X) icon. *@
 <button @ref="_button"
+        type="button"
         class="relative -mx-3 flex items-center justify-center px-3 transition-all duration-300
                @(IsLocked ? "hamburger-toggle-open" : "hamburger-toggle-closed")"
-        aria-label="@(IsLocked ? "Close domain menu" : "Open domain menu")"
+        aria-label="@(IsLocked ? "Close navigation" : "Open navigation")"
+        aria-expanded="@(IsLocked ? "true" : "false")"
+        aria-controls="control-panel"
         @onclick="Toggle">
-    <div class="flex h-[16px] w-[20px] origin-center transform flex-col justify-between overflow-hidden transition-all duration-300 @(IsLocked ? "-translate-x-1.5 rotate-180" : "")">
-        <div class="@hamburgerLineBase @(IsLocked ? "rotate-[42deg] w-[22px] -translate-x-1" : "")"></div>
-        <div class="@hamburgerLineBase @(IsLocked ? "translate-x-10" : "")"></div>
-        <div class="@hamburgerLineBase @(IsLocked ? "-rotate-[43deg] w-[22px] -translate-x-1" : "")"></div>
-    </div>
+    <span class="ui-hamburger-icon flex h-6 w-6 items-center justify-center pointer-events-none" aria-hidden="true">
+        @if (IsLocked)
+        {
+            <XMarkIcon class="h-6 w-6" />
+        }
+        else
+        {
+            <Bars3Icon class="h-6 w-6" />
+        }
+    </span>
 </button>
 
 @code {
@@ -18,9 +28,6 @@
     [Parameter] public bool IsOpen { get; set; }
     [Parameter] public bool IsLocked { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
-
-    private string hamburgerLineBase =>
-        "ui-hamburger-line h-[2px] transform transition-all duration-300 delay-150 w-7 pointer-events-none";
 
     private async Task Toggle()
     {

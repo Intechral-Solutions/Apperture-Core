@@ -18,16 +18,53 @@ public sealed class S6RunScheduleOperatorTriageTests
     }
 
     [Fact]
-    public void SortRunsForTriage_orders_by_attention_then_recency()
+    public void FilterRunsForDisplay_keeps_server_order_and_does_not_promote_failures()
     {
-        var olderFailed = SampleRun("failed", DateTimeOffset.UtcNow.AddHours(-2));
-        var newerCompleted = SampleRun("completed", DateTimeOffset.UtcNow);
-        var newerFailed = SampleRun("failed", DateTimeOffset.UtcNow.AddMinutes(-5));
+        // The server returns runs newest first. A failed run older than a completed run must not jump ahead.
+        var now = DateTimeOffset.UtcNow;
+        var newestCompleted = SampleRun("completed", now, "run-newest-completed");
+        var newerFailed = SampleRun("failed", now.AddMinutes(-5), "run-newer-failed");
+        var oldestFailed = SampleRun("failed", now.AddHours(-2), "run-oldest-failed");
+        var olderRunning = SampleRun("running", now.AddHours(-1), "run-older-running");
+        var serverOrder = new[] { newestCompleted, newerFailed, olderRunning, oldestFailed };
 
-        var sorted = RunScheduleOperatorUiHelpers.SortRunsForTriage([olderFailed, newerCompleted, newerFailed]);
-        sorted[0].RunId.Should().Be(newerFailed.RunId);
-        sorted[1].RunId.Should().Be(olderFailed.RunId);
-        sorted[2].RunId.Should().Be(newerCompleted.RunId);
+        var shown = RunScheduleOperatorUiHelpers.FilterRunsForDisplay(serverOrder, needsAttentionOnly: false);
+
+        shown.Select(r => r.RunId).Should().Equal(
+            "run-newest-completed", "run-newer-failed", "run-older-running", "run-oldest-failed");
+        shown.Select(r => r.CreatedAt).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
+    public void FilterRunsForDisplay_needs_attention_filters_without_reordering()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var serverOrder = new[]
+        {
+            SampleRun("completed", now, "run-a"),
+            SampleRun("running", now.AddMinutes(-1), "run-b"),
+            SampleRun("completed", now.AddMinutes(-2), "run-c"),
+            SampleRun("failed", now.AddMinutes(-3), "run-d"),
+        };
+
+        var shown = RunScheduleOperatorUiHelpers.FilterRunsForDisplay(serverOrder, needsAttentionOnly: true);
+
+        shown.Select(r => r.RunId).Should().Equal("run-b", "run-d");
+    }
+
+    [Fact]
+    public void RunLists_do_not_apply_a_triage_sort()
+    {
+        foreach (var relative in new[]
+                 {
+                     "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor",
+                     "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Integrations/IntegrationRuns.razor",
+                 })
+        {
+            File.ReadAllText(RepoPath(relative)).Should().NotContain("SortRunsForTriage", because: relative);
+        }
+
+        typeof(RunScheduleOperatorUiHelpers).GetMethod("SortRunsForTriage").Should().BeNull();
     }
 
     [Fact]
@@ -69,7 +106,7 @@ public sealed class S6RunScheduleOperatorTriageTests
         var path = RepoPath("src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Runs/RunsList.razor");
         var content = File.ReadAllText(path);
         content.Should().Contain("PageHeader");
-        content.Should().Contain("RunScheduleOperatorUiHelpers.SortRunsForTriage");
+        content.Should().Contain("RunScheduleOperatorUiHelpers.FilterRunsForDisplay");
         content.Should().Contain("ManagementAdvancedSection Title=\"Filters and diagnostics\"");
         content.Should().Contain("Nothing needs attention");
     }
@@ -127,9 +164,9 @@ public sealed class S6RunScheduleOperatorTriageTests
         content.Should().Contain("BuildRunAttentionReason");
     }
 
-    private static RunSummaryDto SampleRun(string status, DateTimeOffset? createdAt = null) =>
+    private static RunSummaryDto SampleRun(string status, DateTimeOffset? createdAt = null, string? runId = null) =>
         new(
-            RunId: $"run-{status}",
+            RunId: runId ?? $"run-{status}",
             ExecutionInstanceId: "inst-1",
             ExecutionDefinitionId: "def-1",
             Status: status,

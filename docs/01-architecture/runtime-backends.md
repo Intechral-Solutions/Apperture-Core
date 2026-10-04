@@ -9,12 +9,12 @@ See [ADR-0003](../02-decisions/ADR-0003-runtime-portability.md) and [.ai/playboo
 - Durable Task Framework
 - Worker Service host
 - SQL Server persistence
-- One module per worker process
+- One worker process may host several modules today; one module per worker process is a supported future deployment option
 
 ## Cloud: Durable Functions
 
 - Azure Durable Functions
-- One module per Function App
+- One module per Function App (intended model; not implemented and outside RC1 support)
 - Azure Storage backing store
 - Consistent telemetry/audit to instance store
 

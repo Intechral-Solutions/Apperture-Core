@@ -73,8 +73,8 @@ See [module-manifest-spec.md](../../docs/05-modules/module-manifest-spec.md) and
 
 ## Deployment
 
-- **On-prem:** Compiled into worker host; explicit `IEnumerable<IModule>` registration. One module per process (intent).
-- **Cloud:** One module per Function App.
+- **On-prem:** Compiled into worker host; explicit `IEnumerable<IModule>` registration. One worker process may host several modules today; one module per process is a supported future deployment option (RC1 program gate, D-23).
+- **Cloud (not implemented; outside RC1 support):** One module per Function App is the intended model.
 
 ## Runtime-visible naming
 

@@ -9,7 +9,14 @@
 | [ADR-0037](ADR-0037-platform-signals-events-and-notification-system.md) | Platform signals and notification system (Epic 77) |
 | [ADR-0038](ADR-0038-platform-signals-sdk-conventions.md) | Module SDK signal conventions (Epic 103A) |
 | [ADR-0039](ADR-0039-environment-startup-bootstrap-and-platform-settings.md) | Environment, startup, bootstrap, and platform settings layers (105B; Phase 1 settings Epic 109) |
-| [ADR-0040](ADR-0040-operator-information-architecture.md) | Operator information architecture (Control Center / Integrations / Business Data / Config rail) |
+| [ADR-0040](ADR-0040-operator-information-architecture.md) | Operator information architecture (Control Center / Integrations / Business Data / Config rail). **Partly superseded 2026-10-03:** Services domain; Runs and Schedules under Integrations |
+| [ADR-0041](ADR-0041-human-readable-identity-policy.md) | Human-readable identity policy (canonical id, routing key, display name) |
+| [ADR-0042](ADR-0042-notification-to-toast-channel-model.md) | Notification-to-Toast channel model |
+| [ADR-0043](ADR-0043-component-catalog-read-model.md) | Component catalog is a read-model projection |
+| [ADR-0044](ADR-0044-connection-workspace-and-browse-authorization.md) | Connection workspace, the "Service" language ruling (amended 2026-10-03: "Services" allowed as a navigation label only), `connection.browse` |
+| [ADR-0045](ADR-0045-browser-session-recovery-and-request-trust.md) | Browser session recovery and request trust (SEC-1) |
+| [ADR-0046](ADR-0046-external-organization-access-and-federation-withdrawal.md) | External-organization access; withdrawal of instance federation |
+| [RC1 program gate](../01-architecture/rc1-program-gate.md) | RC1 definition, decisions, deferrals and epic sequence (2026-10-03) |
 
 ### Foundation sequence (Epics 105–117)
 
@@ -31,15 +38,16 @@
 | [Epic 117](Epic117-Integration-Scoped-Settings-Design.md) | Integration-scoped settings and Integration Detail settings UI design |
 | [Epic 118](Epic118-Integration-Settings-API-Foundation.md) | Integration-scoped settings persistence and API foundation |
 | [Epic 119](Epic119-Integration-Detail-Settings-UI.md) | Integration Detail settings UI |
-| [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | Federated external instance relationships |
-| [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | Entra-backed platform trust for instance authentication |
-| [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization |
-| [ADR-0008](ADR-0008-parent-child-first-on-generalized-relationship-model.md) | Parent-child first on generalized relationship model |
-| [ADR-0009](ADR-0009-constrained-cross-instance-management-api-boundary.md) | Constrained cross-instance management API boundary |
-| [ADR-0010](ADR-0010-signed-reliable-child-to-parent-notifications.md) | Signed reliable child-to-parent notifications |
-| [ADR-0011](ADR-0011-delegated-capability-model-for-remote-instance-administration.md) | Delegated capability model for remote instance administration |
+| [ADR-0005](ADR-0005-federated-external-instance-relationships.md) | **Withdrawn (ADR-0046).** Federated external instance relationships |
+| [ADR-0006](ADR-0006-entra-backed-platform-trust-for-instance-authentication.md) | **Withdrawn (ADR-0046).** Entra-backed platform trust for instance authentication |
+| [ADR-0007](ADR-0007-separation-of-human-auth-service-auth-and-relationship-authorization.md) | Separation of human auth, service auth, and relationship authorization (relationship leg withdrawn by ADR-0046) |
+| [ADR-0008](ADR-0008-parent-child-first-on-generalized-relationship-model.md) | **Withdrawn (ADR-0046).** Parent-child first on generalized relationship model |
+| [ADR-0009](ADR-0009-constrained-cross-instance-management-api-boundary.md) | **Withdrawn (ADR-0046).** Constrained cross-instance management API boundary |
+| [ADR-0010](ADR-0010-signed-reliable-child-to-parent-notifications.md) | **Withdrawn (ADR-0046).** Signed reliable child-to-parent notifications |
+| [ADR-0011](ADR-0011-delegated-capability-model-for-remote-instance-administration.md) | **Withdrawn (ADR-0046).** Delegated capability model for remote instance administration |
 | [ADR-0012](ADR-0012-authorization-evaluation-model.md) | Authorization evaluation model (ResourceDescriptor vs IGovernedResourceIdentity) |
 | [ADR-0013](ADR-0013-action-and-scope-naming-conventions.md) | Action and scope naming conventions |
+| [ADR-0013 (second file with the same number)](ADR-0013-operation-definition-identity-and-result-normalization.md) | Operation definition identity and result normalization. Two accepted ADRs share the number 0013; neither is renumbered, to keep existing links valid |
 | [Epic 73](Epic73-execution-hot-path-and-host-roles.md) | Execution hot path, host roles, runtime boundary (dispatch, module persistence, connectors) |
 
 Use [adr-template.md](adr-template.md) when creating new ADRs.

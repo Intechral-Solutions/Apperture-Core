@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Withdrawn (2026-10-03) by [ADR-0046](ADR-0046-external-organization-access-and-federation-withdrawal.md). Never implemented. Kept as history. Previously: Proposed.
 
 ## Context
 

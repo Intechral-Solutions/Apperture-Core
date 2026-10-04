@@ -8,10 +8,13 @@ Orchestration is explicit and workflow-based. Workflows have definitions, step g
 
 Each deployment is one Instance (one customer per deployment). Isolation and compliance are simplified. Everything is auditable per instance. Design tables so adding TenantId later would be straightforward.
 
-## 3. One module per compute process
+## 3. Module/process isolation is a supported deployment option
 
-- **On-prem:** One module per worker process (service/container).
-- **Cloud:** One module per Azure Function App.
+Amended 2026-10-03 (RC1 program gate, decision D-23). This was previously stated as an invariant; the code never enforced it.
+
+- **Today:** one Worker Host process hosts several modules. That is accepted for RC1.
+- **Supported future option:** one module per worker process (on-prem) or per Azure Function App (cloud). A worker module-selection mechanism can provide it.
+- **Rule for code:** do not depend on a module being alone in its process, and do not prevent isolating one later. Do not restructure the runtime merely to enforce isolation.
 
 Modules are trusted; no sandboxing. This is a core isolation boundary for reliability and deployment.
 

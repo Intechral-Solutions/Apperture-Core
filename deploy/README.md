@@ -6,8 +6,10 @@ Deployment configuration.
 |--------|---------|
 | [config/](config/) | Canonical `appsettings` templates (docker-dev, Windows, Azure) and shared UI config — see [config/README.md](config/README.md) |
 | docker/ | docker-compose.dev.yml, env files, SQL init/migrations |
-| k8s/ | Kubernetes manifests (future) |
-| azure/ | Azure deployment config (future) |
+| k8s/ | Not present. Kubernetes is outside RC1 support |
+| azure/ | Not present. Azure is outside RC1 support |
+
+> **RC1 note (2026-10-03).** The RC1-supported production topology is Windows Server, SQL Server and three hosts as Windows Services. It is delivered by the OPS-1 epic and does not exist yet: there is no installer, no service hosting and no supported upgrade or backup procedure today. See [rc1-program-gate.md](../docs/01-architecture/rc1-program-gate.md).
 
 Management platform configuration reference: [docs/03-operations/management-platform-configuration.md](../docs/03-operations/management-platform-configuration.md) (environment/startup layer). Configuration boundaries: [ADR-0039](../docs/02-decisions/ADR-0039-environment-startup-bootstrap-and-platform-settings.md). Foundation smoke baseline: [Epic 110](../docs/03-operations/epic110-foundation-stabilization.md).
 
@@ -139,7 +141,7 @@ Then log in at `POST /api/auth/local/login` with `tenny` / `dev` (or your chosen
 When EF Core migrations exist:
 
 ```bash
-dotnet ef database update --project src/Apperture.ControlPlane/Apperture.Management.Host
+dotnet ef database update --project src/Apperture.Persistence/Apperture.Persistence.SqlServer --startup-project src/Apperture.ControlPlane/Apperture.Management.Host
 ```
 
 See [docs/00-overview/roadmap.md](../docs/00-overview/roadmap.md).

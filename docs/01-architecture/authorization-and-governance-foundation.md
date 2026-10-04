@@ -163,7 +163,7 @@ Definition-level permissions must remain coherent with the grantable catalog. If
 
 - **AuthorizationEvaluationContext** — ActorId, Permission, Resource, Result, EvaluationPath
 - **AuthorizationEvaluationResult** — Allow, Deny
-- **AuthorizationEvaluationPath** — BreakGlass, Relationship, Rbac, ResourceOwnership, None
+- **AuthorizationEvaluationPath** — BreakGlass, Relationship, Rbac, ResourceOwnership, None. (Relationship is reserved and dormant: federation was withdrawn by ADR-0046.)
 
 ## Dependency and Boundary Check
 
@@ -228,7 +228,7 @@ The first concrete governed resource family (connectors, connections, slots, bin
 
 - **Full Entra interactive flow** and **full local username/password auth** (login UI, token handling, password hashing)
 - Break-glass policy execution in the evaluator — **Implemented (Epic 4):** evaluator grants when Human actor has break-glass session; lockout-prevention guards in UserManagementService
-- Relationship and resource-ownership evaluation
+- Resource-ownership evaluation. (Relationship evaluation is withdrawn with federation; see ADR-0046.)
 - Machine/System actor role resolution
 - Full audit emission of auth decisions
 - Connector management UI

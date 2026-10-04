@@ -6,7 +6,7 @@
 | **Runtime Plane** | The execution/data-plane subsystem within an Environment (workers, DTFx/Durable Functions, step execution). |
 | **Module** | An installable capability type (catalog entry): workflow definitions, step implementations, optional connectors, optional UI. |
 | **Module Installation** | A module enabled within an Environment. |
-| **Module Instance** | A configured executable occurrence of a Module Installation. One module per worker process (on-prem) or Function App (cloud). Do not use the bare word "instance" ambiguously. |
+| **Module Instance** | A configured executable occurrence of a Module Installation. One worker process may host several module instances today; one module per worker process (on-prem) or Function App (cloud) is a supported future deployment option. Do not use the bare word "instance" ambiguously. |
 | **Workflow** | A durable procedure with a step graph, persisted state, and typed parameters. Executed by the runtime. |
 | **Step** | A unit of execution within a workflow. The runtime invokes steps in order. |
 | **OperationRun** | Top-level record for a workflow execution, surfaced in the UI and audit. |

@@ -119,6 +119,88 @@ public sealed class S10NotificationDiagnosticsUiTests
         content.Should().Contain("Digest summaries and quiet hours");
     }
 
+    private const string DiagnosticsPage =
+        "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Config/Notifications/NotificationDiagnostics.razor";
+
+    [Fact]
+    public void Diagnostics_page_states_its_purpose_and_groups_the_tools()
+    {
+        var content = ReadRepoFile(DiagnosticsPage);
+
+        content.Should().Contain("Check that notifications are set up and delivering");
+        content.Should().Contain("Title=\"Overall delivery health\"");
+        content.Should().Contain("Title=\"Send a test email\"");
+        content.Should().Contain("Title=\"Integration to check\"");
+        content.Should().Contain("Title=\"Look up notification activity\"");
+        // The tool with side effects sits behind progressive disclosure and is closed by default.
+        content.Should().Contain("<ManagementAdvancedSection Title=\"Pipeline test (admin)\"");
+        content.Should().NotContain("InitiallyOpen");
+    }
+
+    [Fact]
+    public void Diagnostics_page_explains_every_input_in_visible_text()
+    {
+        var content = ReadRepoFile(DiagnosticsPage);
+
+        // Each input has a label tied to it and help text that is associated, not hover-only.
+        foreach (var id in new[] { "diag-smtp-recipient", "diag-integration", "diag-definition", "diag-dry-run", "diag-dispatch" })
+            content.Should().Contain($"for=\"{id}\"", because: id);
+        foreach (var describedBy in new[] { "diag-integration-help", "diag-definition-help", "diag-dry-run-help", "diag-dispatch-help" })
+        {
+            content.Should().Contain($"aria-describedby=\"{describedBy}\"", because: describedBy);
+            content.Should().Contain($"id=\"{describedBy}\"", because: describedBy);
+        }
+
+        // No explanation lives only in a hover tooltip (a lower-case title attribute).
+        System.Text.RegularExpressions.Regex.IsMatch(content, "\\stitle=\"").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Diagnostics_page_warns_that_a_live_pipeline_test_is_real()
+    {
+        var content = ReadRepoFile(DiagnosticsPage);
+
+        content.Should().Contain("Dry run (check only)");
+        content.Should().Contain("Saves nothing and sends nothing");
+        content.Should().Contain("this creates a real notification for the integration");
+        content.Should().Contain("real recipients");
+        content.Should().Contain("Run dry-run test");
+        content.Should().Contain("Run live test");
+        // The warning only shows when dry-run is turned off.
+        content.Should().Contain("@if (!_pipelineTestDryRun)");
+        // The page says which definition the pipeline test uses.
+        content.Should().Contain("Schedule expected run missing");
+    }
+
+    [Fact]
+    public void Diagnostics_page_no_longer_promises_tables_it_does_not_show()
+    {
+        var content = ReadRepoFile(DiagnosticsPage);
+
+        content.Should().NotContain("required for tables");
+        content.Should().Contain("This is a summary");
+        content.Should().Contain("NotificationUiRoutes.IntegrationNotifications(");
+        content.Should().Contain("NotificationUiRoutes.Delivery()");
+    }
+
+    [Fact]
+    public void Diagnostics_page_keeps_every_existing_capability()
+    {
+        var content = ReadRepoFile(DiagnosticsPage);
+
+        content.Should().Contain("Client.GetNotificationDeliveryHealthAsync()");
+        content.Should().Contain("Client.GetNotificationConfigurationDiagnosticsAsync()");
+        content.Should().Contain("Client.GetNotificationIntegrationDiagnosticsAsync(");
+        content.Should().Contain("Client.SendNotificationSmtpTestAsync(");
+        content.Should().Contain("Client.RunPlatformNotificationPipelineTestAsync(");
+        content.Should().Contain("DryRun: _pipelineTestDryRun");
+        content.Should().Contain("DispatchImmediately: !_pipelineTestDryRun && _pipelineTestDispatch");
+        content.Should().Contain("q.TryGetValue(\"integrationId\"");
+        content.Should().Contain("q.TryGetValue(\"definitionId\"");
+        content.Should().Contain("@if (_canManage)");
+        content.Should().Contain("Requires integration read and notification definition read.");
+    }
+
     private static string ReadRepoFile(string relativePath)
     {
         var dir = AppContext.BaseDirectory;
