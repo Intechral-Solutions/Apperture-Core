@@ -624,7 +624,8 @@ public sealed class AccountController : ControllerBase
         ?? principal.FindFirst("email")?.Value
         ?? principal.FindFirst(ClaimTypes.Email)?.Value
         ?? principal.FindFirst("unique_name")?.Value
-        ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        // Display only: the session's user id (NameIdentifier) is never shown as the sign-in name.
+        ?? principal.FindFirst(ApplicationSessionClaims.UsernameClaimType)?.Value;
 }
 
 public sealed record UpdateAccountProfileRequest(string? DisplayName);

@@ -27,12 +27,15 @@ public interface INativeMfaService
     ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Protected pending-login ticket issued after password success when MFA is required.</summary>
+/// <summary>
+/// Protected pending-login ticket issued after password success when MFA is required. It identifies the user by
+/// user id only; the session issued after the challenge is built from the user record.
+/// </summary>
 public interface IPendingMfaLoginTicketService
 {
-    ValueTask<string> IssueAsync(UserId userId, string username, DateTimeOffset utcNow, CancellationToken cancellationToken = default);
+    ValueTask<string> IssueAsync(UserId userId, DateTimeOffset utcNow, CancellationToken cancellationToken = default);
 
     ValueTask<PendingMfaLoginTicket?> RedeemAsync(string token, DateTimeOffset utcNow, CancellationToken cancellationToken = default);
 }
 
-public sealed record PendingMfaLoginTicket(UserId UserId, string Username, DateTimeOffset ExpiresUtc);
+public sealed record PendingMfaLoginTicket(UserId UserId, DateTimeOffset ExpiresUtc);

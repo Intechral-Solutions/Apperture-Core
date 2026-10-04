@@ -68,6 +68,7 @@ public sealed class AuthControllerAccountTests
         var body = ok.Value.Should().BeOfType<MeResponse>().Subject;
         body.UserId.Should().Be(TestUserId.Value);
         body.DisplayName.Should().Be("Account Test User");
+        body.UserPrincipal.Should().Be(LocalUsername, "a local session shows its sign-in name, never the user id it is keyed by");
         body.SignInSource.Should().Be("Local");
         body.LocalCredentialStatus.Should().Be(AccountMeSnapshotBuilder.LocalCredentialStatusActive);
         body.CanChangeLocalPassword.Should().BeTrue();
@@ -388,9 +389,8 @@ public sealed class AuthControllerAccountTests
 
     private static DefaultHttpContext HttpContextWithLocalClaims(string username)
     {
-        var identity = new ClaimsIdentity("test");
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, username));
-        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        // A local session as the host issues it: identified by user id, with the username for display.
+        var identity = LocalSessionIdentity.Create(TestUserId, username, "Account Test User");
         var context = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
         return context;
     }

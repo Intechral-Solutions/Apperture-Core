@@ -146,4 +146,11 @@ dotnet ef database update --project src/Apperture.Persistence/Apperture.Persiste
 
 The Management Host applies migrations itself at startup, and that is the supported path for a database that already has users. Between two of the migrations it runs a data step that gives every user a username. `dotnet ef database update` cannot run that step: on a database with users it stops with a message asking you to start the Management Host, which then completes the upgrade. An empty database migrates fully either way.
 
+### Sign-in sessions after upgrading
+
+Sign-in sessions are identified by the user's internal id. Sessions created by an earlier version do not carry that identity and are not accepted.
+
+- **Upgrade:** after upgrading, everyone is signed out once and must sign in again. Recovery Access is affected the same way. No data changes and no action is needed.
+- **Rollback:** an earlier version does not recognise local sessions created by this version. Local and Recovery Access users see "account unavailable" until they sign out and sign in again; Microsoft sign-in sessions keep working. Before rolling back, rotate the Data Protection key ring (or clear its keys) so that every session ends cleanly and everyone signs in again. Upgrading again later signs everyone out once more.
+
 See [docs/00-overview/roadmap.md](../docs/00-overview/roadmap.md).

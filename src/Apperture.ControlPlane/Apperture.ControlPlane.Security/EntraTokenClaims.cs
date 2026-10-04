@@ -29,9 +29,12 @@ public static class EntraTokenClaims
         return IsGuid(value) ? Normalize(value) : null;
     }
 
-    /// <summary>Token subject, retained for diagnostics only. Never used to resolve a user.</summary>
+    /// <summary>
+    /// Token subject (<c>sub</c>), retained for diagnostics only. Never used to resolve a user. On an application
+    /// session <see cref="ClaimTypes.NameIdentifier"/> is the user id, so it is not a subject fallback.
+    /// </summary>
     public static string? TryGetSubject(ClaimsPrincipal? principal) =>
-        FirstNonEmpty(principal, SubClaim, ClaimTypes.NameIdentifier);
+        FirstNonEmpty(principal, SubClaim);
 
     /// <summary>True when the token's directory id matches the expected (active registration) directory id.</summary>
     public static bool TenantMatches(string? tokenTenantId, string? expectedTenantId) =>

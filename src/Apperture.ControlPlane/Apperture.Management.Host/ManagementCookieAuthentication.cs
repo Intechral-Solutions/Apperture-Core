@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -29,6 +30,24 @@ internal static class ManagementCookieAuthentication
                 return Task.CompletedTask;
             context.Response.Redirect(context.RedirectUri);
             return Task.CompletedTask;
+        };
+    }
+
+    /// <summary>
+    /// The application session cookie only: a principal not issued in the current session format (before the
+    /// user-id session identity) is rejected and its cookie cleared, once. The next API call is then an ordinary
+    /// unauthenticated request and the browser follows the usual sign-in recovery. This is a format check on the
+    /// cookie alone; it reads no user, link or other database state, and nothing maps an old cookie to a user.
+    /// </summary>
+    public static void ConfigureApplicationSession(CookieAuthenticationOptions options)
+    {
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            if (ApplicationSessionClaims.IsCurrentFormat(context.Principal))
+                return;
+
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(context.Scheme.Name);
         };
     }
 

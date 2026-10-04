@@ -4,8 +4,10 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Concrete IActor for human principals. Used when mapping ClaimsPrincipal to IActor.
-/// When PreferredIdentitySource is set, the principal-to-user resolver uses only that source for lookup.
+/// Concrete IActor for human principals, produced from an application session by
+/// <see cref="ClaimsPrincipalToActorMapper"/>. <see cref="Id"/> is the user id. The identity source and the
+/// Entra tenant and object ids describe the identity link the session was issued through, so the resolver can
+/// require that link to still belong to the user.
 /// </summary>
 public sealed class HumanActor : IActor
 {
@@ -14,27 +16,38 @@ public sealed class HumanActor : IActor
     public string? DisplayName { get; }
 
     /// <summary>
-    /// When set, the resolver uses only this source for identity link lookup (no Entra-then-Local fallback).
-    /// Epic 2 auth handlers should set this via the identity_source claim.
+    /// The identity source the session was established with (the <c>identity_source</c> claim). The resolver
+    /// binds the session to an identity link of this source.
     /// </summary>
     public IdentitySource? PreferredIdentitySource { get; }
 
     /// <summary>
-    /// Directory (tenant) id from a validated Microsoft token. Required to resolve Entra identity links.
+    /// Directory (tenant) id from a validated Microsoft token. With <see cref="EntraObjectId"/>, the Entra link
+    /// an Entra session was issued through.
     /// </summary>
     public string? TenantId { get; }
+
+    /// <summary>Directory object id (<c>oid</c>) of an Entra session. Link provenance only, never the actor id.</summary>
+    public string? EntraObjectId { get; }
 
     /// <summary>
     /// True when the session was established via the break-glass login endpoint. The authorization evaluator grants all permission checks for such sessions.
     /// </summary>
     public bool IsBreakGlassSession { get; }
 
-    public HumanActor(ActorId id, string? displayName = null, IdentitySource? preferredIdentitySource = null, bool isBreakGlassSession = false, string? tenantId = null)
+    public HumanActor(
+        ActorId id,
+        string? displayName = null,
+        IdentitySource? preferredIdentitySource = null,
+        bool isBreakGlassSession = false,
+        string? tenantId = null,
+        string? entraObjectId = null)
     {
         Id = id;
         DisplayName = displayName;
         PreferredIdentitySource = preferredIdentitySource;
         IsBreakGlassSession = isBreakGlassSession;
         TenantId = tenantId;
+        EntraObjectId = entraObjectId;
     }
 }

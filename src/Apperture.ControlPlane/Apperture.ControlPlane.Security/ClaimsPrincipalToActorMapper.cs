@@ -5,27 +5,14 @@ using Apperture.Shared.Kernel;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Maps ClaimsPrincipal to IActor (Human). Provider-agnostic; uses standard claim types
-/// so both Entra and local auth can populate them later.
-/// For Entra, Id (ExternalId for identity link) must be the stable subject: oid or sub—not preferred_username or email.
+/// Maps an application-session <see cref="ClaimsPrincipal"/> to a human <see cref="IActor"/> whose id is the
+/// session's user id (<see cref="ApplicationSessionClaims"/>). Local, Entra and Recovery Access sessions of one
+/// user therefore produce the same actor id. The identity source, the break-glass marker and the Entra
+/// <c>tid</c> and <c>oid</c> ride along as provenance so the resolver can check the session's identity link
+/// still exists; they are never the actor id.
 /// </summary>
 public static class ClaimsPrincipalToActorMapper
 {
-    /// <summary>
-    /// Azure AD / Entra object ID (immutable). Prefer this for IdentityLink.ExternalId when present.
-    /// </summary>
-    private static readonly string[] OidClaimTypes = [
-        "http://schemas.microsoft.com/identity/claims/objectidentifier",
-        "oid" // JWT from Entra uses short name
-    ];
-
-    /// <summary>
-    /// JWT/OIDC claim types (fallback when ASP.NET claim types not present).
-    /// </summary>
-    private const string JwtSub = "sub";
-    private const string JwtPreferredUsername = "preferred_username";
-    private const string JwtName = "name";
-
     /// <summary>
     /// Namespace for claims this application itself issues (identity source, break-glass, and any later session metadata).
     /// An external identity provider must never be allowed to assert a claim in this namespace.
@@ -58,42 +45,48 @@ public static class ClaimsPrincipalToActorMapper
     }
 
     /// <summary>
-    /// Maps an authenticated ClaimsPrincipal to a Human IActor, or returns null if not authenticated.
-    /// Id (used as ExternalId for lookup): oid first (Entra stable), then NameIdentifier, sub, name, preferred_username.
-    /// Epic 2: set identity_source claim so resolution is unambiguous.
+    /// Maps an authenticated application session to a human actor whose id is the session's user id, or returns
+    /// null. A principal that is not in the current session format (<see cref="ApplicationSessionClaims"/>), has no
+    /// <see cref="ClaimTypes.NameIdentifier"/>, or has no recognised identity source is not an application session
+    /// and maps to no actor. There is deliberately no fallback to <c>oid</c>, <c>sub</c>, a name or a username.
     /// </summary>
     public static IActor? ToActor(ClaimsPrincipal? principal)
     {
         if (principal is null || principal.Identity?.IsAuthenticated != true)
             return null;
-
-        // Stable subject for Entra: oid or sub; do not use preferred_username/email as primary ExternalId.
-        var id = OidClaimTypes.Select(t => principal.FindFirst(t)?.Value).FirstOrDefault(v => !string.IsNullOrEmpty(v))
-            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? principal.FindFirst(JwtSub)?.Value
-            ?? principal.FindFirst(ClaimTypes.Name)?.Value
-            ?? principal.FindFirst(JwtPreferredUsername)?.Value;
-        if (string.IsNullOrEmpty(id))
+        if (!ApplicationSessionClaims.IsCurrentFormat(principal))
             return null;
 
-        var displayName = principal.FindFirst(ClaimTypes.Name)?.Value
-            ?? principal.FindFirst(JwtName)?.Value
-            ?? principal.FindFirst(JwtPreferredUsername)?.Value;
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return null;
 
-        IdentitySource? preferredSource = null;
         var sourceClaim = principal.FindFirst(IdentitySourceClaimType)?.Value;
-        if (string.Equals(sourceClaim, "Entra", StringComparison.OrdinalIgnoreCase))
-            preferredSource = IdentitySource.Entra;
-        else if (string.Equals(sourceClaim, "Local", StringComparison.OrdinalIgnoreCase))
-            preferredSource = IdentitySource.Local;
+        IdentitySource source;
+        if (string.Equals(sourceClaim, ApplicationSessionClaims.EntraSource, StringComparison.OrdinalIgnoreCase))
+            source = IdentitySource.Entra;
+        else if (string.Equals(sourceClaim, ApplicationSessionClaims.LocalSource, StringComparison.OrdinalIgnoreCase))
+            source = IdentitySource.Local;
+        else
+            return null;
 
-        var breakGlassClaim = principal.FindFirst(BreakGlassClaimType)?.Value;
-        var isBreakGlassSession = string.Equals(breakGlassClaim, "1", StringComparison.Ordinal);
+        var isBreakGlassSession = string.Equals(principal.FindFirst(BreakGlassClaimType)?.Value, "1", StringComparison.Ordinal);
 
-        var tenantId = preferredSource == IdentitySource.Entra
-            ? EntraTokenClaims.TryGetTenantId(principal)
-            : null;
+        // Provenance of an Entra session: the link it was issued through. Never the actor id.
+        string? tenantId = null;
+        string? objectId = null;
+        if (source == IdentitySource.Entra)
+        {
+            tenantId = EntraTokenClaims.TryGetTenantId(principal);
+            objectId = EntraTokenClaims.TryGetObjectId(principal);
+        }
 
-        return new HumanActor(new ActorId(id), displayName, preferredSource, isBreakGlassSession, tenantId);
+        return new HumanActor(
+            new ActorId(userId),
+            principal.FindFirst(ClaimTypes.Name)?.Value,
+            source,
+            isBreakGlassSession,
+            tenantId,
+            objectId);
     }
 }

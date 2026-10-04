@@ -667,8 +667,14 @@ public sealed class ManagementAuthEndpointsTests
         app.MapGet("/api/auth/me", () => Results.Ok(new { userId = "me" })).RequireAuthorization();
         app.MapGet("/test/session", async (HttpContext ctx, string? sid, string? iss) =>
         {
+            // A current-format Entra session (user id identity); the cookie handler rejects any other.
             var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
-            identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, LinkedUserId));
+            ApplicationSessionClaims.Apply(
+                identity,
+                new Apperture.Core.Domain.Identity.UserId(LinkedUserId),
+                "linked.operator",
+                "Linked operator",
+                ApplicationSessionClaims.EntraSource);
             if (sid is not null)
                 identity.AddClaim(new Claim("sid", sid));
             if (iss is not null)

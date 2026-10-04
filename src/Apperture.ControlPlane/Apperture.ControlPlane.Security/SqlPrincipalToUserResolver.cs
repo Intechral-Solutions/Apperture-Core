@@ -7,8 +7,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Resolves a Human IActor to UserId using persisted identity links.
-/// Local identities resolve by source + external id. Entra identities resolve by tenant id + object id.
+/// Resolves the human actor of an application session to its user: by user id, then requires the identity link
+/// the session was issued through to still belong to that user (session-link binding), then touches that link's
+/// last-authenticated time. An Entra session needs the exact tenant id + object id link; a local session
+/// (Recovery Access included) needs a Local link, whatever its current name, so a username rename does not end
+/// the session but removing the link does. No caching: every call reads the user.
 /// </summary>
 public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
 {
@@ -29,68 +32,48 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
     /// <inheritdoc />
     public async ValueTask<UserId?> ResolveUserIdAsync(IActor actor, CancellationToken cancellationToken = default)
     {
-        if (actor is null || actor.Kind != ActorKind.Human)
+        // Only a human actor mapped from an application session carries the provenance needed for binding.
+        if (actor is not HumanActor human || human.PreferredIdentitySource is not { } source)
             return null;
 
-        var externalId = actor.Id.Value;
-        if (string.IsNullOrEmpty(externalId))
+        var userIdValue = human.Id.Value;
+        if (string.IsNullOrWhiteSpace(userIdValue))
             return null;
 
-        User? user;
-        if (actor is HumanActor human && human.PreferredIdentitySource is { } source)
+        var user = await _userRepository.GetByIdAsync(new UserId(userIdValue), cancellationToken);
+        if (user is null)
+            return null;
+
+        if (source == IdentitySource.Entra)
         {
-            if (source == IdentitySource.Entra)
-            {
-                var tenantId = EntraTokenClaims.Normalize(human.TenantId);
-                if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(tenantId))
-                    return null;
+            var tenantId = EntraTokenClaims.Normalize(human.TenantId);
+            var objectId = EntraTokenClaims.Normalize(human.EntraObjectId);
+            if (!EntraTokenClaims.IsValidObjectId(tenantId) || !EntraTokenClaims.IsValidObjectId(objectId))
+                return null;
 
-                var key = ProviderIdentityKey.Entra(tenantId, externalId);
-                user = await _userRepository.GetByIdentityLinkAsync(key, cancellationToken);
-                if (user is not null)
-                {
-                    var wasPendingEntra = WasPendingEntra(user, key);
-                    await _userRepository.UpdateLastAuthenticatedAtAsync(key, DateTimeOffset.UtcNow, cancellationToken);
-                    if (wasPendingEntra)
-                        await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
-                }
+            // The links come from the user just loaded, so a link that moved to another user cannot match.
+            var key = ProviderIdentityKey.Entra(tenantId!, objectId!);
+            var entraLink = user.IdentityLinks.FirstOrDefault(key.Matches);
+            if (entraLink is null)
+                return null;
 
-                return user?.Id;
-            }
-
-            user = await _userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken);
-            if (user is not null)
-                await _userRepository.UpdateLastAuthenticatedAtAsync(source, externalId, DateTimeOffset.UtcNow, cancellationToken);
-            return user?.Id;
+            await _userRepository.UpdateLastAuthenticatedAtAsync(key, DateTimeOffset.UtcNow, cancellationToken);
+            if (!entraLink.IsProven)
+                await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
+            return user.Id;
         }
 
-        if (actor is HumanActor withTenant && !string.IsNullOrEmpty(withTenant.TenantId))
-        {
-            var tenantId = EntraTokenClaims.Normalize(withTenant.TenantId);
-            if (!string.IsNullOrEmpty(tenantId) && EntraTokenClaims.IsValidObjectId(tenantId) && EntraTokenClaims.IsValidObjectId(externalId))
-            {
-                var key = ProviderIdentityKey.Entra(tenantId, externalId);
-                user = await _userRepository.GetByIdentityLinkAsync(key, cancellationToken);
-                if (user is not null)
-                {
-                    var wasPendingEntra = WasPendingEntra(user, key);
-                    await _userRepository.UpdateLastAuthenticatedAtAsync(key, DateTimeOffset.UtcNow, cancellationToken);
-                    if (wasPendingEntra)
-                        await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
-                    return user.Id;
-                }
-            }
-        }
+        if (source != IdentitySource.Local)
+            return null;
 
-        user = await _userRepository.GetByIdentityLinkAsync(IdentitySource.Local, externalId, cancellationToken);
-        if (user is not null)
-            await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Local, externalId, DateTimeOffset.UtcNow, cancellationToken);
+        // Bound to the user's Local link by existence, not by name: it mirrors the current username.
+        var localLink = user.IdentityLinks.FirstOrDefault(l => l.Source == IdentitySource.Local);
+        if (localLink is null)
+            return null;
 
-        return user?.Id;
+        await _userRepository.UpdateLastAuthenticatedAtAsync(IdentitySource.Local, localLink.ExternalId, DateTimeOffset.UtcNow, cancellationToken);
+        return user.Id;
     }
-
-    private static bool WasPendingEntra(User user, ProviderIdentityKey identity) =>
-        user.IdentityLinks.Any(l => identity.Matches(l) && !l.IsProven);
 
     private async ValueTask ApplyEntraPrimaryPolicyAsync(UserId userId, CancellationToken cancellationToken)
     {

@@ -150,9 +150,10 @@ public sealed class EntraStepUpSecurityGuardTests
     [Fact]
     public void Local_sign_in_and_the_step_up_callback_share_one_local_session_identity_shape()
     {
+        // Both build the local session from the user record, identified by user id (IAM-9.2).
         Source("src/Apperture.ControlPlane/Apperture.Management.Api/Controllers/AuthController.cs")
-            .Should().Contain("LocalSessionIdentity.Create(user.DisplayName, normalizedUsername)");
+            .Should().Contain("LocalSessionIdentity.Create(user.Id, user.Username, user.DisplayName)");
         Source($"{Host}/EntraOpenIdConnectOptionsConfigurer.cs")
-            .Should().Contain("LocalSessionIdentity.Create(user.DisplayName, localLink.ExternalId)");
+            .Should().Contain("LocalSessionIdentity.Create(user.Id, user.Username, user.DisplayName)");
     }
 }

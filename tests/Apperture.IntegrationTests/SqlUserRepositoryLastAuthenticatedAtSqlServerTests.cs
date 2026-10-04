@@ -108,7 +108,8 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
             var linkId = $"link-{Guid.NewGuid():N}"[..24];
             await SeedIdentityLinkAsync(db, userId, linkId, externalId, lastAuthenticatedAt: null);
 
-            var actor = new HumanActor(new ActorId(externalId), externalId, preferredIdentitySource: IdentitySource.Local);
+            // A local session's actor: the user id, bound to the user's Local link.
+            var actor = new HumanActor(new ActorId(userId), "Operator", preferredIdentitySource: IdentitySource.Local);
             var tasks = Enumerable.Range(0, 20).Select(async _ =>
             {
                 await using var taskDb = new AppertureDbContext(options);

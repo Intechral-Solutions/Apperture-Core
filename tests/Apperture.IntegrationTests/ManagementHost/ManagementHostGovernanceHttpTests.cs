@@ -935,8 +935,9 @@ public sealed class ManagementHostGovernanceHttpTests
         operationPermission.Resource!.ResourceType.Should().Be("OperationDefinition");
         operationPermission.Resource.ScopeKey.Should().Be("module:Sample.HelloWorld");
 
+        // A local session's actor is the user id (IAM-9.2), not the sign-in name.
         var actor = new HumanActor(
-            new ActorId(ManagementGovernanceTestConstants.ExternalProcedureLauncher),
+            new ActorId(ManagementGovernanceTestConstants.UserProcedureLauncher),
             preferredIdentitySource: IdentitySource.Local);
         var evaluator = scope.ServiceProvider.GetRequiredService<IExecutablePermissionEvaluator>();
         (await evaluator.EvaluateAllAsync(actor, definition.RequiredPermissions!)).Should().BeTrue(
