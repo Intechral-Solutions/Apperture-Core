@@ -998,8 +998,11 @@ public interface IManagementClient
     /// </summary>
     Task<RoleAssignmentsDto?> GetRoleAssignmentsAsync(string roleId, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets a paginated page of users. Requires user.read.</summary>
-    Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Gets a page of users ordered by username. <paramref name="query"/> matches a username prefix or a display-name
+    /// substring. The server clamps <paramref name="take"/> to 1-100. Requires user.read.
+    /// </summary>
+    Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null);
 
     /// <summary>Creates a local or Entra-linked platform user. Requires user.manage. Throws on 400/403/409.</summary>
     Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default);
@@ -1101,7 +1104,7 @@ public sealed record UpdateRoleMetadataRequest(string Name, string? Description)
 public sealed record RoleAssignmentsDto(int Count, IReadOnlyList<RoleAssignmentHolderDto> Holders);
 
 /// <summary>User identity shown on role delete confirmation.</summary>
-public sealed record RoleAssignmentHolderDto(string UserId, string DisplayName);
+public sealed record RoleAssignmentHolderDto(string UserId, string Username, string DisplayName);
 
 /// <summary>
 /// Role lifecycle conflict from the Management API. <see cref="Code"/> is the stable API error
@@ -1129,21 +1132,33 @@ public sealed record UserListResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<UserListDto> Items,
     [property: JsonPropertyName("totalCount")] int TotalCount);
 
+/// <summary>How a page refers to one user: the stable id, the human-facing username, and the display name.</summary>
+public sealed record UserReferenceDto(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("username")] string Username,
+    [property: JsonPropertyName("displayName")] string DisplayName);
+
 public sealed record UserListDto(
     [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("hasLocalLink")] bool HasLocalLink,
     [property: JsonPropertyName("hasEntraLink")] bool HasEntraLink,
     [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds,
     [property: JsonPropertyName("emergencyAccessAccount")] bool EmergencyAccessAccount = false);
 
+/// <remarks>
+/// For Local, <c>Username</c> is the preferred name and <c>ExternalId</c> an accepted alias; both may be given only
+/// if they are the same name. For Entra, <c>ExternalId</c> is the directory object id and <c>Username</c> is ignored.
+/// </remarks>
 public sealed record CreateUserRequest(
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("identitySource")] string IdentitySource,
-    [property: JsonPropertyName("externalId")] string ExternalId,
+    [property: JsonPropertyName("externalId")] string? ExternalId = null,
     [property: JsonPropertyName("password")] string? Password = null,
     [property: JsonPropertyName("contactEmail")] string? ContactEmail = null,
-    [property: JsonPropertyName("sendSetupInvitation")] bool SendSetupInvitation = false);
+    [property: JsonPropertyName("sendSetupInvitation")] bool SendSetupInvitation = false,
+    [property: JsonPropertyName("username")] string? Username = null);
 
 public sealed record SetupInvitationRequest(
     [property: JsonPropertyName("contactEmail")] string? ContactEmail);
@@ -1158,6 +1173,7 @@ public sealed record CreateUserResponse(
 
 public sealed record UserDetailDto(
     [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("identityLinks")] IReadOnlyList<IdentityLinkDto> IdentityLinks,
     [property: JsonPropertyName("roleIds")] IReadOnlyList<string> RoleIds,
@@ -1180,9 +1196,10 @@ public sealed record IdentityLinkDto(
     [property: JsonPropertyName("externalId")] string ExternalId,
     [property: JsonPropertyName("lastAuthenticatedAt")] DateTimeOffset? LastAuthenticatedAt);
 
+/// <remarks>For Local, <c>ExternalId</c> is optional and defaults to the user's username; supplied, it must equal it.</remarks>
 public sealed record AddIdentityLinkRequest(
     [property: JsonPropertyName("identitySource")] string IdentitySource,
-    [property: JsonPropertyName("externalId")] string ExternalId);
+    [property: JsonPropertyName("externalId")] string? ExternalId = null);
 
 public sealed record IdentityLinkErrorResponse(
     [property: JsonPropertyName("message")] string Message,
@@ -1886,6 +1903,7 @@ public sealed record RuntimeControlRequestDto(
 
 public sealed record MeResponse(
     [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("displayName")] string DisplayName,
     [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles,
     [property: JsonPropertyName("userPrincipal")] string? UserPrincipal,

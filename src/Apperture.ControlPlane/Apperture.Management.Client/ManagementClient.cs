@@ -1816,10 +1816,12 @@ public sealed class ManagementClient : IManagementClient
         return new RoleLifecycleConflictException(code, message ?? "The role could not be changed.", assignmentCount);
     }
 
-    public async Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+    public async Task<UserListResponse> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null)
     {
-        var query = $"?skip={skip}&take={take}";
-        var dto = await _http.GetFromJsonAsync<UserListResponse>($"users{query}", cancellationToken).ConfigureAwait(false);
+        var queryString = $"?skip={skip}&take={take}";
+        if (!string.IsNullOrWhiteSpace(query))
+            queryString += $"&q={Uri.EscapeDataString(query)}";
+        var dto = await _http.GetFromJsonAsync<UserListResponse>($"users{queryString}", cancellationToken).ConfigureAwait(false);
         return dto ?? new UserListResponse([], 0);
     }
 

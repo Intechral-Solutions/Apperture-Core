@@ -5,7 +5,7 @@ namespace Apperture.Core.Application.Services;
 /// <summary>
 /// Current holders of a role. Used by role detail and delete confirmation.
 /// </summary>
-public sealed record RoleAssignmentHolder(UserId UserId, string DisplayName);
+public sealed record RoleAssignmentHolder(UserId UserId, string Username, string DisplayName);
 
 /// <summary>
 /// Assignment list for a live role, including the count used to decide delete.

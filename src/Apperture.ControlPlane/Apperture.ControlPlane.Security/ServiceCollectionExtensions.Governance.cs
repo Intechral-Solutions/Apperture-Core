@@ -112,6 +112,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IEntraAccessRequestService, EntraAccessRequestService>();
         services.AddScoped<IUserManagementService, UserManagementService>();
+        services.AddScoped<IUserReferenceResolver, UserReferenceResolver>();
         services.AddScoped<IManagedContactManagementService, ManagedContactManagementService>();
         // Module permission registration must run before role repair so platform-admin gets module-scoped workflow.execute etc.
         services.AddHostedService<ModulePermissionRegistrationHostedService>();

@@ -40,7 +40,7 @@ public sealed record RoleAssignmentsDto(
 /// <summary>
 /// Identity shown when confirming whether a role can be deleted.
 /// </summary>
-public sealed record RoleAssignmentHolderDto(string UserId, string DisplayName);
+public sealed record RoleAssignmentHolderDto(string UserId, string Username, string DisplayName);
 
 /// <summary>
 /// A single permission granted to a role.

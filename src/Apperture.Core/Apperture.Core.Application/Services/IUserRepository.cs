@@ -89,6 +89,42 @@ public interface IUserRepository
     ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a page of users that match <paramref name="criteria"/>: a username prefix or a case-insensitive
+    /// display-name substring (LIKE wildcards in the query are literal characters). An exact username match comes
+    /// first, then <c>Username</c> ascending. Email, UPN, mail snapshots and the user id are never matched. Same
+    /// Recovery Access exclusion and filtered <c>TotalCount</c> as <see cref="GetPageAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// The default serves only the unfiltered list. A repository that can search overrides it.
+    /// </remarks>
+    ValueTask<(IReadOnlyList<User> Page, int TotalCount)> SearchPageAsync(
+        UserSearchCriteria criteria,
+        CancellationToken cancellationToken = default) =>
+        criteria.Query is null
+            ? GetPageAsync(criteria.Skip, criteria.Take, cancellationToken)
+            : throw new NotSupportedException("This user repository does not support searching users.");
+
+    /// <summary>
+    /// Resolves <see cref="UserReferenceDto"/> values for the given ids in as few round trips as the store allows.
+    /// Includes Recovery Access. Ids with no matching user are omitted.
+    /// </summary>
+    /// <remarks>The default loads each user; a store that can project the three fields in one query overrides it.</remarks>
+    async ValueTask<IReadOnlyList<UserReferenceDto>> GetReferencesAsync(
+        IReadOnlyCollection<UserId> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        var references = new List<UserReferenceDto>(userIds.Count);
+        foreach (var userId in userIds)
+        {
+            var user = await GetByIdAsync(userId, cancellationToken).ConfigureAwait(false);
+            if (user is not null)
+                references.Add(new UserReferenceDto(user.Id.Value, user.Username, user.DisplayName));
+        }
+
+        return references;
+    }
+
+    /// <summary>
     /// Moves a user from <paramref name="expectedCurrentUsername"/> to <paramref name="newUsername"/> in one
     /// transaction: retires the current ledger row with <paramref name="retiredReason"/>, reactivates the
     /// user's own retired row for the new name or inserts a new one, and updates <c>Users.Username</c> and

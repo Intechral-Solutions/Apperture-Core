@@ -109,7 +109,7 @@ public sealed class Epic39GovernanceAdminTests
             _throws = throws;
         }
 
-        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null) =>
             ValueTask.FromResult(((IReadOnlyList<User>)([]), 0));
 
         public ValueTask<User?> GetUserByIdAsync(UserId userId, CancellationToken cancellationToken = default)
@@ -141,7 +141,7 @@ public sealed class Epic39GovernanceAdminTests
             bool sendSetupInvitation = false) =>
             throw new NotImplementedException();
 
-        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

@@ -40,7 +40,9 @@ public sealed class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Lists users with pagination. Requires user.read.
+    /// Lists users with pagination, ordered by username. <c>q</c> narrows the list to a username prefix or a
+    /// case-insensitive display-name substring (exact username first); email, UPN and user id are never searched.
+    /// <c>take</c> defaults to 20 and is clamped to 1-100. Requires user.read.
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(UserListResponse), StatusCodes.Status200OK)]
@@ -48,12 +50,13 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<UserListResponse>> List(
         [FromQuery] int skip = 0,
-        [FromQuery] int take = 20,
+        [FromQuery] int take = UserSearchCriteria.DefaultTake,
+        [FromQuery] string? q = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var (page, totalCount) = await _userManagement.GetUserPageAsync(skip, take, cancellationToken);
+            var (page, totalCount) = await _userManagement.GetUserPageAsync(skip, take, cancellationToken, q);
             var items = page.Select(ToListDto).ToList();
             return Ok(new UserListResponse(items, totalCount));
         }
@@ -156,18 +159,42 @@ public sealed class UsersController : ControllerBase
         [FromBody] CreateUserRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.ExternalId))
-            return BadRequest(new { message = "DisplayName and ExternalId are required." });
         if (!Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) ||
             (source != IdentitySource.Entra && source != IdentitySource.Local))
             return BadRequest(new { message = "IdentitySource must be 'Entra' or 'Local'." });
+
+        // Local: Username is the preferred field and ExternalId an accepted alias for the same name. Supplying both is
+        // allowed only when they are the same name, so a request can never create a different account name than one
+        // of its fields asked for. Entra keeps ExternalId as its only key; Username does not apply.
+        var requestedName = request.ExternalId;
+        if (source == IdentitySource.Local)
+        {
+            var hasUsername = !string.IsNullOrWhiteSpace(request.Username);
+            var hasExternalId = !string.IsNullOrWhiteSpace(request.ExternalId);
+            if (hasUsername && hasExternalId
+                && !string.Equals(UsernamePolicy.Normalize(request.Username!), UsernamePolicy.Normalize(request.ExternalId!), StringComparison.Ordinal))
+            {
+                return BadRequest(new
+                {
+                    message = "Username and ExternalId are the same field for a Local user; supply one, or the same name in both.",
+                    code = UsernameErrorCodes.Mismatch
+                });
+            }
+
+            requestedName = hasUsername ? request.Username : request.ExternalId;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(requestedName))
+            return BadRequest(new { message = source == IdentitySource.Local
+                ? "DisplayName and Username are required."
+                : "DisplayName and ExternalId are required." });
 
         try
         {
             var userId = await _userManagement.CreateUserAsync(
                 request.DisplayName.Trim(),
                 source,
-                request.ExternalId.Trim(),
+                requestedName.Trim(),
                 request.Password,
                 cancellationToken,
                 request.ContactEmail,
@@ -253,19 +280,23 @@ public sealed class UsersController : ControllerBase
         [FromBody] AddIdentityLinkRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.ExternalId))
+        var sourceIsValid = Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) &&
+            (source == IdentitySource.Entra || source == IdentitySource.Local);
+        // Only Local may omit the name (it defaults to the user's username); every other source needs one.
+        if (string.IsNullOrWhiteSpace(request.ExternalId) && (!sourceIsValid || source != IdentitySource.Local))
             return BadRequest(new IdentityLinkErrorResponse(
                 "ExternalId is required.",
                 IdentityLinkErrorCodes.MissingExternalId));
-        if (!Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) ||
-            (source != IdentitySource.Entra && source != IdentitySource.Local))
+        if (!sourceIsValid)
             return BadRequest(new IdentityLinkErrorResponse(
                 "IdentitySource must be 'Entra' or 'Local'.",
                 IdentityLinkErrorCodes.InvalidSource));
 
         try
         {
-            await _userManagement.AddIdentityLinkAsync(new UserId(id), source, request.ExternalId.Trim(), cancellationToken);
+            // A Local link's name is the user's username: omitted means "use it", supplied must equal it.
+            var externalId = string.IsNullOrWhiteSpace(request.ExternalId) ? null : request.ExternalId.Trim();
+            await _userManagement.AddIdentityLinkAsync(new UserId(id), source, externalId, cancellationToken);
             return NoContent();
         }
         catch (UnauthorizedAccessException)
@@ -491,6 +522,7 @@ public sealed class UsersController : ControllerBase
         var hasEntra = user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra);
         return new UserListDto(
             user.Id.Value,
+            user.Username,
             user.DisplayName,
             hasLocal,
             hasEntra,
@@ -514,6 +546,7 @@ public sealed class UsersController : ControllerBase
             : hasLocalLink ? "setup_pending" : "none";
         return new UserDetailDto(
             user.Id.Value,
+            user.Username,
             user.DisplayName,
             user.IdentityLinks.Select(l => new IdentityLinkDto(l.Source.ToString(), l.ExternalId, l.LastAuthenticatedAt)).ToList(),
             user.AssignedRoleIds.Select(r => r.Value).ToList(),
@@ -546,6 +579,7 @@ public sealed record UserListResponse(IReadOnlyList<UserListDto> Items, int Tota
 
 public sealed record UserListDto(
     string UserId,
+    string Username,
     string DisplayName,
     bool HasLocalLink,
     bool HasEntraLink,
@@ -554,6 +588,7 @@ public sealed record UserListDto(
 
 public sealed record UserDetailDto(
     string UserId,
+    string Username,
     string DisplayName,
     IReadOnlyList<IdentityLinkDto> IdentityLinks,
     IReadOnlyList<string> RoleIds,
@@ -573,13 +608,22 @@ public sealed record UserDetailDto(
 
 public sealed record IdentityLinkDto(string Source, string ExternalId, DateTimeOffset? LastAuthenticatedAt);
 
+/// <param name="ExternalId">
+/// For Local, an accepted alias for <paramref name="Username"/> (the requested username); for Entra, the directory
+/// object id. Optional for Local when <paramref name="Username"/> is supplied.
+/// </param>
+/// <param name="Username">
+/// The preferred Local username. If both this and <paramref name="ExternalId"/> are supplied for Local they must
+/// normalize to the same name (otherwise <c>username_mismatch</c>). Ignored for Entra.
+/// </param>
 public sealed record CreateUserRequest(
     string DisplayName,
     string IdentitySource,
-    string ExternalId,
+    string? ExternalId = null,
     string? Password = null,
     string? ContactEmail = null,
-    bool SendSetupInvitation = false);
+    bool SendSetupInvitation = false,
+    string? Username = null);
 
 public sealed record SetupInvitationRequest(string? ContactEmail);
 
@@ -587,7 +631,10 @@ public sealed record SetupInvitationResponse(bool DeliverySucceeded, string? Del
 
 public sealed record CreateUserResponse(string UserId);
 
-public sealed record AddIdentityLinkRequest(string IdentitySource, string ExternalId);
+/// <param name="ExternalId">
+/// Optional for Local, where it defaults to the user's username and must equal it when supplied. Required for Entra.
+/// </param>
+public sealed record AddIdentityLinkRequest(string IdentitySource, string? ExternalId = null);
 
 public sealed record IdentityLinkErrorResponse(string Message, string Code);
 

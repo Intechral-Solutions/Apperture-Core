@@ -419,14 +419,35 @@ public sealed class SqlUserRepository : IUserRepository
     }
 
     /// <inheritdoc />
-    public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+    public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
+        SearchPageAsync(new UserSearchCriteria(null, skip, take), cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> SearchPageAsync(UserSearchCriteria criteria, CancellationToken cancellationToken = default)
     {
         var query = _db.Users.AsNoTracking().Where(u => !u.IsBreakGlassEligible);
+        IOrderedQueryable<UserEntity> ordered;
+        if (criteria.Query is { } text)
+        {
+            // Username is matched by prefix against the column's case-insensitive collation; the display name is
+            // matched as a lower-cased substring. Only these two columns are ever compared: never email, UPN or id.
+            var escaped = EscapeLikePattern(text);
+            var usernamePrefix = escaped + "%";
+            var displaySubstring = "%" + escaped + "%";
+            query = query.Where(u =>
+                EF.Functions.Like(u.Username, usernamePrefix, LikeEscape)
+                || EF.Functions.Like(u.DisplayName.ToLower(), displaySubstring, LikeEscape));
+            ordered = query.OrderBy(u => u.Username == text ? 0 : 1).ThenBy(u => u.Username);
+        }
+        else
+        {
+            ordered = query.OrderBy(u => u.Username);
+        }
+
         var totalCount = await query.CountAsync(cancellationToken);
-        var userEntities = await query
-            .OrderBy(u => u.Id)
-            .Skip(skip)
-            .Take(take)
+        var userEntities = await ordered
+            .Skip(criteria.Skip)
+            .Take(criteria.Take)
             .ToListAsync(cancellationToken);
         if (userEntities.Count == 0)
             return (Array.Empty<User>(), totalCount);
@@ -450,6 +471,28 @@ public sealed class SqlUserRepository : IUserRepository
         });
         return (page, totalCount);
     }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<UserReferenceDto>> GetReferencesAsync(IReadOnlyCollection<UserId> userIds, CancellationToken cancellationToken = default)
+    {
+        if (userIds.Count == 0)
+            return Array.Empty<UserReferenceDto>();
+
+        var ids = userIds.Select(u => u.Value).Distinct().ToList();
+        return await _db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new UserReferenceDto(u.Id, u.Username, u.DisplayName))
+            .ToListAsync(cancellationToken);
+    }
+
+    private const string LikeEscape = "\\";
+
+    /// <summary>Makes <c>\</c>, <c>%</c>, <c>_</c> and <c>[</c> literal inside a LIKE pattern that uses <see cref="LikeEscape"/>.</summary>
+    internal static string EscapeLikePattern(string text) =>
+        text.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal);
 
     /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
