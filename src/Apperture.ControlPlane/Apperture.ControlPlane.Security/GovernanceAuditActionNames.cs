@@ -13,6 +13,7 @@ public static class GovernanceAuditActionNames
     public const string RoleDeleted = "governance.role.deleted";
     public const string RoleMutationRejected = "governance.role.mutation_rejected";
     public const string BreakGlassAdminOperation = "governance.break_glass.admin_operation";
+    public const string UserUsernameChanged = "governance.user.username.changed";
 
     // Runtime enrollment (operator control surface)
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";

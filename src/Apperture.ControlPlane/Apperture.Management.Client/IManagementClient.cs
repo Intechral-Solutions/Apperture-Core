@@ -1007,6 +1007,13 @@ public interface IManagementClient
     /// <summary>Creates a local or Entra-linked platform user. Requires user.manage. Throws on 400/403/409.</summary>
     Task<CreateUserResponse> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Renames a user's username, or reclaims one of the user's own retired names. Requires user.manage. The server
+    /// confirms the canonical result; a refusal throws <see cref="UsernameRenameException"/> (400 invalid or reserved,
+    /// 403, 404, 409 taken, concurrent change or Recovery Access).
+    /// </summary>
+    Task<RenameUsernameResponse> RenameUserAsync(string userId, string username, CancellationToken cancellationToken = default);
+
     /// <summary>Enabled Entra registrations available for directory provisioning. Requires user.manage.</summary>
     Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(CancellationToken cancellationToken = default);
 
@@ -1137,6 +1144,13 @@ public sealed record UserReferenceDto(
     [property: JsonPropertyName("userId")] string UserId,
     [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("displayName")] string DisplayName);
+
+/// <param name="Username">The canonical stored username after the call.</param>
+/// <param name="Outcome"><c>assigned</c>, <c>reclaimed</c> or <c>unchanged</c>.</param>
+public sealed record RenameUsernameResponse(
+    [property: JsonPropertyName("userId")] string UserId,
+    [property: JsonPropertyName("username")] string Username,
+    [property: JsonPropertyName("outcome")] string Outcome);
 
 public sealed record UserListDto(
     [property: JsonPropertyName("userId")] string UserId,

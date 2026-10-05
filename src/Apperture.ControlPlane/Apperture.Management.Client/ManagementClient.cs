@@ -1840,6 +1840,40 @@ public sealed class ManagementClient : IManagementClient
         return body ?? throw new InvalidOperationException("Create user succeeded without a user id.");
     }
 
+    public async Task<RenameUsernameResponse> RenameUserAsync(string userId, string username, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/username",
+            new { username },
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadFromJsonAsync<RenameUsernameResponse>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+            return body ?? throw new InvalidOperationException("Rename succeeded without a result.");
+        }
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            // No structured body: fall back to a plain message for the status.
+        }
+
+        var message = !string.IsNullOrWhiteSpace(error?.Message)
+            ? error!.Message
+            : response.StatusCode switch
+            {
+                HttpStatusCode.Forbidden => "Not authorized to manage users.",
+                HttpStatusCode.NotFound => "User not found.",
+                _ => "Could not change the username."
+            };
+        throw new UsernameRenameException(message, response.StatusCode, error?.Code);
+    }
+
     public async Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(
         CancellationToken cancellationToken = default)
     {

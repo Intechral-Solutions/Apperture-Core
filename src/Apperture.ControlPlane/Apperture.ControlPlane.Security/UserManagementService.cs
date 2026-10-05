@@ -486,6 +486,35 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
+    public async ValueTask<UsernameRenameResult> RenameUsernameAsync(
+        UserId userId,
+        string requestedUsername,
+        CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequireUserManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("user.username.rename", actorId, cancellationToken);
+
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+        var previous = user.Username;
+
+        // Policy, Recovery Access refusal, ownership and the transactional ledger/Local-link change live in the
+        // username service and repository; this method adds authorization and the audit row.
+        var outcome = await new UsernameService(_userRepository).RenameAsync(userId, requestedUsername, cancellationToken);
+        if (outcome == UsernameChangeOutcome.Unchanged)
+            return new UsernameRenameResult(outcome, previous, previous);
+
+        var current = UsernamePolicy.Normalize(requestedUsername);
+        await AppendAuditAsync(
+            GovernanceAuditActionNames.UserUsernameChanged,
+            actorId,
+            userId.Value,
+            $"userId={userId.Value} previousUsername={previous} newUsername={current}",
+            cancellationToken);
+        return new UsernameRenameResult(outcome, previous, current);
+    }
+
+    /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);

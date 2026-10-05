@@ -97,6 +97,18 @@ public interface IUserManagementService
         throw new NotSupportedException();
 
     /// <summary>
+    /// Renames a user's username (including reclaiming one of the user's own retired names). The target must satisfy the
+    /// current username policy; a name another user holds or held is refused (<see cref="UsernameErrorCodes.Taken"/>);
+    /// Recovery Access is refused (<see cref="EmergencyAccessErrorCodes.UnsafeOperation"/>).
+    /// Changes no credential, role or session. Audited when the name changes. Requires user.manage.
+    /// </summary>
+    ValueTask<UsernameRenameResult> RenameUsernameAsync(
+        UserId userId,
+        string requestedUsername,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
     /// Adds an identity link to a user. For Local, externalId is optional and defaults to the user's username; when
     /// supplied it is normalized (trim, lowercase) and must equal the username. Entra requires an externalId.
     /// Requires user.manage.

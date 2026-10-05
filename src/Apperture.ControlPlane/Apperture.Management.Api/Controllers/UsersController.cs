@@ -266,6 +266,52 @@ public sealed class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Renames a user's username, or reclaims one of the user's own retired names. The target must satisfy the current
+    /// username policy. Changes no credential, role or session; the Local sign-in name follows the username. Requires user.manage.
+    /// </summary>
+    [HttpPut("{id}/username")]
+    [ProducesResponseType(typeof(RenameUsernameResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RenameUsernameResponse>> RenameUsername(
+        string id,
+        [FromBody] RenameUsernameRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Username))
+            return BadRequest(new { message = "Username is required.", code = UsernameErrorCodes.Invalid });
+
+        try
+        {
+            var result = await _userManagement.RenameUsernameAsync(new UserId(id), request.Username, cancellationToken);
+            return Ok(new RenameUsernameResponse(id, result.Username, result.Outcome.ToString().ToLowerInvariant()));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (EmergencyAccessException ex)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+        catch (UsernameException ex) when (ex.Code is UsernameErrorCodes.Taken or UsernameErrorCodes.ConcurrentChange)
+        {
+            return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+        catch (UsernameException ex)
+        {
+            return BadRequest(new { message = ex.Message, code = ex.Code });
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Adds an identity link to a user. Requires user.manage.
     /// </summary>
     [HttpPost("{id}/identity-links")]
@@ -624,6 +670,13 @@ public sealed record CreateUserRequest(
     string? ContactEmail = null,
     bool SendSetupInvitation = false,
     string? Username = null);
+
+/// <param name="Username">The requested username. Normalized (trimmed, lower-cased) and validated against the current policy.</param>
+public sealed record RenameUsernameRequest(string Username);
+
+/// <param name="Username">The canonical stored username after the call.</param>
+/// <param name="Outcome"><c>assigned</c> (a new name), <c>reclaimed</c> (one of the user's own retired names) or <c>unchanged</c>.</param>
+public sealed record RenameUsernameResponse(string UserId, string Username, string Outcome);
 
 public sealed record SetupInvitationRequest(string? ContactEmail);
 
