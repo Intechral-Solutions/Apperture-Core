@@ -1,0 +1,98 @@
+@using Apperture.Management.Client
+@*
+    UserRef presents one human platform user, or an unresolved historical actor string.
+
+    Supply exactly one of:
+      - User             a resolved UserReferenceDto (rendered per Mode), or
+      - UnresolvedActor  the original historical actor string ("Unrecognized actor" + the string in monospace).
+    An unresolved actor is never a user: it is never linked and never looked up here.
+
+    Accessible name for a resolved user is always "Display Name (username)", produced by the DOM itself:
+      - Rich:    the display name and the parenthesised username are both ordinary visible text.
+      - Compact: only the username is visible; the display name and the parentheses are screen-reader-only
+                 text, so the visible label is contained in the accessible name and nothing is hidden from
+                 assistive technology. The native title (display name) is only a mouse convenience.
+
+    CanNavigate is supplied by the caller from its own capability state (user.read). Without it the same
+    identity renders as plain, non-focusable text. This component fetches nothing.
+*@
+<span class="@RootClass">
+    @if (_actor is not null)
+    {
+        <span class="ui-user-ref__unresolved-label">Unrecognized actor</span>@(" ")<code class="ui-user-ref__actor font-mono">@_actor</code>
+    }
+    else if (CanNavigate)
+    {
+        <DrillInLink Href="@UserDetailHref" Class="ui-user-ref__link" Title="@CompactTitle">@Identity</DrillInLink>
+    }
+    else
+    {
+        <span class="ui-user-ref__identity" title="@CompactTitle">@Identity</span>
+    }
+    @StatusSlot
+</span>
+
+@code {
+    /// <summary>The resolved user. Mutually exclusive with <see cref="UnresolvedActor"/>.</summary>
+    [Parameter] public UserReferenceDto? User { get; set; }
+
+    /// <summary>The original historical actor string when it could not be resolved to a user. Mutually exclusive with <see cref="User"/>.</summary>
+    [Parameter] public string? UnresolvedActor { get; set; }
+
+    [Parameter] public UserRefMode Mode { get; set; } = UserRefMode.Compact;
+
+    /// <summary>True when the viewer may open User detail (holds user.read). Off by default; never affects what identity is shown.</summary>
+    [Parameter] public bool CanNavigate { get; set; }
+
+    private UserReferenceDto? _user;
+    private string? _actor;
+
+    /// <summary>
+    /// Reserved extension point for the user lifecycle status (IAM-11). Renders nothing today, and adds no DOM,
+    /// so the status can later be rendered here without changing either mode's identity markup.
+    /// </summary>
+    private static RenderFragment? StatusSlot => null;
+
+    private string RootClass => _actor is not null
+        ? "ui-user-ref ui-user-ref--unresolved"
+        : Mode == UserRefMode.Rich ? "ui-user-ref ui-user-ref--rich" : "ui-user-ref ui-user-ref--compact";
+
+    private string UserDetailHref => "/config/governance/users/" + Uri.EscapeDataString(_user!.UserId);
+
+    private string? CompactTitle => Mode == UserRefMode.Compact ? _user!.DisplayName : null;
+
+    private RenderFragment Identity => Mode == UserRefMode.Rich
+        ? @<text><span class="ui-user-ref__display-name">@_user!.DisplayName</span>@(" ")<span class="ui-user-ref__username text-muted">(@_user.Username)</span></text>
+        : @<text><span class="sr-only">@_user!.DisplayName (</span>@_user.Username<span class="sr-only">)</span></text>;
+
+    protected override void OnParametersSet()
+    {
+        if (!Enum.IsDefined(Mode))
+            throw new InvalidOperationException($"{nameof(UserRef)} does not support mode '{Mode}'.");
+
+        if ((User is not null) == (UnresolvedActor is not null))
+            throw new InvalidOperationException(
+                $"{nameof(UserRef)} requires exactly one of {nameof(User)} or {nameof(UnresolvedActor)}.");
+
+        if (User is not null)
+        {
+            if (string.IsNullOrWhiteSpace(User.UserId)
+                || string.IsNullOrWhiteSpace(User.Username)
+                || string.IsNullOrWhiteSpace(User.DisplayName))
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(UserRef)} requires a user reference with a user id, username and display name.");
+            }
+
+            _user = User;
+            _actor = null;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(UnresolvedActor))
+            throw new InvalidOperationException($"{nameof(UserRef)} requires a non-blank {nameof(UnresolvedActor)}.");
+
+        _user = null;
+        _actor = UnresolvedActor;
+    }
+}
