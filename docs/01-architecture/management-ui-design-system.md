@@ -111,6 +111,7 @@ Pre-boot: inline script in `index.html` / `_Layout.cshtml` reads `localStorage` 
 | `StatusPill` | Summary / detail | Health or lifecycle status chips |
 | `AttentionPill` | Summary | Dashboard attention tokens (`Critical`, `Warning`, `Info`) |
 | `DrillInLink` | Detail | Underlined drill-in with `ui-drill-in-link` class |
+| `UserRef` | Any (Molecule) | One human platform user, or an unresolved historical actor string. Takes a resolved `UserReferenceDto` **or** `UnresolvedActor`; `Mode` is `Compact` (default: username visible, `Display Name (username)` accessible name) or `Rich` (display name primary, `(username)` visible secondary text). `CanNavigate` (caller-supplied from `user.read`) links to User detail through `DrillInLink` by user id; without it the same identity is plain text. Unresolved renders "Unrecognized actor" plus the original string in monospace and never links. Fetches nothing; no tooltip or popover. The lifecycle status slot is reserved and renders nothing yet |
 | `LoadingState` / `EmptyState` / `ForbiddenState` / `ErrorState` | Any | Thin aliases over `PageMessage` for consistent defaults |
 | `ActionFeedback` | Detail (below header / summary) | Cooperative/user-triggered action result banner (Epic 88; Integration Detail Epic 96); uses `ui-feedback-banner` (Epic 97); defaults Title “Action”, Kind Info |
 | `MetadataGrid` / `MetadataItem` | Detail / summary | Repeated label/value facts (Epic 93); optional `ThreeColumn` on summary bands |

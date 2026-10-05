@@ -992,6 +992,34 @@ body.apperture-modal-open {
   color: var(--color-primary-dark);
 }
 
+/* --- UserRef (user identity primitive) --- */
+
+.ui-user-ref {
+  overflow-wrap: anywhere;
+}
+
+.ui-user-ref--rich .ui-user-ref__link {
+  font-size: inherit;
+}
+
+.ui-user-ref__display-name {
+  font-weight: 600;
+  color: var(--color-text-heading);
+}
+
+.ui-user-ref__username {
+  font-size: 0.875em;
+}
+
+.ui-user-ref__unresolved-label {
+  color: var(--color-text-muted);
+}
+
+.ui-user-ref__actor {
+  font-size: 0.875em;
+  white-space: pre-wrap;
+}
+
 /* UIX-3 — affected-record anchor highlight (not color-only). */
 .ui-operation-item-anchor {
   outline: 2px solid var(--color-accent-line);
