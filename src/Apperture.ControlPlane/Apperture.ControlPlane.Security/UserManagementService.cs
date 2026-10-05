@@ -70,10 +70,11 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
-    public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default)
+    public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null)
     {
         await RequireUserReadAsync(cancellationToken);
-        return await _userRepository.GetPageAsync(skip, take, cancellationToken);
+        // Reads are not audited here, and the search text must never reach an audit record.
+        return await _userRepository.SearchPageAsync(UserSearchCriteria.Create(query, skip, take), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -278,7 +279,7 @@ public sealed class UserManagementService : IUserManagementService
         foreach (var userId in userIds)
         {
             var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-            holders.Add(new RoleAssignmentHolder(userId, user?.DisplayName ?? userId.Value));
+            holders.Add(new RoleAssignmentHolder(userId, user?.Username ?? userId.Value, user?.DisplayName ?? userId.Value));
         }
 
         return new RoleAssignmentList(holders.Count, holders);
@@ -485,14 +486,11 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
-    public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+    public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("identity_link.add", actorId, cancellationToken);
         ValidateEntraExternalId(source, externalId);
-        var linkExternalId = source == IdentitySource.Local
-            ? LocalAuthHelpers.NormalizeUsername(externalId)
-            : externalId.Trim();
 
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
@@ -504,6 +502,11 @@ public sealed class UserManagementService : IUserManagementService
                 EmergencyAccessErrorCodes.UnsafeOperation,
                 "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
         }
+
+        // A Local link's name is the user's username, so it may be omitted and then defaults to it.
+        var linkExternalId = source == IdentitySource.Local
+            ? string.IsNullOrWhiteSpace(externalId) ? user.Username : LocalAuthHelpers.NormalizeUsername(externalId)
+            : externalId!.Trim();
 
         if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
         {
@@ -863,7 +866,7 @@ public sealed class UserManagementService : IUserManagementService
             && (excludedLink is null || !ReferenceEquals(l, excludedLink)));
     }
 
-    private static void ValidateEntraExternalId(IdentitySource source, string externalId)
+    private static void ValidateEntraExternalId(IdentitySource source, string? externalId)
     {
         if (source != IdentitySource.Entra)
             return;

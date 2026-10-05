@@ -414,6 +414,12 @@ Numeric suffixes reveal only that another name with the same base exists, and on
 - At most one Local link per user. IAM-9.1 adds a filtered unique index on `IdentityLinks(UserId)` where `[Source] = 1`. The migration fails closed with a clear message if any user has two.
 - `POST /api/users/{id}/identity-links` with `Local`: `ExternalId` may be omitted, and then defaults to the user's username. If supplied, its normalized form must equal the username, otherwise 400 `username_mismatch`. This is a documented behaviour change.
 - `CreateUserRequest.ExternalId` for `Local` keeps meaning "the requested username". IAM-9.3 adds an optional `Username` field as the preferred name and keeps `ExternalId` as an accepted alias.
+- **Both fields supplied (product-owner ruling, IAM-9.3).** For a `Local` create request:
+  - `Username` only: use `Username`.
+  - `ExternalId` only: accept it as the legacy Local username alias.
+  - Both: normalize each through the one username normalization (`UsernamePolicy.Normalize`, which `LocalAuthHelpers.NormalizeUsername` delegates to). If the normalized values are equal, proceed. If they differ, return 400 `username_mismatch`.
+  - Neither field silently wins over a conflicting value. This is the same rule as the Local identity-link rule above, so `User.Username` and the Local `IdentityLink.ExternalId` keep one canonical meaning.
+  - `Entra` creation is unchanged and ignores `Username`.
 
 Rejected alternative: resolving local sign-in through `Users.Username` and dropping the Local link key. It would remove the existing filtered unique index's protection and change the credential model without benefit.
 
@@ -695,7 +701,7 @@ All changes are additive unless marked.
 | `MeResponse` (server and client copy) | Add `Username` |
 | `RoleAssignmentHolderDto` | Add `Username` |
 | `GET /api/users` | Add `q`; clamp `take`; **order by `Username`** (behaviour change) |
-| `CreateUserRequest` | Add optional `Username`; `ExternalId` remains an alias for Local |
+| `CreateUserRequest` | Add optional `Username`; `ExternalId` remains an alias for Local. Both supplied: equal after normalization proceeds, otherwise 400 `username_mismatch` (§11) |
 | `POST /api/users/{id}/identity-links` (Local) | `ExternalId` optional and must equal the username (**behaviour change**, 400 `username_mismatch`) |
 | `PUT /api/users/{id}/username` (IAM-9.5) | New: `{ "username": "…" }`, `user.manage`. 200 for a new name or a reclaim of this user's own retired name. 409 `username_taken` when the name is, or was, owned by another user. 409 `UnsafeOperation` for Recovery Access. 400 `username_invalid` / `username_reserved` when the target fails the current policy, including reclaim targets |
 | `UserReferenceDto` | New shared record (§14) |

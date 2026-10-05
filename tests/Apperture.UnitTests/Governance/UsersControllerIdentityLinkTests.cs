@@ -147,6 +147,59 @@ public sealed class UsersControllerIdentityLinkTests
         body.Code.Should().Be(IdentityLinkErrorCodes.MissingExternalId);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task AddIdentityLink_local_without_external_id_defers_to_the_users_username(string? omitted)
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.AddIdentityLink(
+            TargetUserId,
+            new AddIdentityLinkRequest("Local", omitted),
+            CancellationToken.None);
+
+        result.Should().BeOfType<NoContentResult>();
+        service.AddCalls.Should().ContainSingle(c =>
+            c.UserId.Value == TargetUserId && c.Source == IdentitySource.Local && c.ExternalId == null);
+    }
+
+    [Fact]
+    public async Task AddIdentityLink_local_name_that_differs_from_the_username_returns_bad_request_username_mismatch()
+    {
+        var service = new StubUserManagement(throwOnAdd: new UsernameException(
+            UsernameErrorCodes.Mismatch,
+            "A local sign-in must use this user's existing username."));
+        var controller = NewController(service);
+
+        var result = await controller.AddIdentityLink(
+            TargetUserId,
+            new AddIdentityLinkRequest("Local", "someone.else"),
+            CancellationToken.None);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        var body = bad.Value.Should().BeOfType<IdentityLinkErrorResponse>().Subject;
+        body.Code.Should().Be("username_mismatch");
+    }
+
+    [Fact]
+    public async Task AddIdentityLink_entra_without_external_id_returns_bad_request_without_calling_service()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.AddIdentityLink(
+            TargetUserId,
+            new AddIdentityLinkRequest("Entra", null),
+            CancellationToken.None);
+
+        var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        bad.Value.Should().BeOfType<IdentityLinkErrorResponse>().Which.Code.Should().Be(IdentityLinkErrorCodes.MissingExternalId);
+        service.AddCalls.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task SetLocalCredentialDisabled_without_recent_strong_authentication_returns_forbidden_with_code()
     {
@@ -201,9 +254,9 @@ public sealed class UsersControllerIdentityLinkTests
             _throwOnDisable = throwOnDisable;
         }
 
-        public List<(UserId UserId, IdentitySource Source, string ExternalId)> AddCalls { get; } = [];
+        public List<(UserId UserId, IdentitySource Source, string? ExternalId)> AddCalls { get; } = [];
 
-        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default)
         {
             if (_throwOnAdd is not null)
                 throw _throwOnAdd;
@@ -213,7 +266,7 @@ public sealed class UsersControllerIdentityLinkTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null) =>
             ValueTask.FromResult(((IReadOnlyList<User>)([]), 0));
 
         public ValueTask<User?> GetUserByIdAsync(UserId userId, CancellationToken cancellationToken = default) =>

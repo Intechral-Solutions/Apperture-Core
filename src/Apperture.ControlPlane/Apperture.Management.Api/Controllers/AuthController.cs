@@ -153,7 +153,7 @@ public sealed class AuthController : ControllerBase
 
         var roles = await _roleProvider.GetRolesForUserAsync(uid, cancellationToken);
         var credential = await _localCredentialRepository.GetByUserIdAsync(uid, cancellationToken);
-        var userPrincipal = ResolveUserPrincipal(User);
+        var userPrincipal = ResolveUserPrincipal(User) ?? user.Username;
         var localStatus = AccountMeSnapshotBuilder.ResolveLocalCredentialStatus(user, credential);
         var identityLinks = user.IdentityLinks
             .Select(l => new AccountIdentityLinkDto(
@@ -176,6 +176,7 @@ public sealed class AuthController : ControllerBase
         var accountVerification = _accountVerification?.GetCurrent() ?? RecentAccountVerification.None;
         return Ok(new MeResponse(
             user.Id.Value,
+            user.Username,
             user.DisplayName,
             roles.Select(r => r.Id.Value).ToArray(),
             userPrincipal,
@@ -754,6 +755,10 @@ public sealed class AuthController : ControllerBase
         await _audit.AppendAsync(record, cancellationToken);
     }
 
+    /// <summary>
+    /// The sign-in name an Entra token carries. Deliberately not the session cookie's username claim: that is frozen
+    /// at sign-in and goes stale on rename, so callers fall back to the user's current username instead.
+    /// </summary>
     private static string? ResolveUserPrincipal(ClaimsPrincipal principal)
     {
         return principal.FindFirst("preferred_username")?.Value
@@ -761,9 +766,7 @@ public sealed class AuthController : ControllerBase
             ?? principal.FindFirst(ClaimTypes.Upn)?.Value
             ?? principal.FindFirst("email")?.Value
             ?? principal.FindFirst(ClaimTypes.Email)?.Value
-            ?? principal.FindFirst("unique_name")?.Value
-            // Display only: the session's user id (NameIdentifier) is never shown as the sign-in name.
-            ?? principal.FindFirst(ApplicationSessionClaims.UsernameClaimType)?.Value;
+            ?? principal.FindFirst("unique_name")?.Value;
     }
 }
 
@@ -775,6 +778,8 @@ public sealed record LocalMfaChallengeRequest(string? TotpCode, string? Recovery
 
 public sealed record MeResponse(
     string UserId,
+    /// <summary>The user's current canonical username, read from the user record on every request.</summary>
+    string Username,
     string DisplayName,
     string[] Roles,
     string? UserPrincipal,

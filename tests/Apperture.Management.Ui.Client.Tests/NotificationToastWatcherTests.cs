@@ -79,7 +79,7 @@ public sealed class NotificationToastWatcherTests : IDisposable
     private async Task<SessionStateService> AuthenticatedSessionAsync()
     {
         _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         var session = new SessionStateService(_client.Object);
         await session.RefreshAsync();
         session.State.Should().Be(SessionLoadState.Authenticated);
@@ -440,7 +440,7 @@ public sealed class NotificationToastWatcherTests : IDisposable
 
         // Session returns to Authenticated.
         _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         _toasts.Calls.Clear();
         var callsBeforeResume = _requestedCursors.Count;
         _responses.Enqueue(() => Task.FromResult(Response(
@@ -592,7 +592,7 @@ public sealed class NotificationToastWatcherTests : IDisposable
 
         // ...and returns, starting a fresh epoch (epoch 2) with its own baseline.
         _client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         _responses.Enqueue(() => Task.FromResult(Response(items: [], nextCreatedAtUtc: null, nextId: null, unreadCount: 0, isBootstrap: true)));
         await session.RefreshAsync();
         _clock.Advance(TimeSpan.Zero); // fires epoch 2's own baseline poll

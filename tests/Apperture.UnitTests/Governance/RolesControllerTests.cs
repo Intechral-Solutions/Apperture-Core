@@ -231,7 +231,7 @@ public sealed class RolesControllerTests
         var role = SampleRole();
         var userManagement = new StubUserManagementService(
             createdRole: role,
-            assignments: new RoleAssignmentList(1, [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+            assignments: new RoleAssignmentList(1, [new RoleAssignmentHolder(new UserId("user-1"), "ada", "Ada")]));
         var controller = new RolesController(userManagement);
 
         var result = await controller.Create(
@@ -332,8 +332,8 @@ public sealed class RolesControllerTests
         var userManagement = new StubUserManagementService(
             updatedRole: role,
             assignments: new RoleAssignmentList(2, [
-                new RoleAssignmentHolder(new UserId("user-1"), "Ada"),
-                new RoleAssignmentHolder(new UserId("user-2"), "Grace")
+                new RoleAssignmentHolder(new UserId("user-1"), "ada", "Ada"),
+                new RoleAssignmentHolder(new UserId("user-2"), "grace", "Grace")
             ]));
         var controller = new RolesController(userManagement);
 
@@ -505,7 +505,7 @@ public sealed class RolesControllerTests
     {
         var userManagement = new StubUserManagementService(assignments: new RoleAssignmentList(
             5,
-            [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+            [new RoleAssignmentHolder(new UserId("user-1"), "ada", "Ada")]));
         var controller = new RolesController(userManagement);
 
         var result = await controller.GetAssignments("role-abc", CancellationToken.None);
@@ -513,9 +513,9 @@ public sealed class RolesControllerTests
         var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var body = ok.Value.Should().BeOfType<RoleAssignmentsDto>().Subject;
         body.Count.Should().Be(5);
-        body.Holders.Should().ContainSingle(h => h.UserId == "user-1" && h.DisplayName == "Ada");
+        body.Holders.Should().ContainSingle(h => h.UserId == "user-1" && h.Username == "ada" && h.DisplayName == "Ada");
         typeof(RoleAssignmentHolderDto).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(p => p.Name)
-            .Should().BeEquivalentTo("UserId", "DisplayName");
+            .Should().BeEquivalentTo("UserId", "Username", "DisplayName");
     }
 
     [Fact]
@@ -545,7 +545,7 @@ public sealed class RolesControllerTests
     {
         var userManagement = new StubUserManagementService(
             role: SampleRole(),
-            assignments: new RoleAssignmentList(4, [new RoleAssignmentHolder(new UserId("user-1"), "Ada")]));
+            assignments: new RoleAssignmentList(4, [new RoleAssignmentHolder(new UserId("user-1"), "ada", "Ada")]));
         var controller = new RolesController(userManagement);
 
         var result = await controller.Get("role-abc", CancellationToken.None);
@@ -629,7 +629,7 @@ public sealed class RolesControllerTests
 
         public bool RemoveRoleCalled { get; private set; }
 
-        public ValueTask<(IReadOnlyList<Apperture.Core.Domain.Identity.User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<(IReadOnlyList<Apperture.Core.Domain.Identity.User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null) =>
             ValueTask.FromResult(((IReadOnlyList<Apperture.Core.Domain.Identity.User>)([]), 0));
 
         public ValueTask<Apperture.Core.Domain.Identity.User?> GetUserByIdAsync(Apperture.Core.Domain.Identity.UserId userId, CancellationToken cancellationToken = default) =>
@@ -717,7 +717,7 @@ public sealed class RolesControllerTests
             bool sendSetupInvitation = false) =>
             throw new NotImplementedException();
 
-        public ValueTask AddIdentityLinkAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
+        public ValueTask AddIdentityLinkAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.IdentitySource source, string? externalId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
         public ValueTask RemoveIdentityLinkAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

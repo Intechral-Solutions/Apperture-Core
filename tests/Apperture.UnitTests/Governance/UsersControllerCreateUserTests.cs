@@ -96,6 +96,84 @@ public sealed class UsersControllerCreateUserTests
         service.CreateCalls.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Create_local_user_accepts_username_without_external_id()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.Create(
+            new CreateUserRequest("Operator", "Local", Password: "Password1!", Username: "operator"),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<CreatedAtActionResult>();
+        service.CreateCalls.Should().ContainSingle(c =>
+            c.Source == IdentitySource.Local && c.ExternalId == "operator");
+    }
+
+    [Fact]
+    public async Task Create_local_user_accepts_matching_username_and_external_id_after_normalization()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.Create(
+            new CreateUserRequest("Operator", "Local", "  Operator ", "Password1!", Username: "OPERATOR"),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<CreatedAtActionResult>();
+        // The preferred field's value goes to the service, which owns normalization.
+        service.CreateCalls.Should().ContainSingle(c => c.ExternalId == "OPERATOR");
+    }
+
+    [Fact]
+    public async Task Create_local_user_with_different_username_and_external_id_returns_username_mismatch()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.Create(
+            new CreateUserRequest("Operator", "Local", "operator.one", "Password1!", Username: "operator.two"),
+            CancellationToken.None);
+
+        var bad = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        System.Text.Json.JsonSerializer.Serialize(bad.Value).Should().Contain("\"code\":\"username_mismatch\"");
+        service.CreateCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_local_user_without_username_or_external_id_returns_bad_request()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var result = await controller.Create(
+            new CreateUserRequest("Operator", "Local", "  ", "Password1!", Username: " "),
+            CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        service.CreateCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_entra_user_is_unchanged_and_ignores_username()
+    {
+        var service = new StubUserManagement();
+        var controller = NewController(service);
+
+        var withoutExternalId = await controller.Create(
+            new CreateUserRequest("Operator", "Entra", Username: "operator"),
+            CancellationToken.None);
+        withoutExternalId.Result.Should().BeOfType<BadRequestObjectResult>();
+        service.CreateCalls.Should().BeEmpty();
+
+        await controller.Create(
+            new CreateUserRequest("Operator", "Entra", " 11111111-2222-3333-4444-555555555555 ", Username: "operator"),
+            CancellationToken.None);
+        service.CreateCalls.Should().ContainSingle(c =>
+            c.Source == IdentitySource.Entra && c.ExternalId == "11111111-2222-3333-4444-555555555555");
+    }
+
     private static UsersController NewController(StubUserManagement service) =>
         new(service, new StubLocalCredentialRepository(), new StubRoleProvider());
 
@@ -122,7 +200,7 @@ public sealed class UsersControllerCreateUserTests
             return ValueTask.FromResult(new UserId("usr-created"));
         }
 
-        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default) =>
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null) =>
             ValueTask.FromResult(((IReadOnlyList<User>)([]), 0));
 
         public ValueTask<User?> GetUserByIdAsync(UserId userId, CancellationToken cancellationToken = default) =>
@@ -140,7 +218,7 @@ public sealed class UsersControllerCreateUserTests
         public ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
-        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
 
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>

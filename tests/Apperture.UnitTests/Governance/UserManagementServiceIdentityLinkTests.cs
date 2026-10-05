@@ -259,6 +259,85 @@ public sealed class UserManagementServiceIdentityLinkTests
         }
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task AddIdentityLinkAsync_local_link_defaults_to_the_users_username_when_external_id_is_omitted(string? omitted)
+    {
+        var userId = new UserId("usr-entra-only");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Jane Doe",
+            [new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow)],
+            [],
+            false)
+        { Username = "jane.doe" });
+        var service = NewService(repo);
+
+        await service.AddIdentityLinkAsync(userId, IdentitySource.Local, omitted, CancellationToken.None);
+
+        repo.AddedLinks.Should().ContainSingle(l => l.Source == IdentitySource.Local && l.ExternalId == "jane.doe");
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_omitted_local_external_id_does_not_add_a_second_local_link()
+    {
+        var userId = new UserId("usr-local");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Jane Doe",
+            [new IdentityLink(IdentitySource.Local, "jane.doe", null)],
+            [],
+            false)
+        { Username = "jane.doe" });
+        var service = NewService(repo);
+
+        await service.AddIdentityLinkAsync(userId, IdentitySource.Local, null, CancellationToken.None);
+
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_a_different_local_name_is_refused_even_when_the_user_already_has_a_local_link()
+    {
+        var userId = new UserId("usr-local");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Jane Doe",
+            [new IdentityLink(IdentitySource.Local, "jane.doe", null)],
+            [],
+            false)
+        { Username = "jane.doe" });
+        var service = NewService(repo);
+
+        Func<Task> second = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Local, "jane.other", CancellationToken.None);
+
+        (await second.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.Mismatch);
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AddIdentityLinkAsync_entra_link_still_requires_an_external_id()
+    {
+        var userId = new UserId("usr-local");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Jane Doe",
+            [new IdentityLink(IdentitySource.Local, "jane.doe", null)],
+            [],
+            false)
+        { Username = "jane.doe" });
+        var service = NewService(repo);
+
+        Func<Task> omitted = async () =>
+            await service.AddIdentityLinkAsync(userId, IdentitySource.Entra, null, CancellationToken.None);
+
+        (await omitted.Should().ThrowAsync<IdentityLinkException>()).Which.Code.Should().Be(IdentityLinkErrorCodes.InvalidEntraExternalId);
+        repo.IdentityLinkAddCount.Should().Be(0);
+    }
+
     private sealed class InMemoryUserRepository : IUserRepository
     {
         private readonly Dictionary<UserId, User> _users;

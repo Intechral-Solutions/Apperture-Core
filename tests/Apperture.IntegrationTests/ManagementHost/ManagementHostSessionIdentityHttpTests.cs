@@ -56,6 +56,7 @@ public sealed class ManagementHostSessionIdentityHttpTests
         var me = await MeAsync(client);
         me.UserId.Should().Be(person.Id.Value);
         me.UserPrincipal.Should().Be(person.Username, "the sign-in name is shown, not the user id");
+        me.Username.Should().Be(person.Username);
         me.SignInSource.Should().Be("Local");
     }
 
@@ -72,7 +73,10 @@ public sealed class ManagementHostSessionIdentityHttpTests
             (await new UsernameService(users).RenameAsync(person.Id, renamed)).Should().Be(UsernameChangeOutcome.Assigned);
         }
 
-        (await MeAsync(client)).UserId.Should().Be(person.Id.Value, "the session is keyed by user id, and the Local link still exists under its new name");
+        var me = await MeAsync(client);
+        me.UserId.Should().Be(person.Id.Value, "the session is keyed by user id, and the Local link still exists under its new name");
+        me.Username.Should().Be(renamed, "/me reports the current username, not the one frozen into the cookie at sign-in");
+        me.UserPrincipal.Should().Be(renamed, "the Local sign-in name shown is the current username, not the stale cookie copy");
 
         var oldName = await _fixture.Factory.CreateClient().PostAsJsonAsync("/api/auth/local/login", new LocalLoginRequest(person.Username, Password));
         oldName.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -209,7 +209,7 @@ public sealed class RoleLifecycleUiRenderTests
             system: false,
             canManage: false,
             assignmentCount: 1,
-            holders: [new RoleAssignmentHolderDto("user-ada", "Ada Lovelace")]);
+            holders: [new RoleAssignmentHolderDto("user-ada", "ada", "Ada Lovelace")]);
 
         rig.Html.Should().Contain("Assigned to 1 person.");
         rig.Html.Should().Contain("Ada Lovelace");
@@ -259,8 +259,8 @@ public sealed class RoleLifecycleUiRenderTests
             assignmentCount: 2,
             holders:
             [
-                new RoleAssignmentHolderDto("user-ada", "Ada Lovelace"),
-                new RoleAssignmentHolderDto("user-grace", "Grace Hopper")
+                new RoleAssignmentHolderDto("user-ada", "ada", "Ada Lovelace"),
+                new RoleAssignmentHolderDto("user-grace", "grace", "Grace Hopper")
             ]);
 
         rig.Html.Should().Contain("Assigned to 2 people.");
@@ -291,8 +291,8 @@ public sealed class RoleLifecycleUiRenderTests
         rig.Client.Setup(c => c.GetRoleAssignmentsAsync(RoleId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RoleAssignmentsDto(2,
             [
-                new RoleAssignmentHolderDto("user-ada", "Ada Lovelace"),
-                new RoleAssignmentHolderDto("user-grace", "Grace Hopper")
+                new RoleAssignmentHolderDto("user-ada", "ada", "Ada Lovelace"),
+                new RoleAssignmentHolderDto("user-grace", "grace", "Grace Hopper")
             ]));
         await rig.Do(rig.Page.OpenDeleteConfirmAsync);
 

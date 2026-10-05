@@ -60,12 +60,14 @@ public sealed class Epic41ConfigGovernanceUiTests
     {
         var dto = new UserDetailDto(
             "u1",
+            "test.user",
             "Test User",
             [],
             ["r1", "r2"],
             true,
             false);
         dto.UserId.Should().Be("u1");
+        dto.Username.Should().Be("test.user");
         dto.DisplayName.Should().Be("Test User");
         dto.RoleIds.Should().BeEquivalentTo("r1", "r2");
     }

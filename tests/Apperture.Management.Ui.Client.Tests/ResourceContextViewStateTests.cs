@@ -34,7 +34,7 @@ public class ResourceContextViewStateTests
     private static async Task<SessionStateService> SignedInSessionAsync(Mock<IManagementClient> client)
     {
         client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((EntraAccessRequestSessionDto?)null);
         var session = new SessionStateService(client.Object);
@@ -112,7 +112,7 @@ public class ResourceContextViewStateTests
         client.Setup(c => c.GetResourceContextsAsync(true, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<ResourceContextDto>)[Application("old-app-id", "Old App", archived: true)]);
         client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((EntraAccessRequestSessionDto?)null);
 

@@ -79,7 +79,7 @@ public sealed class PersonalNotificationMenuBadgeLivenessTests
     {
         var client = new Mock<IManagementClient>();
         client.Setup(c => c.GetMeAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeResponse("user-1", "Test User", [], null, "Local", [], "Set", [], false, null));
+            .ReturnsAsync(new MeResponse("user-1", "test.user", "Test User", [], null, "Local", [], "Set", [], false, null));
         client.Setup(c => c.GetAccessRequestSessionAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync((EntraAccessRequestSessionDto?)null);
 

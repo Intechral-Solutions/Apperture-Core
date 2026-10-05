@@ -147,7 +147,7 @@ public sealed class RolesController : ControllerBase
 
     /// <summary>
     /// Lists current holders for delete confirmation. Requires the same user.read check as role detail.
-    /// Returns only user id and display name.
+    /// Returns only user id, username and display name.
     /// </summary>
     [HttpGet("{id}/assignments")]
     [ProducesResponseType(typeof(RoleAssignmentsDto), StatusCodes.Status200OK)]
@@ -162,7 +162,7 @@ public sealed class RolesController : ControllerBase
             if (assignments is null)
                 return NotFound();
             var holders = assignments.Holders
-                .Select(h => new RoleAssignmentHolderDto(h.UserId.Value, h.DisplayName))
+                .Select(h => new RoleAssignmentHolderDto(h.UserId.Value, h.Username, h.DisplayName))
                 .ToList();
             return Ok(new RoleAssignmentsDto(assignments.Count, holders));
         }

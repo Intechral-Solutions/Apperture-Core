@@ -11,9 +11,11 @@ namespace Apperture.Core.Application.Services;
 public interface IUserManagementService
 {
     /// <summary>
-    /// Gets a page of users. Requires user.read.
+    /// Gets a page of users, optionally filtered by <paramref name="query"/> (a username prefix or a display-name
+    /// substring; see <see cref="UserSearchCriteria"/>). Take is clamped to 1 through 100. Requires user.read. The
+    /// query is never written to audit.
     /// </summary>
-    ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default);
+    ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null);
 
     /// <summary>
     /// Gets a user by id. Requires user.read.
@@ -95,9 +97,11 @@ public interface IUserManagementService
         throw new NotSupportedException();
 
     /// <summary>
-    /// Adds an identity link to a user. For Local, externalId is normalized (trim, lowercase). Requires user.manage.
+    /// Adds an identity link to a user. For Local, externalId is optional and defaults to the user's username; when
+    /// supplied it is normalized (trim, lowercase) and must equal the username. Entra requires an externalId.
+    /// Requires user.manage.
     /// </summary>
-    ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
+    ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Removes an identity link. Fails if it is the user's last link. Requires user.manage.
