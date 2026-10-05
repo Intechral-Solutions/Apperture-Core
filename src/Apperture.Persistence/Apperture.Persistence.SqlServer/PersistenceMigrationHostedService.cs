@@ -61,8 +61,9 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
 
     /// <summary>
     /// Runs on every start, after the schema is current, because an earlier binary (after a rollback) writes legacy actor
-    /// values again. A failure is logged and does not stop the host: the values it would rewrite are only historical, new
-    /// writes are already user ids, and the next start tries again.
+    /// values again. Unresolved and ambiguous values are results, not failures. An execution failure (connectivity, timeout,
+    /// schema mismatch) means a required startup step did not complete, so it fails the start like a migration does: nothing
+    /// is reported ready. Values already rewritten stay committed, and the next start resumes.
     /// </summary>
     private async Task NormalizeHistoricalActorsAsync(AppertureDbContext db, CancellationToken cancellationToken)
     {
@@ -74,7 +75,8 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
         {
             _logger.LogError(
                 ex,
-                "Historical actor normalization failed. Historical actor values stay as they are; the next Management Host start retries.");
+                "Historical actor normalization failed; the Management Host will not start. Correct the database or infrastructure problem and start it again. Values already normalized are kept and the next start resumes.");
+            throw;
         }
     }
 

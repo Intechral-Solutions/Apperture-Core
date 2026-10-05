@@ -3,9 +3,13 @@ using Apperture.Core.Application.Services;
 using Apperture.IntegrationTests.ManagementHost;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
@@ -172,14 +176,79 @@ public sealed class HistoricalActorNormalizationSqlServerTests
         };
         await interrupted.Should().ThrowAsync<InvalidOperationException>();
 
+        // Each rewrite committed on its own: the first five columns are done, every later one is untouched.
+        var done = HistoricalActorNormalization.Columns.Take(5).ToList();
+        var pending = HistoricalActorNormalization.Columns.Skip(5).ToList();
+        foreach (var column in done)
+            await AssertColumnStateAsync(scratch, column, normalized: true);
+        foreach (var column in pending)
+            await AssertColumnStateAsync(scratch, column, normalized: false);
+
         HistoricalActorNormalizationReport resumed;
         await using (var db = scratch.NewDb())
             resumed = await HistoricalActorNormalization.RunAsync(db, NullLogger.Instance);
 
         await AssertFinalStateAsync(scratch);
+        resumed.Resolved.Should().Be(
+            pending.Sum(c => ExpectedValues(scratch, c, normalized: false).Count(v => v is not null && Expected[v].Category == HistoricalActorCategory.Resolved)),
+            "the resumed run rewrites exactly the columns the interrupted run had not reached");
+        foreach (var result in resumed.Columns)
+        {
+            result.DistinctValues.Should().Be(
+                ExpectedValues(scratch, result.Column, normalized: done.Contains(result.Column))
+                    .Where(v => v is not null).Distinct(StringComparer.Ordinal).Count(),
+                $"{result.Column} distinct values seen by the resumed run");
+        }
+
         resumed.Ambiguous.Should().Be(
             scratch.Corpus.Sum(r => r.Values.Values.Count(v => v is not null && Expected[v].Category == HistoricalActorCategory.Ambiguous)),
             "no value becomes ambiguous because another column was normalized first");
+    }
+
+    [Fact]
+    public async Task A_normalization_failure_fails_host_startup_keeps_committed_progress_and_converges_after_repair()
+    {
+        await using var scratch = await CreateSeededAsync("Apperture_Iam92aFailClosed_", corpus: false);
+        if (scratch is null)
+            return;
+
+        var early = HistoricalActorNormalization.Columns.Take(4).ToList();
+        var broken = HistoricalActorNormalization.Columns[4];
+        var late = HistoricalActorNormalization.Columns[^1];
+        broken.Should().Be(new HistoricalActorColumn("AttentionIncidents", "AcknowledgedBy"), "the failure is induced after four columns");
+        foreach (var column in early.Append(broken).Append(late))
+        {
+            foreach (var value in new[] { "pat.lee", "pat.old", ErinOid, "ghost.user", UserA })
+                await scratch.InsertActorRowAsync(column.Table, new Dictionary<string, string?> { [column.Column] = value });
+        }
+
+        // After migrations, a schema problem makes the fifth column unavailable.
+        await ExecuteAsync(scratch.ConnectionString, "EXEC sp_rename N'dbo.AttentionIncidents.AcknowledgedBy', N'AcknowledgedByUnavailable', N'COLUMN';");
+
+        var failedCompletion = new MigrationCompletionState();
+        var failedLogs = new CapturingLoggerProvider();
+        var failedStart = () => StartHostAsync(scratch.ConnectionString, failedCompletion, failedLogs);
+        await failedStart.Should().ThrowAsync<Exception>("an execution failure is a failed start, not a warning");
+
+        failedCompletion.IsComplete.Should().BeFalse("persistence is not reported ready");
+        failedLogs.Messages.Should().Contain(m => m.StartsWith("Historical actor normalization failed", StringComparison.Ordinal));
+        failedLogs.Messages.Should().Contain(m => m.StartsWith("Database migration failed. Application cannot start", StringComparison.Ordinal));
+        failedLogs.Messages.Should().NotContain("Database migrations applied successfully.");
+
+        // Before any repair: the four earlier columns are already committed; the broken and later columns are untouched.
+        foreach (var column in early)
+            await AssertColumnStateAsync(scratch, column, normalized: true);
+        await AssertColumnStateAsync(scratch, late, normalized: false);
+        (await ColumnValuesAsync(scratch.ConnectionString, broken with { Column = "AcknowledgedByUnavailable" }))
+            .Should().BeEquivalentTo(ExpectedValues(scratch, broken, normalized: false));
+
+        await ExecuteAsync(scratch.ConnectionString, "EXEC sp_rename N'dbo.AttentionIncidents.AcknowledgedByUnavailable', N'AcknowledgedBy', N'COLUMN';");
+
+        var repairedCompletion = new MigrationCompletionState();
+        await StartHostAsync(scratch.ConnectionString, repairedCompletion, new CapturingLoggerProvider());
+
+        repairedCompletion.IsComplete.Should().BeTrue("the repaired start completes");
+        await AssertFinalStateAsync(scratch);
     }
 
     // -------------------------------------------------------------------------------------------------------------
@@ -291,12 +360,55 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     private static async Task AssertFinalStateAsync(ScratchDatabase scratch)
     {
         foreach (var column in HistoricalActorNormalization.Columns)
+            await AssertColumnStateAsync(scratch, column, normalized: true);
+    }
+
+    private static async Task AssertColumnStateAsync(ScratchDatabase scratch, HistoricalActorColumn column, bool normalized) =>
+        (await ColumnValuesAsync(scratch.ConnectionString, column)).Should().BeEquivalentTo(
+            ExpectedValues(scratch, column, normalized),
+            $"{column} {(normalized ? "after" : "before")} normalization");
+
+    /// <summary>The column's values as seeded (legacy), or as an uninterrupted normalization leaves them.</summary>
+    private static List<string?> ExpectedValues(ScratchDatabase scratch, HistoricalActorColumn column, bool normalized) =>
+        scratch.Corpus
+            .Where(r => r.Table == column.Table)
+            .Select(r => r.Values[column.Column] is { } v ? (normalized ? Expected[v].Final : v) : null)
+            .ToList();
+
+    /// <summary>Starts the real Management Host (production startup path) and waits until it has started or failed.</summary>
+    private static async Task StartHostAsync(string connectionString, MigrationCompletionState completion, CapturingLoggerProvider logs)
+    {
+        await using var factory = new ManagementHostWebApplicationFactory(connectionString);
+        await using var configured = factory.WithWebHostBuilder(builder =>
         {
-            var expected = scratch.Corpus
-                .Where(r => r.Table == column.Table)
-                .Select(r => r.Values[column.Column] is { } v ? Expected[v].Final : null)
-                .ToList();
-            (await ColumnValuesAsync(scratch.ConnectionString, column)).Should().BeEquivalentTo(expected, $"{column} after normalization");
+            builder.ConfigureLogging(logging => logging.AddProvider(logs));
+            builder.ConfigureTestServices(services => services.AddSingleton(completion));
+        });
+        using var client = configured.CreateClient();
+        _ = await client.GetAsync("/health");
+    }
+
+    /// <summary>Records every log message (formatted), so a test can tell a failed start from a completed one.</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
+
+        public IReadOnlyList<string> Messages => _messages.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new Logger(_messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Logger(System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+                messages.Enqueue(formatter(state, exception));
         }
     }
 
