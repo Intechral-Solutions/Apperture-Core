@@ -22,6 +22,9 @@ public static class UsernameRules
     public const string FormatGuidance =
         "A username must be 3 to 64 characters: lowercase letters, digits, '.', '-' or '_', starting with a letter and ending with a letter or digit, with no two separators in a row.";
 
+    /// <summary>Shown (and returned by the API) when a typed name is one of <see cref="ReservedNames"/>.</summary>
+    public const string ReservedMessage = "That username is reserved.";
+
     /// <summary>
     /// Names no new assignment may take: Recovery Access, plus the literal actor values persisted in
     /// history, so a person is never confused with a non-human actor.
@@ -42,6 +45,23 @@ public static class UsernameRules
     public static bool IsReserved(string normalizedUsername) => ReservedNames.Contains(normalizedUsername);
 
     public static bool IsSeparator(char c) => c is '.' or '-' or '_';
+
+    /// <summary>
+    /// How a form field should present a typed username as the operator types: pristine while blank, valid when the
+    /// normalized name may be assigned, otherwise invalid with the same message the server would return. Uniqueness is
+    /// never known here; the server confirms it on submit.
+    /// </summary>
+    public static FieldValidationPresentation ToFieldValidation(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return FieldValidationPresentation.Pristine;
+
+        var normalized = Normalize(raw);
+        if (!IsValidFormat(normalized))
+            return FieldValidationPresentation.Invalid(FormatGuidance);
+
+        return IsReserved(normalized) ? FieldValidationPresentation.Invalid(ReservedMessage) : FieldValidationPresentation.Valid;
+    }
 
     /// <summary>True for the 24-lowercase-hex shape of a user id, which a username may never take.</summary>
     public static bool IsUserIdShaped(string value)

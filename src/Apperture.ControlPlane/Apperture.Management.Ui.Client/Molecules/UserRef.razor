@@ -7,11 +7,14 @@
       - UnresolvedActor  the original historical actor string ("Unrecognized actor" + the string in monospace).
     An unresolved actor is never a user: it is never linked and never looked up here.
 
-    Accessible name for a resolved user is always "Display Name (username)", produced by the DOM itself:
+    Accessible name for a resolved user is always exactly "Display Name (username)", produced by the DOM itself:
       - Rich:    the display name and the parenthesised username are both ordinary visible text.
-      - Compact: only the username is visible; the display name and the parentheses are screen-reader-only
-                 text, so the visible label is contained in the accessible name and nothing is hidden from
-                 assistive technology. The native title (display name) is only a mouse convenience.
+      - Compact: only the username is visible. It is marked aria-hidden and the complete name is one
+                 screen-reader-only text node beside it, so the visible label is contained in the accessible
+                 name (WCAG 2.5.3). One node matters: Chromium computes "Display Name ( username )", with
+                 stray spaces, when hidden text is split around the visible username. The hidden text is
+                 user-select:none so copying the username copies only the username.
+      The native title (display name) is only a mouse convenience.
 
     CanNavigate is supplied by the caller from its own capability state (user.read). Without it the same
     identity renders as plain, non-focusable text. This component fetches nothing.
@@ -63,7 +66,7 @@
 
     private RenderFragment Identity => Mode == UserRefMode.Rich
         ? @<text><span class="ui-user-ref__display-name">@_user!.DisplayName</span>@(" ")<span class="ui-user-ref__username text-muted">(@_user.Username)</span></text>
-        : @<text><span class="sr-only">@_user!.DisplayName (</span>@_user.Username<span class="sr-only">)</span></text>;
+        : @<text><span class="ui-user-ref__username-visible" aria-hidden="true">@_user!.Username</span><span class="sr-only ui-user-ref__sr">@_user.DisplayName (@_user.Username)</span></text>;
 
     protected override void OnParametersSet()
     {

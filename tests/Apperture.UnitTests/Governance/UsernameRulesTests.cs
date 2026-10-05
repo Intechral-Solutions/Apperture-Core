@@ -52,6 +52,53 @@ public sealed class UsernameRulesTests
         UsernamePolicy.Normalize(input).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_blank_field_is_pristine_not_an_error(string? raw) =>
+        UsernameRules.ToFieldValidation(raw).Kind.Should().Be(FieldValidationKind.Pristine);
+
+    [Theory]
+    [InlineData("alice")]
+    [InlineData("  Alice.Example  ")]
+    [InlineData("a-b_c9")]
+    public void A_name_that_may_be_assigned_is_valid_after_normalization(string raw) =>
+        UsernameRules.ToFieldValidation(raw).Should().Be(FieldValidationPresentation.Valid);
+
+    [Theory]
+    [InlineData("ab")]
+    [InlineData("alice-")]
+    [InlineData("Bad Name!")]
+    [InlineData("jane@contoso.com")]
+    [InlineData("001122334455667788990011")]
+    public void A_name_that_fails_the_format_shows_the_format_guidance(string raw)
+    {
+        var result = UsernameRules.ToFieldValidation(raw);
+
+        result.Kind.Should().Be(FieldValidationKind.Invalid);
+        result.Message.Should().Be(UsernameRules.FormatGuidance);
+    }
+
+    [Theory]
+    [InlineData("system")]
+    [InlineData("  Breakglass ")]
+    public void A_reserved_name_says_it_is_reserved(string raw)
+    {
+        var result = UsernameRules.ToFieldValidation(raw);
+
+        result.Kind.Should().Be(FieldValidationKind.Invalid);
+        result.Message.Should().Be(UsernameRules.ReservedMessage);
+    }
+
+    [Fact]
+    public void The_reserved_message_is_the_one_the_server_returns()
+    {
+        var act = () => UsernamePolicy.RequireNewAssignment("system");
+
+        act.Should().Throw<UsernameException>().Which.Message.Should().Be(UsernameRules.ReservedMessage);
+    }
+
     [Fact]
     public void Length_bounds_are_shared()
     {

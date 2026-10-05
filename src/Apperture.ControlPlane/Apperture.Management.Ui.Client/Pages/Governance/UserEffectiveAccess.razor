@@ -16,7 +16,13 @@
                 Title="@EntityShellTitles.Detail(_userDisplayName, "User")"
                 Subtitle="Role-derived access">
         <ChildContent>
-            <div class="mt-1 font-mono text-xs text-muted break-all">@UserId — merged permissions from assigned roles only</div>
+            <div class="mt-1 text-xs text-muted break-all">
+                @if (_username is not null)
+                {
+                    <span class="font-mono">@_username</span><span> — </span>
+                }
+                Merged permissions from assigned roles only
+            </div>
         </ChildContent>
         <Toolbar>
             <a href="@("/config/governance/users/" + Uri.EscapeDataString(UserId))" class="ui-toolbar-btn">Manage role assignments</a>
@@ -59,9 +65,12 @@
         <div class="mt-4 grid gap-4">
             <ManagementSection Title="User and roles" Layer="ManagementSection.UiLayer.Summary">
                 <MetadataGrid>
-                    <MetadataItem Label="User ID" Monospace="true" Value="@_access.UserId" />
+                    <MetadataItem Label="Username" Monospace="true" Value="@(_username ?? "-")" />
                     <MetadataItem Label="Roles" Value="@(string.Join(", ", _access.RoleIds) != "" ? string.Join(", ", _access.RoleIds) : "(none)")" />
                 </MetadataGrid>
+                <TechnicalDetails Dense="true" Class="mt-3">
+                    <TechnicalDetail Label="User ID" Value="@_access.UserId" />
+                </TechnicalDetails>
             </ManagementSection>
 
             <ManagementSection Title="Merged permissions" Layer="ManagementSection.UiLayer.Detail">
@@ -103,6 +112,7 @@
 
     private PrincipalEffectiveAccessDto? _access;
     private string? _userDisplayName;
+    private string? _username;
     private bool _loading;
     private bool _forbidden;
     private string? _error;
@@ -126,6 +136,7 @@
             return;
         _dataLoadKey = key;
         _userDisplayName = null;
+        _username = null;
         _access = null;
         await LoadAsync();
     }
@@ -141,6 +152,7 @@
         {
             var user = await Client.GetUserAsync(UserId);
             _userDisplayName = user?.DisplayName;
+            _username = user?.Username;
             _access = await Client.GetEffectiveAccessAsync(UserId);
             if (_access is null)
                 _error = "User not found.";

@@ -77,7 +77,7 @@ public static class UsernamePolicy
             case UsernameAssignmentCheck.Valid:
                 return normalized;
             case UsernameAssignmentCheck.Reserved:
-                throw new UsernameException(UsernameErrorCodes.Reserved, "That username is reserved.");
+                throw new UsernameException(UsernameErrorCodes.Reserved, UsernameRules.ReservedMessage);
             default:
                 throw new UsernameException(UsernameErrorCodes.Invalid, UsernameRules.FormatGuidance);
         }
