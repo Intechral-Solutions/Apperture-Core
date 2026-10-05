@@ -9,7 +9,9 @@ namespace Apperture.Management.Ui.Client.Tests;
 
 /// <summary>
 /// UserRef presents one human platform user, or an unresolved historical actor string, consistently. These tests
-/// assert the rendered DOM semantics (visible text, accessible name, link, focusability), not just CSS classes.
+/// assert the rendered DOM structure (visible text, the text content that supplies the accessible name, link,
+/// focusability), not just CSS classes. They do not run a browser, so they do not prove browser-computed accessible
+/// names, screen-reader output or theme appearance; those are checked at adoption (IAM-9.5).
 /// </summary>
 public sealed class UserRefRenderTests : BunitContext
 {
@@ -264,8 +266,9 @@ public sealed class UserRefRenderTests : BunitContext
 }
 
 /// <summary>
-/// Minimal accessibility-tree approximation for assertions: name from aria-label, otherwise from the text
-/// content of the subtree with <c>aria-hidden</c> branches removed. Visually hidden text still counts.
+/// Text-structure approximation used by these tests: the text a name would be built from, taken from aria-label
+/// if present, otherwise from the subtree text with <c>aria-hidden</c> branches removed (screen-reader-only text
+/// still counts). It is not the browser's accessible-name algorithm and says nothing about screen-reader behavior.
 /// </summary>
 internal static class UserRefDom
 {
