@@ -484,6 +484,8 @@ Approved without change by the product owner (2026-10-03). The one-Local-link-pe
 
 The check reuses the links already loaded by `GetByIdAsync`, so it adds no query. The Entra-primary policy that the resolver applies for pending links keeps running.
 
+The binding applies to authorization as well as to `/me`. A legacy break-glass session bypasses role evaluation only after it has resolved to its user through this check, so removing its Local link ends its permissions too (IAM-9.2 independent review).
+
 | Case | Result |
 |---|---|
 | User id not found | Null. `/me` 403 (existing terminal account-unavailable surface); authorization denies |
@@ -558,7 +560,7 @@ IAM-9.2a columns: `RuntimeControlRequests.RequestedBy`, `WorkflowExternalControl
 
 **Resolution rules, applied in order to each non-null value:**
 
-1. A known literal (`system`, `anonymous`, `recovery`, `emergency-cli`, or a value equal to a recorded worker or host id) is left unchanged.
+1. A known literal (`ActorLiterals.IsNonHumanLiteral`: `system`, `anonymous`, `recovery`, `emergency-cli`, `system-worker` and the `system:` family such as `system:scheduler`; or a value equal to a recorded worker or host id) is left unchanged.
 2. A value equal to an existing `Users.Id` is already a user id. Leave it.
 3. A value equal to a `UsernameLedger.Username` (current or retired) resolves to that ledger row's user. The ledger includes previous Recovery Access names (§20.2).
 4. A value equal to the `ExternalId` of exactly **one** Entra link resolves to that link's user. Zero or several matches leave it unresolved. Historical strings carry no tenant, so this rule is the only safe oid match. Under D-27 an instance has one mapped tenant, so ambiguity is not expected, but it is checked.
@@ -575,7 +577,7 @@ No mapping log table is kept. Reversal relies on a pre-upgrade database backup, 
 - An unresolved value is never mapped to a user and never causes a user, link or ledger row to be created.
 - It stays verbatim in its column (IAM-9.2a) or in `AuditLogs.Actor` (AUD-1.1).
 - Read models expose it as an unresolved actor with its original string. `UserRef` renders "Unrecognized actor" plus the string (§15).
-- Literals render as non-human actors (for example "System"), not as users. The literal list moves to one constants class in IAM-9.2 (`ActorLiterals`), shared by the mapper's callers, the migration and AUD-1.
+- Literals render as non-human actors (for example "System"), not as users. The literal list moves to one constants class in IAM-9.2 (`ActorLiterals`), shared by the mapper's callers, the migration and AUD-1. It lives in `Apperture.Core.Application.Services` beside `UsernamePolicy`, because the persistence layer (where a startup data step runs) cannot reference `Apperture.ControlPlane.Security`.
 
 ## 19. Recovery Access treatment
 
@@ -643,7 +645,7 @@ No application-memory lock or cache is relied on.
 ### 20.4 Rollback
 
 - **IAM-9.1** `Down` migrations drop the index, column and table. Rolling back after renames is unsafe for local sign-in only if a rename happened, and renames ship in IAM-9.5, so 9.1 alone rolls back cleanly.
-- **IAM-9.2** changes cookie semantics. Rolling back the binary makes post-upgrade cookies unresolvable by old code (403 for local, works for Entra). A rollback therefore needs a second forced sign-out, achieved by rotating the Data Protection key ring or clearing sessions. The release note must say so.
+- **IAM-9.2** changes cookie semantics. Rolling back the binary makes post-upgrade cookies unresolvable by old code (403 for local, works for Entra). A rollback therefore needs a second forced sign-out, and it is **mandatory**, not a convenience: old code reads a local cookie's `NameIdentifier` (now a user id) as a Local username, and a grandfathered username may have the 24-hex user-id shape (§9.1), so a new cookie could resolve to a different account. Before starting the earlier binary, the operator stops the host and deletes (or revokes) every Data Protection key it used. Rotating or adding a key is **not** sufficient, because existing keys still decrypt existing cookies. Recovery Access and native MFA secrets use the secret protector, not this key ring, so they survive. The release note says so (`deploy/README.md`, "Sign-in sessions after upgrading").
 - **IAM-9.2a** rewrites data one way. Rollback means restoring the pre-upgrade backup.
 - Entra sign-in continuity does not depend on any IAM-9 schema change, because the Entra key is untouched.
 
@@ -756,10 +758,13 @@ Packages run in this order: 9.1 → 9.2 → 9.2a, and 9.1 → 9.3 → 9.4 → 9.
 ### IAM-9.2a — Historical non-audit actor migration
 
 - **Goal.** Legacy actor strings in non-audit columns become user ids.
-- **Prerequisites.** 9.2 (so no new legacy values are written), same release.
-- **Scope.** §17 columns and rules; one data migration.
+- **Prerequisites.** 9.2 (so no new legacy values are written), same release. Begins on its own branch as soon as 9.2 merges.
+- **Scope.** §17 columns and rules; one data normalization.
 - **Non-goals.** `AuditLogs` (AUD-1.1); column renames.
 - **Invariants.** Literals and unresolvable values untouched; no fabricated users.
+- **Re-run safety (IAM-9.2 independent review).** Rolling the release's binary back lets the earlier version write username and oid actor strings again, and a later upgrade must normalize those too. The normalization is therefore idempotent and safe to run again: prefer a restart-safe startup data step (like the IAM-9.1 username backfill) over a one-shot migration that can never run a second time. The value-based rules make a re-run a no-op for values already converted (rule 2).
+- **Rule inputs.** Rule 1 takes its literals from `ActorLiterals`. A Local username that equals a different user's id (possible only for a grandfathered name, §9.1) is an ambiguous value: count and report it, never guess.
+- **Sequencing.** Part of the current RC1 release sequence. AUD-1 sequencing (§17) is unchanged.
 - **Tests.** §24 row for 9.2a.
 - **Handback.** Resolved, unresolved, ambiguous and literal counts per column on a development database.
 - **Model.** Opus-class for the rules review; Sonnet-class can implement once the rules are fixed.
@@ -804,7 +809,7 @@ Packages run in this order: 9.1 → 9.2 → 9.2a, and 9.1 → 9.3 → 9.4 → 9.
 | Losing "unlink ends session" | Binding check, with an HTTP test |
 | Mixed actor columns misread after migration | Rule 2 recognizes user ids; the user-id shape is barred from usernames |
 | Audit actor backfill delayed past an unlink | Ship AUD-1.1 in the same release |
-| Rollback after 9.2 | Second forced sign-out; documented |
+| Rollback after 9.2 | Mandatory second forced sign-out by deleting the Data Protection keys (not rotating them); documented (§20.4) |
 | Rollback after 9.2a | Database restore only; backup is a release prerequisite |
 
 ## 27. Open questions requiring product-owner approval

@@ -8,6 +8,7 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Implements IAuthorizationPolicyEvaluator using RBAC. Per ADR-0012: break-glass and relationship slots reserved.
 /// Human actors with resolved UserId get role-based evaluation; Machine/System/RemoteInstance deny by default.
+/// A break-glass session bypasses role evaluation only after it has resolved to its user.
 /// </summary>
 public sealed class RbacAuthorizationPolicyEvaluator : IAuthorizationPolicyEvaluator
 {
@@ -36,18 +37,20 @@ public sealed class RbacAuthorizationPolicyEvaluator : IAuthorizationPolicyEvalu
         if (actor is null)
             return false;
 
-        // Break-glass: human session established via break-glass login grants all permission checks
-        if (actor.Kind == ActorKind.Human && actor is HumanActor human && human.IsBreakGlassSession)
-            return true;
-
         // Relationship slot: reserved, no-op
 
         // RBAC path for Human actors
         if (actor.Kind == ActorKind.Human)
         {
+            // Every human session, break-glass included, must first resolve to its user through the identity link
+            // it was issued through. A session whose link is gone authorizes nothing.
             var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
             if (userId is null)
                 return false;
+
+            // Break-glass: a resolved session established via break-glass login grants all permission checks
+            if (actor is HumanActor { IsBreakGlassSession: true })
+                return true;
 
             var roles = await _roleProvider.GetRolesForUserAsync(userId!, cancellationToken);
             var targetScopeKey = resourceIdentity?.ScopeKey ?? resource?.ScopeKey ?? ScopeKeyConstants.Instance;

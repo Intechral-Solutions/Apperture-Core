@@ -164,8 +164,30 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_grants_all_permissions_for_break_glass_session_when_endpoint_would_create_one()
+    public async Task EvaluateAsync_grants_all_permissions_for_a_break_glass_session_that_resolves_to_its_user()
     {
+        var userId = new UserId("break-glass-user");
+        var actor = new HumanActor(new ActorId(userId.Value), "Break Glass", IdentitySource.Local, isBreakGlassSession: true);
+        var userResolver = new Mock<IPrincipalToUserResolver>();
+        userResolver.Setup(r => r.ResolveUserIdAsync(actor, It.IsAny<CancellationToken>())).ReturnsAsync(userId);
+        var evaluator = new RbacAuthorizationPolicyEvaluator(
+            userResolver.Object,
+            new StubRoleProvider(),
+            new ScopeContainmentEvaluator());
+
+        var result = await evaluator.EvaluateAsync(
+            actor,
+            new PermissionDescriptor(ActionConstants.ConnectionRead),
+            null,
+            null);
+
+        result.Should().BeTrue("break-glass evaluator path is preserved for a future recovery epic; the user holds no role granting it");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_denies_a_break_glass_session_whose_user_no_longer_resolves()
+    {
+        // The session's identity link is gone (or the user is): the break-glass marker grants nothing on its own.
         var actor = new HumanActor(new ActorId("break-glass-user"), "Break Glass", IdentitySource.Local, isBreakGlassSession: true);
         var evaluator = new RbacAuthorizationPolicyEvaluator(
             new StubPrincipalToUserResolver(),
@@ -178,7 +200,7 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
             null,
             null);
 
-        result.Should().BeTrue("break-glass evaluator path is preserved for a future recovery epic");
+        result.Should().BeFalse();
     }
 
     [Fact]

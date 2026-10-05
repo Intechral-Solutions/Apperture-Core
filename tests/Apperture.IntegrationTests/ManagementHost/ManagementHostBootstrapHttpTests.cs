@@ -127,6 +127,9 @@ public sealed class ManagementHostBootstrapHttpTests
         db.UserRoles.RemoveRange(db.UserRoles);
         db.IdentityLinks.RemoveRange(db.IdentityLinks);
         db.LocalCredentials.RemoveRange(db.LocalCredentials);
+        // Recovery Access tests in this collection enroll an authenticator.
+        db.UserMfaRecoveryCodes.RemoveRange(db.UserMfaRecoveryCodes);
+        db.UserTotpCredentials.RemoveRange(db.UserTotpCredentials);
         // Test-only reset: the product never deletes users, so the ledger restricts it.
         db.UsernameLedger.RemoveRange(db.UsernameLedger);
         db.Users.RemoveRange(db.Users);

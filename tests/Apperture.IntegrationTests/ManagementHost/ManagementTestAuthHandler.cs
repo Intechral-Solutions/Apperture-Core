@@ -18,17 +18,12 @@ namespace Apperture.IntegrationTests.ManagementHost;
 /// carries its tid and oid as link provenance. A key with no link still authenticates, as a session whose user id
 /// does not exist, so the account-unavailable paths stay testable.
 /// </summary>
-/// <remarks>
-/// <see cref="UserIdHeaderName"/> pins the session's user id instead of looking it up, to model a session issued
-/// earlier: the resolver's link binding then decides whether it still stands.
-/// </remarks>
 internal sealed class ManagementTestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     public const string SchemeName = "ManagementTest";
     public const string HeaderName = "X-Test-External-Id";
     public const string IdentitySourceHeaderName = "X-Test-Identity-Source";
     public const string TenantIdHeaderName = "X-Test-Tenant-Id";
-    public const string UserIdHeaderName = "X-Test-User-Id";
 
     public ManagementTestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -59,7 +54,7 @@ internal sealed class ManagementTestAuthHandler : AuthenticationHandler<Authenti
             user = await users.GetByIdentityLinkAsync(IdentitySource.Local, externalId, Context.RequestAborted);
         }
 
-        var userId = Header(UserIdHeaderName) ?? user?.Id.Value ?? "unlinked-" + externalId;
+        var userId = user?.Id.Value ?? "unlinked-" + externalId;
         var identity = new ClaimsIdentity(SchemeName);
         ApplicationSessionClaims.Apply(
             identity,
