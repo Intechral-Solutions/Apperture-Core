@@ -553,7 +553,7 @@ Selectors for callers without `user.read`, such as operational-team editors unde
 | Step | Package | What |
 |---|---|---|
 | Future writes | IAM-9.2 | Every human write stores the user id, because the mapper returns it |
-| Non-audit columns | IAM-9.2a | One-time data migration rewrites legacy values in place to user ids |
+| Non-audit columns | IAM-9.2a | Re-runnable startup data step rewrites legacy values in place to user ids (see the 9.2a package for why it runs on every start) |
 | Audit rows | AUD-1.1 | Adds actor columns (kind, user id, original display) and backfills them using the same resolution rules. `AuditLogs.Actor` is never rewritten |
 
 IAM-9.2a columns: `RuntimeControlRequests.RequestedBy`, `WorkflowExternalControlRequests.RequestedBy`, `PlatformSettingValues.UpdatedByPrincipalId`, `EntraAccessRequests.ReviewedByUserId`, `AttentionIncidents.AcknowledgedBy`, `OperationItemAttentionAcknowledgements.AcknowledgedByUserId` and `.ReopenedByUserId`, `OperationItemRetryAttempts.RequestedByActorId`, `NotificationDefinitions.CreatedByActorId` and `.UpdatedByActorId`, `NotificationSubscriptions.CreatedByActorId` and `.UpdatedByActorId`, `NotificationSubscriptionUserOverrides.CreatedByActorId`.
@@ -568,9 +568,19 @@ IAM-9.2a columns: `RuntimeControlRequests.RequestedBy`, `WorkflowExternalControl
 
 A value matching more than one rule with different users is left unchanged and reported as ambiguous.
 
+**Implementation notes (IAM-9.2a).**
+
+- Every rule is evaluated before deciding, so the order above never hides a second meaning. Zero candidate users is unresolved, one is already a user id or resolved, several are ambiguous.
+- A literal is left unchanged even when a grandfathered username has the same spelling (rule 1 wins).
+- An object id with links of several users is counted as ambiguous. Several links of one user stay unresolved, because rule 4 requires exactly one link.
+- A value is rewritten only to a user whose id means that user alone. If the id is also another user's username or object id, the original stays and is counted as ambiguous, so every written value reads back as a user id.
+- Usernames compare case-insensitively (the ledger key); object ids compare case-insensitively (GUIDs); user ids compare exactly; nothing is trimmed. Values are matched and rewritten byte-exactly, so case and trailing-space variants are separate values.
+- "A recorded worker or host id" needs no data source for these columns. Every writer of the 13 columns is an authenticated Management API request, and worker ids are stored only in `AppliedBy` and `ClaimedBy`, which are not normalized. AUD-1.1 decides this again for audit rows.
+- Rule order is a contract shared with AUD-1.1: the pure rules live in `HistoricalActorClassifier` (`Apperture.Core.Application.Services`).
+
 **Sequencing.** IAM-9.2a runs after IAM-9.2 in the same release. Because the ledger keeps every name, a later rename does not make historical usernames unresolvable. AUD-1.1 should still ship in the same release as IAM-9, so that Entra links removed in between do not lose oid resolution.
 
-No mapping log table is kept. Reversal relies on a pre-upgrade database backup, which the release note requires.
+No mapping log table is kept. Reversal relies on a pre-upgrade database backup, which the release note requires (`deploy/README.md`, "Who-did-what history after upgrading").
 
 ## 18. Historical actor fallback (R18)
 

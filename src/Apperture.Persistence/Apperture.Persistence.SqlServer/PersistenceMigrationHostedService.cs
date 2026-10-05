@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>.
+/// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>, then
+/// normalizes historical actor values (<see cref="HistoricalActorNormalization"/>).
 /// Register via AddApperturePersistenceMigrationsOnStartup when migrations should run automatically.
 /// </summary>
 internal sealed class PersistenceMigrationHostedService : IHostedService
@@ -47,6 +48,7 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
 
             // Includes the username backfill data step; readiness is reported only after all of it.
             await AppertureDatabaseMigrator.MigrateAsync(db, _logger, cancellationToken).ConfigureAwait(false);
+            await NormalizeHistoricalActorsAsync(db, cancellationToken).ConfigureAwait(false);
             _migrationCompletion.IsComplete = true;
             _logger.LogInformation("Database migrations applied successfully.");
         }
@@ -54,6 +56,25 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
         {
             LogMigrationFailure(ex, db);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs on every start, after the schema is current, because an earlier binary (after a rollback) writes legacy actor
+    /// values again. A failure is logged and does not stop the host: the values it would rewrite are only historical, new
+    /// writes are already user ids, and the next start tries again.
+    /// </summary>
+    private async Task NormalizeHistoricalActorsAsync(AppertureDbContext db, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await HistoricalActorNormalization.RunAsync(db, _logger, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(
+                ex,
+                "Historical actor normalization failed. Historical actor values stay as they are; the next Management Host start retries.");
         }
     }
 

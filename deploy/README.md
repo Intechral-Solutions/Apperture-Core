@@ -146,6 +146,12 @@ dotnet ef database update --project src/Apperture.Persistence/Apperture.Persiste
 
 The Management Host applies migrations itself at startup, and that is the supported path for a database that already has users. Between two of the migrations it runs a data step that gives every user a username. `dotnet ef database update` cannot run that step: on a database with users it stops with a message asking you to start the Management Host, which then completes the upgrade. An empty database migrates fully either way.
 
+### Who-did-what history after upgrading
+
+Every time the Management Host starts, it rewrites older "requested by", "acknowledged by", "updated by" and similar values (stored as sign-in names or Microsoft object ids) to the user's internal id, wherever the person can be identified with certainty. Values it cannot identify with certainty are left as they are. The audit log is never changed.
+
+**Back up the database before upgrading.** The rewrite keeps no record of the previous values, so restoring that backup is the only way to get them back. Rolling back only the program (see below) leaves the internal ids in place, and an earlier version shows them as ids.
+
 ### Sign-in sessions after upgrading
 
 Sign-in sessions are identified by the user's internal id. Sessions created by an earlier version do not carry that identity and are not accepted.
