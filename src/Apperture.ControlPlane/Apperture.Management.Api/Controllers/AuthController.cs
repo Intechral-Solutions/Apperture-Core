@@ -518,12 +518,12 @@ public sealed class AuthController : ControllerBase
                 return Unauthorized();
             }
 
-            var ticket = await _pendingMfaTickets.IssueAsync(user.Id, normalizedUsername, DateTimeOffset.UtcNow, cancellationToken);
+            var ticket = await _pendingMfaTickets.IssueAsync(user.Id, DateTimeOffset.UtcNow, cancellationToken);
             Response.Cookies.Append(PendingMfaCookieName, ticket, CreatePendingMfaCookieOptions());
             return Ok(new LocalLoginResponse("", "", RequiresMfa: true));
         }
 
-        await SignInLocalAsync(user, normalizedUsername, assuranceMechanism: null, cancellationToken);
+        await SignInLocalAsync(user, assuranceMechanism: null, cancellationToken);
         await AppendAuthAuditAsync(
             user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
             new ActorId(user.Id.Value),
@@ -612,7 +612,7 @@ public sealed class AuthController : ControllerBase
         }
 
         ClearPendingMfaCookie();
-        await SignInLocalAsync(user, ticket.Username, mechanism, cancellationToken);
+        await SignInLocalAsync(user, mechanism, cancellationToken);
         await AppendAuthAuditAsync(
             user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
             new ActorId(user.Id.Value),
@@ -685,10 +685,8 @@ public sealed class AuthController : ControllerBase
             return Unauthorized();
         }
 
-        var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
-        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, normalizedUsername));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
-        identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local"));
+        // The ordinary local session identity (user id), plus the legacy break-glass marker.
+        var identity = LocalSessionIdentity.Create(user.Id, user.Username, user.DisplayName);
         identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.BreakGlassClaimType, "1"));
 
         var principal = new ClaimsPrincipal(identity);
@@ -705,11 +703,10 @@ public sealed class AuthController : ControllerBase
 
     private async Task SignInLocalAsync(
         User user,
-        string normalizedUsername,
         string? assuranceMechanism,
         CancellationToken cancellationToken)
     {
-        var identity = LocalSessionIdentity.Create(user.DisplayName, normalizedUsername);
+        var identity = LocalSessionIdentity.Create(user.Id, user.Username, user.DisplayName);
         if (!string.IsNullOrWhiteSpace(assuranceMechanism))
         {
             AuthenticationAssuranceClaims.Replace(identity, assuranceMechanism, DateTimeOffset.UtcNow, providerContext: null);
@@ -765,7 +762,8 @@ public sealed class AuthController : ControllerBase
             ?? principal.FindFirst("email")?.Value
             ?? principal.FindFirst(ClaimTypes.Email)?.Value
             ?? principal.FindFirst("unique_name")?.Value
-            ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            // Display only: the session's user id (NameIdentifier) is never shown as the sign-in name.
+            ?? principal.FindFirst(ApplicationSessionClaims.UsernameClaimType)?.Value;
     }
 }
 

@@ -91,9 +91,9 @@ public sealed class BackgroundSessionRenewalTests
             app.UseAuthorization();
             app.MapGet("/signin-test", async (HttpContext ctx) =>
             {
+                // A current-format session (user id identity); the cookie handler rejects any other.
                 var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
-                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "opa"));
-                identity.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, source));
+                ApplicationSessionClaims.Apply(identity, new Apperture.Core.Domain.Identity.UserId("usr-opa"), "opa", "Operator A", source);
                 if (steppedUp)
                 {
                     AuthenticationAssuranceClaims.Replace(

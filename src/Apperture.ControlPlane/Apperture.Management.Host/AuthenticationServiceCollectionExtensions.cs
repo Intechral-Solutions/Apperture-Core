@@ -39,6 +39,7 @@ public static class AuthenticationServiceCollectionExtensions
                 options.ExpireTimeSpan = TimeSpan.FromHours(12);
                 options.SlidingExpiration = true;
                 ManagementCookieAuthentication.Configure(options);
+                ManagementCookieAuthentication.ConfigureApplicationSession(options);
             })
             .AddCookie(EntraAccessRequestAuthentication.Scheme, options =>
             {

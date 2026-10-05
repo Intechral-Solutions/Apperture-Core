@@ -384,7 +384,9 @@ public sealed class EntraStepUpCallbackTests
         session.Should().NotBeNull("a session is issued by the callback itself; the browser never sent one");
         var (_, principal, properties) = session!.Value;
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local").Should().BeTrue("the session kind that started step-up is the kind that is re-issued");
-        Has(principal, ClaimTypes.NameIdentifier, "opa").Should().BeTrue("identity is rebuilt from the INITIATING user's record, not from any cookie");
+        Has(principal, ClaimTypes.NameIdentifier, UserA).Should().BeTrue("identity is rebuilt from the INITIATING user's record (its user id), not from any cookie");
+        Has(principal, ApplicationSessionClaims.SessionFormatClaimType, ApplicationSessionClaims.CurrentSessionFormat).Should().BeTrue();
+        Has(principal, ApplicationSessionClaims.UsernameClaimType, "opa").Should().BeTrue();
         Has(principal, ClaimTypes.Name, "Operator A").Should().BeTrue();
         Has(principal, AuthenticationAssuranceClaims.MechanismClaimType, AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism).Should().BeTrue();
         Has(principal, AuthenticationAssuranceClaims.ContextClaimType, "c1").Should().BeTrue();
@@ -411,6 +413,8 @@ public sealed class EntraStepUpCallbackTests
         session.Should().NotBeNull();
         var (_, principal, properties) = session!.Value;
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue();
+        principal.FindAll(ClaimTypes.NameIdentifier).Select(c => c.Value).Should().Equal(UserA);
+        Has(principal, ApplicationSessionClaims.SessionFormatClaimType, ApplicationSessionClaims.CurrentSessionFormat).Should().BeTrue();
         Has(principal, "oid", OidA).Should().BeTrue("the validated id_token principal (tid + oid proven to be the initiator's) becomes the session");
         Has(principal, "tid", ActiveTenant).Should().BeTrue();
         Has(principal, AuthenticationAssuranceClaims.MechanismClaimType, AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism).Should().BeTrue();
@@ -430,15 +434,15 @@ public sealed class EntraStepUpCallbackTests
         // A browser that DOES send a session cookie on this cross-site POST (e.g. Playwright's WebKit build) must not change
         // whose session is issued: build a genuine session ticket for user B and send it along.
         var options = rig.App.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(CookieAuthenticationDefaults.AuthenticationScheme);
-        var bIdentity = LocalSessionIdentity.Create("Operator B", "opb");
+        var bIdentity = LocalSessionIdentity.Create(new UserId(UserB), "opb", "Operator B");
         var bCookie = options.TicketDataFormat.Protect(new AuthenticationTicket(new ClaimsPrincipal(bIdentity), new AuthenticationProperties(), CookieAuthenticationDefaults.AuthenticationScheme));
         var withB = new Challenge(challenge.State, challenge.Cookies + "; " + SessionCookie + "=" + bCookie);
 
         var response = await rig.PostCallbackAsync(withB);
 
         var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
-        Has(principal, ClaimTypes.NameIdentifier, "opa").Should().BeTrue("the initiating user comes from the protected state");
-        Has(principal, ClaimTypes.NameIdentifier, "opb").Should().BeFalse("nothing is merged from an ambient cookie");
+        Has(principal, ClaimTypes.NameIdentifier, UserA).Should().BeTrue("the initiating user comes from the protected state");
+        Has(principal, ClaimTypes.NameIdentifier, UserB).Should().BeFalse("nothing is merged from an ambient cookie");
     }
 
     // ---- binding the returned identity to the initiating user ---------------------------------------------------------------
@@ -705,24 +709,47 @@ public sealed class EntraStepUpCallbackTests
             .Should().BeTrue("host-issued assurance is added after the external claims are removed");
     }
 
+    /// <summary>
+    /// Authority a hostile token (a tenant claims-mapping policy) might try to assert: Apperture-namespace claims,
+    /// including the session format and username, and the session identity itself (another user's id).
+    /// </summary>
     private static Dictionary<string, object> HostileAppertureAuthorityClaims() => new()
     {
         [ClaimsPrincipalToActorMapper.BreakGlassClaimType] = "1",
         [ClaimsPrincipalToActorMapper.IdentitySourceClaimType] = "Local",
         [ClaimsPrincipalToActorMapper.ApplicationClaimNamespace + "custom_authority"] = "platform-administrator",
+        [ApplicationSessionClaims.SessionFormatClaimType] = "9",
+        [ApplicationSessionClaims.UsernameClaimType] = "admin",
+        [ClaimTypes.NameIdentifier] = UserB,
     };
+
+    /// <summary>The Apperture-namespace claims this host itself issues on every application session.</summary>
+    private static bool IsHostIssuedSessionClaim(string type) =>
+        type is ClaimsPrincipalToActorMapper.IdentitySourceClaimType
+            or ApplicationSessionClaims.SessionFormatClaimType
+            or ApplicationSessionClaims.UsernameClaimType;
 
     private static void AssertNoExternalAppertureAuthority(ClaimsPrincipal principal, string expectedIdentitySource)
     {
         principal.Claims.Should().NotContain(
             c => c.Type.StartsWith(ClaimsPrincipalToActorMapper.ApplicationClaimNamespace, StringComparison.Ordinal)
-                 && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType,
+                 && !IsHostIssuedSessionClaim(c.Type),
             "an external token must not assert any Apperture-namespace claim");
         principal.FindAll(ClaimsPrincipalToActorMapper.IdentitySourceClaimType).Select(c => c.Value).Should().Equal(expectedIdentitySource);
+        AssertHostIssuedSessionIdentity(principal);
         principal.Claims.Should().NotContain(c => c.Type == ClaimsPrincipalToActorMapper.BreakGlassClaimType);
         var actor = ClaimsPrincipalToActorMapper.ToActor(principal);
         actor.Should().BeOfType<HumanActor>().Which.IsBreakGlassSession.Should().BeFalse();
         ((HumanActor)actor!).PreferredIdentitySource.Should().Be(IdentitySource.Entra);
+        actor!.Id.Value.Should().Be(UserA, "the actor is the resolved user's id, never a token-supplied one");
+    }
+
+    /// <summary>Exactly one copy of each session-identity claim, with the host's values for user A.</summary>
+    private static void AssertHostIssuedSessionIdentity(ClaimsPrincipal principal)
+    {
+        principal.FindAll(ClaimTypes.NameIdentifier).Select(c => c.Value).Should().Equal(UserA);
+        principal.FindAll(ApplicationSessionClaims.SessionFormatClaimType).Select(c => c.Value).Should().Equal(ApplicationSessionClaims.CurrentSessionFormat);
+        principal.FindAll(ApplicationSessionClaims.UsernameClaimType).Select(c => c.Value).Should().Equal("opa");
     }
 
     [Fact]
@@ -761,7 +788,7 @@ public sealed class EntraStepUpCallbackTests
         var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
 
         var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
-        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType);
+        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && !IsHostIssuedSessionClaim(c.Type));
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue("Apperture adds the trusted Entra source after stripping the token");
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local").Should().BeFalse();
         Has(principal, "oid", OidA).Should().BeTrue();
@@ -769,6 +796,27 @@ public sealed class EntraStepUpCallbackTests
         var actor = ClaimsPrincipalToActorMapper.ToActor(principal);
         actor.Should().BeOfType<HumanActor>().Which.IsBreakGlassSession.Should().BeFalse();
         ((HumanActor)actor!).PreferredIdentitySource.Should().Be(IdentitySource.Entra);
+    }
+
+    [Fact]
+    public async Task A_normal_entra_sign_in_issues_the_user_id_session_and_ignores_a_token_supplied_identity()
+    {
+        await using var rig = new Rig { TokenExtraClaims = HostileAppertureAuthorityClaims() };
+        await rig.StartAsync();
+        using var challengeResponse = await rig.Client.GetAsync("/signin");
+        var state = QueryHelpers.ParseQuery(challengeResponse.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", challengeResponse.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+
+        var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
+
+        var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
+        AssertNoExternalAppertureAuthority(principal, expectedIdentitySource: "Entra");
+        Has(principal, ClaimTypes.Name, "Operator A").Should().BeTrue("the session's name is the user's display name");
+        Has(principal, "oid", OidA).Should().BeTrue("the raw directory ids stay as link provenance");
+        Has(principal, "tid", ActiveTenant).Should().BeTrue();
+        ApplicationSessionClaims.IsCurrentFormat(principal).Should().BeTrue();
+        rig.Audit.Should().Contain(a => a.Action == "auth.entra.login.success" && a.ActorId.Value == UserA,
+            "the sign-in is attributed to the user id, not the directory object id");
     }
 
     [Fact]
@@ -790,7 +838,7 @@ public sealed class EntraStepUpCallbackTests
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         var (_, principal, _) = rig.ReadSessionCookie(response)!.Value;
-        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && c.Type != ClaimsPrincipalToActorMapper.IdentitySourceClaimType);
+        principal.Claims.Should().NotContain(c => c.Type.StartsWith("http://schemas.apperture/", StringComparison.OrdinalIgnoreCase) && !IsHostIssuedSessionClaim(c.Type));
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra").Should().BeTrue();
         Has(principal, ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Local").Should().BeFalse();
         Has(principal, "oid", OidA).Should().BeTrue();

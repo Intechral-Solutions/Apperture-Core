@@ -21,9 +21,9 @@ public sealed class PendingMfaLoginTicketService : IPendingMfaLoginTicketService
         _time = time;
     }
 
-    public async ValueTask<string> IssueAsync(UserId userId, string username, DateTimeOffset utcNow, CancellationToken cancellationToken = default)
+    public async ValueTask<string> IssueAsync(UserId userId, DateTimeOffset utcNow, CancellationToken cancellationToken = default)
     {
-        var payload = JsonSerializer.Serialize(new TicketPayload(userId.Value, username, utcNow.Add(Lifetime)));
+        var payload = JsonSerializer.Serialize(new TicketPayload(userId.Value, utcNow.Add(Lifetime)));
         var protectedBytes = await _protector.ProtectAsync(Encoding.UTF8.GetBytes(payload), ProtectorKeyId, cancellationToken);
         return Convert.ToBase64String(protectedBytes);
     }
@@ -66,8 +66,8 @@ public sealed class PendingMfaLoginTicketService : IPendingMfaLoginTicketService
         if (payload is null || string.IsNullOrWhiteSpace(payload.UserId) || utcNow >= payload.ExpiresUtc)
             return null;
 
-        return new PendingMfaLoginTicket(new UserId(payload.UserId), payload.Username ?? "", payload.ExpiresUtc);
+        return new PendingMfaLoginTicket(new UserId(payload.UserId), payload.ExpiresUtc);
     }
 
-    private sealed record TicketPayload(string UserId, string? Username, DateTimeOffset ExpiresUtc);
+    private sealed record TicketPayload(string UserId, DateTimeOffset ExpiresUtc);
 }

@@ -146,4 +146,18 @@ dotnet ef database update --project src/Apperture.Persistence/Apperture.Persiste
 
 The Management Host applies migrations itself at startup, and that is the supported path for a database that already has users. Between two of the migrations it runs a data step that gives every user a username. `dotnet ef database update` cannot run that step: on a database with users it stops with a message asking you to start the Management Host, which then completes the upgrade. An empty database migrates fully either way.
 
+### Sign-in sessions after upgrading
+
+Sign-in sessions are identified by the user's internal id. Sessions created by an earlier version do not carry that identity and are not accepted.
+
+- **Upgrade:** after upgrading, everyone is signed out once and must sign in again. Recovery Access is affected the same way. This session-format change alters no stored data; no upgrade action is needed.
+- **Rollback:** an earlier version interprets sessions created by this version differently. In rare cases a local or Recovery Access session could otherwise be matched to a different account. **Before you start an earlier version, you must invalidate every sign-in session this version issued:**
+  1. Stop the Management Host.
+  2. Delete every ASP.NET Core Data Protection key the host has used: the `key-*.xml` files in its key repository. The host logs the repository at startup ("… as key repository …"). By default it is `%LOCALAPPDATA%\ASP.NET\DataProtection-Keys` for the account the host runs as.
+  3. Do **not** merely rotate or add a key. Existing keys keep decrypting existing session cookies, so rotation does not end any session.
+  4. Start the earlier version.
+  5. Everyone signs in again.
+
+  Fresh Microsoft sign-in keeps working. Recovery Access and multi-factor sign-in keep working, because their secrets are not protected by this key ring. Upgrading again later signs everyone out once more.
+
 See [docs/00-overview/roadmap.md](../docs/00-overview/roadmap.md).

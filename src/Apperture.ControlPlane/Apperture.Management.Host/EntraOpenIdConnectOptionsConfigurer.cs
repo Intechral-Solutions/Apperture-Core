@@ -132,6 +132,11 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             AuthenticationAssuranceClaims.Remove(identity);
             RecentAccountVerificationClaims.Remove(identity);
             ClaimsPrincipalToActorMapper.RemoveUntrustedApplicationClaims(identity);
+
+            // The session identity (NameIdentifier = user id) is issued by this host after association, never taken
+            // from the token. With MapInboundClaims off a token only carries one if it names the claim type outright.
+            foreach (var claim in identity.FindAll(ClaimTypes.NameIdentifier).ToList())
+                identity.RemoveClaim(claim);
         }
 
         identity?.AddClaim(new Claim(ClaimsPrincipalToActorMapper.IdentitySourceClaimType, "Entra"));
@@ -198,7 +203,26 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
         }
 
-        await AppendLoginSuccessAuditAsync(ctx, objectId);
+        // The cookie the handler is about to issue identifies the resolved user by user id. The token's tid + oid stay on
+        // it only as provenance: the resolver requires that exact link to still belong to this user on every request.
+        var users = ctx.HttpContext.RequestServices.GetService<IUserRepository>();
+        var sessionUser = outcome.UserId is null || users is null
+            ? null
+            : await users.GetByIdAsync(outcome.UserId, ctx.HttpContext.RequestAborted);
+        if (sessionUser is null || identity is null)
+        {
+            FailWithRedirect(ctx, isLinking, isStepUp: false, EntraLinkFailureCodes.UserNotFound);
+            return;
+        }
+
+        ApplicationSessionClaims.Apply(
+            identity,
+            sessionUser.Id,
+            sessionUser.Username,
+            sessionUser.DisplayName,
+            ApplicationSessionClaims.EntraSource);
+
+        await AppendLoginSuccessAuditAsync(ctx, sessionUser.Id, objectId, tenantId);
 
         ctx.Properties ??= new AuthenticationProperties();
         if (isLinking)
@@ -294,6 +318,12 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
                 return;
             }
 
+            ApplicationSessionClaims.Apply(
+                entraIdentity,
+                user.Id,
+                user.Username,
+                user.DisplayName,
+                ApplicationSessionClaims.EntraSource);
             AuthenticationAssuranceClaims.Replace(
                 entraIdentity,
                 AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism,
@@ -328,7 +358,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
         }
 
-        var localIdentity = LocalSessionIdentity.Create(user.DisplayName, localLink.ExternalId);
+        var localIdentity = LocalSessionIdentity.Create(user.Id, user.Username, user.DisplayName);
         AuthenticationAssuranceClaims.Replace(
             localIdentity,
             AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism,
@@ -425,7 +455,8 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         ctx.HandleResponse();
     }
 
-    private static async Task AppendLoginSuccessAuditAsync(TokenValidatedContext ctx, string objectId)
+    /// <summary>The actor is the signed-in user's id; the directory identity it came through is recorded as detail.</summary>
+    private static async Task AppendLoginSuccessAuditAsync(TokenValidatedContext ctx, UserId userId, string objectId, string tenantId)
     {
         var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
         if (audit is null)
@@ -433,13 +464,13 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
 
         var record = new AuditRecord(
             new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(objectId),
+            new ActorId(userId.Value),
             "auth.entra.login.success",
             Resource: null,
             "auth",
             DateTimeOffset.UtcNow,
             new CorrelationId(null),
-            Details: null);
+            $"oid={objectId} tenantId={tenantId}");
         await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
     }
 
