@@ -146,6 +146,17 @@ dotnet ef database update --project src/Apperture.Persistence/Apperture.Persiste
 
 The Management Host applies migrations itself at startup, and that is the supported path for a database that already has users. Between two of the migrations it runs a data step that gives every user a username. `dotnet ef database update` cannot run that step: on a database with users it stops with a message asking you to start the Management Host, which then completes the upgrade. An empty database migrates fully either way.
 
+### Who-did-what history after upgrading
+
+Every time the Management Host starts, it rewrites older "requested by", "acknowledged by", "updated by" and similar values (stored as sign-in names or Microsoft object ids) to the user's internal id, wherever the person can be identified with certainty. Values it cannot identify with certainty are left as they are. The audit log is never changed.
+
+- **Backup:** back up the database **before the new Management Host starts for the first time**. The rewrite keeps no record of the previous values, so restoring that backup is the only way to get them back.
+- **If the rewrite fails:** the Management Host does not start. Correct the reported database or infrastructure problem and start the host again. Values already rewritten are kept and the next run resumes safely. A failed run is not a reason to restore the backup.
+- **Full rollback** needs both of these:
+  1. Restore the pre-upgrade database backup, which reverses the rewrite. Rolling back only the program leaves the internal ids in place, and an earlier version shows them as ids.
+  2. Invalidate the sign-in sessions as described in "Sign-in sessions after upgrading" below. Restoring the database does not do this.
+- **Upgrading again after a rollback:** take a fresh database backup first. The rewrite runs again and converts any older-style values the earlier version wrote in the meantime.
+
 ### Sign-in sessions after upgrading
 
 Sign-in sessions are identified by the user's internal id. Sessions created by an earlier version do not carry that identity and are not accepted.

@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
-/// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>.
+/// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>, then
+/// normalizes historical actor values (<see cref="HistoricalActorNormalization"/>).
 /// Register via AddApperturePersistenceMigrationsOnStartup when migrations should run automatically.
 /// </summary>
 internal sealed class PersistenceMigrationHostedService : IHostedService
@@ -47,12 +48,34 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
 
             // Includes the username backfill data step; readiness is reported only after all of it.
             await AppertureDatabaseMigrator.MigrateAsync(db, _logger, cancellationToken).ConfigureAwait(false);
+            await NormalizeHistoricalActorsAsync(db, cancellationToken).ConfigureAwait(false);
             _migrationCompletion.IsComplete = true;
             _logger.LogInformation("Database migrations applied successfully.");
         }
         catch (Exception ex)
         {
             LogMigrationFailure(ex, db);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs on every start, after the schema is current, because an earlier binary (after a rollback) writes legacy actor
+    /// values again. Unresolved and ambiguous values are results, not failures. An execution failure (connectivity, timeout,
+    /// schema mismatch) means a required startup step did not complete, so it fails the start like a migration does: nothing
+    /// is reported ready. Values already rewritten stay committed, and the next start resumes.
+    /// </summary>
+    private async Task NormalizeHistoricalActorsAsync(AppertureDbContext db, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await HistoricalActorNormalization.RunAsync(db, _logger, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(
+                ex,
+                "Historical actor normalization failed; the Management Host will not start. Correct the database or infrastructure problem and start it again. Values already normalized are kept and the next start resumes.");
             throw;
         }
     }
