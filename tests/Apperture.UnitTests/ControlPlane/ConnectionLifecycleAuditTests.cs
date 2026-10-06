@@ -460,13 +460,26 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
 
     // AU8 -------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// AU8, replaced by AUD-1.1 (audit hardening design gate §22, AUD-1.1 scope): the row schema is the gate's §10.1, §11.8,
+    /// §13 and §14 columns. A Connection target is the generic <c>TargetType</c>/<c>TargetId</c> pair; there is still no
+    /// resource-descriptor or connection-specific column.
+    /// </summary>
     [Fact]
-    public void AU8_the_audit_row_schema_is_unchanged_no_resource_or_connection_column()
+    public void AU8_the_audit_row_schema_is_the_aud1_schema_with_a_generic_target_and_no_connection_column()
     {
         var columns = typeof(AuditLogEntity).GetProperties().Select(p => p.Name).ToList();
 
         columns.Should().NotContain(c => c.Contains("Resource", StringComparison.Ordinal) && c != nameof(AuditLogEntity.ResourceContextId));
         columns.Should().NotContain(c => c.Contains("Connection", StringComparison.Ordinal));
+        columns.Should().BeEquivalentTo(
+        [
+            "Id", "At", "Actor", "Action", "Details", "Outcome", "ModuleId", "ScheduleId", "RunId", "ResourceContextId", "CorrelationId",
+            "EventId", "OperationEventId", "Producer", "DetailsFormat", "ClassificationState",
+            "ActorKind", "ActorUserId", "ActorUsername", "ActorExternalProvider", "ActorExternalTenantId", "ActorExternalSubjectId",
+            "ActorAttribution", "AttributionIssue", "AttributionIssueCertainty", "TargetType", "TargetId",
+            "Category", "Severity", "Visibility", "Basis", "OutcomeCode", "OutcomeProvenance",
+        ]);
     }
 
     [Fact]
