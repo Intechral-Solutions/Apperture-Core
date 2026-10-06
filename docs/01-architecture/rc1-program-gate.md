@@ -192,6 +192,8 @@ RCV-1  release-candidate validation
 
 Hard dependencies: AUD-1 needs IAM-9's actor identity. IAM-10 needs AUD-1's recorder for grant diffs. IAM-11 needs all three. ACT-1 needs NAV-2's icon keys. LST-1.3 to 1.5 need IAM-9; LST-1.4 also needs IAM-11's user status and D-08.
 
+*Sequencing clarification (product-owner ruling, 2026-10-06; [AUD-1.0 design gate](transitions/audit-hardening/aud1-design-gate.md) §3 OR-11, §26 P-3).* The hard dependencies above are unchanged. IAM-10.0 design planning may proceed independently of AUD-1. IAM-10 implementation packages that record grant changes begin once the AUD-1 contracts they need (AUD-1.1 and AUD-1.2) are delivered and verified. They do not wait for the audit timeline UI (AUD-1.5b). Every package still starts only on an explicit owner instruction (§9).
+
 ## 6. Scope amendments to Part 1
 
 Part 1 sections H and I describe each epic and package. These amendments apply.
@@ -283,7 +285,7 @@ Deliberately left to later work, with owner:
 | Structured audit details for `governance.user.username.changed` (its details are free-form text; IAM-9 gate §29.3) | AUD-1 |
 | A revoked former Recovery Access user remains an ordinary administrator named `breakglass` / "Recovery Access" (existing behaviour; IAM-9 gate §19; [IAM-9 closure audit](../audits/iam9-identity-foundation-closure.md) F-6) | IAM-11 (emergency-path gate) |
 | The invisible validation control (`FieldValidationIndicator` renders at 0x0 but is a focusable button) and the undefined `text-message-error` class (closure audit F-9, F-10). Product-owner decision 2026-10-05 | RCV-1 accessibility baseline (requirement 8) |
-| Operational `UserRef` adoption has no per-page split between AUD-1 and LST-1.3 (IAM-9 gate §23 says "LST-1.3 or AUD-1"; closure audit F-8) | AUD-1.0 establishes the split with LST-1.3 |
+| Operational `UserRef` adoption has no per-page split between AUD-1 and LST-1.3 (IAM-9 gate §23 says "LST-1.3 or AUD-1"; closure audit F-8) | AUD-1.0 establishes the split with LST-1.3. **Split approved by the product owner (2026-10-06)**: [AUD-1.0 design gate](transitions/audit-hardening/aud1-design-gate.md) §18 assigns each surface to AUD-1.5b, LST-1.3 or LST-1.4, or marks it as no adoption. AUD-1.0 was approved on 2026-10-06 with conditions |
 
 ## 9. What may start
 

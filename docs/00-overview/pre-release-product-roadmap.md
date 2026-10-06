@@ -52,8 +52,10 @@ assigned username on Entra provisioning results); the finding and its correction
 not RC1 completion and not risk acceptance. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay open under their
 owners. In particular, the `role.manage` escalation path blocks RC1 requirement 4 until IAM-10 closes it.
 
-The next Track A body is **AUD-1**, beginning with its **AUD-1.0** design gate. LST-1.1, NAV-2 and SDK-8 have not
-started. Each waits for an explicit start instruction.
+The current Track A body is **AUD-1**. Its **AUD-1.0** design gate was approved by the product owner on 2026-10-06 with
+conditions ([aud1-design-gate.md](../01-architecture/transitions/audit-hardening/aud1-design-gate.md)). **AUD-1.1 is
+next and has not started.** LST-1.1, NAV-2 and SDK-8 have not started. Each package waits for an explicit start
+instruction.
 
 IAM-8 is complete and **merged to `master`** (PR #3, `5cfa901`). Earlier statements in this document that IAM-8 is
 "not merged" are superseded.
