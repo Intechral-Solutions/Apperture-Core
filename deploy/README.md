@@ -148,7 +148,7 @@ The Management Host applies migrations itself at startup, and that is the suppor
 
 ### Who-did-what history after upgrading
 
-Every time the Management Host starts, it rewrites older "requested by", "acknowledged by", "updated by" and similar values (stored as sign-in names or Microsoft object ids) to the user's internal id, wherever the person can be identified with certainty. Values it cannot identify with certainty are left as they are. The audit log is never changed.
+Every time the Management Host starts, it rewrites older "requested by", "acknowledged by", "updated by" and similar values (stored as sign-in names or Microsoft object ids) to the user's internal id, wherever the person can be identified with certainty. Values it cannot identify with certainty are left as they are. This rewrite never touches the audit log: what each audit entry recorded (who, what, when, the outcome and the details) is never changed. The audit log is classified separately, as described in "Audit log classification after upgrading" below.
 
 - **Backup:** back up the database **before the new Management Host starts for the first time**. The rewrite keeps no record of the previous values, so restoring that backup is the only way to get them back.
 - **If the rewrite fails:** the Management Host does not start. Correct the reported database or infrastructure problem and start the host again. Values already rewritten are kept and the next run resumes safely. A failed run is not a reason to restore the backup.
@@ -156,6 +156,17 @@ Every time the Management Host starts, it rewrites older "requested by", "acknow
   1. Restore the pre-upgrade database backup, which reverses the rewrite. Rolling back only the program leaves the internal ids in place, and an earlier version shows them as ids.
   2. Invalidate the sign-in sessions as described in "Sign-in sessions after upgrading" below. Restoring the database does not do this.
 - **Upgrading again after a rollback:** take a fresh database backup first. The rewrite runs again and converts any older-style values the earlier version wrote in the meantime.
+
+### Audit log classification after upgrading
+
+Audit entries now carry a structured description: who acted (a person, the system, the worker, an unauthenticated caller, or "Unrecognized actor"), how that was established, the subject area, severity, whether the entry is routine, what the entry asserts, and a normalized outcome alongside the recorded one. New entries are written with it. Entries written before the upgrade gain it once, the next time the Management Host starts.
+
+- **What changes:** only the new descriptive fields, once per entry. The recorded values (who, what, when, the outcome text and the details) are never rewritten, and no corrected person is ever invented. Where an entry is known to have recorded the wrong person, or may have, it is marked with a notice instead. After an entry is classified, its description is frozen.
+- **Upgrade timing:** the first start after upgrading classifies every existing entry before the host reports ready. Progress is logged per batch ("Audit classification batch …"). Plan for it in the upgrade window on large audit logs. The measured rate is in the [AUD-1.1 implementation record](../docs/01-architecture/transitions/audit-hardening/aud1-1-foundation-record.md#benchmark). Later starts check for unclassified entries with a single index lookup.
+- **If classification fails:** the Management Host does not start. Correct the reported database or infrastructure problem and start it again. Entries already classified are kept and the next start resumes.
+- **Rollback:** an earlier version can still write audit entries to the upgraded database. Those entries are classified when this version starts again. Restoring the pre-upgrade backup (as "Who-did-what history after upgrading" requires for a full rollback) also removes the new fields.
+- **Integrity guard:** the database refuses any change to a recorded audit value, any change to a completed classification and any deletion of an audit entry. This protects against application defects and ordinary data changes. It is **not** access control and not tamper-evidence: in the default installation the Management Host's database login applies migrations, so it can alter the table and could remove the guard, as could any `db_owner` or `sysadmin`.
+- **Backups:** the audit log is kept indefinitely and is part of every database backup.
 
 ### Sign-in sessions after upgrading
 
