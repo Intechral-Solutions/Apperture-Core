@@ -860,3 +860,75 @@ No open product-owner questions remain.
 3. A populated development database snapshot, including an Entra-only user and an email-shaped local user, for the migration proof.
 4. SQL Server or LocalDB available for the SQL tests. SQL-dependent tests that skip must be reported as skipped, not passed.
 5. No other package is changing `SqlUserRepository`, `AuthController` or the Entra configurer at the same time.
+
+## 29. IAM-9.5 review findings carried forward
+
+Source: the independent IAM-9.5 review at `89bdec3` (2026-10-05) and its review-fix pass. These findings were found while reviewing IAM-9.5. **None is introduced by IAM-9.5 and IAM-9.5 changes no permission behaviour.** Each has a named owner. Deferring a finding to its owner is not a disposition of it: §29.2 states what must be true before RC1 closes.
+
+The reproductions below come from a code trace and were not executed against a running host. IAM-10.0 turns them into tests first.
+
+### 29.1 Governance-read capability checks a different permission than the APIs enforce
+
+| | |
+|---|---|
+| Owner | IAM-10.0 (permission definitions and capability model) |
+| Class | Existing defect (March 2026, the Epic 40 capability work). Not a regression and not a product decision against the IAM-9 contract: §15 and §16 say `user.read`, and `user.read` exists in the catalog only on the User resource |
+| Effect today | A custom role holding `user.read` on User (the catalog accepts it) can call every governance read API, but the UI computes `CanViewGovernance` as false. The Users list, User detail, effective access, and role list and detail show the forbidden state, and `UserRef` renders as plain text |
+| IAM-9.5 | Consumes the flag unchanged: `CanNavigate` on the users list and role holders, and the search box. Who can see what is the same as before the package |
+
+Code trace (paths under `src/Apperture.ControlPlane/`):
+
+- The capability: `Apperture.ControlPlane.Security/OperatorCapabilitiesQueryService.cs:52` evaluates `user.read` on **Role**. Its comment records the stopgap: "no distinct governance-read permission exists".
+- The catalog: `PlatformPermissionSeeder.cs:115-116` registers `user.read` and `user.manage` on **User** only. There is no `user.read` on Role and no `role.read`. `UserManagementService.cs:291-304` (`ValidateCatalogPermissions`) refuses any role grant outside the catalog, so `user.read` on Role cannot be given to a custom role through the API.
+- The API enforcement: `GET /api/users`, `GET /api/users/{id}`, `GET /api/users/{id}/effective-access` and the role reads all call `RequireUserReadAsync` (`UserManagementService.cs:75-127`, `:272`, `:796-807`), which checks `user.read` on **User**. `GET /api/governance/descriptors` (`GovernanceController.cs:51`) is the one endpoint that checks `user.read` on Role.
+- Who passes the capability today: the seeded platform administrator role (`PlatformAdminRolePermissionRepair.cs` holds `user.read` on Role; the evaluator also admits it through `PlatformAdministratorGovernancePermissions`), and any role holding `role.manage` (§29.2).
+
+Reproduction:
+
+1. As a platform administrator, create a custom role and set its permissions to `user.read` on User at instance scope only.
+2. Assign it to a user who holds no other role.
+3. As that user: `GET /api/users`, `GET /api/users/{id}`, `GET /api/users/{id}/effective-access`, `GET /api/roles` and `GET /api/roles/{id}` are expected to return 200, while `GET /api/control/capabilities` is expected to report `canViewGovernance: false`. The governance pages show the forbidden state.
+4. The reverse (capability true, APIs 403) needs a `user.read` on Role grant written outside the API.
+
+Acceptance criteria for IAM-10:
+
+1. For every governance read endpoint, the capability and the API agree. One test enumerates the endpoints against the capability for a role holding only `user.read` on User.
+2. That same role is offered no manage action: `CanManageUsers` is false and `PUT /api/users/{id}/username` returns 403.
+3. The real-browser evidence harness can build a "governance read without `user.manage`" session through the API, and the note in `GovernanceUserIdentityEvidenceTests.Capabilities_control_what_the_governance_surfaces_offer_on_real_sessions` is replaced by that session.
+4. No test pins `user.read` on Role as the governance capability after the change.
+5. Any widening of who can read governance is a recorded ruling of IAM-10.0. IAM-9 does not widen `user.read` (§16).
+
+### 29.2 `role.manage` implies broad governance privileges for custom roles
+
+| | |
+|---|---|
+| Owner | IAM-10.0 and IAM-10.2. Already tracked as X-01 in the RC1 audit (`rc1-architecture-audit-and-program-plan.md`), which plans removal of the implication with a preserving migration |
+| Class | Existing, not resolved by this package and **not closed by being scheduled** |
+| IAM-9.5 | Adds no new class of capability. The rename endpoint requires `user.manage`, which a `role.manage` role already holds through the implication. `user.manage` already covers user creation, identity-link changes and, until IAM-11 applies D-07, setting passwords |
+
+Effective privileges of a custom role that holds only `role.manage` on Role at instance scope (the catalog allows this grant: `PlatformPermissionSeeder.cs:109`). `RbacAuthorizationPolicyEvaluator.ImpliedByInstanceRoleManage` (`:103-118`) together with `PlatformAdministratorGovernancePermissions.IsGovernanceOrAuthConfigurationSurface` (`:20-51`) treats that role as also holding, at instance scope:
+
+| Resource | Actions |
+|---|---|
+| Role | `user.read`, `permission.assign`, `role.assign` |
+| User | `user.read`, `user.manage`, `role.assign`, `credential.manage` |
+| Instance configuration | `auth.configuration.read`, `auth.ui_policy.manage`, `auth.entra.manage` |
+
+Two of these (`permission.assign` and `role.assign`) let the holder grant any catalog permission to any role and assign any role to anyone, so in practice the holder is root-equivalent. `role.manage` is also the cheapest route to the governance capability in §29.1.
+
+**Required before RC1 closure.** RC1 requires "no known escalation path" (program gate §2, item 4). Before RCV-1 closes, the security and product owners record one of these, and RCV-1 does not pass on the existence of this note:
+
+1. IAM-10.2 shipped and verified: the implication is removed, a migration preserved existing deployments' effective access visibly, and the denial tests in the audit's IAM-10 section pass (a role with only `role.manage` no longer gains `user.manage`, `credential.manage` or `auth.*`).
+2. An explicit, signed risk acceptance stating that `role.manage` is a root-equivalent permission, how operators are told so when delegating it, and why RC1 may ship with it.
+
+Until then, `role.manage` should be treated as root-equivalent when delegating roles.
+
+### 29.3 Structured audit details stay with AUD-1
+
+`governance.user.username.changed` writes free-form details, `userId=… previousUsername=… newUsername=…`. Grandfathered usernames (§9.1) may contain characters that make that text ambiguous to parse, such as `@`, `=` or spaces. IAM-9 makes no audit schema change (§6). **AUD-1 owns structured audit details and the actor columns** (RC1 §6.5, D-13). AUD-1 must give this action structured fields for the previous and new username as values, and must not parse the free text.
+
+### 29.4 Package handback notes
+
+- **`UsernameRules` relocation.** §9.2 and §9.4 place the rules in `UsernamePolicy` (Application). In IAM-9.5 the pure rules (normalization, format, reserved names, the guidance and reserved messages) moved to `Apperture.Core.Domain.Identity.UsernameRules`, because the browser client references the domain project and not the application project, and the new username field must apply exactly the rule the server enforces. `UsernamePolicy` delegates to it and keeps generation and the ledger-backed rules. There is still one reserved list and one format rule. Existing callers still call `UsernamePolicy`.
+- **Audit previous name.** The administrator rename audits the names reported by the rename transaction itself (`UsernameRenameResult` from `IUserRepository.ChangeUsernameAsync`), never a read made before it. `UsernameService.RenameWithResultAsync` exposes that result; `RenameAsync` still returns the outcome only.
+- **Manual accessibility validation (user-reported).** The compact `UserRef` link was first reported to announce only the display name on hover and only the username on Tab. A retest was then reported by the user as passing. This is user-reported manual validation. No speech transcript, browser version or cause for the earlier discrepancy was recorded, and none is claimed. The automated browser evidence asserts the browser-computed name (`Alice Example (alice.example)`) and, separately, the computed description (`Alice Example`, from the native title) on the focused link. That is the browser's accessibility tree, not assistive-technology output.
