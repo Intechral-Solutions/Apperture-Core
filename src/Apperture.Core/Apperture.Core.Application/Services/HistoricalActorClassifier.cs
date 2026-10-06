@@ -25,6 +25,28 @@ public enum HistoricalActorCategory
 /// <summary>The category of one historical actor value and, when <see cref="HistoricalActorCategory.Resolved"/>, the user id it becomes.</summary>
 public readonly record struct HistoricalActorClassification(HistoricalActorCategory Category, string? UserId = null);
 
+/// <summary>Which of the IAM-9 §17 rules decided a classification (additive report for audit attribution, AUD-1 §15.2).</summary>
+public enum HistoricalActorRule
+{
+    /// <summary>No single rule decided: the value is unresolved or ambiguous.</summary>
+    None,
+
+    /// <summary>Rule 1: a non-human literal.</summary>
+    Literal,
+
+    /// <summary>Rule 2: the value is already the user's id.</summary>
+    UserId,
+
+    /// <summary>Rule 3: a current or retired username in the ledger.</summary>
+    Username,
+
+    /// <summary>Rule 4: the object id of exactly one Entra link.</summary>
+    EntraObjectId,
+}
+
+/// <summary>A classification together with the rule that decided it.</summary>
+public readonly record struct HistoricalActorRuleClassification(HistoricalActorClassification Classification, HistoricalActorRule Rule);
+
 /// <summary>
 /// Classifies a historical actor value against the instance's identity data, by the rules of the IAM-9 design gate §17.
 /// Rewriting is the caller's job; this only decides. It never invents an identity.
@@ -82,8 +104,28 @@ public sealed class HistoricalActorClassifier
         }
     }
 
-    public HistoricalActorClassification Classify(string? value)
+    public HistoricalActorClassification Classify(string? value) => ClassifyReportingRule(value).Classification;
+
+    /// <summary>
+    /// <see cref="Classify"/>, also reporting which rule decided. A value that is both a username and the object id of the
+    /// same single user reports <see cref="HistoricalActorRule.Username"/>, the earlier rule in the approved order.
+    /// </summary>
+    public HistoricalActorRuleClassification ClassifyReportingRule(string? value)
     {
+        var classification = ClassifyCore(value, out var isUsername);
+        var rule = classification.Category switch
+        {
+            HistoricalActorCategory.Literal => HistoricalActorRule.Literal,
+            HistoricalActorCategory.AlreadyUserId => HistoricalActorRule.UserId,
+            HistoricalActorCategory.Resolved => isUsername ? HistoricalActorRule.Username : HistoricalActorRule.EntraObjectId,
+            _ => HistoricalActorRule.None,
+        };
+        return new(classification, rule);
+    }
+
+    private HistoricalActorClassification ClassifyCore(string? value, out bool isUsername)
+    {
+        isUsername = false;
         if (string.IsNullOrWhiteSpace(value))
             return new(HistoricalActorCategory.Unresolved);
 
@@ -96,7 +138,7 @@ public sealed class HistoricalActorClassifier
         if (isUserId)
             candidates.Add(value);
 
-        var isUsername = _usernameOwners.TryGetValue(value, out var usernameOwners);
+        isUsername = _usernameOwners.TryGetValue(value, out var usernameOwners);
         if (isUsername)
             candidates.UnionWith(usernameOwners!);
 

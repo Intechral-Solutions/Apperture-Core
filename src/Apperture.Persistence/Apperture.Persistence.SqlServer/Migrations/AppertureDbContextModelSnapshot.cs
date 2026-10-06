@@ -158,8 +158,56 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("ActorAttribution")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ActorExternalProvider")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ActorExternalSubjectId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActorExternalTenantId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActorKind")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ActorUsername")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<DateTimeOffset>("At")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AttributionIssue")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("AttributionIssueCertainty")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Basis")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ClassificationState")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
 
                     b.Property<string>("CorrelationId")
                         .HasMaxLength(64)
@@ -168,13 +216,37 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("Details")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("DetailsFormat")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("ModuleId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("OperationEventId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Outcome")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("OutcomeCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("OutcomeProvenance")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Producer")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
 
                     b.Property<string>("ResourceContextId")
                         .HasMaxLength(64)
@@ -188,10 +260,45 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("Severity")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("TargetId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("TargetType")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Visibility")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("At", "Id")
                         .IsDescending();
+
+                    b.HasIndex(new[] { "At", "Id" }, "IX_AuditLogs_DefaultVisible_At_Id")
+                        .IsDescending()
+                        .HasFilter("[Visibility] = N'default'");
+
+                    b.HasIndex(new[] { "ActorUserId", "At", "Id" }, "IX_AuditLogs_ActorUserId_At_Id")
+                        .IsDescending(false, true, true)
+                        .HasFilter("[ActorUserId] IS NOT NULL");
+
+                    b.HasIndex(new[] { "EventId" }, "UX_AuditLogs_EventId")
+                        .IsUnique()
+                        .HasFilter("[EventId] IS NOT NULL");
+
+                    b.HasIndex(new[] { "Id" }, "IX_AuditLogs_Unclassified_Id")
+                        .HasFilter("[ClassificationState] IS NULL");
+
+                    b.HasIndex(new[] { "TargetType", "TargetId", "At", "Id" }, "IX_AuditLogs_TargetType_TargetId_At_Id")
+                        .IsDescending(false, false, true, true)
+                        .HasFilter("[TargetType] IS NOT NULL AND [TargetId] IS NOT NULL");
 
                     b.HasIndex("ModuleId", "At")
                         .IsDescending(false, true)
@@ -214,7 +321,16 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsDescending(false, true)
                         .HasFilter("[ScheduleId] IS NOT NULL");
 
-                    b.ToTable("AuditLogs", (string)null);
+                    b.ToTable("AuditLogs", null, t =>
+                        {
+                            t.HasTrigger("TR_AuditLogs_GuardDelete");
+
+                            t.HasTrigger("TR_AuditLogs_GuardUpdate");
+
+                            t.HasCheckConstraint("CK_AuditLogs_ClassificationSet", Aud1_AuditFoundation.ClassificationSetCheckSql);
+
+                            t.HasCheckConstraint("CK_AuditLogs_Producer", Aud1_AuditFoundation.ProducerCheckSql);
+                        });
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.BindingEntity", b =>

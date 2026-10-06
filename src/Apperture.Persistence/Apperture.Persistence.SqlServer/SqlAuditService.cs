@@ -1,7 +1,11 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Persistence.SqlServer.Audit;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Linq.Expressions;
 
 namespace Apperture.Persistence.SqlServer;
@@ -10,26 +14,53 @@ namespace Apperture.Persistence.SqlServer;
 /// Appends audit records to AuditLogs table. Epic 37: Outcome and reference columns are first-class.
 /// Query supports DB-backed filtering by actor, time, outcome, moduleId, scheduleId, runId.
 /// </summary>
+/// <remarks>
+/// <para><see cref="AppendAsync"/> is the AUD-1.1 transitional bridge (audit hardening design gate §14) for writers not yet
+/// converted to the recorder. Each writer keeps its current write mode and guarantee: the row is saved on the caller's
+/// scoped context, so it is atomic with the caller's change only where the caller already wrapped both in one
+/// transaction. Converting a writer to <see cref="IAuditedUnitOfWork"/> is what makes it atomic.</para>
+/// <para>A bridge row carries <c>Producer = append</c>, the caller's <see cref="AuditRecord.Id"/> as its event id and
+/// operation event id, and the details text exactly as given (no <c>Resource=</c> suffix; the resource descriptor was
+/// never queryable). It is inserted with its whole classification set when insert-time classification succeeds, or with
+/// none of it when any lookup cannot run; the next Management Host start completes it. Never partially.</para>
+/// </remarks>
 public sealed class SqlAuditService : IAuditService
 {
     private readonly AppertureDbContext _db;
+    private readonly ILogger<SqlAuditService> _logger;
 
-    public SqlAuditService(AppertureDbContext db) => _db = db;
+    public SqlAuditService(AppertureDbContext db, ILogger<SqlAuditService>? logger = null)
+    {
+        _db = db;
+        _logger = logger ?? NullLogger<SqlAuditService>.Instance;
+    }
 
     /// <inheritdoc />
     public async ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
     {
-        var details = record.Details;
-        if (record.Resource is not null)
-            details = (details ?? "") + (string.IsNullOrEmpty(details) ? "" : "; ") + $"Resource={record.Resource}";
+        var eventId = record.Id?.Value;
+        if (string.IsNullOrWhiteSpace(eventId) || eventId.Length > 64)
+            eventId = Guid.NewGuid().ToString("N");
 
-        _db.AuditLogs.Add(new AuditLogEntity
+        var outcome = string.IsNullOrEmpty(record.Outcome) ? null : record.Outcome;
+        if (AuditActionCatalog.Default.Find(record.Action) is null)
+        {
+            _logger.LogWarning(
+                "Audit action {AuditAction} is not declared in the audit catalog; it is classified as 'other'. Declare it.",
+                record.Action);
+        }
+
+        var classification = await TryClassifyAsync(
+            new AuditLegacyRow(record.ActorId.Value, record.Action, outcome, record.Details, AuditProducers.Append),
+            cancellationToken).ConfigureAwait(false);
+
+        var entity = new AuditLogEntity
         {
             At = record.Timestamp,
             Actor = record.ActorId.Value,
             Action = record.Action,
-            Details = details,
-            Outcome = string.IsNullOrEmpty(record.Outcome) ? null : record.Outcome,
+            Details = record.Details,
+            Outcome = outcome,
             ModuleId = record.ModuleId,
             ScheduleId = record.ScheduleId,
             RunId = record.RunId,
@@ -42,9 +73,58 @@ public sealed class SqlAuditService : IAuditService
             // became an NRE that silently dropped the whole audit append under any best-effort catch {}
             // wrapper -- see SchedulerOperationsController.cs's TryAuditAsync, which was hit by exactly
             // this. Null-conditional matches every other nullable field in this same initializer.
-            CorrelationId = record.CorrelationId?.Value
-        });
-        await _db.SaveChangesAsync(cancellationToken);
+            CorrelationId = record.CorrelationId?.Value,
+            EventId = eventId,
+            OperationEventId = eventId,
+            Producer = AuditProducers.Append,
+        };
+        if (classification is not null)
+            AuditClassificationColumns.Apply(entity, classification);
+
+        _db.AuditLogs.Add(entity);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (AuditRecorderRows.IsEventIdViolation(ex))
+        {
+            // The save was retried after a lost acknowledgement: the row with this event id already exists (§13.5).
+            _db.Entry(entity).State = EntityState.Detached;
+            _logger.LogInformation("Audit row {EventId} ({AuditAction}) was already written.", eventId, record.Action);
+        }
+    }
+
+    /// <summary>
+    /// Insert-time classification (§14) by the same rules as the startup step (<see cref="AuditRowClassifier"/>), against
+    /// only the identity rows that can bear on this actor value. Any failure leaves the whole set null.
+    /// </summary>
+    private async Task<AuditClassificationSet?> TryClassifyAsync(AuditLegacyRow row, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var classifier = await AuditActorEvidence.LoadForValueAsync(_db, row.Actor, cancellationToken).ConfigureAwait(false);
+            var set = AuditRowClassifier.Classify(row, classifier, AuditActionCatalog.Default);
+            if (set.ActorKind == AuditActorKinds.User)
+            {
+                // Event-time username (§10.3): read inside this write.
+                var username = await _db.Users.AsNoTracking()
+                    .Where(u => u.Id == set.ActorUserId)
+                    .Select(u => u.Username)
+                    .FirstOrDefaultAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                set = set with { ActorUsername = username ?? set.ActorUsername };
+            }
+
+            return set;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Audit row for {AuditAction} could not be classified at insert; it is stored unclassified and completed at the next start.",
+                row.Action);
+            return null;
+        }
     }
 
     /// <inheritdoc />

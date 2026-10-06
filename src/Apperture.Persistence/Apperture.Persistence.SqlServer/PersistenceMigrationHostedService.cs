@@ -1,3 +1,4 @@
+using Apperture.Persistence.SqlServer.Audit;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +9,8 @@ namespace Apperture.Persistence.SqlServer;
 
 /// <summary>
 /// Optional IHostedService that migrates the database on startup through <see cref="AppertureDatabaseMigrator"/>, then
-/// normalizes historical actor values (<see cref="HistoricalActorNormalization"/>).
+/// normalizes historical actor values (<see cref="HistoricalActorNormalization"/>), then completes unclassified audit rows
+/// (<see cref="AuditClassification"/>).
 /// Register via AddApperturePersistenceMigrationsOnStartup when migrations should run automatically.
 /// </summary>
 internal sealed class PersistenceMigrationHostedService : IHostedService
@@ -49,6 +51,7 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
             // Includes the username backfill data step; readiness is reported only after all of it.
             await AppertureDatabaseMigrator.MigrateAsync(db, _logger, cancellationToken).ConfigureAwait(false);
             await NormalizeHistoricalActorsAsync(db, cancellationToken).ConfigureAwait(false);
+            await ClassifyAuditRowsAsync(db, cancellationToken).ConfigureAwait(false);
             _migrationCompletion.IsComplete = true;
             _logger.LogInformation("Database migrations applied successfully.");
         }
@@ -76,6 +79,27 @@ internal sealed class PersistenceMigrationHostedService : IHostedService
             _logger.LogError(
                 ex,
                 "Historical actor normalization failed; the Management Host will not start. Correct the database or infrastructure problem and start it again. Values already normalized are kept and the next start resumes.");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Completes unclassified audit rows (AUD-1 design gate §15.6). Runs on every start, after the IAM-9.2a normalization and
+    /// before readiness: the host reports not ready while it runs, and logs progress per batch. With nothing to classify it
+    /// is one index seek. Unresolved and ambiguous actors are results; an execution failure fails the start like a
+    /// migration, committed batches are kept, and the next start resumes.
+    /// </summary>
+    private async Task ClassifyAuditRowsAsync(AppertureDbContext db, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await AuditClassification.RunAsync(db, _logger, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(
+                ex,
+                "Audit record classification failed; the Management Host will not start. Correct the database or infrastructure problem and start it again. Rows already classified are kept and the next start resumes.");
             throw;
         }
     }

@@ -52,4 +52,47 @@ public static class ActorLiterals
             return true;
         return value.Length > SystemPrefix.Length && value.StartsWith(SystemPrefix, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The audit actor kind of a non-human literal (AUD-1 design gate §10.8): <c>worker</c> for <see cref="SystemWorker"/>,
+    /// <c>anonymous</c> for <see cref="Anonymous"/>, otherwise <c>system</c>. Null when <paramref name="value"/> is not a literal.
+    /// </summary>
+    public static string? AuditKindOf(string? value)
+    {
+        if (!IsNonHumanLiteral(value))
+            return null;
+        return value switch
+        {
+            SystemWorker => "worker",
+            Anonymous => "anonymous",
+            _ => "system",
+        };
+    }
+
+    /// <summary>
+    /// The runtime-visible label of a non-human literal (§10.8). <c>system:</c> subtypes without a specific label read
+    /// "System". Null when <paramref name="value"/> is not a literal.
+    /// </summary>
+    public static string? LabelOf(string? value)
+    {
+        if (!IsNonHumanLiteral(value))
+            return null;
+        return value switch
+        {
+            System => "System",
+            SystemScheduler => "Scheduler",
+            SystemModuleLifecycle => "Module lifecycle",
+            Recovery => "Recovery tool",
+            EmergencyCli => "Emergency access command line",
+            SystemWorker => "Worker",
+            Anonymous => "Not signed in",
+            _ => "System",
+        };
+    }
+
+    /// <summary>The scheduler subsystem.</summary>
+    public const string SystemScheduler = "system:scheduler";
+
+    /// <summary>The module lifecycle subsystem.</summary>
+    public const string SystemModuleLifecycle = "system:module-lifecycle";
 }

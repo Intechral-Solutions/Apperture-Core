@@ -12,6 +12,12 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
+    <!-- AUD-1.1: internal audit actor and event factories are used by the recorder and its test harnesses. -->
+    <InternalsVisibleTo Include="Apperture.Persistence.SqlServer" />
+    <InternalsVisibleTo Include="Apperture.UnitTests" />
+    <InternalsVisibleTo Include="Apperture.IntegrationTests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Abstractions\Apperture.ModuleSdk.Abstractions.csproj" />
     <ProjectReference Include="..\..\Apperture.ModuleSdk\Apperture.ModuleSdk.Integration\Apperture.ModuleSdk.Integration.csproj" />
