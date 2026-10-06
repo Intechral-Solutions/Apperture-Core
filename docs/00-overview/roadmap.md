@@ -42,7 +42,7 @@ Canonical current-state track list and near-term order: [`pre-release-product-ro
 approved with amendments) and QW-1 (implemented) merged to `master` with PR #4. **IAM-9** (identity foundation)
 packages 9.1 to 9.5 are merged to `master` (PRs #5 to #10). Its
 [closure audit](../audits/iam9-identity-foundation-closure.md) finds it **not ready to close**: one approved contract
-row is unmet, with a bounded fix proposed. LST-1 implementation, NAV-2, SDK-8 and every later epic have not started.
+row was unmet on `master`; its correction is implemented on a branch and awaits merge. LST-1 implementation, NAV-2, SDK-8 and every later epic have not started.
 Contract:
 [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). IAM-8 and LFC-1 are complete and merged to `master`.
 Workspaces are a Direction with implementation deferred; that direction supersedes the earlier cross-context

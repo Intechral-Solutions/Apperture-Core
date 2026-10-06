@@ -47,8 +47,8 @@ design gate) and **QW-1** (quick wins, implemented) are merged to `master` (PR #
 
 **IAM-9** (identity foundation) is implemented: packages 9.1 to 9.5 are merged to `master` (PRs #5 to #10, last
 merge `2b5bb52`). The [closure audit](../audits/iam9-identity-foundation-closure.md) finds IAM-9 **not ready to close**:
-one approved contract row (the assigned username on Entra provisioning results) is unmet, and a bounded fix is
-proposed. After that fix, closure awaits owner acceptance. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay
+one approved contract row (the assigned username on Entra provisioning results) was unmet on `master`; the correction
+is implemented on a branch and awaits merge. After it merges, closure awaits owner acceptance. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay
 open. In particular, the `role.manage` escalation path blocks RC1 requirement 4 until IAM-10 closes it.
 
 The next Track A body is **AUD-1**, beginning with its design gate. LST-1.1, NAV-2 and SDK-8 have not started. Each

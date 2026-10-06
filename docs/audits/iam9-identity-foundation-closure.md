@@ -7,11 +7,13 @@ Audited baseline: `master` at `2b5bb52` (merge of PR #10).
 
 ## Verdict
 
-**NOT READY TO CLOSE.** One approved contract row is unmet:
+**NOT READY TO CLOSE.** The audit found one unmet approved contract row on `master` (`2b5bb52`):
 
-- **§22, "Entra provisioning results: add the assigned `Username`"** (IAM-9.3 scope by §25). Neither the directory-provisioning batch result nor the access-request approval result carries the username. No ruling waives the row. See finding C-1 for the proposed bounded fix.
+- **§22, "Entra provisioning results: add the assigned `Username`"** (IAM-9.3 scope by §25). Neither the directory-provisioning batch result nor the access-request approval result carried the username. No ruling waives the row.
 
-Every other IAM-9 requirement is implemented and evidenced. Once C-1 is fixed, merged and green on CI, the audit supports closure, subject to owner acceptance. Closing IAM-9 does not close RC1. It does not close, accept or schedule away any finding in §4, and it does not narrow RC1 requirement 4.
+**Correction status (§6).** The row is implemented on branch `iam-9-provisioning-username-result` (finding C-1). That branch is **not merged and not pushed**. IAM-9 closure stays pending, in this order: the correction merges, post-merge CI is green, and the owner accepts closure. Until the correction merges, `master` still does not meet §22. After it merges, this audit knows of no unmet IAM-9 requirement; implementation is then complete and closure awaits owner acceptance.
+
+Closing IAM-9 does not close RC1. It does not close, accept or schedule away any finding in §4, and it does not narrow RC1 requirement 4.
 
 ## 1. Merge and CI checkpoint
 
@@ -27,8 +29,9 @@ Every other IAM-9 requirement is implemented and evidenced. Once C-1 is fixed, m
 **What CI ran.**
 
 - The `build-and-test` job ran with a SQL Server 2022 service container, and every test assembly reported zero failures.
-- The SQL-backed IAM-9 suites report PASS even when SQL is unreachable (the soft skip, see N-1). They took 4–7 s per test on CI, which matches creating and migrating a real database, not a skip. The suites are `UsernameFoundationSqlServerTests` (11), `HistoricalActorNormalizationSqlServerTests` (9) and `UserSearchSqlServerTests` (8).
-- The Management Host HTTP suites have no soft skip and passed: `ManagementHostUsernameRenameHttpTests`, `ManagementHostSessionIdentityHttpTests` and `ManagementHostUserSearchHttpTests`.
+- **Whether the soft-skip SQL suites executed against SQL Server in CI is unverified.** The suites are `UsernameFoundationSqlServerTests` (11 tests), `HistoricalActorNormalizationSqlServerTests` (9) and `UserSearchSqlServerTests` (9). When SQL is unreachable they return early and report PASS (see N-1). `dotnet test --verbosity normal` does not print the "EXECUTED against SQL Server" or "NOT EXECUTED" marker they write, the CI log contains neither marker, and CI does not set `APPERTURE_REQUIRE_SQL_TESTS=1`. An earlier version of this audit said their 4–7 s durations showed real execution. That was an inference, not evidence, and it is withdrawn.
+- **What CI does show.** The Management Host HTTP suites have no soft skip: their fixture fails without SQL, and a derived class asserts SQL is available. They passed in the same job: `ManagementHostUsernameRenameHttpTests`, `ManagementHostSessionIdentityHttpTests` and `ManagementHostUserSearchHttpTests`. That shows SQL Server was reachable through the governance connection used by those fixtures. It does not prove which connection the soft-skip suites resolved.
+- **Explicit local SQL evidence** for the soft-skip suites, run with the skip turned into a failure, is recorded in §6.
 
 **Blocking and opt-in browser evidence.**
 
@@ -83,7 +86,7 @@ UT = `tests/Apperture.UnitTests`, IT = `tests/Apperture.IntegrationTests`, UIC =
 | R16 search: prefix or substring, escaping, ordering, clamp, Recovery Access excluded, no email/UPN/id, never audited, `user.read` | `UsersController.cs:47-67`; `SqlUserRepository.cs`; `UserSearchCriteria.cs` | IT `ManagementHostUserSearchHttpTests` (9), `UserSearchSqlServerTests` (8); UT `UserSearchCriteriaTests` | Met (see N-6) |
 | §22 `Username` on `UserListDto`, `UserDetailDto`, `MeResponse` (both copies), `RoleAssignmentHolderDto` | `UsersController.cs`; `AuthController.cs`; `GovernanceAdminModels.cs`; client copies | UT `UserReferenceContractTests`; IT `User_detail_and_me_expose_the_current_username` | Met |
 | §11 `CreateUserRequest.Username`, `ExternalId` alias, both supplied → `username_mismatch`; Local link name optional and must match | `UsersController.cs`; `UserManagementService.cs` | UT `UsersControllerCreateUserTests`, `UsersControllerIdentityLinkTests`, `UserManagementServiceIdentityLinkTests`; IT `Create_local_user_by_username_by_alias_and_with_a_conflict`, `Local_identity_link_may_omit_the_name_and_must_match_the_username` | Met |
-| **§22 Entra provisioning results carry the assigned `Username`** | `UsersEntraProvisioningController.cs:267-276` (`EntraProvisioningPersonResultDto`), client copy `IManagementClient.cs:2193`, `UserProvisioningResult` | None | **Not met (C-1)** |
+| **§22 Entra provisioning results carry the assigned `Username`** | `UsersEntraProvisioningController.cs:267-276` (`EntraProvisioningPersonResultDto`), client copy `IManagementClient.cs:2193`, `UserProvisioningResult` | None on `master` | **Not met on `master` (C-1).** Implemented on `iam-9-provisioning-username-result`, pending merge; evidence in §6 |
 
 ### 2.5 IAM-9.4 — `UserRef`
 
@@ -116,7 +119,7 @@ UT = `tests/Apperture.UnitTests`, IT = `tests/Apperture.IntegrationTests`, UIC =
 
 - **Severity:** Low product impact. An administrator sees the generated name only by opening the user afterwards. It blocks closure because it is an unmet approved row.
 - **Owner:** IAM-9 (an IAM-9.3 contract row).
-- **Proposed bounded fix:**
+- **Status:** corrected on branch `iam-9-provisioning-username-result`, not merged. The correction and its evidence are in §6. The fix as originally proposed:
   - Add the username to `UserProvisioningResult` and populate it from the created user in `UserProvisioningService`, for both the directory and the access-request paths.
   - Add `string? Username` to `EntraProvisioningPersonResultDto`, server and client copies; it is null on a failed row.
   - Set it in `UsersEntraProvisioningController` for the batch and approve responses.
@@ -136,9 +139,9 @@ UT = `tests/Apperture.UnitTests`, IT = `tests/Apperture.IntegrationTests`, UIC =
 | F-5 | Lifecycle status: additive `UserReferenceDto.Status`, the reserved `UserRef` status slot, the resolver status and session-version check | — (planned scope) | IAM-11. Gate §13, §14, §15; audit plan IAM-11.1 (resolver check). The `UserRef` slot is recorded in the design-system catalogue only | No |
 | F-6 | A revoked former Recovery Access user stays an ordinary administrator named `breakglass` / "Recovery Access" (gate §19) | Medium | IAM-11 (emergency-path gate). Previously recorded only in gate §19; now also tracked in program gate §8 | No. Existing behaviour |
 | F-7 | Login and forgotten-password timing oracles (gate §21) | Medium | IAM-11. Audit plan section J (throttling in IAM-11.4 bounds both; constant time is a should-fix) | No |
-| F-8 | Operational `UserRef` adoption (gate §23 "later adoption" list) | — (planned scope) | LST-1.3 and AUD-1. The LST-1 gate's LST-1.3 package owns "the surfaces IAM-9 §23 assigns to this package". Gate §23 says "LST-1.3 or AUD-1" without a per-surface split | No. §6 and §23 exclude it. **Tracking gap:** the planning records imply audit timeline and entity activity under AUD-1.5, the team-members table under LST-1.4, and the rest under LST-1.3. `RunOperationItemizationPanel.razor` is named only in gate §23. LST-1.3 and AUD-1.0 should confirm the split |
-| F-9 | `FieldValidationIndicator` icon renders at 0x0, yet it is a focusable button: a phantom tab stop on fields using `ValidatedFieldShell` (existing password fields included) | Medium (accessibility) | **No owner.** Found by IAM-9.5 browser evidence. Recorded only as the rationale for `UsernameField` in `management-ui-design-system.md`. Proposed: the RCV-1 accessibility baseline (RC1 requirement 8) unless the product owner assigns it earlier | No. `UsernameField` avoids it |
-| F-10 | `text-message-error` is not a defined class, but five account and run surfaces use it | Low (visual) | **No owner.** Same proposal as F-9 | No |
+| F-8 | Operational `UserRef` adoption (gate §23 "later adoption" list) | — (planned scope) | LST-1.3 and AUD-1. The LST-1 gate's LST-1.3 package owns "the surfaces IAM-9 §23 assigns to this package". Gate §23 says "LST-1.3 or AUD-1" without a per-surface split | No. §6 and §23 exclude it. **Tracking gap, now assigned:** the planning records imply audit timeline and entity activity under AUD-1.5, the team-members table under LST-1.4, and the rest under LST-1.3. `RunOperationItemizationPanel.razor` is named only in gate §23. **AUD-1.0 must establish the explicit per-page ownership split with LST-1.3** before AUD-1 or LST-1.3 adopts `UserRef` anywhere (program gate §8) |
+| F-9 | The `FieldValidationIndicator` icon (invisible validation control) renders at 0x0, yet it is a focusable button: a phantom tab stop on fields using `ValidatedFieldShell` (existing password fields included) | Medium (accessibility) | **RCV-1 accessibility baseline (RC1 requirement 8).** Product-owner decision, recorded 2026-10-05 and in program gate §8. Originally found by IAM-9.5 browser evidence and recorded only as the rationale for `UsernameField` in `management-ui-design-system.md` | No. `UsernameField` avoids it |
+| F-10 | `text-message-error` is not a defined class, but five account and run surfaces use it | Low (visual) | **RCV-1 accessibility baseline.** Same decision as F-9 | No |
 | F-11 | Entra self-link rows have no UPN, mail or display snapshots; the "already has another Entra link" check ignores tenant (gate §21) | Low | Future external-organization access work (D-27 deferral). Recorded only in gate §21 | No |
 | F-12 | Username-based routing and grandfathered names | — | Deferred with no owning epic (gate §9.1, §9.4) | No |
 
@@ -148,7 +151,7 @@ The RC1 audit plan still says, in its IAM-9 non-goals, that rename "ships in IAM
 
 | Id | Note | Owner |
 |---|---|---|
-| N-1 | SQL tests soft-pass when SQL Server is unreachable. CI does not set `APPERTURE_REQUIRE_SQL_TESTS=1`. This run's timings show the IAM-9 SQL suites executed | RCV-1 (RC1 requirement 8, "no silently passing SQL tests") |
+| N-1 | SQL tests soft-pass when SQL Server is unreachable. CI does not set `APPERTURE_REQUIRE_SQL_TESTS=1`, and its log carries no execution marker, so CI execution of the soft-skip IAM-9 SQL suites is unverified (§1). Local execution is evidenced in §6 | RCV-1 (RC1 requirement 8, "no silently passing SQL tests") |
 | N-2 | Two renames racing on real SQL Server is proven only with a unit fake. The arbiters (ledger PK, current-name index, fault-injected atomicity) are proven on SQL Server | None required |
 | N-3 | "Existing local user signs in after migration" is proven at the repository lookup the sign-in path uses (populated barrier test), not by an HTTP sign-in of a migrated user. The old-cookie test proves the 401 and cookie clearing but does not sign in afterwards | None required |
 | N-4 | Ledger `UserId` immutability is a behavioural guarantee tested through every write path. No database trigger blocks a raw `UPDATE`, and the gate does not require one | None required |
@@ -161,8 +164,71 @@ The RC1 audit plan still says, in its IAM-9 non-goals, that rename "ships in IAM
 
 After C-1 is fixed and IAM-9 closure is accepted, the program contract (§5, Track A: IAM-9 → AUD-1 → IAM-10 → IAM-11) points to **AUD-1**, beginning with its short design gate, AUD-1.0. AUD-1's hard dependency on IAM-9's actor identity is met.
 
-AUD-1.0 must take in F-3 and F-4, and the audit-timeline part of F-8. Gate §17 and §26 ask for AUD-1.1 in the same release as IAM-9. Tracks B and C are unaffected:
+AUD-1.0 must take in F-3 and F-4, and it must establish with LST-1.3 the explicit per-page ownership split for operational `UserRef` adoption (F-8), starting with the audit timeline. Gate §17 and §26 ask for AUD-1.1 in the same release as IAM-9. Tracks B and C are unaffected:
 
 - QW-1 is on `master`.
 - NAV-2, LST-1.1 and SDK-8 have not started.
 - Every package starts only on an explicit owner instruction (program gate §9).
+
+## 6. Correction record: C-1, Entra provisioning results carry the assigned username
+
+Branch `iam-9-provisioning-username-result`, created from `2b5bb52` with the audit commit cherry-picked on top. It is **not pushed and not merged**. Scope is gate §22 only: no schema, authorization, identity-matching or status-code change.
+
+### 6.1 What changed
+
+- `UserProvisioningResult` gains `Username`. Both provisioning paths (directory and access-request approval) take it from the `User` that `UsernameService.AddWithGeneratedUsernameAsync` returns after the repository persisted it. The repository stores `Username` verbatim and refuses a non-canonical value, so the reported name is the stored name. Nothing regenerates it, and email, UPN and object id are never substituted.
+- `EntraProvisioningPersonResultDto` gains a nullable `Username`, in the server and client copies, serialized as `username`. The field is additive. A client reading an older server gets `null`, and an older client ignores the field.
+- `UsersEntraProvisioningController` fills it for the batch endpoint and the approval endpoint.
+
+### 6.2 Behaviour by outcome and endpoint
+
+| Endpoint | Outcome | Status and shape | `username` |
+|---|---|---|---|
+| `POST /api/users/entra` (batch) | User created | 200. Row `succeeded: true` with `userId` | The stored username |
+| | User created and a pending access request reconciled | Same row. The reconciled request id is not part of the DTO | The new user's stored username |
+| | Failure: disabled or missing directory user, invalid object id, registration problem, role-assign forbidden, username generation exhausted, or any other provisioning failure | 200. Row `succeeded: false` with `errorCode`; `userId` null | `null` |
+| | Identity already a user (`duplicate_identity`) | 200. Failed row; `userId` null | `null`. Unchanged: the row does not identify the existing user |
+| | Caller lacks `user.manage` | 403 | n/a |
+| `POST /api/users/entra/access-requests/{id}/approve` | User created | 200. `succeeded: true` with `userId` | The stored username |
+| | Identity already a user (request is reconciled to that user, then refused) | 409 `{ message, code: duplicate_identity }`. No result body | None. Unchanged |
+| | Request not pending or not found, or another provisioning failure | 409 with `code` | None |
+| | Caller lacks `user.manage` | 403 | n/a |
+
+**Open ambiguity (no code change; product decision if wanted).** Gate §22 asks for "the assigned `Username`" on a result. The two existing-user outcomes above have no result body that identifies a user: the batch row has no `userId`, and approval answers 409 with no user. Returning an existing user's username there would mean newly disclosing that user's id or username in a failure, which §22 does not ask for and no ruling covers. So the existing-user outcomes keep their previous semantics. If the owner wants them to identify the existing user, that is a separate contract decision.
+
+### 6.3 Tests
+
+New and strengthened tests (all pass):
+
+- `UserReferenceContractTests` (serialized contract): `Entra_provisioning_result_carries_the_assigned_username_and_the_client_reads_it`, `A_failed_provisioning_row_has_no_username_on_the_wire`, `The_client_still_reads_a_provisioning_result_from_a_server_that_predates_the_username`, `Entra_provisioning_batch_result_round_trips_usernames_into_the_client_copy`.
+- `UsersEntraProvisioningControllerUsernameTests` (controller mapping): batch rows carry the service's username and failures carry none, including the generic-failure branch; approval carries it; both refused-approval forms stay 409 with no result.
+- `UserProvisioningServiceTests`: both success paths assert `result.Username` equals the persisted user's username; a lost race for the first candidate reports the stored later candidate (`jane-2`), not the base; a reconciled provision reports the new user's username; approving a request for an existing identity still throws `duplicate_identity`, creates no user and reconciles the request (this path had no test).
+- `ManagementHostEntraProvisioningUsernameHttpTests` (real Management Host and SQL Server; fails rather than skips without SQL):
+  - Approval returns the stored username.
+  - A taken base gets the suffix in the stored value, and the response reports it.
+  - An existing identity is 409 with no username, and the request is reconciled to the existing user.
+  - A mixed batch reports the stored username for the created person and none for the disabled, existing and missing rows.
+  - Each compares the response with the value read back from `Users`.
+
+### 6.4 Positive SQL execution evidence (local, explicit)
+
+Run on the development machine against the dedicated `apperture-test-sql` container, with `APPERTURE_REQUIRE_SQL_TESTS=1` so that any skip fails the run. The SQL server clock (UTC) read 2026-10-06 04:11:25 before the run, and the tests finished about four minutes later.
+
+| Evidence | Result |
+|---|---|
+| Filtered run: the four new HTTP tests plus `UsernameFoundationSqlServerTests`, `HistoricalActorNormalizationSqlServerTests`, `UserSearchSqlServerTests` | 33 passed, 0 failed, **0 skipped** (4 + 11 + 9 + 9) |
+| Execution markers written by the soft-skip suites into the trx | 11 `EXECUTED against SQL Server catalog Apperture_Iam9…` lines (`UsernameFoundationSqlServerTests`) and 9 `EXECUTED against SQL Server scratch catalog` lines (`UserSearchSqlServerTests`); **0** `NOT EXECUTED` lines. `HistoricalActorNormalizationSqlServerTests` prints no positive marker; its 9 passes under `APPERTURE_REQUIRE_SQL_TESTS=1` mean it ran, because an unreachable server would have failed it |
+| Rows read back from the server after the run (`sqlcmd` against `Apperture_BootstrapHttpTests`, `AssignedAtUtc` after the 04:11:25 marker) | Six ledger rows written by the new tests, for example `….jane` and `….jane-2` (the suffixed name), `….ada` (batch). Each approved request's `ProvisionedUserId` equals the owner of the ledger name the API reported: `rq-p7a762fd525` → `30280ebaf8e94ca8ba7f4717` = owner of `p7a762fd525.jane`; `rq-p11a693289a` → `f6f2979fde454524b77bc934` = owner of `p11a693289a.jane-2` |
+
+This is **local evidence only**. The CI execution detail for the soft-skip suites remains unverified (§1). The new HTTP tests cannot soft-skip in CI, because they throw when SQL is unavailable, and they compare against rows read from the `Users` table.
+
+### 6.5 Other validation
+
+- `dotnet build Apperture.slnx`, isolated under the repo-local `artifacts/` path: 0 errors. A first attempt failed on one compile error in a new test (an `out` variable inside an assertion expression). It was fixed, and the rebuild passed.
+- Focused unit run: 52 passed, 0 failed (`UserProvisioningServiceTests`, `UserReferenceContractTests`, `UsersEntraProvisioningControllerUsernameTests`, `EntraAccessRequestServiceTests`, `UsernameServiceTests`).
+- Wider affected packages, all with 0 failed and 0 skipped: `Apperture.UnitTests` Governance, Persistence and ControlPlane namespaces (1,824 passed); `Apperture.ArchTests` (38); `Apperture.Management.Ui.Shared.Tests` provisioning, user-creation and `UserRef` source contracts (24); `Apperture.Management.Ui.Client.Tests` provisioning, Entra and `ManagementClient` tests (30).
+- Not rerun, because the correction touches nothing they cover: the full `build-and-test` suite and the SEC-1 `browser-security` suite. Both run in CI on the PR.
+
+### 6.6 Remaining unmet IAM-9 requirements
+
+None known on the correction branch. On `master` §22 remains unmet until the correction merges. IAM-9 closure stays pending that merge, green post-merge CI, and owner acceptance. The findings in §4.2 stay open and are untouched by this correction. In particular the permission and security findings F-1 and F-2 remain open: F-2 conflicts with RC1 requirement 4, and no risk acceptance has been requested or granted.
