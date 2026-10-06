@@ -181,7 +181,7 @@ Classification key: **R1** must implement before RC1. **R2** must design or sett
 
 | ID | Requirement | Evidence | Class | Destination |
 |---|---|---|---|---|
-| X-01 | Close privilege escalation through `role.assign`, `permission.assign` and `role.manage` | `UserManagementService.AssignRoleAsync:602-621`; `RbacAuthorizationPolicyEvaluator.ImpliedByInstanceRoleManage:100-115`. The implied privileges of a `role.manage` custom role are tabulated, and a security/product disposition is required before RC1 closes, in the [IAM-9 gate §29.2](../01-architecture/transitions/identity-foundation/iam9-design-gate.md) | R1 | IAM-10 |
+| X-01 | Close privilege escalation through `role.assign`, `permission.assign` and `role.manage` | `UserManagementService.AssignRoleAsync:602-621`; `RbacAuthorizationPolicyEvaluator.ImpliedByInstanceRoleManage:100-115`. The implied privileges of a `role.manage` custom role are tabulated in the [IAM-9 gate §29.2](../01-architecture/transitions/identity-foundation/iam9-design-gate.md) | R1 | IAM-10 |
 | X-02 | Normalize the audit actor to a stable user identity | `ClaimsPrincipalToActorMapper.cs:62-97`; `LocalSessionIdentity` | R1 | IAM-9, AUD-1 |
 | X-03 | Attribute and audit run actions and configuration lifecycle | `WorkflowCancelService.cs:43` (`RequestedBy = null`); section K matrix | R1 | AUD-1 |
 | X-04 | Sign-in throttling or lockout, and usable failed sign-in evidence | No limiter on `local/login`, `local/mfa`, `forgot-password` | R1 | IAM-11 |

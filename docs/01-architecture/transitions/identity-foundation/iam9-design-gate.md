@@ -1,7 +1,7 @@
 # IAM-9 — Identity foundation — design gate
 
 Date: 2026-10-03
-Status: **IAM-9.0 design gate. Approved by the product owner (2026-10-03) with amendments.** Section 27 records the answers to Q1 to Q3 and the amendments to the username ledger and reserved names. Every ruling is binding on IAM-9.1 onward. No IAM-9 implementation has started.
+Status: **IAM-9.0 design gate. Approved by the product owner (2026-10-03) with amendments.** Section 27 records the answers to Q1 to Q3 and the amendments to the username ledger and reserved names. Every ruling is binding on IAM-9.1 onward. **Implementation status (2026-10-05):** IAM-9.1, 9.2, 9.2a, 9.3 and 9.4 are merged to `master`. IAM-9.5 is implemented on branch `iam-9.5-governance-ui` and is awaiting pull request review and merge. IAM-9 is not complete (see §1).
 Branch at writing: `rc1-foundation` (documentation-only commit; may be cherry-picked onto the dedicated IAM-9 branch)
 Baseline HEAD: `d8cc7e5` (`docs: establish RC1 program contract and roadmap reconciliation`)
 Governing contract: [rc1-program-gate.md](../../rc1-program-gate.md), decisions D-01 to D-07, D-10, D-11, D-13, D-27.
@@ -23,8 +23,10 @@ Labels:
 | RC-0 program contract | Present and authoritative: `docs/01-architecture/rc1-program-gate.md` (commit `d8cc7e5`) |
 | RC1 identity decisions D-01 to D-07 | Present in the gate §3.1 and consistent with repository reality (§7) |
 | IAM-9.0 | This document. Approved with amendments (§27) |
-| IAM-9.1 onward | Not started. Section 25 decomposes them |
-| Product code changed by IAM-9.0 | None |
+| IAM-9.1 to IAM-9.4 | **Merged to `master`** (2026-10-05): 9.1 username foundation (#5), 9.2 stable session identity (#6), 9.2a historical actor normalization (#7), 9.3 user reference and search (#8), 9.4 `UserRef` component (#9). Section 25 decomposes them |
+| IAM-9.5 | Implemented on `iam-9.5-governance-ui`, **awaiting pull request review and merge. It is not on `master`** |
+| IAM-9 as a whole | **Not complete.** It is complete only when IAM-9.5 has merged and the IAM-9 closure audit against this gate (§25, IAM-9.5 handback) is recorded; no closure audit is recorded yet. The open findings carried to IAM-10 and AUD-1 are in §29. RC1 is not complete either |
+| Product code changed by IAM-9.0 | None. IAM-9.0 itself was documentation only |
 
 ## 2. Baseline
 
@@ -916,12 +918,11 @@ Effective privileges of a custom role that holds only `role.manage` on Role at i
 
 Two of these (`permission.assign` and `role.assign`) let the holder grant any catalog permission to any role and assign any role to anyone, so in practice the holder is root-equivalent. `role.manage` is also the cheapest route to the governance capability in §29.1.
 
-**Required before RC1 closure.** RC1 requires "no known escalation path" (program gate §2, item 4). Before RCV-1 closes, the security and product owners record one of these, and RCV-1 does not pass on the existence of this note:
+**Status: open.** RC1 requires "no known escalation path" (program gate §2, item 4), and this is a known escalation path. The finding is closed only when IAM-10.2, or the design IAM-10.0 rules in its place, is shipped and verified: the implication is removed, a migration preserved existing deployments' effective access visibly, and the denial tests in the audit's IAM-10 section pass (a role with only `role.manage` no longer gains `user.manage`, `credential.manage` or `auth.*`). The security and product owners record that disposition before RCV-1 closes, and RCV-1 does not pass on the existence of this note.
 
-1. IAM-10.2 shipped and verified: the implication is removed, a migration preserved existing deployments' effective access visibly, and the denial tests in the audit's IAM-10 section pass (a role with only `role.manage` no longer gains `user.manage`, `credential.manage` or `auth.*`).
-2. An explicit, signed risk acceptance stating that `role.manage` is a root-equivalent permission, how operators are told so when delegating it, and why RC1 may ship with it.
+**No risk acceptance has been requested or granted, and this note is not one.** It creates no exception to RC1 requirement 4. Shipping RC1 with this finding open would change the binding RC1 definition, which needs an explicit product-owner ruling recorded in the program gate (§1: a Decision is changed only by an explicit ruling). Nothing in this document, the program gate's §8 table or the audit pre-authorizes that.
 
-Until then, `role.manage` should be treated as root-equivalent when delegating roles.
+Until the finding is closed, `role.manage` should be treated as root-equivalent when delegating roles.
 
 ### 29.3 Structured audit details stay with AUD-1
 

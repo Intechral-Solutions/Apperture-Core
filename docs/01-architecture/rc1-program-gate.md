@@ -279,7 +279,7 @@ Deliberately left to later work, with owner:
 | `CHANGELOG.md` | OPS-1.7 |
 | Module manifest spec and parameter-schema vocabulary | SDK-8.3 |
 | The UI governance-read capability checks `user.read` on Role while the catalog and the APIs use `user.read` on User (found in the IAM-9.5 review; reproduction and acceptance in the IAM-9 gate §29.1) | IAM-10.0 |
-| `role.manage` implies `user.manage`, `credential.manage`, `permission.assign`, `role.assign` and `auth.*` for custom roles (audit X-01; effective privileges in the IAM-9 gate §29.2). **Open until the security and product owners record a disposition before RCV-1 closes: IAM-10.2 shipped and verified, or a signed risk acceptance. Scheduling it is not a disposition** | IAM-10.0, IAM-10.2; disposition at RCV-1 |
+| `role.manage` implies `user.manage`, `credential.manage`, `permission.assign`, `role.assign` and `auth.*` for custom roles (audit X-01; effective privileges in the IAM-9 gate §29.2). **Open. It closes only when IAM-10.2 (or the design IAM-10.0 rules in its place) is shipped and verified, with the security and product owners' disposition recorded before RCV-1 closes. Scheduling it is not a disposition. No risk acceptance has been requested or granted, and this row creates no exception to RC1 requirement 4 (§2)** | IAM-10.0, IAM-10.2; disposition at RCV-1 |
 | Structured audit details for `governance.user.username.changed` (its details are free-form text; IAM-9 gate §29.3) | AUD-1 |
 
 ## 9. What may start
