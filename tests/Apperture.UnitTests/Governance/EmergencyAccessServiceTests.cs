@@ -363,7 +363,7 @@ public sealed class EmergencyAccessServiceTests
             _users[user.Id.Value] = user;
             return ValueTask.CompletedTask;
         }
-        public ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+        public ValueTask<UsernameRenameResult> ChangeUsernameAsync(
             UserId userId,
             string expectedCurrentUsername,
             string newUsername,
@@ -390,10 +390,12 @@ public sealed class EmergencyAccessServiceTests
                 DisplayName = newDisplayName ?? user.DisplayName,
                 IdentityLinks = links,
             });
-            return ValueTask.FromResult(
+            return ValueTask.FromResult(new UsernameRenameResult(
                 string.Equals(expectedCurrentUsername, newUsername, StringComparison.Ordinal)
                     ? UsernameChangeOutcome.Unchanged
-                    : reclaimed ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned);
+                    : reclaimed ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned,
+                expectedCurrentUsername,
+                newUsername));
         }
         public ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(string username, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_ledger.GetValueOrDefault(username));

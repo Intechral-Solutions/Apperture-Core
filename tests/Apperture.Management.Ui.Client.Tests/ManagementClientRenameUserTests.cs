@@ -13,11 +13,13 @@ public sealed class ManagementClientRenameUserTests
     {
         private readonly HttpStatusCode _status;
         private readonly string _body;
+        private readonly string _contentType;
 
-        public Capture(HttpStatusCode status, string body)
+        public Capture(HttpStatusCode status, string body, string contentType = "application/json")
         {
             _status = status;
             _body = body;
+            _contentType = contentType;
         }
 
         public HttpMethod? Method { get; private set; }
@@ -29,13 +31,13 @@ public sealed class ManagementClientRenameUserTests
             Method = request.Method;
             Path = request.RequestUri!.AbsolutePath;
             RequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(_status) { Content = new StringContent(_body, Encoding.UTF8, "application/json") };
+            return new HttpResponseMessage(_status) { Content = new StringContent(_body, Encoding.UTF8, _contentType) };
         }
     }
 
-    private static (ManagementClient Client, Capture Http) Create(HttpStatusCode status, string body)
+    private static (ManagementClient Client, Capture Http) Create(HttpStatusCode status, string body, string contentType = "application/json")
     {
-        var http = new Capture(status, body);
+        var http = new Capture(status, body, contentType);
         return (new ManagementClient(new HttpClient(http) { BaseAddress = new Uri("https://api.example/api/") }), http);
     }
 
@@ -80,6 +82,34 @@ public sealed class ManagementClientRenameUserTests
         ex.StatusCode.Should().Be(status);
         ex.Code.Should().Be(code);
         ex.Message.Should().Be("Server says no.");
+    }
+
+    [Theory]
+    [InlineData("<html><body>Bad gateway</body></html>", "text/html")]
+    [InlineData("not json at all", "application/json")]
+    [InlineData("", "application/json")]
+    public async Task A_refusal_without_a_readable_body_is_a_refusal_with_a_plain_message_not_a_parse_failure(string body, string contentType)
+    {
+        var (client, _) = Create(HttpStatusCode.BadGateway, body, contentType);
+
+        var act = () => client.RenameUserAsync("user-7f3a", "bob");
+
+        var ex = (await act.Should().ThrowAsync<UsernameRenameException>()).Which;
+        ex.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        ex.Message.Should().Be("Could not change the username.");
+        ex.Code.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("not json at all", typeof(System.Text.Json.JsonException))]
+    [InlineData("null", typeof(InvalidOperationException))]
+    public async Task A_success_whose_body_cannot_be_read_throws_so_the_caller_can_say_the_change_was_not_confirmed(string body, Type expected)
+    {
+        var (client, _) = Create(HttpStatusCode.OK, body);
+
+        var act = () => client.RenameUserAsync("user-7f3a", "bob");
+
+        (await act.Should().ThrowAsync<Exception>()).Which.Should().BeOfType(expected);
     }
 
     [Fact]

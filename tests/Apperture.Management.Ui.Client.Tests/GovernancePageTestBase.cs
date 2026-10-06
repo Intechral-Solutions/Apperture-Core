@@ -16,6 +16,7 @@ namespace Apperture.Management.Ui.Client.Tests;
 public abstract class GovernancePageTestBase : BunitContext
 {
     protected const string AliceId = "00112233445566778899aabb";
+    protected const string BobId = "ffeeddccbbaa998877665544";
 
     protected GovernancePageTestBase()
     {
@@ -66,6 +67,15 @@ public abstract class GovernancePageTestBase : BunitContext
             HasLocalCredential: true,
             IsCredentialDisabled: false,
             EmergencyAccessAccount: emergency);
+
+    /// <summary>A second ordinary user, for pages that move from one user to another.</summary>
+    protected static UserDetailDto Bob(string username = "bob") =>
+        new(BobId, username, "Bob Builder",
+            [new IdentityLinkDto("Local", username, null)],
+            [],
+            HasLocalCredential: true,
+            IsCredentialDisabled: false,
+            EmergencyAccessAccount: false);
 
     /// <summary>What a sighted user reads: attributes are not text and screen-reader-only branches are skipped (aria-hidden text is visible).</summary>
     protected static string VisibleText(IElement element) => Collect(element, includeScreenReaderOnly: false);

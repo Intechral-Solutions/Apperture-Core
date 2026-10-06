@@ -7,6 +7,8 @@
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @using Apperture.Management.Ui.Shared
+@using System.Text.Json
+@implements IDisposable
 @inject SessionStateService Session
 @inject IManagementClient Client
 @inject IOperatorCapabilitiesService Capabilities
@@ -137,14 +139,14 @@
                     {
                         <form data-rename-username
                               class="mt-2 space-y-3"
-                              aria-busy="@(_renaming ? "true" : null)"
+                              aria-busy="@(IsRenaming ? "true" : null)"
                               @onsubmit="RenameUsernameAsync"
                               @onsubmit:preventDefault="true">
                             <UsernameField Id="rename-username"
                                            Label="Username"
                                            Value="@_renameValue"
                                            ValueChanged="OnRenameValueChanged"
-                                           Disabled="@_renaming"
+                                           Disabled="@IsRenaming"
                                            ServerError="@_renameError" />
                             <p class="text-xs text-muted">
                                 Sign-in follows the new name. The previous name stays reserved for this user and is never given to anyone else.
@@ -410,7 +412,24 @@
     private ActionButton? _renameButton;
     private string _renameValue = "";
     private string? _renameError;
-    private bool _renaming;
+
+    /// <summary>
+    /// The one rename this page is waiting on, if any. A rename belongs to the user it was sent for and to this exact
+    /// instance: once the page moves to another user or is disposed, the operation is no longer current and whatever the
+    /// server answers is reported but never applied to the form in front of the operator.
+    /// </summary>
+    private RenameOperation? _renameOperation;
+    private bool _disposed;
+
+    private bool IsRenaming => _renameOperation is not null;
+
+    private bool IsCurrent(RenameOperation operation) => !_disposed && ReferenceEquals(_renameOperation, operation);
+
+    private sealed class RenameOperation(string userId, string displayName)
+    {
+        public string UserId { get; } = userId;
+        public string DisplayName { get; } = displayName;
+    }
 
     private bool CanSendSetupInvitation =>
         _capabilities?.CanManageUsers == true
@@ -445,8 +464,34 @@
             return;
         _dataLoadKey = key;
         _user = null;
+        await ResetRenameFormAsync();
         ReadStepUpOutcomeFromQuery();
         await LoadAsync();
+    }
+
+    /// <summary>
+    /// The rename form belongs to one user. Moving to another user abandons any rename still waiting on the server (its
+    /// answer is reported when it arrives, but no longer touches this form) and returns the form, including the button's
+    /// own state, to a clean start. The button is reset explicitly because the component can survive the move.
+    /// </summary>
+    private async Task ResetRenameFormAsync()
+    {
+        _renameOperation = null;
+        _renameError = null;
+        _renameValue = "";
+        await SetRenameButtonAsync(ActionButtonState.Default);
+    }
+
+    private async Task SetRenameButtonAsync(ActionButtonState state)
+    {
+        if (_renameButton is not null && !_disposed)
+            await _renameButton.SetStateAsync(state);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _renameOperation = null;
     }
 
     private async Task LoadAsync()
@@ -510,7 +555,7 @@
     /// </summary>
     private async Task RenameUsernameAsync()
     {
-        if (_user is null || _renaming || _capabilities?.CanManageUsers != true)
+        if (_user is null || IsRenaming || _capabilities?.CanManageUsers != true)
             return;
 
         var typed = _renameValue.Trim();
@@ -530,30 +575,111 @@
             return;
         }
 
-        _renaming = true;
+        var operation = new RenameOperation(UserId, _user.DisplayName);
+        _renameOperation = operation;
         _renameError = null;
-        if (_renameButton is not null)
-            await _renameButton.SetStateAsync(ActionButtonState.Active);
+        var confirmed = false;
         try
         {
-            var result = await Client.RenameUserAsync(UserId, typed);
-            if (_renameButton is not null)
-                await _renameButton.SetStateAsync(ActionButtonState.Success);
-            Toasts.Show(ToastSeverity.Success, $"Username changed to {result.Username}.", "Governance");
-            if (Session.User is { } me && string.Equals(me.UserId, UserId, StringComparison.Ordinal))
-                await Session.RefreshAsync();
-            await LoadAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            _renameError = ex.StatusCode == HttpStatusCode.Forbidden ? "Not authorized to manage users." : ex.Message;
-            if (_renameButton is not null)
-                await _renameButton.SetStateAsync(ActionButtonState.Default);
+            await SetRenameButtonAsync(ActionButtonState.Active);
+
+            RenameUsernameResponse result;
+            try
+            {
+                // Deliberately not cancelled when the page moves on: abandoning a mutation client-side does not stop the
+                // server applying it, so the answer is awaited and reported rather than thrown away.
+                result = await Client.RenameUserAsync(operation.UserId, typed);
+            }
+            catch (OperationCanceledException) when (_disposed)
+            {
+                // The page is gone (host teardown): there is no form left to tell.
+                return;
+            }
+            catch (Exception ex) when (TryDescribeRenameFailure(ex, out var failure))
+            {
+                ReportRenameFailure(operation, failure);
+                return;
+            }
+
+            confirmed = true;
+            await ConcludeConfirmedRenameAsync(operation, result);
         }
         finally
         {
-            _renaming = false;
+            // Release the pending state however this ended, but only if this is still the operation the page is waiting
+            // on: an older operation must never clear a newer one's busy form, or touch another user's.
+            if (IsCurrent(operation))
+            {
+                _renameOperation = null;
+                if (!confirmed)
+                    await SetRenameButtonAsync(ActionButtonState.Default);
+            }
         }
+    }
+
+    /// <summary>
+    /// The expected ways a rename request can fail, each with what the operator should be told. Anything else is a defect
+    /// and is left to propagate (the pending state is still released by the caller's <c>finally</c>).
+    /// </summary>
+    private static bool TryDescribeRenameFailure(Exception ex, out string message)
+    {
+        switch (ex)
+        {
+            case HttpRequestException { StatusCode: HttpStatusCode.Forbidden }:
+                message = "Not authorized to manage users.";
+                return true;
+            case UsernameRenameException refused:
+                // The server's own explanation, safe to show (for example a name another user holds or held).
+                message = refused.Message;
+                return true;
+            case HttpRequestException:
+                message = "Could not reach the server, so the username change was not confirmed. Try again.";
+                return true;
+            case OperationCanceledException:
+                // HttpClient reports a timeout as a cancellation. The server may still have applied the change.
+                message = "The server did not answer in time. The username may have changed; reload the page to check before trying again.";
+                return true;
+            case JsonException or NotSupportedException or InvalidOperationException:
+                // The typed client throws these only when it could not read a reply it was given.
+                message = "The server's response could not be read, so the username change was not confirmed. Reload the page to see the current username.";
+                return true;
+            default:
+                message = "";
+                return false;
+        }
+    }
+
+    private void ReportRenameFailure(RenameOperation operation, string message)
+    {
+        if (IsCurrent(operation))
+        {
+            _renameError = message;
+            return;
+        }
+
+        // The operator has moved on, so this is not shown on the form in front of them, but a failure is not silent.
+        Toasts.Show(ToastSeverity.Error, $"Changing the username for {operation.DisplayName} failed. {message}", "Governance");
+    }
+
+    private async Task ConcludeConfirmedRenameAsync(RenameOperation operation, RenameUsernameResponse result)
+    {
+        var current = IsCurrent(operation);
+        if (current)
+            await SetRenameButtonAsync(ActionButtonState.Success);
+        Toasts.Show(
+            ToastSeverity.Success,
+            current
+                ? $"Username changed to {result.Username}."
+                : $"Username for {operation.DisplayName} changed to {result.Username}.",
+            "Governance");
+
+        // The signed-in operator renamed themself: the shell shows the new name whichever page they are on now.
+        if (Session.User is { } me && string.Equals(me.UserId, operation.UserId, StringComparison.Ordinal))
+            await Session.RefreshAsync();
+
+        // Reload only when the page is still showing the user that was renamed (never another user's page).
+        if (!_disposed && string.Equals(UserId, operation.UserId, StringComparison.Ordinal))
+            await LoadAsync();
     }
 
     private async Task AssignRoleAsync()

@@ -494,24 +494,20 @@ public sealed class UserManagementService : IUserManagementService
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("user.username.rename", actorId, cancellationToken);
 
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
-        var previous = user.Username;
-
         // Policy, Recovery Access refusal, ownership and the transactional ledger/Local-link change live in the
-        // username service and repository; this method adds authorization and the audit row.
-        var outcome = await new UsernameService(_userRepository).RenameAsync(userId, requestedUsername, cancellationToken);
-        if (outcome == UsernameChangeOutcome.Unchanged)
-            return new UsernameRenameResult(outcome, previous, previous);
+        // username service and repository; this method adds authorization and the audit row. The audited names come
+        // from the transaction's own result, never from a read made before it.
+        var result = await new UsernameService(_userRepository).RenameWithResultAsync(userId, requestedUsername, cancellationToken);
+        if (result.Outcome == UsernameChangeOutcome.Unchanged)
+            return result;
 
-        var current = UsernamePolicy.Normalize(requestedUsername);
         await AppendAuditAsync(
             GovernanceAuditActionNames.UserUsernameChanged,
             actorId,
             userId.Value,
-            $"userId={userId.Value} previousUsername={previous} newUsername={current}",
+            $"userId={userId.Value} previousUsername={result.PreviousUsername} newUsername={result.Username}",
             cancellationToken);
-        return new UsernameRenameResult(outcome, previous, current);
+        return result;
     }
 
     /// <inheritdoc />

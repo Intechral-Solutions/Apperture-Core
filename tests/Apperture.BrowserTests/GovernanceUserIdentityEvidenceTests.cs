@@ -131,6 +131,17 @@ public sealed class GovernanceUserIdentityEvidenceTests(BrowserHarness harness, 
         name.Should().Be("Alice Example (alice.example)");
         ev.Log("aria-snapshot", (await aliceRow.AriaSnapshotAsync()).Replace(Environment.NewLine, " | "));
 
+        // The name and the description are separate things a screen reader may announce (name on focus, description on
+        // hover or by request), so both are asserted on the focused link: the name is the full identity, and the native
+        // title (the display name) is only the description, never the name.
+        await aliceLink.FocusAsync();
+        (await aliceLink.EvaluateAsync<bool>("e => e === document.activeElement")).Should().BeTrue("the probe is on the focused link");
+        var (focusedRole, focusedName, focusedDescription) = await ev.ComputedAsync(aliceLink);
+        ev.Log("accessible-name", $"users list, alice link focused: role={focusedRole} name='{focusedName}' description='{focusedDescription}'");
+        focusedRole.Should().Be("link");
+        focusedName.Should().Be("Alice Example (alice.example)");
+        focusedDescription.Should().Be("Alice Example", "the native title is the description, so the display name is not announced as the name");
+
         // The raw id is not visible anywhere in the table.
         (await page.Locator("table").InnerTextAsync()).Should().NotContain(f.AliceId);
         (await aliceLink.GetAttributeAsync("href")).Should().Be(UserHref(f.AliceId), "the link targets the user id, never the username");
@@ -364,8 +375,10 @@ public sealed class GovernanceUserIdentityEvidenceTests(BrowserHarness harness, 
 
         // NOTE: a session with governance read but without user.manage cannot be built here. The shell's governance
         // capability is user.read on the Role resource, which the permission catalog does not let a custom role carry
-        // (the API refuses it), so only platform administrators reach these pages. That state is covered by the bUnit
-        // page tests, not by a real browser session.
+        // (the API refuses it). The routes to that capability are the platform administrator role and any custom role
+        // holding role.manage, which implies the whole governance surface including user.manage, so neither yields
+        // "read without manage". That state is covered by the bUnit page tests, not by a real browser session.
+        // (Both the capability mismatch and the role.manage implication are tracked for IAM-10; see the IAM-9 gate.)
 
         // No governance access at all: the pages are forbidden and identity is never fetched or shown.
         {

@@ -169,7 +169,7 @@ public sealed class SqlUserRepository : IUserRepository
     }
 
     /// <inheritdoc />
-    public async ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+    public async ValueTask<UsernameRenameResult> ChangeUsernameAsync(
         UserId userId,
         string expectedCurrentUsername,
         string newUsername,
@@ -218,7 +218,7 @@ public sealed class SqlUserRepository : IUserRepository
             cancellationToken);
     }
 
-    private async Task<UsernameChangeOutcome> ChangeUsernameCoreAsync(
+    private async Task<UsernameRenameResult> ChangeUsernameCoreAsync(
         UserId userId,
         string expectedCurrentUsername,
         string newUsername,
@@ -237,6 +237,8 @@ public sealed class SqlUserRepository : IUserRepository
                 "The user's username changed. Reload and try again.");
         }
 
+        // The row just matched expectedCurrentUsername inside this transaction, so this is the name actually replaced.
+        var previousUsername = user.Username;
         var outcome = UsernameChangeOutcome.Unchanged;
         if (!string.Equals(user.Username, newUsername, StringComparison.Ordinal))
         {
@@ -297,7 +299,7 @@ public sealed class SqlUserRepository : IUserRepository
         if (newDisplayName is not null)
             user.DisplayName = newDisplayName;
 
-        return outcome;
+        return new UsernameRenameResult(outcome, previousUsername, user.Username);
     }
 
     /// <inheritdoc />

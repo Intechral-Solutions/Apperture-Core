@@ -1858,9 +1858,9 @@ public sealed class ManagementClient : IManagementClient
         {
             error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
-            // No structured body: fall back to a plain message for the status.
+            // No structured body (a malformed one, or a gateway page that is not JSON): fall back to a plain message for the status.
         }
 
         var message = !string.IsNullOrWhiteSpace(error?.Message)

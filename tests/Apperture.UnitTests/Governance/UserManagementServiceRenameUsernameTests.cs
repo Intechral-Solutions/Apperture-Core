@@ -51,6 +51,41 @@ public sealed class UserManagementServiceRenameUsernameTests
     }
 
     [Fact]
+    public async Task The_audit_takes_the_previous_name_from_the_transaction_that_made_the_change()
+    {
+        var harness = Harness.Create();
+        // What the transaction reports as replaced is what is audited and returned, whatever any earlier read showed.
+        harness.Users.ReportedPrevious = "alice.replaced";
+
+        var result = await harness.Service.RenameUsernameAsync(new UserId(TargetId), "alice.renamed");
+
+        result.PreviousUsername.Should().Be("alice.replaced");
+        result.Username.Should().Be("alice.renamed");
+        var audit = harness.Audit.Records.Should().ContainSingle().Which;
+        audit.Details.Should().Contain("previousUsername=alice.replaced").And.NotContain("previousUsername=alice ");
+    }
+
+    [Fact]
+    public async Task A_rename_that_races_a_concurrent_rename_is_refused_and_never_audits_a_stale_previous_name()
+    {
+        var harness = Harness.Create();
+        // Another administrator renames alice to alice.mid right after the first read of the user. Reading the user a
+        // second time and auditing the first read would record "alice" as replaced when "alice.mid" was.
+        harness.Users.AfterFirstRead = () => harness.Users.Seed(new User(
+            new UserId(TargetId),
+            "Alice Example",
+            [new IdentityLink(IdentitySource.Local, "alice.mid", LastAuthenticatedAt: null)],
+            [],
+            IsBreakGlassEligible: false) { Username = "alice.mid" });
+
+        var act = () => harness.Service.RenameUsernameAsync(new UserId(TargetId), "alice.renamed").AsTask();
+
+        (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.ConcurrentChange);
+        harness.Users.Changes.Should().BeEmpty("the compare-and-swap protects the concurrent rename");
+        harness.Audit.Records.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Rename_to_one_of_the_users_own_retired_names_is_a_reclaim()
     {
         var harness = Harness.Create();
@@ -193,12 +228,25 @@ public sealed class UserManagementServiceRenameUsernameTests
         public HashSet<string> OwnRetired { get; } = new(StringComparer.Ordinal);
         public int OtherMutations { get; private set; }
 
+        /// <summary>Runs right after the first read of a user returns, to play a concurrent change landing between two reads.</summary>
+        public Action? AfterFirstRead { get; set; }
+
+        /// <summary>When set, the change reports this as the name it replaced, as the transaction's own result.</summary>
+        public string? ReportedPrevious { get; set; }
+
+        private int _reads;
+
         public void Seed(User user) => _users[user.Id.Value] = user;
 
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.Count);
 
-        public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
+        public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default)
+        {
+            var user = _users.GetValueOrDefault(id.Value);
+            if (++_reads == 1)
+                AfterFirstRead?.Invoke();
+            return ValueTask.FromResult(user);
+        }
 
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IdentityLinks.Any(l => l.Source == source && l.ExternalId == externalId)));
@@ -233,7 +281,7 @@ public sealed class UserManagementServiceRenameUsernameTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+        public ValueTask<UsernameRenameResult> ChangeUsernameAsync(
             UserId userId,
             string expectedCurrentUsername,
             string newUsername,
@@ -241,12 +289,19 @@ public sealed class UserManagementServiceRenameUsernameTests
             string? newDisplayName = null,
             CancellationToken cancellationToken = default)
         {
+            // As the transaction does: the stored name must still be the one the caller saw.
+            var stored = _users[userId.Value];
+            if (!string.Equals(stored.Username, expectedCurrentUsername, StringComparison.Ordinal))
+                throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "The user's username changed. Reload and try again.");
             if (OtherOwners.Contains(newUsername))
                 throw new UsernameException(UsernameErrorCodes.Taken, "That username belongs, or once belonged, to another user.");
 
             Changes.Add((userId.Value, expectedCurrentUsername, newUsername, retiredReason));
-            _users[userId.Value] = _users[userId.Value] with { Username = newUsername };
-            return ValueTask.FromResult(OwnRetired.Contains(newUsername) ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned);
+            _users[userId.Value] = stored with { Username = newUsername };
+            return ValueTask.FromResult(new UsernameRenameResult(
+                OwnRetired.Contains(newUsername) ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned,
+                ReportedPrevious ?? stored.Username,
+                newUsername));
         }
     }
 
