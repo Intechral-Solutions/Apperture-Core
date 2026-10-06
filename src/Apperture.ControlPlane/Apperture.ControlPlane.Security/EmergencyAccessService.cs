@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -11,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 /// <inheritdoc />
 public sealed class EmergencyAccessService : IEmergencyAccessService
 {
-    public const string CliActorId = "emergency-cli";
+    public const string CliActorId = ActorLiterals.EmergencyCli;
     private const string AuditCategory = "auth";
 
     private readonly IUserRepository _users;
@@ -22,6 +23,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     private readonly IAuditService _audit;
     private readonly TimeProvider _time;
     private readonly ILogger<EmergencyAccessService> _logger;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public EmergencyAccessService(
         IUserRepository users,
@@ -31,8 +33,10 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         INativeMfaService mfa,
         IAuditService audit,
         TimeProvider time,
-        ILogger<EmergencyAccessService> logger)
+        ILogger<EmergencyAccessService> logger,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
+        _auditedUnitOfWork = auditedUnitOfWork;
         _users = users;
         _roles = roles;
         _credentials = credentials;
@@ -101,7 +105,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         if (!user.IsBreakGlassEligible)
             await SetDesignationAsync(user, designated: true, cancellationToken);
 
-        await EnsureCanonicalIdentityAsync(cancellationToken);
+        await EnsureCanonicalIdentityAsync(AuditActorFor(actorId), cancellationToken);
 
         await AuditAsync(
             EmergencyAccessAuditActionNames.Designated,
@@ -119,7 +123,7 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         var existingDesignated = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
         if (existingDesignated is not null)
         {
-            await EnsureCanonicalIdentityAsync(cancellationToken);
+            await EnsureCanonicalIdentityAsync(AuditActorFor(actorId), cancellationToken);
             return existingDesignated.Id;
         }
 
@@ -167,41 +171,57 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     }
 
     /// <inheritdoc />
-    public async ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default)
+    public async ValueTask EnsureCanonicalIdentityAsync(AuditActor actor, CancellationToken cancellationToken = default)
     {
-        var designated = await _users.FindDesignatedEmergencyUserAsync(cancellationToken);
-        if (designated is null)
-            return;
-        if (EmergencyAccessIdentity.HasCanonicalIdentity(designated))
-            return;
+        // AUD-1.1: one audited unit of work (audit hardening design gate §13). The checks, the rename and the audit row
+        // commit together, and the row records who actually ran it: the emergency command line, or the system when the
+        // Management Host applies it at startup (previously always recorded as the command line).
+        var unit = _auditedUnitOfWork
+            ?? throw new InvalidOperationException("Applying the Recovery Access identity requires the audited unit of work.");
+        await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.RecoveryAccessCanonicalized, actor),
+            async (transaction, ct) =>
+            {
+                var designated = await _users.FindDesignatedEmergencyUserAsync(ct);
+                if (designated is null || EmergencyAccessIdentity.HasCanonicalIdentity(designated))
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-        await EnsureCanTakeCanonicalUsernameAsync(designated, cancellationToken);
+                await EnsureCanTakeCanonicalUsernameAsync(designated, ct);
 
-        if (EmergencyAccessIdentity.LocalUsernameOf(designated) is null)
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.LocalCredentialRequired,
-                "The emergency account must have an enabled local username and password.");
-        }
+                if (EmergencyAccessIdentity.LocalUsernameOf(designated) is null)
+                {
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.LocalCredentialRequired,
+                        "The emergency account must have an enabled local username and password.");
+                }
 
-        // A system rename through the shared username foundation: the previous name is retired but stays
-        // bound to this user, and the Local link moves with the username in the same transaction.
-        var previousUsername = designated.Username;
-        try
-        {
-            await new UsernameService(_users).ApplyRecoveryAccessIdentityAsync(designated, cancellationToken);
-        }
-        catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
-        {
-            throw CanonicalUsernameConflict();
-        }
+                // A system rename through the shared username foundation: the previous name is retired but stays
+                // bound to this user, and the Local link moves with the username in the same transaction.
+                var previousUsername = designated.Username;
+                try
+                {
+                    await new UsernameService(_users).ApplyRecoveryAccessIdentityAsync(designated, ct);
+                }
+                catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
+                {
+                    throw CanonicalUsernameConflict();
+                }
 
-        await AuditAsync(
-            EmergencyAccessAuditActionNames.Canonicalized,
-            CliActorId,
-            $"userId={designated.Id.Value} previousUsername={previousUsername}",
+                await transaction.StageAsync(
+                    AuditEvents.RecoveryAccessCanonicalized(designated.Id, previousUsername, UsernamePolicy.RecoveryAccessUsername),
+                    ct);
+                return true;
+            },
+            (_, _) => Task.FromResult(true),
             cancellationToken);
     }
+
+    /// <summary>The audit actor for an emergency operation passed an optional actor id (the command line passes its own).</summary>
+    private static AuditActor AuditActorFor(ActorId? actorId) =>
+        actorId is null || actorId.Value == CliActorId ? AuditActor.EmergencyCli : AuditActor.CurrentPrincipal;
 
     /// <inheritdoc />
     public async ValueTask RevokeAsync(bool confirmFallback, ActorId? actorId, CancellationToken cancellationToken = default)

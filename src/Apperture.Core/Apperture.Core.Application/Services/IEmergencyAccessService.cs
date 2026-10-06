@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 
@@ -30,9 +31,11 @@ public interface IEmergencyAccessService
     /// Normalizes the designated emergency user in place to the canonical username and display name.
     /// Preserves UserId, credentials, TOTP, recovery codes, and designation. Throws
     /// <see cref="EmergencyAccessErrorCodes.UsernameConflict"/> without mutating when another user
-    /// already owns the reserved username.
+    /// already owns the reserved username. The change and its audit row commit together, attributed to
+    /// <paramref name="actor"/>: <see cref="AuditActor.EmergencyCli"/> from the command line, or
+    /// <see cref="AuditActor.System"/> when the Management Host applies it at startup.
     /// </summary>
-    ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default);
+    ValueTask EnsureCanonicalIdentityAsync(AuditActor actor, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Clears emergency designation. IAM-2 last-admin fallback becomes required again until a

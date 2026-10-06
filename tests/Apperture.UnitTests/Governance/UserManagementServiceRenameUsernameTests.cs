@@ -1,10 +1,12 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -29,6 +31,7 @@ public sealed class UserManagementServiceRenameUsernameTests
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         harness.Users.Changes.Should().BeEmpty();
         harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Operations.Should().BeEmpty("authorization is refused before the unit of work opens");
     }
 
     [Fact]
@@ -43,11 +46,17 @@ public sealed class UserManagementServiceRenameUsernameTests
         result.Username.Should().Be("alice.renamed", "the stored form is the normalized one");
         harness.Users.Changes.Should().ContainSingle().Which.Should().Be((TargetId, "alice", "alice.renamed", UsernameRetiredReasons.Rename));
 
-        var audit = harness.Audit.Records.Should().ContainSingle().Which;
+        // AUD-1.1: a structured row staged in the rename's own unit of work, attributed to the authenticated principal.
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.Operation.PrimaryAction.Should().Be("governance.user.username.changed");
+        operation.Operation.Actor.IsCurrentPrincipal.Should().BeTrue("the recorder takes a person only from the authenticated context");
+        var audit = operation.Staged.Should().ContainSingle().Which;
         audit.Action.Should().Be("governance.user.username.changed");
-        audit.ActorId.Value.Should().Be("admin");
-        audit.Resource!.ResourceType.Should().Be(ResourceTypeConstants.User);
-        audit.Details.Should().Contain("previousUsername=alice").And.Contain("newUsername=alice.renamed");
+        audit.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, TargetId));
+        audit.Fields["previousUsername"].Should().Be("alice");
+        audit.Fields["newUsername"].Should().Be("alice.renamed");
+        audit.Fields["change"].Should().Be("assigned");
+        harness.Audit.Records.Should().BeEmpty("the rename no longer goes through the append bridge");
     }
 
     [Fact]
@@ -61,8 +70,23 @@ public sealed class UserManagementServiceRenameUsernameTests
 
         result.PreviousUsername.Should().Be("alice.replaced");
         result.Username.Should().Be("alice.renamed");
-        var audit = harness.Audit.Records.Should().ContainSingle().Which;
-        audit.Details.Should().Contain("previousUsername=alice.replaced").And.NotContain("previousUsername=alice ");
+        var audit = harness.Recorder.Staged.Should().ContainSingle().Which;
+        audit.Fields["previousUsername"].Should().Be("alice.replaced");
+    }
+
+    [Fact]
+    public void A_committed_rename_is_reconstructed_from_its_recorded_names_without_rerunning_it()
+    {
+        var committed = new AuditCommittedOperation(
+            "op1",
+            "governance.user.username.changed",
+            AuditTargetTypes.User,
+            TargetId,
+            """{"userId":"00112233445566778899aabb","previousUsername":"alice","newUsername":"alice.old","change":"reclaimed"}""");
+
+        var result = UserManagementService.ReconstructRename(committed);
+
+        result.Should().Be(new UsernameRenameResult(UsernameChangeOutcome.Reclaimed, "alice", "alice.old"));
     }
 
     [Fact]
@@ -82,7 +106,7 @@ public sealed class UserManagementServiceRenameUsernameTests
 
         (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.ConcurrentChange);
         harness.Users.Changes.Should().BeEmpty("the compare-and-swap protects the concurrent rename");
-        harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -94,7 +118,8 @@ public sealed class UserManagementServiceRenameUsernameTests
         var result = await harness.Service.RenameUsernameAsync(new UserId(TargetId), "alice.old");
 
         result.Outcome.Should().Be(UsernameChangeOutcome.Reclaimed);
-        harness.Audit.Records.Should().ContainSingle(a => a.Action == "governance.user.username.changed");
+        harness.Recorder.Staged.Should().ContainSingle(a => a.Action == "governance.user.username.changed")
+            .Which.Fields["change"].Should().Be("reclaimed");
     }
 
     [Fact]
@@ -107,7 +132,9 @@ public sealed class UserManagementServiceRenameUsernameTests
         result.Outcome.Should().Be(UsernameChangeOutcome.Unchanged);
         result.Username.Should().Be("alice");
         harness.Users.Changes.Should().BeEmpty();
-        harness.Audit.Records.Should().BeEmpty();
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.NoOp.Should().BeTrue("an unchanged rename declares that it changed nothing");
+        operation.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -119,7 +146,7 @@ public sealed class UserManagementServiceRenameUsernameTests
         var act = () => harness.Service.RenameUsernameAsync(new UserId(TargetId), "bob").AsTask();
 
         (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.Taken);
-        harness.Audit.Records.Should().NotContain(a => a.Action == "governance.user.username.changed");
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Theory]
@@ -182,6 +209,7 @@ public sealed class UserManagementServiceRenameUsernameTests
         public RecordingAudit Audit { get; } = new();
         public RecordingRoles Roles { get; } = new();
         public RecordingCredentials Credentials { get; } = new();
+        public RecordingAuditedUnitOfWork Recorder { get; } = new();
         public UserManagementService Service { get; }
 
         private Harness(bool allowUserManage)
@@ -202,7 +230,8 @@ public sealed class UserManagementServiceRenameUsernameTests
                 Credentials,
                 new StubHasher(),
                 Audit,
-                Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }));
+                Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }),
+                auditedUnitOfWork: Recorder);
         }
 
         public static Harness Create(bool allowUserManage = true) => new(allowUserManage);

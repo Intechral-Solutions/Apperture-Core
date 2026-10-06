@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -28,7 +29,8 @@ public sealed class EmergencyAccessCanonicalizationHostedService : IHostedServic
         {
             using var scope = _scopeFactory.CreateScope();
             var emergency = scope.ServiceProvider.GetRequiredService<IEmergencyAccessService>();
-            await emergency.EnsureCanonicalIdentityAsync(cancellationToken).ConfigureAwait(false);
+            // The host applies this on its own, so the platform is the actor (not the emergency command line).
+            await emergency.EnsureCanonicalIdentityAsync(AuditActor.System(), cancellationToken).ConfigureAwait(false);
         }
         catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
         {

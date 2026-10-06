@@ -1,9 +1,11 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -135,7 +137,7 @@ public sealed class EmergencyAccessServiceTests
         harness.Mfa.Enrolled["emerg-1"] = true;
         harness.Mfa.UnusedCodes["emerg-1"] = 9;
 
-        await harness.Emergency.EnsureCanonicalIdentityAsync();
+        await harness.Emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli);
 
         var user = harness.Users.Get("emerg-1")!;
         user.Id.Value.Should().Be("emerg-1");
@@ -143,12 +145,44 @@ public sealed class EmergencyAccessServiceTests
         user.DisplayName.Should().Be(EmergencyAccessIdentity.DisplayName);
         EmergencyAccessIdentity.LocalUsernameOf(user).Should().Be(EmergencyAccessIdentity.LocalUsername);
         user.Username.Should().Be(EmergencyAccessIdentity.LocalUsername, "canonicalization is a rename through the username foundation");
-        harness.Audit.Details.Should().Contain(d => d.Contains("previousUsername=oldglass"));
         harness.Credentials.Disabled["emerg-1"].Should().BeFalse();
         harness.Mfa.Enrolled["emerg-1"].Should().BeTrue();
         harness.Mfa.UnusedCodes["emerg-1"].Should().Be(9);
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.Canonicalized);
-        harness.Audit.Details.Should().NotContain("oldglass-secret");
+
+        // AUD-1.1: one structured row, staged in the rename's unit of work and attributed to the caller.
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        var staged = operation.Staged.Should().ContainSingle().Which;
+        staged.Action.Should().Be(EmergencyAccessAuditActionNames.Canonicalized);
+        staged.Target!.Id.Should().Be("emerg-1");
+        staged.Fields["previousUsername"].Should().Be("oldglass");
+        staged.Fields["newUsername"].Should().Be(EmergencyAccessIdentity.LocalUsername);
+        harness.Audit.Actions.Should().NotContain(EmergencyAccessAuditActionNames.Canonicalized, "the append path no longer writes it");
+    }
+
+    [Fact]
+    public async Task EnsureCanonical_from_the_host_is_attributed_to_the_system_not_the_command_line()
+    {
+        var harness = Harness.WithAdmin("emerg-1");
+        harness.Users.Seed(Admin("emerg-1", designated: true, username: "oldglass", displayName: "Emergency Administrator"));
+
+        await harness.Emergency.EnsureCanonicalIdentityAsync(AuditActor.System());
+
+        harness.Recorder.Operations.Should().ContainSingle().Which.Operation.Actor.RecordedValue.Should().Be("system");
+        harness.Recorder.Staged.Should().ContainSingle(e => e.Action == EmergencyAccessAuditActionNames.Canonicalized);
+    }
+
+    [Fact]
+    public async Task EnsureCanonical_on_an_already_canonical_account_declares_a_no_op_and_stages_nothing()
+    {
+        var harness = Harness.WithAdmin("emerg-1");
+        harness.Users.Seed(Admin("emerg-1", designated: true, username: EmergencyAccessIdentity.LocalUsername, displayName: EmergencyAccessIdentity.DisplayName));
+
+        await harness.Emergency.EnsureCanonicalIdentityAsync(AuditActor.System());
+
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.NoOp.Should().BeTrue();
+        operation.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -188,7 +222,7 @@ public sealed class EmergencyAccessServiceTests
         harness.Mfa.Enrolled["emerg-1"] = true;
         harness.Mfa.UnusedCodes["emerg-1"] = 4;
 
-        var act = () => harness.Emergency.EnsureCanonicalIdentityAsync().AsTask();
+        var act = () => harness.Emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
@@ -269,6 +303,7 @@ public sealed class EmergencyAccessServiceTests
         public RecordingRoles Roles { get; } = new();
         public FakeMfa Mfa { get; } = new();
         public RecordingAudit Audit { get; } = new();
+        public RecordingAuditedUnitOfWork Recorder { get; } = new();
         public EmergencyAccessService Emergency { get; }
 
         private Harness()
@@ -281,7 +316,8 @@ public sealed class EmergencyAccessServiceTests
                 Mfa,
                 Audit,
                 TimeProvider.System,
-                NullLogger<EmergencyAccessService>.Instance);
+                NullLogger<EmergencyAccessService>.Instance,
+                Recorder);
         }
 
         public static Harness Empty() => new();

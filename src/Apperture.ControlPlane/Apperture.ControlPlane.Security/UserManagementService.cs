@@ -1,5 +1,6 @@
 using Apperture.Core.Application;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -32,6 +33,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IEmergencyAccessService? _emergencyAccess;
     private readonly IAccountInvitationService? _invitations;
     private readonly IAccountActionTokenService? _actionTokens;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -49,8 +51,10 @@ public sealed class UserManagementService : IUserManagementService
         IStrongAuthenticationGate? strongAuthentication = null,
         IEmergencyAccessService? emergencyAccess = null,
         IAccountInvitationService? invitations = null,
-        IAccountActionTokenService? actionTokens = null)
+        IAccountActionTokenService? actionTokens = null,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
+        _auditedUnitOfWork = auditedUnitOfWork;
         _entraAssociation = entraAssociation;
         _entraOptions = entraOptions;
         _strongAuthentication = strongAuthentication;
@@ -494,20 +498,41 @@ public sealed class UserManagementService : IUserManagementService
         var actorId = await RequireUserManageAsync(cancellationToken);
         await AppendBreakGlassUseAuditIfNeededAsync("user.username.rename", actorId, cancellationToken);
 
-        // Policy, Recovery Access refusal, ownership and the transactional ledger/Local-link change live in the
-        // username service and repository; this method adds authorization and the audit row. The audited names come
-        // from the transaction's own result, never from a read made before it.
-        var result = await new UsernameService(_userRepository).RenameWithResultAsync(userId, requestedUsername, cancellationToken);
-        if (result.Outcome == UsernameChangeOutcome.Unchanged)
-            return result;
+        // AUD-1.1: one audited unit of work (audit hardening design gate §13). Policy, Recovery Access refusal, ownership
+        // and the ledger/Local-link change run inside the unit's transaction, and the audit row commits with them. The
+        // audited names come from the transaction's own result, never from a read made before it. After an uncertain
+        // commit the outcome is verified before anything reruns, so a rename that already committed is reported as
+        // done (from its recorded names), never as unchanged.
+        var unit = _auditedUnitOfWork
+            ?? throw new InvalidOperationException("Renaming a user requires the audited unit of work.");
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.UsernameChanged, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var result = await new UsernameService(_userRepository).RenameWithResultAsync(userId, requestedUsername, ct);
+                if (result.Outcome == UsernameChangeOutcome.Unchanged)
+                {
+                    transaction.DeclareNoOp();
+                    return result;
+                }
 
-        await AppendAuditAsync(
-            GovernanceAuditActionNames.UserUsernameChanged,
-            actorId,
-            userId.Value,
-            $"userId={userId.Value} previousUsername={result.PreviousUsername} newUsername={result.Username}",
+                await transaction.StageAsync(
+                    AuditEvents.UsernameChanged(userId, result.PreviousUsername, result.Username, result.Outcome), ct);
+                return result;
+            },
+            (committed, _) => Task.FromResult(ReconstructRename(committed)),
             cancellationToken);
-        return result;
+    }
+
+    /// <summary>A committed rename's result, rebuilt from its audit row without rerunning the rename (§13.5).</summary>
+    internal static UsernameRenameResult ReconstructRename(AuditCommittedOperation committed)
+    {
+        var previous = committed.GetField("previousUsername")
+            ?? throw new InvalidOperationException("The committed rename row records no previous username.");
+        var next = committed.GetField("newUsername")
+            ?? throw new InvalidOperationException("The committed rename row records no new username.");
+        var outcome = committed.GetField("change") == "reclaimed" ? UsernameChangeOutcome.Reclaimed : UsernameChangeOutcome.Assigned;
+        return new UsernameRenameResult(outcome, previous, next);
     }
 
     /// <inheritdoc />

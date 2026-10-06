@@ -1,5 +1,6 @@
 using Apperture.Cli.Bootstrap;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Providers;
@@ -111,7 +112,7 @@ internal static class EmergencyCli
     {
         try
         {
-            await emergency.EnsureCanonicalIdentityAsync();
+            await emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli);
         }
         catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
         {
@@ -144,7 +145,7 @@ internal static class EmergencyCli
         {
             try
             {
-                await emergency.EnsureCanonicalIdentityAsync();
+                await emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli);
             }
             catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
             {
