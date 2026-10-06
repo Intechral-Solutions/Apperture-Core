@@ -36,8 +36,13 @@ public sealed record AccessRequestApprovalProvisioningRequest(
     string? InitialRoleId = null,
     bool SendWelcomeEmail = false);
 
+/// <summary>
+/// The outcome of a successful provisioning. <paramref name="Username"/> is the canonical username persisted for
+/// the new user (the stored value, not a recomputation); failures throw and carry no result.
+/// </summary>
 public sealed record UserProvisioningResult(
     UserId UserId,
+    string Username,
     string DisplayName,
     string ObjectId,
     bool EntraLinkProven,

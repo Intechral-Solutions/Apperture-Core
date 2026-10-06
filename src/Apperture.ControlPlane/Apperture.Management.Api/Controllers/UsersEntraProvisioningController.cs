@@ -100,6 +100,7 @@ public sealed class UsersEntraProvisioningController : ControllerBase
                     true,
                     objectId,
                     result.UserId.Value,
+                    result.Username,
                     result.DisplayName,
                     null,
                     null,
@@ -114,12 +115,12 @@ public sealed class UsersEntraProvisioningController : ControllerBase
             catch (UserProvisioningException ex)
             {
                 results.Add(new EntraProvisioningPersonResultDto(
-                    false, objectId, null, null, ex.Code, ex.Message, false, false, null));
+                    false, objectId, null, null, null, ex.Code, ex.Message, false, false, null));
             }
             catch (InvalidOperationException ex)
             {
                 results.Add(new EntraProvisioningPersonResultDto(
-                    false, objectId, null, null, "user.provisioning.failed", ex.Message, false, false, null));
+                    false, objectId, null, null, null, "user.provisioning.failed", ex.Message, false, false, null));
             }
         }
 
@@ -157,6 +158,7 @@ public sealed class UsersEntraProvisioningController : ControllerBase
                 true,
                 result.ObjectId,
                 result.UserId.Value,
+                result.Username,
                 result.DisplayName,
                 null,
                 null,
@@ -264,10 +266,15 @@ public sealed record EntraDirectoryProvisionRequestBody(
 
 public sealed record EntraProvisioningBatchResultDto(IReadOnlyList<EntraProvisioningPersonResultDto> Results);
 
+/// <summary>
+/// One person's provisioning outcome. <paramref name="Username"/> is the stored username of the user that was
+/// created; it is null on a failed row, which identifies no user.
+/// </summary>
 public sealed record EntraProvisioningPersonResultDto(
     bool Succeeded,
     string ObjectId,
     string? UserId,
+    string? Username,
     string? DisplayName,
     string? ErrorCode,
     string? ErrorMessage,
