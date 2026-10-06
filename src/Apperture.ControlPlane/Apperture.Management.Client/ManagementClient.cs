@@ -1863,14 +1863,18 @@ public sealed class ManagementClient : IManagementClient
             // No structured body (a malformed one, or a gateway page that is not JSON): fall back to a plain message for the status.
         }
 
-        var message = !string.IsNullOrWhiteSpace(error?.Message)
-            ? error!.Message
-            : response.StatusCode switch
-            {
-                HttpStatusCode.Forbidden => "Not authorized to manage users.",
-                HttpStatusCode.NotFound => "User not found.",
-                _ => "Could not change the username."
-            };
+        // A 5xx or 408 does not prove the rename was refused (the change may have committed before the error), so whatever
+        // the body says, the operator is told the outcome is unknown rather than that it failed.
+        var message = UsernameRenameException.IsOutcomeUnknown(response.StatusCode)
+            ? "The server could not complete the request. " + UsernameRenameException.ConfirmByRefreshing
+            : !string.IsNullOrWhiteSpace(error?.Message)
+                ? error!.Message
+                : response.StatusCode switch
+                {
+                    HttpStatusCode.Forbidden => "Not authorized to manage users.",
+                    HttpStatusCode.NotFound => "User not found.",
+                    _ => "Could not change the username."
+                };
         throw new UsernameRenameException(message, response.StatusCode, error?.Code);
     }
 

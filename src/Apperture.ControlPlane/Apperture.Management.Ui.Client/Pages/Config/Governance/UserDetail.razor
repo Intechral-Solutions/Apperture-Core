@@ -595,9 +595,9 @@
                 // The page is gone (host teardown): there is no form left to tell.
                 return;
             }
-            catch (Exception ex) when (TryDescribeRenameFailure(ex, out var failure))
+            catch (Exception ex) when (TryDescribeRenameFailure(ex, out var failure, out var outcomeKnown))
             {
-                ReportRenameFailure(operation, failure);
+                ReportRenameFailure(operation, failure, outcomeKnown);
                 return;
             }
 
@@ -621,27 +621,36 @@
     /// The expected ways a rename request can fail, each with what the operator should be told. Anything else is a defect
     /// and is left to propagate (the pending state is still released by the caller's <c>finally</c>).
     /// </summary>
-    private static bool TryDescribeRenameFailure(Exception ex, out string message)
+    /// <remarks>
+    /// <paramref name="outcomeKnown"/> separates a confirmed refusal (the API answered with a 4xx, so nothing changed) from
+    /// an unknown outcome (no answer, an unreadable answer, a server or gateway error), where the server may have committed
+    /// the rename. Only a confirmed refusal may be described as "not changed"; an unknown outcome says it is unknown and
+    /// sends the operator to refresh to confirm.
+    /// </remarks>
+    private static bool TryDescribeRenameFailure(Exception ex, out string message, out bool outcomeKnown)
     {
+        outcomeKnown = false;
         switch (ex)
         {
             case HttpRequestException { StatusCode: HttpStatusCode.Forbidden }:
                 message = "Not authorized to manage users.";
+                outcomeKnown = true;
                 return true;
             case UsernameRenameException refused:
-                // The server's own explanation, safe to show (for example a name another user holds or held).
+                // The client's or the server's own explanation, safe to show. A 5xx or 408 carries the unknown-outcome wording.
                 message = refused.Message;
+                outcomeKnown = !refused.OutcomeUnknown;
                 return true;
             case HttpRequestException:
-                message = "Could not reach the server, so the username change was not confirmed. Try again.";
+                message = "The connection was lost before an answer was received. " + UsernameRenameException.ConfirmByRefreshing;
                 return true;
             case OperationCanceledException:
                 // HttpClient reports a timeout as a cancellation. The server may still have applied the change.
-                message = "The server did not answer in time. The username may have changed; reload the page to check before trying again.";
+                message = "The server did not answer in time. " + UsernameRenameException.ConfirmByRefreshing;
                 return true;
             case JsonException or NotSupportedException or InvalidOperationException:
                 // The typed client throws these only when it could not read a reply it was given.
-                message = "The server's response could not be read, so the username change was not confirmed. Reload the page to see the current username.";
+                message = "The server's reply could not be read. " + UsernameRenameException.ConfirmByRefreshing;
                 return true;
             default:
                 message = "";
@@ -649,7 +658,7 @@
         }
     }
 
-    private void ReportRenameFailure(RenameOperation operation, string message)
+    private void ReportRenameFailure(RenameOperation operation, string message, bool outcomeKnown)
     {
         if (IsCurrent(operation))
         {
@@ -657,8 +666,14 @@
             return;
         }
 
-        // The operator has moved on, so this is not shown on the form in front of them, but a failure is not silent.
-        Toasts.Show(ToastSeverity.Error, $"Changing the username for {operation.DisplayName} failed. {message}", "Governance");
+        // The operator has moved on, so this is not shown on the form in front of them, but it is not silent either. It never
+        // says "failed" or "not changed" unless the API actually refused the request.
+        Toasts.Show(
+            ToastSeverity.Error,
+            outcomeKnown
+                ? $"The username for {operation.DisplayName} was not changed. {message}"
+                : $"Could not confirm the username change for {operation.DisplayName}. {message}",
+            "Governance");
     }
 
     private async Task ConcludeConfirmedRenameAsync(RenameOperation operation, RenameUsernameResponse result)

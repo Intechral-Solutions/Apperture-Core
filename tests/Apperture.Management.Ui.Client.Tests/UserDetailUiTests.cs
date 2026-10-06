@@ -204,13 +204,21 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
 
     // ---------- Rename failures: the operator is told, and the pending state is always released ----------
 
+    private static UsernameRenameException ServerError(HttpStatusCode status) =>
+        new("The server could not complete the request. " + UsernameRenameException.ConfirmByRefreshing, status, null);
+
+    /// <summary>Every way a rename can end with the result unknown: the server may have committed the change.</summary>
     public static TheoryData<Exception, string> UnconfirmedFailures => new()
     {
         { new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.", new TimeoutException()), "did not answer in time" },
-        { new HttpRequestException("Connection refused"), "Could not reach the server" },
+        { new HttpRequestException("Connection refused"), "connection was lost" },
         { new System.Text.Json.JsonException("The response is not JSON."), "could not be read" },
         { new NotSupportedException("The content type is not supported."), "could not be read" },
         { new InvalidOperationException("Rename succeeded without a result."), "could not be read" },
+        { ServerError(HttpStatusCode.InternalServerError), "could not complete the request" },
+        { ServerError(HttpStatusCode.BadGateway), "could not complete the request" },
+        { ServerError(HttpStatusCode.GatewayTimeout), "could not complete the request" },
+        { ServerError(HttpStatusCode.RequestTimeout), "could not complete the request" },
     };
 
     [Theory]
@@ -224,6 +232,13 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         RenameForm(cut).Submit();
 
         cut.WaitForAssertion(() => cut.Find("#rename-username-hint").TextContent.Should().Contain(expected));
+
+        // The server may have committed the rename, so the page never says it failed or was not applied: it says the result
+        // is unknown and sends the operator to refresh to confirm before trying again.
+        var hint = cut.Find("#rename-username-hint").TextContent;
+        hint.Should().Contain("may or may not have changed").And.Contain("Refresh this page to confirm");
+        hint.Should().NotContainAny("was not changed", "Could not change", "failed", "Try again.", "not applied");
+
         RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse("the pending state is released");
         Field(cut).HasAttribute("disabled").Should().BeFalse();
         Field(cut).GetAttribute("value").Should().Be("alice.renamed", "the typed value is kept");
@@ -355,14 +370,15 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         gate.SetException(new UsernameRenameException(
             "That username belongs, or once belonged, to another user.", HttpStatusCode.Conflict, "username_taken"));
 
+        // A confirmed refusal: the API said no, so "not changed" is true.
         cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t =>
-            t.Message.Contains("Alice Example") && t.Message.Contains("failed")));
+            t.Message.Contains("Alice Example") && t.Message.Contains("was not changed") && t.Message.Contains("another user")));
         AssertIdleRenameForm(cut, "bob");
         cut.Find("#rename-username-hint").TextContent.Should().NotContain("another user");
     }
 
     [Fact]
-    public void A_late_timeout_for_the_previous_user_never_touches_the_form_of_the_user_now_shown()
+    public void A_late_timeout_for_the_previous_user_never_touches_the_form_and_does_not_claim_the_rename_failed()
     {
         var cut = RenderDetail();
         var gate = new TaskCompletionSource<RenameUsernameResponse>();
@@ -373,6 +389,51 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
 
         cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t => t.Message.Contains("Alice Example")));
         AssertIdleRenameForm(cut, "bob");
+        AssertUnknownOutcomeToast();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    public void A_late_server_or_gateway_error_for_the_previous_user_is_an_unknown_outcome_not_a_refusal(HttpStatusCode status)
+    {
+        var cut = RenderDetail();
+        var gate = new TaskCompletionSource<RenameUsernameResponse>();
+        StartAlicePendingRename(cut, gate);
+        NavigateToBob(cut);
+
+        gate.SetException(ServerError(status));
+
+        cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t => t.Message.Contains("Alice Example")));
+        AssertIdleRenameForm(cut, "bob");
+        AssertUnknownOutcomeToast();
+    }
+
+    [Fact]
+    public void A_late_transport_failure_for_the_previous_user_is_an_unknown_outcome_not_a_refusal()
+    {
+        var cut = RenderDetail();
+        var gate = new TaskCompletionSource<RenameUsernameResponse>();
+        StartAlicePendingRename(cut, gate);
+        NavigateToBob(cut);
+
+        gate.SetException(new HttpRequestException("Connection reset"));
+
+        cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t => t.Message.Contains("Alice Example")));
+        AssertIdleRenameForm(cut, "bob");
+        AssertUnknownOutcomeToast();
+    }
+
+    /// <summary>A result that is not known is never reported as a failure or as "not changed": the server may have committed it.</summary>
+    private void AssertUnknownOutcomeToast()
+    {
+        var toast = Toasts.Toasts.Should().ContainSingle(t => t.Message.Contains("Alice Example")).Which.Message;
+        toast.Should().StartWith("Could not confirm the username change for Alice Example.");
+        toast.Should().Contain("may or may not have changed").And.Contain("Refresh this page to confirm");
+        toast.Should().NotContainAny("was not changed", "failed", "Try again.");
     }
 
     [Theory]

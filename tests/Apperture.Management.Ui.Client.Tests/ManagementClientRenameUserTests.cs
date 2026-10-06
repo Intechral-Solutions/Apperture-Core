@@ -82,23 +82,63 @@ public sealed class ManagementClientRenameUserTests
         ex.StatusCode.Should().Be(status);
         ex.Code.Should().Be(code);
         ex.Message.Should().Be("Server says no.");
+        ex.OutcomeUnknown.Should().BeFalse("a 4xx is the API refusing the request, so nothing changed");
     }
 
     [Theory]
-    [InlineData("<html><body>Bad gateway</body></html>", "text/html")]
+    [InlineData("<html><body>Bad request</body></html>", "text/html")]
     [InlineData("not json at all", "application/json")]
     [InlineData("", "application/json")]
     public async Task A_refusal_without_a_readable_body_is_a_refusal_with_a_plain_message_not_a_parse_failure(string body, string contentType)
     {
-        var (client, _) = Create(HttpStatusCode.BadGateway, body, contentType);
+        var (client, _) = Create(HttpStatusCode.BadRequest, body, contentType);
 
         var act = () => client.RenameUserAsync("user-7f3a", "bob");
 
         var ex = (await act.Should().ThrowAsync<UsernameRenameException>()).Which;
-        ex.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        ex.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         ex.Message.Should().Be("Could not change the username.");
         ex.Code.Should().BeNull();
+        ex.OutcomeUnknown.Should().BeFalse();
     }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, """{"message":"Server says no.","code":"username_taken"}""", "application/json")]
+    [InlineData(HttpStatusCode.BadGateway, "<html><body>Bad gateway</body></html>", "text/html")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "", "application/json")]
+    [InlineData(HttpStatusCode.GatewayTimeout, "<html>Gateway time-out</html>", "text/html")]
+    [InlineData(HttpStatusCode.RequestTimeout, "", "application/json")]
+    public async Task A_server_or_gateway_error_is_an_unknown_outcome_never_a_claim_that_the_rename_failed(HttpStatusCode status, string body, string contentType)
+    {
+        // The API commits the rename before it writes the audit row, and a gateway can fail after the API answered, so these
+        // statuses do not prove the rename was refused. Whatever the body says, the operator is told the result is unknown.
+        var (client, _) = Create(status, body, contentType);
+
+        var act = () => client.RenameUserAsync("user-7f3a", "bob");
+
+        var ex = (await act.Should().ThrowAsync<UsernameRenameException>()).Which;
+        ex.StatusCode.Should().Be(status);
+        ex.OutcomeUnknown.Should().BeTrue();
+        ex.Message.Should().StartWith("The server could not complete the request.")
+            .And.Contain(UsernameRenameException.ConfirmByRefreshing);
+        ex.Message.Should().NotContainAny("Could not change", "failed", "was not changed", "Server says no.");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK, false)]
+    [InlineData(HttpStatusCode.BadRequest, false)]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    [InlineData(HttpStatusCode.Conflict, false)]
+    [InlineData(HttpStatusCode.TooManyRequests, false)]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.GatewayTimeout, true)]
+    public void Only_a_server_error_or_a_request_timeout_leaves_the_outcome_unknown(HttpStatusCode status, bool unknown) =>
+        UsernameRenameException.IsOutcomeUnknown(status).Should().Be(unknown);
 
     [Theory]
     [InlineData("not json at all", typeof(System.Text.Json.JsonException))]
