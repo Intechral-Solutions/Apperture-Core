@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Apperture.BrowserTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -56,6 +57,7 @@ public sealed class SessionRenewalBaselineTests(BrowserHarness harness, ITestOut
             "no request in the passive window re-issued the session cookie, including a late boot request that was not operator input");
 
         // Six more hours: 13 h since sign-in. The original ticket expired at 12 h.
+        var beforeExpiry = trace.Responses.Count;
         harness.Clock.Advance(TimeSpan.FromHours(6));
         harness.Recorder.Clear();
         await TestSupport.EventuallyAsync(
@@ -77,10 +79,37 @@ public sealed class SessionRenewalBaselineTests(BrowserHarness harness, ITestOut
         laterPoll.SetSessionCookie.Should().BeFalse();
         replay.Status.Should().Be(401, "the original ticket is dead at 13 h");
 
-        await page.WaitForURLAsync(u => u.Contains("/login", StringComparison.Ordinal), new() { Timeout = 60_000 });
-        new Uri(page.Url).AbsolutePath.Should().Be("/login");
-        harness.Recorder.Where(r => r.Path.Contains("/auth/me", StringComparison.OrdinalIgnoreCase) && r.Status is 200 or 401)
-            .Should().NotBeEmpty("recovery probes auth/me once the background poll is 401");
+        try
+        {
+            // A retrying URL assertion, not a navigation-event wait. The tab's one navigation to sign-in usually commits
+            // ~100 ms after the 401 poll, while this test is still busy with the control replay above, and a
+            // WaitForURLAsync started at that moment can miss it (Playwright .NET checks the URL, then subscribes to the
+            // navigation event), timing out on a tab that is already on /login.
+            await Assertions.Expect(page).ToHaveURLAsync(
+                new Regex("^" + Regex.Escape(harness.Origins.Ui) + @"/login(\?|$)"), new() { Timeout = 60_000 });
+            new Uri(page.Url).AbsolutePath.Should().Be("/login");
+
+            // The tab's own recovery probe, seen by the page: one auth/me re-check between expiry and the sign-in
+            // document. The control replay runs in another context and never reaches this trace.
+            trace.RecoveryProbes(beforeExpiry).Should().ContainSingle("recovery probes auth/me once the background poll is 401")
+                .Which.Status.Should().Be(401);
+
+            // The same probe as the host received it (the recorder was cleared at 13 h): a CORS request from the UI
+            // origin without the platform header. The control replay sends no Origin, and the sign-in page's own boot
+            // check carries the platform header.
+            harness.Recorder.Where(r => r.Path.EndsWith("/auth/me", StringComparison.OrdinalIgnoreCase)
+                    && r.Origin == harness.Origins.Ui
+                    && r.SecFetchMode == "cors"
+                    && !r.CustomHeaderPresent)
+                .Should().ContainSingle("the tab's recovery probe reached the host, not only the control replay")
+                .Which.Status.Should().Be(401);
+        }
+        catch (Exception)
+        {
+            // URLs, statuses and cookie names only; never cookie values or tokens.
+            output.Line("F9", trace.Describe(harness.Recorder));
+            throw;
+        }
     }
 
     /// <summary>
