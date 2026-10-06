@@ -111,7 +111,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
         var pendingLink = await _association.BuildPendingAdminLinkAsync(objectId!, registration, cancellationToken);
         var userId = NewUserId();
-        await AddWithGeneratedUsernameAsync(
+        var created = await AddWithGeneratedUsernameAsync(
             username => new User(
                 userId,
                 displayName,
@@ -145,6 +145,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
         return new UserProvisioningResult(
             userId,
+            created.Username,
             displayName,
             objectId!,
             EntraLinkProven: false,
@@ -224,7 +225,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
             MailSnapshot: accessRequest.MailSnapshot);
 
         var userId = NewUserId();
-        await AddWithGeneratedUsernameAsync(
+        var created = await AddWithGeneratedUsernameAsync(
             username => new User(userId, displayName, [link], [], IsBreakGlassEligible: false) { Username = username },
             new UsernameGenerationSources(
                 accessRequest.UserPrincipalNameSnapshot,
@@ -267,6 +268,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
         return new UserProvisioningResult(
             userId,
+            created.Username,
             displayName,
             objectId!,
             EntraLinkProven: true,
@@ -410,16 +412,17 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
     /// <summary>
     /// Persists a new Entra user under a generated username (UPN, mail, display name, then <c>user</c>;
-    /// never the object id). A failed add reserves no name.
+    /// never the object id). A failed add reserves no name. Returns the user exactly as persisted, so callers
+    /// report its stored username rather than recomputing one.
     /// </summary>
-    private async ValueTask AddWithGeneratedUsernameAsync(
+    private async ValueTask<User> AddWithGeneratedUsernameAsync(
         Func<string, User> buildUser,
         UsernameGenerationSources sources,
         CancellationToken cancellationToken)
     {
         try
         {
-            await new UsernameService(_users).AddWithGeneratedUsernameAsync(buildUser, sources, cancellationToken);
+            return await new UsernameService(_users).AddWithGeneratedUsernameAsync(buildUser, sources, cancellationToken);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
         {

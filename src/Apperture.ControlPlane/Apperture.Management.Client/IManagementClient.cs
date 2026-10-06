@@ -2194,6 +2194,7 @@ public sealed record EntraProvisioningPersonResultDto(
     [property: JsonPropertyName("succeeded")] bool Succeeded,
     [property: JsonPropertyName("objectId")] string ObjectId,
     [property: JsonPropertyName("userId")] string? UserId,
+    [property: JsonPropertyName("username")] string? Username,
     [property: JsonPropertyName("displayName")] string? DisplayName,
     [property: JsonPropertyName("errorCode")] string? ErrorCode,
     [property: JsonPropertyName("errorMessage")] string? ErrorMessage,

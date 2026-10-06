@@ -29,6 +29,7 @@ public sealed class UserProvisioningServiceTests
 
         var user = harness.Users.Added.Should().ContainSingle().Subject;
         user.Username.Should().Be("jane", "generated from the UPN local part, never the object id");
+        result.Username.Should().Be(user.Username, "the result reports the username that was persisted");
         user.EmailAddress.Should().BeNull();
         user.EmailVerifiedAtUtc.Should().BeNull();
         user.IdentityLinks.Should().ContainSingle(l =>
@@ -217,6 +218,60 @@ public sealed class UserProvisioningServiceTests
         harness.Requests.Items["req-1"].ProvisionedUserId.Should().Be(result.UserId.Value);
         harness.Users.Added.Single().EmailAddress.Should().BeNull();
         harness.Users.Added.Single().Username.Should().Be("jane", "generated from the request's UPN snapshot");
+        result.Username.Should().Be(harness.Users.Added.Single().Username, "the result reports the username that was persisted");
+    }
+
+    [Fact]
+    public async Task The_result_reports_the_persisted_username_when_the_repository_stores_a_later_candidate()
+    {
+        var harness = Harness.Create();
+        harness.Users.RejectUsernamesOnce("jane");
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid));
+
+        var stored = harness.Users.Added.Should().ContainSingle().Subject;
+        stored.Username.Should().Be("jane-2", "the first candidate lost the race, so the next one was stored");
+        result.Username.Should().Be("jane-2", "the result is the stored name, not a recomputed base");
+    }
+
+    [Fact]
+    public async Task A_reconciled_directory_provision_reports_the_new_users_username()
+    {
+        var harness = Harness.Create();
+        harness.Requests.Seed(new EntraAccessRequest(
+            "req-1", "reg-1", Tid, Oid, "Jane", "jane@contoso.com", "jane@contoso.com", "Member",
+            DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow.AddMinutes(-5), EntraAccessRequestStatus.Pending));
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid));
+
+        result.ReconciledRequestId.Should().Be("req-1");
+        result.Username.Should().Be(harness.Users.Added.Single().Username);
+    }
+
+    [Fact]
+    public async Task Approving_a_request_for_an_existing_identity_reconciles_it_and_returns_no_result()
+    {
+        var harness = Harness.Create();
+        harness.Users.Seed(new User(
+            new UserId("existing"),
+            "Existing",
+            [new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow, Tid, "reg-1")],
+            [],
+            IsBreakGlassEligible: false)
+        { Username = "existing" });
+        harness.Requests.Seed(new EntraAccessRequest(
+            "req-1", "reg-1", Tid, Oid, "Jane", "jane@contoso.com", "jane@contoso.com", "Member",
+            DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow.AddMinutes(-5), EntraAccessRequestStatus.Pending));
+
+        var act = () => harness.Service.ProvisionFromAccessRequestAsync(
+            new AccessRequestApprovalProvisioningRequest("req-1")).AsTask();
+
+        var ex = await act.Should().ThrowAsync<UserProvisioningException>();
+        ex.Which.Code.Should().Be(UserProvisioningErrorCodes.DuplicateIdentity, "an existing identity yields a failure, not a result");
+        harness.Users.Added.Should().BeEmpty();
+        harness.Requests.Items["req-1"].ProvisionedUserId.Should().Be("existing");
     }
 
     [Fact]
@@ -441,9 +496,17 @@ public sealed class UserProvisioningServiceTests
     private sealed class RecordingUsers : IUserRepository
     {
         private readonly Dictionary<string, User> _users = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _rejectOnce = new(StringComparer.Ordinal);
         public List<User> Added { get; } = [];
 
         public void Seed(User user) => _users[user.Id.Value] = user;
+
+        /// <summary>Simulates losing the race for these candidate names: the first insert of each is refused as taken.</summary>
+        public void RejectUsernamesOnce(params string[] usernames)
+        {
+            foreach (var username in usernames)
+                _rejectOnce.Add(username);
+        }
 
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_users.Count);
@@ -459,6 +522,9 @@ public sealed class UserProvisioningServiceTests
 
         public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
         {
+            if (_rejectOnce.Remove(user.Username))
+                throw new UsernameException(UsernameErrorCodes.Taken, "That username is taken.");
+
             foreach (var link in user.IdentityLinks)
             {
                 var key = link.Source == IdentitySource.Entra

@@ -9,7 +9,7 @@ Apperture is past a **foundation baseline** (Stabilization + Scheduling & Worker
 | Foundation / Stabilization | Reliability floor, auth, notifications, operator shell triage | **Complete** (S1–S13) |
 | Scheduling & Worker Management foundation | Dispatch, TZ, heartbeat observe, schedule readiness, lifecycle quarantine | **Complete** (SWM-1–SWM-12) |
 | Pre-release product development | Major product tracks (UI, demos, contexts, components, services, security, role lifecycle) | **Complete through IAM-8** (merged to `master`, 2026-09-30) |
-| RC1 program | Identity, audit, authorization, navigation, actions, lists, module runtime, operability | **Current.** Program gate approved 2026-10-03; no implementation epic started — see [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) |
+| RC1 program | Identity, audit, authorization, navigation, actions, lists, module runtime, operability | **Current.** Program gate approved 2026-10-03. IAM-9 packages and QW-1 are merged to `master`; IAM-9 closure is not yet accepted. See [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) |
 | RC1 validation | Smoke automation, security review, docs, tag | After the RC1 program |
 
 Do **not** use “release candidate,” “v1 ready,” or “release-ready” for the current baseline. RC1 is reached only through the RC1 program and its validation epic. See:
@@ -38,9 +38,12 @@ Worker process lifecycle remains **externally managed** (SWM-9/12). Do not resto
 
 Canonical current-state track list and near-term order: [`pre-release-product-roadmap.md`](pre-release-product-roadmap.md).
 
-**Current (2026-10-03):** the **RC1 program**. Its gate (RC-0) is complete. The first bodies have run on the
-`rc1-foundation` branch: IAM-9.0 and LST-1.0 (design gates, approved with amendments, not yet implemented) and QW-1
-(implemented). No other epic has started. Contract:
+**Current (2026-10-05):** the **RC1 program**. Its gate (RC-0) is complete. IAM-9.0, LST-1.0 (design gates,
+approved with amendments) and QW-1 (implemented) merged to `master` with PR #4. **IAM-9** (identity foundation)
+packages 9.1 to 9.5 are merged to `master` (PRs #5 to #10). Its
+[closure audit](../audits/iam9-identity-foundation-closure.md) finds it **not ready to close**: one approved contract
+row was unmet on `master`; its correction is implemented on a branch and awaits merge. LST-1 implementation, NAV-2, SDK-8 and every later epic have not started.
+Contract:
 [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). IAM-8 and LFC-1 are complete and merged to `master`.
 Workspaces are a Direction with implementation deferred; that direction supersedes the earlier cross-context
 grouping item. Context-scoped IAM stays deferred. SEC-1 engineering is merged; its remaining

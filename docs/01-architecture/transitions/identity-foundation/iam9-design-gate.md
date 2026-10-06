@@ -1,7 +1,7 @@
 # IAM-9 — Identity foundation — design gate
 
 Date: 2026-10-03
-Status: **IAM-9.0 design gate. Approved by the product owner (2026-10-03) with amendments.** Section 27 records the answers to Q1 to Q3 and the amendments to the username ledger and reserved names. Every ruling is binding on IAM-9.1 onward. **Implementation status (2026-10-05):** IAM-9.1, 9.2, 9.2a, 9.3 and 9.4 are merged to `master`. IAM-9.5 is implemented on branch `iam-9.5-governance-ui` and is awaiting pull request review and merge. IAM-9 is not complete (see §1).
+Status: **IAM-9.0 design gate. Approved by the product owner (2026-10-03) with amendments.** Section 27 records the answers to Q1 to Q3 and the amendments to the username ledger and reserved names. Every ruling is binding on IAM-9.1 onward. **Implementation status (2026-10-05):** IAM-9.1 to IAM-9.5 are merged to `master` (IAM-9.5: PR #10, `2b5bb52`, CI green). The [closure audit](../../../audits/iam9-identity-foundation-closure.md) is recorded with the verdict **not ready to close**: one approved §22 row (the assigned username on Entra provisioning results) was unmet on `master`. The correction is implemented on branch `iam-9-provisioning-username-result` and is not yet merged. IAM-9 is not complete (see §1).
 Branch at writing: `rc1-foundation` (documentation-only commit; may be cherry-picked onto the dedicated IAM-9 branch)
 Baseline HEAD: `d8cc7e5` (`docs: establish RC1 program contract and roadmap reconciliation`)
 Governing contract: [rc1-program-gate.md](../../rc1-program-gate.md), decisions D-01 to D-07, D-10, D-11, D-13, D-27.
@@ -24,8 +24,8 @@ Labels:
 | RC1 identity decisions D-01 to D-07 | Present in the gate §3.1 and consistent with repository reality (§7) |
 | IAM-9.0 | This document. Approved with amendments (§27) |
 | IAM-9.1 to IAM-9.4 | **Merged to `master`** (2026-10-05): 9.1 username foundation (#5), 9.2 stable session identity (#6), 9.2a historical actor normalization (#7), 9.3 user reference and search (#8), 9.4 `UserRef` component (#9). Section 25 decomposes them |
-| IAM-9.5 | Implemented on `iam-9.5-governance-ui`, **awaiting pull request review and merge. It is not on `master`** |
-| IAM-9 as a whole | **Not complete.** It is complete only when IAM-9.5 has merged and the IAM-9 closure audit against this gate (§25, IAM-9.5 handback) is recorded; no closure audit is recorded yet. The open findings carried to IAM-10 and AUD-1 are in §29. RC1 is not complete either |
+| IAM-9.5 | **Merged to `master`** (PR #10, merge `2b5bb52`, 2026-10-06 UTC; post-merge CI green) |
+| IAM-9 as a whole | **Not complete.** The closure audit is recorded: [iam9-identity-foundation-closure.md](../../../audits/iam9-identity-foundation-closure.md), verdict **not ready to close**. One approved row was unmet on `master`: §22, Entra provisioning results carry the assigned `Username` (closure finding C-1). The correction is implemented on `iam-9-provisioning-username-result`, not yet merged. All other requirements are implemented and evidenced. Closure stays pending the correction merge, green CI and owner acceptance. The open findings carried to IAM-10, AUD-1 and IAM-11 are in §29 and in the closure audit §4. RC1 is not complete either |
 | Product code changed by IAM-9.0 | None. IAM-9.0 itself was documentation only |
 
 ## 2. Baseline

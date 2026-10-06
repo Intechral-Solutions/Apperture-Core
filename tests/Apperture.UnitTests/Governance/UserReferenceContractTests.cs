@@ -78,6 +78,60 @@ public sealed class UserReferenceContractTests
     }
 
     [Fact]
+    public void Entra_provisioning_result_carries_the_assigned_username_and_the_client_reads_it()
+    {
+        var created = new EntraProvisioningPersonResultDto(
+            true, "oid-1", "u1", "ada.lovelace", "Ada Lovelace", null, null, true, true, null);
+        var json = Json(created).GetRawText();
+
+        JsonDocument.Parse(json).RootElement.GetProperty("username").GetString().Should().Be("ada.lovelace");
+        var client = JsonSerializer.Deserialize<Client.EntraProvisioningPersonResultDto>(json, Web)!;
+        client.Username.Should().Be("ada.lovelace");
+        client.UserId.Should().Be("u1");
+        client.DisplayName.Should().Be("Ada Lovelace");
+    }
+
+    [Fact]
+    public void A_failed_provisioning_row_has_no_username_on_the_wire()
+    {
+        var failed = new EntraProvisioningPersonResultDto(
+            false, "oid-2", null, null, null, "user.provisioning.duplicate_identity", "Already a user.", false, false, null);
+        var json = Json(failed);
+
+        json.GetProperty("username").ValueKind.Should().Be(JsonValueKind.Null);
+        var client = JsonSerializer.Deserialize<Client.EntraProvisioningPersonResultDto>(json.GetRawText(), Web)!;
+        client.Username.Should().BeNull("a failure identifies no user, so no name is invented");
+        client.UserId.Should().BeNull();
+    }
+
+    [Fact]
+    public void The_client_still_reads_a_provisioning_result_from_a_server_that_predates_the_username()
+    {
+        const string legacy =
+            """{"succeeded":true,"objectId":"oid-1","userId":"u1","displayName":"Ada","errorCode":null,"errorMessage":null,"welcomeMailAttempted":false,"welcomeMailDelivered":false,"welcomeMailFailureSummary":null}""";
+
+        var client = JsonSerializer.Deserialize<Client.EntraProvisioningPersonResultDto>(legacy, Web)!;
+
+        client.Succeeded.Should().BeTrue();
+        client.UserId.Should().Be("u1");
+        client.Username.Should().BeNull("the field is additive");
+    }
+
+    [Fact]
+    public void Entra_provisioning_batch_result_round_trips_usernames_into_the_client_copy()
+    {
+        var batch = new EntraProvisioningBatchResultDto(
+        [
+            new EntraProvisioningPersonResultDto(true, "oid-1", "u1", "ada", "Ada", null, null, false, false, null),
+            new EntraProvisioningPersonResultDto(false, "oid-2", null, null, null, "user.provisioning.directory_user_missing", "Gone.", false, false, null)
+        ]);
+
+        var client = JsonSerializer.Deserialize<Client.EntraProvisioningBatchResultDto>(Json(batch).GetRawText(), Web)!;
+
+        client.Results.Select(r => r.Username).Should().Equal("ada", null);
+    }
+
+    [Fact]
     public void Create_user_request_accepts_username_and_keeps_external_id_as_an_optional_alias()
     {
         var username = JsonSerializer.Deserialize<CreateUserRequest>(
