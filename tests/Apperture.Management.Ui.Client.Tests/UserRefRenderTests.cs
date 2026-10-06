@@ -68,6 +68,25 @@ public sealed class UserRefRenderTests : BunitContext
         cut.Markup.Should().NotContain("href");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Compact_holds_the_whole_name_in_one_screen_reader_only_node_and_the_visible_username_is_aria_hidden(bool canNavigate)
+    {
+        // Real Chromium computes "Display Name ( username )", with stray spaces, when hidden text is split around the
+        // visible username (observed in the browser evidence run), so the name is one node and the username is aria-hidden.
+        var cut = RenderResolved(UserRefMode.Compact, canNavigate);
+
+        var visible = cut.Find(".ui-user-ref__username-visible");
+        visible.GetAttribute("aria-hidden").Should().Be("true");
+        visible.TextContent.Should().Be("alice");
+
+        var hidden = cut.FindAll(".sr-only");
+        hidden.Should().ContainSingle();
+        hidden[0].TextContent.Should().Be(AliceName);
+        hidden[0].ClassList.Should().Contain("ui-user-ref__sr", "the hidden copy must not be selectable or copied");
+    }
+
     [Fact]
     public void Compact_is_the_default_mode()
     {
@@ -278,7 +297,7 @@ internal static class UserRefDom
         return label is not null ? label : Collect(element, includeScreenReaderOnly: true);
     }
 
-    /// <summary>Text a sighted user sees: aria-hidden and screen-reader-only branches are excluded.</summary>
+    /// <summary>Text a sighted user sees: screen-reader-only branches are excluded, aria-hidden text is visible.</summary>
     public static string VisibleText(IElement element) => Collect(element, includeScreenReaderOnly: false);
 
     public static IReadOnlyList<IElement> FocusableElements(IRenderedComponent<UserRef> cut) =>
@@ -288,9 +307,8 @@ internal static class UserRefDom
     {
         if (node is IElement el)
         {
-            if (el.GetAttribute("aria-hidden") == "true")
-                return "";
-            if (!includeScreenReaderOnly && el.ClassList.Contains("sr-only"))
+            // Assistive technology skips aria-hidden branches; a sighted reader skips screen-reader-only branches.
+            if (includeScreenReaderOnly ? el.GetAttribute("aria-hidden") == "true" : el.ClassList.Contains("sr-only"))
                 return "";
         }
 

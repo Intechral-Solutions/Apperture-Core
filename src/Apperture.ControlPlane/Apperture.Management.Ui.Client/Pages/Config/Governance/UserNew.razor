@@ -44,15 +44,12 @@
                            autocomplete="name"
                            placeholder="e.g. Operator" />
                 </div>
-                <div>
-                    <label class="block text-xs text-muted" for="new-user-username">Username</label>
-                    <input id="new-user-username"
-                           class="ui-input mt-1"
-                           @bind="_username"
-                           disabled="@_saving"
-                           autocomplete="username"
-                           placeholder="local sign-in username" />
-                </div>
+                <UsernameField Id="new-user-username"
+                               Label="Username"
+                               Value="@_username"
+                               ValueChanged="@(value => _username = value ?? "")"
+                               Disabled="@_saving"
+                               Placeholder="e.g. alice.example" />
                 <div>
                     <label class="block text-xs text-muted" for="new-user-email">Contact email</label>
                     <input id="new-user-email"
@@ -164,7 +161,7 @@
     {
         var passwordReady = _sendInvitation || (_passwordFields?.ValidateForSubmit() ?? _passwordSetupValid);
         var detailsReady = !string.IsNullOrWhiteSpace(_displayName)
-            && !string.IsNullOrWhiteSpace(_username)
+            && UsernameRules.ToFieldValidation(_username).Kind == FieldValidationKind.Valid
             && (!_sendInvitation || !string.IsNullOrWhiteSpace(_contactEmail));
         if (!detailsReady || !passwordReady)
         {
@@ -183,10 +180,10 @@
                 new CreateUserRequest(
                     _displayName.Trim(),
                     "Local",
-                    _username.Trim(),
-                    _sendInvitation ? null : _password,
-                    _contactEmail.Trim(),
-                    _sendInvitation));
+                    Password: _sendInvitation ? null : _password,
+                    ContactEmail: _contactEmail.Trim(),
+                    SendSetupInvitation: _sendInvitation,
+                    Username: _username.Trim()));
 
             if (!string.IsNullOrEmpty(_selectedRoleId))
             {

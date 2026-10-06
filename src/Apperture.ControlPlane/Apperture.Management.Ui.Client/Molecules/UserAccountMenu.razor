@@ -85,7 +85,7 @@
             return user.UserPrincipal;
         if (!string.IsNullOrWhiteSpace(user.DisplayName))
             return user.DisplayName;
-        return user.UserId;
+        return user.Username;
     }
 
     private static string FormatSignInSource(string source) =>

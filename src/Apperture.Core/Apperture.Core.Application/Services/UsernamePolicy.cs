@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Apperture.Core.Domain.Identity;
 
 namespace Apperture.Core.Application.Services;
 
@@ -15,14 +16,14 @@ namespace Apperture.Core.Application.Services;
 /// </remarks>
 public static class UsernamePolicy
 {
-    public const int MinLength = 3;
-    public const int MaxLength = 64;
+    public const int MinLength = UsernameRules.MinLength;
+    public const int MaxLength = UsernameRules.MaxLength;
 
     /// <summary>Longest generated base, leaving room for a <c>-xxxxxx</c> collision suffix.</summary>
     public const int GeneratedBaseMaxLength = 56;
 
     /// <summary>Canonical Recovery Access username. Reserved: only provisioning and canonicalization assign it.</summary>
-    public const string RecoveryAccessUsername = "breakglass";
+    public const string RecoveryAccessUsername = UsernameRules.RecoveryAccessUsername;
 
     /// <summary>Last-resort generation source when no directory attribute yields a usable name.</summary>
     public const string FallbackGeneratedBase = "user";
@@ -33,72 +34,28 @@ public static class UsernamePolicy
     private const string RandomSuffixAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
 
     /// <summary>
-    /// Names no new assignment may take: Recovery Access, plus the literal actor values persisted in
-    /// history, so a person is never confused with a non-human actor.
+    /// Names no new assignment may take (see <see cref="UsernameRules.ReservedNames"/>, the one list, which the browser
+    /// client shares).
     /// </summary>
-    public static IReadOnlySet<string> ReservedNames { get; } = new HashSet<string>(StringComparer.Ordinal)
-    {
-        RecoveryAccessUsername,
-        "system",
-        "anonymous",
-        "recovery",
-        "emergency-cli",
-        "worker",
-    };
+    public static IReadOnlySet<string> ReservedNames => UsernameRules.ReservedNames;
 
     /// <summary>Trim, then lower-case invariant. The result is the canonical stored form.</summary>
-    public static string Normalize(string username) => username.Trim().ToLowerInvariant();
+    public static string Normalize(string username) => UsernameRules.Normalize(username);
 
     public static bool IsCanonical(string username) =>
         !string.IsNullOrEmpty(username) && string.Equals(Normalize(username), username, StringComparison.Ordinal);
 
-    public static bool IsReserved(string normalizedUsername) => ReservedNames.Contains(normalizedUsername);
+    public static bool IsReserved(string normalizedUsername) => UsernameRules.IsReserved(normalizedUsername);
 
     /// <summary>True for the 24-lowercase-hex shape of a user id, which a username may never take.</summary>
-    public static bool IsUserIdShaped(string value)
-    {
-        if (value.Length != 24)
-            return false;
-        foreach (var c in value)
-        {
-            if (!(c is >= '0' and <= '9' or >= 'a' and <= 'f'))
-                return false;
-        }
-
-        return true;
-    }
+    public static bool IsUserIdShaped(string value) => UsernameRules.IsUserIdShaped(value);
 
     /// <summary>
     /// Format rules for a new assignment, without the reserved-name check: 3 to 64 characters of
     /// <c>a-z 0-9 . - _</c>, starting with a letter, ending with a letter or digit, no two separators
-    /// in a row, and not shaped like a user id.
+    /// in a row, and not shaped like a user id. See <see cref="UsernameRules.IsValidFormat"/>.
     /// </summary>
-    public static bool IsValidFormat(string normalizedUsername)
-    {
-        var value = normalizedUsername;
-        if (value.Length is < MinLength or > MaxLength)
-            return false;
-        if (value[0] is not (>= 'a' and <= 'z'))
-            return false;
-        if (IsSeparator(value[^1]))
-            return false;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (IsSeparator(c))
-            {
-                if (IsSeparator(value[i - 1]))
-                    return false;
-            }
-            else if (c is not (>= 'a' and <= 'z' or >= '0' and <= '9'))
-            {
-                return false;
-            }
-        }
-
-        return !IsUserIdShaped(value);
-    }
+    public static bool IsValidFormat(string normalizedUsername) => UsernameRules.IsValidFormat(normalizedUsername);
 
     /// <summary>Classifies an already-normalized value as a candidate for an ordinary new assignment.</summary>
     public static UsernameAssignmentCheck CheckNewAssignment(string normalizedUsername)
@@ -120,11 +77,9 @@ public static class UsernamePolicy
             case UsernameAssignmentCheck.Valid:
                 return normalized;
             case UsernameAssignmentCheck.Reserved:
-                throw new UsernameException(UsernameErrorCodes.Reserved, "That username is reserved.");
+                throw new UsernameException(UsernameErrorCodes.Reserved, UsernameRules.ReservedMessage);
             default:
-                throw new UsernameException(
-                    UsernameErrorCodes.Invalid,
-                    "A username must be 3 to 64 characters: lowercase letters, digits, '.', '-' or '_', starting with a letter and ending with a letter or digit, with no two separators in a row.");
+                throw new UsernameException(UsernameErrorCodes.Invalid, UsernameRules.FormatGuidance);
         }
     }
 
@@ -229,7 +184,7 @@ public static class UsernamePolicy
         return at < 0 ? address : address[..at];
     }
 
-    private static bool IsSeparator(char c) => c is '.' or '-' or '_';
+    private static bool IsSeparator(char c) => UsernameRules.IsSeparator(c);
 }
 
 /// <summary>Result of checking a normalized value against the policy for an ordinary new assignment.</summary>

@@ -1840,6 +1840,44 @@ public sealed class ManagementClient : IManagementClient
         return body ?? throw new InvalidOperationException("Create user succeeded without a user id.");
     }
 
+    public async Task<RenameUsernameResponse> RenameUserAsync(string userId, string username, CancellationToken cancellationToken = default)
+    {
+        using var response = await _http.PutAsJsonAsync(
+            $"users/{Uri.EscapeDataString(userId)}/username",
+            new { username },
+            ApiJsonWriteOptions,
+            cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadFromJsonAsync<RenameUsernameResponse>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+            return body ?? throw new InvalidOperationException("Rename succeeded without a result.");
+        }
+
+        IdentityLinkErrorResponse? error = null;
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<IdentityLinkErrorResponse>(ApiJsonReadOptions, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            // No structured body (a malformed one, or a gateway page that is not JSON): fall back to a plain message for the status.
+        }
+
+        // A 5xx or 408 does not prove the rename was refused (the change may have committed before the error), so whatever
+        // the body says, the operator is told the outcome is unknown rather than that it failed.
+        var message = UsernameRenameException.IsOutcomeUnknown(response.StatusCode)
+            ? "The server could not complete the request. " + UsernameRenameException.ConfirmByRefreshing
+            : !string.IsNullOrWhiteSpace(error?.Message)
+                ? error!.Message
+                : response.StatusCode switch
+                {
+                    HttpStatusCode.Forbidden => "Not authorized to manage users.",
+                    HttpStatusCode.NotFound => "User not found.",
+                    _ => "Could not change the username."
+                };
+        throw new UsernameRenameException(message, response.StatusCode, error?.Code);
+    }
+
     public async Task<IReadOnlyList<EntraProvisioningRegistrationDto>> GetEntraProvisioningRegistrationsAsync(
         CancellationToken cancellationToken = default)
     {

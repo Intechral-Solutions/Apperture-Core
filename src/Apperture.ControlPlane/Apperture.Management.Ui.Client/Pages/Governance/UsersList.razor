@@ -2,6 +2,7 @@
 @layout ConfigLayout
 @using System.Net
 @using Apperture.Management.Client
+@using Apperture.Management.Ui.Client.Molecules
 @using Apperture.Management.Ui.Client.Organisms
 @using Apperture.Management.Ui.Client.Services
 @inject IManagementClient Client
@@ -30,6 +31,27 @@
         </Toolbar>
     </PageHeader>
 
+    @if (_capabilitiesLoaded && _capabilities?.CanViewGovernance == true && !_forbidden)
+    {
+        <form role="search" class="flex flex-wrap items-end gap-2" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+            <label class="min-w-[16rem] flex-1 text-xs text-muted" for="users-search">
+                Search users
+                <input id="users-search"
+                       type="search"
+                       class="ui-input mt-1 text-sm"
+                       autocomplete="off"
+                       placeholder="Username or display name"
+                       @bind="_searchText"
+                       @bind:event="oninput" />
+            </label>
+            <button type="submit" class="btn btn-secondary" disabled="@_loading">Search</button>
+            @if (_query is not null || !string.IsNullOrEmpty(_searchText))
+            {
+                <button type="button" class="btn btn-secondary" disabled="@_loading" @onclick="ClearSearchAsync">Clear</button>
+            }
+        </form>
+    }
+
     @if (!_capabilitiesLoaded)
     {
         <LoadingState Message="Loading…" />
@@ -52,7 +74,7 @@
     }
     else if (_page.Items.Count == 0)
     {
-        <EmptyState Message="No users found." />
+        <EmptyState Message="@(_query is null ? "No users found." : $"No users match “{_query}”.")" />
     }
     else
     {
@@ -60,7 +82,7 @@
             <table class="ui-data-table__table min-w-full text-left text-body">
                 <thead>
                     <tr>
-                        <th>Id</th>
+                        <th>Username</th>
                         <th>Display name</th>
                         <th>Local</th>
                         <th>Entra</th>
@@ -73,8 +95,8 @@
                     {
                         var userDetailHref = "/config/governance/users/" + Uri.EscapeDataString(u.UserId);
                         <tr class="cursor-pointer" @onclick="() => Nav.NavigateTo(userDetailHref)">
-                            <td class="font-mono text-xs"><a href="@userDetailHref" class="underline hover:no-underline" @onclick:stopPropagation>@u.UserId</a></td>
-                            <td><a href="@userDetailHref" class="underline hover:no-underline" @onclick:stopPropagation>@u.DisplayName</a></td>
+                            <td><UserRef User="@(new UserReferenceDto(u.UserId, u.Username, u.DisplayName))" Mode="UserRefMode.Compact" CanNavigate="@(_capabilities?.CanViewGovernance == true)" /></td>
+                            <td>@u.DisplayName</td>
                             <td>@(u.HasLocalLink ? "Yes" : "No")</td>
                             <td>@(u.HasEntraLink ? "Yes" : "No")</td>
                             <td>@(u.RoleIds?.Count ?? 0)</td>
@@ -119,6 +141,10 @@
     private OperatorCapabilitiesDto? _capabilities;
     private bool _capabilitiesLoaded;
     private int _pendingRequestCount;
+    private string _searchText = "";
+
+    /// <summary>The query the current page was loaded with; null means the unfiltered list.</summary>
+    private string? _query;
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,7 +162,7 @@
         _forbidden = false;
         try
         {
-            _page = await Client.GetUserPageAsync(_skip, PageSize);
+            _page = await Client.GetUserPageAsync(_skip, PageSize, default, _query);
             if (_capabilities?.CanManageUsers == true)
             {
                 try
@@ -162,6 +188,22 @@
         {
             _loading = false;
         }
+    }
+
+    private async Task SearchAsync()
+    {
+        var trimmed = _searchText.Trim();
+        _query = trimmed.Length == 0 ? null : trimmed;
+        _skip = 0;
+        await LoadAsync();
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        _searchText = "";
+        _query = null;
+        _skip = 0;
+        await LoadAsync();
     }
 
     private async Task LoadPrevious()

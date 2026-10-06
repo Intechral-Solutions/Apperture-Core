@@ -1002,6 +1002,11 @@ body.apperture-modal-open {
   font-size: inherit;
 }
 
+/* Screen-reader-only full name beside the visible compact username: not selectable, so copying copies the username only. */
+.ui-user-ref__sr {
+  user-select: none;
+}
+
 .ui-user-ref__display-name {
   font-weight: 600;
   color: var(--color-text-heading);
@@ -1622,6 +1627,15 @@ textarea.ui-input {
 .ui-validated-field__control {
   position: relative;
   margin-top: 0.25rem;
+}
+
+/* Username field: same width as the validated fields, an error border for an invalid value (never color alone: the message is text). */
+.ui-username-field {
+  max-width: 28rem;
+}
+
+.ui-username-field .ui-input[aria-invalid='true'] {
+  border-color: var(--color-error);
 }
 
 .ui-validated-field__adornments {

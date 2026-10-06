@@ -1,0 +1,60 @@
+@using Apperture.Core.Domain.Identity
+@*
+    A username input with live feedback against the one username rule (UsernameRules, shared with the server).
+
+    The format guidance and any problem are ordinary visible text that the input points at (aria-describedby), announced
+    politely as it changes; an invalid value also gets an error border, so the state is never carried by color alone.
+    Uniqueness is never known here: the owner passes the server's refusal in ServerError and clears it when the value
+    changes.
+
+    This deliberately does not use ValidatedFieldShell: its validity icon adds a focusable button named with the whole
+    message while its icon renders at 0x0 in the shipped styles (measured in the browser evidence run), which would leave a
+    phantom tab stop beside every invalid value.
+*@
+<div class="ui-username-field">
+    <label class="ui-validated-field__label" for="@Id">@Label</label>
+    <input id="@Id"
+           type="text"
+           class="ui-input mt-1"
+           value="@Value"
+           disabled="@Disabled"
+           placeholder="@Placeholder"
+           autocomplete="username"
+           autocapitalize="none"
+           spellcheck="false"
+           aria-invalid="@(IsInvalid ? "true" : null)"
+           aria-describedby="@HintId"
+           @oninput="OnInput" />
+    <p id="@HintId"
+       class="@($"ui-username-field__hint mt-1 text-xs {(IsInvalid ? "text-error" : "text-muted")}")"
+       aria-live="polite">@HintText</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public string Label { get; set; } = "Username";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+
+    /// <summary>The server's refusal of the current value (for example a name that is taken). Shown instead of the hint.</summary>
+    [Parameter] public string? ServerError { get; set; }
+
+    private string HintId => Id + "-hint";
+
+    private FieldValidationPresentation Validation =>
+        string.IsNullOrWhiteSpace(ServerError)
+            ? UsernameRules.ToFieldValidation(Value)
+            : FieldValidationPresentation.Invalid(ServerError);
+
+    private bool IsInvalid => Validation.Kind == FieldValidationKind.Invalid;
+
+    private string HintText => IsInvalid ? Validation.Message ?? UsernameRules.FormatGuidance : UsernameRules.FormatGuidance;
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Value = e.Value?.ToString();
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

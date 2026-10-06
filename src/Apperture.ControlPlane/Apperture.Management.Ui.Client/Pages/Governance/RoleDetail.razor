@@ -222,8 +222,8 @@
                         <ul class="mt-2 divide-y divide-default text-sm">
                             @foreach (var holder in _assignments.Holders)
                             {
-                                <li class="py-2">
-                                    <a href="@UserHref(holder.UserId)" class="underline text-sm">@holder.DisplayName</a>
+                                <li class="py-2 text-sm">
+                                    <UserRef User="@HolderReference(holder)" Mode="UserRefMode.Compact" CanNavigate="@(_capabilities?.CanViewGovernance == true)" />
                                 </li>
                             }
                         </ul>
@@ -298,7 +298,9 @@
                     <ul class="mt-2 space-y-1">
                         @foreach (var holder in _assignments.Holders)
                         {
-                            <li><a href="@UserHref(holder.UserId)" class="underline text-sm">@holder.DisplayName</a></li>
+                            <li class="text-sm">
+                                <UserRef User="@HolderReference(holder)" Mode="UserRefMode.Compact" CanNavigate="@(_capabilities?.CanViewGovernance == true)" />
+                            </li>
                         }
                     </ul>
                 }
@@ -748,6 +750,6 @@
             ? "This role is assigned to 1 person. Remove that assignment before deleting it. Deletion does not remove assignments."
             : $"This role is assigned to {count} people. Remove those assignments before deleting it. Deletion does not remove assignments.";
 
-    private static string UserHref(string userId) =>
-        "/config/governance/users/" + Uri.EscapeDataString(userId);
+    private static UserReferenceDto HolderReference(RoleAssignmentHolderDto holder) =>
+        new(holder.UserId, holder.Username, holder.DisplayName);
 }

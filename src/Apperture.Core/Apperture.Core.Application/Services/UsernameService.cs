@@ -71,6 +71,16 @@ public sealed class UsernameService
     public async ValueTask<UsernameChangeOutcome> RenameAsync(
         UserId userId,
         string requestedUsername,
+        CancellationToken cancellationToken = default) =>
+        (await RenameWithResultAsync(userId, requestedUsername, cancellationToken)).Outcome;
+
+    /// <summary>
+    /// <see cref="RenameAsync"/>, reporting the name the transaction actually replaced and the canonical name now
+    /// stored. Callers that audit a rename use this result and never read the previous name separately.
+    /// </summary>
+    public async ValueTask<UsernameRenameResult> RenameWithResultAsync(
+        UserId userId,
+        string requestedUsername,
         CancellationToken cancellationToken = default)
     {
         var user = await _users.GetByIdAsync(userId, cancellationToken)
@@ -84,7 +94,7 @@ public sealed class UsernameService
 
         var target = UsernamePolicy.RequireNewAssignment(requestedUsername);
         if (string.Equals(target, user.Username, StringComparison.Ordinal))
-            return UsernameChangeOutcome.Unchanged;
+            return new UsernameRenameResult(UsernameChangeOutcome.Unchanged, user.Username, user.Username);
 
         return await _users.ChangeUsernameAsync(
             userId,
@@ -107,12 +117,12 @@ public sealed class UsernameService
         if (!designated.IsBreakGlassEligible)
             throw new InvalidOperationException("Only the designated Recovery Access user can take the Recovery Access username.");
 
-        return await _users.ChangeUsernameAsync(
+        return (await _users.ChangeUsernameAsync(
             designated.Id,
             designated.Username,
             UsernamePolicy.RecoveryAccessUsername,
             UsernameRetiredReasons.Canonicalization,
             EmergencyAccessIdentity.DisplayName,
-            cancellationToken);
+            cancellationToken)).Outcome;
     }
 }

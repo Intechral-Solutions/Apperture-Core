@@ -61,6 +61,30 @@ Prerequisites
 - One run at a time per machine: the run takes an exclusive lock (a temp file) because it owns the fixed-name
   database; a second concurrent run fails fast with a clear message.
 
+## UI evidence (IAM-9.5)
+
+`GovernanceUserIdentityEvidenceTests` drives the governance pages that show people (users list, user detail with rename,
+role-derived access, role holders, new user) in real Chromium and records what each kind of evidence actually is:
+
+| Evidence | Source | It is not |
+|---|---|---|
+| Accessible role, name and description | the browser's own accessibility tree through the DevTools protocol | screen-reader output |
+| Keyboard order and focus indicator | real Tab presses and `:focus-visible` | |
+| Contrast ratio | computed from the rendered text and background colors | a visual judgement |
+| Screenshots in light and dark | `artifacts/iam95-visual/{light,dark}/` | an automated check; they are for looking at |
+
+It is a second opt-in on top of the browser suite, so the blocking `browser-security` job (which sets only
+`APPERTURE_BROWSER_TESTS`) skips it:
+
+```powershell
+$env:APPERTURE_BROWSER_TESTS = "1"
+$env:APPERTURE_UI_EVIDENCE = "1"
+dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj --filter "FullyQualifiedName~GovernanceUserIdentityEvidenceTests"
+```
+
+An evidence log (`evidence.log`) is written next to the screenshots. Chromium only: Firefox and WebKit are not driven, and
+no real screen reader is involved.
+
 ## What it starts (and stops)
 
 | Piece | How | Origin |

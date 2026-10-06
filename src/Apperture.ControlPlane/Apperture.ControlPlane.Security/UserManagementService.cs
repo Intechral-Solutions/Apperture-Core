@@ -486,6 +486,31 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     /// <inheritdoc />
+    public async ValueTask<UsernameRenameResult> RenameUsernameAsync(
+        UserId userId,
+        string requestedUsername,
+        CancellationToken cancellationToken = default)
+    {
+        var actorId = await RequireUserManageAsync(cancellationToken);
+        await AppendBreakGlassUseAuditIfNeededAsync("user.username.rename", actorId, cancellationToken);
+
+        // Policy, Recovery Access refusal, ownership and the transactional ledger/Local-link change live in the
+        // username service and repository; this method adds authorization and the audit row. The audited names come
+        // from the transaction's own result, never from a read made before it.
+        var result = await new UsernameService(_userRepository).RenameWithResultAsync(userId, requestedUsername, cancellationToken);
+        if (result.Outcome == UsernameChangeOutcome.Unchanged)
+            return result;
+
+        await AppendAuditAsync(
+            GovernanceAuditActionNames.UserUsernameChanged,
+            actorId,
+            userId.Value,
+            $"userId={userId.Value} previousUsername={result.PreviousUsername} newUsername={result.Username}",
+            cancellationToken);
+        return result;
+    }
+
+    /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);

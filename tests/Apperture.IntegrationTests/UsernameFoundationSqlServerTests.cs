@@ -377,7 +377,10 @@ public sealed class UsernameFoundationSqlServerTests
         await using (var db = scratch.NewDb())
         {
             var repository = new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance);
-            (await new UsernameService(repository).RenameAsync(new UserId("u1"), "Alice.New")).Should().Be(UsernameChangeOutcome.Assigned);
+            var renamed = await new UsernameService(repository).RenameWithResultAsync(new UserId("u1"), "Alice.New");
+            renamed.Outcome.Should().Be(UsernameChangeOutcome.Assigned);
+            renamed.PreviousUsername.Should().Be("alice", "the transaction reports the name it replaced");
+            renamed.Username.Should().Be("alice.new", "and the canonical form it stored");
         }
 
         await AssertUserStateAsync(scratch, "u1", username: "alice.new", localLink: "alice.new", currentLedger: "alice.new");
@@ -440,7 +443,10 @@ public sealed class UsernameFoundationSqlServerTests
         await using (var db = scratch.NewDb())
         {
             var service = new UsernameService(new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance));
-            (await service.RenameAsync(new UserId("u1"), "alice")).Should().Be(UsernameChangeOutcome.Reclaimed);
+            var reclaimed = await service.RenameWithResultAsync(new UserId("u1"), "alice");
+            reclaimed.Outcome.Should().Be(UsernameChangeOutcome.Reclaimed);
+            reclaimed.PreviousUsername.Should().Be("alice.smith");
+            reclaimed.Username.Should().Be("alice");
         }
         await AssertUserStateAsync(scratch, "u1", username: "alice", localLink: "alice", currentLedger: "alice");
         (await ScalarAsync<DateTimeOffset>(scratch.ConnectionString, "SELECT AssignedAtUtc FROM UsernameLedger WHERE Username = N'alice';"))

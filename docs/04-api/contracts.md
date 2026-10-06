@@ -29,6 +29,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | GET | `/api/roles/{id}/permissions` | Read explicit role permission assignments |
 | PUT | `/api/roles/{id}/permissions` | Replace explicit role permission assignments (Epic 39: 404 when role not found) |
 | GET | `/api/users/{id}/effective-access` | Target user's effective access from roles (Epic 39) |
+| PUT | `/api/users/{id}/username` | Rename a user's username, or reclaim one of their own retired names. Requires `user.manage`; no step-up. Body `{ "username": "…" }`, normalized (trim, lower-case) and checked against the current username policy. 200 `{ userId, username, outcome }` (`assigned`, `reclaimed`, `unchanged`); 400 `username_invalid` / `username_reserved`; 404 unknown user; 409 `username_taken` (held, or once held, by another user), `username_concurrent_change`, or `UnsafeOperation` for Recovery Access. Writes audit `governance.user.username.changed` (`previousUsername`, `newUsername`) when the name changes. The Local sign-in name follows the username; credentials, roles and sessions are unchanged. |
 | GET | `/api/schedules/capabilities` | Schedule governance capability projection |
 | GET | `/api/schedules` | List schedules (Epic 28/33) |
 | GET | `/api/schedules/{id}` | Get schedule detail with execution state (query: runtimePlaneId) |

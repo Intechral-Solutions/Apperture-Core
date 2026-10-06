@@ -54,6 +54,15 @@ public sealed class UserRefSourceContractTests
     }
 
     [Fact]
+    public void The_screen_reader_only_copy_of_the_name_is_not_selectable_so_copying_a_username_copies_only_the_username()
+    {
+        var css = ReadUserRefCss();
+
+        System.Text.RegularExpressions.Regex.IsMatch(css, @"\.ui-user-ref__sr\s*\{[^}]*user-select:\s*none")
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public void UserRef_does_not_extend_the_reference_contract_with_status_or_avatar()
     {
         var content = ReadComponent(UserRefPath);
@@ -65,11 +74,12 @@ public sealed class UserRefSourceContractTests
     }
 
     /// <summary>
-    /// IAM-9.4 changes no product page. This guard is deliberately removed by the adoption package (IAM-9.5),
-    /// which is the first change allowed to place UserRef on a page.
+    /// IAM-9 adopts UserRef on Governance only (gate §6 and §23). Operational surfaces (audit timeline, runs, notification
+    /// and team pickers, shutdown requests, and the rest of the gate's later-adoption list) belong to later packages, and
+    /// the one that adopts a surface adds it here deliberately.
     /// </summary>
     [Fact]
-    public void No_product_page_has_adopted_UserRef_yet()
+    public void UserRef_is_adopted_only_on_the_governance_surfaces_the_gate_names()
     {
         var clientRoot = ClientRoot();
         var adopters = Directory
@@ -79,10 +89,14 @@ public sealed class UserRefSourceContractTests
                         && !f.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}"))
             .Where(f => !f.EndsWith(Path.Combine("Molecules", "UserRef.razor"), StringComparison.Ordinal))
             .Where(f => File.ReadAllText(f).Contains("<UserRef"))
-            .Select(f => Path.GetRelativePath(clientRoot, f))
+            .Select(f => Path.GetRelativePath(clientRoot, f).Replace(Path.DirectorySeparatorChar, '/'))
+            .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
 
-        adopters.Should().BeEmpty("page adoption belongs to a later package");
+        adopters.Should().Equal(
+            "Pages/Config/Governance/UserDetail.razor",
+            "Pages/Governance/RoleDetail.razor",
+            "Pages/Governance/UsersList.razor");
     }
 
     private static string ReadUserRefCss()

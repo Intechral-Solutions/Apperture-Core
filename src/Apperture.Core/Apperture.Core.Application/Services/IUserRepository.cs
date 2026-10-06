@@ -133,8 +133,10 @@ public interface IUserRepository
     /// Throws <see cref="UsernameException"/> with <see cref="UsernameErrorCodes.Taken"/> when another user
     /// holds or held the name, or <see cref="UsernameErrorCodes.ConcurrentChange"/> when the user's username
     /// is no longer <paramref name="expectedCurrentUsername"/>. Does not touch credentials, roles or sessions.
+    /// The result carries the username the transaction actually replaced, so callers that audit the change take the
+    /// previous name from here rather than from an earlier, separate read.
     /// </summary>
-    ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+    ValueTask<UsernameRenameResult> ChangeUsernameAsync(
         UserId userId,
         string expectedCurrentUsername,
         string newUsername,

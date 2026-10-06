@@ -221,7 +221,7 @@ public sealed class UsernameServiceTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<UsernameChangeOutcome> ChangeUsernameAsync(
+        public ValueTask<UsernameRenameResult> ChangeUsernameAsync(
             UserId userId,
             string expectedCurrentUsername,
             string newUsername,
@@ -234,6 +234,7 @@ public sealed class UsernameServiceTests
             if (user.Username != expectedCurrentUsername)
                 throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "changed");
 
+            var previousUsername = user.Username;
             var outcome = UsernameChangeOutcome.Unchanged;
             if (user.Username != newUsername)
             {
@@ -253,7 +254,7 @@ public sealed class UsernameServiceTests
             }
 
             _users[userId.Value] = user with { DisplayName = newDisplayName ?? user.DisplayName };
-            return ValueTask.FromResult(outcome);
+            return ValueTask.FromResult(new UsernameRenameResult(outcome, previousUsername, user.Username));
         }
 
         public ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(string username, CancellationToken cancellationToken = default) =>
