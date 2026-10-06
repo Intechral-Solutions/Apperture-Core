@@ -190,11 +190,11 @@ Branch `iam-9-provisioning-username-result`, created from `2b5bb52` with the aud
 | | Identity already a user (`duplicate_identity`) | 200. Failed row; `userId` null | `null`. Unchanged: the row does not identify the existing user |
 | | Caller lacks `user.manage` | 403 | n/a |
 | `POST /api/users/entra/access-requests/{id}/approve` | User created | 200. `succeeded: true` with `userId` | The stored username |
-| | Identity already a user (request is reconciled to that user, then refused) | 409 `{ message, code: duplicate_identity }`. No result body | None. Unchanged |
-| | Request not pending or not found, or another provisioning failure | 409 with `code` | None |
+| | Identity already a user (request is reconciled to that user, then refused) | 409 with an **error body** `{ message, code: duplicate_identity }` and nothing else. It is not a provisioning result and carries no user identity (no `userId`, no `username`) | None. Unchanged |
+| | Request not pending or not found, or another provisioning failure | 409 with the same `{ message, code }` error body | None |
 | | Caller lacks `user.manage` | 403 | n/a |
 
-**Open ambiguity (no code change; product decision if wanted).** Gate §22 asks for "the assigned `Username`" on a result. The two existing-user outcomes above have no result body that identifies a user: the batch row has no `userId`, and approval answers 409 with no user. Returning an existing user's username there would mean newly disclosing that user's id or username in a failure, which §22 does not ask for and no ruling covers. So the existing-user outcomes keep their previous semantics. If the owner wants them to identify the existing user, that is a separate contract decision.
+**Existing-user outcomes (product-owner clarification, recorded).** Gate §22 asks for "the assigned `Username`" on a result. Neither existing-user outcome returns a result that identifies a user: the batch row has no `userId`, and approval answers 409 with the `{ message, code }` error body, which is not a user identity payload. The product owner ruled that this behaviour is preserved: neither outcome gains the existing user's `username` or `userId`, and no response-contract expansion is requested. Returning that user's identity in a failure would disclose it, which §22 does not ask for. An earlier handback described the approval 409 as having "no body". That wording was imprecise: the response has an error body, and it has no user identity payload. The behaviour is unchanged, and the source (the three `Conflict(new { message, code })` returns in `UsersEntraProvisioningController`) is the reference.
 
 ### 6.3 Tests
 
