@@ -516,6 +516,7 @@ public sealed record UserReferenceDto(string UserId, string Username, string Dis
 - `Status` is **not** shipped. IAM-11 adds it as an additive, nullable field (`active`, `disabled`, `decommissioned`). Clients treat a missing status as active.
 - An avatar key is not shipped. It is additive later.
 - Unknown historical actors are **not** `UserReferenceDto` values. AUD-1 defines an actor reference for audit (kind `user`, `system`, `anonymous`, `worker`, or `unresolved`, plus the original string). It embeds `UserReferenceDto` for kind `user`. IAM-9 fixes only the rendering rule (§18).
+  - **Amendment (product-owner ruling, 2026-10-06; recorded in the [AUD-1.0 design gate](../audit-hardening/aud1-design-gate.md) §3 OR-2 and §10.4).** The kind list gains `external`: an identity authenticated by an external provider in the current request, for which no platform user is the actor. An Entra external identity is the provider, tenant id and object id from the validated authentication result; object id alone is not sufficient, and email and UPN are not keys. Unauthenticated or unverified claims never become `external`. Historical audit rows are never classified `external`. This is additive. It does not reopen IAM-9, change any other ruling here, or affect the accepted IAM-9 closure.
 - References are composed **server-side** into the response that needs them, through an `IUserReferenceResolver.ResolveAsync(IEnumerable<UserId>)` batch service. There is no general bulk user-lookup endpoint. A page shows a user reference because its own permission allows the page, not because the viewer can read the user directory.
 
 ## 15. User presentation rules (R15)
@@ -728,6 +729,8 @@ All changes are additive unless marked.
 | `UserNew.razor` | Local "username" field writes `ExternalId` | Same field, validated live against §9.1 |
 
 **Later adoption (LST-1.3 or AUD-1), not IAM-9:** `AuditTimeline.razor:164`, `EntityRecentActivityPanel.razor:46`, `RunDetail.razor:474`, `RunOperationItemizationPanel.razor:421`, `IntegrationScheduleDiagnostics.razor:250`, `RuntimeShutdownRequests.razor:46,48`, `RuntimeShutdownRequestsList.razor:47,49`, `NotificationRecipientResolutionDisplay.razor:46`, `NotificationRecipientSnapshotDisplay.razor:96`, `ManagedContactEditor.razor:97`, the team-members table in `AttentionContactGroupDetail.razor`, and the notification principal pickers in `NotificationDefinitionDetail.razor` and `IntegrationNotifications.razor` (replaced by `AsyncSearchSelect`).
+
+*Ownership resolved (product-owner ruling, 2026-10-06).* The "LST-1.3 or AUD-1" split above is now assigned page by page in the [AUD-1.0 design gate](../audit-hardening/aud1-design-gate.md) §18, which also adds two subscription-recipient surfaces this list missed.
 
 **Legitimately technical, may stay:** `AuthOverview.razor:126`, `AccountProfile.razor:197`, `RunDetail.razor:343` and `:605-607` (all inside `TechnicalDetails` or advanced sections).
 

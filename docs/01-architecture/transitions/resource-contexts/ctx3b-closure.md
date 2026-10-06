@@ -285,6 +285,10 @@ that plan's own stabilization note — these cover the delete-blocker-clearing U
 - **P2 — `integration.deleted` audit**, narrow by design. Only the Integration hard-delete lifecycle action is
   audited by CTX-3B; create, update, activate, deactivate and retire remain unaudited, pre-existing and
   deliberately not broadened here (see §7).
+  *Write mode superseded (product-owner ruling, 2026-10-06; [AUD-1.0 design gate](../audit-hardening/aud1-design-gate.md)
+  §3 OR-1, §13.6).* CTX-3B appended this audit after the delete committed, accepting a lost row (Plan 6a). Under
+  AUD-1 the delete and its audit row commit atomically (AUD-1.4). The audit scope recorded above is unchanged;
+  AUD-1.4 adds the other Integration lifecycle events.
 - **P3 — ownership preflights (schedule drift and cross-context bindings)**: both preflights the plans
   required (Plan 2 Task 1 Step 0, Plan 3 Task 0) were never historically recorded in the repository. This
   closure session ran both live against real Aspire dev data and got 0 rows / DriftCount = 0 on each (§5).

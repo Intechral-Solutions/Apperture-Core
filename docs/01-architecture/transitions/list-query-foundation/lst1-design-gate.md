@@ -907,6 +907,8 @@ LST-1.0 (this gate)
    +-- LST-1.3 (after IAM-9) --> LST-1.4 (after IAM-9, IAM-10, IAM-11) --> LST-1.5
 ```
 
+*Note (product-owner ruling, 2026-10-06; [AUD-1.0 design gate](../audit-hardening/aud1-design-gate.md) §18).* The "AUD-1 UI adoption" node above is the AUD-1.5b package. The surfaces LST-1.3 adopts (scope below: "the surfaces IAM-9 §23 assigns to this package") are those AUD-1.0 §18 assigns to LST-1.3, including two notification-subscription recipient columns IAM-9 §23 did not list. LST-1.3 depends on no AUD-1 package. The team-members table stays with LST-1.4.
+
 Program rule retained: LST-1.0, 1.1, 1.2, 1.2a and 1.6 run alongside NAV-2 and wait for nothing in Track A. 1.3 to 1.5 keep their IAM dependencies (program gate §5). **LST-1.2a is RC1 work. It must land before RCV-1.** It depends on LST-1.2 and on nothing else.
 
 ### LST-1.1 Core primitives

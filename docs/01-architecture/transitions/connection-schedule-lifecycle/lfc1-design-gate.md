@@ -242,6 +242,7 @@ The one Connection change in this epic is copy, not lifecycle: the retired notic
 4. In the same transaction, remove `ScheduleStates` for this schedule's assignments, remove those `ScheduleAssignments`, then remove the `ScheduleDefinitions` row.
 5. Commit.
 6. After commit, append `schedule.deleted`. A lost audit row is acceptable; refusing a completed delete to retry the audit is not. This matches `integration.deleted`.
+   *Superseded (product-owner ruling, 2026-10-06; [AUD-1.0 design gate](../audit-hardening/aud1-design-gate.md) §3 OR-1, §13.6).* The delete and its `schedule.deleted` audit row will commit atomically in one transaction (AUD-1.4). If the audit row cannot be written, the delete rolls back, or the outcome is reported as unknown. The step 6 text above is kept as the historical ruling. The other steps are unchanged.
 
 **Retained:** `ScheduleRuns`, `AuditLogs` rows that already cite `ScheduleId`, `PlatformEvents`, `NotificationInstances`, start-request idempotency keys, `OperationRuns` / workflow rows. None of these are rewritten.
 
