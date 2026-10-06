@@ -45,14 +45,15 @@ the gate governs where they differ).
 **RC-0 (program gate) is complete.** **IAM-9.0** (identity foundation design gate), **LST-1.0** (list and query
 design gate) and **QW-1** (quick wins, implemented) are merged to `master` (PR #4).
 
-**IAM-9** (identity foundation) is implemented: packages 9.1 to 9.5 are merged to `master` (PRs #5 to #10, last
-merge `2b5bb52`). The [closure audit](../audits/iam9-identity-foundation-closure.md) finds IAM-9 **not ready to close**:
-one approved contract row (the assigned username on Entra provisioning results) was unmet on `master`; the correction
-is implemented on a branch and awaits merge. After it merges, closure awaits owner acceptance. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay
-open. In particular, the `role.manage` escalation path blocks RC1 requirement 4 until IAM-10 closes it.
+**IAM-9** (identity foundation) is **complete and its closure is accepted**: packages 9.1 to 9.5 are merged to
+`master` (PRs #5 to #10), and the provisioning-result correction merged as PR #11 (`962abb3`, post-merge CI green). The
+[closure audit](../audits/iam9-identity-foundation-closure.md) found one approved contract row unmet at `2b5bb52` (the
+assigned username on Entra provisioning results); the finding and its correction evidence are kept as history. This is
+not RC1 completion and not risk acceptance. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay open under their
+owners. In particular, the `role.manage` escalation path blocks RC1 requirement 4 until IAM-10 closes it.
 
-The next Track A body is **AUD-1**, beginning with its design gate. LST-1.1, NAV-2 and SDK-8 have not started. Each
-waits for an explicit start instruction.
+The next Track A body is **AUD-1**, beginning with its **AUD-1.0** design gate. LST-1.1, NAV-2 and SDK-8 have not
+started. Each waits for an explicit start instruction.
 
 IAM-8 is complete and **merged to `master`** (PR #3, `5cfa901`). Earlier statements in this document that IAM-8 is
 "not merged" are superseded.

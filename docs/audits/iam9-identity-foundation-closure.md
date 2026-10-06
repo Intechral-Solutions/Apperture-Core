@@ -4,18 +4,23 @@ Date: 2026-10-05
 Design authority: [IAM-9 design gate](../01-architecture/transitions/identity-foundation/iam9-design-gate.md) (rulings R1–R18, §§9–24, package decomposition §25, carried findings §29).
 Program contract: [RC1 program gate](../01-architecture/rc1-program-gate.md) (D-01 to D-07, D-13, D-19, D-27; §2 RC1 definition; §8).
 Audited baseline: `master` at `2b5bb52` (merge of PR #10).
+Closure status: **IAM-9 is complete and its closure is accepted** (§7). The correction merged as PR #11 (`962abb3`).
+
+This document is a historical record. §§1–6 keep the audit as it was written: the verdict at the audited baseline, the finding, and the correction and its evidence. §7 records the merge and CI checkpoint and the closure.
 
 ## Verdict
 
-**NOT READY TO CLOSE.** The audit found one unmet approved contract row on `master` (`2b5bb52`):
+**Current status: IAM-9 is complete and closure is accepted.** The owner accepted closure once the PR #11 merge and green post-merge CI were verified (§7). Implementation is complete. Closure does not close RC1, does not close, accept or schedule away any finding in §4, and does not narrow RC1 requirement 4.
 
-- **§22, "Entra provisioning results: add the assigned `Username`"** (IAM-9.3 scope by §25). Neither the directory-provisioning batch result nor the access-request approval result carried the username. No ruling waives the row.
+**Verdict at the audited baseline (historical): NOT READY TO CLOSE.** The audit found one unmet approved contract row on `master` (`2b5bb52`):
 
-**Correction status (§6).** The row is implemented on branch `iam-9-provisioning-username-result` (finding C-1). That branch is **not merged and not pushed**. IAM-9 closure stays pending, in this order: the correction merges, post-merge CI is green, and the owner accepts closure. Until the correction merges, `master` still does not meet §22. After it merges, this audit knows of no unmet IAM-9 requirement; implementation is then complete and closure awaits owner acceptance.
+- **§22, "Entra provisioning results: add the assigned `Username`"** (IAM-9.3 scope by §25). Neither the directory-provisioning batch result nor the access-request approval result carried the username. No ruling waived the row.
 
-Closing IAM-9 does not close RC1. It does not close, accept or schedule away any finding in §4, and it does not narrow RC1 requirement 4.
+**Correction (§6, §7).** The row was corrected by finding C-1 and merged as PR #11 (`962abb3`). After the merge this audit knows of no unmet IAM-9 requirement. The findings in §4.2 and the notes in §4.3 are not part of IAM-9 closure and stay open under their owners.
 
-## 1. Merge and CI checkpoint
+## 1. Merge and CI checkpoint (audited baseline)
+
+This section records the baseline that was audited (`master` at `2b5bb52`). The correction and closure checkpoint is §7.
 
 | Check | Result |
 |---|---|
@@ -86,7 +91,7 @@ UT = `tests/Apperture.UnitTests`, IT = `tests/Apperture.IntegrationTests`, UIC =
 | R16 search: prefix or substring, escaping, ordering, clamp, Recovery Access excluded, no email/UPN/id, never audited, `user.read` | `UsersController.cs:47-67`; `SqlUserRepository.cs`; `UserSearchCriteria.cs` | IT `ManagementHostUserSearchHttpTests` (9), `UserSearchSqlServerTests` (8); UT `UserSearchCriteriaTests` | Met (see N-6) |
 | §22 `Username` on `UserListDto`, `UserDetailDto`, `MeResponse` (both copies), `RoleAssignmentHolderDto` | `UsersController.cs`; `AuthController.cs`; `GovernanceAdminModels.cs`; client copies | UT `UserReferenceContractTests`; IT `User_detail_and_me_expose_the_current_username` | Met |
 | §11 `CreateUserRequest.Username`, `ExternalId` alias, both supplied → `username_mismatch`; Local link name optional and must match | `UsersController.cs`; `UserManagementService.cs` | UT `UsersControllerCreateUserTests`, `UsersControllerIdentityLinkTests`, `UserManagementServiceIdentityLinkTests`; IT `Create_local_user_by_username_by_alias_and_with_a_conflict`, `Local_identity_link_may_omit_the_name_and_must_match_the_username` | Met |
-| **§22 Entra provisioning results carry the assigned `Username`** | `UsersEntraProvisioningController.cs:267-276` (`EntraProvisioningPersonResultDto`), client copy `IManagementClient.cs:2193`, `UserProvisioningResult` | None on `master` | **Not met on `master` (C-1).** Implemented on `iam-9-provisioning-username-result`, pending merge; evidence in §6 |
+| **§22 Entra provisioning results carry the assigned `Username`** | `UsersEntraProvisioningController.cs:267-276` (`EntraProvisioningPersonResultDto`), client copy `IManagementClient.cs:2193`, `UserProvisioningResult` | None at the audited baseline | **Not met at the audited baseline (C-1).** Corrected and merged as PR #11 (`962abb3`); evidence in §6 and §7 |
 
 ### 2.5 IAM-9.4 — `UserRef`
 
@@ -119,7 +124,7 @@ UT = `tests/Apperture.UnitTests`, IT = `tests/Apperture.IntegrationTests`, UIC =
 
 - **Severity:** Low product impact. An administrator sees the generated name only by opening the user afterwards. It blocks closure because it is an unmet approved row.
 - **Owner:** IAM-9 (an IAM-9.3 contract row).
-- **Status:** corrected on branch `iam-9-provisioning-username-result`, not merged. The correction and its evidence are in §6. The fix as originally proposed:
+- **Status:** corrected and merged as PR #11 (`962abb3`). The finding is kept as recorded. The correction and its evidence are in §6, and the merge checkpoint is in §7. The fix as originally proposed:
   - Add the username to `UserProvisioningResult` and populate it from the created user in `UserProvisioningService`, for both the directory and the access-request paths.
   - Add `string? Username` to `EntraProvisioningPersonResultDto`, server and client copies; it is null on a failed row.
   - Set it in `UsersEntraProvisioningController` for the batch and approve responses.
@@ -162,7 +167,7 @@ The RC1 audit plan still says, in its IAM-9 non-goals, that rename "ships in IAM
 
 ## 5. Next package
 
-After C-1 is fixed and IAM-9 closure is accepted, the program contract (§5, Track A: IAM-9 → AUD-1 → IAM-10 → IAM-11) points to **AUD-1**, beginning with its short design gate, AUD-1.0. AUD-1's hard dependency on IAM-9's actor identity is met.
+IAM-9 closure is accepted (§7), so the program contract (§5, Track A: IAM-9 → AUD-1 → IAM-10 → IAM-11) points to **AUD-1**, beginning with its short design gate, **AUD-1.0**. AUD-1's hard dependency on IAM-9's actor identity is met. Accepting IAM-9 closure does not start AUD-1.
 
 AUD-1.0 must take in F-3 and F-4, and it must establish with LST-1.3 the explicit per-page ownership split for operational `UserRef` adoption (F-8), starting with the audit timeline. Gate §17 and §26 ask for AUD-1.1 in the same release as IAM-9. Tracks B and C are unaffected:
 
@@ -172,7 +177,7 @@ AUD-1.0 must take in F-3 and F-4, and it must establish with LST-1.3 the explici
 
 ## 6. Correction record: C-1, Entra provisioning results carry the assigned username
 
-Branch `iam-9-provisioning-username-result`, created from `2b5bb52` with the audit commit cherry-picked on top. It is **not pushed and not merged**. Scope is gate §22 only: no schema, authorization, identity-matching or status-code change.
+Branch `iam-9-provisioning-username-result`, created from `2b5bb52` with the audit commit cherry-picked on top. It was reviewed as PR #11 and merged as `962abb3` (§7). The text below is the correction record as written before the merge. Scope is gate §22 only: no schema, authorization, identity-matching or status-code change.
 
 ### 6.1 What changed
 
@@ -231,4 +236,44 @@ This is **local evidence only**. The CI execution detail for the soft-skip suite
 
 ### 6.6 Remaining unmet IAM-9 requirements
 
-None known on the correction branch. On `master` §22 remains unmet until the correction merges. IAM-9 closure stays pending that merge, green post-merge CI, and owner acceptance. The findings in §4.2 stay open and are untouched by this correction. In particular the permission and security findings F-1 and F-2 remain open: F-2 conflicts with RC1 requirement 4, and no risk acceptance has been requested or granted.
+None known on the correction branch. When this record was written, `master` still did not meet §22 and closure was pending the merge, green post-merge CI and owner acceptance; §7 records that all three happened. The findings in §4.2 stay open and are untouched by this correction. In particular the permission and security findings F-1 and F-2 remain open: F-2 conflicts with RC1 requirement 4, and no risk acceptance has been requested or granted.
+
+## 7. Closure record
+
+**IAM-9 is complete and its closure is accepted.** The owner accepted closure by instruction after the merge and CI checkpoint below was verified. Nothing in the audited findings was rewritten to reach this status: the unmet §22 row stays recorded in §§2.4, 4.1 and 6 as found, with its correction and evidence.
+
+### 7.1 Verified merge and CI checkpoint
+
+| Check | Result |
+|---|---|
+| PR #11 `IAM-9: report the assigned username on Entra provisioning results (gate §22) and record the closure audit` | `MERGED` 2026-10-06 05:38 UTC; merge commit `962abb3e977dcf66e56465024a048e9f4f61dfae`; `origin/master` at that commit |
+| Reviewed head `f285f41e3da0bfac4ea3884eed30bd1a31ad484b` | Second parent of `962abb3`; `git merge-base --is-ancestor` holds; `git diff f285f41 962abb3` is empty (the merge adds nothing). Commits delivered: `deba791`, `0cd392d`, `a771ef1`, `f285f41` |
+| PR head CI (run `37415889624`, `f285f41`) | `build-and-test` success; `browser-security` success (335 tests: 330 passed, 5 skipped, the opt-in governance evidence tests). The four new real-host HTTP tests and the four new controller tests passed by name in the CI log |
+| Post-merge CI (run `37419504500`, push, `962abb3`) | `success`. `build-and-test` 13/13 steps green; `browser-security` 15 steps green, 1 skipped (results upload, which runs only on failure) |
+
+**What this does not change about the SQL evidence.** The CI logs still carry no execution marker for the soft-skip IAM-9 SQL suites, and CI still does not set `APPERTURE_REQUIRE_SQL_TESTS=1`, so their CI execution stays unverified (§1, N-1). The explicit local SQL evidence is §6.4. The new HTTP tests cannot soft-skip, so their CI pass shows SQL Server was reachable for them. Green totals and test durations are not treated as proof of SQL execution.
+
+### 7.2 What closure does not mean
+
+- **RC1 is not complete.** IAM-9 is one body of Track A. AUD-1, IAM-10 and IAM-11 and the other tracks remain, as does RCV-1.
+- **No risk is accepted.** No risk acceptance has been requested or granted for any finding, and closure creates no exception to any RC1 requirement.
+- **No finding is closed.** Every finding in §4.2 and note in §4.3 stays open under the owner named there.
+- **No other package is started.** Every package starts only on an explicit owner instruction (program gate §9).
+
+### 7.3 Findings that stay open, by owner
+
+| Owner | Findings |
+|---|---|
+| IAM-10.0 | F-1: the governance-read capability checks `user.read` on Role while the APIs enforce it on User |
+| IAM-10.0, IAM-10.2 | F-2: `role.manage` implies broad governance privileges (X-01). **High. A known escalation path that conflicts with RC1 requirement 4.** The security and product owners record a disposition before RCV-1 closes. Scheduling it is not a disposition |
+| AUD-1 | F-3: structured details for `governance.user.username.changed`. F-4: the audit actor backfill, with AUD-1.1 in the same release as IAM-9 |
+| AUD-1.0, with LST-1.3 | F-8: the explicit per-page ownership split for operational `UserRef` adoption. Notes N-7 and N-8 (role holders still use one lookup each; the batch `IUserReferenceResolver` has no consumer yet) go to LST-1.3 and AUD-1 |
+| IAM-11 | F-5: lifecycle status on references and the resolver check. F-6: the revoked former Recovery Access user. F-7: the login and forgotten-password timing oracles |
+| RCV-1 accessibility baseline | F-9: the invisible validation control (a focusable 0x0 button). F-10: the undefined `text-message-error` class. Product-owner decision |
+| RCV-1 | N-1: soft-skip SQL tests can pass without SQL, and CI sets no require-SQL flag |
+| Future external-organization access work | F-11: Entra self-link snapshots and the tenant-blind duplicate-link check |
+| No owning epic | F-12: username-based routing and grandfathered names |
+
+### 7.4 Next package
+
+The program contract (§5, Track A: IAM-9 → AUD-1 → IAM-10 → IAM-11) points to **AUD-1.0**, the short AUD-1 design gate. It must take in F-3, F-4 and the F-8 ownership split before any AUD-1 implementation begins. It has not been started.
