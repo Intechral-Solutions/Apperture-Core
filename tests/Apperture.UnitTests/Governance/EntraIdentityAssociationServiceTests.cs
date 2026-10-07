@@ -50,6 +50,24 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Fact]
+    public async Task A_registration_that_cannot_be_read_fails_sign_in_and_link_and_is_never_recorded_as_a_tenant_mismatch()
+    {
+        // AUD-1.2 review: a failed read is an infrastructure failure, not a security refusal. It fails closed by throwing (the
+        // handler then fails the sign-in) and records no refusal row against the validated identity.
+        var harness = new Harness();
+        harness.Repository.Seed(NewUser("usr-1", LocalLink("operator"), EntraLink(Oid, provenAt: Now, tenantId: ActiveTenantId)));
+        harness.Registrations.FailActiveRead = true;
+
+        var signIn = () => harness.Service.CompleteSignInAsync(Assertion()).AsTask();
+        await signIn.Should().ThrowAsync<InvalidOperationException>();
+        var link = () => harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion()).AsTask();
+        await link.Should().ThrowAsync<InvalidOperationException>();
+
+        harness.Audit.Actions.Should().NotContain(EntraLinkAuditActionNames.TenantMismatch);
+        harness.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Sign_in_resolves_the_existing_platform_user()
     {
         var harness = new Harness();
@@ -418,7 +436,7 @@ public sealed class EntraIdentityAssociationServiceTests
             Directory = new StubDirectoryDiscovery();
             Service = new EntraIdentityAssociationService(
                 Repository,
-                new StubRegistrationRepository(),
+                Registrations,
                 Directory,
                 new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>
@@ -434,6 +452,8 @@ public sealed class EntraIdentityAssociationServiceTests
         }
 
         public RecordingUserRepository Repository { get; }
+
+        public StubRegistrationRepository Registrations { get; } = new();
 
         internal AuditRecording Audit { get; }
 
@@ -455,8 +475,13 @@ public sealed class EntraIdentityAssociationServiceTests
 
     private sealed class StubRegistrationRepository : IEntraInstanceRegistrationRepository
     {
+        /// <summary>The active registration cannot be read (a deadlock victim, a timeout, a broken connection).</summary>
+        public bool FailActiveRead { get; set; }
+
         public Task<EntraInstanceRegistration?> GetActiveAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<EntraInstanceRegistration?>(new EntraInstanceRegistration
+            FailActiveRead
+                ? Task.FromException<EntraInstanceRegistration?>(new InvalidOperationException("Injected: the registration read failed."))
+                : Task.FromResult<EntraInstanceRegistration?>(new EntraInstanceRegistration
             {
                 Id = "reg-1",
                 DisplayName = "Contoso",

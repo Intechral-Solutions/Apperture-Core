@@ -79,6 +79,19 @@ public sealed class EntraStepUpServiceTests
     }
 
     [Fact]
+    public async Task A_registration_that_cannot_be_read_fails_the_step_up_and_is_never_recorded_as_a_tenant_mismatch()
+    {
+        var harness = new Harness();
+        harness.Users.Seed(User("usr-1", EntraLink(Oid, proven: true)));
+        harness.Registrations.FailActiveRead = true;
+
+        var act = () => harness.Service.CompleteAsync(new UserId("usr-1"), new EntraIdentityAssertion(Oid, ActiveTenantId), "c1", ["c1"], false).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>("no stronger session; the handler fails the callback");
+        harness.Audit.Actions.Should().BeEmpty("an unreadable registration is not a security refusal");
+    }
+
+    [Fact]
     public async Task Missing_authentication_context_fails()
     {
         var harness = new Harness();
@@ -127,10 +140,12 @@ public sealed class EntraStepUpServiceTests
             Audit = new AuditRecording();
             Service = new EntraStepUpService(
                 Users,
-                new StubRegistrations(),
+                Registrations,
                 NullLogger<EntraStepUpService>.Instance,
                 Audit);
         }
+
+        public StubRegistrations Registrations { get; } = new();
 
         public RecordingUsers Users { get; }
         internal AuditRecording Audit { get; }
@@ -139,8 +154,12 @@ public sealed class EntraStepUpServiceTests
 
     private sealed class StubRegistrations : IEntraInstanceRegistrationRepository
     {
+        public bool FailActiveRead { get; set; }
+
         public Task<EntraInstanceRegistration?> GetActiveAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<EntraInstanceRegistration?>(new EntraInstanceRegistration
+            FailActiveRead
+                ? Task.FromException<EntraInstanceRegistration?>(new InvalidOperationException("Injected: the registration read failed."))
+                : Task.FromResult<EntraInstanceRegistration?>(new EntraInstanceRegistration
             {
                 Id = "reg-1",
                 Authority = $"https://login.microsoftonline.com/{ActiveTenantId}",

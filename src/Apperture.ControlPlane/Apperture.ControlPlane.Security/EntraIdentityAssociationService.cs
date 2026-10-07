@@ -121,7 +121,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         var external = AuditActor.ValidatedExternalIdentity(
             new AuditExternalActor(AuditExternalActor.EntraProvider, tokenTenantId!, objectId!));
 
-        var registration = await GetActiveRegistrationAsync(cancellationToken);
+        var registration = await _registrations.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         var activeTenantId = ResolveActiveTenantId(registration);
         if (!EntraTokenClaims.TenantMatches(tokenTenantId, activeTenantId))
         {
@@ -229,7 +229,8 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
                     if (EmergencyAccessIdentity.IsSystemManaged(user))
                         return Refuse(AuditEvents.EntraLinkRefused(initiatingUserId, key.TenantId!, objectId!, "emergency_account"), EntraLinkFailureCodes.EmergencyAccount);
 
-                    var registration = await GetActiveRegistrationAsync(ct);
+                    // Read strictly: a failed read fails the attempt (the unit may retry it), never a tenant-mismatch refusal.
+                    var registration = await _registrations.GetActiveAsync(ct).ConfigureAwait(false);
                     if (!EntraTokenClaims.TenantMatches(tokenTenantId, ResolveActiveTenantId(registration)))
                         return Refuse(AuditEvents.EntraTenantMismatch(tokenTenantId!, objectId!, initiatingUserId), EntraLinkFailureCodes.TenantMismatch);
 
@@ -347,6 +348,10 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
             MailSnapshot: Trim(snapshot?.Mail));
     }
 
+    /// <summary>
+    /// The active registration for provenance only (a link's registration id and snapshot). Tenant checks read it strictly:
+    /// a failed read there fails the sign-in or link instead of being recorded as a tenant mismatch (AUD-1.2 review).
+    /// </summary>
     private async ValueTask<EntraInstanceRegistration?> GetActiveRegistrationAsync(CancellationToken cancellationToken)
     {
         try
@@ -411,6 +416,11 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
         try
         {
             await _entraPrimaryPolicy.ApplyAfterEntraProvenAsync(userId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AuditOutcomeUnknownException ex)
+        {
+            // It runs again at the next sign-in; until then the change may or may not have been applied.
+            _logger.LogError(ex, "Entra-primary local-authentication policy for {UserId} has an unknown outcome (operation {OperationEventId}); it may have been applied.", userId.Value, ex.OperationEventId);
         }
         catch (Exception ex)
         {

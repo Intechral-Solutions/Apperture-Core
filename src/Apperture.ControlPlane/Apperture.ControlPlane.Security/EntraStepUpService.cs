@@ -92,7 +92,8 @@ public sealed class EntraStepUpService : IEntraStepUpService
         if (requested is null)
             return await RefuseAsync(AuditEvents.StepUpFailed(initiatingUserId, "not_configured", tokenTenantId, objectId), EntraStepUpFailureCodes.NotConfigured);
 
-        var registration = await GetActiveRegistrationAsync(cancellationToken);
+        // Read strictly: a failed read fails the step-up (no stronger session), never a recorded tenant mismatch.
+        var registration = await _registrations.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         var activeTenantId = registration is null
             ? null
             : EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
@@ -124,16 +125,4 @@ public sealed class EntraStepUpService : IEntraStepUpService
         return EntraAssociationOutcome.Success(initiatingUserId);
     }
 
-    private async ValueTask<EntraInstanceRegistration?> GetActiveRegistrationAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _registrations.GetActiveAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Active Entra registration could not be read; step-up tenant validation will reject.");
-            return null;
-        }
-    }
 }
