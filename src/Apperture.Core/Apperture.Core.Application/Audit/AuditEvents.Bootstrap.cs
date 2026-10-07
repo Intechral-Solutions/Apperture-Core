@@ -14,6 +14,17 @@ public static partial class AuditEvents
         Event(AuditActionNames.FirstAdminCreated, Target(AuditTargetTypes.User, user.Value), AuditOutcomeCodes.Succeeded,
             ("userId", user.Value), ("username", username), ("localSignInReady", localSignInReady));
 
+    /// <summary>
+    /// The host's startup configuration created a user who holds the Platform Administrator role. Recorded as
+    /// <c>system:bootstrap-configuration</c>; the role's own assignment row follows in the same transaction.
+    /// </summary>
+    public static AuditEvent ConfiguredAdminCreated(UserId user, string username, IdentitySource source, RoleId role) =>
+        Event(AuditActionNames.ConfiguredAdminCreated, Target(AuditTargetTypes.User, user.Value), AuditOutcomeCodes.Succeeded,
+            ("userId", user.Value),
+            ("username", username),
+            ("identitySource", source == IdentitySource.Entra ? "entra" : "local"),
+            ("roleId", role.Value));
+
     /// <summary>A first-administrator request was refused because the instance already has users.</summary>
     public static AuditEvent FirstAdminRejectedAlreadyInitialized() =>
         Event(AuditActionNames.FirstAdminRejectedAlreadyInitialized, Target(AuditTargetTypes.Instance, InstanceTargetId), AuditOutcomeCodes.Rejected);

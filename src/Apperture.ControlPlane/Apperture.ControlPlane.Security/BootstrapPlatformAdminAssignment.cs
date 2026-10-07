@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Microsoft.Extensions.Logging;
@@ -8,8 +9,27 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Core logic for <see cref="BootstrapPlatformAdminAssignmentHostedService"/>; unit-testable without hosting.
 /// </summary>
+/// <remarks>
+/// AUD-1.2: each configured principal's change is one audited unit of work, recorded as
+/// <c>system:bootstrap-configuration</c>. The lookup that decides it, the created user (with its link and role) or the role
+/// assignment, and their rows commit together: <c>bootstrap.configured_admin.created</c> plus the role's
+/// <c>governance.role.assignment.created</c>, or the assignment row alone for an existing user. A principal that already holds
+/// the role changes nothing and writes no row. Configuration that cannot be applied is skipped and logged, as before.
+/// </remarks>
 public static class BootstrapPlatformAdminAssignment
 {
+    /// <summary>The actor of every change this startup step makes.</summary>
+    public static AuditActor Actor { get; } = AuditActor.System("bootstrap-configuration");
+
+    private enum Outcome
+    {
+        Skipped,
+        InvalidUsername,
+        Created,
+        Assigned,
+        AlreadyAdministrator,
+    }
+
     /// <summary>
     /// Ensures each configured principal has the Platform Administrator role (creates user when allowed and missing).
     /// </summary>
@@ -18,6 +38,7 @@ public static class BootstrapPlatformAdminAssignment
         IUserRepository userRepository,
         IRoleRepository roleRepository,
         ILogger? logger,
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
         CancellationToken cancellationToken = default)
     {
         if (!options.Enabled || options.Principals.Count == 0)
@@ -32,6 +53,9 @@ public static class BootstrapPlatformAdminAssignment
                 BootstrapConstants.PlatformAdminRoleId);
             return;
         }
+
+        var unit = auditedUnitOfWork
+            ?? throw new InvalidOperationException("Bootstrap principal assignment requires the audited unit of work.");
 
         foreach (var p in options.Principals)
         {
@@ -68,135 +92,167 @@ public static class BootstrapPlatformAdminAssignment
                 continue;
             }
 
-            User? existing;
+            string? tenantId = null;
             if (source == IdentitySource.Entra)
             {
-                var tenantId = EntraTokenClaims.Normalize(p.TenantId);
+                tenantId = EntraTokenClaims.Normalize(p.TenantId);
                 if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(tenantId) || !EntraTokenClaims.IsValidObjectId(externalId))
                 {
                     logger?.LogWarning(
                         "Bootstrap Entra principal skipped: TenantId and ExternalId must be directory ids (tid + oid).");
                     continue;
                 }
+            }
 
-                existing = await userRepository
-                    .GetByIdentityLinkAsync(ProviderIdentityKey.Entra(tenantId, externalId), cancellationToken)
-                    .ConfigureAwait(false);
-                if (existing is null)
-                {
-                    if (!options.CreateUserIfMissing)
+            var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
+                ? $"Bootstrap administrator ({externalId})"
+                : p.DisplayName.Trim();
+
+            // Chosen once, so a rerun after a confirmed rollback creates the same user.
+            var newUserId = new UserId(Guid.NewGuid().ToString("N")[..24]);
+            UserId? affected = null;
+            string? createdUsername = null;
+
+            Outcome outcome;
+            try
+            {
+                outcome = await unit.ExecuteAsync(
+                    new AuditedOperation(AuditActionNames.ConfiguredAdminCreated, Actor, [AuditActionNames.RoleAssigned]),
+                    async (transaction, ct) =>
                     {
-                        logger?.LogInformation(
-                            "Bootstrap principal {Source}/{TenantId}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
-                            source,
-                            tenantId,
-                            externalId);
-                        continue;
-                    }
+                        affected = null;
+                        createdUsername = null;
 
-                    var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
-                        ? $"Bootstrap administrator ({externalId})"
-                        : p.DisplayName.Trim();
+                        var existing = source == IdentitySource.Entra
+                            ? await userRepository.GetByIdentityLinkAsync(ProviderIdentityKey.Entra(tenantId!, externalId), ct).ConfigureAwait(false)
+                            : await userRepository.GetByIdentityLinkAsync(source, externalId, ct).ConfigureAwait(false);
 
-                    var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
-
-                    // Configuration names only tid + oid, so the username comes from a configured display
-                    // name or falls back to "user". The default display text (with the oid) is never used.
-                    var user = await new UsernameService(userRepository).AddWithGeneratedUsernameAsync(
-                        username => new User(
-                            userId,
-                            displayName,
-                            [new IdentityLink(IdentitySource.Entra, externalId, LastAuthenticatedAt: null, TenantId: tenantId)],
-                            [adminRoleId],
-                            IsBreakGlassEligible: false)
+                        if (existing is null)
                         {
-                            Username = username
-                        },
-                        new UsernameGenerationSources(
-                            UserPrincipalName: null,
-                            Mail: null,
-                            DisplayName: string.IsNullOrWhiteSpace(p.DisplayName) ? null : displayName),
-                        cancellationToken).ConfigureAwait(false);
-                    logger?.LogInformation(
-                        "Created user {UserId} ({Username}) for bootstrap principal {Source}/{TenantId}/{ExternalId} with Platform Administrator role.",
-                        userId.Value,
-                        user.Username,
-                        source,
-                        tenantId,
-                        externalId);
-                    continue;
-                }
+                            if (!options.CreateUserIfMissing)
+                            {
+                                transaction.DeclareNoOp();
+                                return Outcome.Skipped;
+                            }
+
+                            if (source == IdentitySource.Local && UsernamePolicy.CheckNewAssignment(externalId) != UsernameAssignmentCheck.Valid)
+                            {
+                                transaction.DeclareNoOp();
+                                return Outcome.InvalidUsername;
+                            }
+
+                            var user = await CreateAsync(userRepository, source, tenantId, externalId, displayName, p.DisplayName, newUserId, adminRoleId, ct)
+                                .ConfigureAwait(false);
+                            affected = user.Id;
+                            createdUsername = user.Username;
+                            await transaction.StageAsync(AuditEvents.ConfiguredAdminCreated(user.Id, user.Username, source, adminRoleId), ct).ConfigureAwait(false);
+                            await transaction.StageAsync(AuditEvents.RoleAssigned(user.Id, adminRoleId), ct).ConfigureAwait(false);
+                            return Outcome.Created;
+                        }
+
+                        var roles = await roleRepository.GetForUserAsync(existing.Id, ct).ConfigureAwait(false);
+                        if (roles.Any(r => string.Equals(r.Id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal)))
+                        {
+                            transaction.DeclareNoOp();
+                            return Outcome.AlreadyAdministrator;
+                        }
+
+                        await roleRepository.AssignToUserAsync(existing.Id, adminRoleId, ct).ConfigureAwait(false);
+                        affected = existing.Id;
+                        await transaction.StageAsync(AuditEvents.RoleAssigned(existing.Id, adminRoleId), ct).ConfigureAwait(false);
+                        return Outcome.Assigned;
+                    },
+                    (committed, _) => Task.FromResult(
+                        string.Equals(committed.Action, AuditActionNames.ConfiguredAdminCreated, StringComparison.Ordinal)
+                            ? Outcome.Created
+                            : Outcome.Assigned),
+                    cancellationToken).ConfigureAwait(false);
             }
-            else
+            catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
             {
-                existing = await userRepository.GetByIdentityLinkAsync(source, externalId, cancellationToken).ConfigureAwait(false);
-                if (existing is null)
-                {
-                    if (!options.CreateUserIfMissing)
-                    {
-                        logger?.LogInformation(
-                            "Bootstrap principal {Source}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
-                            source,
-                            externalId);
-                        continue;
-                    }
-
-                    if (UsernamePolicy.CheckNewAssignment(externalId) != UsernameAssignmentCheck.Valid)
-                    {
-                        logger?.LogWarning(
-                            "Bootstrap principal {Source}/{ExternalId} skipped: a new local username must be 3 to 64 lowercase letters, digits, '.', '-' or '_', start with a letter, end with a letter or digit, and not be reserved.",
-                            source,
-                            externalId);
-                        continue;
-                    }
-
-                    var displayName = string.IsNullOrWhiteSpace(p.DisplayName)
-                        ? $"Bootstrap administrator ({externalId})"
-                        : p.DisplayName.Trim();
-
-                    var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
-                    var user = new User(
-                        userId,
-                        displayName,
-                        [new IdentityLink(source, externalId, LastAuthenticatedAt: null)],
-                        [adminRoleId],
-                        IsBreakGlassEligible: false)
-                    {
-                        Username = externalId
-                    };
-
-                    try
-                    {
-                        await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (UsernameException ex) when (ex.Code == UsernameErrorCodes.Taken)
-                    {
-                        logger?.LogWarning(
-                            "Bootstrap principal {Source}/{ExternalId} skipped: that username belongs, or once belonged, to another user.",
-                            source,
-                            externalId);
-                        continue;
-                    }
-                    logger?.LogInformation(
-                        "Created user {UserId} for bootstrap principal {Source}/{ExternalId} with Platform Administrator role.",
-                        userId.Value,
-                        source,
-                        externalId);
-                    continue;
-                }
-            }
-
-            var roles = await roleRepository.GetForUserAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-            var hasAdmin = roles.Any(r => string.Equals(r.Id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal));
-            if (!hasAdmin)
-            {
-                await roleRepository.AssignToUserAsync(existing.Id, adminRoleId, cancellationToken).ConfigureAwait(false);
-                logger?.LogInformation(
-                    "Assigned Platform Administrator role to user {UserId} for bootstrap principal {Source}/{ExternalId}.",
-                    existing.Id.Value,
+                logger?.LogWarning(
+                    "Bootstrap principal {Source}/{ExternalId} skipped: that username belongs, or once belonged, to another user.",
                     source,
                     externalId);
+                continue;
+            }
+
+            switch (outcome)
+            {
+                case Outcome.Created:
+                    logger?.LogInformation(
+                        "Created user {UserId} ({Username}) for bootstrap principal {Source}/{ExternalId} with Platform Administrator role.",
+                        (affected ?? newUserId).Value,
+                        createdUsername,
+                        source,
+                        externalId);
+                    break;
+                case Outcome.Assigned:
+                    logger?.LogInformation(
+                        "Assigned Platform Administrator role to user {UserId} for bootstrap principal {Source}/{ExternalId}.",
+                        affected?.Value,
+                        source,
+                        externalId);
+                    break;
+                case Outcome.Skipped:
+                    logger?.LogInformation(
+                        "Bootstrap principal {Source}/{ExternalId}: no user found and CreateUserIfMissing=false; skipped.",
+                        source,
+                        externalId);
+                    break;
+                case Outcome.InvalidUsername:
+                    logger?.LogWarning(
+                        "Bootstrap principal {Source}/{ExternalId} skipped: a new local username must be 3 to 64 lowercase letters, digits, '.', '-' or '_', start with a letter, end with a letter or digit, and not be reserved.",
+                        source,
+                        externalId);
+                    break;
             }
         }
+    }
+
+    /// <summary>Adds the configured administrator with its link and the Platform Administrator role.</summary>
+    private static async Task<User> CreateAsync(
+        IUserRepository userRepository,
+        IdentitySource source,
+        string? tenantId,
+        string externalId,
+        string displayName,
+        string? configuredDisplayName,
+        UserId userId,
+        RoleId adminRoleId,
+        CancellationToken cancellationToken)
+    {
+        if (source == IdentitySource.Entra)
+        {
+            // Configuration names only tid + oid, so the username comes from a configured display
+            // name or falls back to "user". The default display text (with the oid) is never used.
+            return await new UsernameService(userRepository).AddWithGeneratedUsernameAsync(
+                username => new User(
+                    userId,
+                    displayName,
+                    [new IdentityLink(IdentitySource.Entra, externalId, LastAuthenticatedAt: null, TenantId: tenantId)],
+                    [adminRoleId],
+                    IsBreakGlassEligible: false)
+                {
+                    Username = username
+                },
+                new UsernameGenerationSources(
+                    UserPrincipalName: null,
+                    Mail: null,
+                    DisplayName: string.IsNullOrWhiteSpace(configuredDisplayName) ? null : displayName),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var user = new User(
+            userId,
+            displayName,
+            [new IdentityLink(source, externalId, LastAuthenticatedAt: null)],
+            [adminRoleId],
+            IsBreakGlassEligible: false)
+        {
+            Username = externalId
+        };
+        await userRepository.AddAsync(user, cancellationToken).ConfigureAwait(false);
+        return user;
     }
 }

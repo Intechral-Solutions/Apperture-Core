@@ -1317,6 +1317,21 @@ internal static class AuditActionCatalogEntries
             IntroducedAfterEpic37Migration = true,
             Writer = "BootstrapController.cs:137",
         },
+        // AUD-1.2 review: the host's startup configuration (BootstrapPlatformAdmin) created a Platform Administrator with no
+        // audit row. Assigning the role to an existing user records governance.role.assignment.created with the same actor.
+        new()
+        {
+            Action = "bootstrap.configured_admin.created",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ConfiguredAdminCreated,
+            IntroducedIn = "AUD-1.2",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "BootstrapPlatformAdminAssignment.cs",
+        },
         new()
         {
             Action = "bootstrap.first_admin.rejected_already_initialized",

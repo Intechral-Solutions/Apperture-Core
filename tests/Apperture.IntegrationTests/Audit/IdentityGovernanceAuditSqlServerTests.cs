@@ -328,6 +328,50 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{result.UserId!.Value}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
     }
 
+    // ---- Configured administrators (BootstrapPlatformAdmin at host start; AUD-1.2 review) ----
+
+    [Fact]
+    public async Task A_configured_administrator_commits_with_its_rows_or_not_at_all_and_an_assignment_is_recorded_once()
+    {
+        var options = new BootstrapPlatformAdminOptions
+        {
+            Enabled = true,
+            CreateUserIfMissing = true,
+            Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "configured.admin" } },
+        };
+        Task ApplyAsync(AppertureDbContext db) => BootstrapPlatformAdminAssignment.ExecuteAsync(
+            options, new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance), new SqlRoleRepository(db), null, NewUnit(db, null));
+
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => ApplyAsync(db);
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Users WHERE Username = N'configured.admin';")).Should().Be(0, "no administrator without its rows");
+
+        await using (var db = _db.NewDb())
+            await ApplyAsync(db);
+        var userId = await _db.ScalarAsync<string>("SELECT Id FROM Users WHERE Username = N'configured.admin';");
+        var rows = await RowsAsync("user", userId);
+        rows.Select(r => r["Action"]).Should().Equal(AuditActionNames.ConfiguredAdminCreated, AuditActionNames.RoleAssigned);
+        rows.Should().OnlyContain(r => (string)r["Actor"]! == ActorLiterals.SystemBootstrapConfiguration && (string)r["ActorKind"]! == "system");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{userId}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
+
+        // An administrator removed by hand gets the role back at the next start, with one assignment row; a start that finds
+        // the role held changes nothing and writes no row.
+        await _db.ExecuteAsync($"DELETE FROM UserRoles WHERE UserId = N'{userId}' AND RoleId = N'{PlatformAdmin}';");
+        await using (var db = _db.NewDb(new LostCommitAcknowledgement()))
+            await ApplyAsync(db);
+        await using (var db = _db.NewDb())
+            await ApplyAsync(db);
+
+        (await RowsAsync("user", userId)).Select(r => r["Action"]).Should().Equal(
+            AuditActionNames.ConfiguredAdminCreated, AuditActionNames.RoleAssigned, AuditActionNames.RoleAssigned);
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{userId}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
+    }
+
     private static FirstAdminBootstrapService Bootstrap(AppertureDbContext db) =>
         new(
             new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),

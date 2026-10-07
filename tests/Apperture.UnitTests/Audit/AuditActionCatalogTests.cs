@@ -31,6 +31,7 @@ public sealed partial class AuditActionCatalogTests
         "entra.tenant_registration.deleted",
         "entra.tenant_registration.activated",
         "entra.tenant_registration.change_refused",
+        "bootstrap.configured_admin.created",
         "auth.sign_in_policy.updated",
     ];
 

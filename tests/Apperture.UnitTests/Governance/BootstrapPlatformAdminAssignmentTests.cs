@@ -1,5 +1,7 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
@@ -11,6 +13,8 @@ namespace Apperture.UnitTests.Governance;
 
 public sealed class BootstrapPlatformAdminAssignmentTests
 {
+    private readonly RecordingAuditedUnitOfWork _unit = new();
+
     [Fact]
     public async Task ExecuteAsync_Skips_WhenDisabled()
     {
@@ -18,7 +22,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
         var roles = new Mock<IRoleRepository>(MockBehavior.Strict);
         var opts = new BootstrapPlatformAdminOptions { Enabled = false, Principals = { new() { IdentitySource = "Local", ExternalId = "x" } } };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         users.VerifyNoOtherCalls();
         roles.VerifyNoOtherCalls();
@@ -31,7 +35,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
         var roles = new Mock<IRoleRepository>(MockBehavior.Strict);
         var opts = new BootstrapPlatformAdminOptions { Enabled = true, Principals = new() };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         users.VerifyNoOtherCalls();
         roles.VerifyNoOtherCalls();
@@ -72,12 +76,17 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "alice" } }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         roles.Verify(
             r => r.AssignToUserAsync(userId, It.Is<RoleId>(rid => rid.Value == BootstrapConstants.PlatformAdminRoleId), It.IsAny<CancellationToken>()),
             Times.Once);
         users.Verify(u => u.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // AUD-1.2: the assignment commits with its row, recorded as the startup configuration.
+        _unit.Actions.Should().Equal(AuditActionNames.RoleAssigned);
+        _unit.Operations.Should().ContainSingle().Which.Operation.Actor.RecordedValue.Should().Be(ActorLiterals.SystemBootstrapConfiguration);
+        _unit.Single(AuditActionNames.RoleAssigned).Target!.Id.Should().Be(userId.Value);
     }
 
     [Fact]
@@ -115,12 +124,13 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "alice" } }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         roles.Verify(
             r => r.AssignToUserAsync(It.IsAny<UserId>(), It.IsAny<RoleId>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        _unit.Staged.Should().BeEmpty("a principal that already holds the role changes nothing and writes no row (D7)");
     }
 
     [Fact]
@@ -158,7 +168,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         users.Verify(
             u => u.AddAsync(
@@ -171,6 +181,49 @@ public sealed class BootstrapPlatformAdminAssignmentTests
         roles.Verify(
             r => r.AssignToUserAsync(It.IsAny<UserId>(), It.IsAny<RoleId>(), It.IsAny<CancellationToken>()),
             Times.Never);
+
+        // AUD-1.2: the created administrator and its role commit with their rows; no password or address is recorded.
+        _unit.Actions.Should().Equal(AuditActionNames.ConfiguredAdminCreated, AuditActionNames.RoleAssigned);
+        _unit.Operations.Should().ContainSingle().Which.Operation.Actor.RecordedValue.Should().Be(ActorLiterals.SystemBootstrapConfiguration);
+        var created = _unit.Single(AuditActionNames.ConfiguredAdminCreated);
+        created.Fields["username"].Should().Be("newuser");
+        created.Fields["identitySource"].Should().Be("local");
+        created.Fields["roleId"].Should().Be(BootstrapConstants.PlatformAdminRoleId);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_records_a_created_administrator_whose_acknowledgement_was_lost_once_from_the_committed_row()
+    {
+        var (users, roles, added) = CreatingRepositories();
+        _unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Lost;
+        var opts = new BootstrapPlatformAdminOptions
+        {
+            Enabled = true,
+            CreateUserIfMissing = true,
+            Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "ops.admin" } }
+        };
+
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
+
+        added.Should().ContainSingle("verification confirmed the commit, so nothing reran");
+        _unit.Actions.Should().Equal(AuditActionNames.ConfiguredAdminCreated, AuditActionNames.RoleAssigned);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_requires_the_audited_unit_of_work_before_changing_anything()
+    {
+        var (users, roles, added) = CreatingRepositories();
+        var opts = new BootstrapPlatformAdminOptions
+        {
+            Enabled = true,
+            CreateUserIfMissing = true,
+            Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "ops.admin" } }
+        };
+
+        var act = () => BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        added.Should().BeEmpty();
     }
 
     [Fact]
@@ -201,7 +254,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         users.Verify(u => u.AddAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
         roles.Verify(
@@ -231,7 +284,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         var user = added.Should().ContainSingle().Subject;
         user.Username.Should().Be(expected);
@@ -249,7 +302,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "  Ops.Admin " } }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         var user = added.Should().ContainSingle().Subject;
         user.Username.Should().Be("ops.admin");
@@ -269,7 +322,7 @@ public sealed class BootstrapPlatformAdminAssignmentTests
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = externalId } }
         };
 
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null);
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(opts, users.Object, roles.Object, null, _unit);
 
         added.Should().BeEmpty();
     }

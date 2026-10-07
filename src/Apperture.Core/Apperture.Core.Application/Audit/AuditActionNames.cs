@@ -112,6 +112,7 @@ public static class AuditActionNames
 
     // AUD-1.2: first-administrator bootstrap and bootstrap recovery
     public const string FirstAdminCreated = "bootstrap.first_admin.created";
+    public const string ConfiguredAdminCreated = "bootstrap.configured_admin.created";
     public const string FirstAdminRejectedAlreadyInitialized = "bootstrap.first_admin.rejected_already_initialized";
     public const string FirstAdminRejectedInvalidRequest = "bootstrap.first_admin.rejected_invalid_request";
     public const string RestorePlatformAccessExecuted = "recovery.restore_platform_access.executed";

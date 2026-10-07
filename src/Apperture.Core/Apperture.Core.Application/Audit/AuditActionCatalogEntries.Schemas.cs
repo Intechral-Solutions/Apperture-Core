@@ -474,6 +474,14 @@ internal static class AuditDetailSchemas
         FlagField("localSignInReady"),
     ]);
 
+    internal static readonly AuditDetailSchema ConfiguredAdminCreated = new(
+    [
+        IdField("userId"),
+        UsernameField("username"),
+        EnumField("identitySource", true, "local", "entra"),
+        IdField("roleId"),
+    ]);
+
     internal static readonly AuditDetailSchema FirstAdminRejectedInvalidRequest = new(
     [
         EnumField("reason", true, "missing_fields", "invalid_identity_source", "password_policy", "username_policy"),
