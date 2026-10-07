@@ -654,6 +654,64 @@ public sealed class OperatorActionAuditSqlServerTests : IAsyncLifetime
         (await RowsAsync("operation_item", item.OperationItemId)).Should().BeEmpty("the attempt and its row belong to the request that made it");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_item_retry_that_loses_the_attempt_index_to_a_request_with_a_different_key_commits_nothing_and_never_adopts_the_winners_attempt(bool blocked)
+    {
+        var (user, _) = await AddUserAsync("itemretrier");
+        var (runId, item) = await SeedFailedItemAsync();
+        // A different key is not a replay of the winner's request, so the loser must not be answered with, or record, the
+        // winner's attempt. Two requests for one item compute the same next attempt index, so the loser fails on that index
+        // instead of on the key. Only an attempt with the loser's own key would make it a replay, and none exists.
+        var race = new BeforeFirstMatchingCommand(
+            sql => sql.Contains("INSERT INTO [OperationItemRetryAttempts]", StringComparison.Ordinal),
+            async () => await _db.ExecuteAsync(
+                "INSERT INTO OperationItemRetryAttempts (Id, OperationItemId, RunId, OperationGroupId, AttemptIndex, IdempotencyKey, RequestedByActorId, Status, StartedAtUtc, CreatedAtUtc, UpdatedAtUtc) "
+                + $"VALUES (N'att-winner', N'{item.OperationItemId}', N'{runId}', N'{item.OperationGroupId}', 1, N'winner-key', N'usr_winner', N'{(blocked ? "Blocked" : "Dispatched")}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());"));
+
+        await using (var db = _db.NewDb(race))
+        {
+            var act = () => ItemRetryService(db, user, new TestHandler { CanRetry = !blocked }).RequestRetryAsync(
+                new OperationRunId(runId), item.OperationItemId, new RequestOperationItemRetryDto("loser-key"));
+            // It fails on the attempt index, not on anything else: the unique violation keeps its meaning and is not turned into
+            // a replay, because no attempt with this request's own key exists.
+            var thrown = await act.Should().ThrowAsync<Microsoft.EntityFrameworkCore.DbUpdateException>();
+            thrown.Which.ToString().Should().Contain("IX_OperationItemRetryAttempts_OperationItemId_AttemptIndex");
+        }
+
+        race.Fired.Should().BeTrue();
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemRetryAttempts;")).Should().Be(1, "only the winner's attempt exists");
+        (await _db.ScalarAsync<string>("SELECT RequestedByActorId FROM OperationItemRetryAttempts WHERE Id = N'att-winner';")).Should().Be("usr_winner");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationRuns WHERE RetryOfRunId IS NOT NULL;")).Should().Be(0, "the loser started no child run");
+        (await _db.ScalarAsync<int>($"SELECT RetryCount FROM OperationItems WHERE Id = N'{item.OperationItemId}';")).Should().Be(0, "the loser stamped nothing");
+        (await RowsAsync("operation_item", item.OperationItemId)).Should().BeEmpty("a request that committed nothing records nothing, and the winner's attempt is never recorded under the loser's name");
+    }
+
+    [Fact]
+    public async Task An_operation_cancel_intent_the_worker_later_removes_leaves_the_audit_row_that_names_who_asked()
+    {
+        var (user, username) = await AddUserAsync("canceller");
+        await SeedOperationRunAsync("run-op1", "running");
+
+        await using (var db = _db.NewDb())
+            (await new OperationCancelService(db, new AllowOperationCancel(), NewUnit(db, new Principal(user))).RequestCancelAsync(new OperationRunId("run-op1"))).Should().BeTrue();
+
+        (await _db.ScalarAsync<string>("SELECT RequestedBy FROM OperationCancelRequests WHERE RunId = N'run-op1';")).Should().Be(user);
+        var before = (await RowsAsync("operation_run", "run-op1")).Should().ContainSingle().Which;
+        before["Action"].Should().Be(AuditActionNames.OperationRunCancelRequested);
+        before["Actor"].Should().Be(user);
+        before["ActorUsername"].Should().Be(username);
+
+        // What OperationStartRequestProcessor does when the run reaches a terminal state: it removes the transient intent.
+        await _db.ExecuteAsync("DELETE FROM OperationCancelRequests WHERE RunId = N'run-op1';");
+
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationCancelRequests WHERE RunId = N'run-op1';")).Should().Be(0);
+        var after = (await RowsAsync("operation_run", "run-op1")).Should().ContainSingle("the audit row outlives the intent").Which;
+        foreach (var column in new[] { "Id", "EventId", "Actor", "ActorUserId", "ActorUsername", "Action", "Details", "OutcomeCode", "Basis" })
+            after[column].Should().Be(before[column], $"{column} is evidence and is unchanged when the intent is removed");
+    }
+
     [Fact]
     public async Task A_confirmed_commit_whose_result_cannot_be_rebuilt_is_reported_as_applied_never_as_a_refusal()
     {
@@ -944,6 +1002,32 @@ public sealed class OperatorActionAuditSqlServerTests : IAsyncLifetime
         await db.SaveChangesAsync();
     }
 
+    private async Task SeedOperationRunAsync(string runId, string status)
+    {
+        await using var db = _db.NewDb();
+        var instanceId = "opinst-" + runId;
+        db.OperationInstances.Add(new OperationInstanceEntity
+        {
+            Id = instanceId,
+            DefinitionId = OperationKey,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            Version = 1,
+            CurrentStepName = "DoWork",
+        });
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = runId,
+            WorkflowInstanceId = instanceId,
+            DefinitionId = OperationKey,
+            Status = status,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            CorrelationKey = "corr-" + runId,
+        });
+        await db.SaveChangesAsync();
+    }
+
     private async Task<(string RunId, OperationItem Item)> SeedFailedItemAsync()
     {
         var runId = "run-item-" + Guid.NewGuid().ToString("N")[..8];
@@ -1053,6 +1137,11 @@ public sealed class OperatorActionAuditSqlServerTests : IAsyncLifetime
                 new SqlWorkflowPersistence(db),
                 db),
             NewUnit(db, new Principal(user)));
+    }
+
+    private sealed class AllowOperationCancel : IOperationRunCancelAuthorizationService
+    {
+        public ValueTask EnsureCanCancelRunAsync(OperationId operationId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
     private sealed class AllowCancel : IWorkflowRunCancelAuthorizationService
