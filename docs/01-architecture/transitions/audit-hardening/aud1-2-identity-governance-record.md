@@ -1,8 +1,8 @@
 # AUD-1.2 identity and governance: implementation record
 
-Date: 2026-10-07
+Date: 2026-10-06
 
-Status: **In progress on branch `aud-1.2-identity-governance-audit`.** This record holds the writer inventory and the package decisions; the sections after §4 are completed as each family lands.
+Status: **Implemented on branch `aud-1.2-identity-governance-audit`; not pushed, no PR.** This record holds the writer inventory, the package decisions, the acceptance mapping, the failure and external-effect behaviour, the findings with owners and the scope left for later packages.
 
 Base: `origin/master` at `a300bcd` (merge of PR #15; post-merge CI run 37552614278 green).
 
@@ -26,7 +26,7 @@ Out, with owner:
 
 ## 2. Writer inventory
 
-W1 = required mutation, W2 = required security event, W3 = attempt or refusal. `CP` = `AuditActor.CurrentPrincipal`. "Unit" = one audited unit of work (`IAuditedUnitOfWork`). Status is updated as families land.
+W1 = required mutation, W2 = required security event, W3 = attempt or refusal. `CP` = `AuditActor.CurrentPrincipal`. "Unit" = one audited unit of work (`IAuditedUnitOfWork`). Status is as committed on the branch.
 
 | Family and service | Actions | Class | Actor (correct) | Target | Boundary after conversion |
 |---|---|---|---|---|---|
@@ -39,7 +39,7 @@ W1 = required mutation, W2 = required security event, W3 = attempt or refusal. `
 | Bootstrap: `BootstrapController`, `FirstAdminBootstrapService` | `bootstrap.first_admin.created` (W1); `bootstrap.first_admin.rejected_*` (W3) | W1, W3 | `anonymous` | user; instance | Creation and credential in one unit |
 | Provisioning: `UserProvisioningService` | `user.provisioned.entra_directory`, `user.provisioned.entra_access_request`, `entra.access_request.approved`, `entra.access_request.reconciled_by_provisioning`; `user.provisioning.welcome.sent`, `.failed` (W3, external attempt) | W1, W3 | CP (administrator) | user; access request | One unit; welcome mail after commit |
 | Access requests: `EntraAccessRequestService` | `entra.access_request.created`; `entra.access_request.rejected` | W1 | created: external identity (verified triple); rejected: CP | access request | One unit |
-| Entra association: `EntraIdentityAssociationService`, `EntraPrimaryAuthenticationPolicy` | `identity_link.entra.proven`, `.linked`, `credential.local.disabled_entra_primary` (W1); `identity_link.entra.link_failed`, `.collision`, `.tenant_mismatch`, `auth.entra.login.rejected_unlinked`, `emergency.local.protected`, `credential.local.disable_deferred_last_entra_independent_admin` (W3) | W1, W3 | the owning or initiating user; external for rejected identities | identity link; external identity | Proof, link and policy changes each in a unit; the callback has no session |
+| Entra association: `EntraIdentityAssociationService`, `EntraPrimaryAuthenticationPolicy` | `identity_link.entra.proven`, `.linked`, `credential.local.disabled_entra_primary` (W1); `identity_link.entra.link_failed`, `.collision`, `.tenant_mismatch`, `auth.entra.login.rejected_unlinked`, `emergency.local.protected`, `credential.local.disable_deferred_last_entra_independent_admin` (W3) | W1, W3 | proof and link: the owning or initiating user (D24); rejected identities: external (D1, D22); policy: `system:entra-primary-policy` (D26) | identity link; external identity; user | Proof, link and policy changes each in a unit; the callback has no session |
 | Account services: `AccountInvitationService`, `AccountContactService`, `AccountProfileService`, `ForgottenPasswordService` | `account.invitation.sent`, `.resent`, `.accepted`; `credential.password.setup_completed`; `account.email.*`; `account.profile.*`; `account.notification.*` (own preferences); `credential.password.reset_requested`, `.reset_completed` | W1 | invitations: the administrator (corrects §15.3); self-service: CP; token flows: the verified user; reset request: `anonymous` | user | Token and state in one unit; mail after commit |
 | same | `account.security_mail.delivery_attempted` (new, replaces failure-only rows), `account.profile.avatar.upload_rejected`, suppressed reset request | W3 | as above | user | Own transaction, after commit |
 | Sign-in successes | `auth.local.login.success`, `auth.emergency.login.success`, `auth.break_glass.login.success`, `auth.entra.login.success`, `auth.strong_authentication.step_up.satisfied` | W2 | the verified user | user | Row commits **before** the cookie or redirect |
@@ -50,7 +50,10 @@ W1 = required mutation, W2 = required security event, W3 = attempt or refusal. `
 | New: tenant registration | `entra.tenant_registration.created`, `.updated`, `.deleted`, `.activated`; `entra.access_request.policy.changed` | W1 | CP | tenant registration | One unit; secret-store effects outside it |
 | New: sign-in policy | `auth.sign_in_policy.updated` | W1 | CP | auth policy | One unit |
 | Enrollment: `EnrollController`, `SqlRuntimeEnrollmentService` | `governance.runtime.enrollment.invitation.created`; `governance.runtime.enrollment.completed` (new) | W1 | invitation: CP; enrollment: `anonymous` (token-authenticated, no identity) | runtime instance | One unit |
-| Recovery restore: `RealBootstrapRecoveryService` (no production caller today) | `recovery.restore_platform_access.executed` (W1); `.denied`, `.failed` (W3) | W1, W3 | `recovery` | user; instance | Converted mechanically; verified at the service |
+| Recovery restore: `RealBootstrapRecoveryService` (no production caller today) | `recovery.restore_platform_access.executed` (W1); `.denied`, `.failed` (W3) | W1, W3 | `recovery` (system kind) | user; instance | One unit resolved from a scope, as the host does; audit failure and lost acknowledgement proven against SQL Server |
+| Found during the package: own email preference through `MeNotificationSubscriptionsController` | `account.notification.email.opted_in`, `.opted_out` | W1 | CP | notification preference row | Routed through the audited account service (D17); it wrote the preference with no row |
+
+Status at the end of the package: every row above is converted as listed, with the exceptions and corrections recorded in §3. No converted writer reaches the append bridge (pinned by `Aud12ConvertedWritersTests`); the remaining bridge rows in the family are the sign-in failures that IAM-11.4 owns. Catalog: 147 actions from AUD-1.1 plus 10 added here (`AuditActionCatalogTests` pins the list): `account.security_mail.delivery_attempted`, `credential.password.reset_request.suppressed`, `governance.runtime.enrollment.completed`, `auth.entra.login.failed`, `auth.sign_out`, `entra.tenant_registration.created`, `.updated`, `.deleted`, `.activated`, `auth.sign_in_policy.updated`. Historical entries stay declared (for example `account.security_mail.delivery_failed`, `governance.break_glass.admin_operation`).
 
 ## 3. Decisions of the package
 
@@ -96,4 +99,92 @@ W1 = required mutation, W2 = required security event, W3 = attempt or refusal. `
 | D38 | First-administrator bootstrap is anonymous. The no-users check, role, identity checks, user, link, role assignment, credential and created row are one unit in the bootstrap service; the controller records refusals as W3 rows with a stable reason and never the request. Closing the takeover window is OPS-1.4 | Gate §22; D7 |
 | D39 | Bootstrap recovery restore (no production caller today) records as `recovery`: the assignment and its row in one unit; denial and an unknown target are W3 rows. A target not found has no user to target, so `recovery.restore_platform_access.failed` targets the instance (catalog correction). A target that already holds the role changes nothing and writes no row | Gate §22; D7 |
 
-Further sections (acceptance mapping, authentication-result behaviour, external effects, validation results) are added when the package is complete.
+## 4. Acceptance mapping
+
+| Requirement | Where it is met | Evidence |
+|---|---|---|
+| Identity and governance W1 writers through the audited unit of work | Every W1 row of §2 is staged inside `IAuditedUnitOfWork.ExecuteAsync` | Per-family unit tests (recording double) and SQL suites `IdentityGovernanceAuditSqlServerTests`, `AccountServicesAuditSqlServerTests`, `EntraGovernanceAuditSqlServerTests`, `AuthenticationAuditSqlServerTests`, `AuthConfigurationAuditSqlServerTests` |
+| W2 security events | Sign-in successes and a satisfied step-up through `IAuditEventWriter.WriteAsync`, before the session (D30) | `AuthControllerSessionIdentityTests`, `EntraStepUpCallbackTests`, `AuthenticationAuditSqlServerTests` |
+| W3 attempts and refusals | Refusals decided in the transaction, written after rollback through `TryWriteAsync` | Refusal tests per family; SQL: last-admin refusal, Recovery Access refusal, self-link collision, password-change refusal |
+| New events: sign-out, Entra remote failure, tenant registration, sign-in policy, enrollment | `auth.sign_out`, `auth.entra.login.failed`, `entra.tenant_registration.*`, `auth.sign_in_policy.updated`, `governance.runtime.enrollment.completed` | `ManagementAuthEndpointsTests`, `EntraStepUpCallbackTests`, `AuthConfigurationAuditSqlServerTests`, `RuntimeEnrollmentEnvironmentValidationTests`, `AccountServicesAuditSqlServerTests` |
+| Actor versus target corrected | Invitations (administrator, D8), Recovery Access refusals (attempting person), MFA administration (`emergency-cli`), reset request (`anonymous`), token flows (the link's user), Entra policy (`system:entra-primary-policy`) | Actor assertions in each family's tests and SQL `Actor` columns |
+| Verified external Entra triples | D1, D22, D23; `AuditActor.ValidatedExternalIdentity` | `AuditActorCallSiteTests`; SQL `ActorKind = external` with tenant and subject columns |
+| Recovery Access marker replaced by an event field | D3: `viaRecoveryAccess` added by the recorder | SQL: a Recovery Access session marks its rows and writes no marker row |
+| Permission diffs | D9 | SQL: role diff rows hold the committed additions and removals |
+| Database changes separated from mail and external attempts | D8, D13, D14, D28, D35 | SQL: rerun after a rolled-back commit mails once; lost acknowledgement mails the committed link once (invitation, contact verification, password reset); an audit failure mails nothing; failed and throwing sends |
+| No competing recorder or retry | Only `IAuditedUnitOfWork` and `IAuditEventWriter`; no service retries | Code review; the unit owns reruns (confirmed rollback only) |
+| Unknown outcomes never reported as refusal or rollback | D12; reconciliation refused only after a confirmed commit | SQL: an approval whose commit cannot be verified is `outcome_unknown`, never the refusal |
+| Sign-out non-blocking | D32 | `ManagementAuthEndpointsTests`: a failed row never blocks the sign-out |
+| Sensitive values excluded | Schema names refuse password, token, secret, credential and search names; producers take typed values only | `AuditDetailSchemaTests`; tests assert no plaintext link, password, code, address or provider text in rows |
+| IAM-9 behaviour intact | Usernames, the ledger and the session binding are unchanged | Full unit and integration suites; SEC-1 browser suite (§7) |
+| Fault injection per converted family; lost acknowledgement; red/green | §5; §7 targeted mutations M1 to M8 | SQL suites above; `artifacts`-local mutation run summarized in §7 |
+
+## 5. Authentication results and transaction failures
+
+- A W2 sign-in row commits before the session. When it cannot be written: local, Recovery Access and break-glass sign-in fail the request with no cookie; a Microsoft sign-in fails in the handler and redirects once to the login page with no session; a satisfied step-up issues no stronger session. A consumed recovery code stays consumed (D4).
+- A W1 change and its rows commit together. An audit insert failure rolls the change back. SQL fault injection covers every converted service family: user rename (and its retry, audited once), role permissions, Recovery Access provisioning, MFA recovery-code regeneration, invitations, contact verification requests, password reset requests, display name, runtime enrollment, provisioning approval, access request submission, self-link, the Entra-primary policy, password change, tenant registration update, the sign-in policy, the first administrator and the recovery restore.
+- An uncertain commit is verified before anything reruns. A confirmed commit returns the reconstructed result; a confirmed rollback reruns the attempt (bounded); anything else is `outcome_unknown` (HTTP 500 with `code` and `operationEventId`, D12), never a refusal or a rollback. Lost acknowledgements are proven against SQL Server for role delete, Recovery Access revocation, recovery codes, invitations, contact verification, password reset, display name, setup completion, enrollment, provisioning approval, access request submission, self-link, pending-link proof, the Entra-primary policy, tenant registration update and activation, the sign-in policy, the first administrator and the recovery restore. In each, the operation ran once and reported success, never "already done", "not found" or a refusal. The password change's lost acknowledgement and unknown outcome are proven with the recording double.
+- A request that changes nothing writes no row and answers as before (D7), decided inside the transaction.
+- A refusal changes nothing and is recorded after the transaction released its locks.
+
+## 6. External effects and retries
+
+- Mail (setup invitation, contact verification, password reset, welcome) is sent once, after commit, by the request that committed it; a rerun cannot reach it. The link's id and plaintext are chosen before the unit (D13), so the link held after a verified commit is the committed one. Each send is a W3 row: `succeeded`, `failed`, or `unknown` when the send threw; a failed or unknown send never reports the committed change as undone.
+- Bounded recovery when a committed request's link is not in hand (D14): nothing is sent, the caller is told `account.security_mail.link_unavailable`, and sending again issues a new link and revokes the unsent one. By D13 this cannot occur after a verified commit; it stays as a guard. An unverifiable outcome sends nothing.
+- The secret store runs its own transaction (D35): a supplied secret is stored before the unit and retired again when nothing committed; a deleted registration's secret is retired after the commit.
+- Directory (Graph) reads run before the unit and are never repeated by a rerun.
+
+## 7. Validation
+
+Local run on 2026-10-06 against the branch with the test commit applied. Builds used an isolated artifacts path (`dotnet build … --artifacts-path <repo>/artifacts/aud12-build -m:1`); SQL Server is the local `apperture-test-sql` container.
+
+| Check | Result |
+|---|---|
+| Full solution build (`Apperture.slnx`) | Succeeded, 0 errors. The warnings are in files AUD-1.2 did not change (`AuthMeResponseJsonTests`, `NotificationToastWatcherTests`, `RoleDetailHoldersUiTests`, `ManagementHostEntraLinkingHttpTests`) |
+| `Apperture.UnitTests` | 3842 / 3842 passed |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `Apperture.Management.Ui.Shared.Tests` | 1483 / 1483 passed |
+| `Apperture.Management.Ui.Client.Tests` | 511 / 511 passed |
+| `Apperture.AppHost.Diagnostics.Tests` | 7 / 7 passed |
+| `Apperture.IntegrationTests` (full) | 464 / 465 passed. The one failure, `ManagementHostGovernanceHttpTests.Post_sftp_test_connect_…`, needs the test SFTP server at `127.0.0.1:2222`, which was not running (environmental; unrelated to this package) |
+| AUD-1.2 SQL classes (`IdentityGovernance…`, `AccountServices…`, `EntraGovernance…`, `Authentication…`, `AuthConfiguration…AuditSqlServerTests`) | 52 / 52 passed |
+| The same 52 with every SQL source pointed at an unreachable endpoint | 52 failed, 0 passed, 0 skipped: they fail, never skip, without SQL Server |
+| SEC-1 browser suite (`APPERTURE_BROWSER_TESTS=1`, headless Playwright) | 330 / 330 executed passed in 17 m 55 s. 5 skipped: the IAM-9.5 UI evidence tests, which need the second opt-in `APPERTURE_UI_EVIDENCE` and are not part of SEC-1 |
+
+Targeted mutations: each was applied alone, its test project rebuilt, the named test run, and the file restored (`git checkout`); the source tree was clean afterwards.
+
+| Id | Mutation | Caught by | Result |
+|---|---|---|---|
+| M1 | Invitation mail sent inside the retryable transaction | `An_invitation_rerun_after_a_rolled_back_commit_issues_one_link_and_mails_it_once` | Failed (mail sent twice) |
+| M2 | Session issued before its W2 sign-in row | `When_the_sign_in_row_cannot_be_written_no_session_is_issued` | Failed (a session was issued) |
+| M3 | Duplicate-identity refusal thrown inside the transaction | `Approving_an_identity_that_already_has_a_user_commits_the_reconciliation_and_refuses_only_after_a_confirmed_commit` | Failed (reconciliation rolled back) |
+| M4 | Reset request recorded as the principal, not `anonymous` | `A_reset_request_is_anonymous_and_one_matching_no_account_records_only_that_it_was_suppressed` | Failed (no principal to resolve) |
+| M5 | Notification preference row written when nothing changed | `Setting_a_channel_to_its_current_value_answers_the_same_and_records_nothing` | Failed. Indirectly: the double refused the extra row's unresolved principal before the "records nothing" assertion |
+| M6 | Unchanged registration update treated as a change | `A_registration_is_created_changed_activated_and_deleted_each_with_its_row_and_an_unchanged_update_writes_none` | Failed (the producer refuses an empty change list) |
+| M7 | Validated Entra identity recorded as `anonymous` | `A_refused_sign_in_is_recorded_as_the_validated_external_identity_never_as_a_user` | Failed (actor mismatch) |
+| M8 | Registration activation opening its own transaction inside the unit | Same registration lifecycle test | Failed (nested transaction refused) |
+
+Not performed: the remote CI run (nothing is pushed); the SFTP-dependent integration test; the IAM-9.5 UI evidence opt-in; a sign-in against a real Entra tenant (the harness has no Entra credentials; Entra flows are proven with the OIDC handler events and test doubles).
+
+## 8. Findings, follow-ups and owners
+
+| Finding | Owner |
+|---|---|
+| `BootstrapPlatformAdminAssignment` (configuration-driven, at host start) creates users and assigns Platform Administrator with no audit row. No approved action covers it, so AUD-1.2 did not add one | Product decision; proposed OPS-1.4 with an approved action |
+| One-time account links and MFA recovery codes are consumed by read-then-update without a row lock; two concurrent uses of the same link or code can both succeed | IAM-11 |
+| A refused or failed tenant registration update leaves a newly supplied client secret active in the secret store (unchanged from before; the store runs its own transaction) | AUD-1.4 (secret store family) |
+| A forgotten-password request for an eligible account that fails at the database returns an error, while an ineligible one returns the acknowledgement (unchanged from before) | IAM-11.3 |
+| Lockout-guard refusals of tenant registration changes and activation stay unrecorded (no approved W3 action) | AUD-1.4 |
+| Rows of `emergency.local.protected` and `credential.local.disable_deferred_last_entra_independent_admin` already classified before D6 keep their earlier basis | AUD-1.5 (query and read model) |
+| `EmergencyAccessService` keeps unused `_time` and `_logger` fields | AUD-1.3 housekeeping |
+
+## 9. Scope remaining for AUD-1.3 and later
+
+Package scope is the design gate's (§22); this lists what AUD-1.2 leaves to each.
+
+- **AUD-1.3, operator action attribution:** the Part 1 AUD-1.3 actions as W1 with their request rows; replacing the `system` and `unknown` actors; real outcomes in `RecoveryController`; actor columns on request rows where missing; the `EmergencyAccessService` housekeeping above.
+- **AUD-1.4, configuration lifecycle:** the remaining configuration writers, both deletes with verification and the lost-acknowledgement delete case; Part 1 AUD-1.4 coverage; secret-store events through the recorder (including the tenant-secret finding above); the runtime-shutdown duplicate case; the tenant-registration lockout refusals. Team events stay in LST-1.4.
+- **AUD-1.5, query contract (server):** cursor, §16 parameters and DTO; the first `IUserReferenceResolver` consumer; prospective transition-only blocked writing; module discovery as routine; the dashboard count; the denial actor; the basis of rows classified before D6.
+- **AUD-1.5b, timeline UI:** §17 and the AUD-1 rows of §18. Depends on AUD-1.5, LST-1.1 and AUD-1.3.
+- **AUD-1.6, enforcement and T-B:** M2 to M5 (including the source scan that no W1 or W2 action reaches `AppendAsync`; the sign-in failure rows still use the bridge as W3), the T-B privileged startup connection, and the retention document.
+- IAM-10 (authorization and the `role.manage` finding), IAM-11 (sign-in failure rows, session, throttling, lockout, single-use consumption, reset initiation), OPS-1 (first-administrator window, configuration bootstrap) and RCV-1 keep their findings. IAM-9 stays closed. RC1 is incomplete.
