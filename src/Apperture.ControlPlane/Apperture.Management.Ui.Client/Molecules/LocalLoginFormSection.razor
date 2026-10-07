@@ -108,11 +108,13 @@
             await Client.CompleteLocalMfaAsync(new LocalMfaChallengeRequest(totp, recovery));
             NavigateAfterLogin();
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
-            _error = _awaitingMfa
-                ? "Verification failed. Check the authenticator or recovery code."
-                : "Sign-in failed. Check your username and password.";
+            // A refusal is the user's to correct; anything else may follow an accepted recovery code, which is then used up,
+            // so it is cleared rather than offered for another attempt.
+            _error = LocalSignInMessages.ForFailure(_awaitingMfa, ex.StatusCode);
+            if (_awaitingMfa && ex.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+                _model.RecoveryCode = "";
         }
         catch (Exception ex)
         {

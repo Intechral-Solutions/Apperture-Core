@@ -112,6 +112,151 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         rows.Should().OnlyContain(r => !((string)r["Details"]!).Contains(Password) && !((string)r["Details"]!).Contains(Next));
     }
 
+    // ---- AUD-1.2 review (D4): a recovery code consumed with its own row, then a sign-in row that cannot be written ----
+
+    [Fact]
+    public async Task A_recovery_code_consumed_before_a_failed_sign_in_row_stays_consumed_with_its_row_and_no_session_is_issued()
+    {
+        var (user, _) = await AddUserWithPasswordAsync("mfa");
+        var codes = await EnrollWithRecoveryCodesAsync(user);
+
+        var failSignInRow = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        var withheld = new CapturingAuthentication();
+        await using (var db = _db.NewDb())
+        {
+            var act = () => MfaController(db, withheld, user, writerInterceptors: [failSignInRow])
+                .LocalMfa(new LocalMfaChallengeRequest(null, codes[0]), CancellationToken.None);
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        failSignInRow.Failures.Should().BeGreaterThan(0);
+        withheld.Count.Should().Be(0, "no session is issued when the sign-in row cannot be written");
+        (await UnusedCodesAsync(user)).Should().Be(codes.Count - 1, "the consumption committed with its own row before the sign-in row was attempted");
+        var consumed = (await _db.RowsAsync($"SELECT * FROM AuditLogs WHERE Action = N'{AuditActionNames.RecoveryCodeConsumed}' AND TargetId = N'{user}';"))
+            .Should().ContainSingle().Which;
+        consumed["Actor"].Should().Be(user);
+        (await _db.RowsAsync($"SELECT * FROM AuditLogs WHERE Action = N'{AuditActionNames.LocalSignInSucceeded}' AND TargetId = N'{user}';")).Should().BeEmpty();
+
+        // The same code is refused next time: it is used up, which is what the sign-in form now tells the user.
+        var retried = new CapturingAuthentication();
+        await using (var db = _db.NewDb())
+        {
+            var result = await MfaController(db, retried, user).LocalMfa(new LocalMfaChallengeRequest(null, codes[0]), CancellationToken.None);
+            result.Result.Should().BeOfType<UnauthorizedResult>();
+        }
+
+        retried.Count.Should().Be(0);
+        await NoRowCarriesAnyCodeAsync(codes);
+    }
+
+    [Fact]
+    public async Task A_recovery_code_consumption_whose_outcome_is_unknown_is_reported_unknown_and_issues_no_session()
+    {
+        var (user, _) = await AddUserWithPasswordAsync("mfa.unknown");
+        var codes = await EnrollWithRecoveryCodesAsync(user);
+
+        var signedIn = new CapturingAuthentication();
+        await using (var db = _db.NewDb(new LostCommitAcknowledgement()))
+        {
+            var act = () => MfaController(db, signedIn, user, verification: new UnreachableVerification())
+                .LocalMfa(new LocalMfaChallengeRequest(null, codes[0]), CancellationToken.None);
+            await act.Should().ThrowAsync<AuditOutcomeUnknownException>("never a refusal and never a confirmed rollback");
+        }
+
+        signedIn.Count.Should().Be(0);
+        (await _db.RowsAsync($"SELECT * FROM AuditLogs WHERE Action = N'{AuditActionNames.LocalSignInSucceeded}' AND TargetId = N'{user}';")).Should().BeEmpty();
+        await NoRowCarriesAnyCodeAsync(codes);
+    }
+
+    private async Task<IReadOnlyList<string>> EnrollWithRecoveryCodesAsync(string userId)
+    {
+        var id = new UserId(userId);
+        await using (var db = _db.NewDb())
+        {
+            var totp = new SqlNativeTotpCredentialRepository(db);
+            await totp.UpsertPendingAsync(id, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
+            await totp.MarkEnrolledAsync(id, 1, DateTimeOffset.UtcNow);
+        }
+
+        await using (var db = _db.NewDb())
+            return await Mfa(db, NewUnit(db, null)).RegenerateRecoveryCodesAsync(id, AuditActor.EmergencyCli);
+    }
+
+    private Task<int> UnusedCodesAsync(string userId) =>
+        _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId = N'{userId}' AND ConsumedAtUtc IS NULL;");
+
+    private async Task NoRowCarriesAnyCodeAsync(IReadOnlyList<string> codes)
+    {
+        var details = (await _db.RowsAsync("SELECT Details FROM AuditLogs WHERE Details IS NOT NULL;")).Select(r => (string)r["Details"]!).ToList();
+        foreach (var code in codes)
+        {
+            details.Should().NotContain(d => d.Contains(code, StringComparison.OrdinalIgnoreCase));
+            details.Should().NotContain(d => d.Contains(MfaRecoveryCodes.Normalize(code), StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private static NativeMfaService Mfa(AppertureDbContext db, IAuditedUnitOfWork unit) =>
+        new(
+            new SqlNativeTotpCredentialRepository(db),
+            new SqlNativeMfaRecoveryCodeRepository(db),
+            new LocalPasswordHasher(),
+            new PassThroughProtector(),
+            TimeProvider.System,
+            NullLogger<NativeMfaService>.Instance,
+            unit);
+
+    /// <summary>The local MFA step of a user whose password this request's pending ticket already verified.</summary>
+    private AuthController MfaController(
+        AppertureDbContext db,
+        CapturingAuthentication authentication,
+        string userId,
+        Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[]? writerInterceptors = null,
+        IAuditVerificationConnectionFactory? verification = null)
+    {
+        var unit = NewUnit(db, null, verification: verification);
+        var controller = new AuthController(
+            new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
+            new SqlLocalCredentialRepository(db),
+            new LocalPasswordHasher(),
+            new NoPrincipal(),
+            new SelfResolver(),
+            new NoRoles(),
+            new SqlUserPreferencesRepository(db),
+            new NoBridge(),
+            Options.Create(new LocalAuthOptions { Enabled = true }),
+            Options.Create(new BreakGlassAuthOptions()),
+            Options.Create(new EntraAuthOptions()),
+            new NoAuthUiPolicy(),
+            nativeMfa: Mfa(db, unit),
+            pendingMfaTickets: new TicketFor(new UserId(userId)),
+            auditedUnitOfWork: unit,
+            auditEvents: new SqlAuditEventWriter(_db.Options(writerInterceptors ?? []), null, HarnessCatalog, null, null, null));
+        var http = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddSingleton<IAuthenticationService>(authentication).BuildServiceProvider(),
+        };
+        http.Request.Headers.Cookie = "apperture.mfa.pending=ticket";
+        controller.ControllerContext = new ControllerContext { HttpContext = http };
+        return controller;
+    }
+
+    private sealed class TicketFor(UserId userId) : IPendingMfaLoginTicketService
+    {
+        public ValueTask<string> IssueAsync(UserId user, DateTimeOffset utcNow, CancellationToken cancellationToken = default) => ValueTask.FromResult("ticket");
+
+        public ValueTask<PendingMfaLoginTicket?> RedeemAsync(string token, DateTimeOffset utcNow, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<PendingMfaLoginTicket?>(new PendingMfaLoginTicket(userId, utcNow.AddMinutes(5)));
+    }
+
+    private sealed class PassThroughProtector : Apperture.Core.Security.Secrets.Abstractions.ISecretProtector
+    {
+        public ValueTask<byte[]> ProtectAsync(ReadOnlyMemory<byte> plaintext, string keyId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(plaintext.ToArray());
+
+        public ValueTask<byte[]> UnprotectAsync(ReadOnlyMemory<byte> protectedPayload, string keyId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(protectedPayload.ToArray());
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserWithPasswordAsync(string stem)
