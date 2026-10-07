@@ -54,7 +54,8 @@ owners. In particular, the `role.manage` escalation path blocks RC1 requirement 
 
 The current Track A body is **AUD-1**. Its **AUD-1.0** design gate was approved by the product owner on 2026-10-06 with
 conditions ([aud1-design-gate.md](../01-architecture/transitions/audit-hardening/aud1-design-gate.md)). **AUD-1.1 is
-next and has not started.** LST-1.1, NAV-2 and SDK-8 have not started. Each package waits for an explicit start
+implemented on branch `aud-1.1-audit-foundation` and in review; it is not merged**
+([record](../01-architecture/transitions/audit-hardening/aud1-1-foundation-record.md)). LST-1.1, NAV-2 and SDK-8 have not started. Each package waits for an explicit start
 instruction.
 
 IAM-8 is complete and **merged to `master`** (PR #3, `5cfa901`). Earlier statements in this document that IAM-8 is
@@ -91,7 +92,7 @@ targets; they remain architectural goals. Full definition: gate section 2.
 | ----- | ---- | ------- |
 | C1 | **SDK-8** Module runtime correctness | Missing-handler failure; step timeout and lease renewal; registration validation; preview statement |
 | C2 | **ID-1** Identifier hygiene | Ordered ids for new high-volume rows; no migration project |
-| C3 | **OPS-1** Operability baseline | Windows Service hosting; health; explicit migration; backup and restore; first-admin hardening; release engineering |
+| C3 | **OPS-1** Operability baseline | Windows Service hosting; health; explicit migration; backup and restore; first-admin hardening; release engineering. Carries the audit classification step's service-start measurement, which AUD-1.1 could not perform ([record](../01-architecture/transitions/audit-hardening/aud1-1-foundation-record.md) §5) |
 
 ### Pre-release and UAT
 

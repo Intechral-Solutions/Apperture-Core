@@ -1,6 +1,6 @@
 # Audit attribution: who an entry says acted
 
-Every audit entry records who acted. This page explains how that is shown, and what the notices on some older entries mean.
+Every audit entry records who acted. This page explains how that is shown, and what the attribution notices on some entries mean.
 
 ## How the actor is established
 
@@ -8,7 +8,7 @@ Each entry carries the value it recorded at the time, unchanged, plus a classifi
 
 | Shown as | Meaning |
 |---|---|
-| A person | The entry identifies a user. Since this release, new entries record the person signed in to the session. Older entries were matched to a user by their recorded user id, by a sign-in name in the username history, or by a Microsoft Entra object id linked to exactly one user. |
+| A person | The entry identifies a user. Entries from the platform's audit recorder record the person signed in to the session; in this release that covers username changes and the Recovery Access identity being applied. Other entries keep the value their writer recorded, as before, and are matched to a user by a recorded user id, by a sign-in name in the username history, or by a Microsoft Entra object id linked to exactly one user. |
 | "Recorded as *name*" | The sign-in name the entry recorded differs from the person's current username, for example after a rename. |
 | System, Scheduler, Module lifecycle, Recovery tool, Emergency access command line, Worker | The platform acted, not a person. |
 | Not signed in | An unauthenticated request, such as a failed sign-in. |
@@ -19,9 +19,9 @@ Classification never invents a person and never changes what an entry recorded. 
 
 An older entry that recorded only the word `unknown` is always shown as an unrecognized actor, even if an account named `unknown` exists.
 
-## Notices on older entries
+## Attribution notices
 
-Some writers in earlier versions recorded the wrong person. Their entries keep what they recorded and carry one of the notices below. Entries written by this version's audit recorder never carry one.
+Some writers record, or recorded, the wrong person. Their entries keep what they recorded and carry one of the notices below. This includes new entries from writers that have not yet moved to the audit recorder: those writers still record the same actor as before, so their new entries carry the same notice. Entries written by the audit recorder never carry one.
 
 A **definite** notice means every version of the writer recorded the wrong person in that situation. A **possible** notice means it may have.
 
