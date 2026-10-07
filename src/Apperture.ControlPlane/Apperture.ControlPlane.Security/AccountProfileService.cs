@@ -1,10 +1,9 @@
 using System.Security.Cryptography;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
-using Apperture.Shared.Kernel;
 using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
@@ -13,9 +12,12 @@ namespace Apperture.ControlPlane.Security;
 /// Self-service account operations for the signed-in operator.
 /// </summary>
 /// <remarks>
-/// Every method takes a <see cref="UserId"/> that callers must have resolved from the authentication
+/// <para>Every method takes a <see cref="UserId"/> that callers must have resolved from the authentication
 /// context. Nothing here accepts a user id from a request body or route, so there is no path by which
-/// one operator can mutate another's profile through this service.
+/// one operator can mutate another's profile through this service.</para>
+/// <para>AUD-1.2: each audited change is one audited unit of work of the signed-in user: the checks, the change and its row
+/// commit together, and a request that changes nothing writes no row while returning the same response. A refused upload
+/// changes nothing and writes a W3 row.</para>
 /// </remarks>
 public sealed class AccountProfileService : IAccountProfileService
 {
@@ -32,8 +34,9 @@ public sealed class AccountProfileService : IAccountProfileService
     private readonly IProfileImageNormalizer _normalizer;
     private readonly IOperatorNotificationSubscriptionService _notificationPreferences;
     private readonly IOperatorNotificationToastPreferenceService _toastPreferences;
-    private readonly IAuditService _audit;
     private readonly ILogger<AccountProfileService> _logger;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public AccountProfileService(
         IUserRepository users,
@@ -42,8 +45,9 @@ public sealed class AccountProfileService : IAccountProfileService
         IProfileImageNormalizer normalizer,
         IOperatorNotificationSubscriptionService notificationPreferences,
         IOperatorNotificationToastPreferenceService toastPreferences,
-        IAuditService audit,
-        ILogger<AccountProfileService> logger)
+        ILogger<AccountProfileService> logger,
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null)
     {
         _users = users;
         _preferences = preferences;
@@ -51,9 +55,19 @@ public sealed class AccountProfileService : IAccountProfileService
         _normalizer = normalizer;
         _notificationPreferences = notificationPreferences;
         _toastPreferences = toastPreferences;
-        _audit = audit;
         _logger = logger;
+        _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Profile changes require the audited unit of work.");
+
+    private IAuditEventWriter Events =>
+        _auditEvents ?? throw new InvalidOperationException("Profile changes require the audit event writer.");
+
+    private static AuditedOperation Operation(string primaryAction, params string[] alternates) =>
+        new(primaryAction, AuditActor.CurrentPrincipal, alternates.Length == 0 ? null : alternates);
 
     /// <inheritdoc />
     public async ValueTask<AccountProfileSnapshot?> GetProfileAsync(
@@ -73,18 +87,24 @@ public sealed class AccountProfileService : IAccountProfileService
         if (!DisplayNameRules.TryNormalize(displayName, out var normalized, out var error))
             throw new ArgumentException(error, nameof(displayName));
 
-        var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
-        EnsureMutable(user);
-        if (string.Equals(user.DisplayName, normalized, StringComparison.Ordinal))
-            return BuildSnapshot(user);
+        var updated = await Unit.ExecuteAsync(
+            Operation(AuditActionNames.DisplayNameUpdated),
+            async (transaction, ct) =>
+            {
+                var user = await RequireUserAsync(userId, ct).ConfigureAwait(false);
+                EnsureMutable(user);
+                if (string.Equals(user.DisplayName, normalized, StringComparison.Ordinal))
+                {
+                    transaction.DeclareNoOp();
+                    return user;
+                }
 
-        var previous = user.DisplayName;
-        var updated = user with { DisplayName = normalized };
-        await _users.UpdateAsync(updated, cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(
-            userId,
-            AccountAuditActionNames.DisplayNameUpdated,
-            $"Display name changed from '{previous}' to '{normalized}'.",
+                var changed = user with { DisplayName = normalized };
+                await _users.UpdateAsync(changed, ct).ConfigureAwait(false);
+                await transaction.StageAsync(AuditEvents.DisplayNameUpdated(userId, user.DisplayName, normalized), ct).ConfigureAwait(false);
+                return changed;
+            },
+            async (_, ct) => await RequireUserAsync(userId, ct).ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
         return BuildSnapshot(updated);
@@ -145,24 +165,31 @@ public sealed class AccountProfileService : IAccountProfileService
         if (!BuiltInAvatarCatalog.IsKnownOptionId(optionId))
             throw new ArgumentException($"'{optionId}' is not a built-in avatar option.", nameof(optionId));
 
-        var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
-        EnsureMutable(user);
         var avatar = UserAvatar.ForBuiltIn(optionId!);
-        await _users.UpdateAsync(user with { Avatar = avatar }, cancellationToken).ConfigureAwait(false);
 
-        // Selecting artwork retires any photo the operator had uploaded, so the image does not linger.
-        var retired = await _images.DeleteForUserAsync(userId.Value, keepImageKey: null, cancellationToken)
-            .ConfigureAwait(false);
-        if (retired > 0)
-        {
-            await AppendAuditAsync(
-                userId,
-                AccountAuditActionNames.AvatarReset,
-                $"Selected built-in avatar '{avatar.BuiltInOptionId}'; {retired} stored profile image(s) deleted.",
-                cancellationToken).ConfigureAwait(false);
-        }
+        // AUD-1.2: the row is written whenever the selection changed something (the avatar, or stored images deleted), since
+        // a change and its row commit together; the earlier code recorded only image deletion. Re-selecting the current
+        // artwork with no stored image changes nothing and writes no row.
+        return await Unit.ExecuteAsync(
+            Operation(AuditActionNames.AvatarReset),
+            async (transaction, ct) =>
+            {
+                var user = await RequireUserAsync(userId, ct).ConfigureAwait(false);
+                EnsureMutable(user);
+                var avatarChanged = user.Avatar != avatar;
+                if (avatarChanged)
+                    await _users.UpdateAsync(user with { Avatar = avatar }, ct).ConfigureAwait(false);
 
-        return avatar;
+                // Selecting artwork retires any photo the operator had uploaded, so the image does not linger.
+                var retired = await _images.DeleteForUserAsync(userId.Value, keepImageKey: null, ct).ConfigureAwait(false);
+                if (avatarChanged || retired > 0)
+                    await transaction.StageAsync(AuditEvents.AvatarReset(userId, builtIn: true, retired), ct).ConfigureAwait(false);
+                else
+                    transaction.DeclareNoOp();
+                return avatar;
+            },
+            (_, _) => Task.FromResult(avatar),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -175,15 +202,12 @@ public sealed class AccountProfileService : IAccountProfileService
         EnsureMutable(user);
         var current = user.EffectiveAvatar;
 
-        // Cheap pre-filter on what the client claims. The decoder below is what actually decides.
+        // Cheap pre-filter on what the client claims. The decoder below is what actually decides. A refusal changes nothing,
+        // so its row is a W3 attempt and its failure never changes the response.
         if (!ProfileImageLimits.IsAcceptedUploadContentType(upload.DeclaredContentType)
             || !ProfileImageLimits.IsAcceptedUploadExtension(upload.FileName))
         {
-            await AppendAuditAsync(
-                userId,
-                AccountAuditActionNames.AvatarUploadRejected,
-                "Upload rejected: unsupported file type.",
-                cancellationToken).ConfigureAwait(false);
+            await RecordUploadRejectedAsync(userId, ProfileImageRejectionReason.UnsupportedDeclaredType).ConfigureAwait(false);
             return AccountAvatarUploadResult.Rejected(
                 ProfileImageRejectionReason.UnsupportedDeclaredType,
                 "Only JPEG, PNG, and WebP images are accepted.",
@@ -193,30 +217,32 @@ public sealed class AccountProfileService : IAccountProfileService
         var normalized = _normalizer.Normalize(upload.Content);
         if (!normalized.Succeeded)
         {
-            await AppendAuditAsync(
-                userId,
-                AccountAuditActionNames.AvatarUploadRejected,
-                $"Upload rejected: {normalized.Reason}.",
-                cancellationToken).ConfigureAwait(false);
+            await RecordUploadRejectedAsync(userId, normalized.Reason).ConfigureAwait(false);
             return AccountAvatarUploadResult.Rejected(
                 normalized.Reason,
                 normalized.Message ?? "That image could not be used.",
                 current);
         }
 
+        // Chosen once, so a rerun stores the same key.
         var imageKey = GenerateImageKey();
-        await _images
-            .SaveAsync(userId.Value, imageKey, normalized.Renditions, cancellationToken)
-            .ConfigureAwait(false);
-
         var avatar = UserAvatar.ForCustomImage(imageKey);
-        await _users.UpdateAsync(user with { Avatar = avatar }, cancellationToken).ConfigureAwait(false);
+        var retired = await Unit.ExecuteAsync(
+            Operation(AuditActionNames.AvatarUpdated),
+            async (transaction, ct) =>
+            {
+                var target = await RequireUserAsync(userId, ct).ConfigureAwait(false);
+                EnsureMutable(target);
+                await _images.SaveAsync(userId.Value, imageKey, normalized.Renditions, ct).ConfigureAwait(false);
+                await _users.UpdateAsync(target with { Avatar = avatar }, ct).ConfigureAwait(false);
 
-        // Point the user row at the new key first, then retire everything else. If cleanup fails the
-        // account still renders correctly and only orphaned rows remain.
-        var retired = await _images
-            .DeleteForUserAsync(userId.Value, keepImageKey: imageKey, cancellationToken)
-            .ConfigureAwait(false);
+                // The new image, the user row pointing at it and the retirement of every other image commit together.
+                var deleted = await _images.DeleteForUserAsync(userId.Value, keepImageKey: imageKey, ct).ConfigureAwait(false);
+                await transaction.StageAsync(AuditEvents.AvatarUpdated(userId, imageKey, deleted), ct).ConfigureAwait(false);
+                return deleted;
+            },
+            (committed, _) => Task.FromResult(ImagesDeleted(committed)),
+            cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Stored normalized profile image for user {UserId} ({Width}x{Height} {SourceFormat} source); retired {RetiredCount} previous image(s).",
@@ -226,32 +252,32 @@ public sealed class AccountProfileService : IAccountProfileService
             normalized.SourceFormat,
             retired);
 
-        await AppendAuditAsync(
-            userId,
-            AccountAuditActionNames.AvatarUpdated,
-            $"Custom profile image stored (key {imageKey}); {retired} previous image(s) deleted.",
-            cancellationToken).ConfigureAwait(false);
-
         return new AccountAvatarUploadResult(true, ProfileImageRejectionReason.None, null, avatar);
     }
 
     /// <inheritdoc />
     public async ValueTask<UserAvatar> ResetAvatarAsync(UserId userId, CancellationToken cancellationToken = default)
     {
-        var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
-        EnsureMutable(user);
-        await _users.UpdateAsync(user with { Avatar = UserAvatar.Default }, cancellationToken).ConfigureAwait(false);
-        var retired = await _images
-            .DeleteForUserAsync(userId.Value, keepImageKey: null, cancellationToken)
-            .ConfigureAwait(false);
+        return await Unit.ExecuteAsync(
+            Operation(AuditActionNames.AvatarReset),
+            async (transaction, ct) =>
+            {
+                var user = await RequireUserAsync(userId, ct).ConfigureAwait(false);
+                EnsureMutable(user);
+                var avatarChanged = user.EffectiveAvatar != UserAvatar.Default;
+                if (avatarChanged)
+                    await _users.UpdateAsync(user with { Avatar = UserAvatar.Default }, ct).ConfigureAwait(false);
+                var retired = await _images.DeleteForUserAsync(userId.Value, keepImageKey: null, ct).ConfigureAwait(false);
 
-        await AppendAuditAsync(
-            userId,
-            AccountAuditActionNames.AvatarReset,
-            $"Avatar reset to the platform default; {retired} stored profile image(s) deleted.",
+                // Already the default with nothing stored: the same response, and no row (D7).
+                if (avatarChanged || retired > 0)
+                    await transaction.StageAsync(AuditEvents.AvatarReset(userId, builtIn: false, retired), ct).ConfigureAwait(false);
+                else
+                    transaction.DeclareNoOp();
+                return UserAvatar.Default;
+            },
+            (_, _) => Task.FromResult(UserAvatar.Default),
             cancellationToken).ConfigureAwait(false);
-
-        return UserAvatar.Default;
     }
 
     /// <inheritdoc />
@@ -307,18 +333,21 @@ public sealed class AccountProfileService : IAccountProfileService
             throw new ArgumentException("A notification definition id is required.", nameof(definitionId));
 
         var trimmedDefinitionId = definitionId.Trim();
-        var updated = await _notificationPreferences
-            .SetEmailEnabledAsync(userId.Value, trimmedDefinitionId, emailEnabled, cancellationToken)
-            .ConfigureAwait(false);
 
         // Opting out of a channel changes who gets told about operational problems, so unlike the
-        // presentation preferences above this is worth an audit record.
-        await AppendAuditAsync(
-            userId,
-            emailEnabled
-                ? AccountAuditActionNames.NotificationEmailOptIn
-                : AccountAuditActionNames.NotificationEmailOptOut,
-            $"Email delivery for '{updated.DisplayName}' ({updated.DefinitionId}) set to {(emailEnabled ? "on" : "off")}.",
+        // presentation preferences above this is worth an audit record. Setting the current value writes nothing and no row.
+        var updated = await Unit.ExecuteAsync(
+            Operation(emailEnabled ? AuditActionNames.NotificationEmailOptedIn : AuditActionNames.NotificationEmailOptedOut),
+            async (transaction, ct) =>
+            {
+                var update = await _notificationPreferences
+                    .UpdateEmailEnabledAsync(userId.Value, trimmedDefinitionId, emailEnabled, ct)
+                    .ConfigureAwait(false);
+                await StageOrDeclareNoOpAsync(transaction, update.Changed, userId, update.PreferenceId, trimmedDefinitionId, "email", emailEnabled, ct)
+                    .ConfigureAwait(false);
+                return update.Preference;
+            },
+            async (_, ct) => await EmailPreferenceAsync(userId, trimmedDefinitionId, ct).ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
         var toast = await _toastPreferences
@@ -340,18 +369,22 @@ public sealed class AccountProfileService : IAccountProfileService
             throw new ArgumentException("A notification definition id is required.", nameof(definitionId));
 
         var trimmedDefinitionId = definitionId.Trim();
-        var updated = await _toastPreferences
-            .SetToastEnabledAsync(userId.Value, trimmedDefinitionId, toastEnabled, cancellationToken)
-            .ConfigureAwait(false);
 
         // Opting out of a channel changes who gets told about operational problems, so unlike the
-        // presentation preferences above this is worth an audit record.
-        await AppendAuditAsync(
-            userId,
-            toastEnabled
-                ? AccountAuditActionNames.NotificationToastOptIn
-                : AccountAuditActionNames.NotificationToastOptOut,
-            $"Toast delivery for '{updated.DisplayName}' ({updated.DefinitionId}) set to {(toastEnabled ? "on" : "off")}.",
+        // presentation preferences above this is worth an audit record. Setting the current value writes nothing and no row.
+        var updated = await Unit.ExecuteAsync(
+            Operation(toastEnabled ? AuditActionNames.NotificationToastOptedIn : AuditActionNames.NotificationToastOptedOut),
+            async (transaction, ct) =>
+            {
+                var update = await _toastPreferences
+                    .UpdateToastEnabledAsync(userId.Value, trimmedDefinitionId, toastEnabled, ct)
+                    .ConfigureAwait(false);
+                await StageOrDeclareNoOpAsync(transaction, update.Changed, userId, update.PreferenceId, trimmedDefinitionId, "toast", toastEnabled, ct)
+                    .ConfigureAwait(false);
+                return update.Preference;
+            },
+            async (_, ct) => (await _toastPreferences.ListToastPreferencesAsync(userId.Value, ct).ConfigureAwait(false))
+                .First(t => string.Equals(t.DefinitionId, trimmedDefinitionId, StringComparison.Ordinal)),
             cancellationToken).ConfigureAwait(false);
 
         var email = await _notificationPreferences
@@ -452,21 +485,50 @@ public sealed class AccountProfileService : IAccountProfileService
             "Recovery Access is system-managed. Display name and avatar cannot be changed here.");
     }
 
-    private async ValueTask AppendAuditAsync(
+    private static async ValueTask StageOrDeclareNoOpAsync(
+        IAuditedTransaction transaction,
+        bool changed,
         UserId userId,
-        string action,
-        string? details,
+        string preferenceId,
+        string definitionId,
+        string channel,
+        bool enabled,
         CancellationToken cancellationToken)
     {
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(userId.Value),
-            action,
-            Resource: null,
-            Outcome: AccountAuditActionNames.Outcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
+        if (!changed)
+        {
+            transaction.DeclareNoOp();
+            return;
+        }
+
+        await transaction.StageAsync(
+            AuditEvents.NotificationPreferenceChanged(userId, preferenceId, definitionId, channel, enabled),
+            cancellationToken).ConfigureAwait(false);
     }
+
+    private async ValueTask<OperatorEmailSubscriptionPreference> EmailPreferenceAsync(
+        UserId userId,
+        string definitionId,
+        CancellationToken cancellationToken) =>
+        (await _notificationPreferences.ListEmailPreferencesAsync(userId.Value, cancellationToken).ConfigureAwait(false))
+            .First(e => string.Equals(e.DefinitionId, definitionId, StringComparison.Ordinal));
+
+    /// <summary>The committed upload row's count of retired images (it is logged only).</summary>
+    private static int ImagesDeleted(AuditCommittedOperation committed)
+    {
+        if (string.IsNullOrEmpty(committed.Details))
+            return 0;
+        using var document = System.Text.Json.JsonDocument.Parse(committed.Details);
+        return document.RootElement.TryGetProperty("imagesDeleted", out var value) && value.TryGetInt32(out var count) ? count : 0;
+    }
+
+    private ValueTask<bool> RecordUploadRejectedAsync(UserId userId, ProfileImageRejectionReason reason) =>
+        new(Events.TryWriteAsync(
+            AuditEvents.AvatarUploadRejected(userId, ReasonCode(reason)),
+            AuditActor.CurrentPrincipal,
+            CancellationToken.None));
+
+    /// <summary>The recorded spelling of a rejection reason (snake_case of the enum name).</summary>
+    internal static string ReasonCode(ProfileImageRejectionReason reason) =>
+        string.Concat(reason.ToString().Select((c, i) => char.IsUpper(c) ? (i > 0 ? "_" : "") + char.ToLowerInvariant(c) : c.ToString()));
 }

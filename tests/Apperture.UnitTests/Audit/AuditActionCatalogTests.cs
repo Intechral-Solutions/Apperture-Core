@@ -18,10 +18,22 @@ public sealed partial class AuditActionCatalogTests
 {
     private static readonly AuditActionCatalog Catalog = AuditActionCatalog.Default;
 
+    /// <summary>Actions AUD-1.2 adds to the AUD-1.1 inventory (record §3 and the gate's §22 new coverage).</summary>
+    private static readonly string[] Aud12Additions =
+    [
+        "account.security_mail.delivery_attempted",
+        "credential.password.reset_request.suppressed",
+        "governance.runtime.enrollment.completed",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
-        Catalog.Definitions.Should().HaveCount(147, "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names");
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud12Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.2").Select(d => d.Action).Should().BeEquivalentTo(Aud12Additions);
+        Catalog.Definitions.Should().HaveCount(
+            147 + Aud12Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 adds only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 

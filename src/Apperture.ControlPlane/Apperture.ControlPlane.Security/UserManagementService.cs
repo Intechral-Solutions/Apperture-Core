@@ -430,7 +430,7 @@ public sealed class UserManagementService : IUserManagementService
 
         if (source == IdentitySource.Local)
         {
-            if (sendSetupInvitation && _invitations is null)
+            if (sendSetupInvitation && (_invitations is null || _actionTokens is null))
                 throw new InvalidOperationException("Apperture setup invitations are not available.");
             if (EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
             {
@@ -478,12 +478,18 @@ public sealed class UserManagementService : IUserManagementService
         };
         var credentialSet = source == IdentitySource.Local && !string.IsNullOrEmpty(password);
         var credential = credentialSet ? _passwordHasher.HashPassword(password!) : default;
+        var invite = sendSetupInvitation && source == IdentitySource.Local;
+        // The invitation link is chosen once, like the user id, so a rerun issues the same link (AUD-1.2 D8).
+        var invitationToken = invite ? _actionTokens!.Prepare() : null;
+        PreparedSetupInvitation? invitation = null;
 
-        // The user, its credential and the audit row commit together: no user without its credential (AUD-1.2).
+        // The user, its credential or invitation and their rows commit together: no user without the credential or the
+        // invitation it was created with (AUD-1.2). The invitation link is mailed once, after commit.
         await Unit.ExecuteAsync(
             Operation(AuditActionNames.UserCreated),
             async (transaction, ct) =>
             {
+                invitation = null;
                 var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, ct);
                 if (existing is not null)
                     throw new InvalidOperationException("An identity link with this source and external id already exists.");
@@ -494,13 +500,17 @@ public sealed class UserManagementService : IUserManagementService
 
                 await transaction.StageAsync(
                     AuditEvents.UserCreated(userId, linkExternalId, user.DisplayName, credentialSet, sendSetupInvitation), ct);
+                if (invite)
+                    invitation = await _invitations!.StageSetupInvitationAsync(transaction, userId, contactEmail, invitationToken!, ct);
                 return true;
             },
             Done,
             cancellationToken);
 
-        if (sendSetupInvitation && source == IdentitySource.Local)
-            await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+        // The result is not part of this method's contract; a failed or unknown send is recorded by its own row and shown in
+        // the user's invitation state, and never reported as a failure of the committed creation.
+        if (invitation is not null)
+            await _invitations!.DeliverSetupInvitationAsync(invitation, AuditActor.CurrentPrincipal, cancellationToken);
 
         return userId;
     }
@@ -512,21 +522,11 @@ public sealed class UserManagementService : IUserManagementService
         CancellationToken cancellationToken = default)
     {
         await RequireUserManageAsync(cancellationToken);
-        return await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
-    }
-
-    private async ValueTask<AccountInvitationResult> SendSetupInvitationCoreAsync(
-        UserId userId,
-        string? contactEmail,
-        CancellationToken cancellationToken)
-    {
         if (_invitations is null)
             throw new InvalidOperationException("Apperture setup invitations are not available.");
 
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
-        var email = contactEmail ?? user.PendingEmailAddress ?? user.EmailAddress;
-        return await _invitations.SendSetupInvitationAsync(userId, email ?? "", cancellationToken);
+        // The address falls back to the user's pending, then verified, one inside the invitation's transaction.
+        return await _invitations.SendSetupInvitationAsync(userId, contactEmail, cancellationToken);
     }
 
     /// <inheritdoc />

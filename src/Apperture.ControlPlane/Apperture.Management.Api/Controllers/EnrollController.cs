@@ -26,7 +26,6 @@ public sealed class EnrollController : ControllerBase
     private readonly IRoleProvider _roleProvider;
     private readonly IEnvironmentContext _environment;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
-    private readonly IAuditService _audit;
 
     public EnrollController(
         IRuntimeEnrollmentService enrollment,
@@ -34,8 +33,7 @@ public sealed class EnrollController : ControllerBase
         IPrincipalToUserResolver principalToUserResolver,
         IRoleProvider roleProvider,
         IEnvironmentContext environment,
-        IAuthorizationEvaluationService authorizationEvaluation,
-        IAuditService audit)
+        IAuthorizationEvaluationService authorizationEvaluation)
     {
         _enrollment = enrollment;
         _principalContext = principalContext;
@@ -43,7 +41,6 @@ public sealed class EnrollController : ControllerBase
         _roleProvider = roleProvider;
         _environment = environment;
         _authorizationEvaluation = authorizationEvaluation;
-        _audit = audit;
     }
 
     /// <summary>
@@ -98,23 +95,12 @@ public sealed class EnrollController : ControllerBase
             validatedScopes = set;
         }
 
+        // The invitation and its audit row commit together in the enrollment service (AUD-1.2).
         var invitation = await _enrollment.CreateInvitationAsync(
             request.RuntimeId,
             ttl,
             validatedScopes,
             cancellationToken).ConfigureAwait(false);
-
-        var runtimeResource = new ResourceDescriptor(ResourceTypeConstants.RuntimeInstance, runtimeScopeKey);
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actor.Id,
-            GovernanceAuditActionNames.RuntimeEnrollmentInvitationCreated,
-            runtimeResource,
-            "auth-admin",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            $"runtimeId={request.RuntimeId} scopesCount={validatedScopes?.Count ?? 0}");
-        await _audit.AppendAsync(record, cancellationToken);
 
         return Ok(invitation);
     }

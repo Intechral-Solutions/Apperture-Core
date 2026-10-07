@@ -169,4 +169,94 @@ internal static class AuditDetailSchemas
         IdField("userId"),
         CountField("remaining"),
     ]);
+
+    // ---- Account services ----
+    // requestId is the id of the one-time request row (AccountActionTokens.Id). The link's plaintext, its hash and the
+    // contact address are never recorded.
+
+    /// <summary>The purposes of a one-time account request, as recorded.</summary>
+    internal static readonly string[] AccountRequestPurposes = ["setup_invitation", "contact_verification", "password_reset"];
+
+    internal static readonly AuditDetailSchema AccountRequestIssued = new(
+    [
+        IdField("userId"),
+        IdField("requestId"),
+    ]);
+
+    internal static readonly AuditDetailSchema ContactVerificationRequested = new(
+    [
+        IdField("userId"),
+        IdField("requestId"),
+        FlagField("resent"),
+    ]);
+
+    internal static readonly AuditDetailSchema ContactEmailVerified = new(
+    [
+        IdField("userId"),
+        EnumField("via", true, "verification_link", "setup_invitation"),
+    ]);
+
+    internal static readonly AuditDetailSchema SecurityMailDeliveryAttempted = new(
+    [
+        IdField("userId"),
+        IdField("requestId"),
+        EnumField("purpose", true, AccountRequestPurposes),
+        EnumField("failure", false, "not_configured", "send_failed", "error"),
+    ]);
+
+    internal static readonly AuditDetailSchema Empty = new([]);
+
+    internal static readonly AuditDetailSchema DisplayNameUpdated = new(
+    [
+        IdField("userId"),
+        NameField("previousDisplayName"),
+        NameField("newDisplayName"),
+    ]);
+
+    internal static readonly AuditDetailSchema AvatarReset = new(
+    [
+        IdField("userId"),
+        EnumField("avatar", true, "default", "built_in"),
+        CountField("imagesDeleted"),
+    ]);
+
+    internal static readonly AuditDetailSchema AvatarUpdated = new(
+    [
+        IdField("userId"),
+        IdField("imageKey"),
+        CountField("imagesDeleted"),
+    ]);
+
+    internal static readonly AuditDetailSchema AvatarUploadRejected = new(
+    [
+        IdField("userId"),
+        EnumField(
+            "reason",
+            true,
+            "empty", "too_large", "unsupported_declared_type", "undecodable_image", "unsupported_image_format",
+            "dimensions_too_large", "dimensions_too_small", "encode_failed"),
+    ]);
+
+    // ---- Runtime enrollment ----
+    // invitationId is the invitation row's id; the enrollment token itself is never recorded.
+
+    internal static readonly AuditDetailSchema RuntimeEnrollmentInvitationCreated = new(
+    [
+        IdField("runtimeId"),
+        IdField("invitationId"),
+        CountField("capabilityCount"),
+    ]);
+
+    internal static readonly AuditDetailSchema RuntimeEnrollmentCompleted = new(
+    [
+        IdField("runtimeId"),
+        IdField("invitationId"),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationPreferenceChanged = new(
+    [
+        IdField("userId"),
+        IdField("definitionId"),
+        EnumField("channel", true, "email", "toast"),
+    ]);
 }

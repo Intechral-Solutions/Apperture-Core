@@ -41,4 +41,30 @@ public static class AuditActionNames
     public const string RecoveryCodesGenerated = "auth.mfa.recovery_codes.generated";
     public const string RecoveryCodeConsumed = "auth.mfa.recovery_code.consumed";
     public const string MfaReset = "auth.mfa.reset";
+
+    // AUD-1.2: account services (invitations, contact email, password setup and reset, profile, own notification preferences)
+    public const string InvitationSent = "account.invitation.sent";
+    public const string InvitationResent = "account.invitation.resent";
+    public const string InvitationAccepted = "account.invitation.accepted";
+    public const string PasswordSetupCompleted = "credential.password.setup_completed";
+    public const string EmailVerificationRequested = "account.email.verification_requested";
+    public const string EmailChangeRequested = "account.email.change_requested";
+    public const string EmailVerified = "account.email.verified";
+    public const string EmailChanged = "account.email.changed";
+    public const string PasswordResetRequested = "credential.password.reset_requested";
+    public const string PasswordResetRequestSuppressed = "credential.password.reset_request.suppressed";
+    public const string PasswordResetCompleted = "credential.password.reset_completed";
+    public const string SecurityMailDeliveryAttempted = "account.security_mail.delivery_attempted";
+    public const string DisplayNameUpdated = "account.profile.display_name.updated";
+    public const string AvatarReset = "account.profile.avatar.reset";
+    public const string AvatarUpdated = "account.profile.avatar.updated";
+    public const string AvatarUploadRejected = "account.profile.avatar.upload_rejected";
+    public const string NotificationEmailOptedIn = "account.notification.email.opted_in";
+    public const string NotificationEmailOptedOut = "account.notification.email.opted_out";
+    public const string NotificationToastOptedIn = "account.notification.toast.opted_in";
+    public const string NotificationToastOptedOut = "account.notification.toast.opted_out";
+
+    // AUD-1.2: runtime enrollment
+    public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
+    public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";
 }

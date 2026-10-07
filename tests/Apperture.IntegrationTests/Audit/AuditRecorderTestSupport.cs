@@ -1,6 +1,7 @@
 using System.Data.Common;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -88,7 +89,9 @@ internal static class AuditRecorderTestSupport
         IAuditedUnitOfWork unit,
         IAuditEventWriter? events = null,
         IEmergencyAccessService? emergencyAccess = null,
-        IResourceDescriptorRegistry? registry = null) =>
+        IResourceDescriptorRegistry? registry = null,
+        IAccountInvitationService? invitations = null,
+        IAccountActionTokenService? actionTokens = null) =>
         new(
             principal,
             new NoResolver(),
@@ -100,6 +103,8 @@ internal static class AuditRecorderTestSupport
             new LocalPasswordHasher(),
             Options.Create(new LocalAuthOptions()),
             emergencyAccess: emergencyAccess,
+            invitations: invitations,
+            actionTokens: actionTokens,
             auditedUnitOfWork: unit,
             auditEvents: events);
 

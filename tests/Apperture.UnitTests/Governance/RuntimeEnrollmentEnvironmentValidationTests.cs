@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -27,8 +29,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
             environment: new StubEnvironmentContext("local"),
-            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
-            audit: new StubAuditService());
+            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true));
 
         var result = await controller.CreateInvitation(new CreateInvitationRequest("rt-1"), CancellationToken.None);
 
@@ -36,38 +37,37 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
     }
 
     [Fact]
-    public async Task CreateInvitation_WhenNotAuthorized_Returns403_AndDoesNotAudit()
+    public async Task CreateInvitation_WhenNotAuthorized_Returns403_AndCreatesNothing()
     {
-        var audit = new StubAuditService();
+        var enrollment = new StubRuntimeEnrollmentService(token: "t-1");
         var controller = new EnrollController(
-            enrollment: new StubRuntimeEnrollmentService(token: "t-1"),
+            enrollment: enrollment,
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
             environment: new StubEnvironmentContext("local"),
-            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: false),
-            audit: audit);
+            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: false));
 
         var result = await controller.CreateInvitation(
             new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string> { RuntimeCapabilityCatalog.InspectionCapabilities }),
             CancellationToken.None);
 
         result.Result.Should().BeOfType<ForbidResult>();
-        audit.AppendCalls.Should().Be(0);
+        enrollment.InvitationCalls.Should().Be(0);
     }
 
     [Fact]
-    public async Task CreateInvitation_WhenAuthorized_AppendsAuditAndReturnsInvitation()
+    public async Task CreateInvitation_records_the_administrators_invitation_with_its_row_id_and_never_the_token()
     {
-        var audit = new StubAuditService();
+        var db = NewDb();
+        var audit = new AuditRecording();
         var controller = new EnrollController(
-            enrollment: new StubRuntimeEnrollmentService(token: "t-1"),
+            enrollment: new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"), audit),
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
             environment: new StubEnvironmentContext("local"),
-            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
-            audit: audit);
+            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true));
 
         var result = await controller.CreateInvitation(
             new CreateInvitationRequest("rt-1", TtlHours: 1, Scopes: new HashSet<string>
@@ -77,29 +77,29 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             }),
             CancellationToken.None);
 
-        result.Result.Should().BeOfType<OkObjectResult>();
-        audit.AppendCalls.Should().Be(1);
-        audit.LastRecord!.Action.Should().Be(GovernanceAuditActionNames.RuntimeEnrollmentInvitationCreated);
-        audit.LastRecord.Resource.Should().NotBeNull();
-        audit.LastRecord.Resource!.ResourceType.Should().Be(ResourceTypeConstants.RuntimeInstance);
-        audit.LastRecord.Outcome.Should().Be("auth-admin");
-
-        audit.LastRecord.Details.Should().Contain("runtimeId=rt-1");
-        audit.LastRecord.Details.Should().Contain("scopesCount=2");
+        var invitation = result.Result.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeOfType<EnrollmentInvitation>().Which;
+        var row = await db.EnrollmentTokens.SingleAsync();
+        var (created, actor) = audit.Events.Should().ContainSingle().Subject;
+        created.Action.Should().Be(GovernanceAuditActionNames.RuntimeEnrollmentInvitationCreated);
+        actor.Should().Be(AuditActor.CurrentPrincipal);
+        created.Target.Should().Be(new AuditTarget(AuditTargetTypes.RuntimeInstance, ScopeKeyConstants.RuntimeInstance("local", "rt-1")));
+        created.Fields["runtimeId"].Should().Be("rt-1");
+        created.Fields["invitationId"].Should().Be(row.Id.ToString("N"));
+        created.Fields["capabilityCount"].Should().Be(2);
+        created.Fields.Values.Should().NotContain(invitation.Token, "the enrollment token is a capability and is never recorded");
     }
 
     [Fact]
-    public async Task CreateInvitation_WhenAuthorized_WithUnknownScopes_Returns400_AndDoesNotAudit()
+    public async Task CreateInvitation_WhenAuthorized_WithUnknownScopes_Returns400_AndCreatesNothing()
     {
-        var audit = new StubAuditService();
+        var enrollment = new StubRuntimeEnrollmentService(token: "t-1");
         var controller = new EnrollController(
-            enrollment: new StubRuntimeEnrollmentService(token: "t-1"),
+            enrollment: enrollment,
             principalContext: new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)),
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
             environment: new StubEnvironmentContext("local"),
-            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true),
-            audit: audit);
+            authorizationEvaluation: new StubAuthorizationEvaluationService(allowed: true));
 
         var result = await controller.CreateInvitation(
             new CreateInvitationRequest(
@@ -109,7 +109,52 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             CancellationToken.None);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
-        audit.AppendCalls.Should().Be(0);
+        enrollment.InvitationCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task EnrollAsync_records_the_completed_enrollment_as_anonymous_against_the_runtime()
+    {
+        var db = NewDb();
+        var invitationId = Guid.NewGuid();
+        db.EnrollmentTokens.Add(new EnrollmentTokenEntity
+        {
+            Id = invitationId,
+            Token = "token-a",
+            RuntimeId = "rt-a",
+            EnvironmentId = "local",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            Used = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ScopesJson = "[]"
+        });
+        await db.SaveChangesAsync();
+        var audit = new AuditRecording();
+        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"), audit);
+
+        var result = await service.EnrollAsync("token-a", new RuntimeIdentityRegistration("rt-name", "PublicKey", "pk", null));
+
+        result.Success.Should().BeTrue();
+        var (completed, actor) = audit.Events.Should().ContainSingle().Subject;
+        completed.Action.Should().Be(AuditActionNames.RuntimeEnrollmentCompleted);
+        actor.Should().Be(AuditActor.Anonymous, "the token is a capability, not an identity (D10)");
+        completed.Target.Should().Be(new AuditTarget(AuditTargetTypes.RuntimeInstance, ScopeKeyConstants.RuntimeInstance("local", "rt-a")));
+        completed.Fields["invitationId"].Should().Be(invitationId.ToString("N"));
+        completed.Fields.Values.Should().NotContain("token-a");
+    }
+
+    [Fact]
+    public async Task EnrollAsync_refused_writes_no_row()
+    {
+        var db = NewDb();
+        var audit = new AuditRecording();
+        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"), audit);
+
+        var result = await service.EnrollAsync("no-such-token", new RuntimeIdentityRegistration("rt-name", "PublicKey", "pk", null));
+
+        result.Success.Should().BeFalse();
+        audit.Events.Should().BeEmpty();
+        audit.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
     }
 
     [Fact]
@@ -130,7 +175,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
         });
         await db.SaveChangesAsync();
 
-        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"));
+        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"), new AuditRecording());
         var result = await service.EnrollAsync(
             "token-1",
             new RuntimeIdentityRegistration("rt-name", "PublicKey", "pk", null),
@@ -164,7 +209,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
         });
         await db.SaveChangesAsync();
 
-        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"));
+        var service = new SqlRuntimeEnrollmentService(db, new StubEnvironmentContext("local"), new AuditRecording());
         var result = await service.EnrollAsync(
             "token-2",
             new RuntimeIdentityRegistration("rt-name", "PublicKey", "pk", null),
@@ -182,10 +227,9 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
         var db = NewDb();
         var environment = new StubEnvironmentContext("local");
 
-        var enrollment = new SqlRuntimeEnrollmentService(db, environment);
+        var enrollment = new SqlRuntimeEnrollmentService(db, environment, new AuditRecording());
         var identity = new SqlRuntimeIdentityService(db);
 
-        var audit = new StubAuditService();
         var createInvitationAuthz = new StubAuthorizationEvaluationService(allowed: true);
 
         var enrollController = new EnrollController(
@@ -194,8 +238,7 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
             principalToUserResolver: new StubPrincipalToUserResolver(),
             roleProvider: new StubRoleProvider(),
             environment: environment,
-            authorizationEvaluation: createInvitationAuthz,
-            audit: audit);
+            authorizationEvaluation: createInvitationAuthz);
 
         var invitationResult = await enrollController.CreateInvitation(
             new CreateInvitationRequest("rt-3", TtlHours: 1, Scopes: new HashSet<string> { RuntimeCapabilityCatalog.InspectionCapabilities }),
@@ -278,12 +321,15 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
         public StubRuntimeEnrollmentService(string? token = null) => _token = token;
 
+        public int InvitationCalls { get; private set; }
+
         public ValueTask<EnrollmentInvitation> CreateInvitationAsync(
             string runtimeId,
             TimeSpan? ttl = null,
             IReadOnlySet<string>? scopes = null,
             CancellationToken cancellationToken = default)
         {
+            InvitationCalls++;
             return ValueTask.FromResult(new EnrollmentInvitation(
                 _token ?? "t-default",
                 "https://localhost/api/enroll?token=t-default",

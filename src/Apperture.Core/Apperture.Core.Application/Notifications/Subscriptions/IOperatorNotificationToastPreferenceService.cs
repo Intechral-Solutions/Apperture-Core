@@ -15,4 +15,10 @@ public interface IOperatorNotificationToastPreferenceService
 
     ValueTask<OperatorToastPreference> SetToastEnabledAsync(
         string userId, string definitionId, bool toastEnabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// As <see cref="SetToastEnabledAsync"/>, writing only what differs and reporting whether it wrote anything (AUD-1.2 D7).
+    /// </summary>
+    ValueTask<OperatorPreferenceUpdate<OperatorToastPreference>> UpdateToastEnabledAsync(
+        string userId, string definitionId, bool toastEnabled, CancellationToken cancellationToken = default);
 }

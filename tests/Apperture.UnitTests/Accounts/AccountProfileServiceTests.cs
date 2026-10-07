@@ -1,3 +1,5 @@
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
@@ -99,10 +101,12 @@ public sealed class AccountProfileServiceTests
 
         await fixture.Service.UpdateDisplayNameAsync(Owner, "Renamed Operator");
 
-        var record = fixture.Audit.Records.Should()
-            .ContainSingle(r => r.Action == AccountAuditActionNames.DisplayNameUpdated).Subject;
-        record.ActorId.Value.Should().Be(Owner.Value);
-        record.Details.Should().Contain("Owner Person").And.Contain("Renamed Operator");
+        var (record, actor) = fixture.Audit.Events.Should()
+            .ContainSingle(e => e.Event.Action == AccountAuditActionNames.DisplayNameUpdated).Subject;
+        actor.Should().Be(AuditActor.CurrentPrincipal, "the signed-in user is resolved by the recorder, never passed in");
+        record.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, Owner.Value));
+        record.Fields["previousDisplayName"].Should().Be("Owner Person");
+        record.Fields["newDisplayName"].Should().Be("Renamed Operator");
     }
 
     [Fact]
@@ -112,7 +116,7 @@ public sealed class AccountProfileServiceTests
 
         await fixture.Service.UpdateDisplayNameAsync(Owner, "Owner Person");
 
-        fixture.Audit.Records.Should().BeEmpty("a no-op edit is not an account change worth recording");
+        fixture.Audit.Events.Should().BeEmpty("a no-op edit is not an account change worth recording");
     }
 
     [Theory]
@@ -265,7 +269,7 @@ public sealed class AccountProfileServiceTests
         await fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("Dark", "Hour12", "UTC"));
 
         // Appearance and clock choices change nothing operationally, so they stay out of the audit log.
-        fixture.Audit.Records.Should().BeEmpty();
+        fixture.Audit.Events.Should().BeEmpty();
     }
 
     [Fact]
@@ -439,7 +443,7 @@ public sealed class AccountProfileServiceTests
             Owner,
             new AccountAvatarUpload("bad.exe", "application/octet-stream", ProfileImageTestImages.WindowsExecutable()));
 
-        fixture.Audit.HasAction(AccountAuditActionNames.AvatarUploadRejected).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.AvatarUploadRejected).Should().BeTrue();
     }
 
     [Fact]
@@ -449,7 +453,7 @@ public sealed class AccountProfileServiceTests
 
         await fixture.Service.UploadAvatarAsync(Owner, ValidUpload());
 
-        fixture.Audit.HasAction(AccountAuditActionNames.AvatarUpdated).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.AvatarUpdated).Should().BeTrue();
     }
 
     [Fact]
@@ -463,7 +467,7 @@ public sealed class AccountProfileServiceTests
         avatar.Should().Be(UserAvatar.Default);
         avatar.BuiltInOptionId.Should().Be(BuiltInAvatarCatalog.DefaultOptionId);
         fixture.Images.Rows.Where(r => r.UserId == Owner.Value).Should().BeEmpty();
-        fixture.Audit.HasAction(AccountAuditActionNames.AvatarReset).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.AvatarReset).Should().BeTrue();
     }
 
     [Fact]
@@ -635,8 +639,86 @@ public sealed class AccountProfileServiceTests
         await fixture.Service.SetNotificationEmailPreferenceAsync(Owner, "platform.schedule.expected_run_missing", false);
         await fixture.Service.SetNotificationEmailPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
 
-        fixture.Audit.HasAction(AccountAuditActionNames.NotificationEmailOptOut).Should().BeTrue();
-        fixture.Audit.HasAction(AccountAuditActionNames.NotificationEmailOptIn).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.NotificationEmailOptOut).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.NotificationEmailOptIn).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Setting_a_channel_to_its_current_value_answers_the_same_and_records_nothing()
+    {
+        var fixture = new Fixture();
+        await fixture.Service.SetNotificationEmailPreferenceAsync(Owner, "platform.schedule.expected_run_missing", false);
+        await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
+        fixture.Audit.Clear();
+
+        var email = await fixture.Service.SetNotificationEmailPreferenceAsync(Owner, "platform.schedule.expected_run_missing", false);
+        var toast = await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
+
+        email.Email.Enabled.Should().BeFalse();
+        toast.Toast.Enabled.Should().BeTrue();
+        fixture.Audit.Events.Should().BeEmpty("nothing changed (D7)");
+    }
+
+    [Fact]
+    public async Task A_channel_change_targets_the_users_preference_row_and_names_the_definition_and_channel()
+    {
+        var fixture = new Fixture();
+
+        await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
+
+        var (changed, actor) = fixture.Audit.Events.Should().ContainSingle().Subject;
+        changed.Action.Should().Be(AuditActionNames.NotificationToastOptedIn);
+        actor.Should().Be(AuditActor.CurrentPrincipal);
+        changed.Target.Should().Be(new AuditTarget(AuditTargetTypes.NotificationSubscription, $"pref-{Owner.Value}-platform.schedule.expected_run_missing-toast"));
+        changed.Fields["definitionId"].Should().Be("platform.schedule.expected_run_missing");
+        changed.Fields["channel"].Should().Be("toast");
+    }
+
+    [Fact]
+    public async Task Resetting_an_avatar_that_is_already_the_default_answers_the_same_and_records_nothing()
+    {
+        var fixture = new Fixture();
+
+        var avatar = await fixture.Service.ResetAvatarAsync(Owner);
+
+        avatar.Should().Be(UserAvatar.Default);
+        fixture.Audit.Events.Should().BeEmpty("nothing changed (D7)");
+    }
+
+    [Fact]
+    public async Task Choosing_artwork_records_the_change_with_the_number_of_images_it_deleted()
+    {
+        var fixture = new Fixture();
+        await fixture.Service.UploadAvatarAsync(Owner, ValidUpload());
+        fixture.Audit.Clear();
+
+        await fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-c");
+        await fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-c");
+
+        var reset = fixture.Audit.Events.Should().ContainSingle("re-selecting the same artwork changes nothing").Subject.Event;
+        reset.Action.Should().Be(AuditActionNames.AvatarReset);
+        reset.Fields["avatar"].Should().Be("built_in");
+        reset.Fields["imagesDeleted"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_rejected_upload_is_an_attempt_row_naming_the_reason_and_its_failure_never_changes_the_answer()
+    {
+        var fixture = new Fixture();
+        fixture.Audit.FailWrites = true;
+
+        var rejected = await fixture.Service.UploadAvatarAsync(
+            Owner,
+            new AccountAvatarUpload("bad.exe", "application/octet-stream", ProfileImageTestImages.WindowsExecutable()));
+
+        rejected.Succeeded.Should().BeFalse();
+        fixture.Audit.FailWrites = false;
+        await fixture.Service.UploadAvatarAsync(
+            Owner,
+            new AccountAvatarUpload("bad.exe", "application/octet-stream", ProfileImageTestImages.WindowsExecutable()));
+        var row = fixture.Audit.Events.Should().ContainSingle().Subject.Event;
+        row.Definition.WriteClass.Should().Be(AuditWriteClass.Attempt);
+        row.Fields["reason"].Should().Be("unsupported_declared_type");
     }
 
     [Fact]
@@ -721,8 +803,8 @@ public sealed class AccountProfileServiceTests
         await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", false);
         await fixture.Service.SetNotificationToastPreferenceAsync(Owner, "platform.schedule.expected_run_missing", true);
 
-        fixture.Audit.HasAction(AccountAuditActionNames.NotificationToastOptOut).Should().BeTrue();
-        fixture.Audit.HasAction(AccountAuditActionNames.NotificationToastOptIn).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.NotificationToastOptOut).Should().BeTrue();
+        fixture.Audit.Actions.Contains(AccountAuditActionNames.NotificationToastOptIn).Should().BeTrue();
     }
 
     [Fact]
@@ -755,7 +837,7 @@ public sealed class AccountProfileServiceTests
             ToastPreferences = new StubOperatorNotificationToastPreferenceService(
                 ("platform.schedule.expected_run_missing", "Expected run missing", "A schedule did not run when expected."),
                 ("module.sample.helloworld.demo.completed", "Demo completed", null));
-            Audit = new RecordingAuditService();
+            Audit = new AuditRecording();
 
             Service = new AccountProfileService(
                 Users,
@@ -764,8 +846,9 @@ public sealed class AccountProfileServiceTests
                 new SkiaProfileImageNormalizer(),
                 Notifications,
                 ToastPreferences,
+                NullLogger<AccountProfileService>.Instance,
                 Audit,
-                NullLogger<AccountProfileService>.Instance);
+                Audit);
         }
 
         public InMemoryUserRepository Users { get; }
@@ -773,7 +856,7 @@ public sealed class AccountProfileServiceTests
         public InMemoryUserProfileImageStore Images { get; }
         public StubOperatorNotificationSubscriptionService Notifications { get; }
         public StubOperatorNotificationToastPreferenceService ToastPreferences { get; }
-        public RecordingAuditService Audit { get; }
+        public AuditRecording Audit { get; }
         public AccountProfileService Service { get; }
     }
 }
