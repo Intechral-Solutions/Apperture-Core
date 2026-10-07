@@ -30,6 +30,14 @@ public sealed class LocalSignInMessagesTests
         message.Should().Contain("may now be used up").And.Contain("different recovery code");
         message.Should().NotContain("Check the authenticator or recovery code", "the code may have been accepted and used up");
         message.Should().NotContainEquivalentOf("nothing", "an unknown outcome is never presented as nothing having happened");
+        LocalSignInMessages.ClearsRecoveryCode(mfaStep: true, status).Should().BeTrue("the code is not offered for another attempt");
+    }
+
+    [Fact]
+    public void A_refused_code_is_left_for_the_user_to_correct()
+    {
+        LocalSignInMessages.ClearsRecoveryCode(mfaStep: true, HttpStatusCode.Unauthorized).Should().BeFalse();
+        LocalSignInMessages.ClearsRecoveryCode(mfaStep: false, HttpStatusCode.InternalServerError).Should().BeFalse();
     }
 
     [Fact]

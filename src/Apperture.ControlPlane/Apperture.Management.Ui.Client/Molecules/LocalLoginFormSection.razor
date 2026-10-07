@@ -113,7 +113,7 @@
             // A refusal is the user's to correct; anything else may follow an accepted recovery code, which is then used up,
             // so it is cleared rather than offered for another attempt.
             _error = LocalSignInMessages.ForFailure(_awaitingMfa, ex.StatusCode);
-            if (_awaitingMfa && ex.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+            if (LocalSignInMessages.ClearsRecoveryCode(_awaitingMfa, ex.StatusCode))
                 _model.RecoveryCode = "";
         }
         catch (Exception ex)

@@ -21,7 +21,15 @@ public static class LocalSignInMessages
 
     /// <summary>The message for a failed step; <paramref name="status"/> is null when no response arrived.</summary>
     public static string ForFailure(bool mfaStep, HttpStatusCode? status) =>
-        status == HttpStatusCode.Unauthorized
+        IsRefusal(status)
             ? mfaStep ? CodeRejected : PasswordRejected
             : mfaStep ? MfaNotCompleted : SignInNotCompleted;
+
+    /// <summary>
+    /// True when an entered recovery code must be cleared rather than offered again: the MFA step failed other than by a
+    /// refusal, so the code may have been accepted and used up.
+    /// </summary>
+    public static bool ClearsRecoveryCode(bool mfaStep, HttpStatusCode? status) => mfaStep && !IsRefusal(status);
+
+    private static bool IsRefusal(HttpStatusCode? status) => status == HttpStatusCode.Unauthorized;
 }
