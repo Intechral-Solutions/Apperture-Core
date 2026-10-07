@@ -38,6 +38,15 @@ public sealed class EmergencyAccessCanonicalizationHostedService : IHostedServic
                 ex,
                 "Emergency Access canonical identity could not be applied because another user already owns the reserved username. The existing designated recovery account was left unchanged.");
         }
+        catch (AuditOutcomeUnknownException ex)
+        {
+            // Neither a commit nor a rollback was established (audit hardening design gate §13.2), so this must not say
+            // the account was left unchanged. The rename and its audit row either both committed or neither did.
+            _logger.LogError(
+                ex,
+                "Emergency Access canonical identity upgrade {OperationEventId} may or may not have been applied: its outcome could not be confirmed. Check the Recovery Access status before acting on it.",
+                ex.OperationEventId);
+        }
         catch (Exception ex)
         {
             _logger.LogError(

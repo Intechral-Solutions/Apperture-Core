@@ -67,6 +67,17 @@ internal static class EmergencyCli
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
         }
+        catch (AuditOutcomeUnknownException ex)
+        {
+            // Never reported as failed or unchanged: run 'emergency status' to see what was applied (design gate §13.2).
+            Console.Error.WriteLine($"Error: {ex.Message} Run 'emergency status' to check before trying again. Operation: {ex.OperationEventId}");
+            return 1;
+        }
+        catch (AuditOperationNotCompletedException ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
+        }
         catch (InvalidOperationException ex)
         {
             Console.Error.WriteLine($"Error: {ex.Message}");
