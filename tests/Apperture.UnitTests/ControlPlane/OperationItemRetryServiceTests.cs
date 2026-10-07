@@ -1,11 +1,11 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
-using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
-using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Sample.FileImport;
@@ -27,7 +27,8 @@ public sealed class OperationItemRetryServiceTests
         SeedRun(db, "run-parent", FileImportDef.Value);
         await db.SaveChangesAsync();
 
-        var service = CreateService(db, items, attempts, allowAuthz: true);
+        var unit = new RecordingAuditedUnitOfWork();
+        var service = CreateService(db, items, attempts, allowAuthz: true, unit);
 
         var result = await service.RequestRetryAsync(
             new OperationRunId("run-parent"),
@@ -42,6 +43,21 @@ public sealed class OperationItemRetryServiceTests
 
         var child = await db.OperationRuns.SingleAsync(r => r.Id == result.ChildRunId);
         child.RetryOfRunId.Should().Be("run-parent");
+
+        // The attempt, the child run's start request and the audit row all carry the unit's own actor and name the same
+        // persisted item, attempt and child run.
+        var actor = unit.CurrentPrincipalActor.RecordedValue;
+        result.RequestedByActorId.Should().Be(actor);
+        (await db.WorkflowStartRequests.SingleAsync(s => s.RunId == result.ChildRunId)).RequestedBy.Should().Be(actor);
+        unit.Actions.Should().Equal(AuditActionNames.OperationItemRetryRequested);
+        var recorded = unit.Single(AuditActionNames.OperationItemRetryRequested);
+        recorded.Target!.Type.Should().Be(AuditTargetTypes.OperationItem);
+        recorded.Target.Id.Should().Be(item.OperationItemId);
+        recorded.Fields["attemptId"].Should().Be(result.OperationItemRetryAttemptId);
+        recorded.Fields["childRunId"].Should().Be(result.ChildRunId);
+        recorded.Fields["runId"].Should().Be("run-parent");
+        recorded.Fields["reason"].Should().Be("operator retry");
+        recorded.Fields.Should().NotContainKey("idempotencyKey", "the client's key is not audit content");
 
         var start = await db.WorkflowStartRequests.SingleAsync(s => s.RunId == result.ChildRunId);
         start.IdempotencyKey.Should().Be(OperationItemRetryService.BuildDispatchIdempotencyKey(item.OperationItemId, "idem-1"));
@@ -67,7 +83,8 @@ public sealed class OperationItemRetryServiceTests
         SeedRun(db, "run-parent", FileImportDef.Value);
         await db.SaveChangesAsync();
 
-        var service = CreateService(db, items, attempts, allowAuthz: true);
+        var unit = new RecordingAuditedUnitOfWork();
+        var service = CreateService(db, items, attempts, allowAuthz: true, unit);
 
         var first = await service.RequestRetryAsync(
             new OperationRunId("run-parent"),
@@ -80,6 +97,7 @@ public sealed class OperationItemRetryServiceTests
 
         second!.OperationItemRetryAttemptId.Should().Be(first!.OperationItemRetryAttemptId);
         second.ChildRunId.Should().Be(first.ChildRunId);
+        unit.Actions.Should().Equal([AuditActionNames.OperationItemRetryRequested], "the replay changed nothing, so it recorded nothing");
         (await attempts.ListByItemAsync(item.OperationItemId)).Should().HaveCount(1);
         (await db.OperationRuns.CountAsync(r => r.RetryOfRunId == "run-parent")).Should().Be(1);
     }
@@ -100,7 +118,8 @@ public sealed class OperationItemRetryServiceTests
         SeedRun(db, "run-parent", FileImportDef.Value);
         await db.SaveChangesAsync();
 
-        var service = CreateService(db, items, attempts, allowAuthz: true);
+        var unit = new RecordingAuditedUnitOfWork();
+        var service = CreateService(db, items, attempts, allowAuthz: true, unit);
 
         var act = async () => await service.RequestRetryAsync(
             new OperationRunId("run-parent"),
@@ -110,6 +129,7 @@ public sealed class OperationItemRetryServiceTests
         var ex = await act.Should().ThrowAsync<OperationItemRetryException>();
         ex.Which.ErrorCode.Should().Be(OperationItemRetryErrorCodes.NotFailed);
         (await attempts.ListByItemAsync(item.OperationItemId)).Should().BeEmpty();
+        unit.Staged.Should().BeEmpty("a refused request records no request");
     }
 
     [Fact]
@@ -159,7 +179,8 @@ public sealed class OperationItemRetryServiceTests
         SeedRun(db, "run-parent", FileImportDef.Value);
         await db.SaveChangesAsync();
 
-        var service = CreateService(db, items, attempts, allowAuthz: true);
+        var unit = new RecordingAuditedUnitOfWork();
+        var service = CreateService(db, items, attempts, allowAuthz: true, unit);
 
         var result = await service.RequestRetryAsync(
             new OperationRunId("run-parent"),
@@ -170,6 +191,14 @@ public sealed class OperationItemRetryServiceTests
         result.ErrorCode.Should().Be(OperationItemRetryErrorCodes.MissingRetryMetadata);
         result.ChildRunId.Should().BeNull();
         (await db.OperationRuns.CountAsync(r => r.RetryOfRunId == "run-parent")).Should().Be(0);
+
+        // The blocked attempt is a committed change, so it is recorded with its requester, as a blocked outcome.
+        result.RequestedByActorId.Should().Be(unit.CurrentPrincipalActor.RecordedValue);
+        var recorded = unit.Single(AuditActionNames.OperationItemRetryBlocked);
+        recorded.OutcomeCode.Should().Be(AuditOutcomeCodes.Blocked);
+        recorded.Fields["errorCode"].Should().Be(OperationItemRetryErrorCodes.MissingRetryMetadata);
+        recorded.Fields["attemptId"].Should().Be(result.OperationItemRetryAttemptId);
+        unit.Actions.Should().Equal(AuditActionNames.OperationItemRetryBlocked);
     }
 
     [Fact]
@@ -274,7 +303,8 @@ public sealed class OperationItemRetryServiceTests
         AppertureDbContext db,
         IOperationItemStore items,
         IOperationItemRetryAttemptStore attempts,
-        bool allowAuthz)
+        bool allowAuthz,
+        RecordingAuditedUnitOfWork? unit = null)
     {
         var definitionResolver = new StubDefinitionResolver(new WorkflowDefinition(
             FileImportDef,
@@ -292,7 +322,7 @@ public sealed class OperationItemRetryServiceTests
             [new FileImportOperationItemRetryHandler()],
             authz,
             dispatch,
-            new StubPrincipal());
+            unit ?? new RecordingAuditedUnitOfWork());
     }
 
     private static async Task<(OperationItem item, OperationGroup group)> SeedFailedFileImportItemAsync(
@@ -379,18 +409,5 @@ public sealed class OperationItemRetryServiceTests
     {
         public ValueTask EnsureCanRetryRunAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
             throw new UnauthorizedAccessException("denied");
-    }
-
-    private sealed class StubPrincipal : IPrincipalContext
-    {
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IActor?>(new StubActor());
-    }
-
-    private sealed class StubActor : IActor
-    {
-        public ActorId Id { get; } = new("actor-test");
-        public ActorKind Kind => ActorKind.Human;
-        public string? DisplayName => "Test";
     }
 }

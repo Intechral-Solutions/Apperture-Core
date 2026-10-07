@@ -18,6 +18,51 @@ public sealed class SqlOperationItemRetryAttemptStore : IOperationItemRetryAttem
         ArgumentNullException.ThrowIfNull(request);
         ValidateCreate(request);
 
+        try
+        {
+            return await InsertAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            var existing = await GetByIdempotencyKeyAsync(request.OperationItemId, request.IdempotencyKey, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is not null)
+                return existing;
+            throw;
+        }
+    }
+
+    public async Task<OperationItemRetryAttempt?> TryCreateAsync(
+        CreateOperationItemRetryAttemptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateCreate(request);
+
+        try
+        {
+            return await InsertAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, IdempotencyKeyIndexName)
+            || SqlUniqueKeyViolation.IsOnIndex(ex, AttemptIndexIndexName))
+        {
+            // Two requests with one key compute the same next attempt index, so SQL Server may report either index. Only an
+            // attempt that now exists with this key means a concurrent request with it committed first; anything else keeps
+            // its meaning. Inside a caller's transaction EF rolled this save back to its savepoint, and the row is no longer
+            // tracked, so no later save can flush it.
+            if (await GetByIdempotencyKeyAsync(request.OperationItemId, request.IdempotencyKey, cancellationToken).ConfigureAwait(false) is null)
+                throw;
+            return null;
+        }
+    }
+
+    private const string IdempotencyKeyIndexName = "IX_OperationItemRetryAttempts_OperationItemId_IdempotencyKey";
+    private const string AttemptIndexIndexName = "IX_OperationItemRetryAttempts_OperationItemId_AttemptIndex";
+
+    private async Task<OperationItemRetryAttempt> InsertAsync(
+        CreateOperationItemRetryAttemptRequest request,
+        CancellationToken cancellationToken)
+    {
         var now = request.StartedAtUtc ?? DateTimeOffset.UtcNow;
         var entity = new OperationItemRetryAttemptEntity
         {
@@ -50,13 +95,9 @@ public sealed class SqlOperationItemRetryAttemptStore : IOperationItemRetryAttem
         {
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException)
         {
             _db.Entry(entity).State = EntityState.Detached;
-            var existing = await GetByIdempotencyKeyAsync(request.OperationItemId, request.IdempotencyKey, cancellationToken)
-                .ConfigureAwait(false);
-            if (existing is not null)
-                return existing;
             throw;
         }
 

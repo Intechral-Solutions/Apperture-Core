@@ -30,6 +30,13 @@ public sealed class OperationStartRequestEntity
 
     public DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>
+    /// Who requested the start, as the platform recorded it: a user id, or a non-human actor literal (for example the
+    /// scheduler). Written with the request, in the same transaction as the audit row of an operator action. Null for rows
+    /// written before the actor was recorded. The worker that claims the row is <see cref="ClaimedBy"/>, a separate fact.
+    /// </summary>
+    public string? RequestedBy { get; set; }
+
     public string Status { get; set; } = WorkflowLifecycleStatusNames.Requested;
     public DateTimeOffset? ClaimedAt { get; set; }
     public string? ClaimedBy { get; set; }

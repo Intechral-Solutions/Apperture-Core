@@ -91,6 +91,16 @@ internal sealed class ManagementHostExceptionHandler(ILogger<ManagementHostExcep
                     ["code"] = AuditOutcomeUnknownException.Code,
                     ["operationEventId"] = unknown.OperationEventId,
                 }),
+            // Verification confirmed the commit, but the result could not be read back: the change is applied.
+            AuditCommittedResultUnavailableException committed => new ExceptionMapping(
+                StatusCodes.Status500InternalServerError,
+                "The operation was applied.",
+                "Its result could not be read back. Refresh to see it; do not repeat the operation.",
+                new Dictionary<string, object?>
+                {
+                    ["code"] = AuditCommittedResultUnavailableException.Code,
+                    ["operationEventId"] = committed.OperationEventId,
+                }),
             // Verification confirmed a rollback, but the operation could not be completed within its bounded reruns.
             AuditOperationNotCompletedException notCompleted => new ExceptionMapping(
                 StatusCodes.Status500InternalServerError,

@@ -1,13 +1,13 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
 using Apperture.ControlPlane.Security;
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditEvent = Apperture.Core.Application.Audit.AuditEvent;
 
 namespace Apperture.Management.Api.Controllers;
 
@@ -24,7 +24,7 @@ public sealed class RecoveryController : ControllerBase
     private readonly IScheduleDispatchRunner _scheduleRunner;
     private readonly IDevWorkerRuntimeRecoveryService _devWorkerRecovery;
     private readonly IRecoveryGovernanceService _recoveryGovernance;
-    private readonly IAuditService? _audit;
+    private readonly IAuditEventWriter _events;
     private readonly IPrincipalContext _principal;
 
     public RecoveryController(
@@ -34,7 +34,7 @@ public sealed class RecoveryController : ControllerBase
         IDevWorkerRuntimeRecoveryService devWorkerRecovery,
         IRecoveryGovernanceService recoveryGovernance,
         IPrincipalContext principal,
-        IAuditService? audit = null)
+        IAuditEventWriter events)
     {
         _recovery = recovery;
         _retry = retry;
@@ -42,7 +42,7 @@ public sealed class RecoveryController : ControllerBase
         _devWorkerRecovery = devWorkerRecovery;
         _recoveryGovernance = recoveryGovernance;
         _principal = principal;
-        _audit = audit;
+        _events = events;
     }
 
     /// <summary>
@@ -105,7 +105,7 @@ public sealed class RecoveryController : ControllerBase
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
         {
-            await TryAuditRetryDeniedAsync(runId, cancellationToken).ConfigureAwait(false);
+            await RecordAttemptAsync(AuditEvents.RecoveryRetryDenied(runId), cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
         var entry = await _recovery.GetBlockedWorkRemediationForRunAsync(runId, cancellationToken).ConfigureAwait(false);
@@ -135,25 +135,34 @@ public sealed class RecoveryController : ControllerBase
 
         if (!entry.RetryEligibleNow)
         {
-            await TryAuditRetryRefusedAsync(runId, entry.DefinitionId, entry.RetryEligibleReason, cancellationToken).ConfigureAwait(false);
+            await RecordAttemptAsync(
+                AuditEvents.BlockedWorkRetryRefused(
+                    runId,
+                    entry.DefinitionId,
+                    entry.ModuleId is null ? "definition_not_mapped" : "module_not_executable",
+                    resourceContextId: null),
+                cancellationToken).ConfigureAwait(false);
             return Conflict(new { error = entry.RetryEligibleReason ?? "Retry not eligible.", blocked = true, runId });
         }
 
-        await TryAuditRetryRequestedAsync(runId, entry.DefinitionId, cancellationToken).ConfigureAwait(false);
+        // The retry, its new run and start request, and one audit row (the request, naming the new run) commit together, so
+        // there is no separate "requested" row written before the work and no "dispatched" row written after it.
         var runIdTyped = new OperationRunId(runId);
         try
         {
-            var result = await _retry.RequestRetryAsync(runIdTyped, cancellationToken).ConfigureAwait(false);
+            var result = await _retry.RequestRetryAsync(runIdTyped, WorkflowRetryChannel.BlockedWork, cancellationToken).ConfigureAwait(false);
             if (result is null)
                 return NotFound();
 
             if (result.IsBlocked)
             {
-                await TryAuditRetryRefusedAsync(runId, result.OriginalRunId.Value, result.BlockedReason, cancellationToken).ConfigureAwait(false);
+                // The definition is the blocked run's own, not the run id the earlier code passed in its place.
+                await RecordAttemptAsync(
+                    AuditEvents.BlockedWorkRetryRefused(runId, entry.DefinitionId, "definition_not_executable", resourceContextId: null),
+                    cancellationToken).ConfigureAwait(false);
                 return Conflict(new { error = result.BlockedReason ?? "Retry blocked.", blocked = true, runId });
             }
 
-            await TryAuditRetryDispatchedAsync(runId, result.RunId!.Value, entry.DefinitionId, cancellationToken).ConfigureAwait(false);
             return Accepted(new
             {
                 originalRunId = result.OriginalRunId.Value,
@@ -163,8 +172,9 @@ public sealed class RecoveryController : ControllerBase
                 status = result.Status
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
+            // A business refusal (the run is not eligible). An audit invariant failure is an internal error, never a 409.
             return Conflict(new { error = ex.Message });
         }
     }
@@ -204,7 +214,7 @@ public sealed class RecoveryController : ControllerBase
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
         {
-            await TryAuditRunCycleDeniedAsync(cancellationToken).ConfigureAwait(false);
+            await RecordAttemptAsync(AuditEvents.SchedulerOperationDenied("run_cycle"), cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
 
@@ -227,7 +237,10 @@ public sealed class RecoveryController : ControllerBase
             SchedulerManualOperationMapper.ActionRunCycle,
             cycle,
             error);
-        await TryAuditRunCycleRequestedAsync(planeId.Value, cancellationToken).ConfigureAwait(false);
+        // The outcome is what the cycle reported: succeeded, or failed when it threw.
+        await RecordAttemptAsync(
+            AuditEvents.SchedulerOperationRequested("run_cycle", planeId.Value, recoveredCount: null, failed: error is not null),
+            cancellationToken).ConfigureAwait(false);
         return Accepted(result);
     }
 
@@ -300,133 +313,13 @@ public sealed class RecoveryController : ControllerBase
         return Ok(entry);
     }
 
-    private async ValueTask TryAuditRetryRequestedAsync(string runId, string definitionId, CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.BlockedWorkRetryRequested,
-                    Resource: null,
-                    Outcome: "requested",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(runId),
-                    $"runId={runId};definitionId={definitionId}",
-                    RunId: runId),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async ValueTask TryAuditRetryRefusedAsync(string runId, string definitionId, string? reason, CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.BlockedWorkRetryRefused,
-                    Resource: null,
-                    Outcome: "refused",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(runId),
-                    $"runId={runId};definitionId={definitionId};reason={reason ?? "unknown"}",
-                    RunId: runId),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async ValueTask TryAuditRetryDispatchedAsync(string originalRunId, string newRunId, string definitionId, CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.BlockedWorkRetryDispatched,
-                    Resource: null,
-                    Outcome: "dispatched",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(originalRunId),
-                    $"originalRunId={originalRunId};newRunId={newRunId};definitionId={definitionId}",
-                    RunId: originalRunId),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async ValueTask TryAuditRetryDeniedAsync(string runId, CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.RetryDenied,
-                    Resource: null,
-                    Outcome: "denied",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(runId),
-                    $"runId={runId};reason=permission_missing",
-                    RunId: runId),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async ValueTask TryAuditRunCycleDeniedAsync(CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.RunCycleDenied,
-                    Resource: null,
-                    Outcome: "denied",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(null),
-                    "reason=permission_missing"),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
-
-    private async ValueTask TryAuditRunCycleRequestedAsync(string planeId, CancellationToken ct)
-    {
-        if (_audit is null) return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor?.Id ?? new ActorId("system"),
-                    RecoveryAuditActionNames.SchedulesRunCycleRequested,
-                    Resource: null,
-                    Outcome: "completed",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(planeId),
-                    $"runtimePlaneId={planeId}"),
-                ct).ConfigureAwait(false);
-        }
-        catch { /* best-effort */ }
-    }
+    /// <summary>
+    /// Records an attempt, refusal, denial or manual operation as the authenticated principal, or as not signed in when the
+    /// request maps to no application session. A failure to write is logged and never changes the response.
+    /// </summary>
+    private async ValueTask RecordAttemptAsync(AuditEvent auditEvent, CancellationToken cancellationToken) =>
+        await _events.TryWriteAsync(
+            auditEvent,
+            await AttemptActor.ResolveAsync(_principal, cancellationToken).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
 }

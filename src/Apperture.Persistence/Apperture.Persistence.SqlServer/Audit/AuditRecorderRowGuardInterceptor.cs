@@ -35,7 +35,7 @@ public sealed class AuditRecorderRowGuardInterceptor : SaveChangesInterceptor
         foreach (var entry in context.ChangeTracker.Entries<AuditLogEntity>())
         {
             if (entry.State == EntityState.Added && entry.Entity.Producer == AuditProducers.Recorder)
-                throw new InvalidOperationException("A recorder audit row can only be saved inside its unit of work's transaction.");
+                throw new AuditInvariantException("A recorder audit row can only be saved inside its unit of work's transaction.");
         }
     }
 }

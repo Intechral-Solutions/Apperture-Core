@@ -1196,6 +1196,8 @@ Each package has its own branch, and each branch needs the owner's confirmation.
 - Record real outcomes in `RecoveryController`.
 - Add actor columns on request rows where they are missing.
 
+*Ownership clarification (product owner, 2026-10-07).* Bulk item retry and failed-item attention acknowledge and reopen are W1 in §13.1 but were named by no package. They are assigned to AUD-1.3. This assigns ownership only: their requirements are those §13 sets for every W1 writer, unchanged. Bulk retry is orchestration over item retries, which are already AUD-1.3 actions; partial results and per-item `outcome_unknown` are kept. Row cardinality follows the catalog (§11.7) and is recorded in the [AUD-1.3 record](aud1-3-operator-action-record.md).
+
 **Acceptance:**
 - M7 for each action.
 - The request row and the audit row share the actor.
@@ -1381,6 +1383,7 @@ None open. Revision 2's R-1 is resolved by OR-13 (T-B).
 | [CTX-3B closure](../resource-contexts/ctx3b-closure.md) §6 P2 | Write mode superseded by OR-1; scope unchanged |
 | [Program gate](../../rc1-program-gate.md) §5, §8 | IAM-10 sequencing clarification with the hard dependency preserved; F-8 split approved; AUD-1.0 approved |
 | Roadmap, pre-release roadmap, `.ai/memory/decisions-index.md`, transitions index | AUD-1.0 approved; AUD-1.1 next, not started |
+| This gate, §22 AUD-1.3 | Ownership clarification of 2026-10-07: bulk item retry and attention acknowledge and reopen assigned to AUD-1.3; requirements unchanged |
 
 Not edited: the IAM-9 closure audit and Part 1, which are historical or working records. The `deploy/README.md` correction is AUD-1.1 work.
 

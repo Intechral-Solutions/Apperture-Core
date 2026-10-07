@@ -17,39 +17,55 @@ public sealed class InMemoryOperationItemAttentionAcknowledgementStore : IOperat
 
         lock (_gate)
         {
-            var itemId = request.OperationItemId.Trim();
             var existingActive = _byId.Values.FirstOrDefault(a =>
-                string.Equals(a.OperationItemId, itemId, StringComparison.Ordinal) && a.IsActive);
-            if (existingActive is not null)
-                return Task.FromResult(existingActive);
-
-            var disposition = OperationItemAttentionDispositions.Normalize(request.Disposition)
-                ?? throw new OperationItemizationException($"Unknown acknowledgement disposition '{request.Disposition}'.");
-
-            var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
-            if (reason is { Length: > OperationItemAttentionBounds.ReasonMaxLength })
-            {
-                throw new OperationItemizationException(
-                    $"Acknowledgement reason exceeds {OperationItemAttentionBounds.ReasonMaxLength} characters.");
-            }
-
-            var now = request.AcknowledgedAtUtc ?? DateTimeOffset.UtcNow;
-            var ack = new OperationItemAttentionAcknowledgement(
-                AcknowledgementId: Guid.NewGuid().ToString("N"),
-                OperationItemId: itemId,
-                RunId: request.RunId.Trim(),
-                OperationGroupId: request.OperationGroupId.Trim(),
-                Disposition: disposition,
-                Reason: reason,
-                AcknowledgedAtUtc: now,
-                AcknowledgedByUserId: request.AcknowledgedByUserId.Trim(),
-                ReopenedAtUtc: null,
-                ReopenedByUserId: null,
-                CreatedAtUtc: now);
-
-            _byId[ack.AcknowledgementId] = ack;
-            return Task.FromResult(ack);
+                string.Equals(a.OperationItemId, request.OperationItemId.Trim(), StringComparison.Ordinal) && a.IsActive);
+            return Task.FromResult(existingActive ?? CreateLocked(request));
         }
+    }
+
+    public Task<OperationItemAttentionAcknowledgement?> TryCreateAsync(
+        CreateOperationItemAttentionAcknowledgementRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        ArgumentNullException.ThrowIfNull(request);
+
+        lock (_gate)
+        {
+            var hasActive = _byId.Values.Any(a =>
+                string.Equals(a.OperationItemId, request.OperationItemId.Trim(), StringComparison.Ordinal) && a.IsActive);
+            return Task.FromResult<OperationItemAttentionAcknowledgement?>(hasActive ? null : CreateLocked(request));
+        }
+    }
+
+    private OperationItemAttentionAcknowledgement CreateLocked(CreateOperationItemAttentionAcknowledgementRequest request)
+    {
+        var disposition = OperationItemAttentionDispositions.Normalize(request.Disposition)
+            ?? throw new OperationItemizationException($"Unknown acknowledgement disposition '{request.Disposition}'.");
+
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+        if (reason is { Length: > OperationItemAttentionBounds.ReasonMaxLength })
+        {
+            throw new OperationItemizationException(
+                $"Acknowledgement reason exceeds {OperationItemAttentionBounds.ReasonMaxLength} characters.");
+        }
+
+        var now = request.AcknowledgedAtUtc ?? DateTimeOffset.UtcNow;
+        var ack = new OperationItemAttentionAcknowledgement(
+            AcknowledgementId: Guid.NewGuid().ToString("N"),
+            OperationItemId: request.OperationItemId.Trim(),
+            RunId: request.RunId.Trim(),
+            OperationGroupId: request.OperationGroupId.Trim(),
+            Disposition: disposition,
+            Reason: reason,
+            AcknowledgedAtUtc: now,
+            AcknowledgedByUserId: request.AcknowledgedByUserId.Trim(),
+            ReopenedAtUtc: null,
+            ReopenedByUserId: null,
+            CreatedAtUtc: now);
+
+        _byId[ack.AcknowledgementId] = ack;
+        return ack;
     }
 
     public Task<OperationItemAttentionAcknowledgement?> GetActiveByItemIdAsync(

@@ -93,7 +93,8 @@ public sealed class WorkerLifecycleQuarantineSwm9aTests
             new NoRunner(),
             new DevWorkerRuntimeRecoveryService(new StubHostEnvironment(true)),
             new StubGov(canRead, canManage),
-            new StubPrincipal());
+            new StubPrincipal(),
+            new Apperture.UnitTests.Audit.RecordingAuditEventWriter());
 
     private sealed class StubHostEnvironment(bool isDevelopment) : IHostEnvironment
     {
@@ -147,7 +148,7 @@ public sealed class WorkerLifecycleQuarantineSwm9aTests
 
     private sealed class NoRetry : IWorkflowRetryService
     {
-        public ValueTask<WorkflowRetryResult?> RequestRetryAsync(OperationRunId runId, CancellationToken cancellationToken = default) =>
+        public ValueTask<WorkflowRetryResult?> RequestRetryAsync(OperationRunId runId, WorkflowRetryChannel channel, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<WorkflowRetryResult?>(null);
     }
 

@@ -17,48 +17,65 @@ public sealed class InMemoryOperationItemRetryAttemptStore : IOperationItemRetry
 
         lock (_gate)
         {
-            var existing = _byId.Values.FirstOrDefault(a =>
-                string.Equals(a.OperationItemId, request.OperationItemId, StringComparison.Ordinal)
-                && string.Equals(a.IdempotencyKey, request.IdempotencyKey, StringComparison.Ordinal));
-            if (existing is not null)
-                return Task.FromResult(existing);
-
-            if (_byId.Values.Any(a =>
-                    string.Equals(a.OperationItemId, request.OperationItemId, StringComparison.Ordinal)
-                    && a.AttemptIndex == request.AttemptIndex))
-            {
-                throw new OperationItemizationException(
-                    $"AttemptIndex {request.AttemptIndex} already exists for item '{request.OperationItemId}'.");
-            }
-
-            var now = request.StartedAtUtc ?? DateTimeOffset.UtcNow;
-            var attempt = new OperationItemRetryAttempt(
-                OperationItemRetryAttemptId: Guid.NewGuid().ToString("N"),
-                OperationItemId: request.OperationItemId.Trim(),
-                RunId: request.RunId.Trim(),
-                OperationGroupId: request.OperationGroupId.Trim(),
-                AttemptIndex: request.AttemptIndex,
-                IdempotencyKey: request.IdempotencyKey.Trim(),
-                RequestedByActorId: request.RequestedByActorId,
-                Reason: request.Reason,
-                Status: request.Status.Trim(),
-                ChildRunId: request.ChildRunId,
-                ChildOperationGroupId: request.ChildOperationGroupId,
-                ChildOperationItemId: request.ChildOperationItemId,
-                StartedAtUtc: now,
-                CompletedAtUtc: request.Status is OperationItemRetryAttemptStatuses.Blocked
-                    or OperationItemRetryAttemptStatuses.Failed
-                    or OperationItemRetryAttemptStatuses.Succeeded
-                    ? now
-                    : null,
-                ErrorCode: request.ErrorCode,
-                ErrorMessage: request.ErrorMessage,
-                CreatedAtUtc: now,
-                UpdatedAtUtc: now);
-
-            _byId[attempt.OperationItemRetryAttemptId] = attempt;
-            return Task.FromResult(attempt);
+            return Task.FromResult(FindByKeyLocked(request) ?? CreateLocked(request));
         }
+    }
+
+    public Task<OperationItemRetryAttempt?> TryCreateAsync(
+        CreateOperationItemRetryAttemptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        ArgumentNullException.ThrowIfNull(request);
+
+        lock (_gate)
+        {
+            return Task.FromResult<OperationItemRetryAttempt?>(FindByKeyLocked(request) is null ? CreateLocked(request) : null);
+        }
+    }
+
+    private OperationItemRetryAttempt? FindByKeyLocked(CreateOperationItemRetryAttemptRequest request) =>
+        _byId.Values.FirstOrDefault(a =>
+            string.Equals(a.OperationItemId, request.OperationItemId, StringComparison.Ordinal)
+            && string.Equals(a.IdempotencyKey, request.IdempotencyKey, StringComparison.Ordinal));
+
+    private OperationItemRetryAttempt CreateLocked(CreateOperationItemRetryAttemptRequest request)
+    {
+        if (_byId.Values.Any(a =>
+                string.Equals(a.OperationItemId, request.OperationItemId, StringComparison.Ordinal)
+                && a.AttemptIndex == request.AttemptIndex))
+        {
+            throw new OperationItemizationException(
+                $"AttemptIndex {request.AttemptIndex} already exists for item '{request.OperationItemId}'.");
+        }
+
+        var now = request.StartedAtUtc ?? DateTimeOffset.UtcNow;
+        var attempt = new OperationItemRetryAttempt(
+            OperationItemRetryAttemptId: Guid.NewGuid().ToString("N"),
+            OperationItemId: request.OperationItemId.Trim(),
+            RunId: request.RunId.Trim(),
+            OperationGroupId: request.OperationGroupId.Trim(),
+            AttemptIndex: request.AttemptIndex,
+            IdempotencyKey: request.IdempotencyKey.Trim(),
+            RequestedByActorId: request.RequestedByActorId,
+            Reason: request.Reason,
+            Status: request.Status.Trim(),
+            ChildRunId: request.ChildRunId,
+            ChildOperationGroupId: request.ChildOperationGroupId,
+            ChildOperationItemId: request.ChildOperationItemId,
+            StartedAtUtc: now,
+            CompletedAtUtc: request.Status is OperationItemRetryAttemptStatuses.Blocked
+                or OperationItemRetryAttemptStatuses.Failed
+                or OperationItemRetryAttemptStatuses.Succeeded
+                ? now
+                : null,
+            ErrorCode: request.ErrorCode,
+            ErrorMessage: request.ErrorMessage,
+            CreatedAtUtc: now,
+            UpdatedAtUtc: now);
+
+        _byId[attempt.OperationItemRetryAttemptId] = attempt;
+        return attempt;
     }
 
     public Task<OperationItemRetryAttempt?> GetByIdAsync(

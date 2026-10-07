@@ -98,6 +98,19 @@ public sealed class RunsControllerTests
     }
 
     [Fact]
+    public async Task RetryRun_WhenAnAuditInvariantFails_IsNotReportedAsAConflict()
+    {
+        // AUD-1.3: a programming error of the audited unit is an internal error for the host's handler, never a 409 refusal.
+        var controller = NewController(
+            new StubRunQueryService(),
+            retry: new StubRetryService(throwException: new Apperture.Core.Application.Audit.AuditInvariantException("staged none")));
+
+        var act = () => controller.RetryRun("original", CancellationToken.None);
+
+        await act.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>();
+    }
+
+    [Fact]
     public async Task RetryRun_WhenBlockedByLifecycle_Returns409WithBlockedFlag()
     {
         var blockedResult = new WorkflowRetryResult(
@@ -279,6 +292,14 @@ public sealed class RunsControllerTests
             OperationRunId runId,
             string operationItemId,
             RequestOperationItemRetryDto request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<OperationItemRetryAttemptDto?>(null);
+
+        public Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
+            OperationRunId runId,
+            string operationItemId,
+            RequestOperationItemRetryDto request,
+            OperationItemRetryBatch batch,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<OperationItemRetryAttemptDto?>(null);
 
@@ -474,9 +495,11 @@ public sealed class RunsControllerTests
         private readonly bool _throwUnauthorized;
         private readonly bool _returnNull;
         private readonly bool _throwConflict;
+        private readonly Exception? _throwException;
 
-        public StubRetryService(WorkflowRetryResult? result = null, bool throwUnauthorized = false, bool returnNull = false, bool throwConflict = false)
+        public StubRetryService(WorkflowRetryResult? result = null, bool throwUnauthorized = false, bool returnNull = false, bool throwConflict = false, Exception? throwException = null)
         {
+            _throwException = throwException;
             _result = result ?? new WorkflowRetryResult(
                 new Apperture.RuntimePlane.Abstractions.OperationRunId("original"),
                 new Apperture.RuntimePlane.Abstractions.OperationRunId("new-run"),
@@ -490,12 +513,15 @@ public sealed class RunsControllerTests
 
         public ValueTask<WorkflowRetryResult?> RequestRetryAsync(
             Apperture.RuntimePlane.Abstractions.OperationRunId runId,
+            WorkflowRetryChannel channel,
             CancellationToken cancellationToken = default)
         {
             if (_throwUnauthorized)
                 throw new UnauthorizedAccessException("deny");
             if (_throwConflict)
                 throw new InvalidOperationException("not eligible");
+            if (_throwException is not null)
+                throw _throwException;
             if (_returnNull)
                 return ValueTask.FromResult<WorkflowRetryResult?>(null);
             return ValueTask.FromResult(_result);

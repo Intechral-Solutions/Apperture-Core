@@ -62,6 +62,27 @@ public sealed class Job1FailedWorkResolutionUiTests
     }
 
     [Fact]
+    public void An_item_whose_retry_could_not_be_confirmed_is_never_reported_as_not_dispatched()
+    {
+        var result = new BulkRetryOperationItemsResult(
+            RequestedCount: 3,
+            DispatchedCount: 1,
+            SkippedCount: 0,
+            FailedCount: 2,
+            Items:
+            [
+                new("a", "A", "Dispatched", "ok", "child-1"),
+                new("b", "B", "OutcomeUnknown", "unknown"),
+                new("c", "C", "DispatchFailed", "fail"),
+            ]);
+
+        var summary = OperationItemizationUiHelpers.FormatBulkRetryResultSummary(result);
+
+        summary.Should().Contain("1 item could not be dispatched", "only the item that really failed");
+        summary.Should().Contain("1 item's retry could not be confirmed; reload before retrying it");
+    }
+
+    [Fact]
     public void Acknowledgement_meta_keeps_failed_outcome_language()
     {
         var ackResult = new BulkAcknowledgeOperationItemsResult(

@@ -172,6 +172,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
             e.Property(x => x.LastError).HasMaxLength(2048);
             // CTX-2: historical snapshot, not current ownership. No FK, no backfill.
@@ -236,6 +237,7 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.ProcedureId).HasMaxLength(128);
             e.Property(x => x.ParametersJson).HasColumnType("nvarchar(max)");
             e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.RequestedBy).HasMaxLength(256);
             e.Property(x => x.ClaimedBy).HasMaxLength(128);
             e.Property(x => x.LastError).HasMaxLength(2048);
             // CTX-2: historical snapshot, not current ownership. No FK, no backfill.

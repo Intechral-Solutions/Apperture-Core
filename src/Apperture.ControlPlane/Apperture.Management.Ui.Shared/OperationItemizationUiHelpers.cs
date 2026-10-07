@@ -241,8 +241,14 @@ public static class OperationItemizationUiHelpers
         var already = result.Items.Count(i => i.Category == "AlreadyRequested");
         if (already > 0)
             parts.Add($"{already} item{(already == 1 ? "" : "s")} already had retry work");
-        if (result.FailedCount > 0)
-            parts.Add($"{result.FailedCount} item{(result.FailedCount == 1 ? "" : "s")} could not be dispatched");
+        // An item whose outcome could not be confirmed is counted as failed by the server, but it may have been requested: it
+        // is never reported as "could not be dispatched".
+        var unconfirmed = result.Items.Count(i => i.Category == "OutcomeUnknown");
+        var failed = Math.Max(0, result.FailedCount - unconfirmed);
+        if (failed > 0)
+            parts.Add($"{failed} item{(failed == 1 ? "" : "s")} could not be dispatched");
+        if (unconfirmed > 0)
+            parts.Add($"{unconfirmed} item{(unconfirmed == 1 ? "'s retry" : "s' retries")} could not be confirmed; reload before retrying {(unconfirmed == 1 ? "it" : "them")}");
         if (parts.Count == 0)
             return "No retry requests were dispatched.";
         return string.Join(". ", parts) + ".";

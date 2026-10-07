@@ -288,7 +288,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             IntegrationId: definition.IntegrationId?.Value,
             ProcedureId: procedureId,
             ExecutionOrigin: RunExecutionOriginNames.Schedule,
-            ResourceContextId: definition.ResourceContextId?.Value);
+            ResourceContextId: definition.ResourceContextId?.Value,
+            RequestedBy: ActorLiterals.SystemScheduler);
 
         var result = await _workflowDispatch.StartAsync(request, ct);
         if (result is null)
@@ -390,7 +391,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
             IntegrationId: definition.IntegrationId?.Value,
             ProcedureId: procedureId,
             ExecutionOrigin: RunExecutionOriginNames.Schedule,
-            ResourceContextId: definition.ResourceContextId?.Value);
+            ResourceContextId: definition.ResourceContextId?.Value,
+            RequestedBy: ActorLiterals.SystemScheduler);
 
         var result = await _operationDispatch.StartAsync(request, ct);
         if (result is null)

@@ -1,5 +1,7 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Persistence.SqlServer;
+using Apperture.UnitTests.Audit;
 using Apperture.RuntimePlane.Abstractions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -23,8 +25,8 @@ public sealed class WorkflowCancelServiceTests
         });
         await db.SaveChangesAsync();
 
-        var authz = new AllowAuthz();
-        var svc = new WorkflowCancelService(db, authz);
+        var unit = new RecordingAuditedUnitOfWork();
+        var svc = new WorkflowCancelService(db, new AllowAuthz(), unit);
 
         (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
         (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
@@ -32,14 +34,27 @@ public sealed class WorkflowCancelServiceTests
         (await db.WorkflowCancelRequests.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.SingleAsync()).EventType.Should().Be("workflow.cancel_requested");
+
+        // One committed intent, one row: the repeat changed nothing and recorded nothing.
+        unit.Actions.Should().Equal(AuditActionNames.WorkflowRunCancelRequested);
+        var recorded = unit.Single(AuditActionNames.WorkflowRunCancelRequested);
+        recorded.Target!.Type.Should().Be(AuditTargetTypes.WorkflowRun);
+        recorded.Target.Id.Should().Be("r1");
+        recorded.OutcomeCode.Should().Be(AuditOutcomeCodes.Requested);
+        recorded.Fields["runStatus"].Should().Be("running");
+
+        // The request row and the audit row share the actor: the unit's own, never a caller-supplied one.
+        (await db.WorkflowCancelRequests.SingleAsync()).RequestedBy.Should().Be(unit.CurrentPrincipalActor.RecordedValue);
     }
 
     [Fact]
     public async Task RequestCancelAsync_MissingRun_ReturnsFalse()
     {
         var db = NewDb();
-        var svc = new WorkflowCancelService(db, new AllowAuthz());
+        var unit = new RecordingAuditedUnitOfWork();
+        var svc = new WorkflowCancelService(db, new AllowAuthz(), unit);
         (await svc.RequestCancelAsync(new OperationRunId("nope"))).Should().BeFalse();
+        unit.Operations.Should().BeEmpty("an unknown run is answered before any audited unit opens");
     }
 
     [Fact]
@@ -56,10 +71,14 @@ public sealed class WorkflowCancelServiceTests
         });
         await db.SaveChangesAsync();
 
-        var svc = new WorkflowCancelService(db, new DenyAuthz());
+        var unit = new RecordingAuditedUnitOfWork();
+        var svc = new WorkflowCancelService(db, new DenyAuthz(), unit);
 
         await FluentActions.Invoking(() => svc.RequestCancelAsync(new OperationRunId("r1")).AsTask())
             .Should().ThrowAsync<UnauthorizedAccessException>();
+
+        (await db.WorkflowCancelRequests.CountAsync()).Should().Be(0, "a denied request persists nothing");
+        unit.Operations.Should().BeEmpty("a denied request never opens an audited unit");
     }
 
     [Fact]
@@ -77,7 +96,7 @@ public sealed class WorkflowCancelServiceTests
         });
         await db.SaveChangesAsync();
 
-        var svc = new WorkflowCancelService(db, new AllowAuthz());
+        var svc = new WorkflowCancelService(db, new AllowAuthz(), new RecordingAuditedUnitOfWork());
 
         (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
 
@@ -103,7 +122,7 @@ public sealed class WorkflowCancelServiceTests
         });
         await db.SaveChangesAsync();
 
-        var svc = new WorkflowCancelService(db, new AllowAuthz());
+        var svc = new WorkflowCancelService(db, new AllowAuthz(), new RecordingAuditedUnitOfWork());
 
         (await svc.RequestCancelAsync(new OperationRunId("r1"))).Should().BeTrue();
 

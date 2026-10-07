@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeComposition;
@@ -12,6 +13,7 @@ using Apperture.Core.Domain.Workflow;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,9 +43,14 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
                 SqlServerTestConfiguration.DescribeActiveConfiguration());
         }
 
+        // A person asks for the retry, so the recorder needs their user.
+        var principal = new MutablePrincipal();
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
+        services.AddAppertureAuditRecorder();
+        services.AddSingleton<IPrincipalContext>(principal);
         await using var provider = services.BuildServiceProvider();
+        string userId;
 
         var runId = "ep31-" + Guid.NewGuid().ToString("N")[..8];
         var instanceId = "wi-" + runId;
@@ -58,6 +65,9 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
             }
 
             await AppertureDatabaseMigrator.MigrateAsync(db);
+            var (id, username) = await SqlTestUsers.AddAsync(db, "retry");
+            userId = id;
+            principal.Actor = new HumanActor(new ActorId(id), username, isBreakGlassSession: false);
             db.WorkflowInstances.Add(new WorkflowInstanceEntity
             {
                 Id = instanceId,
@@ -137,7 +147,13 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
 
             var dispatch = new WorkflowStartDispatchService(
                 toggleableResolver, new SqlWorkflowPersistence(db), db);
-            var retryService = new WorkflowRetryService(db, new AllowRetryAuthz(), dispatch);
+            var retryService = new WorkflowRetryService(
+                db,
+                new AllowRetryAuthz(),
+                dispatch,
+                scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>(),
+                scope.ServiceProvider.GetRequiredService<IAuditEventWriter>(),
+                principal);
 
             var resultBlocked = await retryService.RequestRetryAsync(new OperationRunId(runId));
             resultBlocked.Should().NotBeNull();
@@ -145,6 +161,12 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
             resultBlocked.RunId.Should().BeNull();
             (await db.OperationRuns.CountAsync(r => r.WorkflowInstanceId == instanceId))
                 .Should().Be(1, "no new run when blocked for this instance");
+
+            // The refusal is recorded after the attempt rolled back, as the person who asked, not as the platform.
+            var refusal = await db.AuditLogs.AsNoTracking().SingleAsync(a => a.TargetId == runId && a.Action == AuditActionNames.WorkflowRetryBlocked);
+            refusal.Actor.Should().Be(userId);
+            refusal.ActorUserId.Should().Be(userId);
+            refusal.OutcomeCode.Should().Be("blocked");
         }
 
         toggleableComposition.SetSnapshot(compositionEnabled);
@@ -167,7 +189,13 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
 
             var dispatch = new WorkflowStartDispatchService(
                 toggleableResolver, new SqlWorkflowPersistence(db), db);
-            var retryService = new WorkflowRetryService(db, new AllowRetryAuthz(), dispatch);
+            var retryService = new WorkflowRetryService(
+                db,
+                new AllowRetryAuthz(),
+                dispatch,
+                scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>(),
+                scope.ServiceProvider.GetRequiredService<IAuditEventWriter>(),
+                principal);
 
             var resultDispatched = await retryService.RequestRetryAsync(new OperationRunId(runId));
             resultDispatched.Should().NotBeNull();
@@ -181,6 +209,12 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
 
             var retryStartRequest = await db.WorkflowStartRequests.SingleOrDefaultAsync(r => r.RunId == retryRun.Id);
             retryStartRequest.Should().NotBeNull("trusted path persists WorkflowStartRequest");
+
+            // The start request and the audit row of the retry share the person who asked for it.
+            retryStartRequest!.RequestedBy.Should().Be(userId);
+            var requested = await db.AuditLogs.AsNoTracking().SingleAsync(a => a.TargetId == runId && a.Action == AuditActionNames.WorkflowRetryRequested);
+            requested.Actor.Should().Be(userId);
+            requested.Details.Should().Contain(retryRun.Id, "the request row names the run created for the retry");
 
             var events = await db.WorkflowLifecycleEvents
                 .Where(e => e.RunId == runId || e.RunId == retryRun.Id)
@@ -235,6 +269,14 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
     {
         public ValueTask EnsureCanRetryRunAsync(WorkflowDefinitionId id, CancellationToken ct = default) =>
             ValueTask.CompletedTask;
+    }
+
+    private sealed class MutablePrincipal : IPrincipalContext
+    {
+        public IActor? Actor { get; set; }
+
+        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Actor);
     }
 
     private sealed class StubModuleRegistry : IModuleRegistryService

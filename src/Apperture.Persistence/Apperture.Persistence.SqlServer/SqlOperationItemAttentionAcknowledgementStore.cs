@@ -20,9 +20,21 @@ public sealed class SqlOperationItemAttentionAcknowledgementStore : IOperationIt
         ArgumentNullException.ThrowIfNull(request);
 
         var itemId = request.OperationItemId.Trim();
-        var existing = await GetActiveByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
-            return existing;
+        return await GetActiveByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false)
+            ?? await TryCreateAsync(request, cancellationToken).ConfigureAwait(false)
+            ?? await GetActiveByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new OperationItemizationException($"Operation item '{itemId}' could not be acknowledged.");
+    }
+
+    public async Task<OperationItemAttentionAcknowledgement?> TryCreateAsync(
+        CreateOperationItemAttentionAcknowledgementRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var itemId = request.OperationItemId.Trim();
+        if (await GetActiveByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false) is not null)
+            return null;
 
         var disposition = OperationItemAttentionDispositions.Normalize(request.Disposition)
             ?? throw new OperationItemizationException($"Unknown acknowledgement disposition '{request.Disposition}'.");
@@ -55,18 +67,18 @@ public sealed class SqlOperationItemAttentionAcknowledgementStore : IOperationIt
         {
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, ActiveIndexName))
         {
-            // Concurrent create — return the winning active row.
+            // A concurrent create committed the item's one active acknowledgement first. Inside a caller's transaction EF rolled
+            // this save back to its savepoint; the row is no longer tracked, so no later save can flush it.
             _db.Entry(entity).State = EntityState.Detached;
-            var winner = await GetActiveByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false);
-            if (winner is not null)
-                return winner;
-            throw;
+            return null;
         }
 
         return Map(entity);
     }
+
+    private const string ActiveIndexName = "IX_OperationItemAttentionAcknowledgements_OperationItemId_Active";
 
     public async Task<OperationItemAttentionAcknowledgement?> GetActiveByItemIdAsync(
         string operationItemId,
@@ -134,7 +146,7 @@ public sealed class SqlOperationItemAttentionAcknowledgementStore : IOperationIt
         if (string.IsNullOrWhiteSpace(operationItemId) || string.IsNullOrWhiteSpace(reopenedByUserId))
             return null;
 
-        var row = await _db.OperationItemAttentionAcknowledgements
+        var row = await _db.OperationItemAttentionAcknowledgements.AsNoTracking()
             .Where(a => a.OperationItemId == operationItemId.Trim() && a.ReopenedAtUtc == null)
             .OrderByDescending(a => a.AcknowledgedAtUtc)
             .FirstOrDefaultAsync(cancellationToken)
@@ -142,9 +154,23 @@ public sealed class SqlOperationItemAttentionAcknowledgementStore : IOperationIt
         if (row is null)
             return null;
 
-        row.ReopenedAtUtc = reopenedAtUtc ?? DateTimeOffset.UtcNow;
-        row.ReopenedByUserId = reopenedByUserId.Trim();
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // Conditional on the row still being active: of two concurrent reopens, the second updates nothing and reports that
+        // nothing was active, instead of overwriting who reopened it.
+        var reopenedAt = reopenedAtUtc ?? DateTimeOffset.UtcNow;
+        var reopenedBy = reopenedByUserId.Trim();
+        var updated = await _db.OperationItemAttentionAcknowledgements
+            .Where(a => a.Id == row.Id && a.ReopenedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(a => a.ReopenedAtUtc, reopenedAt)
+                    .SetProperty(a => a.ReopenedByUserId, reopenedBy),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (updated == 0)
+            return null;
+
+        row.ReopenedAtUtc = reopenedAt;
+        row.ReopenedByUserId = reopenedBy;
         return Map(row);
     }
 

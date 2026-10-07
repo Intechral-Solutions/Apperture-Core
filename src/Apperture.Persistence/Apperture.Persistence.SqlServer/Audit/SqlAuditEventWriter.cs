@@ -74,9 +74,9 @@ public sealed class SqlAuditEventWriter : IAuditEventWriter
     private void Require(AuditEvent auditEvent, params AuditWriteClass[] classes)
     {
         var definition = _catalog.Find(auditEvent.Action)
-            ?? throw new InvalidOperationException($"Audit action '{auditEvent.Action}' is not declared in the audit catalog.");
+            ?? throw new AuditInvariantException($"Audit action '{auditEvent.Action}' is not declared in the audit catalog.");
         if (!classes.Contains(definition.WriteClass) || definition.Details is null)
-            throw new InvalidOperationException($"Audit action '{auditEvent.Action}' is {definition.WriteClass}; this write path does not carry its guarantee.");
+            throw new AuditInvariantException($"Audit action '{auditEvent.Action}' is {definition.WriteClass}; this write path does not carry its guarantee.");
     }
 
     private async Task WriteCoreAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken)

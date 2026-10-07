@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Application.Validation;
@@ -24,8 +25,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
     private readonly IExecutablePermissionEvaluator _permissionEvaluator;
     private readonly IWorkflowStartAuthorizationService _workflowStartAuth;
     private readonly IOperationStartAuthorizationService _operationStartAuth;
-    private readonly IWorkflowStartDispatchService _workflowDispatch;
-    private readonly IOperationStartDispatchService _operationDispatch;
+    private readonly IAuditedExecutionStartService _starts;
 
     public IntegrationProcedureService(
         IIntegrationManagementService integrations,
@@ -37,8 +37,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         IExecutablePermissionEvaluator permissionEvaluator,
         IWorkflowStartAuthorizationService workflowStartAuth,
         IOperationStartAuthorizationService operationStartAuth,
-        IWorkflowStartDispatchService workflowDispatch,
-        IOperationStartDispatchService operationDispatch)
+        IAuditedExecutionStartService starts)
     {
         _integrations = integrations;
         _readiness = readiness;
@@ -49,8 +48,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
         _permissionEvaluator = permissionEvaluator;
         _workflowStartAuth = workflowStartAuth;
         _operationStartAuth = operationStartAuth;
-        _workflowDispatch = workflowDispatch;
-        _operationDispatch = operationDispatch;
+        _starts = starts;
     }
 
     /// <inheritdoc />
@@ -221,7 +219,8 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         ex.Message);
                 }
 
-                var dispatchResult = await _workflowDispatch.StartAsync(
+                // The start, its request row (which names the requester) and its audit row commit together.
+                var dispatchResult = await _starts.StartWorkflowAsync(
                     new StartWorkflowRequest(
                         wfId,
                         parameters,
@@ -231,6 +230,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         IntegrationId: integValue,
                         ProcedureId: procedure.Id,
                         ExecutionOrigin: RunExecutionOriginNames.Manual),
+                    ExecutionLaunchChannel.Procedure,
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
                     return new IntegrationProcedureLaunchOutcome.Failed(
@@ -260,7 +260,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         ex.Message);
                 }
 
-                var dispatchResult = await _operationDispatch.StartAsync(
+                var dispatchResult = await _starts.StartOperationAsync(
                     new StartOperationRequest(
                         procedure.TargetDefinitionId,
                         parameters,
@@ -269,6 +269,7 @@ public sealed class IntegrationProcedureService : IIntegrationProcedureService
                         integValue,
                         procedure.Id,
                         ExecutionOrigin: RunExecutionOriginNames.Manual),
+                    ExecutionLaunchChannel.Procedure,
                     cancellationToken).ConfigureAwait(false);
                 if (dispatchResult is null)
                     return new IntegrationProcedureLaunchOutcome.Failed(

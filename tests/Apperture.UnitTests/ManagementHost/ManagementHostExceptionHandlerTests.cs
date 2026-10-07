@@ -89,6 +89,20 @@ public sealed class ManagementHostExceptionHandlerTests
         mapping.Detail.Should().BeNull();
     }
 
+    [Fact]
+    public void MapException_reports_a_committed_operation_whose_result_could_not_be_read_as_applied()
+    {
+        // AUD-1.3: verification confirmed the commit; the response says so and names the operation, so the client reloads
+        // instead of repeating it. It is never a refusal or a "not found".
+        var mapping = ManagementHostExceptionHandler.MapException(
+            new Apperture.Core.Application.Audit.AuditCommittedResultUnavailableException("op-1", new InvalidOperationException("read failed")));
+
+        mapping.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        mapping.Title.Should().Be("The operation was applied.");
+        mapping.Extensions!["code"].Should().Be("committed_result_unavailable");
+        mapping.Extensions["operationEventId"].Should().Be("op-1");
+    }
+
     private static async Task<(HttpContext Context, string Body)> InvokeHandlerAsync(
         Exception exception,
         string? correlationId = null)

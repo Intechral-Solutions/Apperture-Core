@@ -2233,6 +2233,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<string>("ResourceContextId")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -3643,6 +3647,10 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<string>("ProcedureId")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("ResourceContextId")
                         .HasMaxLength(64)

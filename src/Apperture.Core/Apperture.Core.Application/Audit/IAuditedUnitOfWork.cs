@@ -53,6 +53,14 @@ public interface IAuditedTransaction
     string OperationEventId { get; }
 
     /// <summary>
+    /// The actor this unit records, resolved once before the first attempt from the authenticated context (or the named
+    /// non-human entry the operation was opened with). An operation that persists who requested it (a request row's
+    /// <c>RequestedBy</c>) writes <see cref="AuditActor.RecordedValue"/> from here, so the request row and the audit row
+    /// carry the same actor by construction and no caller-supplied identity is ever used.
+    /// </summary>
+    AuditActor Actor { get; }
+
+    /// <summary>
     /// Adds the event's row, complete, to this transaction. Reads the actor's username in this transaction. Throws
     /// <see cref="InvalidOperationException"/> when no transaction of this unit is current, the action is not a W1 catalog
     /// action with a schema, the details overflow, or the event was already staged.
@@ -84,6 +92,20 @@ public sealed record AuditCommittedOperation(
             ? value.GetString()
             : null;
     }
+
+    /// <summary>The strings of a list field of the primary row's <c>json/1</c> details, or an empty list.</summary>
+    public IReadOnlyList<string> GetStringList(string name)
+    {
+        if (string.IsNullOrEmpty(Details))
+            return [];
+        using var document = JsonDocument.Parse(Details);
+        if (!document.RootElement.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Array)
+            return [];
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!)
+            .ToList();
+    }
 }
 
 /// <summary>
@@ -98,6 +120,39 @@ public sealed class AuditOutcomeUnknownException(string operationEventId, Except
     public const string Code = "outcome_unknown";
 
     public string OperationEventId { get; } = operationEventId;
+}
+
+/// <summary>
+/// Verification confirmed that the operation committed, but its result could not be built from committed state (§13.5,
+/// reconstruction). The change is applied; the caller reloads instead of retrying. It is never a refusal, a conflict or a
+/// "not found", so it does not derive from <see cref="InvalidOperationException"/>.
+/// </summary>
+public sealed class AuditCommittedResultUnavailableException(string operationEventId, Exception inner)
+    : Exception("The operation was applied, but its result could not be read back.", inner)
+{
+    /// <summary>The stable error code surfaced to clients.</summary>
+    public const string Code = "committed_result_unavailable";
+
+    public string OperationEventId { get; } = operationEventId;
+}
+
+/// <summary>
+/// A programming error in an audited write (§13.4: a <c>Stage</c> precondition, a missing primary row, an undeclared action,
+/// an actor that cannot be recorded, a detail schema defect). It is an <see cref="InvalidOperationException"/>, as the gate
+/// states, but never a business refusal: an endpoint that maps <see cref="InvalidOperationException"/> to a refusal excludes it,
+/// so the failure surfaces as the internal error it is. Nothing was committed.
+/// </summary>
+public class AuditInvariantException : InvalidOperationException
+{
+    public AuditInvariantException(string message)
+        : base(message)
+    {
+    }
+
+    public AuditInvariantException(string message, Exception? inner)
+        : base(message, inner)
+    {
+    }
 }
 
 /// <summary>

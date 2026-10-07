@@ -35,14 +35,30 @@ public sealed partial class AuditActionCatalogTests
         "auth.sign_in_policy.updated",
     ];
 
+    /// <summary>Actions AUD-1.3 adds (the operator actions on runs that had no row, or none with an actor).</summary>
+    private static readonly string[] Aud13Additions =
+    [
+        "execution.workflow_start.requested",
+        "execution.operation_start.requested",
+        "execution.workflow_run.cancel_requested",
+        "execution.operation_run.cancel_requested",
+        "execution.workflow_run.park_requested",
+        "execution.workflow_run.resume_requested",
+        "execution.workflow_retry.requested",
+        "execution.operation_item.retry_requested",
+        "execution.operation_item.retry_blocked",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud12Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.2").Select(d => d.Action).Should().BeEquivalentTo(Aud12Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud13Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.3").Select(d => d.Action).Should().BeEquivalentTo(Aud13Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 adds only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 and AUD-1.3 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 

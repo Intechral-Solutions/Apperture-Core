@@ -21,13 +21,20 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
     /// </summary>
     public CommitAcknowledgement Acknowledgement { get; set; } = CommitAcknowledgement.Received;
 
+    /// <summary>
+    /// The user the unit records for an operation opened with <see cref="AuditActor.CurrentPrincipal"/> (the real unit
+    /// resolves it from the authenticated context). A named non-human entry is recorded as itself.
+    /// </summary>
+    public AuditActor CurrentPrincipalActor { get; set; } =
+        AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_unit_test_actor"));
+
     public async Task<T> ExecuteAsync<T>(
         AuditedOperation operation,
         Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
         Func<AuditCommittedOperation, CancellationToken, Task<T>> reconstruct,
         CancellationToken cancellationToken = default)
     {
-        var recorded = new RecordedOperation(operation);
+        var recorded = new RecordedOperation(operation, operation.Actor.IsCurrentPrincipal ? CurrentPrincipalActor : operation.Actor);
         Operations.Add(recorded);
         var result = await attempt(recorded, cancellationToken);
         if (!recorded.NoOp && !recorded.Staged.Any(e => operation.AcceptsPrimary(e.Action)))
@@ -70,9 +77,10 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
     /// <summary>The single committed event of <paramref name="action"/>.</summary>
     public AuditEvent Single(string action) => Staged.Single(e => e.Action == action);
 
-    internal sealed class RecordedOperation(AuditedOperation operation) : IAuditedTransaction
+    internal sealed class RecordedOperation(AuditedOperation operation, AuditActor actor) : IAuditedTransaction
     {
         public AuditedOperation Operation { get; } = operation;
+        public AuditActor Actor { get; } = actor;
         public List<AuditEvent> Staged { get; } = [];
         public bool NoOp { get; private set; }
         public bool Completed { get; set; }

@@ -520,4 +520,135 @@ internal static class AuditDetailSchemas
         IdField("definitionId"),
         EnumField("channel", true, "email", "toast"),
     ]);
+
+    // ---- AUD-1.3: operator actions on runs ----
+    // A start records the names of its parameters and never their values (gate §12.3). Ids copied from a request are bounded
+    // by the persisted column they were stored in, and an id the schema cannot hold is left out by the producer rather than
+    // failing a refusal row.
+
+    /// <summary>Most parameter names one start row lists. The count of every parameter is recorded as well.</summary>
+    internal const int MaxParameterNames = 64;
+
+    /// <summary>Longest parameter name listed; a longer name is counted but not listed.</summary>
+    internal const int MaxParameterNameLength = 64;
+
+    private static readonly string[] LaunchChannels = ["direct", "procedure"];
+
+    internal static readonly AuditDetailSchema StartRequested = new(
+    [
+        IdField("runId"),
+        IdField("instanceId"),
+        IdField("definitionId"),
+        IdField("integrationId", required: false),
+        IdField("procedureId", required: false),
+        EnumField("launch", true, LaunchChannels),
+        CountField("parameterCount"),
+        new AuditFieldDefinition("parameterNames", AuditFieldKind.IdList, Required: false, MaxLength: MaxParameterNameLength, MaxItems: MaxParameterNames),
+    ]);
+
+    internal static readonly AuditDetailSchema StartBlocked = new(
+    [
+        IdField("definitionId", required: false),
+        IdField("integrationId", required: false),
+        IdField("procedureId", required: false),
+        EnumField("launch", true, LaunchChannels),
+        EnumField("reason", true, "definition_not_executable"),
+    ]);
+
+    /// <summary>Cancel, park and resume: a request on an existing run, with the run's status when it was made.</summary>
+    internal static readonly AuditDetailSchema RunControlRequested = new(
+    [
+        IdField("runId"),
+        IdField("instanceId"),
+        IdField("definitionId"),
+        IdField("runStatus"),
+    ]);
+
+    internal static readonly AuditDetailSchema WorkflowRetryRequested = new(
+    [
+        IdField("runId"),
+        IdField("retryRunId"),
+        IdField("definitionId"),
+    ]);
+
+    internal static readonly AuditDetailSchema WorkflowRetryBlocked = new(
+    [
+        IdField("runId"),
+        IdField("definitionId"),
+        EnumField("reason", true, "definition_not_executable"),
+    ]);
+
+    internal static readonly AuditDetailSchema OperationItemRetry = new(
+    [
+        IdField("operationItemId"),
+        IdField("runId"),
+        IdField("operationGroupId"),
+        IdField("attemptId"),
+        CountField("attemptIndex"),
+        IdField("childRunId", required: false),
+        IdField("errorCode", required: false),
+        new AuditFieldDefinition("reason", AuditFieldKind.OperatorText, Required: false, MaxLength: OperationItems.OperationItemRetryBounds.ReasonMaxLength),
+        IdField("bulkRequestId", required: false),
+    ]);
+
+    /// <summary>The items one acknowledge or reopen request changed: a bulk request is bounded, so the list is too.</summary>
+    private static AuditFieldDefinition OperationItemIdsField() =>
+        new("operationItemIds", AuditFieldKind.IdList, Required: true, MaxLength: OperationItems.OperationItemAttentionBounds.IdMaxLength, MaxItems: OperationItems.OperationItemAttentionBounds.MaxBulkItemCount);
+
+    internal static readonly AuditDetailSchema OperationItemAttentionAcknowledged = new(
+    [
+        IdField("runId"),
+        IdField("operationGroupId"),
+        EnumField("disposition", true, [.. OperationItems.OperationItemAttentionDispositions.All]),
+        new AuditFieldDefinition("reason", AuditFieldKind.OperatorText, Required: false, MaxLength: OperationItems.OperationItemAttentionBounds.ReasonMaxLength),
+        CountField("requestedCount"),
+        CountField("acknowledgedCount"),
+        CountField("skippedCount"),
+        OperationItemIdsField(),
+    ]);
+
+    internal static readonly AuditDetailSchema OperationItemAttentionReopened = new(
+    [
+        IdField("runId"),
+        IdField("operationGroupId"),
+        CountField("requestedCount"),
+        CountField("reopenedCount"),
+        CountField("skippedCount"),
+        OperationItemIdsField(),
+    ]);
+
+    internal static readonly AuditDetailSchema RecoveryRetryRequested = new(
+    [
+        IdField("runId"),
+        IdField("retryRunId"),
+        IdField("definitionId"),
+    ]);
+
+    internal static readonly AuditDetailSchema RecoveryRetryRefused = new(
+    [
+        IdField("runId"),
+        IdField("definitionId", required: false),
+        EnumField("reason", true, "module_not_executable", "definition_not_mapped", "definition_not_executable"),
+    ]);
+
+    /// <summary>A recovery retry the caller was not permitted to make. The run id is the caller's own text, so it is optional.</summary>
+    internal static readonly AuditDetailSchema RecoveryRetryDenied = new(
+    [
+        IdField("runId", required: false),
+        EnumField("reason", true, "permission_missing"),
+    ]);
+
+    internal static readonly AuditDetailSchema SchedulerOperationDenied = new(
+    [
+        EnumField("operation", true, "run_cycle", "recover_stale"),
+        EnumField("reason", true, "permission_missing"),
+    ]);
+
+    /// <summary>A manual scheduler operation. The plane id is the caller's own text, so it is optional.</summary>
+    internal static readonly AuditDetailSchema SchedulerOperationRequested = new(
+    [
+        EnumField("operation", true, "run_cycle", "recover_stale"),
+        IdField("runtimePlaneId", required: false),
+        CountField("recoveredCount", required: false),
+    ]);
 }

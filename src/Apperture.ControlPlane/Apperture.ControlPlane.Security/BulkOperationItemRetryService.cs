@@ -1,11 +1,8 @@
-using System.Text.Json;
-using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -50,6 +47,14 @@ public sealed record BulkRetryOperationItemResult(
 /// JOB-1 — bounded selective bulk retry. Reuses <see cref="IOperationItemRetryService"/> per item
 /// with independent idempotency keys. Does not cancel in-flight work. Acknowledgement does not block retry.
 /// </summary>
+/// <remarks>
+/// The batch is orchestration; its required mutations are the item retries (design gate §13.1 W1; assigned to AUD-1.3). Each
+/// item's retry is its own audited unit, so its attempt, its child run and its row (<c>execution.operation_item.retry_requested</c>
+/// or <c>.retry_blocked</c>, naming the batch) commit together, and the batch can end partly done: items that committed stay
+/// reported as such, and an item whose commit can be neither confirmed nor rolled back is reported as unknown while the rest go
+/// on. The batch itself changes nothing, so it records no row of its own: the <c>bulk_retry.requested</c> row written before any
+/// work and the best-effort <c>bulk_retry.completed</c> summary are no longer written; rows written earlier keep them.
+/// </remarks>
 public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryService
 {
     private readonly AppertureDbContext _db;
@@ -57,7 +62,6 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
     private readonly IOperationItemRetryService _itemRetry;
     private readonly IWorkflowRunRetryAuthorizationService _retryAuthz;
     private readonly IPrincipalContext _principal;
-    private readonly IAuditService _audit;
     private readonly ILogger<BulkOperationItemRetryService> _logger;
 
     public BulkOperationItemRetryService(
@@ -66,7 +70,6 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
         IOperationItemRetryService itemRetry,
         IWorkflowRunRetryAuthorizationService retryAuthz,
         IPrincipalContext principal,
-        IAuditService audit,
         ILogger<BulkOperationItemRetryService> logger)
     {
         _db = db;
@@ -74,7 +77,6 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
         _itemRetry = itemRetry;
         _retryAuthz = retryAuthz;
         _principal = principal;
-        _audit = audit;
         _logger = logger;
     }
 
@@ -151,25 +153,11 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                 isConflict: false);
         }
 
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var actorId = actor?.Id.Value ?? "unknown";
-        var correlation = new CorrelationId($"bulk-retry:{runId.Value}:{requestId}");
-
-        await TryAuditAsync(
-            actorId,
-            OperationItemResolutionAuditActions.BulkRetryRequested,
-            "success",
-            correlation,
-            runId.Value,
-            JsonSerializer.Serialize(new
-            {
-                runId = runId.Value,
-                operationGroupId = group.OperationGroupId,
-                requestedCount = orderedUnique.Count,
-                requestId,
-            }),
-            group.ResourceContextId,
-            cancellationToken).ConfigureAwait(false);
+        // The retry authorization above has already established an authenticated actor; there is no placeholder to fall back to.
+        // Each item's unit records that actor itself.
+        if (await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false) is null)
+            throw new UnauthorizedAccessException("Authenticated actor is required to retry failures.");
+        var batch = new OperationItemRetryBatch(requestId);
 
         var results = new List<BulkRetryOperationItemResult>(orderedUnique.Count);
         var dispatched = 0;
@@ -242,6 +230,7 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                     runId,
                     item.OperationItemId,
                     new RequestOperationItemRetryDto(perItemKey, reason),
+                    batch,
                     cancellationToken).ConfigureAwait(false);
 
                 if (attempt is null)
@@ -294,6 +283,20 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                 else
                     skipped++;
             }
+            catch (AuditOutcomeUnknownException ex)
+            {
+                // Each item's retry is its own audited unit. One that could neither be confirmed nor rolled back is reported as
+                // exactly that, and the rest of the batch goes on: earlier items have committed and stay reported as dispatched.
+                _logger.LogWarning(ex, "Bulk retry could not confirm the outcome for item {OperationItemId} (operation {OperationEventId})", item.OperationItemId, ex.OperationEventId);
+                results.Add(new BulkRetryOperationItemResult(
+                    item.OperationItemId,
+                    item.DisplayLabel,
+                    BulkRetryOperationItemResultCategories.OutcomeUnknown,
+                    "The outcome of this retry could not be confirmed. It may or may not have been requested; reload before retrying this item.",
+                    ChildRunId: null,
+                    RetryAttemptId: null));
+                failed++;
+            }
             catch (Exception ex) when (ex is not OperationCanceledException and not UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "Bulk retry dispatch failed for item {OperationItemId}", item.OperationItemId);
@@ -314,25 +317,6 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
             SkippedCount: skipped,
             FailedCount: failed,
             Items: results);
-
-        await TryAuditAsync(
-            actorId,
-            OperationItemResolutionAuditActions.BulkRetryCompleted,
-            failed > 0 && dispatched == 0 ? "failure" : "success",
-            correlation,
-            runId.Value,
-            JsonSerializer.Serialize(new
-            {
-                runId = runId.Value,
-                operationGroupId = group.OperationGroupId,
-                requestId,
-                aggregate.RequestedCount,
-                aggregate.DispatchedCount,
-                aggregate.SkippedCount,
-                aggregate.FailedCount,
-            }),
-            group.ResourceContextId,
-            cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "Bulk retry completed for run {RunId} group {GroupId}: requested={Requested} dispatched={Dispatched} skipped={Skipped} failed={Failed}",
@@ -407,38 +391,4 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
             BulkRetryOperationItemResultCategories.Blocked => "Retry was blocked.",
             _ => "Retry was not dispatched.",
         };
-
-    private async Task TryAuditAsync(
-        string actorId,
-        string action,
-        string outcome,
-        CorrelationId correlation,
-        string runId,
-        string details,
-        string? resourceContextId,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    new ActorId(actorId),
-                    action,
-                    Resource: null,
-                    outcome,
-                    DateTimeOffset.UtcNow,
-                    correlation,
-                    details,
-                    ModuleId: null,
-                    ScheduleId: null,
-                    RunId: runId,
-                    ResourceContextId: resourceContextId),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to append audit for {Action}", action);
-        }
-    }
 }
