@@ -2,7 +2,7 @@
 
 Date: 2026-10-06
 
-Status: **Implemented on branch `aud-1.2-identity-governance-audit`, independently reviewed 2026-10-07 (§10); not pushed, no PR.** This record holds the writer inventory, the package decisions, the acceptance mapping, the failure and external-effect behaviour, the findings with owners and the scope left for later packages. Where the review corrected a claim, the decision or section says so and §10 lists the correction.
+Status: **Implemented on branch `aud-1.2-identity-governance-audit`, independently reviewed 2026-10-07 (§10), with the signed id_token policy adopted after the review (D50, §11); pushed for review as a pull request against `master`, not merged.** This record holds the writer inventory, the package decisions, the acceptance mapping, the failure and external-effect behaviour, the findings with owners and the scope left for later packages. Where the review corrected a claim, the decision or section says so and §10 lists the correction.
 
 Base: `origin/master` at `a300bcd` (merge of PR #15; post-merge CI run 37552614278 green).
 
@@ -82,7 +82,7 @@ Status at the end of the package: every row above is converted as listed, with t
 | D19 | A forgotten-password request matching no eligible account writes the new W3 `credential.password.reset_request.suppressed` (anonymous, no target, no fields) instead of the W1 request row with `suppressed` text | D7; enumeration protection kept |
 | D20 | Enrollment invitation creation records in the enrollment service's unit, not after it in the controller. The invitation's row id is recorded; the token never is | Gate §13.4 |
 | D21 | A user created with a setup invitation stages the invitation in the creation unit: a refused invitation (address in use) creates no user. Before, the user committed and the invitation failed after | Clarification 4 |
-| D22 | Which checks have completed when an Entra identity is recorded as `external` (corrected in review against the installed handler, `Microsoft.AspNetCore.Authentication.OpenIdConnect` 10.0.12, driven for real in `EntraStepUpCallbackTests`). Before `OnTokenValidated`: the state is unprotected and bound to this browser's correlation cookie; the code is redeemed over the back channel at the metadata's token endpoint with PKCE and the client secret; the id_token's issuer, audience and lifetime are validated, and its signature against the authority's keys **when it has one** (the handler accepts an unsigned id_token from the token endpoint in the code flow, relying on the TLS back channel; a probe confirmed it; see §8). The nonce cookie is read but **not validated**, and nor are the token response's required claims and at_hash: the handler does that only after the event returns, and never when the event handles the response itself. The review's fix (D42) runs that validation first in the event, so every check above has completed before anything is recorded or issued. The association service then requires GUID `oid` and `tid`; well-formed GUIDs are a format check, not the verification. A tenant mismatch is recorded only after all of this, with the token's own tenant (D1). A missing or malformed `oid`/`tid` is refused unrecorded; a token or response that fails validation goes through `OnRemoteFailure`, recorded as `anonymous` | Clarification 2; review |
+| D22 | Which checks have completed when an Entra identity is recorded as `external` (corrected in review against the installed handler, `Microsoft.AspNetCore.Authentication.OpenIdConnect` 10.0.12, driven for real in `EntraStepUpCallbackTests`). Before `OnTokenValidated`: the state is unprotected and bound to this browser's correlation cookie; the code is redeemed over the back channel at the metadata's token endpoint with PKCE and the client secret; the id_token's issuer, audience and lifetime are validated, and its signature against the authority's keys **when it has one** (the handler accepts an unsigned id_token from the token endpoint in the code flow, relying on the TLS back channel; a probe confirmed it. Since D50 the event requires a signature first). The nonce cookie is read but **not validated**, and nor are the token response's required claims and at_hash: the handler does that only after the event returns, and never when the event handles the response itself. The review's fix (D42) runs that validation first in the event, so every check above has completed before anything is recorded or issued. The association service then requires GUID `oid` and `tid`; well-formed GUIDs are a format check, not the verification. A tenant mismatch is recorded only after all of this, with the token's own tenant (D1). A missing or malformed `oid`/`tid` is refused unrecorded; a token or response that fails validation goes through `OnRemoteFailure`, recorded as `anonymous` | Clarification 2; review |
 | D23 | The access-request session cookie is issued only in `OnTokenValidated`, after D22's checks, the instance tenant check and the no-link result, in a data-protected cookie of its own scheme with a 20-minute lifetime. Its submission is recorded as `ValidatedExternalIdentity`; email and UPN are not recorded | Clarification 2 |
 | D24 | A self-link's initiating user is set by `GET /signin/link` from the authenticated session (principal resolved to a user), and carried only in the OIDC handler's protected properties, which the handler unprotects and binds to the correlation cookie before the callback runs. That is the actor of the link, the proof and every refusal. `AuditActor.AuthenticatedUser` documents it; a test pins the call sites | Clarification 2 |
 | D25 | Refused links (`identity_link.entra.link_failed`, `.collision`) have no link row to target; their target type is corrected from `identity_link` to `external_identity` (`entra/{tid}/{oid}`). Proven and linked rows target the persisted link id | Clarification 7 |
@@ -110,6 +110,7 @@ Status at the end of the package: every row above is converted as listed, with t
 | D47 | Review: an access-request submission reads the registration, its member and guest policy and the rejection cooldown again inside its unit; only the directory's member or guest type, an external read, comes from before it | Gate §13.4; review |
 | D48 | Review: the recovery restore's result after a verified commit is built from the committed row's user id | Gate §13.5; review |
 | D49 | Review: the local sign-in form tells a refusal (401: check the code or password) from a failure after the server may have accepted the code (5xx, `outcome_unknown`, no response: "a recovery code you entered may now be used up, so continue with your authenticator or a different recovery code") and clears the recovery code field. The password step no longer blames the credentials for a server failure | D4; review |
+| D50 | **Authentication policy (after review):** an Entra id_token is accepted only with a signature that validates against the signing keys in the issuer's metadata, before the host links or proves an identity, attributes it as `external`, writes a W2 success row, or issues a platform, step-up or access-request session. The installed handler (10.0.12) validates the id_token it redeems from the token endpoint on a clone of its validation parameters with `RequireSignedTokens` set to false, so it checks a signature only when one is present; configuring the option does not reach that clone. `OnTokenValidated` therefore first validates the raw token-endpoint id_token with the framework's own `TokenHandler`, the handler's validation parameters and `RequireSignedTokens = true`, then the token response (D42), then everything else. Keys come from the handler's configuration manager: metadata refresh, signing-key rollover and last-known-good configuration behave as in the handler, and no key is pinned. Issuer, audience and lifetime are checked again under the same parameters. No custom cryptography. A failure goes through `OnRemoteFailure` as in D42. The option is also set explicitly for an id_token in the authorization response. Entra signs its id_tokens, so a real sign-in is not expected to change; none was performed | D22; §8; §11 |
 
 ## 4. Acceptance mapping
 
@@ -188,17 +189,17 @@ Resolved in review (kept here so the earlier dispositions stay traceable):
 | A refused or failed tenant registration update "leaves a newly supplied client secret active" (AUD-1.4) | Understated: it changed the credential the live registration resolves. Fixed (D35) |
 | Lockout-guard refusals of tenant registration changes stay unrecorded (AUD-1.4) | Recorded (D41) |
 | Eligible versus ineligible forgotten-password requests answered differently on a database failure, "unchanged from before" (IAM-11.3) | Not unchanged: before AUD-1.2 both failed alike. Fixed (D44). Timing and other reset-initiation behaviour stay IAM-11.3 |
+| Unsigned id_token accepted from the token endpoint in the code flow (left as a decision for the security owner, proposed IAM-11) | Resolved by an explicit authentication policy: a signature from the issuer's published keys is required on every callback path (D50, §11). The review probe and the tests show that the handler accepts such a token **if the token endpoint returns one**. They do not show that anyone can make it return one: that needs control of the TLS back channel to the metadata's token endpoint, or of the metadata. No remotely exploitable bypass is claimed |
 
 Open, with owner:
 
 | Finding | Severity | Owner |
 |---|---|---|
 | **Concurrent single use is not guaranteed.** One-time account links (setup, contact verification, reset) and MFA recovery codes are consumed by read-then-update with no row lock or conditional update; the per-operation lock does not serialize two requests. Two concurrent requests presenting the same link or code can both succeed: a reset link can set two passwords, a recovery code can complete two sign-ins. This package does not make them reliably single-use. It briefly widened the link window (a tracked pre-unit read let any later use succeed); that is fixed (D43), so the window is back to truly concurrent requests. Recovery-code consumption was not widened (no pre-unit read). **Acceptance test:** two concurrent completions with the same unused link or code, against SQL Server: exactly one succeeds and commits one consumption row; the other is refused with nothing changed | Medium (security: needs the secret and a concurrent window, but defeats single use) | IAM-11 |
-| **Last-administrator guards race.** Removing Platform Administrator, removing the last link and disabling the credential check `CountUserAssignmentsAsync`, a plain `COUNT` with no lock hint (`SqlRoleRepository.cs:55`); two concurrent removals by different operations can both commit and leave no Platform Administrator. Before AUD-1.2 there was no transaction at all; the record's earlier claim that reading inside the transaction closes it is withdrawn. Fix: a locking read (`UPDLOCK, HOLDLOCK`, as the role delete already does) or a fixed application lock for these operations | Medium | Proposed IAM-10 (authorization guards); needs owner confirmation |
-| The Entra-primary policy's "last Entra-independent administrator" count has the same race (`EntraPrimaryAuthenticationPolicy`) | Low to Medium | Proposed IAM-10 |
+| **Last-administrator guards race** (F-10A, §8.1). Removing Platform Administrator, removing the last viable link and disabling the credential read an unlocked count; two concurrent operations can both commit and leave no Platform Administrator, or none who can sign in. Not introduced by AUD-1.2; the earlier claim that reading inside the transaction closes it is withdrawn | Medium | IAM-10. Open: an owner is not a disposition |
+| The Entra-primary policy's "last Entra-independent administrator" count has the same race (F-10B, §8.1) | Low to Medium | IAM-10. Open |
 | Two concurrent first-administrator requests can both read zero users | Low | OPS-1.4 (takeover window and race) |
-| **Unsigned id_token.** The installed handler accepts an unsigned (`alg: none`) id_token from the token endpoint in the code flow (it relies on the TLS back channel; probe in review). Entra always signs; requiring a signature would change no real sign-in but is an authentication-policy change, so none was made | Decision | Security owner; proposed IAM-11 |
-| A live session that outlived its link's removal proves the re-added link on its next request (now with its row, D46). Whether it should, rather than requiring a fresh sign-in, is session revalidation | Low | IAM-11 |
+| **A live session proves a re-added identity link** (F-11A, §8.1): a session that outlived its link's removal proves the link an administrator re-adds, on its next request, without a fresh sign-in (now with its row, D46) | Low | IAM-11 (session revalidation). Open |
 | Controllers that catch `InvalidOperationException` for business errors (`UsersController` at six sites, the batch provisioning endpoint) also catch the unit's own invariant failures and answer 400 or 404 with internal text; the host maps any `ArgumentException` to 400. Nothing committed in these cases (they precede commit), but a server fault reads as a client refusal. Pre-existing pattern | Low | Proposed AUD-1.6 (enforcement) |
 | Approving an access request whose user or request can no longer be read after a verified commit throws instead of reporting success (`UserProvisioningService` reconstruct). The directory path is fixed in review | Low | AUD-1.3 |
 | First-administrator refusals for a duplicate identity (including reserved or Entra requests) and a missing role stay unrecorded (D38 corrected) | Low | OPS-1.4 |
@@ -211,6 +212,30 @@ Open, with owner:
 | Rows of `emergency.local.protected` and `credential.local.disable_deferred_last_entra_independent_admin` already classified before D6 keep their earlier basis | Low | AUD-1.5 (query and read model) |
 | `EmergencyAccessService` keeps unused `_time` and `_logger` fields | Low | AUD-1.3 housekeeping |
 
+### 8.1 Findings tracked to IAM-10 and IAM-11
+
+Each stays open until its acceptance criteria are met by shipped and verified code, or the security and product owners record a disposition. Naming an owner is neither. None was introduced by this branch, so none blocks the AUD-1.2 merge. The [RC1 program gate](../../rc1-program-gate.md) §8 register lists each one with its owner.
+
+**F-10A. Last-administrator guards race (IAM-10, Medium).**
+- *Where.* `UserManagementService` decides three refusals from `IRoleRepository.CountUserAssignmentsAsync` for Platform Administrator: removing an identity link (line 731), removing the role (line 837) and disabling the local credential (line 946). The count is `SqlRoleRepository.CountUserAssignmentsAsync` (`SqlRoleRepository.cs:55`), a plain `COUNT` with no lock hint, read inside the operation's unit at the default isolation. The role delete path in the same repository already reads with `UPDLOCK, HOLDLOCK` (lines 182 and 198).
+- *Security impact.* Two requests that each pass alone can both commit. Removing Platform Administrator from each of the last two holders leaves none. Removing one holder's role while the other holder's last viable sign-in method is removed or disabled leaves one administrator who cannot sign in. Either way, ordinary administration of the instance is lost until Recovery Access or the configured-administrator path restores it. This needs two privileged requests inside the same short window, from two administrators or one administrator sending two at once. An unauthenticated caller cannot reach it. Each committed change still has its own row, so the audit trail records what happened.
+- *Origin.* Before AUD-1.2 these checks ran with no transaction at all. The units added here read the count inside the transaction but do not lock it.
+- *Evidence limits.* Established by reading the source and the query the count issues. Not reproduced with concurrent requests against SQL Server. RC1 audit N-07 (the guard skipped for Entra link removal, IAM-11) is a different defect: a missing guard, not this race.
+- *Acceptance.* (1) Against SQL Server, for each pair of the three operations (and two of the same kind on different users), two concurrent requests that together would leave no Platform Administrator with a viable sign-in path: exactly one commits, and the other is refused with its `auth_admin.blocked.*` row and nothing changed. (2) The guard read takes a lock that serializes these operations: a locking read of the Platform Administrator assignments, as the role delete does, or one application lock shared by all three. The test fails with that lock removed. (3) Non-concurrent behaviour, refusal codes and rows are unchanged.
+
+**F-10B. Entra-primary "last Entra-independent administrator" count race (IAM-10, Low to Medium).**
+- *Where.* `EntraPrimaryAuthenticationPolicy` disables a Platform Administrator's local credential after their Entra link is proven, unless Recovery Access is unhealthy and `CountOtherEntraIndependentPlatformAdministratorsAsync` (line 178, used at lines 86 and 147) finds no other administrator with an enabled local credential. The count reads assignments, users and credentials with no lock.
+- *Security impact.* When Recovery Access is not healthy, the last two Entra-independent administrators who prove their links at the same moment can each count the other and both lose their local credential. Administration then depends entirely on Entra being available and correctly configured. The protection that the policy exists to keep is lost without any refusal or deferral row.
+- *Evidence limits.* From the source only. Not reproduced concurrently.
+- *Acceptance.* Against SQL Server, two concurrent applications for the last two Entra-independent administrators while Recovery Access is unhealthy: exactly one credential is disabled, and the other user records `credential.local.disable_deferred_last_entra_independent_admin`. The decision is serialized, by the F-10A lock or its own, and the test fails without it.
+
+**F-11A. A live session proves a re-added identity link (IAM-11, Low).**
+- *Where.* `SqlPrincipalToUserResolver.ResolveUserIdAsync` (lines 64 to 75). A host-issued Entra session carries the tenant and object id it was issued through, and the resolver requires that exact link to still belong to the session's user on every request. When an administrator removes the link, the session stops resolving, but its cookie is not revoked. If the administrator later re-adds the same tenant and object id to the same user, the link is pending. On the old session's next request, the resolver proves it (`TryProvePendingAsync`, in its own unit with `identity_link.entra.proven` as that user, D46) and then applies the Entra-primary policy, which can disable the user's local credential.
+- *Security impact.* A link proof is meant to show that the person controls the directory identity now. Here, a cookie issued before the removal stands in for that proof, with no fresh Entra sign-in. An administrator who removed a link to cut off a session, and re-adds it expecting a new sign-in, instead brings the earlier session back and gets a recorded proof. Exploiting this needs a still-valid session cookie for that user issued through that identity, plus an administrator re-adding the identical link to the same user. A link re-added to a different user is not proven: the session's user id does not match.
+- *Origin.* Pre-existing ("proven by its first authenticated use, as before"). This package added the unit and its row, not the behaviour.
+- *Evidence limits.* `SqlPrincipalToUserResolverTests.Pending_entra_link_is_proven_with_its_row_as_the_sessions_user_then_the_policy_applies` shows the resolver proving a pending link from a session, with a mocked repository. The full sequence (sign in, remove, re-add, reuse the cookie over HTTP against SQL Server) was not run.
+- *Acceptance.* IAM-11's session-revalidation design rules whether a session may prove a link. If it may not: (1) through the host against SQL Server, a session issued through a link that is then removed and re-added stays unresolved; the link stays pending, with no `identity_link.entra.proven` row and no Entra-primary policy change, until a fresh Entra sign-in or self-link proves it. (2) That fresh sign-in proves it exactly as today. (3) Sessions issued after the re-add are unaffected. If IAM-11 decides a session may prove a link, the security owner records that decision and its basis instead.
+
 ## 9. Scope remaining for AUD-1.3 and later
 
 Package scope is the design gate's (§22); this lists what AUD-1.2 leaves to each.
@@ -220,7 +245,7 @@ Package scope is the design gate's (§22); this lists what AUD-1.2 leaves to eac
 - **AUD-1.5, query contract (server):** cursor, §16 parameters and DTO; the first `IUserReferenceResolver` consumer; prospective transition-only blocked writing; module discovery as routine; the dashboard count; the denial actor; the basis of rows classified before D6.
 - **AUD-1.5b, timeline UI:** §17 and the AUD-1 rows of §18. Depends on AUD-1.5, LST-1.1 and AUD-1.3.
 - **AUD-1.6, enforcement and T-B:** M2 to M5 (including the source scan that no W1 or W2 action reaches `AppendAsync`; the sign-in failure rows still use the bridge as W3), the T-B privileged startup connection, and the retention document.
-- IAM-10 (authorization and the `role.manage` finding; proposed: the last-administrator guard races), IAM-11 (sign-in failure rows, session, throttling, lockout, concurrent single-use consumption, reset initiation; proposed: the unsigned id_token decision and session revalidation of re-added links), OPS-1 (first-administrator window and race) and RCV-1 keep their findings. IAM-9 stays closed. RC1 is incomplete.
+- IAM-10 (authorization and the `role.manage` finding; the last-administrator guard races F-10A and F-10B, §8.1), IAM-11 (sign-in failure rows, session, throttling, lockout, concurrent single-use consumption, reset initiation; session proof of a re-added link F-11A, §8.1), OPS-1 (first-administrator window and race) and RCV-1 keep their findings. IAM-9 stays closed. RC1 is incomplete.
 
 ## 10. Independent review (2026-10-07)
 
@@ -245,7 +270,7 @@ Reviewed at `636481a` against the gate (revision 3) and this record. Source and 
 | R13 | A throwing security-mail send was no longer logged | Low | `AccountSecurityMailDelivery` | `5996f70` |
 | R14 | An unknown policy outcome was logged as "could not be applied" | Low | `EntraIdentityAssociationService`, resolver | `f633602`, `0182fbf` |
 | R15 | The M5 mutation could not reach its assertion (stubbed service) | Test gap | `AccountProfileServiceTests` | `032f2ab`: SQL test through the real service |
-| R16 | Last-administrator guard races; unsigned id_token acceptance; concurrent single use; and the other open items | See §8 | | Recorded with owners in §8; no change |
+| R16 | Last-administrator guard races; unsigned id_token acceptance; concurrent single use; and the other open items | See §8 | | Recorded with owners in §8. Unsigned id_token acceptance later resolved by policy (D50, §11); the races and the re-added link are tracked in §8.1 |
 
 ### 10.2 Scope dispositions
 
@@ -266,7 +291,7 @@ Reviewed at `636481a` against the gate (revision 3) and this record. Source and 
 
 ### 10.5 OIDC validation boundaries
 
-Established against the installed handler (10.0.12) by driving it in a TestServer with a fake token endpoint, not by invoking events by hand: see D22 (corrected) and D42. Every check that the handler performs before or after the event has completed before an identity is attributed as `external`, a W2 success row is written, or a session is issued. One check is not performed: a signature is required only when present (§8, decision). Well-formed GUIDs are not treated as verification. A validated identity refused admission is still `external`; a response that fails validation is `anonymous`.
+Established against the installed handler (10.0.12) by driving it in a TestServer with a fake token endpoint, not by invoking events by hand: see D22 (corrected) and D42. Every check that the handler performs before or after the event has completed before an identity is attributed as `external`, a W2 success row is written, or a session is issued. At review the handler required a signature only when one was present (§8). Since D50 the event requires one first (§11). Well-formed GUIDs are not treated as verification. A validated identity refused admission is still `external`; a response that fails validation is `anonymous`.
 
 ### 10.6 Core review conclusions
 
@@ -312,3 +337,45 @@ Evidence classes:
 - **Local, not CI:** everything here ran locally on Windows; nothing is pushed, so PR CI has not run.
 
 Not performed: a sign-in against a real Entra tenant; the remote CI run; the IAM-9.5 UI evidence opt-in.
+
+## 11. Signed id_token policy (after review, 2026-10-07)
+
+### 11.1 Policy and handler path
+
+The policy is D50. The handler path, read from the `v10.0.12` source of `OpenIdConnectHandler.HandleRemoteAuthenticateAsync` and confirmed by the tests below:
+
+1. The handler checks the protected state and correlation, redeems the code, and runs `OnTokenResponseReceived`.
+2. It sets `validationParameters.RequireSignedTokens = false` on its own clone of `TokenValidationParameters` ("no need to validate signature when token is received using code flow"), then validates the token-endpoint id_token through `ValidateTokenUsingHandlerAsync`. That validates a signature that is present, against keys from the configuration manager, and accepts a token with none (an empty signature segment, whatever `alg` the header names).
+3. It reads the nonce cookie and raises `OnTokenValidated`.
+4. If the event did not end the response, the handler runs `ProtocolValidator.ValidateTokenResponse` and completes.
+
+Setting `RequireSignedTokens` on the options cannot change step 2. The host therefore enforces the policy as the first act of the event (step 3), on every path: the normal sign-in, self-link and Entra step-up complete through step 4; the access-request session and the local step-up end the response in the event. A signed token with a bad signature or an untrusted key never reaches the event, because step 2 rejects it.
+
+With a real configuration manager, a key the handler has not seen fails that sign-in in step 2 (`SecurityTokenSignatureKeyNotFoundException`) and causes a metadata refresh. In the test, the key set had been read again but that sign-in still failed. The next sign-in with the new key succeeded without a restart. Last-known-good configuration is unchanged: a key that the issuer has just retired can still validate for that configuration's lifetime, in the handler and in the host's check alike. That is the framework's rollover behaviour, deliberately kept.
+
+### 11.2 Tests (real handler, `EntraStepUpCallbackTests`)
+
+| Test | Proves |
+|---|---|
+| `An_id_token_without_a_signature_from_the_issuers_published_keys_is_rejected_on_every_path` (25 cases) | Unsigned (`alg: none`), signature stripped from an RS256 token, an untrusted key under the published key id, an untrusted key under an unknown key id, and an altered signature, each on all five paths: no association, link or proof, no `UpdateLastAuthenticatedAt`, no session or access-request cookie, no row other than an `anonymous` failure, the failure names the signature |
+| `An_id_token_signed_with_a_key_from_the_issuers_metadata_completes_every_path` (5) | A token signed with the configured metadata's key completes each path, with its success row or access-request cookie |
+| `The_handlers_own_token_response_validation_still_runs_after_the_early_check_with_the_same_nonce` (5) | The D42 early check does not break the handler's own later validation: the token response is validated twice on the completion paths and once on the early-response paths, each time with this browser's challenge nonce |
+| `During_a_signing_key_rollover_a_token_signed_with_either_published_key_is_accepted` | Both published keys are trusted (real `ConfigurationManager`) |
+| `After_the_issuer_rolls_its_signing_key_the_new_key_is_trusted_from_refreshed_metadata` | The rolled key is trusted after a metadata refresh, with no restart and nothing pinned |
+| The D42 nonce tests (10) | Unchanged and green. `An_unlinked_identity_whose_nonce_fails_gets_no_access_request_session` was corrected: its `AccountNotLinked` setup ran before the rig's own setup and was overridden, so it exercised normal sign-in, not the access-request path |
+
+Red before green: against the unfixed configurer (the policy commit reverted locally, tests kept), the 10 unsigned cases failed on all five paths, so the handler had accepted an unsigned token-endpoint id_token everywhere. The 15 signed-but-untrusted cases passed, because step 2 already rejects them. Everything else passed.
+
+### 11.3 Validation
+
+Commits: `6eb0959` (policy), `0ead747` (tests). The results below ran on `0ead747`. This section's documentation commit changes no code. Builds: `--artifacts-path artifacts/aud12`, `-m:1`. SQL Server: the local `apperture-test-sql` container.
+
+| Check | Result at `0ead747` |
+|---|---|
+| Full solution build (`Apperture.slnx`) | Succeeded, 0 errors; no warning in either changed file |
+| `Apperture.UnitTests` (full) | 3900 / 3900 passed |
+| Real-handler classes `EntraStepUpCallbackTests`, `EntraStepUpSecurityGuardTests`, `ManagementAuthEndpointsTests` | 149 / 149 passed (112 before, plus 37 new) |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| Integration classes that touch the OIDC configuration and Entra governance (`AuthConfigurationAuditSqlServerTests`, `BrowserRequestTrustHttpTests`, `EntraGovernanceAuditSqlServerTests`) | 46 / 46 passed |
+
+Not rerun locally at this head: the full `Apperture.IntegrationTests` run (478 / 478 in §10.7 ran on the review commits, not on `0ead747`), the UI test projects (no UI change), and the SEC-1 browser suite. The pull request's CI on the final head is the complete build-and-test and browser-security checkpoint. Its browser stub signs RS256 id_tokens with a key it publishes, so the policy applies to it unchanged. No sign-in against a real Entra tenant was performed.
