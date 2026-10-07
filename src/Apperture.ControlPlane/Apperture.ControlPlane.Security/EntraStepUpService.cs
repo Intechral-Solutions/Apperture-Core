@@ -1,8 +1,6 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
-using Apperture.Shared.Kernel;
 using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
@@ -41,29 +39,33 @@ public interface IEntraStepUpService
 }
 
 /// <inheritdoc />
+/// <remarks>
+/// AUD-1.2: the actor of every row is the initiating user, carried in the sign-in handler's protected, correlation-bound
+/// state and set from the authenticated session when the step-up started (D24). Refusals are W3 attempts; a satisfied step-up
+/// is W2: its row commits before this method returns, and a failure to write it throws, so the stronger session is never
+/// issued without it.
+/// </remarks>
 public sealed class EntraStepUpService : IEntraStepUpService
 {
-    private const string AuditCategory = "auth";
-
     private readonly IUserRepository _userRepository;
     private readonly IEntraInstanceRegistrationRepository _registrations;
-    private readonly IAuditService _audit;
-    private readonly TimeProvider _time;
     private readonly ILogger<EntraStepUpService> _logger;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public EntraStepUpService(
         IUserRepository userRepository,
         IEntraInstanceRegistrationRepository registrations,
-        IAuditService audit,
-        TimeProvider time,
-        ILogger<EntraStepUpService> logger)
+        ILogger<EntraStepUpService> logger,
+        IAuditEventWriter? auditEvents = null)
     {
         _userRepository = userRepository;
         _registrations = registrations;
-        _audit = audit;
-        _time = time;
         _logger = logger;
+        _auditEvents = auditEvents;
     }
+
+    private IAuditEventWriter Events =>
+        _auditEvents ?? throw new InvalidOperationException("Step-up requires the audit event writer.");
 
     /// <inheritdoc />
     public async ValueTask<EntraAssociationOutcome> CompleteAsync(
@@ -74,74 +76,51 @@ public sealed class EntraStepUpService : IEntraStepUpService
         bool developmentSimulated,
         CancellationToken cancellationToken = default)
     {
+        var actor = AuditActor.AuthenticatedUser(initiatingUserId);
+        async ValueTask<EntraAssociationOutcome> RefuseAsync(AuditEvent row, string code)
+        {
+            await Events.TryWriteAsync(row, actor, CancellationToken.None);
+            return EntraAssociationOutcome.Failure(code);
+        }
+
         var objectId = EntraTokenClaims.Normalize(assertion?.ObjectId);
         var tokenTenantId = EntraTokenClaims.Normalize(assertion?.TenantId);
         if (!EntraTokenClaims.IsValidObjectId(objectId) || !EntraTokenClaims.IsValidObjectId(tokenTenantId))
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpFailed, initiatingUserId.Value, objectId, "reason=invalid_identity", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.InvalidIdentity);
-        }
+            return await RefuseAsync(AuditEvents.StepUpFailed(initiatingUserId, "invalid_identity"), EntraStepUpFailureCodes.InvalidIdentity);
 
         var requested = EntraAuthenticationContextId.TryNormalize(requestedContextId);
         if (requested is null)
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpFailed, initiatingUserId.Value, objectId, "reason=not_configured", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.NotConfigured);
-        }
+            return await RefuseAsync(AuditEvents.StepUpFailed(initiatingUserId, "not_configured", tokenTenantId, objectId), EntraStepUpFailureCodes.NotConfigured);
 
         var registration = await GetActiveRegistrationAsync(cancellationToken);
         var activeTenantId = registration is null
             ? null
             : EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
         if (!EntraTokenClaims.TenantMatches(tokenTenantId, activeTenantId))
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpTenantMismatch, initiatingUserId.Value, objectId, $"tokenTenant={tokenTenantId}", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.TenantMismatch);
-        }
+            return await RefuseAsync(AuditEvents.StepUpTenantMismatch(initiatingUserId, tokenTenantId!, objectId!), EntraStepUpFailureCodes.TenantMismatch);
 
         var owner = await _userRepository.FindIdentityLinkAsync(
             ProviderIdentityKey.Entra(tokenTenantId!, objectId!),
             cancellationToken);
         if (owner is null)
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpIdentityMismatch, initiatingUserId.Value, objectId, "reason=no_link", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.IdentityMismatch);
-        }
+            return await RefuseAsync(AuditEvents.StepUpIdentityMismatch(initiatingUserId, tokenTenantId!, objectId!, otherUser: null), EntraStepUpFailureCodes.IdentityMismatch);
 
         if (!string.Equals(owner.UserId.Value, initiatingUserId.Value, StringComparison.Ordinal))
-        {
-            await AuditAsync(
-                StrongAuthenticationAuditActionNames.StepUpIdentityMismatch,
-                initiatingUserId.Value,
-                objectId,
-                $"reason=different_user targetUserId={owner.UserId.Value}",
-                cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.IdentityMismatch);
-        }
+            return await RefuseAsync(AuditEvents.StepUpIdentityMismatch(initiatingUserId, tokenTenantId!, objectId!, owner.UserId), EntraStepUpFailureCodes.IdentityMismatch);
 
         if (!owner.Link.IsProven)
-        {
-            await AuditAsync(StrongAuthenticationAuditActionNames.StepUpFailed, initiatingUserId.Value, objectId, "reason=unproven", cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.Unproven);
-        }
+            return await RefuseAsync(AuditEvents.StepUpFailed(initiatingUserId, "unproven", tokenTenantId, objectId), EntraStepUpFailureCodes.Unproven);
 
         var contextSatisfied = returnedAuthenticationContexts.Any(v =>
             string.Equals(EntraAuthenticationContextId.TryNormalize(v), requested, StringComparison.OrdinalIgnoreCase));
         if (!contextSatisfied && !developmentSimulated)
-        {
-            await AuditAsync(
-                StrongAuthenticationAuditActionNames.StepUpContextNotSatisfied,
-                initiatingUserId.Value,
-                objectId,
-                $"requestedContext={requested}",
-                cancellationToken);
-            return EntraAssociationOutcome.Failure(EntraStepUpFailureCodes.AuthenticationContextNotSatisfied);
-        }
+            return await RefuseAsync(AuditEvents.StepUpContextNotSatisfied(initiatingUserId, requested), EntraStepUpFailureCodes.AuthenticationContextNotSatisfied);
 
-        var details = developmentSimulated
-            ? $"requestedContext={requested} developmentSimulated=1"
-            : $"requestedContext={requested}";
-        await AuditAsync(StrongAuthenticationAuditActionNames.StepUpSatisfied, initiatingUserId.Value, objectId, details, cancellationToken);
+        // W2: committed before the caller issues the stronger session; a failure here withholds it.
+        await Events.WriteAsync(
+            AuditEvents.StepUpSatisfied(initiatingUserId, requested, tokenTenantId!, objectId!, developmentSimulated),
+            actor,
+            cancellationToken);
         return EntraAssociationOutcome.Success(initiatingUserId);
     }
 
@@ -155,39 +134,6 @@ public sealed class EntraStepUpService : IEntraStepUpService
         {
             _logger.LogWarning(ex, "Active Entra registration could not be read; step-up tenant validation will reject.");
             return null;
-        }
-    }
-
-    private async ValueTask AuditAsync(
-        string action,
-        string initiatingUserId,
-        string? objectId,
-        string extraDetails,
-        CancellationToken cancellationToken)
-    {
-        var details = $"userId={initiatingUserId}";
-        if (!string.IsNullOrEmpty(objectId))
-            details += $" oid={objectId}";
-        if (!string.IsNullOrEmpty(extraDetails))
-            details += " " + extraDetails;
-
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(initiatingUserId),
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            AuditCategory,
-            _time.GetUtcNow(),
-            new CorrelationId(null),
-            details);
-
-        try
-        {
-            await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to append {AuditAction} audit record.", action);
         }
     }
 }

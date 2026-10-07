@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -271,7 +272,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var stale = !EntraStepUpFlowConstants.IsFresh(ctx.Properties, clock.GetUtcNow());
         if (string.IsNullOrEmpty(initiatingUserId) || sessionSource is null || requested is null || stale)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, stale ? "reason=continuation_stale" : "reason=continuation_invalid");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, stale ? "continuation_stale" : "continuation_invalid");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.ContinuationInvalid);
             return;
         }
@@ -298,7 +299,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var user = users is null ? null : await users.GetByIdAsync(new UserId(initiatingUserId), ctx.HttpContext.RequestAborted);
         if (user is null)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=user_not_found");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "user_not_found");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
             return;
         }
@@ -341,7 +342,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var localLink = user.IdentityLinks.FirstOrDefault(l => l.Source == IdentitySource.Local);
         if (localLink is null || string.IsNullOrWhiteSpace(localLink.ExternalId))
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=no_local_identity");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "no_local_identity");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
             return;
         }
@@ -353,7 +354,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var credential = credentials is null ? null : await credentials.GetByUserIdAsync(user.Id, ctx.HttpContext.RequestAborted);
         if (localOptions is not { Enabled: true } || credential is null || credential.IsDisabled)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=local_session_unavailable");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "local_session_unavailable");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.LocalSessionUnavailable);
             return;
         }
@@ -374,31 +375,27 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         ctx.HandleResponse();
     }
 
-    /// <summary>Records a step-up refusal the step-up service never saw (its input was already unusable). No token, claim or state content.</summary>
-    private static async Task AppendStepUpAuditAsync(TokenValidatedContext ctx, string objectId, string? initiatingUserId, string reason)
+    /// <summary>
+    /// Records a step-up refusal the step-up service never saw (its input was already unusable) as a W3 row of the initiating
+    /// user from the protected state. Without an initiating user there is no one to attribute it to: the state is produced only
+    /// by this host's challenge, which always sets one, so that case is logged, not recorded. No token, claim or state content.
+    /// </summary>
+    private static async Task AppendStepUpAuditAsync(TokenValidatedContext ctx, string objectId, string tenantId, string? initiatingUserId, string reason)
     {
-        var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
-        if (audit is null)
+        if (string.IsNullOrEmpty(initiatingUserId))
+        {
+            ctx.HttpContext.RequestServices.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger("Apperture.Management.Host.EntraSignIn")
+                .LogWarning("A step-up callback carried no initiating user ({Reason}); it was refused unrecorded.", reason);
+            return;
+        }
+
+        var events = ctx.HttpContext.RequestServices.GetService<IAuditEventWriter>();
+        if (events is null)
             return;
 
-        var details = string.IsNullOrEmpty(initiatingUserId) ? $"oid={objectId} {reason}" : $"userId={initiatingUserId} oid={objectId} {reason}";
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(string.IsNullOrEmpty(initiatingUserId) ? objectId : initiatingUserId),
-            StrongAuthenticationAuditActionNames.StepUpFailed,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            "auth",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        try
-        {
-            await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
-        }
-        catch
-        {
-            // Auditing must never block the refusal.
-        }
+        var user = new UserId(initiatingUserId);
+        await events.TryWriteAsync(AuditEvents.StepUpFailed(user, reason, tenantId, objectId), AuditActor.AuthenticatedUser(user), CancellationToken.None);
     }
 
     private async Task<bool> TryIssueAccessRequestSessionAsync(TokenValidatedContext ctx, string objectId, string tenantId)
@@ -455,23 +452,19 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         ctx.HandleResponse();
     }
 
-    /// <summary>The actor is the signed-in user's id; the directory identity it came through is recorded as detail.</summary>
+    /// <summary>
+    /// W2 (AUD-1.2): the sign-in row commits before the handler issues the session cookie, which happens only after this event
+    /// returns. A failure to write it throws, the handler fails the sign-in through <c>OnRemoteFailure</c>, and no session is
+    /// issued. The actor is the user this callback resolved; the directory identity it came through is recorded as detail.
+    /// </summary>
     private static async Task AppendLoginSuccessAuditAsync(TokenValidatedContext ctx, UserId userId, string objectId, string tenantId)
     {
-        var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
-        if (audit is null)
-            return;
-
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(userId.Value),
-            "auth.entra.login.success",
-            Resource: null,
-            "auth",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            $"oid={objectId} tenantId={tenantId}");
-        await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
+        var events = ctx.HttpContext.RequestServices.GetService<IAuditEventWriter>()
+            ?? throw new InvalidOperationException("A Microsoft sign-in is recorded before its session is issued, and no audit writer is available.");
+        await events.WriteAsync(
+            AuditEvents.EntraSignInSucceeded(userId, tenantId, objectId),
+            AuditActor.AuthenticatedUser(userId),
+            ctx.HttpContext.RequestAborted);
     }
 
     public void Configure(OpenIdConnectOptions options) => Configure(Options.DefaultName, options);

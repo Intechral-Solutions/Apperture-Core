@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
@@ -161,7 +163,7 @@ public sealed class AuthControllerAccountTests
     [Fact]
     public async Task ChangeLocalPassword_success_updates_credential_and_audits()
     {
-        var audit = new CapturingAuditService();
+        var recorder = new AuditRecording();
         var credentialRepo = new MutableCredentialRepository(
             new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false));
         var hasher = new TrackingPasswordHasher(verifyCurrent: true);
@@ -171,7 +173,7 @@ public sealed class AuthControllerAccountTests
             user: SampleUser(),
             credentialRepo: credentialRepo,
             passwordHasher: hasher,
-            audit: audit);
+            recorder: recorder);
 
         var result = await controller.ChangeLocalPassword(
             new ChangeLocalPasswordRequest("old-pass", "new-password-ok"),
@@ -180,7 +182,10 @@ public sealed class AuthControllerAccountTests
         result.Should().BeOfType<NoContentResult>();
         hasher.HashCalls.Should().Be(1);
         credentialRepo.SetPasswordCalls.Should().Be(1);
-        audit.Records.Should().ContainSingle(r => r.Action == "auth.local.password_change.success");
+        var (changed, actor) = recorder.Events.Should().ContainSingle().Subject;
+        changed.Action.Should().Be("auth.local.password_change.success");
+        actor.Should().Be(AuditActor.CurrentPrincipal);
+        changed.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, TestUserId.Value));
     }
 
     [Fact]
@@ -228,14 +233,14 @@ public sealed class AuthControllerAccountTests
     [Fact]
     public async Task ChangeLocalPassword_wrong_current_password_returns_bad_request()
     {
-        var audit = new CapturingAuditService();
+        var recorder = new AuditRecording();
         var controller = NewController(
             actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
             resolvedUserId: TestUserId,
             user: SampleUser(),
             credential: new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false),
             passwordHasher: new TrackingPasswordHasher(verifyCurrent: false),
-            audit: audit);
+            recorder: recorder);
 
         var result = await controller.ChangeLocalPassword(
             new ChangeLocalPasswordRequest("wrong", "new-password-ok"),
@@ -244,7 +249,10 @@ public sealed class AuthControllerAccountTests
         var bad = result.Should().BeOfType<BadRequestObjectResult>().Subject;
         var body = bad.Value.Should().BeOfType<LocalPasswordChangeErrorResponse>().Subject;
         body.Code.Should().Be(LocalPasswordChangeErrorCodes.WrongCurrentPassword);
-        audit.Records.Should().ContainSingle(r => r.Action == "auth.local.password_change.failed");
+        var refused = recorder.Events.Should().ContainSingle().Subject.Event;
+        refused.Action.Should().Be("auth.local.password_change.failed");
+        refused.Fields["reason"].Should().Be("wrong_current_password");
+        recorder.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue("the refusal changed nothing");
     }
 
     [Fact]
@@ -347,18 +355,18 @@ public sealed class AuthControllerAccountTests
     [Fact]
     public async Task ChangeLocalPassword_unlinked_principal_returns_forbidden()
     {
-        var audit = new CapturingAuditService();
+        var recorder = new AuditRecording();
         var controller = NewController(
             actor: new HumanActor(new ActorId("unlinked"), "unlinked", isBreakGlassSession: false),
             resolvedUserId: null,
-            audit: audit);
+            recorder: recorder);
 
         var result = await controller.ChangeLocalPassword(
             new ChangeLocalPasswordRequest("old", "new-password-ok"),
             CancellationToken.None);
 
         result.Should().BeOfType<ForbidResult>();
-        audit.Records.Should().ContainSingle(r => r.Action == "auth.local.password_change.failed");
+        recorder.Events.Should().ContainSingle().Which.Event.Fields["reason"].Should().Be("not_linked");
     }
 
     [Theory]
@@ -408,8 +416,10 @@ public sealed class AuthControllerAccountTests
         HttpContext? httpContext = null,
         InMemoryUserPreferencesRepository? preferences = null,
         IForgottenPasswordService? forgottenPassword = null,
-        IRecentAccountVerificationGate? accountVerification = null)
+        IRecentAccountVerificationGate? accountVerification = null,
+        AuditRecording? recorder = null)
     {
+        recorder ??= new AuditRecording();
         var controller = new AuthController(
             new ConfigurableUserRepository(user),
             credentialRepo ?? (ILocalCredentialRepository)new ConfigurableCredentialRepository(credential),
@@ -424,7 +434,9 @@ public sealed class AuthControllerAccountTests
             Options.Create(new EntraAuthOptions()),
             new StubAuthUiPolicyRepository(),
             forgottenPassword: forgottenPassword,
-            accountVerification: accountVerification);
+            accountVerification: accountVerification,
+            auditedUnitOfWork: recorder,
+            auditEvents: recorder);
 
         controller.ControllerContext = new ControllerContext
         {

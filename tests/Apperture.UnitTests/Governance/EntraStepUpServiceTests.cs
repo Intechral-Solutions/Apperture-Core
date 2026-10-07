@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
@@ -30,14 +31,15 @@ public sealed class EntraStepUpServiceTests
             developmentSimulated: false);
 
         outcome.Succeeded.Should().BeTrue();
-        harness.Audit.Actions.Should().Contain(StrongAuthenticationAuditActionNames.StepUpSatisfied);
-        foreach (var details in harness.Audit.Details)
-        {
-            var text = details ?? string.Empty;
-            text.Contains("eyJ", StringComparison.Ordinal).Should().BeFalse();
-            text.Contains("cookie", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
-            text.Contains("client_secret", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
-        }
+        var (satisfied, actor) = harness.Audit.Events.Should().ContainSingle().Subject;
+        satisfied.Action.Should().Be(StrongAuthenticationAuditActionNames.StepUpSatisfied);
+        satisfied.Definition.WriteClass.Should().Be(Apperture.Core.Application.Audit.AuditWriteClass.RequiredSecurityEvent);
+        actor.Should().Be(Apperture.Core.Application.Audit.AuditActor.AuthenticatedUser(new UserId("usr-1")), "the initiating user from the protected state");
+        harness.Audit.Writer.Written.Should().ContainSingle(w => !w.BestEffort, "a W2 row is written and committed, not attempted");
+        satisfied.Fields.Values.Select(v => v?.ToString() ?? "").Should().OnlyContain(text =>
+            !text.Contains("eyJ", StringComparison.Ordinal)
+            && !text.Contains("cookie", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("client_secret", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -122,17 +124,16 @@ public sealed class EntraStepUpServiceTests
         public Harness()
         {
             Users = new RecordingUsers();
-            Audit = new RecordingAudit();
+            Audit = new AuditRecording();
             Service = new EntraStepUpService(
                 Users,
                 new StubRegistrations(),
-                Audit,
-                TimeProvider.System,
-                NullLogger<EntraStepUpService>.Instance);
+                NullLogger<EntraStepUpService>.Instance,
+                Audit);
         }
 
         public RecordingUsers Users { get; }
-        public RecordingAudit Audit { get; }
+        internal AuditRecording Audit { get; }
         public EntraStepUpService Service { get; }
     }
 
@@ -187,20 +188,4 @@ public sealed class EntraStepUpServiceTests
         public ValueTask CompleteEntraLinkProofAsync(string tenantId, string objectId, DateTimeOffset provenAt, string? registrationIdWhenMissing, string? providerSubject, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public List<string?> Details { get; } = [];
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            Details.Add(record.Details);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
-    }
 }

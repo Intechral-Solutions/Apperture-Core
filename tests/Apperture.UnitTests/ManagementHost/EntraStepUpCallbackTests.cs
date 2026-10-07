@@ -6,6 +6,8 @@ using System.Text.Json;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Host;
 using Apperture.Shared.Kernel;
@@ -66,7 +68,12 @@ public sealed class EntraStepUpCallbackTests
 
         public Mock<IUserRepository> Users { get; } = new();
 
-        public List<AuditRecord> Audit { get; } = new();
+        public AuditRecording Recording { get; } = new();
+
+        /// <summary>Rows still written through the append bridge (none on these paths after AUD-1.2).</summary>
+        public List<AuditRecord> BridgeRows { get; } = new();
+
+        public List<(Apperture.Core.Application.Audit.AuditEvent Event, AuditActor Actor)> Audit => Recording.Events;
 
         /// <summary>Directory id of the token the fake token endpoint issues.</summary>
         public string TokenTenant { get; set; } = ActiveTenant;
@@ -127,7 +134,7 @@ public sealed class EntraStepUpCallbackTests
                 .ReturnsAsync(new EntraInstanceRegistration { Id = "reg1", AzureTenantId = ActiveTenant, Authority = "https://x/" + ActiveTenant, IsActive = true, Enabled = true });
             var audit = new Mock<IAuditService>();
             audit.Setup(a => a.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
-                .Callback<AuditRecord, CancellationToken>((record, _) => Audit.Add(record))
+                .Callback<AuditRecord, CancellationToken>((record, _) => BridgeRows.Add(record))
                 .Returns(ValueTask.CompletedTask);
 
             // Users: A is the initiator (a local operator with a proven link to OidA in the active tenant); B is someone else.
@@ -147,13 +154,13 @@ public sealed class EntraStepUpCallbackTests
             builder.Services.AddSingleton<IUserRepository>(Users.Object);
             builder.Services.AddSingleton<IEntraInstanceRegistrationRepository>(registrations.Object);
             builder.Services.AddSingleton<IAuditService>(audit.Object);
+            builder.Services.AddSingleton<IAuditEventWriter>(Recording);
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
             builder.Services.AddScoped<IEntraStepUpService>(sp => new EntraStepUpService(
                 sp.GetRequiredService<IUserRepository>(),
                 sp.GetRequiredService<IEntraInstanceRegistrationRepository>(),
-                sp.GetRequiredService<IAuditService>(),
-                sp.GetRequiredService<TimeProvider>(),
-                NullLogger<EntraStepUpService>.Instance));
+                NullLogger<EntraStepUpService>.Instance,
+                sp.GetRequiredService<IAuditEventWriter>()));
 
             builder.Services.PostConfigure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
             {
@@ -394,7 +401,7 @@ public sealed class EntraStepUpCallbackTests
         principal.Claims.Should().NotContain(c => c.Type == ClaimsPrincipalToActorMapper.BreakGlassClaimType);
         properties.IsPersistent.Should().BeTrue();
         properties.ExpiresUtc.Should().BeCloseTo(DateTimeOffset.UtcNow.Add(LocalSessionIdentity.Lifetime), TimeSpan.FromMinutes(1));
-        rig.Audit.Should().Contain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied && a.ActorId.Value == UserA);
+        rig.Audit.Should().Contain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied && a.Actor == AuditActor.AuthenticatedUser(new UserId(UserA)));
         NoIdentityLinkWasWritten(rig);
     }
 
@@ -458,8 +465,8 @@ public sealed class EntraStepUpCallbackTests
 
         Location(response).Should().Be("http://localhost:9001/config/governance/users/usr_initiator_aaaa?tab=security&error=identity_mismatch#roles");
         rig.ReadSessionCookie(response).Should().BeNull("no step-up grant, no session");
-        rig.Audit.Should().Contain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpIdentityMismatch && a.ActorId.Value == UserA);
-        rig.Audit.Should().NotContain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
+        rig.Audit.Should().Contain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpIdentityMismatch && a.Actor == AuditActor.AuthenticatedUser(new UserId(UserA)));
+        rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
         NoIdentityLinkWasWritten(rig);
     }
 
@@ -474,7 +481,7 @@ public sealed class EntraStepUpCallbackTests
 
         Location(response).Should().Contain("error=tenant_mismatch");
         rig.ReadSessionCookie(response).Should().BeNull();
-        rig.Audit.Should().Contain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpTenantMismatch);
+        rig.Audit.Should().Contain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpTenantMismatch);
         NoIdentityLinkWasWritten(rig);
     }
 
@@ -503,7 +510,7 @@ public sealed class EntraStepUpCallbackTests
 
         Location(response).Should().Contain("error=authentication_context_not_satisfied");
         rig.ReadSessionCookie(response).Should().BeNull();
-        rig.Audit.Should().Contain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpContextNotSatisfied);
+        rig.Audit.Should().Contain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpContextNotSatisfied);
     }
 
     [Fact]
@@ -541,7 +548,7 @@ public sealed class EntraStepUpCallbackTests
 
         Location(response).Should().Contain("error=continuation_invalid");
         rig.ReadSessionCookie(response).Should().BeNull("a valid OIDC principal with no valid continuation earns nothing");
-        rig.Audit.Should().NotContain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
+        rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
         NoIdentityLinkWasWritten(rig);
     }
 
@@ -575,6 +582,12 @@ public sealed class EntraStepUpCallbackTests
         Location(response).Should().Be("http://localhost:9001/login?error=oidc", "an unvalidated callback is an ordinary sign-in failure, never a step-up");
         rig.ReadSessionCookie(response).Should().BeNull();
         rig.TokenRequests.Should().Be(0, "the code is never redeemed for an unverifiable state");
+
+        // AUD-1.2: recorded once, as an anonymous attempt: nothing about the caller was validated.
+        var (failed, actor) = rig.Audit.Should().ContainSingle(a => a.Event.Action == AuditActionNames.EntraSignInFailed).Subject;
+        actor.Should().Be(AuditActor.Anonymous);
+        failed.Target.Should().BeNull();
+        failed.Fields["flow"].Should().Be("unknown", "the state did not validate, so its purpose is unknown");
     }
 
     [Fact]
@@ -608,9 +621,9 @@ public sealed class EntraStepUpCallbackTests
 
         Location(response).Should().Contain("error=continuation_invalid", "the freshness rule, not incidental handler behaviour, refuses it");
         Location(response).Should().NotContain("steppedUp=1");
-        rig.Audit.Should().Contain(a => a.Details!.Contains("reason=continuation_stale"));
+        rig.Audit.Should().Contain(a => a.Event.Fields.ContainsKey("reason") && (string?)a.Event.Fields["reason"] == "continuation_stale");
         rig.ReadSessionCookie(response).Should().BeNull("an expired state cannot mint a step-up");
-        rig.Audit.Should().NotContain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
+        rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
     }
 
     [Fact]
@@ -815,8 +828,25 @@ public sealed class EntraStepUpCallbackTests
         Has(principal, "oid", OidA).Should().BeTrue("the raw directory ids stay as link provenance");
         Has(principal, "tid", ActiveTenant).Should().BeTrue();
         ApplicationSessionClaims.IsCurrentFormat(principal).Should().BeTrue();
-        rig.Audit.Should().Contain(a => a.Action == "auth.entra.login.success" && a.ActorId.Value == UserA,
+        rig.Audit.Should().Contain(a => a.Event.Action == "auth.entra.login.success" && a.Actor == AuditActor.AuthenticatedUser(new UserId(UserA)),
             "the sign-in is attributed to the user id, not the directory object id");
+    }
+
+    [Fact]
+    public async Task An_entra_sign_in_whose_row_cannot_be_written_issues_no_session_and_returns_once_to_the_login_page()
+    {
+        await using var rig = new Rig();
+        await rig.StartAsync();
+        rig.Recording.FailWrites = true;
+        using var challengeResponse = await rig.Client.GetAsync("/signin");
+        var state = QueryHelpers.ParseQuery(challengeResponse.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", challengeResponse.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+
+        var response = await rig.PostCallbackAsync(new Challenge(state, cookies));
+
+        rig.ReadSessionCookie(response).Should().BeNull("AUD-1.2: the W2 row commits before the session, so its failure withholds it");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.ToString().Should().Contain("/login").And.Contain("error=");
     }
 
     [Fact]
@@ -901,7 +931,7 @@ public sealed class EntraStepUpCallbackTests
         var replayWithCookies = await rig.PostCallbackAsync(challenge);
         Location(replayWithCookies).Should().Contain("error=oidc");
         rig.ReadSessionCookie(replayWithCookies).Should().BeNull();
-        rig.Audit.Count(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied).Should().Be(1);
+        rig.Audit.Count(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied).Should().Be(1);
     }
 
     // ---- regressions: the nearby flows must be untouched --------------------------------------------------------------------
@@ -923,7 +953,7 @@ public sealed class EntraStepUpCallbackTests
         Location(response).Should().Be("http://localhost:9001/account?linked=1");
         rig.Association.Verify(a => a.CompleteLinkAsync(new UserId(UserA), It.Is<EntraIdentityAssertion>(x => x.ObjectId == OidA && x.TenantId == ActiveTenant), It.IsAny<CancellationToken>()), Times.Once);
         rig.Association.Verify(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
-        rig.Audit.Should().NotContain(a => a.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied, "linking is not a step-up and grants no assurance");
+        rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied, "linking is not a step-up and grants no assurance");
         var session = rig.ReadSessionCookie(response);
         session.Should().NotBeNull();
         Has(session!.Value.Principal, AuthenticationAssuranceClaims.MechanismClaimType, AuthenticationAssuranceClaims.EntraAuthenticationContextMechanism).Should().BeFalse();

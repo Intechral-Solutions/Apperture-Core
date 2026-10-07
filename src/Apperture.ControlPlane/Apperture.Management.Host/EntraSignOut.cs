@@ -7,8 +7,11 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.Services;
 
 namespace Apperture.Management.Host;
 
@@ -44,6 +47,7 @@ internal static class EntraSignOut
         IConfiguration configuration)
     {
         var login = CreateProperties(configuration).RedirectUri!;
+        await RecordSignOutAsync(ctx);
 
         // Federated directory logout only for an Entra session. A local session (including Recovery
         // Access) has no id_token; sending it to Microsoft end-session looks like a Microsoft login
@@ -61,6 +65,39 @@ internal static class EntraSignOut
         await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         await ctx.SignOutAsync(EntraAccessRequestAuthentication.Scheme);
         ctx.Response.Redirect(login);
+    }
+
+    /// <summary>
+    /// AUD-1.2 (gate §22): a W3 row of the signed-in user, written before the session ends so the principal still resolves.
+    /// No row when the session resolves to no user (for example an access-request session). Nothing here can stop the
+    /// sign-out: resolution failures are swallowed and the writer never throws.
+    /// </summary>
+    internal static async Task RecordSignOutAsync(HttpContext ctx)
+    {
+        try
+        {
+            var services = ctx.RequestServices;
+            var events = services.GetService<IAuditEventWriter>();
+            var principals = services.GetService<IPrincipalContext>();
+            var resolver = services.GetService<IPrincipalToUserResolver>();
+            if (events is null || principals is null || resolver is null || ctx.User.Identity?.IsAuthenticated != true)
+                return;
+
+            var actor = await principals.GetCurrentActorAsync(CancellationToken.None);
+            var userId = actor is null ? null : await resolver.ResolveUserIdAsync(actor, CancellationToken.None);
+            if (userId is null)
+                return;
+
+            var session = string.Equals(
+                ctx.User.FindFirst(ClaimsPrincipalToActorMapper.IdentitySourceClaimType)?.Value,
+                "Entra",
+                StringComparison.OrdinalIgnoreCase) ? "entra" : "local";
+            await events.TryWriteAsync(AuditEvents.SignedOut(userId, session), AuditActor.CurrentPrincipal, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Recording a sign-out never blocks it.
+        }
     }
 
     /// <summary>

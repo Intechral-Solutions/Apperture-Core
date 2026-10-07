@@ -318,6 +318,86 @@ internal static class AuditDetailSchemas
         FlagField("recoveryAccessHealthy"),
     ]);
 
+    // ---- Authentication ----
+
+    internal static readonly AuditDetailSchema LocalSignIn = new(
+    [
+        IdField("userId"),
+        EnumField("mechanism", true, "password", "native_totp", "native_recovery_code"),
+    ]);
+
+    internal static readonly AuditDetailSchema EntraSignIn = new(
+    [
+        IdField("userId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+    ]);
+
+    internal static readonly AuditDetailSchema EntraSignInFailed = new(
+    [
+        EnumField("flow", true, "sign_in", "link", "step_up", "unknown"),
+        EnumField("reason", true, "cancelled", "failed"),
+    ]);
+
+    internal static readonly AuditDetailSchema SignedOut = new(
+    [
+        IdField("userId"),
+        EnumField("session", true, "local", "entra"),
+    ]);
+
+    internal static readonly AuditDetailSchema LocalPasswordChangeRefused = new(
+    [
+        IdField("userId"),
+        EnumField(
+            "reason",
+            true,
+            "not_linked", "local_auth_disabled", "missing_new_password", "user_not_found", "system_managed", "no_local_identity",
+            "no_credential", "credential_disabled", "verification_required", "wrong_current_password", "policy_rejected"),
+    ]);
+
+    internal static readonly AuditDetailSchema StepUpInitiated = new(
+    [
+        IdField("userId"),
+        IdField("requestedContext"),
+        EnumField("session", true, "local", "entra"),
+    ]);
+
+    internal static readonly AuditDetailSchema StepUpFailed = new(
+    [
+        IdField("userId"),
+        EnumField(
+            "reason",
+            true,
+            "invalid_identity", "not_configured", "unproven", "continuation_invalid", "continuation_stale", "user_not_found",
+            "no_local_identity", "local_session_unavailable"),
+        IdField("tenantId", required: false),
+        IdField("objectId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema StepUpIdentity = new(
+    [
+        IdField("userId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        EnumField("reason", false, "no_link", "different_user"),
+        IdField("otherUserId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema StepUpContextNotSatisfied = new(
+    [
+        IdField("userId"),
+        IdField("requestedContext"),
+    ]);
+
+    internal static readonly AuditDetailSchema StepUpSatisfied = new(
+    [
+        IdField("userId"),
+        IdField("requestedContext"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        FlagField("developmentSimulated"),
+    ]);
+
     // ---- Runtime enrollment ----
     // invitationId is the invitation row's id; the enrollment token itself is never recorded.
 

@@ -85,6 +85,22 @@ public static class AuditActionNames
     public const string RecoveryAccessLocalProtected = "emergency.local.protected";
     public const string LocalDisableDeferredLastAdmin = "credential.local.disable_deferred_last_entra_independent_admin";
 
+    // AUD-1.2: authentication (successes are W2; attempts, refusals and sign-out are W3)
+    public const string LocalSignInSucceeded = "auth.local.login.success";
+    public const string RecoveryAccessSignInSucceeded = "auth.emergency.login.success";
+    public const string BreakGlassSignInSucceeded = "auth.break_glass.login.success";
+    public const string EntraSignInSucceeded = "auth.entra.login.success";
+    public const string EntraSignInFailed = "auth.entra.login.failed";
+    public const string SignedOut = "auth.sign_out";
+    public const string LocalPasswordChanged = "auth.local.password_change.success";
+    public const string LocalPasswordChangeRefused = "auth.local.password_change.failed";
+    public const string StepUpInitiated = "auth.strong_authentication.step_up.initiated";
+    public const string StepUpFailed = "auth.strong_authentication.step_up.failed";
+    public const string StepUpTenantMismatch = "auth.strong_authentication.step_up.tenant_mismatch";
+    public const string StepUpIdentityMismatch = "auth.strong_authentication.step_up.identity_mismatch";
+    public const string StepUpContextNotSatisfied = "auth.strong_authentication.step_up.authentication_context_not_satisfied";
+    public const string StepUpSatisfied = "auth.strong_authentication.step_up.satisfied";
+
     // AUD-1.2: runtime enrollment
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
     public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";

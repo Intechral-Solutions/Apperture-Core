@@ -70,7 +70,9 @@ public sealed class AuthControllerBreakGlassTests
             Options.Create(new LocalAuthOptions { Enabled = true }),
             Options.Create(new BreakGlassAuthOptions { Enabled = breakGlassEnabled }),
             Options.Create(new EntraAuthOptions()),
-            new StubAuthUiPolicyRepository());
+            new StubAuthUiPolicyRepository(),
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(),
+            auditEvents: new Apperture.UnitTests.Audit.AuditRecording());
 
         controller.ControllerContext = new ControllerContext
         {

@@ -24,6 +24,8 @@ public sealed partial class AuditActionCatalogTests
         "account.security_mail.delivery_attempted",
         "credential.password.reset_request.suppressed",
         "governance.runtime.enrollment.completed",
+        "auth.entra.login.failed",
+        "auth.sign_out",
     ];
 
     [Fact]
