@@ -14,6 +14,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Apperture.Management.Host;
 
@@ -124,6 +125,8 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     /// </summary>
     private async Task OnTokenValidatedAsync(TokenValidatedContext ctx)
     {
+        RequireValidTokenResponse(ctx);
+
         var identity = (ClaimsIdentity?)ctx.Principal?.Identity;
         if (identity is not null)
         {
@@ -238,6 +241,29 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         {
             EntraSignInChallenge.EnsureSafePostAuthenticationRedirect(ctx.Properties, _configuration);
         }
+    }
+
+    /// <summary>
+    /// Runs the handler's own token-response checks (the nonce bound to this browser's nonce cookie, the id_token's required
+    /// claims, at_hash) before anything acts on the identity. The handler reads the nonce cookie before this event but validates
+    /// the token response only after the event returns, and never when the event handles the response itself (an access-request
+    /// session, a local step-up). By the time this returns, the handler has already checked the protected state and its
+    /// correlation cookie, redeemed the code with PKCE and the client secret, and validated the id_token's issuer, audience and
+    /// lifetime (and its signature when it has one). A failure throws, so the handler fails the sign-in through
+    /// <c>OnRemoteFailure</c>: one redirect, recorded as <c>anonymous</c>, nothing associated, recorded or issued.
+    /// </summary>
+    private static void RequireValidTokenResponse(TokenValidatedContext ctx)
+    {
+        if (ctx.TokenEndpointResponse is null || ctx.SecurityToken is null)
+            throw new OpenIdConnectProtocolException("The sign-in response carried no token response to validate.");
+
+        ctx.Options.ProtocolValidator.ValidateTokenResponse(new OpenIdConnectProtocolValidationContext
+        {
+            ClientId = ctx.Options.ClientId,
+            ProtocolMessage = ctx.TokenEndpointResponse,
+            ValidatedIdToken = ctx.SecurityToken,
+            Nonce = ctx.Nonce,
+        });
     }
 
     /// <summary>

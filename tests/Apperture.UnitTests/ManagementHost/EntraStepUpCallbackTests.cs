@@ -88,6 +88,9 @@ public sealed class EntraStepUpCallbackTests
         /// <summary>The nonce of the most recent challenge (what the id_token must echo).</summary>
         public string? Nonce { get; private set; }
 
+        /// <summary>When set, the id_token carries this nonce instead of the challenge's.</summary>
+        public string? TokenNonceOverride { get; set; }
+
         public string? LastFailure { get; private set; }
 
         /// <summary>The initiator's local credential (null = none). Local sign-in must still be available for a local session to be re-issued.</summary>
@@ -290,7 +293,7 @@ public sealed class EntraStepUpCallbackTests
                 ["tid"] = TokenTenant,
                 ["sub"] = "subject-1",
                 ["name"] = "Provider Display Name",
-                ["nonce"] = Nonce ?? "",
+                ["nonce"] = TokenNonceOverride ?? Nonce ?? "",
             };
             if (TokenHasAuthenticationContext)
                 claims["acrs"] = new[] { "c1" };
@@ -932,6 +935,108 @@ public sealed class EntraStepUpCallbackTests
         Location(replayWithCookies).Should().Contain("error=oidc");
         rig.ReadSessionCookie(replayWithCookies).Should().BeNull();
         rig.Audit.Count(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied).Should().Be(1);
+    }
+
+    // ---- AUD-1.2 review (D22): the token-response protocol checks finish before anything is recorded or issued ---------------
+    // The handler reads the nonce cookie before OnTokenValidated but validates the token response (nonce, required id_token
+    // claims, at_hash) only after the event returns, and not at all when the event handles the response itself. These drive the
+    // real handler with an id_token that fails those checks and require that nothing was associated, recorded or issued.
+
+    public enum NonceFault
+    {
+        WrongNonce,
+        NonceCookieMissing,
+    }
+
+    private static Challenge Faulted(Challenge challenge, NonceFault fault) =>
+        fault == NonceFault.NonceCookieMissing
+            ? challenge with
+            {
+                Cookies = string.Join("; ", challenge.Cookies.Split("; ").Where(c => !c.StartsWith(".AspNetCore.OpenIdConnect.Nonce.", StringComparison.Ordinal))),
+            }
+            : challenge;
+
+    private static async Task<Challenge> BeginAsync(Rig rig, string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (path.StartsWith("/signin/link", StringComparison.Ordinal))
+        {
+            request.Headers.Add("X-Test-Auth", "1");
+            request.Headers.Add("X-Test-Identity-Source", "Local");
+        }
+
+        using var response = await rig.Client.SendAsync(request);
+        var state = QueryHelpers.ParseQuery(response.Headers.Location!.Query)["state"].ToString();
+        var cookies = string.Join("; ", response.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
+        return new Challenge(state, cookies);
+    }
+
+    private static bool SetsCookie(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues("Set-Cookie", out var values)
+        && values.Any(v => v.StartsWith(name + "=", StringComparison.Ordinal) && !v.StartsWith(name + "=;", StringComparison.Ordinal));
+
+    [Theory]
+    [InlineData(NonceFault.WrongNonce)]
+    [InlineData(NonceFault.NonceCookieMissing)]
+    public async Task A_sign_in_whose_nonce_fails_is_neither_associated_nor_recorded_and_issues_no_session(NonceFault fault)
+    {
+        await using var rig = new Rig { TokenNonceOverride = fault == NonceFault.WrongNonce ? "forged-nonce" : null };
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(Faulted(await BeginAsync(rig, "/signin"), fault));
+
+        rig.ReadSessionCookie(response).Should().BeNull();
+        Location(response).Should().Contain("/login").And.Contain("error=");
+        rig.Association.Verify(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Audit.Should().NotContain(a => a.Event.Action == AuditActionNames.EntraSignInSucceeded);
+        rig.Audit.Should().NotContain(a => a.Actor.Kind == AuditActorKinds.External, "an identity whose token response failed validation is never external attribution");
+    }
+
+    [Theory]
+    [InlineData(NonceFault.WrongNonce)]
+    [InlineData(NonceFault.NonceCookieMissing)]
+    public async Task An_unlinked_identity_whose_nonce_fails_gets_no_access_request_session(NonceFault fault)
+    {
+        await using var rig = new Rig { TokenNonceOverride = fault == NonceFault.WrongNonce ? "forged-nonce" : null };
+        rig.Association.Setup(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(EntraAssociationOutcome.Failure(EntraLinkFailureCodes.AccountNotLinked));
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(Faulted(await BeginAsync(rig, "/signin"), fault));
+
+        SetsCookie(response, EntraAccessRequestAuthentication.CookieName).Should().BeFalse();
+        Location(response).Should().NotContain("access-request");
+        rig.Association.Verify(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(NonceFault.WrongNonce)]
+    [InlineData(NonceFault.NonceCookieMissing)]
+    public async Task A_self_link_whose_nonce_fails_links_nothing(NonceFault fault)
+    {
+        await using var rig = new Rig { TokenNonceOverride = fault == NonceFault.WrongNonce ? "forged-nonce" : null };
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(Faulted(await BeginAsync(rig, "/signin/link"), fault));
+
+        rig.ReadSessionCookie(response).Should().BeNull();
+        rig.Association.Verify(a => a.CompleteLinkAsync(It.IsAny<UserId>(), It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("Local", NonceFault.WrongNonce)]
+    [InlineData("Local", NonceFault.NonceCookieMissing)]
+    [InlineData("Entra", NonceFault.WrongNonce)]
+    [InlineData("Entra", NonceFault.NonceCookieMissing)]
+    public async Task A_step_up_whose_nonce_fails_grants_no_session_and_records_no_satisfied_step_up(string source, NonceFault fault)
+    {
+        await using var rig = new Rig { TokenNonceOverride = fault == NonceFault.WrongNonce ? "forged-nonce" : null };
+        await rig.StartAsync();
+
+        var response = await rig.PostCallbackAsync(Faulted(await rig.BeginStepUpAsync(source), fault));
+
+        rig.ReadSessionCookie(response).Should().BeNull();
+        rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
     }
 
     // ---- regressions: the nearby flows must be untouched --------------------------------------------------------------------
