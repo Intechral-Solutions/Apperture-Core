@@ -72,6 +72,8 @@ public sealed class AuditDetailSchemaTests
             typeof(UsernameChangeOutcome), typeof(PermissionSetChange), typeof(IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>),
             // AUD-1.2: the names of changed settings (validated against a closed set by the producer), never their values.
             typeof(IReadOnlyList<string>),
+            // AUD-1.3: how a run was started (a closed enum). A start's parameters arrive as names only, never as a name/value map.
+            typeof(ExecutionLaunchChannel),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),

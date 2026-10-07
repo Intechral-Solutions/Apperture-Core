@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
@@ -70,6 +71,13 @@ public sealed class OperationItemRetryException : InvalidOperationException
     public bool IsConflict { get; }
 }
 
+/// <summary>
+/// Requests a retry of one failed operation item (design gate §13.1 W1, §22 AUD-1.3). The retry attempt, the child run it starts
+/// (with its start request, which names the requester), the item's retry stamp and the audit row commit in one audited unit of
+/// work. Before this, the attempt, the dispatch and the dispatched mark were separate commits, so a failure between them left an
+/// attempt that said "requested" with nothing started. The attempt records the unit's own actor as
+/// <c>RequestedByActorId</c>, so the attempt row and the audit row share the actor by construction.
+/// </summary>
 public sealed class OperationItemRetryService : IOperationItemRetryService
 {
     private readonly AppertureDbContext _db;
@@ -79,7 +87,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
     private readonly IEnumerable<IOperationItemRetryHandler> _handlers;
     private readonly IWorkflowRunRetryAuthorizationService _retryAuthz;
     private readonly IWorkflowStartDispatchService _dispatch;
-    private readonly IPrincipalContext _principal;
+    private readonly IAuditedUnitOfWork _unit;
 
     public OperationItemRetryService(
         AppertureDbContext db,
@@ -89,7 +97,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         IEnumerable<IOperationItemRetryHandler> handlers,
         IWorkflowRunRetryAuthorizationService retryAuthz,
         IWorkflowStartDispatchService dispatch,
-        IPrincipalContext principal)
+        IAuditedUnitOfWork unit)
     {
         _db = db;
         _items = items;
@@ -98,7 +106,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         _handlers = handlers;
         _retryAuthz = retryAuthz;
         _dispatch = dispatch;
-        _principal = principal;
+        _unit = unit;
     }
 
     public async Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
@@ -142,6 +150,8 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         if (!string.Equals(item.RunId, runId.Value, StringComparison.Ordinal))
             return null;
 
+        // A replay of a request this key already made changes nothing, so it is answered outside the unit: reconciling the
+        // earlier attempt's outcome is a write of its own that a no-op unit would roll back.
         var existing = await _attempts.GetByIdempotencyKeyAsync(item.OperationItemId, idempotencyKey, cancellationToken)
             .ConfigureAwait(false);
         if (existing is not null)
@@ -151,9 +161,50 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
             return Map(reconciled, GuidanceFor(reconciled, idempotentReplay: true));
         }
 
+        return await _unit.ExecuteAsync(
+            new AuditedOperation(
+                AuditActionNames.OperationItemRetryRequested,
+                AuditActor.CurrentPrincipal,
+                AlternatePrimaryActions: [AuditActionNames.OperationItemRetryBlocked]),
+            (transaction, ct) => AttemptAsync(transaction, run, item.OperationItemId, idempotencyKey, reason, ct),
+            ReconstructAsync,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One attempt of the unit: every read the decision depends on is repeated here, inside the transaction, and the attempt,
+    /// the child run and the audit row are written together or not at all.
+    /// </summary>
+    private async Task<OperationItemRetryAttemptDto?> AttemptAsync(
+        IAuditedTransaction transaction,
+        OperationRunEntity run,
+        string operationItemId,
+        string idempotencyKey,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        var item = await _items.GetItemAsync(operationItemId, cancellationToken).ConfigureAwait(false);
+        if (item is null || !string.Equals(item.RunId, run.Id, StringComparison.Ordinal))
+        {
+            transaction.DeclareNoOp();
+            return null;
+        }
+
+        var existing = await _attempts.GetByIdempotencyKeyAsync(item.OperationItemId, idempotencyKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            // A concurrent request with this key committed first.
+            transaction.DeclareNoOp();
+            return Map(existing, GuidanceFor(existing, idempotentReplay: true));
+        }
+
         var group = await _items.GetGroupAsync(item.OperationGroupId, cancellationToken).ConfigureAwait(false);
         if (group is null)
+        {
+            transaction.DeclareNoOp();
             return null;
+        }
 
         if (!string.Equals(item.Status, OperationItemStatuses.Failed, StringComparison.Ordinal))
         {
@@ -177,8 +228,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 $"No retry handler is registered for module '{group.ModuleId}' / operation kind '{group.OperationKind}'.");
         }
 
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var actorId = actor?.Id.Value;
+        var actorId = transaction.Actor.RecordedValue;
         var attemptIndex = await _attempts.GetNextAttemptIndexAsync(item.OperationItemId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -203,9 +253,11 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
             if (!string.Equals(blocked.Status, OperationItemRetryAttemptStatuses.Blocked, StringComparison.Ordinal)
                 && string.Equals(blocked.IdempotencyKey, idempotencyKey, StringComparison.Ordinal))
             {
+                transaction.DeclareNoOp();
                 return Map(blocked, "Idempotent replay of an existing retry attempt.");
             }
 
+            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
             return Map(blocked, eligibility.BlockReasonMessage ?? "Retry blocked; child run was not dispatched.");
         }
 
@@ -222,7 +274,10 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
             cancellationToken).ConfigureAwait(false);
 
         if (!string.Equals(requested.Status, OperationItemRetryAttemptStatuses.Requested, StringComparison.Ordinal))
+        {
+            transaction.DeclareNoOp();
             return Map(requested, "Idempotent replay of an existing retry attempt.");
+        }
 
         OperationItemRetryStartPlan plan;
         try
@@ -232,7 +287,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 group,
                 requested.OperationItemRetryAttemptId,
                 idempotencyKey,
-                runId.Value));
+                run.Id));
         }
         catch (OperationItemizationException ex)
         {
@@ -242,6 +297,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                     OperationItemRetryErrorCodes.MissingRetryMetadata,
                     ex.Message),
                 cancellationToken).ConfigureAwait(false);
+            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
             return Map(blocked, ex.Message);
         }
 
@@ -252,10 +308,11 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 plan.Parameters,
                 dispatchKey,
                 CorrelationId: $"opitem-retry:{item.OperationItemId}:{requested.AttemptIndex}",
-                RetryOfRunId: runId.Value,
+                RetryOfRunId: run.Id,
                 IntegrationId: plan.IntegrationId ?? group.IntegrationId,
                 ProcedureId: plan.ProcedureId ?? group.ProcedureId,
-                ExecutionOrigin: RunExecutionOriginNames.Manual),
+                ExecutionOrigin: RunExecutionOriginNames.Manual,
+                RequestedBy: actorId),
             cancellationToken).ConfigureAwait(false);
 
         if (dispatchResult is null)
@@ -266,6 +323,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                     OperationItemRetryErrorCodes.DefinitionUnavailable,
                     "Workflow definition is not executable (module disabled or unavailable)."),
                 cancellationToken).ConfigureAwait(false);
+            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
             return Map(blocked, "Retry blocked; child run was not dispatched.");
         }
 
@@ -278,11 +336,75 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         await _items.RecordRetryDispatchAsync(item.OperationItemId, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
 
+        await transaction.StageAsync(
+            AuditEvents.OperationItemRetryRequested(
+                item.OperationItemId,
+                run.Id,
+                item.OperationGroupId,
+                dispatched.OperationItemRetryAttemptId,
+                dispatched.AttemptIndex,
+                dispatchResult.RunId.Value,
+                reason,
+                run.ResourceContextId),
+            cancellationToken).ConfigureAwait(false);
+
         return Map(
             dispatched,
             GuidanceFor(dispatched, idempotentReplay: false));
     }
 
+    private static ValueTask StageBlockedAsync(
+        IAuditedTransaction transaction,
+        OperationRunEntity run,
+        OperationItemRetryAttempt blocked,
+        CancellationToken cancellationToken) =>
+        transaction.StageAsync(
+            AuditEvents.OperationItemRetryBlocked(
+                blocked.OperationItemId,
+                run.Id,
+                blocked.OperationGroupId,
+                blocked.OperationItemRetryAttemptId,
+                blocked.AttemptIndex,
+                blocked.ErrorCode ?? OperationItemRetryErrorCodes.MissingRetryMetadata,
+                blocked.Reason,
+                run.ResourceContextId),
+            cancellationToken);
+
+    /// <summary>
+    /// The attempt a confirmed commit created, from its primary row: read back for its current state, or built from the
+    /// recorded fields where it can no longer be read.
+    /// </summary>
+    private async Task<OperationItemRetryAttemptDto?> ReconstructAsync(AuditCommittedOperation committed, CancellationToken cancellationToken)
+    {
+        var attemptId = committed.GetField("attemptId") ?? throw new InvalidOperationException("The committed retry records no attempt.");
+        var attempt = await _attempts.GetByIdAsync(attemptId, cancellationToken).ConfigureAwait(false);
+        if (attempt is not null)
+            return Map(attempt, GuidanceFor(attempt, idempotentReplay: false));
+
+        // Attempt rows are never deleted, so this is a guard, not an expected path: the commit is still reported as the
+        // success it was, from what its audit row recorded.
+        var now = DateTimeOffset.UtcNow;
+        var dispatched = string.Equals(committed.Action, AuditActionNames.OperationItemRetryRequested, StringComparison.Ordinal);
+        return new OperationItemRetryAttemptDto(
+            attemptId,
+            committed.TargetId ?? "",
+            committed.GetField("runId") ?? "",
+            committed.GetField("operationGroupId") ?? "",
+            AttemptIndex: 0,
+            IdempotencyKey: "",
+            RequestedByActorId: null,
+            committed.GetField("reason"),
+            dispatched ? OperationItemRetryAttemptStatuses.Dispatched : OperationItemRetryAttemptStatuses.Blocked,
+            committed.GetField("childRunId"),
+            ChildOperationGroupId: null,
+            ChildOperationItemId: null,
+            now,
+            CompletedAtUtc: null,
+            committed.GetField("errorCode"),
+            ErrorMessage: null,
+            now,
+            now);
+    }
     public async Task<IReadOnlyList<OperationItemRetryAttemptDto>?> ListAttemptsAsync(
         OperationRunId runId,
         string operationItemId,

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
@@ -27,9 +28,15 @@ public sealed class WorkflowExternalControlSqlServerTests
         if (connectionString is null)
             throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
+        // The acting user must exist: the recorder reads the actor's username in the transaction it records the row in.
+        var principal = new MutablePrincipalContext();
+
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);
+        services.AddAppertureAuditRecorder();
+        services.AddSingleton<IPrincipalContext>(principal);
         await using var provider = services.BuildServiceProvider();
+        string userId;
 
         var runId = "sql-park-" + Guid.NewGuid().ToString("N")[..8];
         var instanceId = "sql-inst-" + runId;
@@ -42,6 +49,9 @@ public sealed class WorkflowExternalControlSqlServerTests
                 throw new InvalidOperationException(SqlServerTestConfiguration.DescribeConnectionFailure());
 
             await AppertureDatabaseMigrator.MigrateAsync(db);
+            var (id, username) = await SqlTestUsers.AddAsync(db, "park");
+            userId = id;
+            principal.Actor = new HumanActor(new ActorId(id), username, isBreakGlassSession: false);
             db.WorkflowInstances.Add(new WorkflowInstanceEntity
             {
                 Id = instanceId,
@@ -64,11 +74,10 @@ public sealed class WorkflowExternalControlSqlServerTests
         }
 
         var authz = new AllowAuthz();
-        var principal = new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false));
 
         var results = await Task.WhenAll(
-            InvokeParkAsync(provider, runId, authz, principal),
-            InvokeParkAsync(provider, runId, authz, principal));
+            InvokeParkAsync(provider, runId, authz),
+            InvokeParkAsync(provider, runId, authz));
 
         results[0].Should().NotBeNull();
         results[1].Should().NotBeNull();
@@ -84,18 +93,23 @@ public sealed class WorkflowExternalControlSqlServerTests
             var eventCount = await db.WorkflowLifecycleEvents.CountAsync(x => x.RunId == runId && x.EventType == WorkflowLifecycleEventNames.ParkRequested);
             controlCount.Should().Be(1, "exactly one queued park request row (unique index)");
             eventCount.Should().Be(1, "exactly one park_requested lifecycle event");
+
+            // The loser of the race committed nothing, so it recorded nothing; the winner's request and its audit row share the actor.
+            (await db.WorkflowExternalControlRequests.SingleAsync(x => x.RunId == runId)).RequestedBy.Should().Be(userId);
+            var audit = await db.AuditLogs.AsNoTracking().Where(a => a.TargetId == runId).ToListAsync();
+            audit.Should().ContainSingle("exactly one park request committed").Which.Should().Match<AuditLogEntity>(a =>
+                a.Action == AuditActionNames.WorkflowRunParkRequested && a.Actor == userId && a.ActorUserId == userId);
         }
     }
 
     private static async Task<WorkflowExternalControlResult?> InvokeParkAsync(
         IServiceProvider provider,
         string runId,
-        IWorkflowExternalControlAuthorizationService authz,
-        IPrincipalContext principal)
+        IWorkflowExternalControlAuthorizationService authz)
     {
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        var svc = new WorkflowExternalControlService(db, authz, principal);
+        var svc = new WorkflowExternalControlService(db, authz, scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>());
         return await svc.RequestParkAsync(new OperationRunId(runId));
     }
 
@@ -105,13 +119,11 @@ public sealed class WorkflowExternalControlSqlServerTests
             ValueTask.CompletedTask;
     }
 
-    private sealed class StubPrincipalContext : IPrincipalContext
+    private sealed class MutablePrincipalContext : IPrincipalContext
     {
-        private readonly IActor? _actor;
-
-        public StubPrincipalContext(IActor? actor) => _actor = actor;
+        public IActor? Actor { get; set; }
 
         public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_actor);
+            ValueTask.FromResult(Actor);
     }
 }

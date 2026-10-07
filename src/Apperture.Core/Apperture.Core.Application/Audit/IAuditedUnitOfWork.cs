@@ -53,6 +53,14 @@ public interface IAuditedTransaction
     string OperationEventId { get; }
 
     /// <summary>
+    /// The actor this unit records, resolved once before the first attempt from the authenticated context (or the named
+    /// non-human entry the operation was opened with). An operation that persists who requested it (a request row's
+    /// <c>RequestedBy</c>) writes <see cref="AuditActor.RecordedValue"/> from here, so the request row and the audit row
+    /// carry the same actor by construction and no caller-supplied identity is ever used.
+    /// </summary>
+    AuditActor Actor { get; }
+
+    /// <summary>
     /// Adds the event's row, complete, to this transaction. Reads the actor's username in this transaction. Throws
     /// <see cref="InvalidOperationException"/> when no transaction of this unit is current, the action is not a W1 catalog
     /// action with a schema, the details overflow, or the event was already staged.

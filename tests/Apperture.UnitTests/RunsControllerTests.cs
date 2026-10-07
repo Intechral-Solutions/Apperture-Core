@@ -490,6 +490,7 @@ public sealed class RunsControllerTests
 
         public ValueTask<WorkflowRetryResult?> RequestRetryAsync(
             Apperture.RuntimePlane.Abstractions.OperationRunId runId,
+            WorkflowRetryChannel channel,
             CancellationToken cancellationToken = default)
         {
             if (_throwUnauthorized)

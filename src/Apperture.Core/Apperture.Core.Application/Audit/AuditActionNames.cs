@@ -122,4 +122,25 @@ public static class AuditActionNames
     // AUD-1.2: runtime enrollment
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
     public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";
+
+    // AUD-1.3: operator actions on runs (W1 requests; the refusals beside them are W3)
+    public const string WorkflowStartRequested = "execution.workflow_start.requested";
+    public const string OperationStartRequested = "execution.operation_start.requested";
+    public const string WorkflowStartBlocked = "execution.workflow_start.blocked";
+    public const string OperationStartBlocked = "execution.operation_start.blocked";
+    public const string WorkflowRunCancelRequested = "execution.workflow_run.cancel_requested";
+    public const string OperationRunCancelRequested = "execution.operation_run.cancel_requested";
+    public const string WorkflowRunParkRequested = "execution.workflow_run.park_requested";
+    public const string WorkflowRunResumeRequested = "execution.workflow_run.resume_requested";
+    public const string WorkflowRetryRequested = "execution.workflow_retry.requested";
+    public const string WorkflowRetryBlocked = "execution.workflow_retry.blocked";
+    public const string OperationItemRetryRequested = "execution.operation_item.retry_requested";
+    public const string OperationItemRetryBlocked = "execution.operation_item.retry_blocked";
+
+    // AUD-1.3: recovery and the manual scheduler operations
+    public const string BlockedWorkRetryRequested = "recovery.blocked_work.retry_requested";
+    public const string BlockedWorkRetryRefused = "recovery.blocked_work.retry_refused";
+    public const string RecoveryRetryDenied = "recovery.retry.denied";
+    public const string SchedulerOperationDenied = "recovery.run_cycle.denied";
+    public const string SchedulerOperationRequested = "recovery.schedules.run_cycle_requested";
 }

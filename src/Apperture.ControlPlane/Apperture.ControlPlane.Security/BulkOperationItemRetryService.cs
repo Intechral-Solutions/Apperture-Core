@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -151,8 +152,10 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                 isConflict: false);
         }
 
+        // The retry authorization above has already established an authenticated actor; there is no placeholder to fall back to.
         var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var actorId = actor?.Id.Value ?? "unknown";
+        var actorId = actor?.Id.Value
+            ?? throw new UnauthorizedAccessException("Authenticated actor is required to retry failures.");
         var correlation = new CorrelationId($"bulk-retry:{runId.Value}:{requestId}");
 
         await TryAuditAsync(
@@ -293,6 +296,20 @@ public sealed class BulkOperationItemRetryService : IBulkOperationItemRetryServi
                     failed++;
                 else
                     skipped++;
+            }
+            catch (AuditOutcomeUnknownException ex)
+            {
+                // Each item's retry is its own audited unit. One that could neither be confirmed nor rolled back is reported as
+                // exactly that, and the rest of the batch goes on: earlier items have committed and stay reported as dispatched.
+                _logger.LogWarning(ex, "Bulk retry could not confirm the outcome for item {OperationItemId} (operation {OperationEventId})", item.OperationItemId, ex.OperationEventId);
+                results.Add(new BulkRetryOperationItemResult(
+                    item.OperationItemId,
+                    item.DisplayLabel,
+                    BulkRetryOperationItemResultCategories.OutcomeUnknown,
+                    "The outcome of this retry could not be confirmed. It may or may not have been requested; reload before retrying this item.",
+                    ChildRunId: null,
+                    RetryAttemptId: null));
+                failed++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException and not UnauthorizedAccessException)
             {

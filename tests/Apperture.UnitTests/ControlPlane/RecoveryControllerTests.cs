@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
@@ -5,6 +6,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Domain.Environment;
 using Apperture.Management.Api.Controllers;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -230,31 +232,148 @@ public sealed class RecoveryControllerTests
     }
 
     [Fact]
-    public async Task RetryBlockedWork_WhenDenied_AuditsRetryDenied()
+    public async Task RetryBlockedWork_WhenDenied_AuditsRetryDeniedAsTheCaller()
     {
         var entry = CreateBlockedEntry("r1", "workflow", true);
         var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
-        var spyAudit = new SpyAuditService();
+        var events = new RecordingAuditEventWriter();
         var controller = NewController(
             recovery: new StubRecoveryQueryService(blocked: [entry], single: entry),
             recoveryGovernance: gov,
-            audit: spyAudit);
+            events: events);
         var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
         result.Should().BeOfType<ForbidResult>();
-        spyAudit.LastAppended.Should().NotBeNull("denial audit policy requires recovery retry denials to be audited");
-        spyAudit.LastAppended!.Action.Should().Be(RecoveryAuditActionNames.RetryDenied);
+
+        var (denied, actor, bestEffort) = events.Written.Should().ContainSingle("denial audit policy requires recovery retry denials to be audited").Which;
+        denied.Action.Should().Be(AuditActionNames.RecoveryRetryDenied);
+        denied.OutcomeCode.Should().Be(AuditOutcomeCodes.Denied);
+        denied.Fields["runId"].Should().Be("r1");
+        actor.IsCurrentPrincipal.Should().BeTrue("the denial is the signed-in caller's, not the platform's");
+        bestEffort.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WhenDeniedForACallerMappedToNoSession_IsRecordedAsNotSignedInNeverAsSystem()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(recoveryGovernance: gov, principal: new StubPrincipalContext(signedIn: false), events: events);
+
+        await controller.RetryBlockedWork("r1", CancellationToken.None);
+
+        var (_, actor, _) = events.Written.Should().ContainSingle().Which;
+        actor.Should().Be(AuditActor.Anonymous);
+        actor.RecordedValue.Should().NotBe("system").And.NotBe("system:unknown");
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WhenDeniedWithAnOverlongRunIdText_StillRecordsTheDenialWithoutIt()
+    {
+        var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(recoveryGovernance: gov, events: events);
+
+        var result = await controller.RetryBlockedWork(new string('x', 4000), CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+        var denied = events.Written.Should().ContainSingle().Which.Event;
+        denied.Fields.Should().NotContainKey("runId", "the caller's own text is recorded only when the schema can hold it");
+        denied.Related.RunId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WhenNotEligible_RecordsTheRefusalAgainstTheBlockedRunAndItsOwnDefinition()
+    {
+        var entry = CreateBlockedEntry("r1", "workflow", retryEligibleNow: false);
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(recovery: new StubRecoveryQueryService(blocked: [entry], single: entry), events: events);
+
+        await controller.RetryBlockedWork("r1", CancellationToken.None);
+
+        var refusal = events.Single(AuditActionNames.BlockedWorkRetryRefused);
+        refusal.Target!.Id.Should().Be("r1");
+        refusal.Fields["definitionId"].Should().Be("def-1");
+        refusal.Fields["reason"].Should().Be("module_not_executable");
+        refusal.OutcomeCode.Should().Be(AuditOutcomeCodes.Rejected);
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_WhenTheRetryItselfIsBlocked_RecordsTheDefinitionNotTheRunIdInItsPlace()
+    {
+        // The earlier code passed the original RUN id where the DEFINITION id belongs on this branch.
+        var entry = CreateBlockedEntry("r1", "workflow", true);
+        var blockedResult = new WorkflowRetryResult(
+            new OperationRunId("r1"), null, null, new WorkflowDefinitionId("wf-from-result"), "blocked",
+            IsBlocked: true, BlockedReason: "Module disabled");
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(
+            recovery: new StubRecoveryQueryService(blocked: [entry], single: entry),
+            retry: new StubRetryService(blockedResult),
+            events: events);
+
+        var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+        var refusal = events.Single(AuditActionNames.BlockedWorkRetryRefused);
+        refusal.Fields["runId"].Should().Be("r1");
+        refusal.Fields["definitionId"].Should().Be("def-1").And.NotBe("r1");
+        refusal.Fields["reason"].Should().Be("definition_not_executable");
+    }
+
+    [Fact]
+    public async Task RetryBlockedWork_OnSuccess_AsksForTheRecoveryChannelAndWritesNoRowOfItsOwn()
+    {
+        // The committed retry records itself (naming the new run) in the same unit as the retry, under the recovery action.
+        // The controller no longer writes a "requested" row before the work or a "dispatched" row after it.
+        var entry = CreateBlockedEntry("r1", "workflow", true);
+        var retry = new StubRetryService();
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(recovery: new StubRecoveryQueryService(blocked: [entry], single: entry), retry: retry, events: events);
+
+        var result = await controller.RetryBlockedWork("r1", CancellationToken.None);
+
+        result.Should().BeOfType<AcceptedResult>();
+        retry.Channels.Should().Equal(WorkflowRetryChannel.BlockedWork);
+        events.Written.Should().BeEmpty();
     }
 
     [Fact]
     public async Task RunScheduleCycle_WhenDenied_AuditsRunCycleDenied()
     {
         var gov = new StubRecoveryGovernanceService(canRead: true, canManage: false);
-        var spyAudit = new SpyAuditService();
-        var controller = NewController(recoveryGovernance: gov, audit: spyAudit);
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(recoveryGovernance: gov, events: events);
         var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
         result.Result.Should().BeOfType<ForbidResult>();
-        spyAudit.LastAppended.Should().NotBeNull("denial audit policy requires run-cycle denials to be audited");
-        spyAudit.LastAppended!.Action.Should().Be(RecoveryAuditActionNames.RunCycleDenied);
+        var denied = events.Single(AuditActionNames.SchedulerOperationDenied);
+        denied.Fields["operation"].Should().Be("run_cycle");
+        denied.OutcomeCode.Should().Be(AuditOutcomeCodes.Denied);
+    }
+
+    [Fact]
+    public async Task RunScheduleCycle_RecordsWhatTheCycleReported()
+    {
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(events: events);
+
+        await controller.RunScheduleCycle("plane-a", CancellationToken.None);
+
+        var recorded = events.Single(AuditActionNames.SchedulerOperationRequested);
+        recorded.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        recorded.Fields["runtimePlaneId"].Should().Be("plane-a");
+        recorded.Fields["operation"].Should().Be("run_cycle");
+    }
+
+    [Fact]
+    public async Task RunScheduleCycle_WhenTheCycleThrows_IsRecordedAsFailedNotAsCompleted()
+    {
+        var events = new RecordingAuditEventWriter();
+        var controller = NewController(scheduleRunner: new ThrowingScheduleDispatchRunner(), events: events);
+
+        var result = await controller.RunScheduleCycle(cancellationToken: CancellationToken.None);
+
+        result.Result.Should().BeOfType<AcceptedResult>("the operator still gets the sanitized report");
+        events.Single(AuditActionNames.SchedulerOperationRequested).OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
     }
 
     [Fact]
@@ -278,7 +397,7 @@ public sealed class RecoveryControllerTests
         IDevWorkerRuntimeRecoveryService? devWorkerRecovery = null,
         IRecoveryGovernanceService? recoveryGovernance = null,
         IPrincipalContext? principal = null,
-        IAuditService? audit = null)
+        RecordingAuditEventWriter? events = null)
     {
         return new RecoveryController(
             recovery ?? new StubRecoveryQueryService(blocked: []),
@@ -287,7 +406,7 @@ public sealed class RecoveryControllerTests
             devWorkerRecovery ?? new StubDevWorkerRuntimeRecoveryService(),
             recoveryGovernance ?? new StubRecoveryGovernanceService(canRead: true, canManage: true),
             principal ?? new StubPrincipalContext(),
-            audit);
+            events ?? new RecordingAuditEventWriter());
     }
 
     private sealed class StubDevWorkerRuntimeRecoveryService : IDevWorkerRuntimeRecoveryService
@@ -359,9 +478,23 @@ public sealed class RecoveryControllerTests
 
         public StubRetryService(WorkflowRetryResult? result = null) => _result = result;
 
-        public ValueTask<WorkflowRetryResult?> RequestRetryAsync(OperationRunId runId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<WorkflowRetryResult?>(_result ?? new WorkflowRetryResult(
+        public List<WorkflowRetryChannel> Channels { get; } = [];
+
+        public ValueTask<WorkflowRetryResult?> RequestRetryAsync(OperationRunId runId, WorkflowRetryChannel channel, CancellationToken cancellationToken = default)
+        {
+            Channels.Add(channel);
+            return ValueTask.FromResult<WorkflowRetryResult?>(_result ?? new WorkflowRetryResult(
                 runId, new OperationRunId("new"), new WorkflowInstanceId("inst"), new WorkflowDefinitionId("wf"), "requested"));
+        }
+    }
+
+    private sealed class ThrowingScheduleDispatchRunner : IScheduleDispatchRunner
+    {
+        public ValueTask<ScheduleDispatchCycleResult> RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("the cycle failed");
+
+        public ValueTask<ScheduleDispatchCycleResult> RecoverStaleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("the cycle failed");
     }
 
     private sealed class StubScheduleDispatchRunner : IScheduleDispatchRunner
@@ -382,29 +515,10 @@ public sealed class RecoveryControllerTests
         }
     }
 
-    private sealed class StubPrincipalContext : IPrincipalContext
+    private sealed class StubPrincipalContext(bool signedIn = true) : IPrincipalContext
     {
         public ValueTask<Apperture.Shared.Kernel.IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<Apperture.Shared.Kernel.IActor?>(null);
-    }
-
-    private sealed class SpyAuditService : IAuditService
-    {
-        public Apperture.Core.Domain.Audit.AuditRecord? LastAppended { get; private set; }
-
-        public ValueTask AppendAsync(Apperture.Core.Domain.Audit.AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            LastAppended = record;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<Apperture.Core.Domain.Audit.AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<Apperture.Core.Domain.Audit.AuditRecord?>(null);
+            ValueTask.FromResult<Apperture.Shared.Kernel.IActor?>(
+                signedIn ? new HumanActor(new Apperture.Shared.Kernel.ActorId("usr_recovery_operator"), "operator") : null);
     }
 }

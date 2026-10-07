@@ -1,11 +1,10 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,20 +17,14 @@ public sealed class WorkflowsController : ControllerBase
 {
     private const string DirectStartDeprecationHeader = "299 - \"Direct workflow starts are deprecated; use integration procedure launch APIs where available.\"";
     private readonly IWorkflowStartAuthorizationService _workflowStartAuth;
-    private readonly IWorkflowStartDispatchService _dispatch;
-    private readonly IAuditService? _audit;
-    private readonly IPrincipalContext _principal;
+    private readonly IAuditedExecutionStartService _starts;
 
     public WorkflowsController(
         IWorkflowStartAuthorizationService workflowStartAuth,
-        IWorkflowStartDispatchService dispatch,
-        IPrincipalContext principal,
-        IAuditService? audit = null)
+        IAuditedExecutionStartService starts)
     {
         _workflowStartAuth = workflowStartAuth;
-        _dispatch = dispatch;
-        _principal = principal;
-        _audit = audit;
+        _starts = starts;
     }
 
     [HttpPost("{workflowId}/start")]
@@ -67,24 +60,19 @@ public sealed class WorkflowsController : ControllerBase
             ProcedureId: body?.ProcedureId,
             ExecutionOrigin: RunExecutionOriginNames.Manual);
 
+        // The start, its request row (which names the requester) and its audit row commit together; a definition that
+        // is not executable creates nothing and is recorded as a refused start by the same actor.
         WorkflowStartDispatchResult? dispatchResult;
         try
         {
-            dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+            dispatchResult = await _starts.StartWorkflowAsync(request, ExecutionLaunchChannel.Direct, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
         if (dispatchResult is null)
-        {
-            await TryAppendStartBlockedAuditAsync(
-                LifecycleExecutionAuditActionNames.WorkflowStartBlocked,
-                $"workflowId={workflowId};reason=definition_not_executable",
-                body?.CorrelationId,
-                cancellationToken).ConfigureAwait(false);
             return NotFound(new { error = $"Workflow definition {workflowId} not found." });
-        }
 
         return Accepted(new
         {
@@ -100,39 +88,6 @@ public sealed class WorkflowsController : ControllerBase
         if (HttpContext?.Response?.Headers is null)
             return;
         HttpContext.Response.Headers.Append("Warning", value);
-    }
-
-    private async Task TryAppendStartBlockedAuditAsync(
-        string action,
-        string details,
-        string? correlationId,
-        CancellationToken cancellationToken)
-    {
-        if (_audit is null)
-            return;
-
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            return;
-
-        try
-        {
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor.Id,
-                    action,
-                    Resource: null,
-                    Outcome: "Blocked",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(correlationId),
-                    details),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // best-effort audit
-        }
     }
 
     // Future: POST workflows/{instanceId}/signal — must call OrchestrationSafeValidator.ValidateSignalPayload(payload) at entry before persisting to orchestration state/history.

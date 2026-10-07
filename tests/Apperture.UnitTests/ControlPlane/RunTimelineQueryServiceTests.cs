@@ -80,6 +80,86 @@ public sealed class RunTimelineQueryServiceTests
     }
 
     [Fact]
+    public async Task GetRunTimelineAsync_WorkflowRun_NamesTheRequesterOfTheStartAndOfTheCancelAndTheWorkerThatClaimedIt()
+    {
+        // AUD-1.3: the requesting operator and the worker that executes the request are two facts, shown as two actors.
+        var t0 = DateTimeOffset.UtcNow.AddHours(-1);
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "run-a", WorkflowInstanceId = "wf-a", DefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Running, CreatedAt = t0,
+        });
+        db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
+        {
+            RunId = "run-a", WorkflowInstanceId = "wf-a", WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            Status = WorkflowLifecycleStatusNames.Running, CreatedAt = t0, RequestedBy = "usr_requester",
+            ClaimedAt = t0.AddMinutes(1), ClaimedBy = "worker-1",
+        });
+        db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            Id = 70, RunId = "run-a", WorkflowInstanceId = "wf-a", WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            EventType = WorkflowLifecycleEventNames.CancelRequested, FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Running, OccurredAt = t0.AddMinutes(3),
+        });
+        db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
+        {
+            Id = 71, RunId = "run-a", WorkflowInstanceId = "wf-a", WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            EventType = WorkflowLifecycleEventNames.Started, FromStatus = WorkflowLifecycleStatusNames.Requested,
+            ToStatus = WorkflowLifecycleStatusNames.Running, OccurredAt = t0.AddMinutes(2),
+        });
+        db.WorkflowCancelRequests.Add(new WorkflowCancelRequestEntity
+        {
+            RunId = "run-a", WorkflowInstanceId = "wf-a", WorkflowDefinitionId = "Sample.HelloWorld.HelloWorld",
+            RequestedAt = t0.AddMinutes(3), RequestedBy = "usr_canceller",
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var timeline = await service.GetRunTimelineAsync(new OperationRunId("run-a"));
+
+        timeline!.Events.Single(e => e.EventKind == RunTimeline.EventKindRunRequested).Actor.Should().Be("usr_requester");
+        timeline.Events.Single(e => e.EventKind == RunTimeline.EventKindRunClaimed).Actor.Should().Be("worker-1");
+        timeline.Events.Single(e => e.EventId == "lifecycle:70").Actor.Should().Be("usr_canceller");
+        timeline.Events.Single(e => e.EventId == "lifecycle:71").Actor.Should().BeNull("only the cancel announces an actor; other transitions have none of their own");
+    }
+
+    [Fact]
+    public async Task GetRunTimelineAsync_OperationRun_NamesTheRequesterAndTheCanceller()
+    {
+        var t0 = DateTimeOffset.UtcNow.AddHours(-1);
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "op-a", WorkflowInstanceId = "op-i", DefinitionId = "Sample.HelloWorld.Op",
+            Status = WorkflowLifecycleStatusNames.Running, CreatedAt = t0,
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "op-a", OperationInstanceId = "op-i", OperationDefinitionId = "Sample.HelloWorld.Op",
+            Status = WorkflowLifecycleStatusNames.Running, CreatedAt = t0, RequestedBy = Apperture.Core.Application.Services.ActorLiterals.SystemScheduler,
+        });
+        db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+        {
+            Id = 90, RunId = "op-a", OperationInstanceId = "op-i", OperationDefinitionId = "Sample.HelloWorld.Op",
+            EventType = OperationLifecycleEventNames.CancelRequested, FromStatus = WorkflowLifecycleStatusNames.Running,
+            ToStatus = WorkflowLifecycleStatusNames.Running, OccurredAt = t0.AddMinutes(2),
+        });
+        db.OperationCancelRequests.Add(new OperationCancelRequestEntity
+        {
+            RunId = "op-a", OperationInstanceId = "op-i", OperationDefinitionId = "Sample.HelloWorld.Op",
+            RequestedAt = t0.AddMinutes(2), RequestedBy = "usr_canceller",
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var timeline = await service.GetRunTimelineAsync(new OperationRunId("op-a"));
+
+        timeline!.Events.Single(e => e.EventKind == RunTimeline.EventKindRunRequested).Actor.Should().Be("system:scheduler");
+        timeline.Events.Single(e => e.EventId == "lifecycle:90").Actor.Should().Be("usr_canceller");
+    }
+
+    [Fact]
     public async Task GetRunTimelineAsync_OperationRun_ExcludesExternalControlEvents()
     {
         var t0 = DateTimeOffset.UtcNow.AddMinutes(-30);

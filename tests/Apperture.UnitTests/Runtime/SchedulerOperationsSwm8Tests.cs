@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeComposition;
 using Apperture.Core.Application.RuntimeHealth;
@@ -12,6 +13,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -176,10 +178,12 @@ public sealed class SchedulerOperationsSwm8Tests
     public async Task SchedulerOperationsController_requires_recovery_manage()
     {
         var runner = new CapturingRunner();
+        var events = new RecordingAuditEventWriter();
         var controller = new SchedulerOperationsController(
             runner,
             new StubGov(canManage: false),
-            new StubPrincipal());
+            new StubPrincipal(),
+            events);
         var denied = await controller.RunCycle(cancellationToken: CancellationToken.None);
         denied.Result.Should().BeOfType<ForbidResult>();
         runner.RunCycleCalled.Should().BeFalse();
@@ -187,16 +191,42 @@ public sealed class SchedulerOperationsSwm8Tests
         var deniedRecover = await controller.RecoverStale(cancellationToken: CancellationToken.None);
         deniedRecover.Result.Should().BeOfType<ForbidResult>();
         runner.RecoverStaleCalled.Should().BeFalse();
+
+        // Each denial is recorded as the caller, naming the operation that was refused.
+        events.Written.Select(w => w.Event.Action).Should().Equal(
+            AuditActionNames.SchedulerOperationDenied,
+            AuditActionNames.SchedulerOperationDenied);
+        events.Written.Select(w => w.Event.Fields["operation"]).Should().Equal("run_cycle", "recover_stale");
+        events.Written.Should().OnlyContain(w => w.Actor.IsCurrentPrincipal);
+    }
+
+    [Fact]
+    public async Task SchedulerOperationsController_records_a_caller_mapped_to_no_session_as_not_signed_in_never_as_system_unknown()
+    {
+        var events = new RecordingAuditEventWriter();
+        var controller = new SchedulerOperationsController(
+            new CapturingRunner(),
+            new StubGov(canManage: false),
+            new NoSessionPrincipal(),
+            events);
+
+        await controller.RunCycle(cancellationToken: CancellationToken.None);
+
+        var (_, actor, _) = events.Written.Should().ContainSingle().Which;
+        actor.Should().Be(AuditActor.Anonymous);
+        actor.RecordedValue.Should().NotBe("system:unknown");
     }
 
     [Fact]
     public async Task SchedulerOperationsController_run_cycle_and_recover_stale_return_bodies()
     {
         var runner = new CapturingRunner();
+        var events = new RecordingAuditEventWriter();
         var controller = new SchedulerOperationsController(
             runner,
             new StubGov(canManage: true),
-            new StubPrincipal());
+            new StubPrincipal(),
+            events);
 
         var run = await controller.RunCycle(runtimePlaneId: "local", CancellationToken.None);
         var runBody = run.Result.Should().BeOfType<AcceptedResult>().Subject.Value
@@ -212,6 +242,13 @@ public sealed class SchedulerOperationsSwm8Tests
         recoverBody.Action.Should().Be(SchedulerManualOperationMapper.ActionRecoverStale);
         recoverBody.DueCount.Should().Be(0);
         runner.RecoverStaleCalled.Should().BeTrue();
+
+        // Each manual operation is recorded as the signed-in operator, with what it reported.
+        events.Written.Select(w => w.Event.Fields["operation"]).Should().Equal("run_cycle", "recover_stale");
+        events.Written.Should().OnlyContain(w => w.Actor.IsCurrentPrincipal
+            && w.Event.Action == AuditActionNames.SchedulerOperationRequested
+            && w.Event.OutcomeCode == AuditOutcomeCodes.Succeeded);
+        events.Written[1].Event.Fields.Should().ContainKey("recoveredCount");
     }
 
     [Fact]
@@ -327,6 +364,13 @@ public sealed class SchedulerOperationsSwm8Tests
     }
 
     private sealed class StubPrincipal : IPrincipalContext
+    {
+        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IActor?>(new HumanActor(new ActorId("usr_scheduler_operator"), "operator"));
+    }
+
+    /// <summary>A caller the platform cannot map to an application session.</summary>
+    private sealed class NoSessionPrincipal : IPrincipalContext
     {
         public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IActor?>(null);

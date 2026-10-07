@@ -1,9 +1,10 @@
 using Apperture.ControlPlane.Security;
-using Apperture.Core.Application.Services;
+using Apperture.Core.Application.Audit;
+using Apperture.Core.Domain.Identity;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -19,7 +20,8 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Running);
         await db.SaveChangesAsync();
 
-        var svc = CreateService(db);
+        var unit = SignedInUnit();
+        var svc = CreateService(db, unit);
 
         var result = await svc.RequestParkAsync(new OperationRunId("r1"));
 
@@ -32,6 +34,14 @@ public sealed class WorkflowExternalControlServiceTests
         (await db.WorkflowExternalControlRequests.SingleAsync()).RequestedBy.Should().Be("u1");
         (await db.WorkflowLifecycleEvents.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.SingleAsync()).EventType.Should().Be(WorkflowLifecycleEventNames.ParkRequested);
+
+        // The request row and the audit row share the unit's own actor, and the audit row targets the persisted run.
+        unit.Actions.Should().Equal(AuditActionNames.WorkflowRunParkRequested);
+        var recorded = unit.Single(AuditActionNames.WorkflowRunParkRequested);
+        recorded.Target!.Type.Should().Be(AuditTargetTypes.WorkflowRun);
+        recorded.Target.Id.Should().Be("r1");
+        recorded.Fields["runStatus"].Should().Be(WorkflowLifecycleStatusNames.Running);
+        unit.Operations.Single().Actor.RecordedValue.Should().Be("u1");
     }
 
     [Fact]
@@ -41,7 +51,8 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Parked);
         await db.SaveChangesAsync();
 
-        var svc = CreateService(db);
+        var unit = SignedInUnit();
+        var svc = CreateService(db, unit);
 
         var result = await svc.RequestResumeAsync(new OperationRunId("r1"));
 
@@ -54,6 +65,7 @@ public sealed class WorkflowExternalControlServiceTests
         (await db.WorkflowExternalControlRequests.SingleAsync()).RequestedBy.Should().Be("u1");
         (await db.WorkflowLifecycleEvents.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.SingleAsync()).EventType.Should().Be(WorkflowLifecycleEventNames.ResumeRequested);
+        unit.Actions.Should().Equal(AuditActionNames.WorkflowRunResumeRequested);
     }
 
     [Fact]
@@ -77,7 +89,8 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Running);
         await db.SaveChangesAsync();
 
-        var svc = CreateService(db);
+        var unit = SignedInUnit();
+        var svc = CreateService(db, unit);
         var first = await svc.RequestParkAsync(new OperationRunId("r1"));
         var second = await svc.RequestParkAsync(new OperationRunId("r1"));
 
@@ -86,6 +99,7 @@ public sealed class WorkflowExternalControlServiceTests
         second!.Status.Should().Be(WorkflowExternalControlStatusNames.Queued);
         (await db.WorkflowExternalControlRequests.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.CountAsync(e => e.EventType == WorkflowLifecycleEventNames.ParkRequested)).Should().Be(1);
+        unit.Actions.Should().Equal([AuditActionNames.WorkflowRunParkRequested], "the repeat changed nothing, so it recorded nothing");
     }
 
     [Fact]
@@ -95,12 +109,14 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Parked);
         await db.SaveChangesAsync();
 
-        var svc = CreateService(db);
+        var unit = SignedInUnit();
+        var svc = CreateService(db, unit);
         await svc.RequestResumeAsync(new OperationRunId("r1"));
         await svc.RequestResumeAsync(new OperationRunId("r1"));
 
         (await db.WorkflowExternalControlRequests.CountAsync()).Should().Be(1);
         (await db.WorkflowLifecycleEvents.CountAsync(e => e.EventType == WorkflowLifecycleEventNames.ResumeRequested)).Should().Be(1);
+        unit.Actions.Should().Equal([AuditActionNames.WorkflowRunResumeRequested], "the repeat changed nothing, so it recorded nothing");
     }
 
     [Fact]
@@ -122,13 +138,12 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Running);
         await db.SaveChangesAsync();
 
-        var svc = new WorkflowExternalControlService(
-            db,
-            new DenyAuthz(),
-            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)));
+        var unit = SignedInUnit();
+        var svc = new WorkflowExternalControlService(db, new DenyAuthz(), unit);
 
         Func<Task> act = async () => await svc.RequestParkAsync(new OperationRunId("r1"));
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        unit.Operations.Should().BeEmpty("a denied request never opens an audited unit");
     }
 
     [Fact]
@@ -138,20 +153,19 @@ public sealed class WorkflowExternalControlServiceTests
         SeedRun(db, "r1", "i1", WorkflowLifecycleStatusNames.Parked);
         await db.SaveChangesAsync();
 
-        var svc = new WorkflowExternalControlService(
-            db,
-            new DenyAuthz(),
-            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)));
+        var unit = SignedInUnit();
+        var svc = new WorkflowExternalControlService(db, new DenyAuthz(), unit);
 
         Func<Task> act = async () => await svc.RequestResumeAsync(new OperationRunId("r1"));
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        unit.Operations.Should().BeEmpty("a denied request never opens an audited unit");
     }
 
-    private static WorkflowExternalControlService CreateService(AppertureDbContext db) =>
-        new(
-            db,
-            new AllowAuthz(),
-            new StubPrincipalContext(new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false)));
+    private static RecordingAuditedUnitOfWork SignedInUnit() =>
+        new() { CurrentPrincipalActor = AuditActor.AuthenticatedUser(new UserId("u1")) };
+
+    private static WorkflowExternalControlService CreateService(AppertureDbContext db, RecordingAuditedUnitOfWork? unit = null) =>
+        new(db, new AllowAuthz(), unit ?? SignedInUnit());
 
     private static void SeedRun(AppertureDbContext db, string runId, string instanceId, string status)
     {
@@ -193,15 +207,5 @@ public sealed class WorkflowExternalControlServiceTests
     {
         public ValueTask EnsureCanControlRunAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
             throw new UnauthorizedAccessException("deny");
-    }
-
-    private sealed class StubPrincipalContext : IPrincipalContext
-    {
-        private readonly IActor? _actor;
-
-        public StubPrincipalContext(IActor? actor) => _actor = actor;
-
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(_actor);
     }
 }

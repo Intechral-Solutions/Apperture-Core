@@ -5,7 +5,7 @@ using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
-using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Sample.ApiPolling;
@@ -95,7 +95,7 @@ public sealed class ApiPollingOperationItemRetryServiceTests
             [new ApiPollingOperationItemRetryHandler(), new FileImportOperationItemRetryHandler()],
             new AllowRetryAuthz(),
             dispatch,
-            new StubPrincipal());
+            new RecordingAuditedUnitOfWork());
     }
 
     private static async Task<(OperationItem item, OperationGroup group)> SeedFailedApiPollingItemAsync(
@@ -176,18 +176,5 @@ public sealed class ApiPollingOperationItemRetryServiceTests
     {
         public ValueTask EnsureCanRetryRunAsync(WorkflowDefinitionId workflowDefinitionId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
-    }
-
-    private sealed class StubPrincipal : IPrincipalContext
-    {
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IActor?>(new StubActor());
-    }
-
-    private sealed class StubActor : IActor
-    {
-        public ActorId Id { get; } = new("actor-test");
-        public ActorKind Kind => ActorKind.Human;
-        public string? DisplayName => "Test";
     }
 }

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -7,6 +8,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -212,6 +214,70 @@ public sealed class BulkOperationItemRetryServiceTests
     }
 
     [Fact]
+    public async Task BulkRetry_an_item_whose_outcome_cannot_be_confirmed_is_reported_as_that_and_the_batch_goes_on()
+    {
+        var db = NewDb();
+        var items = new InMemoryOperationItemStore();
+        var attempts = new InMemoryOperationItemRetryAttemptStore();
+        var group = await items.BeginGroupAsync(new BeginOperationGroupRequest(
+            "run-parent", FileImportModule.ModuleIdValue, null, "Sample.FileImport.procedures.import", "file_import"));
+        var first = await AppendFailedAsync(items, group.OperationGroupId, "run-parent", 1, "C-1", 1);
+        var second = await AppendFailedAsync(items, group.OperationGroupId, "run-parent", 2, "C-2", 3);
+        var third = await AppendFailedAsync(items, group.OperationGroupId, "run-parent", 3, "C-3", 4);
+        await items.CompleteGroupAsync(new CompleteOperationGroupRequest(
+            group.OperationGroupId, OperationGroupStatuses.CompletedWithErrors, 3, 0, 3, 0));
+        SeedRun(db, "run-parent", FileImportDef.Value);
+        await db.SaveChangesAsync();
+
+        // The second item's commit can be neither confirmed nor rolled back. The first has committed and stays dispatched; the
+        // third is still attempted. The batch is not turned into a failure that denies what already committed.
+        var unit = new UnknownOnNthOperation(new RecordingAuditedUnitOfWork(), unknownOperation: 2);
+        var svc = CreateBulk(db, items, attempts, unit: unit);
+
+        var result = await svc.BulkRetryAsync(
+            new OperationRunId("run-parent"),
+            group.OperationGroupId,
+            new BulkRetryOperationItemsRequest([first.OperationItemId, second.OperationItemId, third.OperationItemId], RequestId: "unknown-batch"));
+
+        result!.Items.Select(i => i.Category).Should().Equal(
+            BulkRetryOperationItemResultCategories.Dispatched,
+            BulkRetryOperationItemResultCategories.OutcomeUnknown,
+            BulkRetryOperationItemResultCategories.Dispatched);
+        result.DispatchedCount.Should().Be(2);
+        result.FailedCount.Should().Be(1);
+        result.Items[1].Message.Should().Contain("could not be confirmed").And.NotContain("Nothing was changed");
+    }
+
+    [Fact]
+    public async Task BulkRetry_without_an_authenticated_actor_throws_instead_of_recording_a_placeholder()
+    {
+        var db = NewDb();
+        var items = new InMemoryOperationItemStore();
+        var attempts = new InMemoryOperationItemRetryAttemptStore();
+        var (item, group) = await SeedFailedAsync(items, "run-parent", sequence: 1, subject: "C-1", row: 1);
+        SeedRun(db, "run-parent", FileImportDef.Value);
+        await db.SaveChangesAsync();
+
+        var audit = new CapturingAudit();
+        var svc = new BulkOperationItemRetryService(
+            db,
+            items,
+            CreateItemRetry(db, items, attempts, allowAuthz: true),
+            new AllowRetryAuthz(),
+            new NoPrincipal(),
+            audit,
+            NullLogger<BulkOperationItemRetryService>.Instance);
+
+        var act = async () => await svc.BulkRetryAsync(
+            new OperationRunId("run-parent"),
+            group.OperationGroupId,
+            new BulkRetryOperationItemsRequest([item.OperationItemId], "no-actor"));
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        audit.Records.Should().BeEmpty("no row is written under a made-up actor");
+    }
+
+    [Fact]
     public void AttentionRules_acknowledgement_clears_attention_without_success()
     {
         OperationItemAttentionRules.NeedsAttention(OperationItemStatuses.Failed, hasActiveAcknowledgement: false, hasSucceededRetryAttempt: false)
@@ -240,9 +306,10 @@ public sealed class BulkOperationItemRetryServiceTests
         IOperationItemStore items,
         IOperationItemRetryAttemptStore attempts,
         bool allowAuthz = true,
-        IAuditService? audit = null)
+        IAuditService? audit = null,
+        IAuditedUnitOfWork? unit = null)
     {
-        var itemRetry = CreateItemRetry(db, items, attempts, allowAuthz);
+        var itemRetry = CreateItemRetry(db, items, attempts, allowAuthz, unit);
         return new BulkOperationItemRetryService(
             db,
             items,
@@ -257,7 +324,8 @@ public sealed class BulkOperationItemRetryServiceTests
         AppertureDbContext db,
         IOperationItemStore items,
         IOperationItemRetryAttemptStore attempts,
-        bool allowAuthz)
+        bool allowAuthz,
+        IAuditedUnitOfWork? unit = null)
     {
         var definitionResolver = new StubDefinitionResolver(new WorkflowDefinition(
             FileImportDef,
@@ -274,7 +342,7 @@ public sealed class BulkOperationItemRetryServiceTests
             [new FileImportOperationItemRetryHandler()],
             allowAuthz ? new AllowRetryAuthz() : new DenyRetryAuthz(),
             dispatch,
-            new StubPrincipal());
+            unit ?? new RecordingAuditedUnitOfWork());
     }
 
     private static async Task<(OperationItem item, OperationGroup group)> SeedFailedAsync(
@@ -367,6 +435,27 @@ public sealed class BulkOperationItemRetryServiceTests
         public ActorId Id { get; } = new("ops-1");
         public ActorKind Kind => ActorKind.Human;
         public string? DisplayName => "Ops";
+    }
+
+    private sealed class NoPrincipal : IPrincipalContext
+    {
+        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IActor?>(null);
+    }
+
+    /// <summary>Runs every operation through the inner unit, except the Nth, whose commit cannot be established.</summary>
+    private sealed class UnknownOnNthOperation(IAuditedUnitOfWork inner, int unknownOperation) : IAuditedUnitOfWork
+    {
+        private int _calls;
+
+        public Task<T> ExecuteAsync<T>(
+            AuditedOperation operation,
+            Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
+            Func<AuditCommittedOperation, CancellationToken, Task<T>> reconstruct,
+            CancellationToken cancellationToken = default) =>
+            ++_calls == unknownOperation
+                ? throw new AuditOutcomeUnknownException("op-unknown")
+                : inner.ExecuteAsync(operation, attempt, reconstruct, cancellationToken);
     }
 
     private sealed class NullAudit : IAuditService

@@ -13,6 +13,12 @@ public static class BulkRetryOperationItemResultCategories
     public const string DispatchFailed = "DispatchFailed";
     public const string ModuleUnsupported = "ModuleUnsupported";
     public const string Blocked = "Blocked";
+
+    /// <summary>
+    /// The platform could not establish whether this item's retry was committed or rolled back. It may or may not have been
+    /// requested; the operator reloads the item's retry attempts before asking again.
+    /// </summary>
+    public const string OutcomeUnknown = "OutcomeUnknown";
 }
 
 /// <summary>JOB-1 — audit action names for failed-work resolution.</summary>

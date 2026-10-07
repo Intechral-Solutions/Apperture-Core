@@ -5,6 +5,7 @@ using Apperture.Shared.Kernel;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.RuntimePlane.Abstractions;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Xunit;
@@ -22,11 +23,12 @@ public sealed class OperationsControllerTests
         return mock;
     }
 
-    private static IOperationStartDispatchService CreateDispatchService(Func<StartOperationRequest, OperationStartDispatchResult?> handler) =>
-        new MockOperationStartDispatchService(handler);
-
-    private static IPrincipalContext StubPrincipal() =>
-        new StubPrincipalContext(new HumanActor(new ActorId("test"), "test"));
+    /// <summary>
+    /// The real audited start service over the given dispatch handler, with in-memory audit doubles: the controller is tested
+    /// through the start, its request actor and its audit row rather than around them.
+    /// </summary>
+    private static IAuditedExecutionStartService CreateDispatchService(Func<StartOperationRequest, OperationStartDispatchResult?> handler) =>
+        TestExecutionStarts.Create(operations: new MockOperationStartDispatchService(handler));
 
     [Fact]
     public async Task Start_WhenBodyContainsSecretBearingParameter_Returns400BadRequest()
@@ -36,8 +38,7 @@ public sealed class OperationsControllerTests
             CreateAllowAllAuthService(),
             new StubOperationInputValidationService(),
             CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")),
-            new StubRunQueryService(),
-            StubPrincipal());
+            new StubRunQueryService());
 
         var resolvedSecret = new ResolvedSecret(
             new SecretRef("x", null),
@@ -66,8 +67,7 @@ public sealed class OperationsControllerTests
                     new OperationInstanceId("inst-1"),
                     new Apperture.Core.Domain.Operations.OperationId(req.OperationDefinitionId),
                     "requested")),
-            new StubRunQueryService(),
-            StubPrincipal());
+            new StubRunQueryService());
 
         var body = new StartOperationRequestBody
         {
@@ -94,8 +94,7 @@ public sealed class OperationsControllerTests
                     new OperationInstanceId("inst-1"),
                     new Apperture.Core.Domain.Operations.OperationId(req.OperationDefinitionId),
                     "requested")),
-            new StubRunQueryService(),
-            StubPrincipal());
+            new StubRunQueryService());
 
         var result = await controller.Start("operation-1", null, CancellationToken.None);
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -109,8 +108,7 @@ public sealed class OperationsControllerTests
             CreateAllowAllAuthService(),
             new StubOperationInputValidationService(),
             CreateDispatchService(_ => throw new InvalidOperationException("dispatch should not be called")),
-            new StubRunQueryService(),
-            StubPrincipal());
+            new StubRunQueryService());
 
         var body = new StartOperationRequestBody
         {
@@ -119,13 +117,6 @@ public sealed class OperationsControllerTests
 
         var result = await controller.Start("operation-1", body, CancellationToken.None);
         result.Should().BeOfType<BadRequestObjectResult>();
-    }
-
-    private sealed class StubPrincipalContext : IPrincipalContext
-    {
-        private readonly IActor? _actor;
-        public StubPrincipalContext(IActor? actor) => _actor = actor;
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_actor);
     }
 
     private sealed class MockOperationStartAuthorizationService : IOperationStartAuthorizationService
@@ -168,8 +159,7 @@ public sealed class OperationsControllerTests
             CreateAllowAllAuthService(),
             new StubOperationInputValidationService(),
             CreateDispatchService(_ => null),
-            new StubRunQueryService(),
-            StubPrincipal());
+            new StubRunQueryService());
 
         var result = await controller.GetOperations(CancellationToken.None);
         result.Result.Should().BeOfType<ForbidResult>();
@@ -194,8 +184,7 @@ public sealed class OperationsControllerTests
                 "workflow",
                 null,
                 null,
-                null)),
-            StubPrincipal());
+                null)));
 
         var result = await controller.GetOperationRun("r1", CancellationToken.None);
         result.Result.Should().BeOfType<NotFoundResult>();
@@ -220,8 +209,7 @@ public sealed class OperationsControllerTests
                 "operation",
                 null,
                 null,
-                null)),
-            StubPrincipal());
+                null)));
 
         var result = await controller.GetOperationRun("r1", CancellationToken.None);
         result.Result.Should().BeOfType<OkObjectResult>();

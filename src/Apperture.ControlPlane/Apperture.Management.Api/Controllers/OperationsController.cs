@@ -1,11 +1,10 @@
 using Apperture.Core.Domain.Operations;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Management.Api.Models;
-using Apperture.Shared.Kernel;
 using Apperture.RuntimePlane.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,27 +20,21 @@ public sealed class OperationsController : ControllerBase
     private readonly IOperationDefinitionQueryService _definitions;
     private readonly IOperationStartAuthorizationService _startAuth;
     private readonly IOperationInputValidationService _inputValidation;
-    private readonly IOperationStartDispatchService _dispatch;
+    private readonly IAuditedExecutionStartService _starts;
     private readonly IRunQueryService _runs;
-    private readonly IAuditService? _audit;
-    private readonly IPrincipalContext _principal;
 
     public OperationsController(
         IOperationDefinitionQueryService definitions,
         IOperationStartAuthorizationService startAuth,
         IOperationInputValidationService inputValidation,
-        IOperationStartDispatchService dispatch,
-        IRunQueryService runs,
-        IPrincipalContext principal,
-        IAuditService? audit = null)
+        IAuditedExecutionStartService starts,
+        IRunQueryService runs)
     {
         _definitions = definitions;
         _startAuth = startAuth;
         _inputValidation = inputValidation;
-        _dispatch = dispatch;
+        _starts = starts;
         _runs = runs;
-        _principal = principal;
-        _audit = audit;
     }
 
     [HttpGet("runs")]
@@ -185,24 +178,19 @@ public sealed class OperationsController : ControllerBase
             body?.ProcedureId,
             ExecutionOrigin: RunExecutionOriginNames.Manual);
 
+        // The start, its request row (which names the requester) and its audit row commit together; a definition that
+        // is not executable creates nothing and is recorded as a refused start by the same actor.
         OperationStartDispatchResult? dispatchResult;
         try
         {
-            dispatchResult = await _dispatch.StartAsync(request, cancellationToken);
+            dispatchResult = await _starts.StartOperationAsync(request, ExecutionLaunchChannel.Direct, cancellationToken);
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
         if (dispatchResult is null)
-        {
-            await TryAppendStartBlockedAuditAsync(
-                LifecycleExecutionAuditActionNames.OperationStartBlocked,
-                $"operationDefinitionId={operationDefinitionId};reason=definition_not_executable",
-                body?.CorrelationId,
-                cancellationToken).ConfigureAwait(false);
             return NotFound(new { error = $"Operation definition {operationDefinitionId} not found." });
-        }
 
         return Accepted(new
         {
@@ -211,39 +199,6 @@ public sealed class OperationsController : ControllerBase
             operationDefinitionId = dispatchResult.OperationDefinitionId.Value,
             status = dispatchResult.Status
         });
-    }
-
-    private async Task TryAppendStartBlockedAuditAsync(
-        string action,
-        string details,
-        string? correlationId,
-        CancellationToken cancellationToken)
-    {
-        if (_audit is null)
-            return;
-
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
-            return;
-
-        try
-        {
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    actor.Id,
-                    action,
-                    Resource: null,
-                    Outcome: "Blocked",
-                    Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId(correlationId),
-                    details),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            // best-effort audit
-        }
     }
 
     private void TryAppendWarningHeader(string value)

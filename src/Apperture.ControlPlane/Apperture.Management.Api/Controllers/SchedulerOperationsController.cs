@@ -1,12 +1,13 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Recovery;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
 using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditEvent = Apperture.Core.Application.Audit.AuditEvent;
 
 namespace Apperture.Management.Api.Controllers;
 
@@ -22,18 +23,18 @@ public sealed class SchedulerOperationsController : ControllerBase
     private readonly IScheduleDispatchRunner _scheduleRunner;
     private readonly IRecoveryGovernanceService _recoveryGovernance;
     private readonly IPrincipalContext _principal;
-    private readonly IAuditService? _audit;
+    private readonly IAuditEventWriter _events;
 
     public SchedulerOperationsController(
         IScheduleDispatchRunner scheduleRunner,
         IRecoveryGovernanceService recoveryGovernance,
         IPrincipalContext principal,
-        IAuditService? audit = null)
+        IAuditEventWriter events)
     {
         _scheduleRunner = scheduleRunner;
         _recoveryGovernance = recoveryGovernance;
         _principal = principal;
-        _audit = audit;
+        _events = events;
     }
 
     /// <summary>
@@ -49,18 +50,17 @@ public sealed class SchedulerOperationsController : ControllerBase
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
         {
-            await TryAuditAsync(RecoveryAuditActionNames.RunCycleDenied, "scheduler.run_cycle denied", cancellationToken)
-                .ConfigureAwait(false);
+            await RecordAsync(AuditEvents.SchedulerOperationDenied("run_cycle"), cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
 
         var planeId = new RuntimePlaneId(runtimePlaneId ?? ScheduleRuntimePlaneDefaults.ExpectedManagementPlaneId);
         var result = await ExecuteRunCycleAsync(planeId, cancellationToken).ConfigureAwait(false);
-        await TryAuditAsync(
-                RecoveryAuditActionNames.SchedulesRunCycleRequested,
-                $"scheduler.run_cycle plane={planeId.Value}",
-                cancellationToken)
-            .ConfigureAwait(false);
+
+        // The outcome is what the cycle reported: succeeded, or failed when it threw.
+        await RecordAsync(
+            AuditEvents.SchedulerOperationRequested("run_cycle", planeId.Value, recoveredCount: null, failed: result.ErrorSummary is not null),
+            cancellationToken).ConfigureAwait(false);
         return Accepted(result);
     }
 
@@ -77,8 +77,7 @@ public sealed class SchedulerOperationsController : ControllerBase
     {
         if (!await _recoveryGovernance.CanManageAsync(cancellationToken).ConfigureAwait(false))
         {
-            await TryAuditAsync(RecoveryAuditActionNames.RunCycleDenied, "scheduler.recover_stale denied", cancellationToken)
-                .ConfigureAwait(false);
+            await RecordAsync(AuditEvents.SchedulerOperationDenied("recover_stale"), cancellationToken).ConfigureAwait(false);
             return Forbid();
         }
 
@@ -101,11 +100,9 @@ public sealed class SchedulerOperationsController : ControllerBase
             SchedulerManualOperationMapper.ActionRecoverStale,
             cycle,
             error);
-        await TryAuditAsync(
-                RecoveryAuditActionNames.SchedulesRunCycleRequested,
-                $"scheduler.recover_stale plane={planeId.Value};recovered={cycle.RecoveredStaleCount}",
-                cancellationToken)
-            .ConfigureAwait(false);
+        await RecordAsync(
+            AuditEvents.SchedulerOperationRequested("recover_stale", planeId.Value, cycle.RecoveredStaleCount, failed: error is not null),
+            cancellationToken).ConfigureAwait(false);
         return Accepted(result);
     }
 
@@ -133,29 +130,13 @@ public sealed class SchedulerOperationsController : ControllerBase
             error);
     }
 
-    private async ValueTask TryAuditAsync(string action, string details, CancellationToken ct)
-    {
-        if (_audit is null)
-            return;
-        try
-        {
-            var actor = await _principal.GetCurrentActorAsync(ct).ConfigureAwait(false);
-            await _audit.AppendAsync(
-                    new AuditRecord(
-                        new AuditRecordId(Guid.NewGuid().ToString("N")),
-                        actor?.Id ?? new ActorId("system:unknown"),
-                        action,
-                        Resource: null,
-                        Outcome: action.Contains("denied", StringComparison.OrdinalIgnoreCase) ? "denied" : "requested",
-                        Timestamp: DateTimeOffset.UtcNow,
-                        CorrelationId: new CorrelationId(null),
-                        Details: details),
-                    ct)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            /* best-effort */
-        }
-    }
+    /// <summary>
+    /// Records a denial or a manual operation as the authenticated principal, or as not signed in when the request maps to no
+    /// application session. There is no <c>system</c> fallback. A failure to write is logged and never changes the response.
+    /// </summary>
+    private async ValueTask RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken) =>
+        await _events.TryWriteAsync(
+            auditEvent,
+            await AttemptActor.ResolveAsync(_principal, cancellationToken).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
 }

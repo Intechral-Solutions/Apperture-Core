@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
@@ -8,6 +9,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Moq;
 using Xunit;
@@ -296,6 +298,7 @@ public sealed class IntegrationProcedureServiceTests
                 new Apperture.Core.Domain.Operations.OperationId("Sample.HelloWorld.DoWork"),
                 "requested"));
 
+        var unit = new RecordingAuditedUnitOfWork();
         var sut = new IntegrationProcedureService(
             integrations.Object,
             readiness.Object,
@@ -306,14 +309,13 @@ public sealed class IntegrationProcedureServiceTests
             Mock.Of<IExecutablePermissionEvaluator>(),
             Mock.Of<IWorkflowStartAuthorizationService>(),
             operationStartAuth.Object,
-            Mock.Of<IWorkflowStartDispatchService>(),
-            operationDispatch.Object);
+            TestExecutionStarts.Create(operations: operationDispatch.Object, unit: unit));
 
         var outcome = await sut.LaunchAsync(
             IntegrationKey,
             procedure.Id,
             new IntegrationProcedureLaunchRequest(
-                new Dictionary<string, object?> { ["message"] = "hello" },
+                new Dictionary<string, object?> { ["message"] = "secret-looking value" },
                 null,
                 null));
 
@@ -321,6 +323,19 @@ public sealed class IntegrationProcedureServiceTests
         captured.Should().NotBeNull();
         captured!.IntegrationId.Should().Be(IntegrationKey);
         captured.ProcedureId.Should().Be(procedure.Id);
+
+        // The start request names the requester the audited unit resolved, and the launch is recorded with parameter
+        // names only: the value the operator supplied never reaches the audit row.
+        captured.RequestedBy.Should().Be(unit.CurrentPrincipalActor.RecordedValue);
+        var recorded = unit.Single(AuditActionNames.OperationStartRequested);
+        recorded.Target!.Type.Should().Be(AuditTargetTypes.OperationRun);
+        recorded.Target.Id.Should().Be("run-op");
+        recorded.Fields["launch"].Should().Be("procedure");
+        recorded.Fields["procedureId"].Should().Be(procedure.Id);
+        recorded.Fields["integrationId"].Should().Be(IntegrationKey);
+        recorded.Fields["parameterCount"].Should().Be(1);
+        ((IReadOnlyList<string>)recorded.Fields["parameterNames"]!).Should().Equal("message");
+        System.Text.Json.JsonSerializer.Serialize(recorded.Fields).Should().NotContain("secret-looking value");
     }
 
     private static void SetupProcedureReadiness(
@@ -350,6 +365,7 @@ public sealed class IntegrationProcedureServiceTests
             permissionEvaluator ?? Mock.Of<IExecutablePermissionEvaluator>(),
             workflowStartAuth ?? Mock.Of<IWorkflowStartAuthorizationService>(),
             Mock.Of<IOperationStartAuthorizationService>(),
-            Mock.Of<IWorkflowStartDispatchService>(),
-            Mock.Of<IOperationStartDispatchService>());
+            TestExecutionStarts.Create(
+                Mock.Of<IWorkflowStartDispatchService>(),
+                Mock.Of<IOperationStartDispatchService>()));
 }

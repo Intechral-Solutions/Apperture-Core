@@ -412,6 +412,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         private bool _noOp;
 
         public string OperationEventId { get; } = operationEventId;
+        public AuditActor Actor => actor;
         public bool PrimaryStaged { get; private set; }
         public int StagedCount => _staged.Count;
         public bool IsNoOp => _noOp;
