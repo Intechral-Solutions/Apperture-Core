@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
@@ -18,15 +19,18 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
     private readonly IUserRepository _userRepository;
     private readonly IEntraPrimaryAuthenticationPolicy? _entraPrimaryPolicy;
     private readonly ILogger<SqlPrincipalToUserResolver> _logger;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public SqlPrincipalToUserResolver(
         IUserRepository userRepository,
         IEntraPrimaryAuthenticationPolicy? entraPrimaryPolicy = null,
-        ILogger<SqlPrincipalToUserResolver>? logger = null)
+        ILogger<SqlPrincipalToUserResolver>? logger = null,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _userRepository = userRepository;
         _entraPrimaryPolicy = entraPrimaryPolicy;
         _logger = logger ?? NullLogger<SqlPrincipalToUserResolver>.Instance;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
 
     /// <inheritdoc />
@@ -57,8 +61,17 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             if (entraLink is null)
                 return null;
 
-            await _userRepository.UpdateLastAuthenticatedAtAsync(key, DateTimeOffset.UtcNow, cancellationToken);
-            if (!entraLink.IsProven)
+            if (entraLink.IsProven)
+            {
+                // Session bookkeeping on a proven link: no security state changes, so no row (D29).
+                await _userRepository.UpdateLastAuthenticatedAtAsync(key, DateTimeOffset.UtcNow, cancellationToken);
+                return user.Id;
+            }
+
+            // A pending link (re-added by an administrator while this session lived) is proven by its first authenticated
+            // use, as before, but in its own unit with its identity_link.entra.proven row (AUD-1.2 review). Binding does not
+            // depend on the proof, so a proof that cannot be recorded leaves the link pending and the request resolved.
+            if (await TryProvePendingAsync(user.Id, key, cancellationToken))
                 await ApplyEntraPrimaryPolicyAsync(user.Id, cancellationToken);
             return user.Id;
         }
@@ -75,6 +88,43 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
         return user.Id;
     }
 
+    /// <summary>
+    /// Proves the session's pending link as the user this host-issued session belongs to (its user id and the exact tenant id
+    /// and object id it was issued through). True when the proof committed; nothing is proven without its row.
+    /// </summary>
+    private async ValueTask<bool> TryProvePendingAsync(UserId userId, ProviderIdentityKey key, CancellationToken cancellationToken)
+    {
+        if (_auditedUnitOfWork is null)
+            return false;
+
+        var provenAt = DateTimeOffset.UtcNow;
+        try
+        {
+            return await _auditedUnitOfWork.ExecuteAsync(
+                new AuditedOperation(AuditActionNames.EntraLinkProven, AuditActor.AuthenticatedUser(userId)),
+                async (transaction, ct) =>
+                {
+                    var current = await _userRepository.FindIdentityLinkAsync(key, ct).ConfigureAwait(false);
+                    if (current is null || current.UserId != userId || current.Link.IsProven || current.Link.LinkId is not { } linkId)
+                    {
+                        transaction.DeclareNoOp();
+                        return false;
+                    }
+
+                    await _userRepository.UpdateLastAuthenticatedAtAsync(key, provenAt, ct).ConfigureAwait(false);
+                    await transaction.StageAsync(AuditEvents.EntraLinkProven(userId, linkId, key.TenantId!, key.ExternalId), ct).ConfigureAwait(false);
+                    return true;
+                },
+                (_, _) => Task.FromResult(true),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            LogNotApplied(ex, "The pending Entra link of {UserId} could not be proven; it stays pending.", userId);
+            return false;
+        }
+    }
+
     private async ValueTask ApplyEntraPrimaryPolicyAsync(UserId userId, CancellationToken cancellationToken)
     {
         if (_entraPrimaryPolicy is null)
@@ -85,7 +135,19 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Entra-primary local-authentication policy could not be applied for {UserId}.", userId.Value);
+            LogNotApplied(ex, "Entra-primary local-authentication policy could not be applied for {UserId}.", userId);
         }
+    }
+
+    /// <summary>An unknown outcome may have applied the change: it is logged as unknown, with its operation id.</summary>
+    private void LogNotApplied(Exception ex, string message, UserId userId)
+    {
+        if (ex is AuditOutcomeUnknownException unknown)
+        {
+            _logger.LogError(ex, "A change for {UserId} has an unknown outcome (operation {OperationEventId}); it may have been applied.", userId.Value, unknown.OperationEventId);
+            return;
+        }
+
+        _logger.LogWarning(ex, message, userId.Value);
     }
 }

@@ -30,6 +30,8 @@ public sealed partial class AuditActorCallSiteTests
             (2, "proof by the user whose sign-in resolved the link; self-link by the initiating user in the protected state"),
         ["Apperture.ControlPlane/Apperture.ControlPlane.Security/NativeMfaService.cs"] =
             (1, "a recovery code consumed by the user this sign-in is authenticating"),
+        ["Apperture.ControlPlane/Apperture.ControlPlane.Security/SqlPrincipalToUserResolver.cs"] =
+            (1, "proof of a pending link by the user of the host-issued session bound to exactly that tenant and object id"),
     };
 
     private static readonly Dictionary<string, (int Count, string Reason)> ValidatedExternalSites = new(StringComparer.Ordinal)
