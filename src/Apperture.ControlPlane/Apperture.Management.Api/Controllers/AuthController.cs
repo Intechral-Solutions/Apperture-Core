@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Api.Controllers;
@@ -53,6 +54,7 @@ public sealed class AuthController : ControllerBase
     private readonly IAccountContactService? _contact;
     private readonly IAccountActionTokenService? _actionTokens;
     private readonly IRecentAccountVerificationGate? _accountVerification;
+    private readonly ILogger<AuthController>? _logger;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
 
@@ -79,8 +81,10 @@ public sealed class AuthController : ControllerBase
         IAccountActionTokenService? actionTokens = null,
         IRecentAccountVerificationGate? accountVerification = null,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        ILogger<AuthController>? logger = null)
     {
+        _logger = logger;
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
         _passwordHasher = passwordHasher;
@@ -374,7 +378,24 @@ public sealed class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (_forgottenPassword is not null)
-            await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+        {
+            try
+            {
+                await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Enumeration protection (AUD-1.2 review): a request that matches no eligible account changes nothing and
+                // writes only a best-effort W3 row, so it answers with the acknowledgement even when the database refuses
+                // writes. An eligible request whose change failed, or whose outcome is unknown, must answer the same way, or
+                // the difference names the account. The acknowledgement never says a link was issued; the failure is logged.
+                _logger?.LogError(
+                    ex,
+                    "A password reset request could not be completed (operation {OperationEventId}).",
+                    (ex as AuditOutcomeUnknownException)?.OperationEventId ?? (ex as AuditOperationNotCompletedException)?.OperationEventId);
+            }
+        }
+
         return Ok(new ForgotPasswordResponse(ForgottenPasswordService.GenericAcknowledgement));
     }
 

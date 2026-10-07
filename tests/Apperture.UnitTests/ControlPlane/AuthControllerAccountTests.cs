@@ -433,6 +433,27 @@ public sealed class AuthControllerAccountTests
         forgotten.Identifiers.Should().Equal(identifier);
     }
 
+    public static TheoryData<Exception> EligiblePathFailures() => new()
+    {
+        new InvalidOperationException("Injected: the token insert was refused."),
+        new AuditOutcomeUnknownException("op-1"),
+        new AuditOperationNotCompletedException("op-2"),
+    };
+
+    [Theory]
+    [MemberData(nameof(EligiblePathFailures))]
+    public async Task ForgotPassword_answers_the_same_acknowledgement_when_an_eligible_request_fails(Exception failure)
+    {
+        // AUD-1.2 review: an ineligible request writes only a best-effort W3 row and always acknowledges, so a failed eligible
+        // request must too, or a database fault distinguishes accounts that exist.
+        var controller = NewController(actor: null, forgottenPassword: new RecordingForgottenPasswordService { Fails = failure });
+
+        var result = await controller.ForgotPassword(new ForgotPasswordRequest("localuser"), CancellationToken.None);
+
+        var body = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value.Should().BeOfType<ForgotPasswordResponse>().Subject;
+        body.Message.Should().Be(ForgottenPasswordService.GenericAcknowledgement);
+    }
+
     private static User SampleUser() =>
         new(
             TestUserId,
@@ -630,10 +651,12 @@ public sealed class AuthControllerAccountTests
     {
         public List<string> Identifiers { get; } = [];
 
+        public Exception? Fails { get; init; }
+
         public ValueTask RequestAsync(string identifier, CancellationToken cancellationToken = default)
         {
             Identifiers.Add(identifier);
-            return ValueTask.CompletedTask;
+            return Fails is null ? ValueTask.CompletedTask : ValueTask.FromException(Fails);
         }
 
         public ValueTask CompleteAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
