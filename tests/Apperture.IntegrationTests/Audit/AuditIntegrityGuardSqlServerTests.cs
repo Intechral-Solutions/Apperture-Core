@@ -1,6 +1,9 @@
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -168,6 +171,48 @@ public sealed class AuditIntegrityGuardSqlServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Vocabulary_values_must_match_exactly_so_a_trailing_space_is_refused_at_insert_and_at_classification()
+    {
+        // = and IN ignore trailing spaces under every collation, so the check constraint carries its own exactness terms.
+        var complete = CompleteRowSql(kind: "user", userId: "u1", username: null, attribution: "recorded", external: null);
+        await RefusedAsync(complete.Replace("N'complete'", "N'complete '"), CheckViolation);
+        await RefusedAsync(complete.Replace("N'user'", "N'user '"), CheckViolation);
+        await RefusedAsync(complete.Replace("N'recorder'", "N'recorder '"), CheckViolation);
+        await RefusedAsync(complete.Replace("N'json/1'", "N'json/1 '"), CheckViolation);
+
+        var legacy = await InsertLegacyRowAsync();
+        await RefusedAsync(
+            CompleteSql(legacy, kind: "unresolved", userId: null, attribution: "unresolved").Replace("Visibility = N'default'", "Visibility = N'default '"),
+            CheckViolation);
+        await RefusedAsync(
+            CompleteSql(legacy, kind: "unresolved", userId: null, attribution: "unresolved").Replace("ActorKind = N'unresolved'", "ActorKind = N'unresolved '"),
+            CheckViolation);
+        (await _db.ScalarAsync<string>($"SELECT ClassificationState FROM AuditLogs WHERE Id = {legacy};")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_multi_row_update_is_refused_whole_when_any_affected_row_breaks_the_guard()
+    {
+        var pending = await InsertLegacyRowAsync();
+        var completed = await InsertLegacyRowAsync();
+        await _db.ExecuteAsync(CompleteSql(completed, kind: "unresolved", userId: null, attribution: "unresolved"));
+
+        // One legitimate transition and one change to a frozen row in the same statement: neither applies.
+        await RefusedAsync(
+            CompleteSql(pending, kind: "system", userId: null, attribution: "recorded_literal")
+                .Replace($"WHERE Id = {pending} AND ClassificationState IS NULL", $"WHERE Id IN ({pending}, {completed})"),
+            AuditLogSchema.UpdateRefusedError);
+        (await _db.ScalarAsync<string>($"SELECT ClassificationState FROM AuditLogs WHERE Id = {pending};")).Should().BeNull();
+        (await _db.ScalarAsync<string>($"SELECT ActorKind FROM AuditLogs WHERE Id = {completed};")).Should().Be("unresolved");
+
+        // An evidence change on one row of several refuses the statement for all of them.
+        await RefusedAsync($"UPDATE AuditLogs SET Details = Details + CASE WHEN Id = {pending} THEN N'!' ELSE N'' END WHERE Id IN ({pending}, {completed});",
+            AuditLogSchema.UpdateRefusedError);
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM AuditLogs WHERE Id IN ({pending}, {completed}) AND Details = N'userId=u1 previousUsername=a';"))
+            .Should().Be(2);
+    }
+
+    [Fact]
     public async Task Every_delete_is_refused()
     {
         var recorder = await InsertCompleteUserRowAsync();
@@ -212,6 +257,57 @@ public sealed class AuditIntegrityGuardSqlServerTests : IAsyncLifetime
         current.AuditLogs.Add(new AuditLogEntity { At = DateTimeOffset.UtcNow, Actor = "system", Action = "legacy.write" });
         await current.SaveChangesAsync();
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs WHERE Action = N'legacy.write';")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task The_migrated_schema_has_the_models_indexes_enabled_constraints_and_only_update_and_delete_guards()
+    {
+        // The model snapshot is pinned to the model by AppertureDbContextModelConsistencyTests; this pins the migration's
+        // actual SQL to the model. The design-time model keeps index filters and sort orders.
+        await using var db = _db.NewDb();
+        var model = db.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(AuditLogEntity))!;
+        string[] names = [AuditLogSchema.EventIdIndex, "IX_AuditLogs_ActorUserId_At_Id", "IX_AuditLogs_TargetType_TargetId_At_Id",
+            "IX_AuditLogs_DefaultVisible_At_Id", AuditLogSchema.UnclassifiedIndex];
+
+        foreach (var name in names)
+        {
+            var index = model.GetIndexes().Single(i => i.GetDatabaseName() == name);
+            var expected = index.Properties.Select((p, i) =>
+                $"{p.GetColumnName()}{(index.IsDescending is { Count: 0 } || index.IsDescending is { } d && d.Count > i && d[i] ? " desc" : "")}");
+            var actual = await _db.RowsAsync($"""
+                SELECT c.name, ic.is_descending_key, i.is_unique, i.filter_definition, i.is_disabled
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal > 0
+                JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                WHERE i.object_id = OBJECT_ID(N'dbo.AuditLogs') AND i.name = N'{name}'
+                ORDER BY ic.key_ordinal;
+                """);
+
+            actual.Select(r => $"{r["name"]}{((bool)r["is_descending_key"]! ? " desc" : "")}").Should().Equal(expected, name);
+            actual.Should().OnlyContain(r => (bool)r["is_unique"]! == index.IsUnique && !(bool)r["is_disabled"]!, name);
+            Normalize(actual[0]["filter_definition"] as string).Should().Be(Normalize(index.GetFilter()), name);
+        }
+
+        var constraints = await _db.RowsAsync(
+            "SELECT name, is_disabled, is_not_trusted FROM sys.check_constraints WHERE parent_object_id = OBJECT_ID(N'dbo.AuditLogs');");
+        constraints.Select(r => (string)r["name"]!).Should().BeEquivalentTo(model.GetCheckConstraints().Select(c => c.Name));
+        constraints.Should().OnlyContain(r => !(bool)r["is_disabled"]! && !(bool)r["is_not_trusted"]!);
+
+        var triggers = await _db.RowsAsync("""
+            SELECT t.name, t.is_instead_of_trigger, t.is_disabled, e.type_desc
+            FROM sys.triggers t JOIN sys.trigger_events e ON e.object_id = t.object_id
+            WHERE t.parent_id = OBJECT_ID(N'dbo.AuditLogs');
+            """);
+        triggers.Select(r => $"{r["name"]}:{r["type_desc"]}:{((bool)r["is_instead_of_trigger"]! ? "instead_of" : "after")}")
+            .Should().BeEquivalentTo(
+                [$"{AuditLogSchema.UpdateGuardTrigger}:UPDATE:after", $"{AuditLogSchema.DeleteGuardTrigger}:DELETE:instead_of"],
+                "no INSERT trigger, so an earlier program version's OUTPUT insert keeps working (I-5)");
+        triggers.Should().OnlyContain(r => !(bool)r["is_disabled"]!);
+        model.GetDeclaredTriggers().Select(t => t.GetDatabaseName()).Should().BeEquivalentTo(
+            [AuditLogSchema.UpdateGuardTrigger, AuditLogSchema.DeleteGuardTrigger]);
+
+        static string Normalize(string? filter) =>
+            new((filter ?? "").Where(c => !char.IsWhiteSpace(c) && c is not '(' and not ')').ToArray());
     }
 
     // ---- helpers ----

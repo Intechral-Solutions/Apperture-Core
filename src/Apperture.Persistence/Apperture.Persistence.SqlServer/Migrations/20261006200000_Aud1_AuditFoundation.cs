@@ -27,13 +27,19 @@ public partial class Aud1_AuditFoundation : Migration
 
     // Both checks are written as CASE WHEN <rule> THEN 1 ELSE 0 END = 1. A CHECK constraint rejects only FALSE, and a
     // comparison with NULL is UNKNOWN, so a bare rule would let a row with a missing required value through.
+    // Vocabulary values must match exactly. The binary collation makes the comparison case-sensitive, but = and IN ignore
+    // trailing spaces under every collation (ANSI padding), so each value is also required to have none:
+    // DATALENGTH([c]) = DATALENGTH(RTRIM([c])).
 
     /// <summary>A producer row has its identity; a recorder row is complete with json/1 details; an append row has no format.</summary>
     public const string ProducerCheckSql =
         "CASE WHEN [Producer] IS NULL AND [EventId] IS NULL AND [OperationEventId] IS NULL AND [DetailsFormat] IS NULL"
-        + " OR [Producer] COLLATE Latin1_General_BIN2 = N'append' AND [EventId] IS NOT NULL AND [OperationEventId] IS NOT NULL AND [DetailsFormat] IS NULL"
-        + " OR [Producer] COLLATE Latin1_General_BIN2 = N'recorder' AND [EventId] IS NOT NULL AND [OperationEventId] IS NOT NULL"
-        + " AND [DetailsFormat] COLLATE Latin1_General_BIN2 = N'json/1' AND [ClassificationState] IS NOT NULL"
+        + " OR [Producer] COLLATE Latin1_General_BIN2 = N'append' AND DATALENGTH([Producer]) = DATALENGTH(RTRIM([Producer]))"
+        + " AND [EventId] IS NOT NULL AND [OperationEventId] IS NOT NULL AND [DetailsFormat] IS NULL"
+        + " OR [Producer] COLLATE Latin1_General_BIN2 = N'recorder' AND DATALENGTH([Producer]) = DATALENGTH(RTRIM([Producer]))"
+        + " AND [EventId] IS NOT NULL AND [OperationEventId] IS NOT NULL"
+        + " AND [DetailsFormat] COLLATE Latin1_General_BIN2 = N'json/1' AND DATALENGTH([DetailsFormat]) = DATALENGTH(RTRIM([DetailsFormat]))"
+        + " AND [ClassificationState] IS NOT NULL"
         + " THEN 1 ELSE 0 END = 1";
 
     /// <summary>
@@ -57,18 +63,29 @@ public partial class Aud1_AuditFoundation : Migration
         + " AND [Basis] COLLATE Latin1_General_BIN2 IN (N'change', N'request', N'external_attempt', N'confirmed_result', N'security_event', N'attempt', N'telemetry', N'unspecified')"
         + " AND [OutcomeCode] COLLATE Latin1_General_BIN2 IN (N'succeeded', N'failed', N'denied', N'rejected', N'blocked', N'requested', N'unknown')"
         + " AND [OutcomeProvenance] COLLATE Latin1_General_BIN2 IN (N'recorded', N'indeterminate')"
+        + " AND DATALENGTH([ClassificationState]) = DATALENGTH(RTRIM([ClassificationState]))"
+        + " AND DATALENGTH([ActorKind]) = DATALENGTH(RTRIM([ActorKind]))"
+        + " AND DATALENGTH([ActorAttribution]) = DATALENGTH(RTRIM([ActorAttribution]))"
+        + " AND DATALENGTH([Category]) = DATALENGTH(RTRIM([Category]))"
+        + " AND DATALENGTH([Severity]) = DATALENGTH(RTRIM([Severity]))"
+        + " AND DATALENGTH([Visibility]) = DATALENGTH(RTRIM([Visibility]))"
+        + " AND DATALENGTH([Basis]) = DATALENGTH(RTRIM([Basis]))"
+        + " AND DATALENGTH([OutcomeCode]) = DATALENGTH(RTRIM([OutcomeCode]))"
+        + " AND DATALENGTH([OutcomeProvenance]) = DATALENGTH(RTRIM([OutcomeProvenance]))"
         + " AND ([ActorKind] = N'user' AND [ActorUserId] IS NOT NULL OR [ActorKind] <> N'user' AND [ActorUserId] IS NULL)"
         + " AND ([ActorKind] = N'external' AND [ActorExternalProvider] IS NOT NULL AND [ActorExternalTenantId] IS NOT NULL AND [ActorExternalSubjectId] IS NOT NULL"
         + " OR [ActorKind] <> N'external' AND [ActorExternalProvider] IS NULL AND [ActorExternalTenantId] IS NULL AND [ActorExternalSubjectId] IS NULL)"
         + " AND ([ActorUsername] IS NULL OR [ActorKind] = N'user')"
         + " AND ([AttributionIssue] IS NULL AND [AttributionIssueCertainty] IS NULL"
         + " OR [AttributionIssue] COLLATE Latin1_General_BIN2 IN (N'subject_recorded_as_actor', N'subject_possibly_recorded_as_actor', N'initiator_not_recorded', N'initiator_possibly_misrecorded', N'possible_placeholder')"
-        + " AND [AttributionIssueCertainty] COLLATE Latin1_General_BIN2 IN (N'definite', N'possible'))"
+        + " AND [AttributionIssueCertainty] COLLATE Latin1_General_BIN2 IN (N'definite', N'possible')"
+        + " AND DATALENGTH([AttributionIssue]) = DATALENGTH(RTRIM([AttributionIssue]))"
+        + " AND DATALENGTH([AttributionIssueCertainty]) = DATALENGTH(RTRIM([AttributionIssueCertainty])))"
         + " AND ([TargetType] IS NULL AND [TargetId] IS NULL"
         + " OR [TargetType] COLLATE Latin1_General_BIN2 IN (N'user', N'role', N'identity_link', N'external_identity', N'entra_access_request', N'entra_tenant_registration', N'auth_policy',"
         + " N'resource_context', N'integration', N'connection', N'schedule', N'platform_setting', N'integration_setting', N'notification_definition',"
         + " N'notification_subscription', N'managed_contact', N'operational_team', N'module', N'workflow_run', N'operation_run', N'operation_item',"
-        + " N'runtime_instance', N'secret', N'instance') AND [TargetId] IS NOT NULL)"
+        + " N'runtime_instance', N'secret', N'instance') AND DATALENGTH([TargetType]) = DATALENGTH(RTRIM([TargetType])) AND [TargetId] IS NOT NULL)"
         + " THEN 1 ELSE 0 END = 1";
 
     /// <summary>Columns that never change after insert (§19.1). <c>Id</c> is an identity and cannot be updated at all.</summary>

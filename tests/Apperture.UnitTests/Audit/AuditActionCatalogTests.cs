@@ -220,10 +220,15 @@ public sealed partial class AuditActionCatalogTests
         })
         {
             InList(sql, column).Should().BeEquivalentTo(values, column);
+            sql.Should().Contain(NoTrailingSpace(column), because: $"IN ignores trailing spaces, so {column} needs its own exactness term");
         }
 
+        sql.Should().Contain(NoTrailingSpace("ClassificationState"));
+        Aud1_AuditFoundation.ProducerCheckSql.Should().Contain(NoTrailingSpace("Producer")).And.Contain(NoTrailingSpace("DetailsFormat"));
         AuditLogSchema.ClassificationSetCheckSql.Should().Be(sql);
     }
+
+    private static string NoTrailingSpace(string column) => $"DATALENGTH([{column}]) = DATALENGTH(RTRIM([{column}]))";
 
     [Fact]
     public void The_audit_foundation_migration_runs_after_the_username_backfill_barrier()
