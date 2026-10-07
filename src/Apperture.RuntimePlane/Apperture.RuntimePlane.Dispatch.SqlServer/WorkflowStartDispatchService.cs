@@ -65,14 +65,14 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
             var existing = await _db.WorkflowStartRequests.AsNoTracking()
                 .FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
             if (existing is not null)
-            {
-                return new WorkflowStartDispatchResult(
-                    new OperationRunId(existing.RunId),
-                    new WorkflowInstanceId(existing.WorkflowInstanceId),
-                    new WorkflowDefinitionId(existing.WorkflowDefinitionId),
-                    WorkflowLifecycleStatusNames.Requested);
-            }
+                return Replay(existing);
         }
+
+        // AUD-1.3 (design gate §13.4): inside an audited unit of work the start joins the unit's transaction, so the start
+        // request and its audit row commit together, and the unit owns the commit, verification and any rerun. A failed insert
+        // is rolled back to the savepoint EF takes around SaveChanges, which leaves the unit's transaction usable.
+        if (_db.Database.IsRelational() && _db.Database.CurrentTransaction is not null)
+            return await PersistJoinedAsync(request, resourceContextId, cancellationToken);
 
         // EF Core SQL retry execution strategy does not allow user-initiated transactions
         // unless the whole unit of work is wrapped inside the execution strategy.
@@ -85,84 +85,13 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
 
             try
             {
-                var now = DateTimeOffset.UtcNow;
-                var instanceId = new WorkflowInstanceId(NewId());
-                var runId = new OperationRunId(NewId());
-
-                // Persist atomically (instance + run + start request) to avoid orphaned state under failures.
-                _db.WorkflowInstances.Add(new WorkflowInstanceEntity
-                {
-                    Id = instanceId.Value,
-                    DefinitionId = request.WorkflowDefinitionId.Value,
-                    Status = WorkflowLifecycleStatusNames.Requested,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    CorrelationKey = request.CorrelationId,
-                    IntegrationId = request.IntegrationId,
-                    ProcedureId = request.ProcedureId,
-                    CurrentStepName = null,
-                    Version = 0,
-                    ResourceContextId = resourceContextId
-                });
-
-                _db.OperationRuns.Add(new OperationRunEntity
-                {
-                    Id = runId.Value,
-                    WorkflowInstanceId = instanceId.Value,
-                    DefinitionId = request.WorkflowDefinitionId.Value,
-                    Status = WorkflowLifecycleStatusNames.Requested,
-                    CreatedAt = now,
-                    CompletedAt = null,
-                    CorrelationKey = request.CorrelationId,
-                    RetryOfRunId = request.RetryOfRunId,
-                    IntegrationId = request.IntegrationId,
-                    ProcedureId = request.ProcedureId,
-                    ExecutionOrigin = request.ExecutionOrigin,
-                    ResourceContextId = resourceContextId
-                });
-
-                _db.WorkflowStartRequests.Add(new WorkflowStartRequestEntity
-                {
-                    RunId = runId.Value,
-                    WorkflowInstanceId = instanceId.Value,
-                    WorkflowDefinitionId = request.WorkflowDefinitionId.Value,
-                    ParametersJson = SerializeParameters(request.Parameters),
-                    IdempotencyKey = request.IdempotencyKey,
-                    CorrelationId = request.CorrelationId,
-                    IntegrationId = request.IntegrationId,
-                    ProcedureId = request.ProcedureId,
-                    CreatedAt = now,
-                    Status = WorkflowLifecycleStatusNames.Requested,
-                    ClaimedAt = null,
-                    ClaimedBy = null,
-                    LastError = null,
-                    ResourceContextId = resourceContextId
-                });
-
-                _db.WorkflowLifecycleEvents.Add(new WorkflowLifecycleEventEntity
-                {
-                    RunId = runId.Value,
-                    WorkflowInstanceId = instanceId.Value,
-                    WorkflowDefinitionId = request.WorkflowDefinitionId.Value,
-                    EventType = WorkflowLifecycleEventNames.Dispatched,
-                    FromStatus = null,
-                    ToStatus = WorkflowLifecycleStatusNames.Requested,
-                    OccurredAt = now,
-                    RelatedRunId = request.RetryOfRunId,
-                    StepName = null,
-                    DetailsJson = null
-                });
-
+                var rows = AddRows(request, resourceContextId);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 if (tx is not null)
                     await tx.CommitAsync(cancellationToken);
 
-                return new WorkflowStartDispatchResult(
-                    runId,
-                    instanceId,
-                    request.WorkflowDefinitionId,
-                    WorkflowLifecycleStatusNames.Requested);
+                return rows.Result;
             }
             catch (DbUpdateException ex) when (IsUniqueIdempotencyViolation(ex, request.IdempotencyKey))
             {
@@ -175,13 +104,134 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 if (existing is null)
                     throw;
 
-                return new WorkflowStartDispatchResult(
-                    new OperationRunId(existing.RunId),
-                    new WorkflowInstanceId(existing.WorkflowInstanceId),
-                    new WorkflowDefinitionId(existing.WorkflowDefinitionId),
-                    WorkflowLifecycleStatusNames.Requested);
+                return Replay(existing);
             }
         });
+    }
+
+    private async ValueTask<WorkflowStartDispatchResult?> PersistJoinedAsync(
+        StartWorkflowRequest request,
+        string? resourceContextId,
+        CancellationToken cancellationToken)
+    {
+        var rows = AddRows(request, resourceContextId);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return rows.Result;
+        }
+        catch (DbUpdateException ex) when (IsUniqueIdempotencyViolation(ex, request.IdempotencyKey))
+        {
+            // Another concurrent request won the race. Our rows were rolled back to the savepoint; stop tracking them, which
+            // leaves the unit's other pending changes alone, and report the earlier run for this idempotency key.
+            foreach (var row in rows.Entities)
+                _db.Entry(row).State = EntityState.Detached;
+
+            var existing = await _db.WorkflowStartRequests.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
+            if (existing is null)
+                throw;
+
+            return Replay(existing);
+        }
+    }
+
+    private static WorkflowStartDispatchResult Replay(WorkflowStartRequestEntity existing) =>
+        new(
+            new OperationRunId(existing.RunId),
+            new WorkflowInstanceId(existing.WorkflowInstanceId),
+            new WorkflowDefinitionId(existing.WorkflowDefinitionId),
+            WorkflowLifecycleStatusNames.Requested,
+            IsReplay: true,
+            ResourceContextId: existing.ResourceContextId);
+
+    /// <summary>
+    /// Adds the instance, the run, the start request and the first lifecycle event (persisted atomically, to avoid orphaned
+    /// state under failures). Nothing is saved here.
+    /// </summary>
+    private (WorkflowStartDispatchResult Result, IReadOnlyList<object> Entities) AddRows(
+        StartWorkflowRequest request,
+        string? resourceContextId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var instanceId = new WorkflowInstanceId(NewId());
+        var runId = new OperationRunId(NewId());
+
+        var instance = new WorkflowInstanceEntity
+        {
+            Id = instanceId.Value,
+            DefinitionId = request.WorkflowDefinitionId.Value,
+            Status = WorkflowLifecycleStatusNames.Requested,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CorrelationKey = request.CorrelationId,
+            IntegrationId = request.IntegrationId,
+            ProcedureId = request.ProcedureId,
+            CurrentStepName = null,
+            Version = 0,
+            ResourceContextId = resourceContextId
+        };
+        var run = new OperationRunEntity
+        {
+            Id = runId.Value,
+            WorkflowInstanceId = instanceId.Value,
+            DefinitionId = request.WorkflowDefinitionId.Value,
+            Status = WorkflowLifecycleStatusNames.Requested,
+            CreatedAt = now,
+            CompletedAt = null,
+            CorrelationKey = request.CorrelationId,
+            RetryOfRunId = request.RetryOfRunId,
+            IntegrationId = request.IntegrationId,
+            ProcedureId = request.ProcedureId,
+            ExecutionOrigin = request.ExecutionOrigin,
+            ResourceContextId = resourceContextId
+        };
+        var startRequest = new WorkflowStartRequestEntity
+        {
+            RunId = runId.Value,
+            WorkflowInstanceId = instanceId.Value,
+            WorkflowDefinitionId = request.WorkflowDefinitionId.Value,
+            ParametersJson = SerializeParameters(request.Parameters),
+            IdempotencyKey = request.IdempotencyKey,
+            CorrelationId = request.CorrelationId,
+            IntegrationId = request.IntegrationId,
+            ProcedureId = request.ProcedureId,
+            CreatedAt = now,
+            RequestedBy = request.RequestedBy,
+            Status = WorkflowLifecycleStatusNames.Requested,
+            ClaimedAt = null,
+            ClaimedBy = null,
+            LastError = null,
+            ResourceContextId = resourceContextId
+        };
+        var lifecycle = new WorkflowLifecycleEventEntity
+        {
+            RunId = runId.Value,
+            WorkflowInstanceId = instanceId.Value,
+            WorkflowDefinitionId = request.WorkflowDefinitionId.Value,
+            EventType = WorkflowLifecycleEventNames.Dispatched,
+            FromStatus = null,
+            ToStatus = WorkflowLifecycleStatusNames.Requested,
+            OccurredAt = now,
+            RelatedRunId = request.RetryOfRunId,
+            StepName = null,
+            DetailsJson = null
+        };
+
+        _db.WorkflowInstances.Add(instance);
+        _db.OperationRuns.Add(run);
+        _db.WorkflowStartRequests.Add(startRequest);
+        _db.WorkflowLifecycleEvents.Add(lifecycle);
+
+        return (
+            new WorkflowStartDispatchResult(
+                runId,
+                instanceId,
+                request.WorkflowDefinitionId,
+                WorkflowLifecycleStatusNames.Requested,
+                IsReplay: false,
+                ResourceContextId: resourceContextId),
+            [instance, run, startRequest, lifecycle]);
     }
 
     private static string NewId() => Guid.NewGuid().ToString("N")[..24];
