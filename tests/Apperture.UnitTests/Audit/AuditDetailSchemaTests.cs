@@ -70,6 +70,8 @@ public sealed class AuditDetailSchemaTests
         {
             typeof(string), typeof(int), typeof(bool), typeof(UserId), typeof(RoleId), typeof(IdentitySource),
             typeof(UsernameChangeOutcome), typeof(PermissionSetChange), typeof(IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>),
+            // AUD-1.2: the names of changed settings (validated against a closed set by the producer), never their values.
+            typeof(IReadOnlyList<string>),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),

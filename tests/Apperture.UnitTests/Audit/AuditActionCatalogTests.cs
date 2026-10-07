@@ -26,6 +26,11 @@ public sealed partial class AuditActionCatalogTests
         "governance.runtime.enrollment.completed",
         "auth.entra.login.failed",
         "auth.sign_out",
+        "entra.tenant_registration.created",
+        "entra.tenant_registration.updated",
+        "entra.tenant_registration.deleted",
+        "entra.tenant_registration.activated",
+        "auth.sign_in_policy.updated",
     ];
 
     [Fact]

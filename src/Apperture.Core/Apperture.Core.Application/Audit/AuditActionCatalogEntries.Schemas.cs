@@ -398,6 +398,66 @@ internal static class AuditDetailSchemas
         FlagField("developmentSimulated"),
     ]);
 
+    // ---- Entra tenant registrations and the sign-in policy ----
+    // Configuration values are recorded as identifiers and flags. The client secret is never recorded, only that it was
+    // replaced; the authority URL and callback path are recorded only as having changed.
+
+    /// <summary>The settings of a tenant registration a change can name.</summary>
+    internal static readonly string[] TenantRegistrationSettings =
+    [
+        "displayName", "authority", "clientId", "clientAuthentication", "usesDeploymentSecret", "callbackPath", "azureTenantId",
+        "authenticationContextId", "enabled", "allowMemberAccessRequests", "allowGuestAccessRequests",
+    ];
+
+    internal static readonly AuditDetailSchema TenantRegistrationCreated = new(
+    [
+        IdField("registrationId"),
+        NameField("displayName"),
+        IdField("clientId"),
+        IdField("azureTenantId", required: false),
+        FlagField("enabled"),
+        FlagField("clientAuthenticationReplaced"),
+        FlagField("allowMemberAccessRequests"),
+        FlagField("allowGuestAccessRequests"),
+    ]);
+
+    internal static readonly AuditDetailSchema TenantRegistrationUpdated = new(
+    [
+        IdField("registrationId"),
+        NameField("displayName"),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: true, MaxItems: 16),
+        FlagField("enabled"),
+        FlagField("active"),
+    ]);
+
+    internal static readonly AuditDetailSchema TenantRegistrationDeleted = new(
+    [
+        IdField("registrationId"),
+        NameField("displayName"),
+        FlagField("wasActive"),
+    ]);
+
+    internal static readonly AuditDetailSchema TenantRegistrationActivated = new(
+    [
+        IdField("registrationId"),
+        IdField("previousRegistrationId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema AccessRequestPolicyChanged = new(
+    [
+        IdField("registrationId"),
+        FlagField("allowMemberAccessRequests"),
+        FlagField("allowGuestAccessRequests"),
+    ]);
+
+    internal static readonly AuditDetailSchema SignInPolicyUpdated = new(
+    [
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: true, MaxItems: 8),
+        FlagField("showLocalSignInInPrimaryChooser"),
+        FlagField("preferEntraInChooser"),
+        FlagField("autoRedirectToEntra"),
+    ]);
+
     // ---- Runtime enrollment ----
     // invitationId is the invitation row's id; the enrollment token itself is never recorded.
 

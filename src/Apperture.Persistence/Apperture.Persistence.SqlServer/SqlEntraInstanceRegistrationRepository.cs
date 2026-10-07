@@ -115,26 +115,39 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
 
     public async Task SetActiveAsync(string id, CancellationToken cancellationToken = default)
     {
+        // AUD-1.2 (gate §13.4): inside an audited unit of work the switch joins the unit's transaction, so it commits with its
+        // audit row and the unit owns the commit, verification and any rerun.
+        if (_db.Database.CurrentTransaction is not null)
+        {
+            await SwitchActiveAsync(id, cancellationToken);
+            return;
+        }
+
         var strategy = _db.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
-            var rows = await _db.EntraInstanceRegistrations.ToListAsync(cancellationToken);
-            var target = rows.FirstOrDefault(x => x.Id == id)
-                ?? throw new InvalidOperationException($"Entra registration '{id}' was not found.");
-            if (!target.Enabled)
-                throw new InvalidOperationException("Cannot activate a disabled registration.");
-
-            var now = DateTimeOffset.UtcNow;
-            foreach (var r in rows)
-            {
-                r.IsActive = r.Id == id;
-                r.UpdatedUtc = now;
-            }
-
-            await _db.SaveChangesAsync(cancellationToken);
+            await SwitchActiveAsync(id, cancellationToken);
             await tx.CommitAsync(cancellationToken);
         });
+    }
+
+    private async Task SwitchActiveAsync(string id, CancellationToken cancellationToken)
+    {
+        var rows = await _db.EntraInstanceRegistrations.ToListAsync(cancellationToken);
+        var target = rows.FirstOrDefault(x => x.Id == id)
+            ?? throw new InvalidOperationException($"Entra registration '{id}' was not found.");
+        if (!target.Enabled)
+            throw new InvalidOperationException("Cannot activate a disabled registration.");
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var r in rows)
+        {
+            r.IsActive = r.Id == id;
+            r.UpdatedUtc = now;
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task UpdateOpenIdValidationOutcomeAsync(

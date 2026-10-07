@@ -101,6 +101,14 @@ public static class AuditActionNames
     public const string StepUpContextNotSatisfied = "auth.strong_authentication.step_up.authentication_context_not_satisfied";
     public const string StepUpSatisfied = "auth.strong_authentication.step_up.satisfied";
 
+    // AUD-1.2: Entra tenant registrations, the access-request policy and the sign-in policy
+    public const string TenantRegistrationCreated = "entra.tenant_registration.created";
+    public const string TenantRegistrationUpdated = "entra.tenant_registration.updated";
+    public const string TenantRegistrationDeleted = "entra.tenant_registration.deleted";
+    public const string TenantRegistrationActivated = "entra.tenant_registration.activated";
+    public const string AccessRequestPolicyChanged = "entra.access_request.policy.changed";
+    public const string SignInPolicyUpdated = "auth.sign_in_policy.updated";
+
     // AUD-1.2: runtime enrollment
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
     public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";
