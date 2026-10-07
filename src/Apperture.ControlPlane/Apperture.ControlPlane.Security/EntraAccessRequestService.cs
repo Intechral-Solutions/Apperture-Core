@@ -245,9 +245,23 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
                 new AuditedOperation(AuditActionNames.AccessRequestCreated, requester),
                 async (transaction, ct) =>
                 {
-                    // The identity, pending state and rate limit are read again in the transaction.
+                    // The identity, the registration and its access-request policy, pending state, rejection cooldown and rate
+                    // limit are read again in the transaction: an administrator may have changed them since the snapshot. Only
+                    // the directory's member or guest type (an external read) comes from before it.
                     if (await _users.GetByIdentityLinkAsync(ProviderIdentityKey.Entra(principal.TenantId, principal.ObjectId), ct) is not null)
                         throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotEligible, "You already have access. Sign in with Microsoft again.");
+
+                    var registration = await _registrations.GetByIdAsync(principal.RegistrationId, ct);
+                    if (registration is null || !registration.Enabled)
+                        throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotEligible, "This Microsoft directory is not accepting access requests.");
+                    var isGuest = IsGuest(directory?.UserType ?? snapshot.UserType);
+                    if (isGuest ? !registration.AllowGuestAccessRequests : !registration.AllowMemberAccessRequests)
+                        throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotEligible, "Your organization has not enabled access requests.");
+
+                    var latest = await _requests.FindLatestAsync(principal.TenantId, principal.ObjectId, ct);
+                    if (latest?.Status == EntraAccessRequestStatus.Rejected
+                        && now < (latest.ReviewedAtUtc ?? latest.RequestedAtUtc).Add(RejectionCooldown))
+                        throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotEligible, "Your request was not approved.");
 
                     var pending = await _requests.FindPendingAsync(principal.TenantId, principal.ObjectId, ct);
                     if (pending is not null)

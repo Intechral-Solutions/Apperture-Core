@@ -78,6 +78,21 @@ public sealed class EntraAccessRequestServiceTests
     }
 
     [Fact]
+    public async Task A_policy_disabled_after_the_eligibility_snapshot_refuses_the_submission_in_its_transaction()
+    {
+        // AUD-1.2 review (gate §13.4): every read the decision depends on is repeated in the transaction. The snapshot and the
+        // directory lookup see member requests allowed; the administrator turns them off before the unit runs.
+        var harness = Harness.Create(allowMembers: true);
+        harness.Registrations.MembersDisabledAfterReads = 2;
+
+        var act = () => harness.Service.SubmitAsync(Principal()).AsTask();
+
+        (await act.Should().ThrowAsync<EntraAccessRequestException>()).Which.Code.Should().Be(EntraAccessRequestErrorCodes.NotEligible);
+        harness.Requests.Items.Should().BeEmpty();
+        harness.Audit.Events.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Graph_failure_fails_safe_without_email_heuristics()
     {
         var harness = Harness.Create(allowMembers: true);
@@ -157,10 +172,12 @@ public sealed class EntraAccessRequestServiceTests
         public RecordingRequests Requests { get; } = new();
         public AuditRecording Audit { get; } = new();
         public StubDiscovery Discovery { get; } = new();
+        public StubRegistrations Registrations { get; }
         public EntraAccessRequestService Service { get; }
 
         private Harness(bool allowMembers, bool allowGuests, string userType)
         {
+            Registrations = new StubRegistrations(allowMembers, allowGuests);
             Discovery.User = DirectoryUser(userType);
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -170,7 +187,7 @@ public sealed class EntraAccessRequestServiceTests
                 new StubPrincipal(),
                 new AllowAllAuth(),
                 Users,
-                new StubRegistrations(allowMembers, allowGuests),
+                Registrations,
                 Discovery,
                 Requests,
                 new ThrowingProvisioning(),
@@ -241,8 +258,29 @@ public sealed class EntraAccessRequestServiceTests
         public Task<EntraInstanceRegistration?> GetActiveAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<EntraInstanceRegistration?>(_registration);
 
+        /// <summary>After this many reads by id, member requests read as disabled (an administrator changed the policy).</summary>
+        public int MembersDisabledAfterReads { get; set; } = int.MaxValue;
+
+        private int _reads;
+
         public Task<EntraInstanceRegistration?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            Task.FromResult<EntraInstanceRegistration?>(id == "reg-1" ? _registration : null);
+            Task.FromResult<EntraInstanceRegistration?>(
+                id != "reg-1" ? null
+                : ++_reads > MembersDisabledAfterReads ? MembersDisabled()
+                : _registration);
+
+        private EntraInstanceRegistration MembersDisabled() => new()
+        {
+            Id = _registration.Id,
+            DisplayName = _registration.DisplayName,
+            Authority = _registration.Authority,
+            ClientId = _registration.ClientId,
+            Enabled = true,
+            AzureTenantId = _registration.AzureTenantId,
+            UsesDeploymentSecret = true,
+            AllowMemberAccessRequests = false,
+            AllowGuestAccessRequests = _registration.AllowGuestAccessRequests,
+        };
 
         public Task<IReadOnlyList<EntraInstanceRegistration>> ListAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<EntraInstanceRegistration>>([_registration]);
