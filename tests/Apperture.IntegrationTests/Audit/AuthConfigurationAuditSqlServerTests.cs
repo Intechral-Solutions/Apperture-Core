@@ -154,6 +154,75 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         details.RootElement.GetProperty("changed").EnumerateArray().Select(e => e.GetString()).Should().Equal("preferEntraInChooser");
     }
 
+    // ---- M6 per service (gate §22 AUD-1.2): registration update and activation, and the sign-in policy ----
+
+    [Fact]
+    public async Task A_registration_update_and_activation_whose_acknowledgements_are_lost_answer_as_done_with_one_row_each()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        string id;
+        await using (var db = _db.NewDb())
+        {
+            var created = await Tenants(db, principal).Create(CreateBody(), CancellationToken.None);
+            id = ((EntraTenantListItemResponse)((CreatedAtActionResult)created.Result!).Value!).Id;
+        }
+
+        var item = await GetAsync(id, principal);
+        var lostPatch = new LostCommitAcknowledgement();
+        var patchAttempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lostPatch, patchAttempts))
+            (await Tenants(db, principal).Patch(id, UpdateBody(item, allowMembers: false, displayName: "Renamed"), CancellationToken.None)).Result
+                .Should().BeOfType<OkObjectResult>();
+        patchAttempts.Started.Should().Be(1, "verification confirmed the commit, so nothing reran");
+
+        var lostActivate = new LostCommitAcknowledgement();
+        var activateAttempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lostActivate, activateAttempts))
+            (await Tenants(db, principal).Activate(id, CancellationToken.None)).Should().BeOfType<NoContentResult>();
+        activateAttempts.Started.Should().Be(1);
+
+        (await _db.ScalarAsync<string>($"SELECT DisplayName FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be("Renamed");
+        (await _db.ScalarAsync<bool>($"SELECT IsActive FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().BeTrue();
+        (await RowsAsync(id)).Select(r => r["Action"]).Should().Equal(
+            AuditActionNames.TenantRegistrationCreated,
+            AuditActionNames.TenantRegistrationUpdated,
+            AuditActionNames.TenantRegistrationActivated);
+    }
+
+    [Fact]
+    public async Task A_sign_in_policy_whose_audit_fails_is_unchanged_and_one_whose_acknowledgement_is_lost_answers_as_done()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var current = await PolicyAsync(principal);
+        UpdateAuthUiPolicyRequestBody Toggle(AuthUiPolicyResponse policy) => new()
+        {
+            ShowLocalSignInInPrimaryChooser = policy.ShowLocalSignInInPrimaryChooser,
+            PreferEntraInChooser = !policy.PreferEntraInChooser,
+            AutoRedirectToEntra = policy.AutoRedirectToEntra,
+            RowVersionBase64 = policy.RowVersionBase64,
+        };
+
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Policy(db, principal).Patch(Toggle(current), CancellationToken.None);
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await PolicyAsync(principal)).PreferEntraInChooser.Should().Be(current.PreferEntraInChooser);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lost, attempts))
+            (await Policy(db, principal).Patch(Toggle(current), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
+
+        attempts.Started.Should().Be(1);
+        (await PolicyAsync(principal)).PreferEntraInChooser.Should().Be(!current.PreferEntraInChooser);
+        (await _db.RowsAsync($"SELECT * FROM AuditLogs WHERE TargetType = N'auth_policy' AND TargetId = N'instance';"))
+            .Should().ContainSingle().Which["Action"].Should().Be(AuditActionNames.SignInPolicyUpdated);
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)

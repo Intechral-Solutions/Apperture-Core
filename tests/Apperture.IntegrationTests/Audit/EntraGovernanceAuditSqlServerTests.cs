@@ -227,6 +227,97 @@ public sealed class EntraGovernanceAuditSqlServerTests : IAsyncLifetime
         row["ActorKind"].Should().Be("system");
     }
 
+    // ---- M6 per service (gate §22 AUD-1.2): access request submission, self-link, pending-link proof and the policy ----
+
+    [Fact]
+    public async Task A_submitted_access_request_whose_audit_fails_leaves_no_request_and_one_whose_acknowledgement_is_lost_is_returned_once()
+    {
+        var objectId = Guid.NewGuid().ToString();
+        var principal = new EntraAccessRequestPrincipal(Tenant, objectId, RegistrationId, DateTimeOffset.UtcNow, "Jane", "jane@contoso.com", "jane@contoso.com");
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => AccessRequests(db).SubmitAsync(principal).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraAccessRequests WHERE ProviderObjectId =N'{objectId}';")).Should().Be(0);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        EntraAccessRequest submitted;
+        await using (var db = _db.NewDb(lost, attempts))
+            submitted = await AccessRequests(db).SubmitAsync(principal);
+
+        attempts.Started.Should().Be(1, "verification confirmed the commit, so nothing reran");
+        (await _db.ScalarAsync<string>($"SELECT Id FROM EntraAccessRequests WHERE ProviderObjectId =N'{objectId}';")).Should().Be(submitted.Id);
+        (await RowsAsync("entra_access_request", submitted.Id)).Should().ContainSingle()
+            .Which["Action"].Should().Be(AuditActionNames.AccessRequestCreated);
+    }
+
+    [Fact]
+    public async Task A_self_link_whose_audit_fails_leaves_no_link_and_one_whose_acknowledgement_is_lost_is_reported_linked_once()
+    {
+        var (user, _) = await AddUserAsync("linker");
+        var objectId = Guid.NewGuid().ToString();
+        var assertion = new EntraIdentityAssertion(objectId, Tenant, "sub");
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Association(db, new Principal(user)).CompleteLinkAsync(new UserId(user), assertion).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM IdentityLinks WHERE UserId = N'{user}' AND Source = 0;")).Should().Be(0);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        EntraAssociationOutcome outcome;
+        await using (var db = _db.NewDb(lost, attempts))
+            outcome = await Association(db, new Principal(user)).CompleteLinkAsync(new UserId(user), assertion);
+
+        attempts.Started.Should().Be(1);
+        outcome.Succeeded.Should().BeTrue("a verified commit is the link, never a collision with itself");
+        var linkId = await _db.ScalarAsync<string>($"SELECT Id FROM IdentityLinks WHERE UserId = N'{user}' AND ExternalId = N'{objectId}';");
+        var row = (await RowsAsync("identity_link", linkId)).Should().ContainSingle().Which;
+        row["Action"].Should().Be(AuditActionNames.EntraLinked);
+        row["Actor"].Should().Be(user);
+    }
+
+    [Fact]
+    public async Task Proving_a_pending_link_whose_acknowledgement_is_lost_signs_in_once()
+    {
+        var (user, _) = await AddUserAsync("pending");
+        var objectId = Guid.NewGuid().ToString();
+        var linkId = await LinkEntraAsync(user, objectId, proven: false);
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        EntraAssociationOutcome outcome;
+        await using (var db = _db.NewDb(lost, attempts))
+            outcome = await Association(db, null).CompleteSignInAsync(new EntraIdentityAssertion(objectId, Tenant, "sub"));
+
+        attempts.Started.Should().Be(1);
+        outcome.Succeeded.Should().BeTrue();
+        (await RowsAsync("identity_link", linkId)).Should().ContainSingle().Which["Action"].Should().Be(AuditActionNames.EntraLinkProven);
+    }
+
+    [Fact]
+    public async Task A_policy_disable_whose_acknowledgement_is_lost_is_reported_disabled_with_one_row()
+    {
+        var (user, _) = await AddUserAsync("entraprimary");
+        await using (var db = _db.NewDb())
+            await new SqlLocalCredentialRepository(db).SetPasswordAsync(new UserId(user), "hash", "salt", "pbkdf2");
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        EntraPrimaryLocalDisableOutcome outcome;
+        await using (var db = _db.NewDb(lost, attempts))
+            outcome = await Policy(db).ApplyAfterEntraProvenAsync(new UserId(user));
+
+        attempts.Started.Should().Be(1);
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.Disabled, "a verified commit is never reported as already disabled");
+        (await RowsAsync("user", user)).Should().ContainSingle().Which["Action"].Should().Be(AuditActionNames.LocalDisabledEntraPrimary);
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)

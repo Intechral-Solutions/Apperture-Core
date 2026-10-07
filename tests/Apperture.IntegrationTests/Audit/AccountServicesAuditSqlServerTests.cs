@@ -295,6 +295,138 @@ public sealed class AccountServicesAuditSqlServerTests : IAsyncLifetime
         rows.Should().OnlyContain(r => !((string)r["Details"]!).Contains(invitation.Token), "the enrollment token is never recorded");
     }
 
+    // ---- M6 per service (gate §22 AUD-1.2): contact email, password reset, profile, setup completion and enrollment ----
+
+    [Fact]
+    public async Task A_contact_request_whose_acknowledgement_is_lost_mails_the_committed_link_once_and_an_audit_failure_leaves_nothing()
+    {
+        var (user, _) = await AddUserAsync("contact");
+        var principal = new Principal(user);
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        var failedMail = new RecordingMail();
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Contact(db, principal, failedMail).RequestAsync(new UserId(user), "contact@example.com", null).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        failedMail.Sent.Should().BeEmpty();
+        (await _db.ScalarAsync<string?>($"SELECT PendingEmailAddress FROM Users WHERE Id = N'{user}';")).Should().BeNull();
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM AccountActionTokens WHERE UserId = N'{user}';")).Should().Be(0);
+
+        var mail = new RecordingMail();
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        AccountContactMutationResult result;
+        await using (var db = _db.NewDb(lost, attempts))
+            result = await Contact(db, principal, mail).RequestAsync(new UserId(user), "contact@example.com", null);
+
+        attempts.Started.Should().Be(1);
+        result.DeliverySucceeded.Should().BeTrue();
+        var hash = await _db.ScalarAsync<string>($"SELECT TokenHash FROM AccountActionTokens WHERE UserId = N'{user}';");
+        hash.Should().Be(Hash(mail.SingleLink()), "the link held after verification is the committed one, sent once");
+    }
+
+    [Fact]
+    public async Task A_reset_request_whose_acknowledgement_is_lost_mails_once_and_an_audit_failure_issues_no_link()
+    {
+        var (user, username) = await AddUserAsync("resetter");
+        await _db.ExecuteAsync($"UPDATE Users SET EmailAddress = N'resetter@example.com', EmailVerifiedAtUtc = SYSDATETIMEOFFSET() WHERE Id = N'{user}';");
+        await using (var db = _db.NewDb())
+            await new SqlLocalCredentialRepository(db).SetPasswordAsync(new UserId(user), "hash", "salt", "pbkdf2");
+
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        var failedMail = new RecordingMail();
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Forgotten(db, failedMail).RequestAsync(username).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        failedMail.Sent.Should().BeEmpty();
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM AccountActionTokens WHERE UserId = N'{user}';")).Should().Be(0);
+
+        var mail = new RecordingMail();
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lost, attempts))
+            await Forgotten(db, mail).RequestAsync(username);
+
+        attempts.Started.Should().Be(1);
+        (await _db.ScalarAsync<string>($"SELECT TokenHash FROM AccountActionTokens WHERE UserId = N'{user}';")).Should().Be(Hash(mail.SingleLink()));
+    }
+
+    [Fact]
+    public async Task A_display_name_whose_audit_fails_is_unchanged_and_one_whose_acknowledgement_is_lost_is_recorded_once()
+    {
+        var (user, _) = await AddUserAsync("named");
+        var principal = new Principal(user);
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Profile(db, principal).UpdateDisplayNameAsync(new UserId(user), "Failed Name").AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<string>($"SELECT DisplayName FROM Users WHERE Id = N'{user}';")).Should().NotBe("Failed Name");
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        AccountProfileSnapshot snapshot;
+        await using (var db = _db.NewDb(lost, attempts))
+            snapshot = await Profile(db, principal).UpdateDisplayNameAsync(new UserId(user), "Kept Name");
+
+        attempts.Started.Should().Be(1);
+        snapshot.DisplayName.Should().Be("Kept Name");
+        (await RowsAsync("user", user)).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.DisplayNameUpdated);
+    }
+
+    [Fact]
+    public async Task A_setup_completion_whose_acknowledgement_is_lost_is_reported_done_with_its_rows_once()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var (invitee, _) = await AddUserAsync("invitee");
+        var mail = new RecordingMail();
+        await using (var db = _db.NewDb())
+            await Invitations(db, new Principal(admin), mail).SendSetupInvitationAsync(new UserId(invitee), "invitee@example.com");
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        await using (var db = _db.NewDb(lost, attempts))
+            await Invitations(db, principal: null, mail).CompletePasswordSetupAsync(mail.SingleLink(), "chosen-harbor-passphrase");
+
+        attempts.Started.Should().Be(1, "a consumed link would otherwise make a rerun look invalid");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM LocalCredentials WHERE UserId = N'{invitee}';")).Should().Be(1);
+        (await RowsAsync("user", invitee)).Count(r => (string)r["Action"]! == AuditActionNames.PasswordSetupCompleted).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_enrollment_whose_audit_fails_registers_nothing_and_one_whose_acknowledgement_is_lost_is_reported_done()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var environment = new FixedEnvironment("local");
+        Apperture.Core.Security.Trust.EnrollmentInvitation invitation;
+        await using (var db = _db.NewDb())
+            invitation = await new SqlRuntimeEnrollmentService(db, environment, NewUnit(db, new Principal(admin))).CreateInvitationAsync("rt-m6");
+        var registration = new Apperture.Core.Security.Trust.RuntimeIdentityRegistration("Runtime", "PublicKey", "pk", null);
+
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => new SqlRuntimeEnrollmentService(db, environment, NewUnit(db, null)).EnrollAsync(invitation.Token, registration).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM RuntimeIdentities WHERE Id = N'rt-m6';")).Should().Be(0);
+        (await _db.ScalarAsync<bool>("SELECT Used FROM EnrollmentTokens WHERE RuntimeId = N'rt-m6';")).Should().BeFalse();
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        Apperture.Core.Security.Trust.EnrollmentResult result;
+        await using (var db = _db.NewDb(lost, attempts))
+            result = await new SqlRuntimeEnrollmentService(db, environment, NewUnit(db, null)).EnrollAsync(invitation.Token, registration);
+
+        attempts.Started.Should().Be(1);
+        result.Success.Should().BeTrue("a verified commit is success, not 'token already used'");
+        result.RuntimeId.Should().Be("rt-m6");
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
@@ -348,6 +480,17 @@ public sealed class AccountServicesAuditSqlServerTests : IAsyncLifetime
             Links(),
             NewUnit(db, null),
             Events(null));
+
+    private AccountContactService Contact(AppertureDbContext db, IPrincipalContext principal, RecordingMail mail) =>
+        new(
+            new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
+            new SqlLocalCredentialRepository(db),
+            new LocalPasswordHasher(),
+            new AccountActionTokenService(new SqlAccountActionTokenRepository(db), TimeProvider.System),
+            mail,
+            Links(),
+            auditedUnitOfWork: NewUnit(db, principal),
+            auditEvents: Events(principal));
 
     private AccountProfileService Profile(AppertureDbContext db, IPrincipalContext principal) =>
         new(

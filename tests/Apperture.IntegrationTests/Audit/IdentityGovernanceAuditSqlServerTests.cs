@@ -10,6 +10,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Audit;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
@@ -19,7 +20,7 @@ namespace Apperture.IntegrationTests.Audit;
 
 /// <summary>
 /// AUD-1.2 identity and governance writers against SQL Server (audit hardening design gate §13, §22; M6, M7): user
-/// administration, Recovery Access administration and native MFA. Each change commits with its recorder row or not at all;
+/// administration, Recovery Access administration, native MFA, the first administrator and the recovery restore. Each change commits with its recorder row or not at all;
 /// an uncertain commit is verified before anything reruns; a refusal is decided inside the transaction and recorded after
 /// it rolled back; a request that changes nothing records nothing. Fails, never skips, without SQL Server.
 /// </summary>
@@ -335,6 +336,121 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             new LocalPasswordHasher(),
             NewUnit(db, null));
 
+    // ---- M6 per service (gate §22 AUD-1.2): the remaining audit-failure and lost-acknowledgement paths ----
+
+    [Fact]
+    public async Task A_rename_whose_audit_fails_keeps_the_old_name_and_its_retry_is_audited_once()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var (target, targetName) = await AddUserAsync("dana");
+        var principal = new Principal(admin);
+        var requested = NewUsername("dana.new");
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Service(db, principal).RenameUsernameAsync(new UserId(target), requested).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<string>($"SELECT Username FROM Users WHERE Id = N'{target}';")).Should().Be(targetName);
+
+        await using (var db = _db.NewDb())
+            await Service(db, principal).RenameUsernameAsync(new UserId(target), requested);
+
+        (await _db.ScalarAsync<string>($"SELECT Username FROM Users WHERE Id = N'{target}';")).Should().Be(requested);
+        var row = (await RowsAsync("user", target)).Should().ContainSingle("the retry is a new operation, audited once").Which;
+        row["Action"].Should().Be(AuditActionNames.UsernameChanged);
+    }
+
+    [Fact]
+    public async Task Revoking_Recovery_Access_after_a_lost_acknowledgement_is_reported_done_with_one_row()
+    {
+        UserId recovery;
+        await using (var db = _db.NewDb())
+            recovery = await Emergency(db).ProvisionAsync("quiet-maple-lantern-harbor", actorId: null);
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        await using (var db = _db.NewDb(lost, attempts))
+            await Emergency(db).RevokeAsync(confirmFallback: true, actorId: null);
+
+        attempts.Started.Should().Be(1, "verification confirmed the commit, so nothing reran");
+        (await _db.ScalarAsync<bool>($"SELECT IsBreakGlassEligible FROM Users WHERE Id = N'{recovery.Value}';")).Should().BeFalse();
+        (await RowsAsync("user", recovery.Value)).Count(r => (string)r["Action"]! == AuditActionNames.RecoveryAccessRevoked).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task When_the_audit_insert_fails_regenerated_recovery_codes_are_not_stored()
+    {
+        var (user, _) = await AddUserAsync("mfa");
+        var userId = new UserId(user);
+        await using (var db = _db.NewDb())
+        {
+            var totp = new SqlNativeTotpCredentialRepository(db);
+            await totp.UpsertPendingAsync(userId, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
+            await totp.MarkEnrolledAsync(userId, 1, DateTimeOffset.UtcNow);
+        }
+
+        var before = await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId = N'{user}';");
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Mfa(db).RegenerateRecoveryCodesAsync(userId, AuditActor.EmergencyCli).AsTask();
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId = N'{user}';")).Should().Be(before);
+        (await RowsAsync("user", user)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_first_administrator_whose_acknowledgement_is_lost_is_reported_created_once()
+    {
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        FirstAdminBootstrapResult result;
+        await using (var db = _db.NewDb(lost, attempts))
+            result = await Bootstrap(db).TryCreateFirstAdminAsync("First Admin", IdentitySource.Local, "firstadmin", null);
+
+        attempts.Started.Should().Be(1);
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.Success, "a verified commit is success, never 'already initialized'");
+        (await RowsAsync("user", result.UserId!.Value)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_recovery_restore_whose_audit_fails_assigns_nothing_and_one_whose_acknowledgement_is_lost_is_reported_restored_once()
+    {
+        var (user, _) = await AddUserAsync("restored");
+        var request = new Apperture.Bootstrap.Models.BootstrapRecoveryRequest
+        {
+            ActionType = Apperture.Bootstrap.Models.BootstrapRecoveryAction.RestorePlatformAccess,
+            TargetUserId = user,
+            Reason = "operator recovery",
+        };
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Recovery(db).ExecuteRecoveryAsync(request);
+            await act.Should().ThrowAsync<Exception>();
+        }
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{user}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(0);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        Apperture.Bootstrap.Models.BootstrapRecoveryResult result;
+        await using (var db = _db.NewDb(lost, attempts))
+            result = await Recovery(db).ExecuteRecoveryAsync(request);
+
+        attempts.Started.Should().Be(1);
+        result.Success.Should().BeTrue("a verified commit is the restore, never 'target not found' or 'already restored'");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{user}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
+        var row = (await RowsAsync("user", user)).Should().ContainSingle().Which;
+        row["Action"].Should().Be(AuditActionNames.RestorePlatformAccessExecuted);
+        row["Actor"].Should().Be("recovery");
+        row["ActorKind"].Should().Be("system");
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
@@ -377,6 +493,18 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             NullLogger<NativeMfaService>.Instance,
             NewUnit(db, null));
 
+    /// <summary>The recovery service resolves its repositories and unit from a scope, as the host does.</summary>
+    private RealBootstrapRecoveryService Recovery(AppertureDbContext db)
+    {
+        var services = new ServiceCollection()
+            .AddSingleton<IUserRepository>(new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance))
+            .AddSingleton<IRoleRepository>(new SqlRoleRepository(db))
+            .AddSingleton<IAuditedUnitOfWork>(NewUnit(db, null))
+            .AddSingleton<IAuditEventWriter>(new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null))
+            .BuildServiceProvider();
+        return new RealBootstrapRecoveryService(new AuthorizedRecovery(), new NoBootstrapAudit(), services.GetRequiredService<IServiceScopeFactory>());
+    }
+
     private Task<List<Dictionary<string, object?>>> RowsAsync(string targetType, string targetId) =>
         _db.RowsAsync($"SELECT * FROM AuditLogs WHERE TargetType = N'{targetType}' AND TargetId = N'{targetId}' ORDER BY Id;");
 
@@ -408,5 +536,17 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         public ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+    }
+
+    private sealed class AuthorizedRecovery : Apperture.Bootstrap.IBootstrapRecoveryAuthorizer
+    {
+        public Task<Apperture.Bootstrap.Models.BootstrapRecoveryAuthorizationResult> AuthorizeAsync(Apperture.Bootstrap.Models.BootstrapRecoveryRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new Apperture.Bootstrap.Models.BootstrapRecoveryAuthorizationResult { Authorized = true });
+    }
+
+    private sealed class NoBootstrapAudit : Apperture.Bootstrap.IBootstrapAuditWriter
+    {
+        public Task WriteAsync(Apperture.Bootstrap.Models.BootstrapChangeAuditRecord record, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task WriteRecoveryAsync(Apperture.Bootstrap.Models.BootstrapRecoveryAuditRecord record, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

@@ -189,6 +189,53 @@ public sealed class AuthControllerAccountTests
     }
 
     [Fact]
+    public async Task ChangeLocalPassword_whose_acknowledgement_is_lost_answers_as_changed_without_a_refusal()
+    {
+        var recorder = new AuditRecording();
+        recorder.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Lost;
+        var credentialRepo = new MutableCredentialRepository(
+            new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false));
+        var hasher = new TrackingPasswordHasher(verifyCurrent: true);
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credentialRepo: credentialRepo,
+            passwordHasher: hasher,
+            recorder: recorder);
+
+        var result = await controller.ChangeLocalPassword(
+            new ChangeLocalPasswordRequest("old-pass", "new-password-ok"),
+            CancellationToken.None);
+
+        result.Should().BeOfType<NoContentResult>("a verified commit is the change, never a refusal");
+        hasher.HashCalls.Should().Be(1, "nothing reran");
+        recorder.Actions.Should().Equal("auth.local.password_change.success");
+    }
+
+    [Fact]
+    public async Task ChangeLocalPassword_whose_outcome_is_unknown_is_neither_success_nor_a_refusal()
+    {
+        var recorder = new AuditRecording();
+        recorder.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Unknown;
+        var controller = NewController(
+            actor: new HumanActor(new ActorId(LocalUsername), LocalUsername, isBreakGlassSession: false),
+            resolvedUserId: TestUserId,
+            user: SampleUser(),
+            credentialRepo: new MutableCredentialRepository(
+                new LocalCredentialData(TestUserId, "hash", "salt", "stub", IsDisabled: false)),
+            passwordHasher: new TrackingPasswordHasher(verifyCurrent: true),
+            recorder: recorder);
+
+        var act = () => controller.ChangeLocalPassword(
+            new ChangeLocalPasswordRequest("old-pass", "new-password-ok"),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<AuditOutcomeUnknownException>();
+        recorder.Actions.Should().BeEmpty("an unconfirmed change is not recorded as committed or as refused");
+    }
+
+    [Fact]
     public async Task ChangeLocalPassword_with_recent_account_verification_omits_current_password()
     {
         var credentialRepo = new MutableCredentialRepository(
