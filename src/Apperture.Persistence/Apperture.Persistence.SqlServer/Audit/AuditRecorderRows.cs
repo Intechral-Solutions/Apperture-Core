@@ -23,17 +23,17 @@ internal static class AuditRecorderRows
         if (!actor.IsCurrentPrincipal)
             return new ResolvedActor(actor, ViaRecoveryAccess: false);
         if (principals is null)
-            throw new InvalidOperationException("An audited operation records the current principal, but no principal context is available here.");
+            throw new AuditInvariantException("An audited operation records the current principal, but no principal context is available here.");
 
         var current = await principals.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("An audited operation records the current principal, but no one is authenticated.");
+            ?? throw new AuditInvariantException("An audited operation records the current principal, but no one is authenticated.");
         return current.Kind switch
         {
             ActorKind.Human => new ResolvedActor(
                 AuditActor.ForUser(current.Id.Value),
                 current is IRecoveryAccessSession { IsRecoveryAccessSession: true }),
             ActorKind.System => new ResolvedActor(AuditActor.System(), ViaRecoveryAccess: false),
-            _ => throw new InvalidOperationException($"An audited operation cannot record a {current.Kind} principal."),
+            _ => throw new AuditInvariantException($"An audited operation cannot record a {current.Kind} principal."),
         };
     }
 
@@ -51,7 +51,7 @@ internal static class AuditRecorderRows
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
         return username
-            ?? throw new InvalidOperationException($"The acting user {actor.UserId} does not exist, so the operation cannot be attributed.");
+            ?? throw new AuditInvariantException($"The acting user {actor.UserId} does not exist, so the operation cannot be attributed.");
     }
 
     /// <summary>A complete recorder row for <paramref name="auditEvent"/>.</summary>

@@ -4,7 +4,6 @@ using Apperture.Core.Domain.Operations;
 using Apperture.Core.Domain.Workflow;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.RuntimePlane.Dispatch.SqlServer;
@@ -80,9 +79,9 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
                 ? await _db.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
+            var rows = AddRows(request, operationId, resourceContextId);
             try
             {
-                var rows = AddRows(request, operationId, resourceContextId);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 if (tx is not null)
@@ -92,8 +91,11 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
             }
             catch (DbUpdateException ex) when (IsUniqueIdempotencyViolation(ex, request.IdempotencyKey))
             {
+                // Our rows are no longer tracked, so no later save on this context can flush them.
                 if (tx is not null)
                     await tx.RollbackAsync(cancellationToken);
+                foreach (var row in rows.Entities)
+                    _db.Entry(row).State = EntityState.Detached;
 
                 var existing = await _db.OperationStartRequests.AsNoTracking()
                     .FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
@@ -249,9 +251,8 @@ public sealed class OperationStartDispatchService : IOperationStartDispatchServi
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return false;
 
-        if (ex.InnerException is SqlException sql)
-            return sql.Number is 2601 or 2627;
-
-        return false;
+        // Only a duplicate on the idempotency index means a concurrent request with this key committed first. Any other
+        // duplicate keeps its own meaning and propagates.
+        return SqlUniqueKeyViolation.IsOnIndex(ex, "IX_OperationStartRequests_IdempotencyKey");
     }
 }

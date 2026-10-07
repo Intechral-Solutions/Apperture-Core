@@ -84,7 +84,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         {
             var candidate = _catalog.Get(action);
             if (candidate.WriteClass != AuditWriteClass.RequiredMutation || candidate.Details is null)
-                throw new InvalidOperationException($"Audit action '{candidate.Action}' is not a converted W1 action and cannot identify an audited operation.");
+                throw new AuditInvariantException($"Audit action '{candidate.Action}' is not a converted W1 action and cannot identify an audited operation.");
         }
 
         var actor = await AuditRecorderRows.ResolveAsync(operation.Actor, _principals, cancellationToken).ConfigureAwait(false);
@@ -109,7 +109,17 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
                         "Audited operation {OperationEventId} ({Action}) had an uncertain commit; verification confirmed it committed.",
                         operationEventId,
                         primary.Action);
-                    return await reconstruct(result.Committed!, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        return await reconstruct(result.Committed!, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // The change is committed. A failure to build its result must never read as a refusal, a conflict, a
+                        // "not found" or a failure that invites a blind retry.
+                        _logger.LogError(ex, "Audited operation {OperationEventId} ({Action}) committed, but its result could not be reconstructed.", operationEventId, primary.Action);
+                        throw new AuditCommittedResultUnavailableException(operationEventId, ex);
+                    }
 
                 case AttemptKind.VerifiedRollback when reruns < _options.MaxRerunsAfterConfirmedRollback:
                     reruns++;
@@ -152,14 +162,14 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
             }
 
             if (!unit.PrimaryStaged)
-                throw new InvalidOperationException($"The audited operation expected a '{primary.Action}' row and staged none.");
+                throw new AuditInvariantException($"The audited operation expected a '{primary.Action}' row and staged none.");
 
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             var inserted = await _db.AuditLogs.AsNoTracking()
                 .CountAsync(a => a.OperationEventId == operationEventId, cancellationToken)
                 .ConfigureAwait(false);
             if (inserted != unit.StagedCount)
-                throw new InvalidOperationException($"The audited operation staged {unit.StagedCount} rows but {inserted} were inserted.");
+                throw new AuditInvariantException($"The audited operation staged {unit.StagedCount} rows but {inserted} were inserted.");
         }
         catch (Exception ex)
         {
@@ -213,7 +223,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         }
 
         if (!primaryExists)
-            throw new InvalidOperationException("A secondary audit event id collided with an existing row.", violation);
+            throw new AuditInvariantException("A secondary audit event id collided with an existing row.", violation);
 
         var verification = await VerifyAsync(operation, unit.OperationEventId).ConfigureAwait(false);
         if (verification.Kind == VerificationKind.Committed)
@@ -421,17 +431,17 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         {
             var db = owner._db;
             if (_sealed || db.Database.CurrentTransaction?.TransactionId != transaction.TransactionId)
-                throw new InvalidOperationException("Audit events can only be staged while this unit's transaction is current.");
+                throw new AuditInvariantException("Audit events can only be staged while this unit's transaction is current.");
             if (_noOp)
-                throw new InvalidOperationException("An attempt that declared it changed nothing cannot stage audit events.");
+                throw new AuditInvariantException("An attempt that declared it changed nothing cannot stage audit events.");
 
             var definition = owner._catalog.Find(auditEvent.Action);
             if (definition is null || !ReferenceEquals(definition, auditEvent.Definition) && definition != auditEvent.Definition)
-                throw new InvalidOperationException($"Audit action '{auditEvent.Action}' is not declared in the audit catalog.");
+                throw new AuditInvariantException($"Audit action '{auditEvent.Action}' is not declared in the audit catalog.");
             if (definition.WriteClass != AuditWriteClass.RequiredMutation || definition.Details is null)
-                throw new InvalidOperationException($"Audit action '{auditEvent.Action}' is not a W1 action with a structured producer.");
+                throw new AuditInvariantException($"Audit action '{auditEvent.Action}' is not a W1 action with a structured producer.");
             if (!_staged.Add(auditEvent))
-                throw new InvalidOperationException($"This '{auditEvent.Action}' event is already staged in this unit.");
+                throw new AuditInvariantException($"This '{auditEvent.Action}' event is already staged in this unit.");
 
             // The primary row carries the operation event id; a secondary row gets its own id per attempt.
             var isPrimary = !PrimaryStaged && operation.AcceptsPrimary(auditEvent.Action);
@@ -446,7 +456,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         public void DeclareNoOp()
         {
             if (_staged.Count > 0)
-                throw new InvalidOperationException("An attempt that staged audit events cannot declare that it changed nothing.");
+                throw new AuditInvariantException("An attempt that staged audit events cannot declare that it changed nothing.");
             _noOp = true;
         }
 

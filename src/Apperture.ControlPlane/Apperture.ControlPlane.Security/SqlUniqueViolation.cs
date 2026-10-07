@@ -1,21 +1,25 @@
-using Microsoft.Data.SqlClient;
+using Apperture.Persistence.SqlServer;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
-/// <summary>Recognises a SQL Server unique-key violation (2601 or 2627) behind a failed save.</summary>
+/// <summary>
+/// Recognises the SQL Server unique-key violation (2601 or 2627) behind a failed save that means a concurrent request committed
+/// the same durable request first. Only the named index or key that expresses that rule qualifies: any other duplicate keeps its
+/// own meaning and propagates.
+/// </summary>
 internal static class SqlUniqueViolation
 {
-    public static bool Is(DbUpdateException ex)
-    {
-        for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
-        {
-            if (inner is SqlException sql && sql.Number is 2601 or 2627)
-                return true;
-        }
+    /// <summary>The one cancel intent a workflow run can have.</summary>
+    public const string WorkflowCancelIntent = "PK_WorkflowCancelRequests";
 
-        return false;
-    }
+    /// <summary>The one cancel intent an operation run can have.</summary>
+    public const string OperationCancelIntent = "PK_OperationCancelRequests";
+
+    /// <summary>The one queued external control request of a kind a run can have.</summary>
+    public const string QueuedExternalControl = "IX_WorkflowExternalControlRequests_RunId_ControlKind";
+
+    public static bool IsOn(DbUpdateException ex, string indexName) => SqlUniqueKeyViolation.IsOnIndex(ex, indexName);
 
     /// <summary>Stops tracking rows whose save failed, leaving the rest of the context's pending changes alone.</summary>
     public static void Detach(DbContext db, params object[] rows)

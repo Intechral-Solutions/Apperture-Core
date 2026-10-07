@@ -18,6 +18,8 @@ public sealed partial class Aud13ConvertedWritersTests
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/WorkflowExternalControlService.cs",
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/WorkflowRetryService.cs",
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/OperationItemRetryService.cs",
+        "Apperture.ControlPlane/Apperture.ControlPlane.Security/BulkOperationItemRetryService.cs",
+        "Apperture.ControlPlane/Apperture.ControlPlane.Security/OperationItemAttentionService.cs",
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/IntegrationProcedureService.cs",
         "Apperture.ControlPlane/Apperture.Management.Api/Controllers/WorkflowsController.cs",
         "Apperture.ControlPlane/Apperture.Management.Api/Controllers/OperationsController.cs",
@@ -57,8 +59,7 @@ public sealed partial class Aud13ConvertedWritersTests
     public void No_converted_writer_names_a_placeholder_or_the_platform_in_place_of_the_person_who_acted()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        var files = ConvertedFiles.Append("Apperture.ControlPlane/Apperture.ControlPlane.Security/BulkOperationItemRetryService.cs");
-        var offenders = files
+        var offenders = ConvertedFiles
             .Select(f => (File: f, Text: File.ReadAllText(Path.Combine(src, f))))
             .Where(f => PlaceholderActor().IsMatch(f.Text))
             .Select(f => f.File);

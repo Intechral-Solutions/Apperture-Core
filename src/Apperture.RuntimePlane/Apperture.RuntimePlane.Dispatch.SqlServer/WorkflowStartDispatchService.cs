@@ -4,7 +4,6 @@ using Apperture.Core.Domain.Workflow;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.RuntimePlane.Dispatch.SqlServer;
@@ -83,9 +82,9 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
                 ? await _db.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
+            var rows = AddRows(request, resourceContextId);
             try
             {
-                var rows = AddRows(request, resourceContextId);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 if (tx is not null)
@@ -95,9 +94,12 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
             }
             catch (DbUpdateException ex) when (IsUniqueIdempotencyViolation(ex, request.IdempotencyKey))
             {
-                // Another concurrent request won the race; return the existing run for this idempotency key.
+                // Another concurrent request won the race; return the existing run for this idempotency key. Our rows are
+                // no longer tracked, so no later save on this context can flush them.
                 if (tx is not null)
                     await tx.RollbackAsync(cancellationToken);
+                foreach (var row in rows.Entities)
+                    _db.Entry(row).State = EntityState.Detached;
 
                 var existing = await _db.WorkflowStartRequests.AsNoTracking()
                     .FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
@@ -251,12 +253,8 @@ public sealed class WorkflowStartDispatchService : IWorkflowStartDispatchService
         if (string.IsNullOrWhiteSpace(idempotencyKey))
             return false;
 
-        // SQL Server unique constraint violations:
-        // 2601: Cannot insert duplicate key row in object with unique index
-        // 2627: Violation of UNIQUE KEY constraint
-        if (ex.InnerException is SqlException sql)
-            return sql.Number is 2601 or 2627;
-
-        return false;
+        // Only a duplicate on the idempotency index means a concurrent request with this key committed first. Any other
+        // duplicate keeps its own meaning and propagates.
+        return SqlUniqueKeyViolation.IsOnIndex(ex, "IX_WorkflowStartRequests_IdempotencyKey");
     }
 }

@@ -67,8 +67,9 @@ public sealed class WorkflowsController : ControllerBase
         {
             dispatchResult = await _starts.StartWorkflowAsync(request, ExecutionLaunchChannel.Direct, cancellationToken);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
+            // A business refusal from the start path. An audit invariant failure is an internal error, never a 400.
             return BadRequest(new { error = ex.Message });
         }
         if (dispatchResult is null)

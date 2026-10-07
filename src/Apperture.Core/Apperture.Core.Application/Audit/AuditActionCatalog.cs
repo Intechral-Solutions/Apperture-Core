@@ -106,7 +106,7 @@ public sealed class AuditActionCatalog
     public AuditActionDefinition? Find(string action) => _definitions.GetValueOrDefault(action);
 
     public AuditActionDefinition Get(string action) =>
-        Find(action) ?? throw new InvalidOperationException($"Audit action '{action}' is not declared in the audit catalog.");
+        Find(action) ?? throw new AuditInvariantException($"Audit action '{action}' is not declared in the audit catalog.");
 
     /// <summary>A copy of this catalog with extra definitions (test harnesses only).</summary>
     internal AuditActionCatalog With(params AuditActionDefinition[] extra) => new(_definitions.Values.Concat(extra));

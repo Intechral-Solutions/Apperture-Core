@@ -160,6 +160,47 @@ public sealed class RunTimelineQueryServiceTests
     }
 
     [Fact]
+    public async Task GetRunTimelineAsync_OperationRun_NamesACancelRequesterOnlyOnTheEventOfThatSameIntent()
+    {
+        // An operation run's intent is removed when the run completes, and a later cancel writes a new one. The earlier event is
+        // never attributed to the later requester: it shows no requester (the audit row keeps it).
+        var t0 = DateTimeOffset.UtcNow.AddHours(-1);
+        var db = NewDb();
+        db.OperationRuns.Add(new OperationRunEntity
+        {
+            Id = "op-b", WorkflowInstanceId = "op-j", DefinitionId = "Sample.HelloWorld.Op",
+            Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = t0,
+        });
+        db.OperationStartRequests.Add(new OperationStartRequestEntity
+        {
+            RunId = "op-b", OperationInstanceId = "op-j", OperationDefinitionId = "Sample.HelloWorld.Op",
+            Status = WorkflowLifecycleStatusNames.Completed, CreatedAt = t0, RequestedBy = "usr_requester",
+        });
+        foreach (var (id, at) in new[] { (91, t0.AddMinutes(2)), (92, t0.AddMinutes(5)) })
+        {
+            db.OperationLifecycleEvents.Add(new OperationLifecycleEventEntity
+            {
+                Id = id, RunId = "op-b", OperationInstanceId = "op-j", OperationDefinitionId = "Sample.HelloWorld.Op",
+                EventType = OperationLifecycleEventNames.CancelRequested, FromStatus = WorkflowLifecycleStatusNames.Running,
+                ToStatus = WorkflowLifecycleStatusNames.Running, OccurredAt = at,
+            });
+        }
+
+        db.OperationCancelRequests.Add(new OperationCancelRequestEntity
+        {
+            RunId = "op-b", OperationInstanceId = "op-j", OperationDefinitionId = "Sample.HelloWorld.Op",
+            RequestedAt = t0.AddMinutes(5), RequestedBy = "usr_later",
+        });
+        await db.SaveChangesAsync();
+
+        var service = new RunTimelineQueryService(db, new RunKindResolver(db), new AllowWorkflowReadAuthz(), new AllowOperationReadAuthz());
+        var timeline = await service.GetRunTimelineAsync(new OperationRunId("op-b"));
+
+        timeline!.Events.Single(e => e.EventId == "lifecycle:91").Actor.Should().BeNull("its intent is gone; the later requester did not make it");
+        timeline.Events.Single(e => e.EventId == "lifecycle:92").Actor.Should().Be("usr_later");
+    }
+
+    [Fact]
     public async Task GetRunTimelineAsync_OperationRun_ExcludesExternalControlEvents()
     {
         var t0 = DateTimeOffset.UtcNow.AddMinutes(-30);

@@ -172,8 +172,9 @@ public sealed class RecoveryController : ControllerBase
                 status = result.Status
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
+            // A business refusal (the run is not eligible). An audit invariant failure is an internal error, never a 409.
             return Conflict(new { error = ex.Message });
         }
     }

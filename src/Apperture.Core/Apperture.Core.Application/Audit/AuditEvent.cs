@@ -44,7 +44,7 @@ public sealed class AuditEvent
         AuditRelatedReferences? related = null)
     {
         if (definition.Details is null)
-            throw new InvalidOperationException($"Audit action '{definition.Action}' has no structured producer yet; it is written through the append bridge.");
+            throw new AuditInvariantException($"Audit action '{definition.Action}' has no structured producer yet; it is written through the append bridge.");
         if (!AuditOutcomeCodes.All.Contains(outcomeCode))
             throw new ArgumentException($"'{outcomeCode}' is not an audit outcome code.", nameof(outcomeCode));
         if (definition.TargetType is { } declared && target is not null && target.Type != declared)

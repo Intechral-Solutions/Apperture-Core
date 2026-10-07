@@ -7,6 +7,15 @@ public interface IOperationItemRetryAttemptStore
         CreateOperationItemRetryAttemptRequest request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Creates the attempt, or returns null when the item already has an attempt with this idempotency key, including one a
+    /// concurrent request committed first. Unlike <see cref="CreateAsync"/>, it never hands back another request's attempt as
+    /// if this one had made it, so a caller that records who requested the attempt can tell the two apart.
+    /// </summary>
+    Task<OperationItemRetryAttempt?> TryCreateAsync(
+        CreateOperationItemRetryAttemptRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<OperationItemRetryAttempt?> GetByIdAsync(
         string attemptId,
         CancellationToken cancellationToken = default);

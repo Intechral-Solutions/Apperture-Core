@@ -1,12 +1,9 @@
-using System.Text.Json;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.OperationItems;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -86,6 +83,13 @@ public static class BulkAcknowledgeOperationItemResultCategories
 /// JOB-1 — acknowledgement clears attention without rewriting execution outcome.
 /// Race rule: acknowledgement is allowed while a retry is in flight and does not cancel that retry.
 /// </summary>
+/// <remarks>
+/// Acknowledge and reopen are required mutations (design gate §13.1 W1; assigned to AUD-1.3). Each request is one audited unit
+/// of work: every acknowledgement (or reopening) it makes and its one audit row, whose target is the run, commit together or
+/// not at all. Items it skips (missing, in another group, not failed, already acknowledged, not acknowledged) change nothing
+/// and are reported per item as before; a request that changes no item records nothing. The acknowledging user is the unit's
+/// own actor, so the acknowledgement row and the audit row name the same person.
+/// </remarks>
 public sealed class OperationItemAttentionService : IOperationItemAttentionService
 {
     private readonly AppertureDbContext _db;
@@ -93,8 +97,7 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
     private readonly IOperationItemAttentionAcknowledgementStore _acks;
     private readonly IWorkflowRunRetryAuthorizationService _retryAuthz;
     private readonly IPrincipalContext _principal;
-    private readonly IAuditService _audit;
-    private readonly ILogger<OperationItemAttentionService> _logger;
+    private readonly IAuditedUnitOfWork _unit;
 
     public OperationItemAttentionService(
         AppertureDbContext db,
@@ -102,16 +105,14 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
         IOperationItemAttentionAcknowledgementStore acks,
         IWorkflowRunRetryAuthorizationService retryAuthz,
         IPrincipalContext principal,
-        IAuditService audit,
-        ILogger<OperationItemAttentionService> logger)
+        IAuditedUnitOfWork unit)
     {
         _db = db;
         _items = items;
         _acks = acks;
         _retryAuthz = retryAuthz;
         _principal = principal;
-        _audit = audit;
-        _logger = logger;
+        _unit = unit;
     }
 
     public async Task<BulkAcknowledgeOperationItemsResult?> AcknowledgeAsync(
@@ -161,103 +162,158 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
                 isConflict: false);
         }
 
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var actorId = actor?.Id.Value
-            ?? throw new UnauthorizedAccessException("Authenticated actor is required to acknowledge failures.");
+        await RequireActorAsync("Authenticated actor is required to acknowledge failures.", cancellationToken).ConfigureAwait(false);
+        var scope = context.Value;
 
+        return await _unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.OperationItemAttentionAcknowledged, AuditActor.CurrentPrincipal),
+            (transaction, ct) => AcknowledgeAttemptAsync(transaction, runId, scope, disposition, reason, orderedUnique, ct),
+            (committed, ct) => ReconstructAcknowledgeAsync(committed, runId, scope, orderedUnique, ct),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One attempt: every read the outcome depends on (item, group, status, the active acknowledgement) happens in the
+    /// transaction, and every acknowledgement it makes commits with the request's one row or not at all.
+    /// </summary>
+    private async Task<BulkAcknowledgeOperationItemsResult> AcknowledgeAttemptAsync(
+        IAuditedTransaction transaction,
+        OperationRunId runId,
+        AttentionScope scope,
+        string disposition,
+        string? reason,
+        IReadOnlyList<string> orderedUnique,
+        CancellationToken cancellationToken)
+    {
         var results = new List<BulkAcknowledgeOperationItemResult>(orderedUnique.Count);
-        var acknowledged = 0;
-        var skipped = 0;
+        var acknowledged = new List<string>();
 
         foreach (var itemId in orderedUnique)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var item = await _items.GetItemAsync(itemId, cancellationToken).ConfigureAwait(false);
-            if (item is null)
+            var (item, skippedResult) = await ClassifyForAcknowledgeAsync(itemId, runId, scope, cancellationToken).ConfigureAwait(false);
+            if (skippedResult is not null)
             {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    itemId, null, BulkAcknowledgeOperationItemResultCategories.ItemNotFound,
-                    "Item was not found in this operation group."));
-                skipped++;
+                results.Add(skippedResult);
                 continue;
             }
 
-            if (!string.Equals(item.RunId, runId.Value, StringComparison.Ordinal)
-                || !string.Equals(item.OperationGroupId, context.Value.GroupId, StringComparison.Ordinal))
-            {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.WrongGroup,
-                    "Item does not belong to the requested run and operation group."));
-                skipped++;
-                continue;
-            }
-
-            if (!string.Equals(item.Status, OperationItemStatuses.Failed, StringComparison.Ordinal))
-            {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.NotFailed,
-                    $"Item is not Failed (status '{item.Status}'); acknowledgement applies only to failures."));
-                skipped++;
-                continue;
-            }
-
-            var existing = await _acks.GetActiveByItemIdAsync(item.OperationItemId, cancellationToken).ConfigureAwait(false);
-            if (existing is not null)
-            {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    item.OperationItemId,
-                    item.DisplayLabel,
-                    BulkAcknowledgeOperationItemResultCategories.AlreadyAcknowledged,
-                    "Item already has an active acknowledgement.",
-                    MapAck(existing)));
-                skipped++;
-                continue;
-            }
-
-            var created = await _acks.CreateAsync(
+            var created = await _acks.TryCreateAsync(
                 new CreateOperationItemAttentionAcknowledgementRequest(
-                    item.OperationItemId,
+                    item!.OperationItemId,
                     item.RunId,
                     item.OperationGroupId,
                     disposition,
                     reason,
-                    actorId),
+                    transaction.Actor.RecordedValue),
                 cancellationToken).ConfigureAwait(false);
+            if (created is null)
+            {
+                // A concurrent request acknowledged it first: that acknowledgement, and its row, belong to that request.
+                var winner = await _acks.GetActiveByItemIdAsync(item.OperationItemId, cancellationToken).ConfigureAwait(false);
+                results.Add(AlreadyAcknowledged(item, winner));
+                continue;
+            }
 
             // Execution outcome is intentionally untouched.
-            results.Add(new BulkAcknowledgeOperationItemResult(
-                item.OperationItemId,
-                item.DisplayLabel,
-                BulkAcknowledgeOperationItemResultCategories.Acknowledged,
-                "Failure acknowledged; original execution outcome remains Failed.",
-                MapAck(created)));
-            acknowledged++;
+            results.Add(Acknowledged(item, created));
+            acknowledged.Add(item.OperationItemId);
         }
 
-        await TryAuditAsync(
-            actorId,
-            OperationItemResolutionAuditActions.AttentionAcknowledged,
-            "success",
-            new CorrelationId($"ack:{runId.Value}:{Guid.NewGuid():N}"),
-            runId.Value,
-            JsonSerializer.Serialize(new
-            {
-                runId = runId.Value,
-                operationGroupId = context.Value.GroupId,
-                disposition,
-                reason,
-                requestedCount = orderedUnique.Count,
-                acknowledgedCount = acknowledged,
-                skippedCount = skipped,
-            }),
-            cancellationToken).ConfigureAwait(false);
+        if (acknowledged.Count == 0)
+            transaction.DeclareNoOp();
+        else
+        {
+            await transaction.StageAsync(
+                AuditEvents.OperationItemAttentionAcknowledged(
+                    runId.Value, scope.GroupId, disposition, reason, orderedUnique.Count, acknowledged, scope.ResourceContextId),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         return new BulkAcknowledgeOperationItemsResult(
             orderedUnique.Count,
-            acknowledged,
-            skipped,
+            acknowledged.Count,
+            orderedUnique.Count - acknowledged.Count,
             results);
     }
+
+    /// <summary>
+    /// The result of a confirmed commit, from its primary row: the items it lists were acknowledged by this request and are
+    /// read back in their current state; every other item was skipped, for the reason that still holds. An item that was
+    /// acknowledged elsewhere at commit time and reopened since is still reported as it was then: already acknowledged.
+    /// </summary>
+    private async Task<BulkAcknowledgeOperationItemsResult> ReconstructAcknowledgeAsync(
+        AuditCommittedOperation committed,
+        OperationRunId runId,
+        AttentionScope scope,
+        IReadOnlyList<string> orderedUnique,
+        CancellationToken cancellationToken)
+    {
+        var acknowledgedIds = new HashSet<string>(committed.GetStringList("operationItemIds"), StringComparer.Ordinal);
+        var results = new List<BulkAcknowledgeOperationItemResult>(orderedUnique.Count);
+        foreach (var itemId in orderedUnique)
+        {
+            if (acknowledgedIds.Contains(itemId))
+            {
+                var item = await _items.GetItemAsync(itemId, cancellationToken).ConfigureAwait(false);
+                var latest = (await _acks.ListByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+                results.Add(new BulkAcknowledgeOperationItemResult(
+                    itemId,
+                    item?.DisplayLabel,
+                    BulkAcknowledgeOperationItemResultCategories.Acknowledged,
+                    "Failure acknowledged; original execution outcome remains Failed.",
+                    latest is null ? null : MapAck(latest)));
+                continue;
+            }
+
+            var (eligible, skippedResult) = await ClassifyForAcknowledgeAsync(itemId, runId, scope, cancellationToken).ConfigureAwait(false);
+            results.Add(skippedResult ?? AlreadyAcknowledged(eligible!, null));
+        }
+
+        return new BulkAcknowledgeOperationItemsResult(
+            orderedUnique.Count,
+            acknowledgedIds.Count,
+            orderedUnique.Count - acknowledgedIds.Count,
+            results);
+    }
+
+    /// <summary>Either the item, eligible for acknowledgement, or the result that says why it is skipped.</summary>
+    private async Task<(OperationItem? Item, BulkAcknowledgeOperationItemResult? Skipped)> ClassifyForAcknowledgeAsync(
+        string itemId,
+        OperationRunId runId,
+        AttentionScope scope,
+        CancellationToken cancellationToken)
+    {
+        var (item, skipped) = await ClassifyMembershipAsync(itemId, runId, scope, cancellationToken).ConfigureAwait(false);
+        if (skipped is not null)
+            return (null, skipped);
+
+        if (!string.Equals(item!.Status, OperationItemStatuses.Failed, StringComparison.Ordinal))
+        {
+            return (null, new BulkAcknowledgeOperationItemResult(
+                item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.NotFailed,
+                $"Item is not Failed (status '{item.Status}'); acknowledgement applies only to failures."));
+        }
+
+        var existing = await _acks.GetActiveByItemIdAsync(item.OperationItemId, cancellationToken).ConfigureAwait(false);
+        return existing is null ? (item, null) : (null, AlreadyAcknowledged(item, existing));
+    }
+
+    private static BulkAcknowledgeOperationItemResult Acknowledged(OperationItem item, OperationItemAttentionAcknowledgement created) =>
+        new(
+            item.OperationItemId,
+            item.DisplayLabel,
+            BulkAcknowledgeOperationItemResultCategories.Acknowledged,
+            "Failure acknowledged; original execution outcome remains Failed.",
+            MapAck(created));
+
+    private static BulkAcknowledgeOperationItemResult AlreadyAcknowledged(OperationItem item, OperationItemAttentionAcknowledgement? existing) =>
+        new(
+            item.OperationItemId,
+            item.DisplayLabel,
+            BulkAcknowledgeOperationItemResultCategories.AlreadyAcknowledged,
+            "Item already has an active acknowledgement.",
+            existing is null ? null : MapAck(existing));
 
     public async Task<BulkReopenOperationItemsResult?> ReopenAttentionAsync(
         OperationRunId runId,
@@ -288,81 +344,166 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
                 isConflict: false);
         }
 
-        var actor = await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var actorId = actor?.Id.Value
-            ?? throw new UnauthorizedAccessException("Authenticated actor is required to reopen attention.");
+        await RequireActorAsync("Authenticated actor is required to reopen attention.", cancellationToken).ConfigureAwait(false);
+        var scope = context.Value;
 
+        return await _unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.OperationItemAttentionReopened, AuditActor.CurrentPrincipal),
+            (transaction, ct) => ReopenAttemptAsync(transaction, runId, scope, orderedUnique, ct),
+            (committed, ct) => ReconstructReopenAsync(committed, runId, scope, orderedUnique, ct),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One attempt: each reopening applies only to an acknowledgement that is still active, so of two concurrent requests only
+    /// one reopens it and only that one records it. The reopenings and the request's one row commit together or not at all.
+    /// </summary>
+    private async Task<BulkReopenOperationItemsResult> ReopenAttemptAsync(
+        IAuditedTransaction transaction,
+        OperationRunId runId,
+        AttentionScope scope,
+        IReadOnlyList<string> orderedUnique,
+        CancellationToken cancellationToken)
+    {
         var results = new List<BulkAcknowledgeOperationItemResult>(orderedUnique.Count);
-        var reopened = 0;
-        var skipped = 0;
+        var reopened = new List<string>();
 
         foreach (var itemId in orderedUnique)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var item = await _items.GetItemAsync(itemId, cancellationToken).ConfigureAwait(false);
-            if (item is null)
+            var (item, skipped) = await ClassifyMembershipAsync(itemId, runId, scope, cancellationToken).ConfigureAwait(false);
+            if (skipped is not null)
             {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    itemId, null, BulkAcknowledgeOperationItemResultCategories.ItemNotFound,
-                    "Item was not found in this operation group."));
-                skipped++;
+                results.Add(skipped);
                 continue;
             }
 
-            if (!string.Equals(item.RunId, runId.Value, StringComparison.Ordinal)
-                || !string.Equals(item.OperationGroupId, context.Value.GroupId, StringComparison.Ordinal))
-            {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.WrongGroup,
-                    "Item does not belong to the requested run and operation group."));
-                skipped++;
-                continue;
-            }
-
-            var updated = await _acks.ReopenActiveAsync(item.OperationItemId, actorId, cancellationToken: cancellationToken)
+            var updated = await _acks.ReopenActiveAsync(item!.OperationItemId, transaction.Actor.RecordedValue, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (updated is null)
             {
-                results.Add(new BulkAcknowledgeOperationItemResult(
-                    item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.NotAcknowledged,
-                    "Item does not have an active acknowledgement."));
-                skipped++;
+                results.Add(NotAcknowledged(item));
                 continue;
             }
 
-            results.Add(new BulkAcknowledgeOperationItemResult(
-                item.OperationItemId,
-                item.DisplayLabel,
-                BulkAcknowledgeOperationItemResultCategories.Reopened,
-                "Attention reopened; original execution outcome remains Failed.",
-                MapAck(updated)));
-            reopened++;
+            results.Add(Reopened(item, updated));
+            reopened.Add(item.OperationItemId);
         }
 
-        await TryAuditAsync(
-            actorId,
-            OperationItemResolutionAuditActions.AttentionReopened,
-            "success",
-            new CorrelationId($"reopen:{runId.Value}:{Guid.NewGuid():N}"),
-            runId.Value,
-            JsonSerializer.Serialize(new
-            {
-                runId = runId.Value,
-                operationGroupId = context.Value.GroupId,
-                requestedCount = orderedUnique.Count,
-                reopenedCount = reopened,
-                skippedCount = skipped,
-            }),
-            cancellationToken).ConfigureAwait(false);
+        if (reopened.Count == 0)
+            transaction.DeclareNoOp();
+        else
+        {
+            await transaction.StageAsync(
+                AuditEvents.OperationItemAttentionReopened(runId.Value, scope.GroupId, orderedUnique.Count, reopened, scope.ResourceContextId),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         return new BulkReopenOperationItemsResult(
             orderedUnique.Count,
-            reopened,
-            skipped,
+            reopened.Count,
+            orderedUnique.Count - reopened.Count,
             results);
     }
 
-    private async Task<(string GroupId, string DefinitionId)?> ResolveScopeAsync(
+    /// <summary>
+    /// The result of a confirmed commit, from its primary row: the items it lists were reopened by this request and are read
+    /// back in their current state; every other item was skipped.
+    /// </summary>
+    private async Task<BulkReopenOperationItemsResult> ReconstructReopenAsync(
+        AuditCommittedOperation committed,
+        OperationRunId runId,
+        AttentionScope scope,
+        IReadOnlyList<string> orderedUnique,
+        CancellationToken cancellationToken)
+    {
+        var reopenedIds = new HashSet<string>(committed.GetStringList("operationItemIds"), StringComparer.Ordinal);
+        var results = new List<BulkAcknowledgeOperationItemResult>(orderedUnique.Count);
+        foreach (var itemId in orderedUnique)
+        {
+            var (item, skipped) = await ClassifyMembershipAsync(itemId, runId, scope, cancellationToken).ConfigureAwait(false);
+            if (skipped is not null)
+            {
+                results.Add(skipped);
+                continue;
+            }
+
+            if (!reopenedIds.Contains(itemId))
+            {
+                results.Add(NotAcknowledged(item!));
+                continue;
+            }
+
+            var latestReopened = (await _acks.ListByItemIdAsync(itemId, cancellationToken).ConfigureAwait(false))
+                .Where(a => a.ReopenedAtUtc is not null)
+                .OrderByDescending(a => a.ReopenedAtUtc)
+                .FirstOrDefault();
+            results.Add(new BulkAcknowledgeOperationItemResult(
+                item!.OperationItemId,
+                item.DisplayLabel,
+                BulkAcknowledgeOperationItemResultCategories.Reopened,
+                "Attention reopened; original execution outcome remains Failed.",
+                latestReopened is null ? null : MapAck(latestReopened)));
+        }
+
+        return new BulkReopenOperationItemsResult(
+            orderedUnique.Count,
+            reopenedIds.Count,
+            orderedUnique.Count - reopenedIds.Count,
+            results);
+    }
+
+    private static BulkAcknowledgeOperationItemResult Reopened(OperationItem item, OperationItemAttentionAcknowledgement updated) =>
+        new(
+            item.OperationItemId,
+            item.DisplayLabel,
+            BulkAcknowledgeOperationItemResultCategories.Reopened,
+            "Attention reopened; original execution outcome remains Failed.",
+            MapAck(updated));
+
+    private static BulkAcknowledgeOperationItemResult NotAcknowledged(OperationItem item) =>
+        new(
+            item.OperationItemId,
+            item.DisplayLabel,
+            BulkAcknowledgeOperationItemResultCategories.NotAcknowledged,
+            "Item does not have an active acknowledgement.");
+
+    /// <summary>Either the item, in the requested run and group, or the result that says why it is skipped.</summary>
+    private async Task<(OperationItem? Item, BulkAcknowledgeOperationItemResult? Skipped)> ClassifyMembershipAsync(
+        string itemId,
+        OperationRunId runId,
+        AttentionScope scope,
+        CancellationToken cancellationToken)
+    {
+        var item = await _items.GetItemAsync(itemId, cancellationToken).ConfigureAwait(false);
+        if (item is null)
+        {
+            return (null, new BulkAcknowledgeOperationItemResult(
+                itemId, null, BulkAcknowledgeOperationItemResultCategories.ItemNotFound,
+                "Item was not found in this operation group."));
+        }
+
+        if (!string.Equals(item.RunId, runId.Value, StringComparison.Ordinal)
+            || !string.Equals(item.OperationGroupId, scope.GroupId, StringComparison.Ordinal))
+        {
+            return (null, new BulkAcknowledgeOperationItemResult(
+                item.OperationItemId, item.DisplayLabel, BulkAcknowledgeOperationItemResultCategories.WrongGroup,
+                "Item does not belong to the requested run and operation group."));
+        }
+
+        return (item, null);
+    }
+
+    /// <summary>The retry authorization has established an authenticated principal; there is no placeholder to fall back to.</summary>
+    private async Task RequireActorAsync(string message, CancellationToken cancellationToken)
+    {
+        if (await _principal.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false) is null)
+            throw new UnauthorizedAccessException(message);
+    }
+
+    private readonly record struct AttentionScope(string GroupId, string DefinitionId, string? ResourceContextId);
+
+    private async Task<AttentionScope?> ResolveScopeAsync(
         OperationRunId runId,
         string operationGroupId,
         CancellationToken cancellationToken)
@@ -386,7 +527,7 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
         if (!string.Equals(group.RunId, runId.Value, StringComparison.Ordinal))
             return null;
 
-        return (group.OperationGroupId, run.DefinitionId);
+        return new AttentionScope(group.OperationGroupId, run.DefinitionId, run.ResourceContextId);
     }
 
     private static List<string> NormalizeIds(IReadOnlyList<string>? ids)
@@ -416,36 +557,4 @@ public sealed class OperationItemAttentionService : IOperationItemAttentionServi
             a.AcknowledgedByUserId,
             a.ReopenedAtUtc,
             a.ReopenedByUserId);
-
-    private async Task TryAuditAsync(
-        string actorId,
-        string action,
-        string outcome,
-        CorrelationId correlation,
-        string runId,
-        string details,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _audit.AppendAsync(
-                new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    new ActorId(actorId),
-                    action,
-                    Resource: null,
-                    outcome,
-                    DateTimeOffset.UtcNow,
-                    correlation,
-                    details,
-                    ModuleId: null,
-                    ScheduleId: null,
-                    RunId: runId),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to append audit for {Action}", action);
-        }
-    }
 }

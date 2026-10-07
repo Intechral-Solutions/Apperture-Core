@@ -94,7 +94,7 @@ public sealed record AuditActor
     public string RecordedValue =>
         Kind switch
         {
-            null => throw new InvalidOperationException("The current principal must be resolved before it is recorded."),
+            null => throw new AuditInvariantException("The current principal must be resolved before it is recorded."),
             AuditActorKinds.User => UserId!,
             AuditActorKinds.External => External!.CanonicalKey,
             _ => Literal!,

@@ -100,10 +100,11 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
                 .OrderBy(x => x.OccurredAt).ThenBy(x => x.Id)
                 .ToListAsync(cancellationToken);
 
-            // A lifecycle event carries no actor of its own; the cancel intent it announces does.
-            var cancelRequestedBy = await _db.WorkflowCancelRequests.AsNoTracking()
+            // A lifecycle event carries no actor of its own; the cancel intent it announces does. The intent and its event
+            // are written together with one timestamp, so the requester is shown only on the event of that same intent.
+            var cancelIntent = await _db.WorkflowCancelRequests.AsNoTracking()
                 .Where(x => x.RunId == run.Id)
-                .Select(x => x.RequestedBy)
+                .Select(x => new { x.RequestedAt, x.RequestedBy })
                 .FirstOrDefaultAsync(cancellationToken);
 
             foreach (var item in lifecycle)
@@ -114,7 +115,10 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
                     occurredAt: item.OccurredAt,
                     eventKind: RunTimeline.EventKindLifecycleTransition,
                     summary: $"Lifecycle transition: {item.EventType}.",
-                    actor: string.Equals(item.EventType, WorkflowLifecycleEventNames.CancelRequested, StringComparison.Ordinal) ? cancelRequestedBy : null,
+                    actor: string.Equals(item.EventType, WorkflowLifecycleEventNames.CancelRequested, StringComparison.Ordinal)
+                        && cancelIntent is not null && cancelIntent.RequestedAt == item.OccurredAt
+                            ? cancelIntent.RequestedBy
+                            : null,
                     sourceType: RunTimeline.SourceTypeLifecycleEvent,
                     sourceId: item.Id.ToString(),
                     metadata: new Dictionary<string, string?>
@@ -209,10 +213,13 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
                 .OrderBy(x => x.OccurredAt).ThenBy(x => x.Id)
                 .ToListAsync(cancellationToken);
 
-            // A lifecycle event carries no actor of its own; the cancel intent it announces does.
-            var cancelRequestedBy = await _db.OperationCancelRequests.AsNoTracking()
+            // A lifecycle event carries no actor of its own; the cancel intent it announces does. The intent and its event
+            // are written together with one timestamp, so the requester is shown only on the event of that same intent. An
+            // operation run's intent is removed when the run completes; its event then shows no requester (the audit row
+            // keeps it).
+            var cancelIntent = await _db.OperationCancelRequests.AsNoTracking()
                 .Where(x => x.RunId == run.Id)
-                .Select(x => x.RequestedBy)
+                .Select(x => new { x.RequestedAt, x.RequestedBy })
                 .FirstOrDefaultAsync(cancellationToken);
 
             foreach (var item in lifecycle)
@@ -223,7 +230,10 @@ public sealed class RunTimelineQueryService : IRunTimelineQueryService
                     occurredAt: item.OccurredAt,
                     eventKind: RunTimeline.EventKindLifecycleTransition,
                     summary: $"Lifecycle transition: {item.EventType}.",
-                    actor: string.Equals(item.EventType, OperationLifecycleEventNames.CancelRequested, StringComparison.Ordinal) ? cancelRequestedBy : null,
+                    actor: string.Equals(item.EventType, OperationLifecycleEventNames.CancelRequested, StringComparison.Ordinal)
+                        && cancelIntent is not null && cancelIntent.RequestedAt == item.OccurredAt
+                            ? cancelIntent.RequestedBy
+                            : null,
                     sourceType: RunTimeline.SourceTypeLifecycleEvent,
                     sourceId: item.Id.ToString(),
                     metadata: new Dictionary<string, string?>

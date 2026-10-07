@@ -63,7 +63,7 @@ public sealed record AuditSerializedDetails(string Json, IReadOnlyList<string> T
 
 /// <summary>Thrown when a W1 or W2 event's details exceed the limit even after truncation: a schema defect (§12.5).</summary>
 public sealed class AuditDetailsOverflowException(string action, int bytes)
-    : InvalidOperationException($"The details of audit action '{action}' are {bytes} bytes after truncation, over the {AuditDetailSchema.MaxDetailsBytes}-byte limit. The action's detail schema is defective.");
+    : AuditInvariantException($"The details of audit action '{action}' are {bytes} bytes after truncation, over the {AuditDetailSchema.MaxDetailsBytes}-byte limit. The action's detail schema is defective.");
 
 /// <summary>
 /// The permitted fields of one action (§12.1) and the overflow policy (§12.5). There is no way to write an undeclared
@@ -251,7 +251,7 @@ public sealed partial class AuditDetailSchema
                         writer.WriteEndArray();
                         break;
                     default:
-                        throw new InvalidOperationException($"Unsupported audit field value type {value.GetType().Name}.");
+                        throw new AuditInvariantException($"Unsupported audit field value type {value.GetType().Name}.");
                 }
             }
 

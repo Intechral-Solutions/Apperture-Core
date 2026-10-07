@@ -147,10 +147,15 @@ public sealed class WorkflowRetryService : IWorkflowRetryService
 
         if (outcome.Blocked is { } blocked)
         {
-            await _events.TryWriteAsync(
-                AuditEvents.WorkflowRetryBlocked(blocked.Id, blocked.DefinitionId, blocked.ResourceContextId),
-                await AttemptActor.ResolveAsync(_principal, cancellationToken),
-                cancellationToken);
+            // Through blocked-work recovery the refusal is recorded once, by the recovery channel, as its own refusal.
+            if (!viaRecovery)
+            {
+                await _events.TryWriteAsync(
+                    AuditEvents.WorkflowRetryBlocked(blocked.Id, blocked.DefinitionId, blocked.ResourceContextId),
+                    await AttemptActor.ResolveAsync(_principal, cancellationToken),
+                    cancellationToken);
+            }
+
             return new WorkflowRetryResult(
                 new OperationRunId(runId.Value),
                 RunId: null,

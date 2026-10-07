@@ -180,7 +180,8 @@ public static partial class AuditEvents
 
     /// <summary>
     /// An operator asked for one failed operation item to be retried and the retry attempt, with the child run it started,
-    /// committed. The reason is the operator's own text, in its declared field.
+    /// committed. The reason is the operator's own text, in its declared field. An item retried as part of a bulk retry names
+    /// the batch, so the rows of one batch can be found together; each item's row is the record of its own request.
     /// </summary>
     public static AuditEvent OperationItemRetryRequested(
         string operationItemId,
@@ -190,14 +191,15 @@ public static partial class AuditEvents
         int attemptIndex,
         string childRunId,
         string? reason,
-        string? resourceContextId) =>
+        string? resourceContextId,
+        string? bulkRequestId = null) =>
         Created(
             AuditActionNames.OperationItemRetryRequested,
             Target(AuditTargetTypes.OperationItem, operationItemId),
             AuditOutcomeCodes.Requested,
             RunRelated(runId, resourceContextId),
             ("operationItemId", operationItemId), ("runId", runId), ("operationGroupId", operationGroupId), ("attemptId", attemptId),
-            ("attemptIndex", attemptIndex), ("childRunId", childRunId), ("reason", reason));
+            ("attemptIndex", attemptIndex), ("childRunId", childRunId), ("reason", reason), ("bulkRequestId", BoundedId(bulkRequestId)));
 
     /// <summary>
     /// An operator asked for one failed operation item to be retried and the attempt was recorded as blocked: no child run
@@ -211,14 +213,57 @@ public static partial class AuditEvents
         int attemptIndex,
         string errorCode,
         string? reason,
-        string? resourceContextId) =>
+        string? resourceContextId,
+        string? bulkRequestId = null) =>
         Created(
             AuditActionNames.OperationItemRetryBlocked,
             Target(AuditTargetTypes.OperationItem, operationItemId),
             AuditOutcomeCodes.Blocked,
             RunRelated(runId, resourceContextId),
             ("operationItemId", operationItemId), ("runId", runId), ("operationGroupId", operationGroupId), ("attemptId", attemptId),
-            ("attemptIndex", attemptIndex), ("errorCode", errorCode), ("reason", reason));
+            ("attemptIndex", attemptIndex), ("errorCode", errorCode), ("reason", reason), ("bulkRequestId", BoundedId(bulkRequestId)));
+
+    /// <summary>
+    /// An operator acknowledged failed items of one operation group, and the acknowledgements committed. The target is the run;
+    /// the items acknowledged by this request are listed (a bulk request is bounded, so the list is too). Items already
+    /// acknowledged, not failed or not in the group changed nothing and are only counted. The reason is the operator's own
+    /// text, in its declared field.
+    /// </summary>
+    public static AuditEvent OperationItemAttentionAcknowledged(
+        string runId,
+        string operationGroupId,
+        string disposition,
+        string? reason,
+        int requestedCount,
+        IReadOnlyList<string> acknowledgedItemIds,
+        string? resourceContextId) =>
+        Created(
+            AuditActionNames.OperationItemAttentionAcknowledged,
+            Target(AuditTargetTypes.OperationRun, runId),
+            AuditOutcomeCodes.Succeeded,
+            RunRelated(runId, resourceContextId),
+            ("runId", runId), ("operationGroupId", operationGroupId), ("disposition", disposition), ("reason", reason),
+            ("requestedCount", requestedCount), ("acknowledgedCount", acknowledgedItemIds.Count),
+            ("skippedCount", requestedCount - acknowledgedItemIds.Count), ("operationItemIds", acknowledgedItemIds));
+
+    /// <summary>
+    /// An operator reopened attention on acknowledged items of one operation group, and the reopenings committed. The
+    /// acknowledgements are kept as history. The target is the run; the items reopened by this request are listed.
+    /// </summary>
+    public static AuditEvent OperationItemAttentionReopened(
+        string runId,
+        string operationGroupId,
+        int requestedCount,
+        IReadOnlyList<string> reopenedItemIds,
+        string? resourceContextId) =>
+        Created(
+            AuditActionNames.OperationItemAttentionReopened,
+            Target(AuditTargetTypes.OperationRun, runId),
+            AuditOutcomeCodes.Succeeded,
+            RunRelated(runId, resourceContextId),
+            ("runId", runId), ("operationGroupId", operationGroupId), ("requestedCount", requestedCount),
+            ("reopenedCount", reopenedItemIds.Count), ("skippedCount", requestedCount - reopenedItemIds.Count),
+            ("operationItemIds", reopenedItemIds));
 
     /// <summary>
     /// A blocked-work retry was refused before anything was requested: the work is not eligible now. The definition id is the

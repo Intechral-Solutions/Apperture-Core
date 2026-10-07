@@ -626,6 +626,267 @@ public sealed class OperatorActionAuditSqlServerTests : IAsyncLifetime
         (await RowsAsync("operation_item", item.OperationItemId)).Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_item_retry_that_loses_the_race_for_its_key_records_nothing_and_reports_the_winners_attempt(bool blocked)
+    {
+        var (user, _) = await AddUserAsync("itemretrier");
+        var (runId, item) = await SeedFailedItemAsync();
+        // The competing request commits its attempt with the same key (and so the same next attempt index) just before this
+        // one inserts. In the blocked case the winner's attempt is blocked too, which is what the earlier guard missed.
+        var race = new BeforeFirstMatchingCommand(
+            sql => sql.Contains("INSERT INTO [OperationItemRetryAttempts]", StringComparison.Ordinal),
+            async () => await _db.ExecuteAsync(
+                "INSERT INTO OperationItemRetryAttempts (Id, OperationItemId, RunId, OperationGroupId, AttemptIndex, IdempotencyKey, RequestedByActorId, Status, StartedAtUtc, CreatedAtUtc, UpdatedAtUtc) "
+                + $"VALUES (N'att-winner', N'{item.OperationItemId}', N'{runId}', N'{item.OperationGroupId}', 1, N'race-key', N'usr_winner', N'{(blocked ? "Blocked" : "Dispatched")}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());"));
+
+        OperationItemRetryAttemptDto? result;
+        await using (var db = _db.NewDb(race))
+            result = await ItemRetryService(db, user, new TestHandler { CanRetry = !blocked }).RequestRetryAsync(
+                new OperationRunId(runId), item.OperationItemId, new RequestOperationItemRetryDto("race-key"));
+
+        race.Fired.Should().BeTrue();
+        result!.OperationItemRetryAttemptId.Should().Be("att-winner", "the request is answered by the attempt that won");
+        result.RequestedByActorId.Should().Be("usr_winner");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemRetryAttempts;")).Should().Be(1);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationRuns WHERE RetryOfRunId IS NOT NULL;")).Should().Be(0);
+        (await RowsAsync("operation_item", item.OperationItemId)).Should().BeEmpty("the attempt and its row belong to the request that made it");
+    }
+
+    [Fact]
+    public async Task A_confirmed_commit_whose_result_cannot_be_rebuilt_is_reported_as_applied_never_as_a_refusal()
+    {
+        var (user, _) = await AddUserAsync("canceller");
+        await SeedWorkflowRunAsync("run-rc1", "running");
+        var lost = new LostCommitAcknowledgement();
+
+        await using (var db = _db.NewDb(lost))
+        {
+            var act = () => NewUnit(db, new Principal(user)).ExecuteAsync<bool>(
+                new AuditedOperation(AuditActionNames.WorkflowRunCancelRequested, AuditActor.CurrentPrincipal),
+                async (transaction, ct) =>
+                {
+                    await transaction.StageAsync(AuditEvents.RunCancelRequested(true, "run-rc1", "inst-run-rc1", WorkflowKey, "running", null), ct);
+                    return true;
+                },
+                (_, _) => throw new InvalidOperationException("The committed request could not be read back."));
+
+            // An InvalidOperationException here would read as a 409 or 400 refusal at the endpoints that map it so.
+            var thrown = await act.Should().ThrowAsync<AuditCommittedResultUnavailableException>();
+            thrown.Which.Should().NotBeAssignableTo<InvalidOperationException>();
+            thrown.Which.OperationEventId.Should().NotBeNullOrEmpty();
+        }
+
+        (await RowsAsync("workflow_run", "run-rc1")).Should().ContainSingle("the change committed; only its result could not be rebuilt");
+    }
+
+    // ---- Bulk retry (orchestration over item retries) ----
+
+    [Fact]
+    public async Task A_bulk_retry_commits_each_item_with_its_own_row_naming_the_batch_and_writes_no_batch_row()
+    {
+        var (user, _) = await AddUserAsync("bulkretrier");
+        var (runId, items) = await SeedFailedItemsAsync(2);
+
+        BulkRetryOperationItemsResult? result;
+        await using (var db = _db.NewDb())
+            result = await BulkService(db, user).BulkRetryAsync(
+                new OperationRunId(runId), items[0].OperationGroupId, new BulkRetryOperationItemsRequest([.. items.Select(i => i.OperationItemId)], RequestId: "batch-sql"));
+
+        result!.DispatchedCount.Should().Be(2);
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM OperationItemRetryAttempts WHERE RequestedByActorId = N'{user}';")).Should().Be(2);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs WHERE Action LIKE N'execution.operation_item.bulk_retry.%';"))
+            .Should().Be(0, "the batch changes nothing itself, so it records no row of its own");
+        foreach (var item in items)
+        {
+            var row = (await RowsAsync("operation_item", item.OperationItemId)).Should().ContainSingle().Which;
+            row["Action"].Should().Be(AuditActionNames.OperationItemRetryRequested);
+            row["Actor"].Should().Be(user);
+            JsonDocument.Parse((string)row["Details"]!).RootElement.GetProperty("bulkRequestId").GetString().Should().Be("batch-sql");
+        }
+    }
+
+    [Fact]
+    public async Task A_bulk_retry_whose_second_item_cannot_commit_keeps_the_first_and_reports_the_second()
+    {
+        var (user, _) = await AddUserAsync("bulkretrier");
+        var (runId, items) = await SeedFailedItemsAsync(2);
+        // The second item's audit insert fails: that item's unit rolls back alone; the first has committed and stays.
+        var auditInserts = 0;
+        var failSecondAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal) && ++auditInserts == 2);
+
+        BulkRetryOperationItemsResult? result;
+        await using (var db = _db.NewDb(failSecondAudit))
+            result = await BulkService(db, user).BulkRetryAsync(
+                new OperationRunId(runId), items[0].OperationGroupId, new BulkRetryOperationItemsRequest([.. items.Select(i => i.OperationItemId)], RequestId: "batch-partial"));
+
+        result!.Items.Select(i => i.Category).Should().Equal(
+            BulkRetryOperationItemResultCategories.Dispatched, BulkRetryOperationItemResultCategories.DispatchFailed);
+        (await RowsAsync("operation_item", items[0].OperationItemId)).Should().ContainSingle();
+        (await RowsAsync("operation_item", items[1].OperationItemId)).Should().BeEmpty();
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM OperationItemRetryAttempts WHERE OperationItemId = N'{items[1].OperationItemId}';"))
+            .Should().Be(0, "the failed item's attempt rolled back with its row");
+    }
+
+    // ---- Attention acknowledge and reopen ----
+
+    [Fact]
+    public async Task An_acknowledge_commits_its_acknowledgements_and_one_row_on_the_run_with_one_actor()
+    {
+        var (user, username) = await AddUserAsync("acknowledger");
+        var (runId, items) = await SeedFailedItemsAsync(2);
+
+        BulkAcknowledgeOperationItemsResult? result;
+        await using (var db = _db.NewDb())
+            result = await AttentionService(db, user).AcknowledgeAsync(
+                new OperationRunId(runId), items[0].OperationGroupId,
+                new BulkAcknowledgeOperationItemsRequest([.. items.Select(i => i.OperationItemId)], "will-not-retry", "Handled outside the platform."));
+
+        result!.AcknowledgedCount.Should().Be(2);
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM OperationItemAttentionAcknowledgements WHERE AcknowledgedByUserId = N'{user}';")).Should().Be(2);
+        var row = (await RowsAsync("operation_run", runId)).Should().ContainSingle().Which;
+        row["Action"].Should().Be(AuditActionNames.OperationItemAttentionAcknowledged);
+        row["Actor"].Should().Be(user, "the acknowledgement rows and the audit row name the same actor");
+        row["ActorUsername"].Should().Be(username);
+        row["Basis"].Should().Be("change");
+        row["OutcomeCode"].Should().Be("succeeded");
+        var details = JsonDocument.Parse((string)row["Details"]!).RootElement;
+        details.GetProperty("operationItemIds").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(items.Select(i => i.OperationItemId));
+        details.GetProperty("disposition").GetString().Should().Be(OperationItemAttentionDispositions.WillNotRetry);
+    }
+
+    [Fact]
+    public async Task When_the_audit_insert_fails_an_acknowledge_leaves_no_acknowledgement()
+    {
+        var (user, _) = await AddUserAsync("acknowledger");
+        var (runId, items) = await SeedFailedItemsAsync(2);
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => AttentionService(db, user).AcknowledgeAsync(
+                new OperationRunId(runId), items[0].OperationGroupId,
+                new BulkAcknowledgeOperationItemsRequest([.. items.Select(i => i.OperationItemId)], "will-not-retry"));
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        failAudit.Failures.Should().BeGreaterThan(0);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemAttentionAcknowledgements;"))
+            .Should().Be(0, "before AUD-1.3 each acknowledgement committed on its own and the row was best effort afterwards");
+    }
+
+    [Fact]
+    public async Task An_acknowledge_whose_acknowledgement_is_lost_is_verified_reconstructed_and_not_repeated()
+    {
+        var (user, _) = await AddUserAsync("acknowledger");
+        var (runId, items) = await SeedFailedItemsAsync(1);
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+
+        BulkAcknowledgeOperationItemsResult? result;
+        await using (var db = _db.NewDb(lost, attempts))
+            result = await AttentionService(db, user).AcknowledgeAsync(
+                new OperationRunId(runId), items[0].OperationGroupId,
+                new BulkAcknowledgeOperationItemsRequest([items[0].OperationItemId], "will-not-retry"));
+
+        attempts.Started.Should().Be(1, "verification confirmed the commit, so nothing reran");
+        result!.Items.Should().ContainSingle().Which.Category.Should().Be(
+            BulkAcknowledgeOperationItemResultCategories.Acknowledged, "a confirmed commit is never reported as already acknowledged");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemAttentionAcknowledgements;")).Should().Be(1);
+        (await RowsAsync("operation_run", runId)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task An_acknowledge_whose_commit_cannot_be_verified_is_outcome_unknown_and_never_half_applied()
+    {
+        var (user, _) = await AddUserAsync("acknowledger");
+        var (runId, items) = await SeedFailedItemsAsync(1);
+        var lost = new LostCommitAcknowledgement();
+
+        await using (var db = _db.NewDb(lost))
+        {
+            var service = new OperationItemAttentionService(
+                db, new SqlOperationItemStore(db), new SqlOperationItemAttentionAcknowledgementStore(db), new AllowRetry(), new Principal(user),
+                NewUnit(db, new Principal(user), verification: new UnreachableVerification()));
+            var act = () => service.AcknowledgeAsync(
+                new OperationRunId(runId), items[0].OperationGroupId,
+                new BulkAcknowledgeOperationItemsRequest([items[0].OperationItemId], "will-not-retry"));
+            await act.Should().ThrowAsync<AuditOutcomeUnknownException>();
+        }
+
+        var acknowledgements = await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemAttentionAcknowledgements;");
+        var rows = (await RowsAsync("operation_run", runId)).Count;
+        acknowledgements.Should().Be(rows, "either both committed or neither did");
+    }
+
+    [Fact]
+    public async Task An_acknowledge_that_loses_the_race_for_an_items_active_acknowledgement_records_nothing()
+    {
+        var (user, _) = await AddUserAsync("acknowledger");
+        var (runId, items) = await SeedFailedItemsAsync(1);
+        var item = items[0];
+        var race = new BeforeFirstMatchingCommand(
+            sql => sql.Contains("INSERT INTO [OperationItemAttentionAcknowledgements]", StringComparison.Ordinal),
+            async () => await _db.ExecuteAsync(
+                "INSERT INTO OperationItemAttentionAcknowledgements (Id, OperationItemId, RunId, OperationGroupId, Disposition, AcknowledgedAtUtc, AcknowledgedByUserId, CreatedAtUtc) "
+                + $"VALUES (N'ack-winner', N'{item.OperationItemId}', N'{runId}', N'{item.OperationGroupId}', N'NoActionRequired', SYSDATETIMEOFFSET(), N'usr_winner', SYSDATETIMEOFFSET());"));
+
+        BulkAcknowledgeOperationItemsResult? result;
+        await using (var db = _db.NewDb(race))
+            result = await AttentionService(db, user).AcknowledgeAsync(
+                new OperationRunId(runId), item.OperationGroupId,
+                new BulkAcknowledgeOperationItemsRequest([item.OperationItemId], "will-not-retry"));
+
+        race.Fired.Should().BeTrue();
+        result!.AcknowledgedCount.Should().Be(0);
+        result.Items.Should().ContainSingle().Which.Category.Should().Be(BulkAcknowledgeOperationItemResultCategories.AlreadyAcknowledged);
+        result.Items[0].Acknowledgement!.AcknowledgedByUserId.Should().Be("usr_winner", "the winner's acknowledgement is never attributed to the loser");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM OperationItemAttentionAcknowledgements;")).Should().Be(1);
+        (await RowsAsync("operation_run", runId)).Should().BeEmpty("a request that committed nothing records nothing");
+    }
+
+    [Fact]
+    public async Task A_reopen_commits_with_its_row_and_one_that_loses_a_race_neither_overwrites_the_winner_nor_records_anything()
+    {
+        var (user, _) = await AddUserAsync("reopener");
+        var (runId, items) = await SeedFailedItemsAsync(2);
+        await _db.ExecuteAsync(string.Join(
+            " ",
+            items.Select((item, i) =>
+                "INSERT INTO OperationItemAttentionAcknowledgements (Id, OperationItemId, RunId, OperationGroupId, Disposition, AcknowledgedAtUtc, AcknowledgedByUserId, CreatedAtUtc) "
+                + $"VALUES (N'ack-{i}', N'{item.OperationItemId}', N'{runId}', N'{item.OperationGroupId}', N'WillNotRetry', SYSDATETIMEOFFSET(), N'usr_earlier', SYSDATETIMEOFFSET());")));
+
+        // The first item reopens normally. For the second, a competing request reopens it just before this one's update.
+        var race = new BeforeFirstMatchingCommand(
+            sql => sql.TrimStart().StartsWith("UPDATE", StringComparison.Ordinal)
+                && sql.Contains("OperationItemAttentionAcknowledgements", StringComparison.Ordinal),
+            async () => await _db.ExecuteAsync(
+                $"UPDATE OperationItemAttentionAcknowledgements SET ReopenedAtUtc = SYSDATETIMEOFFSET(), ReopenedByUserId = N'usr_winner' WHERE Id = N'ack-1';"));
+
+        BulkReopenOperationItemsResult? first;
+        await using (var db = _db.NewDb())
+            first = await AttentionService(db, user).ReopenAttentionAsync(
+                new OperationRunId(runId), items[0].OperationGroupId, new BulkReopenOperationItemsRequest([items[0].OperationItemId]));
+
+        BulkReopenOperationItemsResult? second;
+        await using (var db = _db.NewDb(race))
+            second = await AttentionService(db, user).ReopenAttentionAsync(
+                new OperationRunId(runId), items[1].OperationGroupId, new BulkReopenOperationItemsRequest([items[1].OperationItemId]));
+
+        first!.ReopenedCount.Should().Be(1);
+        (await _db.ScalarAsync<string>("SELECT ReopenedByUserId FROM OperationItemAttentionAcknowledgements WHERE Id = N'ack-0';")).Should().Be(user);
+        var row = (await RowsAsync("operation_run", runId)).Should().ContainSingle("only the reopen that changed something is recorded").Which;
+        row["Action"].Should().Be(AuditActionNames.OperationItemAttentionReopened);
+        row["Actor"].Should().Be(user);
+
+        race.Fired.Should().BeTrue();
+        second!.ReopenedCount.Should().Be(0);
+        second.Items.Should().ContainSingle().Which.Category.Should().Be(BulkAcknowledgeOperationItemResultCategories.NotAcknowledged);
+        (await _db.ScalarAsync<string>("SELECT ReopenedByUserId FROM OperationItemAttentionAcknowledgements WHERE Id = N'ack-1';"))
+            .Should().Be("usr_winner", "the conditional update never overwrites who reopened it");
+    }
+
     // ---- wiring ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
@@ -698,6 +959,45 @@ public sealed class OperatorActionAuditSqlServerTests : IAsyncLifetime
             group.OperationGroupId, OperationGroupStatuses.CompletedWithErrors, 1, 0, 1, 0));
         return (runId, item);
     }
+
+    private async Task<(string RunId, IReadOnlyList<OperationItem> Items)> SeedFailedItemsAsync(int count)
+    {
+        var runId = "run-items-" + Guid.NewGuid().ToString("N")[..8];
+        await SeedWorkflowRunAsync(runId, "failed", withStartRequest: true);
+        await using var db = _db.NewDb();
+        var store = new SqlOperationItemStore(db);
+        var group = await store.BeginGroupAsync(new BeginOperationGroupRequest(runId, TestHandler.Module, null, "Test.Module.procedures.import", TestHandler.Kind));
+        var items = new List<OperationItem>();
+        for (var i = 1; i <= count; i++)
+        {
+            items.Add(await store.AppendItemAsync(new AppendOperationItemRequest(
+                group.OperationGroupId, runId, i, OperationItemStatuses.Failed,
+                SubjectKey: $"C-{i}", DisplayLabel: $"C-{i}", ErrorCode: "invalid_email", ErrorMessage: "bad", IsRetryable: true,
+                MetadataJson: $"{{\"rowNumber\":{i}}}")));
+        }
+
+        await store.CompleteGroupAsync(new CompleteOperationGroupRequest(
+            group.OperationGroupId, OperationGroupStatuses.CompletedWithErrors, count, 0, count, 0));
+        return (runId, items);
+    }
+
+    private OperationItemAttentionService AttentionService(AppertureDbContext db, string user) =>
+        new(
+            db,
+            new SqlOperationItemStore(db),
+            new SqlOperationItemAttentionAcknowledgementStore(db),
+            new AllowRetry(),
+            new Principal(user),
+            NewUnit(db, new Principal(user)));
+
+    private BulkOperationItemRetryService BulkService(AppertureDbContext db, string user) =>
+        new(
+            db,
+            new SqlOperationItemStore(db),
+            ItemRetryService(db, user, new TestHandler()),
+            new AllowRetry(),
+            new Principal(user),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<BulkOperationItemRetryService>.Instance);
 
     private static StartWorkflowRequest WorkflowStart(string? requestedBy = null, string? idempotencyKey = null) =>
         new(

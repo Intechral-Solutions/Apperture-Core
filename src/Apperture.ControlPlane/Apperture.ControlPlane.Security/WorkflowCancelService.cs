@@ -84,10 +84,14 @@ public sealed class WorkflowCancelService : IWorkflowCancelService
                 {
                     await _db.SaveChangesAsync(ct);
                 }
-                catch (DbUpdateException ex) when (SqlUniqueViolation.Is(ex))
+                catch (DbUpdateException ex) when (SqlUniqueViolation.IsOn(ex, SqlUniqueViolation.WorkflowCancelIntent))
                 {
                     // A concurrent request won the race for the one intent a run can have; ours rolled back to the savepoint.
+                    // The caller's request is answered by that intent, which is confirmed to exist; it and its row belong to
+                    // the request that made it.
                     SqlUniqueViolation.Detach(_db, intent, lifecycle);
+                    if (!await _db.WorkflowCancelRequests.AsNoTracking().AnyAsync(x => x.RunId == runId.Value, ct))
+                        throw;
                     transaction.DeclareNoOp();
                     return true;
                 }

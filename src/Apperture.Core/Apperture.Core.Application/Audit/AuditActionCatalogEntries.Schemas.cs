@@ -588,6 +588,33 @@ internal static class AuditDetailSchemas
         IdField("childRunId", required: false),
         IdField("errorCode", required: false),
         new AuditFieldDefinition("reason", AuditFieldKind.OperatorText, Required: false, MaxLength: OperationItems.OperationItemRetryBounds.ReasonMaxLength),
+        IdField("bulkRequestId", required: false),
+    ]);
+
+    /// <summary>The items one acknowledge or reopen request changed: a bulk request is bounded, so the list is too.</summary>
+    private static AuditFieldDefinition OperationItemIdsField() =>
+        new("operationItemIds", AuditFieldKind.IdList, Required: true, MaxLength: OperationItems.OperationItemAttentionBounds.IdMaxLength, MaxItems: OperationItems.OperationItemAttentionBounds.MaxBulkItemCount);
+
+    internal static readonly AuditDetailSchema OperationItemAttentionAcknowledged = new(
+    [
+        IdField("runId"),
+        IdField("operationGroupId"),
+        EnumField("disposition", true, [.. OperationItems.OperationItemAttentionDispositions.All]),
+        new AuditFieldDefinition("reason", AuditFieldKind.OperatorText, Required: false, MaxLength: OperationItems.OperationItemAttentionBounds.ReasonMaxLength),
+        CountField("requestedCount"),
+        CountField("acknowledgedCount"),
+        CountField("skippedCount"),
+        OperationItemIdsField(),
+    ]);
+
+    internal static readonly AuditDetailSchema OperationItemAttentionReopened = new(
+    [
+        IdField("runId"),
+        IdField("operationGroupId"),
+        CountField("requestedCount"),
+        CountField("reopenedCount"),
+        CountField("skippedCount"),
+        OperationItemIdsField(),
     ]);
 
     internal static readonly AuditDetailSchema RecoveryRetryRequested = new(

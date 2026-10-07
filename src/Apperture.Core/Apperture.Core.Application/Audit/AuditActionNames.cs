@@ -136,6 +136,8 @@ public static class AuditActionNames
     public const string WorkflowRetryBlocked = "execution.workflow_retry.blocked";
     public const string OperationItemRetryRequested = "execution.operation_item.retry_requested";
     public const string OperationItemRetryBlocked = "execution.operation_item.retry_blocked";
+    public const string OperationItemAttentionAcknowledged = "execution.operation_item.attention.acknowledged";
+    public const string OperationItemAttentionReopened = "execution.operation_item.attention.reopened";
 
     // AUD-1.3: recovery and the manual scheduler operations
     public const string BlockedWorkRetryRequested = "recovery.blocked_work.retry_requested";

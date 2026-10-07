@@ -23,6 +23,17 @@ public interface IOperationItemRetryService
         RequestOperationItemRetryDto request,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// As <see cref="RequestRetryAsync(OperationRunId, string, RequestOperationItemRetryDto, CancellationToken)"/>, for one item
+    /// of a bulk retry: the item's own audit row names the batch it belongs to.
+    /// </summary>
+    Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
+        OperationRunId runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        OperationItemRetryBatch batch,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Lists retry attempts for an item under a run. Null when run/item missing.</summary>
     Task<IReadOnlyList<OperationItemRetryAttemptDto>?> ListAttemptsAsync(
         OperationRunId runId,
@@ -33,6 +44,9 @@ public interface IOperationItemRetryService
 public sealed record RequestOperationItemRetryDto(
     string IdempotencyKey,
     string? Reason = null);
+
+/// <summary>The bulk retry an item retry belongs to. Set by the bulk retry service, never taken from a request body.</summary>
+public sealed record OperationItemRetryBatch(string RequestId);
 
 public sealed record OperationItemRetryAttemptDto(
     string OperationItemRetryAttemptId,
@@ -109,11 +123,30 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         _unit = unit;
     }
 
-    public async Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
+    public Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
         OperationRunId runId,
         string operationItemId,
         RequestOperationItemRetryDto request,
+        CancellationToken cancellationToken = default) =>
+        RequestRetryCoreAsync(runId, operationItemId, request, batch: null, cancellationToken);
+
+    public Task<OperationItemRetryAttemptDto?> RequestRetryAsync(
+        OperationRunId runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        OperationItemRetryBatch batch,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        return RequestRetryCoreAsync(runId, operationItemId, request, batch, cancellationToken);
+    }
+
+    private async Task<OperationItemRetryAttemptDto?> RequestRetryCoreAsync(
+        OperationRunId runId,
+        string operationItemId,
+        RequestOperationItemRetryDto request,
+        OperationItemRetryBatch? batch,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(operationItemId))
@@ -166,7 +199,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 AuditActionNames.OperationItemRetryRequested,
                 AuditActor.CurrentPrincipal,
                 AlternatePrimaryActions: [AuditActionNames.OperationItemRetryBlocked]),
-            (transaction, ct) => AttemptAsync(transaction, run, item.OperationItemId, idempotencyKey, reason, ct),
+            (transaction, ct) => AttemptAsync(transaction, run, item.OperationItemId, idempotencyKey, reason, batch?.RequestId, ct),
             ReconstructAsync,
             cancellationToken).ConfigureAwait(false);
     }
@@ -181,6 +214,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         string operationItemId,
         string idempotencyKey,
         string? reason,
+        string? bulkRequestId,
         CancellationToken cancellationToken)
     {
         var item = await _items.GetItemAsync(operationItemId, cancellationToken).ConfigureAwait(false);
@@ -235,7 +269,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
         var eligibility = handler.Evaluate(item, group);
         if (!eligibility.CanRetry)
         {
-            var blocked = await _attempts.CreateAsync(
+            var blocked = await _attempts.TryCreateAsync(
                 new CreateOperationItemRetryAttemptRequest(
                     OperationItemId: item.OperationItemId,
                     RunId: item.RunId,
@@ -248,20 +282,14 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                     ErrorCode: eligibility.BlockReasonCode ?? OperationItemRetryErrorCodes.MissingRetryMetadata,
                     ErrorMessage: eligibility.BlockReasonMessage ?? "Retry blocked."),
                 cancellationToken).ConfigureAwait(false);
+            if (blocked is null)
+                return await LostToConcurrentRequestAsync(transaction, item.OperationItemId, idempotencyKey, cancellationToken).ConfigureAwait(false);
 
-            // Concurrent create may have returned the winning attempt for this key.
-            if (!string.Equals(blocked.Status, OperationItemRetryAttemptStatuses.Blocked, StringComparison.Ordinal)
-                && string.Equals(blocked.IdempotencyKey, idempotencyKey, StringComparison.Ordinal))
-            {
-                transaction.DeclareNoOp();
-                return Map(blocked, "Idempotent replay of an existing retry attempt.");
-            }
-
-            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
+            await StageBlockedAsync(transaction, run, blocked, bulkRequestId, cancellationToken).ConfigureAwait(false);
             return Map(blocked, eligibility.BlockReasonMessage ?? "Retry blocked; child run was not dispatched.");
         }
 
-        var requested = await _attempts.CreateAsync(
+        var requested = await _attempts.TryCreateAsync(
             new CreateOperationItemRetryAttemptRequest(
                 OperationItemId: item.OperationItemId,
                 RunId: item.RunId,
@@ -272,12 +300,8 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 Reason: reason,
                 Status: OperationItemRetryAttemptStatuses.Requested),
             cancellationToken).ConfigureAwait(false);
-
-        if (!string.Equals(requested.Status, OperationItemRetryAttemptStatuses.Requested, StringComparison.Ordinal))
-        {
-            transaction.DeclareNoOp();
-            return Map(requested, "Idempotent replay of an existing retry attempt.");
-        }
+        if (requested is null)
+            return await LostToConcurrentRequestAsync(transaction, item.OperationItemId, idempotencyKey, cancellationToken).ConfigureAwait(false);
 
         OperationItemRetryStartPlan plan;
         try
@@ -297,7 +321,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                     OperationItemRetryErrorCodes.MissingRetryMetadata,
                     ex.Message),
                 cancellationToken).ConfigureAwait(false);
-            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
+            await StageBlockedAsync(transaction, run, blocked, bulkRequestId, cancellationToken).ConfigureAwait(false);
             return Map(blocked, ex.Message);
         }
 
@@ -323,7 +347,7 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                     OperationItemRetryErrorCodes.DefinitionUnavailable,
                     "Workflow definition is not executable (module disabled or unavailable)."),
                 cancellationToken).ConfigureAwait(false);
-            await StageBlockedAsync(transaction, run, blocked, cancellationToken).ConfigureAwait(false);
+            await StageBlockedAsync(transaction, run, blocked, bulkRequestId, cancellationToken).ConfigureAwait(false);
             return Map(blocked, "Retry blocked; child run was not dispatched.");
         }
 
@@ -345,7 +369,8 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 dispatched.AttemptIndex,
                 dispatchResult.RunId.Value,
                 reason,
-                run.ResourceContextId),
+                run.ResourceContextId,
+                bulkRequestId),
             cancellationToken).ConfigureAwait(false);
 
         return Map(
@@ -353,10 +378,27 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
             GuidanceFor(dispatched, idempotentReplay: false));
     }
 
+    /// <summary>
+    /// A concurrent request with the same key committed its attempt first, so this one created nothing. It reports that
+    /// attempt as the replay it is and records nothing: the attempt, and its row, belong to the request that made it.
+    /// </summary>
+    private async Task<OperationItemRetryAttemptDto> LostToConcurrentRequestAsync(
+        IAuditedTransaction transaction,
+        string operationItemId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        transaction.DeclareNoOp();
+        var winner = await _attempts.GetByIdempotencyKeyAsync(operationItemId, idempotencyKey, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("A retry attempt that won the idempotency key could not be read.");
+        return Map(winner, GuidanceFor(winner, idempotentReplay: true));
+    }
+
     private static ValueTask StageBlockedAsync(
         IAuditedTransaction transaction,
         OperationRunEntity run,
         OperationItemRetryAttempt blocked,
+        string? bulkRequestId,
         CancellationToken cancellationToken) =>
         transaction.StageAsync(
             AuditEvents.OperationItemRetryBlocked(
@@ -367,7 +409,8 @@ public sealed class OperationItemRetryService : IOperationItemRetryService
                 blocked.AttemptIndex,
                 blocked.ErrorCode ?? OperationItemRetryErrorCodes.MissingRetryMetadata,
                 blocked.Reason,
-                run.ResourceContextId),
+                run.ResourceContextId,
+                bulkRequestId),
             cancellationToken);
 
     /// <summary>

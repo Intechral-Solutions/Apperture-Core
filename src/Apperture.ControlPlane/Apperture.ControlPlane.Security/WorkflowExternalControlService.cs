@@ -153,7 +153,7 @@ public sealed class WorkflowExternalControlService : IWorkflowExternalControlSer
         {
             await _db.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (SqlUniqueViolation.Is(ex))
+        catch (DbUpdateException ex) when (SqlUniqueViolation.IsOn(ex, SqlUniqueViolation.QueuedExternalControl))
         {
             // Another caller won the unique-index race for the one queued request of this kind; ours rolled back to the
             // savepoint. Report theirs, and record nothing: nothing of ours committed.
