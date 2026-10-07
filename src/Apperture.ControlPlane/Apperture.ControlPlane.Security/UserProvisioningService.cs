@@ -149,14 +149,15 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
                 var assigned = await TryAssignRoleAsync(transaction, userId, request.InitialRoleId, ct);
                 var reconciledId = await ReconcilePendingAsync(transaction, tenantId, objectId!, userId, actorId, reviewedAt, ct);
-                return (user, assigned, reconciledId);
+                return (user.Username, assigned, reconciledId);
             },
-            async (_, ct) =>
+            async (committed, ct) =>
             {
-                var user = await _users.GetByIdAsync(userId, ct)
-                    ?? throw new InvalidOperationException($"User {userId.Value} was verified as created but could not be read.");
+                // A verified commit is success for the user its row names (§13.5): its recorded username stands even if the
+                // user can no longer be read.
+                var username = (await _users.GetByIdAsync(userId, ct))?.Username ?? committed.GetField("username") ?? "";
                 var latest = await _requests.FindLatestAsync(tenantId, objectId!, ct);
-                return (user, !string.IsNullOrWhiteSpace(request.InitialRoleId), latest?.ProvisionedUserId == userId.Value ? latest.Id : null);
+                return (username, !string.IsNullOrWhiteSpace(request.InitialRoleId), latest?.ProvisionedUserId == userId.Value ? latest.Id : null);
             },
             cancellationToken);
 
@@ -170,7 +171,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
 
         return new UserProvisioningResult(
             userId,
-            created.Username,
+            created,
             displayName,
             objectId!,
             EntraLinkProven: false,

@@ -44,6 +44,32 @@ public sealed class UsersEntraProvisioningControllerUsernameTests
     }
 
     [Fact]
+    public async Task A_batch_keeps_the_committed_people_and_reports_an_unknown_or_not_completed_person_on_its_own_row()
+    {
+        // AUD-1.2 review (gate §13.2): one person's uncertain or not-completed operation never turns the whole batch into
+        // "nothing was changed" while the people before it committed.
+        var provisioning = new ScriptedProvisioning
+        {
+            [Oid1] = Result(Oid1, "ada.lovelace"),
+            [Oid2] = new Apperture.Core.Application.Audit.AuditOutcomeUnknownException("op-unknown"),
+            [Oid3] = new Apperture.Core.Application.Audit.AuditOperationNotCompletedException("op-rolled-back"),
+        };
+        var controller = NewController(provisioning, new ScriptedAccessRequests());
+
+        var action = await controller.Provision(
+            new EntraDirectoryProvisionRequestBody("reg-1", [Oid1, Oid2, Oid3], null, false),
+            CancellationToken.None);
+
+        var results = action.Result.Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<EntraProvisioningBatchResultDto>().Which.Results;
+        results.Should().HaveCount(3);
+        results[0].Succeeded.Should().BeTrue();
+        results[1].ErrorCode.Should().Be("outcome_unknown");
+        results[1].ErrorMessage.Should().NotContainEquivalentOf("nothing was changed");
+        results[2].ErrorCode.Should().Be("operation_not_completed");
+    }
+
+    [Fact]
     public async Task Approval_returns_the_services_stored_username()
     {
         var accessRequests = new ScriptedAccessRequests { Approval = Result(Oid1, "grace.hopper") };

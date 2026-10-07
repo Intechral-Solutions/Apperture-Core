@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Microsoft.AspNetCore.Authorization;
@@ -116,6 +117,20 @@ public sealed class UsersEntraProvisioningController : ControllerBase
             {
                 results.Add(new EntraProvisioningPersonResultDto(
                     false, objectId, null, null, null, ex.Code, ex.Message, false, false, null));
+            }
+            catch (AuditOutcomeUnknownException)
+            {
+                // Per person (gate §13.2): the people before this one committed and keep their results; this one may or may
+                // not have been added, and is never reported as nothing having changed.
+                results.Add(new EntraProvisioningPersonResultDto(
+                    false, objectId, null, null, null, AuditOutcomeUnknownException.Code,
+                    "Adding this person could not be confirmed. Reload the user list before trying again.", false, false, null));
+            }
+            catch (AuditOperationNotCompletedException)
+            {
+                results.Add(new EntraProvisioningPersonResultDto(
+                    false, objectId, null, null, null, "operation_not_completed",
+                    "This person could not be added. Nothing was changed for them.", false, false, null));
             }
             catch (InvalidOperationException ex)
             {
