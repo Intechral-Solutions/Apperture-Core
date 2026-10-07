@@ -208,7 +208,18 @@ public sealed class ManagementHostUsernameRenameHttpTests
             .Where(a => a.Action == "governance.user.username.changed" && a.Details!.Contains(person.Id.Value))
             .ToListAsync();
         var row = rows.Should().ContainSingle().Which;
-        row.Details.Should().Contain($"previousUsername={tag}.audited").And.Contain($"newUsername={tag}.audited-new");
+
+        // AUD-1.1 (audit hardening design gate A1.1-9): structured json/1 details from the renaming transaction, written by
+        // the recorder in the same transaction as the rename, with the target and the in-transaction actor username.
+        row.Producer.Should().Be("recorder");
+        row.DetailsFormat.Should().Be("json/1");
+        row.TargetType.Should().Be("user");
+        row.TargetId.Should().Be(person.Id.Value);
+        row.ActorKind.Should().Be("user");
+        row.ActorUsername.Should().NotBeNullOrEmpty();
+        using var details = System.Text.Json.JsonDocument.Parse(row.Details!);
+        details.RootElement.GetProperty("previousUsername").GetString().Should().Be($"{tag}.audited");
+        details.RootElement.GetProperty("newUsername").GetString().Should().Be($"{tag}.audited-new");
     }
 
     [Fact]

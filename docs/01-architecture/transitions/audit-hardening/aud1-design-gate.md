@@ -55,7 +55,7 @@ Path abbreviations, as in the LST-1 gate:
 | IAM-9 | Complete, closure accepted. OR-2 amends R14 additively. **This does not reopen IAM-9 or its closure** |
 | LST-1.0 | Approved with amendments. **LST-1.1 has not started.** That blocks AUD-1.5b only (§26) |
 | AUD-1.0 | **Approved 2026-10-06 with conditions (§3.2)** |
-| AUD-1.1 | **Next. Not started** |
+| AUD-1.1 | **Implemented on branch `aud-1.1-audit-foundation`, awaiting review and merge** ([implementation record](aud1-1-foundation-record.md)). Status at approval: next, not started |
 | AUD-1.2 to AUD-1.6, AUD-1.5b | Not started (§22) |
 | Product code, migrations, tests or CI changed by AUD-1.0 | None |
 

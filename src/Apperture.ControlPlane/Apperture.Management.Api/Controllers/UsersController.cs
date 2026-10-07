@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Models;
@@ -276,6 +277,7 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<RenameUsernameResponse>> RenameUsername(
         string id,
         [FromBody] RenameUsernameRequest request,
@@ -308,6 +310,17 @@ public sealed class UsersController : ControllerBase
         catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
         {
             return NotFound(new { message = ex.Message });
+        }
+        catch (AuditOutcomeUnknownException ex)
+        {
+            // Neither commit nor rollback could be established (audit hardening design gate §13.2): never "failed" or
+            // "unchanged". The client reloads and never resubmits automatically.
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "The rename may or may not have been applied. Refresh to confirm before trying again.",
+                code = AuditOutcomeUnknownException.Code,
+                operationEventId = ex.OperationEventId,
+            });
         }
     }
 

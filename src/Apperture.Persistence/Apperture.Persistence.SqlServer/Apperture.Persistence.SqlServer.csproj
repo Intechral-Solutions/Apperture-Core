@@ -17,6 +17,10 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
   </ItemGroup>
   <ItemGroup>
+    <!-- AUD-1.1: the audit recorder's fault-injection seams (event id source, verification connection) are internal. -->
+    <InternalsVisibleTo Include="Apperture.IntegrationTests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Application\Apperture.Core.Application.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Domain\Apperture.Core.Domain.csproj" />
     <ProjectReference Include="..\..\Apperture.Core\Apperture.Core.Security.Secrets\Apperture.Core.Security.Secrets.csproj" />

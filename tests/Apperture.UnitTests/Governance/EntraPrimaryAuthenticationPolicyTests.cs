@@ -388,7 +388,8 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         public ValueTask DesignateAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<UserId> ProvisionAsync(string password, ActorId? actorId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new UserId("emerg-1"));
-        public ValueTask EnsureCanonicalIdentityAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask EnsureCanonicalIdentityAsync(Apperture.Core.Application.Audit.AuditActor actor, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
         public ValueTask RevokeAsync(bool confirmFallback, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask SetLocalPasswordAsync(UserId userId, string password, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<bool> IsDesignatedEmergencyUserAsync(UserId userId, CancellationToken cancellationToken = default) =>

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Controllers;
@@ -63,6 +64,21 @@ public sealed class UsersControllerRenameUsernameTests
         var bad = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
         bad.Value!.ToString().Should().Contain(UsernameErrorCodes.Invalid);
         service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Rename_whose_outcome_could_not_be_established_is_500_outcome_unknown_with_the_operation_id()
+    {
+        var (controller, service) = NewController();
+        Throws(service, new AuditOutcomeUnknownException("op123"));
+
+        var result = await controller.RenameUsername(TargetUserId, new RenameUsernameRequest("alice.renamed"), CancellationToken.None);
+
+        var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        error.StatusCode.Should().Be(500, "the client treats a 5xx as an unknown outcome and reloads instead of resubmitting");
+        var body = System.Text.Json.JsonSerializer.Serialize(error.Value);
+        body.Should().Contain("\"code\":\"outcome_unknown\"").And.Contain("\"operationEventId\":\"op123\"");
+        body.Should().NotContainEquivalentOf("failed").And.NotContainEquivalentOf("unchanged");
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Apperture.Cli.Bootstrap;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Providers;
@@ -66,6 +67,17 @@ internal static class EmergencyCli
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
         }
+        catch (AuditOutcomeUnknownException ex)
+        {
+            // Never reported as failed or unchanged: run 'emergency status' to see what was applied (design gate §13.2).
+            Console.Error.WriteLine($"Error: {ex.Message} Run 'emergency status' to check before trying again. Operation: {ex.OperationEventId}");
+            return 1;
+        }
+        catch (AuditOperationNotCompletedException ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            return 1;
+        }
         catch (InvalidOperationException ex)
         {
             Console.Error.WriteLine($"Error: {ex.Message}");
@@ -111,7 +123,7 @@ internal static class EmergencyCli
     {
         try
         {
-            await emergency.EnsureCanonicalIdentityAsync();
+            await emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli);
         }
         catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
         {
@@ -144,7 +156,7 @@ internal static class EmergencyCli
         {
             try
             {
-                await emergency.EnsureCanonicalIdentityAsync();
+                await emergency.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli);
             }
             catch (EmergencyAccessException ex) when (ex.Code == EmergencyAccessErrorCodes.UsernameConflict)
             {

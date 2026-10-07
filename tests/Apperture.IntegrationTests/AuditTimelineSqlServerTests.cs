@@ -390,6 +390,11 @@ public sealed class AuditTimelineSqlServerTests
         if (connectionString is null)
             throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
 
+        // AUD-1.1: the integrity guard refuses any UPDATE of evidence columns, so the Epic 37 backfill can no longer be
+        // replayed on a current database (it never should be). Instead, rows are written at the schema before Epic 37 and
+        // the real migration runs its own backfill on the way to the current schema, in a throwaway catalog.
+        var catalog = "Apperture_Ep37Backfill_" + Guid.NewGuid().ToString("N")[..12];
+        connectionString = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString) { InitialCatalog = catalog }.ConnectionString;
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var services = new ServiceCollection();
@@ -397,13 +402,27 @@ public sealed class AuditTimelineSqlServerTests
         services.AddScoped<IAuditService, SqlAuditService>();
         services.AddScoped<IAuditTimelineQueryService, AuditTimelineQueryService>();
         await using var provider = services.BuildServiceProvider();
+        try
+        {
+            await RunEpic37BackfillScenarioAsync(provider);
+        }
+        finally
+        {
+            Microsoft.Data.SqlClient.SqlConnection.ClearAllPools();
+            await DropCatalogAsync(connectionString, catalog);
+        }
+    }
 
+    private static async Task RunEpic37BackfillScenarioAsync(IServiceProvider provider)
+    {
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
             if (!await db.Database.CanConnectAsync())
                 throw new InvalidOperationException("SQL Server not reachable.");
-            await AppertureDatabaseMigrator.MigrateAsync(db);
+            await Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+                .GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>(db)
+                .MigrateAsync("20260322230000_AddScheduleRunClaimedByHostId");
         }
 
         var prefix = $"ep37.backfill.{Guid.NewGuid():N}.";
@@ -416,13 +435,14 @@ public sealed class AuditTimelineSqlServerTests
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+            // The pre-Epic 37 schema has no Outcome or reference columns: the outcome is the first Details segment.
             db.Database.ExecuteSqlRaw("""
-                INSERT INTO AuditLogs (At, Actor, Action, Details, Outcome, ModuleId, ScheduleId, RunId)
+                INSERT INTO AuditLogs (At, Actor, Action, Details)
                 VALUES
-                ({0}, 'system', {1}, 'success; schedule:s-backfill;runId=r-backfill;module=m-backfill', NULL, NULL, NULL, NULL),
-                ({2}, 'system', {3}, 'failed; schedule:other', NULL, NULL, NULL, NULL),
-                ({4}, 'system', {5}, 'blocked', NULL, NULL, NULL, NULL),
-                ({6}, 'system', {7}, 'requested; originalRunId=orig-123', NULL, NULL, NULL, NULL)
+                ({0}, 'system', {1}, 'success; schedule:s-backfill;runId=r-backfill;module=m-backfill'),
+                ({2}, 'system', {3}, 'failed; schedule:other'),
+                ({4}, 'system', {5}, 'blocked'),
+                ({6}, 'system', {7}, 'requested; originalRunId=orig-123')
                 """,
                 at1, prefix + "dispatched",
                 at2, prefix + "failed",
@@ -433,55 +453,8 @@ public sealed class AuditTimelineSqlServerTests
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-            await db.Database.ExecuteSqlRawAsync("""
-                UPDATE a SET Outcome = seg.FirstSegment
-                FROM AuditLogs a
-                CROSS APPLY (
-                    SELECT LTRIM(RTRIM(LEFT(a.Details, CASE WHEN CHARINDEX(';', ISNULL(a.Details, '')) > 0
-                        THEN CHARINDEX(';', a.Details) - 1 ELSE LEN(a.Details) END))) AS FirstSegment
-                ) seg
-                WHERE a.Outcome IS NULL AND a.Details IS NOT NULL AND LEN(seg.FirstSegment) > 0 AND LEN(seg.FirstSegment) < 128
-                    AND seg.FirstSegment NOT LIKE 'Resource=%' AND seg.FirstSegment NOT LIKE 'runId=%'
-                    AND seg.FirstSegment NOT LIKE 'schedule:%' AND seg.FirstSegment NOT LIKE 'definitionId=%'
-                    AND seg.FirstSegment NOT LIKE 'workflowId=%' AND seg.FirstSegment NOT LIKE 'operationDefinitionId=%'
-                    AND seg.FirstSegment NOT LIKE 'module=%' AND seg.FirstSegment NOT LIKE 'runtimePlaneId=%'
-                """);
-            await db.Database.ExecuteSqlRawAsync("""
-                UPDATE a SET ModuleId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 7,
-                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 7) > 0
-                        THEN CHARINDEX(';', a.Details, p.Pos + 7) - p.Pos - 7
-                        ELSE 128 END)))
-                FROM AuditLogs a
-                CROSS APPLY (SELECT NULLIF(PATINDEX('%module=%', a.Details), 0) AS Pos) p
-                WHERE p.Pos > 0 AND a.ModuleId IS NULL
-                """);
-            await db.Database.ExecuteSqlRawAsync("""
-                UPDATE a SET ScheduleId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 9,
-                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 9) > 0
-                        THEN CHARINDEX(';', a.Details, p.Pos + 9) - p.Pos - 9
-                        ELSE 128 END)))
-                FROM AuditLogs a
-                CROSS APPLY (SELECT NULLIF(PATINDEX('%schedule:%', a.Details), 0) AS Pos) p
-                WHERE p.Pos > 0 AND a.ScheduleId IS NULL
-                """);
-            await db.Database.ExecuteSqlRawAsync("""
-                UPDATE a SET RunId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 6,
-                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 6) > 0
-                        THEN CHARINDEX(';', a.Details, p.Pos + 6) - p.Pos - 6
-                        ELSE 64 END)))
-                FROM AuditLogs a
-                CROSS APPLY (SELECT COALESCE(NULLIF(PATINDEX('%runId=%', a.Details), 0), NULLIF(PATINDEX('%RunId=%', a.Details), 0)) AS Pos) p
-                WHERE a.RunId IS NULL AND a.Details IS NOT NULL AND p.Pos > 0
-                """);
-            await db.Database.ExecuteSqlRawAsync("""
-                UPDATE a SET RunId = LTRIM(RTRIM(SUBSTRING(a.Details, p.Pos + 14,
-                    CASE WHEN CHARINDEX(';', a.Details, p.Pos + 14) > 0
-                        THEN CHARINDEX(';', a.Details, p.Pos + 14) - p.Pos - 14
-                        ELSE 64 END)))
-                FROM AuditLogs a
-                CROSS APPLY (SELECT NULLIF(PATINDEX('%originalRunId=%', a.Details), 0) AS Pos) p
-                WHERE a.RunId IS NULL AND a.Details IS NOT NULL AND p.Pos > 0
-                """);
+            // The Epic 37 migration's own backfill runs here, then every later migration up to the current schema.
+            await AppertureDatabaseMigrator.MigrateAsync(db);
         }
 
         await using (var scope = provider.CreateAsyncScope())
@@ -510,6 +483,29 @@ public sealed class AuditTimelineSqlServerTests
             var retry = page.Items.FirstOrDefault(e => e.Action == prefix + "retry");
             retry.Should().NotBeNull();
             retry!.RelatedReferences.Should().Contain(r => r.Kind == "run" && r.Id == "orig-123");
+        }
+    }
+
+    private static async Task DropCatalogAsync(string connectionString, string catalog)
+    {
+        try
+        {
+            var master = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString) { InitialCatalog = "master" }.ConnectionString;
+            await using var connection = new Microsoft.Data.SqlClient.SqlConnection(master);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
+                BEGIN
+                    ALTER DATABASE [{catalog}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    DROP DATABASE [{catalog}];
+                END
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            // Cleanup is best-effort; a leftover throwaway catalog must not fail the run.
         }
     }
 

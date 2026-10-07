@@ -1145,6 +1145,33 @@ public sealed record UserReferenceDto(
     [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("displayName")] string DisplayName);
 
+/// <summary>
+/// The actor of an audit row (client copy of the server read contract). <c>Kind</c> is <c>user</c>, <c>external</c>,
+/// <c>system</c>, <c>anonymous</c>, <c>worker</c>, <c>unresolved</c> or <c>unclassified</c>; <c>Recorded</c> is the verbatim
+/// stored value; <c>UsernameAtEvent</c> is the event-time username evidence.
+/// </summary>
+public sealed record AuditActorDto(
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("user")] UserReferenceDto? User,
+    [property: JsonPropertyName("external")] AuditExternalIdentityDto? External,
+    [property: JsonPropertyName("label")] string? Label,
+    [property: JsonPropertyName("recorded")] string Recorded,
+    [property: JsonPropertyName("usernameAtEvent")] string? UsernameAtEvent,
+    [property: JsonPropertyName("attribution")] string Attribution,
+    [property: JsonPropertyName("issue")] AuditAttributionIssueDto? Issue);
+
+/// <summary>A verified external identity on an audit row. The name hint is provided by the provider.</summary>
+public sealed record AuditExternalIdentityDto(
+    [property: JsonPropertyName("provider")] string Provider,
+    [property: JsonPropertyName("tenantId")] string TenantId,
+    [property: JsonPropertyName("subjectId")] string SubjectId,
+    [property: JsonPropertyName("nameHint")] string? NameHint);
+
+/// <summary>A known attribution defect of an audit row; <c>Certainty</c> is <c>definite</c> or <c>possible</c>.</summary>
+public sealed record AuditAttributionIssueDto(
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("certainty")] string Certainty);
+
 /// <param name="Username">The canonical stored username after the call.</param>
 /// <param name="Outcome"><c>assigned</c>, <c>reclaimed</c> or <c>unchanged</c>.</param>
 public sealed record RenameUsernameResponse(

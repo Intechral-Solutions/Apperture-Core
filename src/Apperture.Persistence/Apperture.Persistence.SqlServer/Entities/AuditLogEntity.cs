@@ -3,6 +3,13 @@ namespace Apperture.Persistence.SqlServer;
 /// <summary>
 /// Audit log entity. Epic 37: Outcome, ModuleId, ScheduleId, RunId are first-class columns.
 /// </summary>
+/// <remarks>
+/// AUD-1.1 (audit hardening design gate §10.1, §11.8, §13, §14, §19): the event identity, producer and details format
+/// are evidence and never change after insert. The classification set (<see cref="ClassificationState"/> through
+/// <see cref="OutcomeProvenance"/>) is either inserted complete or completed by one conditional transition, then frozen
+/// as a whole. The database refuses anything else (triggers and check constraints added by
+/// <c>Aud1_AuditFoundation</c>).
+/// </remarks>
 public sealed class AuditLogEntity
 {
     public long Id { get; set; }
@@ -33,4 +40,40 @@ public sealed class AuditLogEntity
     /// not part of a multi-record operation.
     /// </summary>
     public string? CorrelationId { get; set; }
+
+    /// <summary>Stable identity of this event. Unique when present; null only on rows written before AUD-1.1.</summary>
+    public string? EventId { get; set; }
+
+    /// <summary>The <see cref="EventId"/> of the primary row of the operation that wrote this row.</summary>
+    public string? OperationEventId { get; set; }
+
+    /// <summary><c>recorder</c>, <c>append</c>, or null for rows written before AUD-1.1.</summary>
+    public string? Producer { get; set; }
+
+    /// <summary><c>json/1</c> for recorder rows; null for append and legacy rows.</summary>
+    public string? DetailsFormat { get; set; }
+
+    /// <summary>Null (unclassified) or <c>complete</c>.</summary>
+    public string? ClassificationState { get; set; }
+
+    public string? ActorKind { get; set; }
+    public string? ActorUserId { get; set; }
+
+    /// <summary>The actor account's username as read by the recording transaction, or a recorded sign-in name.</summary>
+    public string? ActorUsername { get; set; }
+
+    public string? ActorExternalProvider { get; set; }
+    public string? ActorExternalTenantId { get; set; }
+    public string? ActorExternalSubjectId { get; set; }
+    public string? ActorAttribution { get; set; }
+    public string? AttributionIssue { get; set; }
+    public string? AttributionIssueCertainty { get; set; }
+    public string? TargetType { get; set; }
+    public string? TargetId { get; set; }
+    public string? Category { get; set; }
+    public string? Severity { get; set; }
+    public string? Visibility { get; set; }
+    public string? Basis { get; set; }
+    public string? OutcomeCode { get; set; }
+    public string? OutcomeProvenance { get; set; }
 }

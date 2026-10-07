@@ -1,5 +1,7 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Persistence.SqlServer.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<AppertureDbContext>((sp, builder) =>
         {
             builder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+            builder.AddInterceptors(AuditRecorderRowGuardInterceptor.Instance);
             var connectionString = connectionStringFactory(sp);
             var sqlBuilder = builder.UseSqlServer(
                 connectionString,
@@ -54,6 +57,7 @@ public static class ServiceCollectionExtensions
         services.AddDbContextFactory<AppertureDbContext>((sp, builder) =>
         {
             builder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+            builder.AddInterceptors(AuditRecorderRowGuardInterceptor.Instance);
             var connectionString = connectionStringFactory(sp);
             builder.UseSqlServer(
                 connectionString,
@@ -78,6 +82,19 @@ public static class ServiceCollectionExtensions
         services.AddHealthChecks()
             .AddCheck<MigrationsCompleteHealthCheck>("migrations");
         services.AddHostedService<PersistenceMigrationHostedService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the audit recorder (AUD-1 design gate §13): the audited unit of work for W1 operations and the single-row
+    /// writer for W2 to W4. Requires AddApperturePersistence (scoped DbContext) to be registered first.
+    /// </summary>
+    public static IServiceCollection AddAppertureAuditRecorder(this IServiceCollection services)
+    {
+        services.AddOptions<AuditRecorderOptions>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddScoped<IAuditedUnitOfWork, SqlAuditedUnitOfWork>();
+        services.TryAddScoped<IAuditEventWriter, SqlAuditEventWriter>();
         return services;
     }
 

@@ -306,7 +306,15 @@ public class AppertureDbContext : DbContext
 
         modelBuilder.Entity<AuditLogEntity>(e =>
         {
-            e.ToTable("AuditLogs");
+            // AUD-1.1: the integrity guard (design gate §19.2). Declaring the triggers makes EF read generated values without
+            // a bare OUTPUT clause, which SQL Server refuses on a table with enabled triggers.
+            e.ToTable("AuditLogs", t =>
+            {
+                t.HasTrigger(AuditLogSchema.UpdateGuardTrigger);
+                t.HasTrigger(AuditLogSchema.DeleteGuardTrigger);
+                t.HasCheckConstraint(AuditLogSchema.ProducerCheck, AuditLogSchema.ProducerCheckSql);
+                t.HasCheckConstraint(AuditLogSchema.ClassificationSetCheck, AuditLogSchema.ClassificationSetCheckSql);
+            });
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedOnAdd();
             e.Property(x => x.Actor).HasMaxLength(256);
@@ -334,6 +342,46 @@ public class AppertureDbContext : DbContext
                 .HasDatabaseName("IX_AuditLogs_ResourceContextId_At")
                 .HasFilter("[ResourceContextId] IS NOT NULL")
                 .IsDescending(false, true);
+
+            // AUD-1.1 (§10.1, §11.8, §13, §14): event identity, producer, details format and the classification set.
+            e.Property(x => x.EventId).HasMaxLength(64);
+            e.Property(x => x.OperationEventId).HasMaxLength(64);
+            e.Property(x => x.Producer).HasMaxLength(16);
+            e.Property(x => x.DetailsFormat).HasMaxLength(16);
+            e.Property(x => x.ClassificationState).HasMaxLength(16);
+            e.Property(x => x.ActorKind).HasMaxLength(16);
+            e.Property(x => x.ActorUserId).HasMaxLength(64);
+            e.Property(x => x.ActorUsername).HasMaxLength(256);
+            e.Property(x => x.ActorExternalProvider).HasMaxLength(16);
+            e.Property(x => x.ActorExternalTenantId).HasMaxLength(64);
+            e.Property(x => x.ActorExternalSubjectId).HasMaxLength(64);
+            e.Property(x => x.ActorAttribution).HasMaxLength(32);
+            e.Property(x => x.AttributionIssue).HasMaxLength(64);
+            e.Property(x => x.AttributionIssueCertainty).HasMaxLength(16);
+            e.Property(x => x.TargetType).HasMaxLength(64);
+            e.Property(x => x.TargetId).HasMaxLength(256);
+            e.Property(x => x.Category).HasMaxLength(32);
+            e.Property(x => x.Severity).HasMaxLength(16);
+            e.Property(x => x.Visibility).HasMaxLength(16);
+            e.Property(x => x.Basis).HasMaxLength(32);
+            e.Property(x => x.OutcomeCode).HasMaxLength(16);
+            e.Property(x => x.OutcomeProvenance).HasMaxLength(16);
+
+            // §16 indexes. Named, so they never merge with an unnamed index on the same columns.
+            e.HasIndex(x => x.EventId, AuditLogSchema.EventIdIndex)
+                .IsUnique()
+                .HasFilter("[EventId] IS NOT NULL");
+            e.HasIndex(x => new { x.ActorUserId, x.At, x.Id }, "IX_AuditLogs_ActorUserId_At_Id")
+                .HasFilter("[ActorUserId] IS NOT NULL")
+                .IsDescending(false, true, true);
+            e.HasIndex(x => new { x.TargetType, x.TargetId, x.At, x.Id }, "IX_AuditLogs_TargetType_TargetId_At_Id")
+                .HasFilter("[TargetType] IS NOT NULL AND [TargetId] IS NOT NULL")
+                .IsDescending(false, false, true, true);
+            e.HasIndex(x => new { x.At, x.Id }, "IX_AuditLogs_DefaultVisible_At_Id")
+                .HasFilter("[Visibility] = N'default'")
+                .IsDescending(true, true);
+            e.HasIndex(x => x.Id, AuditLogSchema.UnclassifiedIndex)
+                .HasFilter("[ClassificationState] IS NULL");
         });
 
         modelBuilder.Entity<TelemetryEventEntity>(e =>

@@ -180,42 +180,68 @@ public sealed class SqlUserRepository : IUserRepository
         if (!UsernamePolicy.IsCanonical(newUsername) || !UsernamePolicy.IsValidFormat(newUsername))
             throw new ArgumentException("The new username must be canonical and satisfy the username policy.", nameof(newUsername));
 
+        // AUD-1.1 (design gate §13.4): inside an audited unit of work the change joins the unit's transaction, so the
+        // rename and its audit row commit together, and the unit owns the commit, verification and any rerun.
+        if (_db.Database.CurrentTransaction is not null)
+        {
+            return await ChangeUsernameTranslatingErrorsAsync(
+                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, commit: null, cancellationToken);
+        }
+
         // Retry-on-failure is enabled, so an explicit transaction must run inside the execution strategy.
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(
             async ct =>
             {
-                var tracked = new List<object>();
-                try
-                {
-                    await using var transaction = await _db.Database.BeginTransactionAsync(ct);
-                    var outcome = await ChangeUsernameCoreAsync(
-                        userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, tracked, ct);
-                    await _db.SaveChangesAsync(ct);
-                    await transaction.CommitAsync(ct);
-                    return outcome;
-                }
-                catch (Exception ex) when (IsUsernameUniqueViolation(ex))
-                {
-                    Detach(tracked);
-                    throw new UsernameException(
-                        UsernameErrorCodes.Taken,
-                        "That username belongs, or once belonged, to another user.");
-                }
-                catch (Exception ex) when (ex is DbUpdateConcurrencyException || IsCurrentUsernameIndexViolation(ex))
-                {
-                    Detach(tracked);
-                    throw new UsernameException(
-                        UsernameErrorCodes.ConcurrentChange,
-                        "The user was changed by another operation. Reload and try again.");
-                }
-                catch
-                {
-                    Detach(tracked);
-                    throw;
-                }
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                return await ChangeUsernameTranslatingErrorsAsync(
+                    userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, transaction, ct);
             },
             cancellationToken);
+    }
+
+    /// <summary>
+    /// The rename and its save, translating the ledger and concurrency failures. Commits <paramref name="commit"/> when
+    /// this repository opened it; a joined transaction is left to its owner.
+    /// </summary>
+    private async Task<UsernameRenameResult> ChangeUsernameTranslatingErrorsAsync(
+        UserId userId,
+        string expectedCurrentUsername,
+        string newUsername,
+        string retiredReason,
+        string? newDisplayName,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? commit,
+        CancellationToken cancellationToken)
+    {
+        var tracked = new List<object>();
+        try
+        {
+            var outcome = await ChangeUsernameCoreAsync(
+                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, tracked, cancellationToken);
+            await _db.SaveChangesAsync(cancellationToken);
+            if (commit is not null)
+                await commit.CommitAsync(cancellationToken);
+            return outcome;
+        }
+        catch (Exception ex) when (IsUsernameUniqueViolation(ex))
+        {
+            Detach(tracked);
+            throw new UsernameException(
+                UsernameErrorCodes.Taken,
+                "That username belongs, or once belonged, to another user.");
+        }
+        catch (Exception ex) when (ex is DbUpdateConcurrencyException || IsCurrentUsernameIndexViolation(ex))
+        {
+            Detach(tracked);
+            throw new UsernameException(
+                UsernameErrorCodes.ConcurrentChange,
+                "The user was changed by another operation. Reload and try again.");
+        }
+        catch
+        {
+            Detach(tracked);
+            throw;
+        }
     }
 
     private async Task<UsernameRenameResult> ChangeUsernameCoreAsync(

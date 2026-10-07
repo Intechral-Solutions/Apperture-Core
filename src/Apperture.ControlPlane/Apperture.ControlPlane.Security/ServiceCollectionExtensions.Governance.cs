@@ -95,6 +95,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPrincipalContext, HostPrincipalContext>();
         services.AddScoped<IIdentityResolutionService, PrincipalContextIdentityResolutionService>();
         services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddAppertureAuditRecorder();
         services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.TryAddSingleton<IPasswordPolicyEvaluator, PasswordPolicyEvaluator>();
@@ -219,6 +220,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRoleRepository, SqlRoleRepository>();
         services.AddScoped<ILocalCredentialRepository, SqlLocalCredentialRepository>();
         services.AddScoped<IAuditService, SqlAuditService>();
+        services.AddAppertureAuditRecorder();
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<INativeTotpCredentialRepository, SqlNativeTotpCredentialRepository>();
         services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();

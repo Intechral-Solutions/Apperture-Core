@@ -9,7 +9,7 @@ Apperture is past a **foundation baseline** (Stabilization + Scheduling & Worker
 | Foundation / Stabilization | Reliability floor, auth, notifications, operator shell triage | **Complete** (S1–S13) |
 | Scheduling & Worker Management foundation | Dispatch, TZ, heartbeat observe, schedule readiness, lifecycle quarantine | **Complete** (SWM-1–SWM-12) |
 | Pre-release product development | Major product tracks (UI, demos, contexts, components, services, security, role lifecycle) | **Complete through IAM-8** (merged to `master`, 2026-09-30) |
-| RC1 program | Identity, audit, authorization, navigation, actions, lists, module runtime, operability | **Current.** Program gate approved 2026-10-03. IAM-9 is complete and its closure is accepted; QW-1 is merged. The AUD-1.0 design gate is approved; AUD-1.1 is next and has not started. RC1 is not complete. See [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) |
+| RC1 program | Identity, audit, authorization, navigation, actions, lists, module runtime, operability | **Current.** Program gate approved 2026-10-03. IAM-9 is complete and its closure is accepted; QW-1 is merged. The AUD-1.0 design gate is approved; AUD-1.1 is implemented on its branch and in review, not merged. RC1 is not complete. See [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) |
 | RC1 validation | Smoke automation, security review, docs, tag | After the RC1 program |
 
 Do **not** use “release candidate,” “v1 ready,” or “release-ready” for the current baseline. RC1 is reached only through the RC1 program and its validation epic. See:
@@ -44,8 +44,9 @@ is **complete and its closure is accepted**: packages 9.1 to 9.5 merged (PRs #5 
 the [closure audit](../audits/iam9-identity-foundation-closure.md) found (the assigned username on Entra provisioning
 results) was corrected in PR #11. The findings IAM-9 carries to IAM-10, AUD-1 and IAM-11 stay open under their owners.
 The current Track A body is **AUD-1**. Its AUD-1.0 design gate was approved by the product owner on 2026-10-06 with
-conditions ([aud1-design-gate.md](../01-architecture/transitions/audit-hardening/aud1-design-gate.md)). **AUD-1.1 is next
-and has not started.** LST-1 implementation, NAV-2, SDK-8 and every later epic have not started. Contract:
+conditions ([aud1-design-gate.md](../01-architecture/transitions/audit-hardening/aud1-design-gate.md)). **AUD-1.1 is
+implemented on branch `aud-1.1-audit-foundation` and in review; it is not merged**
+([record](../01-architecture/transitions/audit-hardening/aud1-1-foundation-record.md)). LST-1 implementation, NAV-2, SDK-8 and every later epic have not started. Contract:
 [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md). IAM-8 and LFC-1 are complete and merged to `master`.
 Workspaces are a Direction with implementation deferred; that direction supersedes the earlier cross-context
 grouping item. Context-scoped IAM stays deferred. SEC-1 engineering is merged; its remaining
