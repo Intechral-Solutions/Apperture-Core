@@ -480,14 +480,19 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         }
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{user}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(0);
 
-        var lost = new LostCommitAcknowledgement();
+        // After the commit the user can no longer be read on this context: the verified commit is still the restore, built
+        // from its committed row (§13.5), never "target not found".
+        var committed = false;
+        var unreadable = new FailingCommand(sql => committed && sql.Contains("FROM [Users]", StringComparison.Ordinal));
+        var lost = new LostCommitAcknowledgement { AfterCommit = () => { committed = true; return Task.CompletedTask; } };
         var attempts = new AttemptCounter();
         Apperture.Bootstrap.Models.BootstrapRecoveryResult result;
-        await using (var db = _db.NewDb(lost, attempts))
+        await using (var db = _db.NewDb(lost, attempts, unreadable))
             result = await Recovery(db).ExecuteRecoveryAsync(request);
 
         attempts.Started.Should().Be(1);
         result.Success.Should().BeTrue("a verified commit is the restore, never 'target not found' or 'already restored'");
+        result.Message.Should().Contain(user);
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{user}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
         var row = (await RowsAsync("user", user)).Should().ContainSingle().Which;
         row["Action"].Should().Be(AuditActionNames.RestorePlatformAccessExecuted);

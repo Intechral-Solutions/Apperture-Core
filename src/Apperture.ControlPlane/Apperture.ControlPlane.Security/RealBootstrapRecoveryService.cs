@@ -70,7 +70,7 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
 
         // AUD-1.2: the target is resolved and the role assigned in one unit with its row, as the recovery tool. A target
         // that already holds the role changes nothing and writes no row (D7).
-        var targetUser = await unit.ExecuteAsync<User?>(
+        var targetUserId = await unit.ExecuteAsync<UserId?>(
             new AuditedOperation(AuditActionNames.RestorePlatformAccessExecuted, AuditActor.RecoveryTool),
             async (transaction, ct) =>
             {
@@ -78,17 +78,18 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
                 if (target is null || target.AssignedRoleIds.Contains(platformAdminRoleId))
                 {
                     transaction.DeclareNoOp();
-                    return target;
+                    return target?.Id;
                 }
 
                 await roleRepository.AssignToUserAsync(target.Id, platformAdminRoleId, ct).ConfigureAwait(false);
                 await transaction.StageAsync(AuditEvents.RestorePlatformAccessExecuted(target.Id, platformAdminRoleId), ct).ConfigureAwait(false);
-                return target;
+                return target.Id;
             },
-            async (committed, ct) => await userRepository.GetByIdAsync(new UserId(committed.GetField("userId")!), ct).ConfigureAwait(false),
+            // A verified commit is success for the user its row names, even if that user can no longer be read (§13.5).
+            (committed, _) => Task.FromResult<UserId?>(new UserId(committed.GetField("userId")!)),
             cancellationToken).ConfigureAwait(false);
 
-        if (targetUser is null)
+        if (targetUserId is not { } restoredUserId)
         {
             await _auditWriter.WriteRecoveryAsync(new BootstrapRecoveryAuditRecord
             {
@@ -108,10 +109,10 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
             RecoveryAction = actionType,
             Reason = request.Reason,
             Outcome = "Executed",
-            Details = $"Platform admin assigned to user {targetUser.Id.Value}."
+            Details = $"Platform admin assigned to user {restoredUserId.Value}."
         }, cancellationToken).ConfigureAwait(false);
 
-        return new BootstrapRecoveryResult { Success = true, Message = $"Platform access restored for user {targetUser.Id.Value}." };
+        return new BootstrapRecoveryResult { Success = true, Message = $"Platform access restored for user {restoredUserId.Value}." };
     }
 
     private static async Task<User?> ResolveTargetUserAsync(BootstrapRecoveryRequest request, IUserRepository userRepository, CancellationToken cancellationToken)
