@@ -61,6 +61,15 @@ public static partial class AuditEvents
         Event(AuditActionNames.TenantRegistrationActivated, Target(AuditTargetTypes.EntraTenantRegistration, registrationId), AuditOutcomeCodes.Succeeded,
             ("registrationId", registrationId), ("previousRegistrationId", previousRegistrationId));
 
+    /// <summary>
+    /// A registration change was refused by a state guard read in its transaction, and nothing changed.
+    /// <paramref name="change"/> is <c>update</c>, <c>activate</c> or <c>delete</c>; <paramref name="reason"/> is
+    /// <c>sign_in_lockout</c> (the change would leave no viable sign-in path) or <c>registration_disabled</c>.
+    /// </summary>
+    public static AuditEvent TenantRegistrationChangeRefused(string registrationId, string change, string reason) =>
+        Event(AuditActionNames.TenantRegistrationChangeRefused, Target(AuditTargetTypes.EntraTenantRegistration, registrationId), AuditOutcomeCodes.Rejected,
+            ("registrationId", registrationId), ("change", change), ("reason", reason));
+
     /// <summary>Whether members and guests of a registration's directory may request access changed.</summary>
     public static AuditEvent AccessRequestPolicyChanged(string registrationId, bool allowMemberAccessRequests, bool allowGuestAccessRequests) =>
         Event(AuditActionNames.AccessRequestPolicyChanged, Target(AuditTargetTypes.EntraTenantRegistration, registrationId), AuditOutcomeCodes.Succeeded,

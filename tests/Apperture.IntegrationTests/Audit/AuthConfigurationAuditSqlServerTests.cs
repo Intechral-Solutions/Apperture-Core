@@ -4,9 +4,13 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Secrets.Abstractions;
+using Apperture.Core.Security.Secrets.Models;
+using Apperture.Core.Security.Secrets.Providers;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.Persistence.SqlServer;
+using Apperture.Persistence.SqlServer.Audit;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
@@ -223,6 +227,245 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
             .Should().ContainSingle().Which["Action"].Should().Be(AuditActionNames.SignInPolicyUpdated);
     }
 
+    // ---- AUD-1.2 review: a supplied client secret and the credential the registration resolves (record D35) ----
+    // The secret store runs its own transaction. A replacement is stored as a secret of its own before the unit, so the live
+    // registration resolves its current secret until the row naming the new one commits; afterwards the unused one is retired,
+    // and after an unknown outcome neither is.
+
+    [Fact]
+    public async Task A_supplied_secret_becomes_the_credential_only_with_the_committed_update_and_the_replaced_one_is_retired()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+
+        var item = await GetAsync(id, principal);
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal, store: SecretStore(db)).Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None))
+                .Result.Should().BeOfType<OkObjectResult>();
+
+        var second = await SecretRefAsync(id);
+        second.Should().NotBe(first, "a replacement is a secret of its own, never a new version of the live one");
+        (await ResolveAsync(second)).Should().Be("second-secret");
+        (await SecretStateAsync(first)).Should().Be(SecretState.Disabled, "the replaced secret is no longer named by any registration");
+        (await SecretStateAsync(second)).Should().Be(SecretState.Active);
+        var row = (await RowsAsync(id)).Last();
+        row["Action"].Should().Be(AuditActionNames.TenantRegistrationUpdated);
+        ((string)row["Details"]!).Should().Contain("clientAuthentication").And.NotContain("second-secret").And.NotContain(second);
+    }
+
+    [Fact]
+    public async Task A_refused_update_leaves_the_live_credential_records_the_refusal_and_retires_the_secret_it_stored()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+
+        // Local sign-in off and the active registration disabled: no viable sign-in path would remain.
+        var item = await GetAsync(id, principal);
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal, store: SecretStore(db), localEnabled: false)
+                    .Patch(id, UpdateBody(item, allowMembers: false, enabled: false, clientSecret: "second-secret"), CancellationToken.None))
+                .Result.Should().BeOfType<BadRequestObjectResult>();
+
+        await AssertLiveCredentialUnchangedAsync(id, first);
+        var refused = (await RowsAsync(id)).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationChangeRefused).Which;
+        refused["Actor"].Should().Be(admin);
+        refused["Basis"].Should().Be(AuditBases.Attempt);
+        using var details = JsonDocument.Parse((string)refused["Details"]!);
+        details.RootElement.GetProperty("change").GetString().Should().Be("update");
+        details.RootElement.GetProperty("reason").GetString().Should().Be("sign_in_lockout");
+        (await RowsAsync(id)).Should().NotContain(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationUpdated);
+    }
+
+    [Fact]
+    public async Task A_conflicting_update_leaves_the_live_credential_and_retires_the_secret_it_stored()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var stale = await GetAsync(id, principal);
+        await using (var db = _db.NewDb())
+            await Tenants(db, principal).Patch(id, UpdateBody(stale, allowMembers: false, displayName: "Changed elsewhere"), CancellationToken.None);
+
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal, store: SecretStore(db)).Patch(id, UpdateBody(stale, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None))
+                .Result.Should().BeOfType<ConflictObjectResult>();
+
+        await AssertLiveCredentialUnchangedAsync(id, first);
+    }
+
+    [Fact]
+    public async Task An_update_whose_audit_fails_rolls_back_and_retires_the_secret_it_stored()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        await using (var secrets = _db.NewDb())
+        {
+            var act = () => Tenants(db, principal, store: SecretStore(secrets)).Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None);
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        await AssertLiveCredentialUnchangedAsync(id, first);
+    }
+
+    [Fact]
+    public async Task An_update_whose_commit_acknowledgement_is_lost_keeps_the_new_credential_and_retires_the_replaced_one()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+
+        // The secret store has its own context here, so the injected commit faults reach only the unit's transaction.
+        var lost = new LostCommitAcknowledgement();
+        await using (var db = _db.NewDb(lost))
+        await using (var secrets = _db.NewDb())
+            (await Tenants(db, principal, store: SecretStore(secrets)).Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None))
+                .Result.Should().BeOfType<OkObjectResult>();
+
+        var second = await SecretRefAsync(id);
+        second.Should().NotBe(first);
+        (await ResolveAsync(second)).Should().Be("second-secret");
+        (await SecretStateAsync(first)).Should().Be(SecretState.Disabled);
+        (await RowsAsync(id)).Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationUpdated).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_update_whose_outcome_is_unknown_retires_neither_secret(bool committed)
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+
+        DbTransactionInterceptor fault = committed ? new LostCommitAcknowledgement() : new RolledBackCommit();
+        await using (var db = _db.NewDb(fault))
+        await using (var secrets = _db.NewDb())
+        {
+            var act = () => Tenants(db, principal, store: SecretStore(secrets), unit: NewUnit(db, principal, verification: new UnreachableVerification()))
+                .Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None);
+            await act.Should().ThrowAsync<AuditOutcomeUnknownException>();
+        }
+
+        var names = await RegistrationSecretsAsync(id);
+        names.Should().HaveCount(2).And.OnlyContain(s => s.State == SecretState.Active, "either secret may be the one a committed row names");
+        var live = await SecretRefAsync(id);
+        (await ResolveAsync(live)).Should().Be(committed ? "second-secret" : "first-secret");
+    }
+
+    [Fact]
+    public async Task Activation_and_delete_refused_by_their_guards_change_nothing_and_are_recorded_after_rollback()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (activeId, _) = await ArrangeActiveWithSecretAsync(principal);
+
+        string disabledId;
+        await using (var db = _db.NewDb())
+        {
+            var body = CreateBody();
+            body.Enabled = false;
+            var created = await Tenants(db, principal).Create(body, CancellationToken.None);
+            disabledId = ((EntraTenantListItemResponse)((CreatedAtActionResult)created.Result!).Value!).Id;
+        }
+
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal).Activate(disabledId, CancellationToken.None)).Should().BeOfType<BadRequestObjectResult>();
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal, localEnabled: false).Delete(activeId, CancellationToken.None)).Should().BeOfType<BadRequestObjectResult>();
+
+        (await _db.ScalarAsync<bool>($"SELECT IsActive FROM EntraInstanceRegistrations WHERE Id = N'{disabledId}';")).Should().BeFalse();
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{activeId}';")).Should().Be(1);
+        string Reason(Dictionary<string, object?> row)
+        {
+            using var details = JsonDocument.Parse((string)row["Details"]!);
+            return details.RootElement.GetProperty("change").GetString() + "/" + details.RootElement.GetProperty("reason").GetString();
+        }
+
+        var activation = (await RowsAsync(disabledId)).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationChangeRefused).Which;
+        Reason(activation).Should().Be("activate/registration_disabled");
+        var delete = (await RowsAsync(activeId)).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationChangeRefused).Which;
+        Reason(delete).Should().Be("delete/sign_in_lockout");
+        delete["Actor"].Should().Be(admin);
+        (await RowsAsync(activeId)).Should().NotContain(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationDeleted);
+    }
+
+    /// <summary>An active registration whose client secret (<c>first-secret</c>) is in the SQL secret store.</summary>
+    private async Task<(string Id, string SecretRef)> ArrangeActiveWithSecretAsync(IPrincipalContext principal)
+    {
+        string id;
+        await using (var db = _db.NewDb())
+        {
+            // A stored secret takes precedence over the deployment secret when the registration's credential is resolved.
+            var body = CreateBody();
+            body.ClientSecret = "first-secret";
+            var created = await Tenants(db, principal, store: SecretStore(db)).Create(body, CancellationToken.None);
+            id = ((EntraTenantListItemResponse)((CreatedAtActionResult)created.Result!).Value!).Id;
+        }
+
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal).Activate(id, CancellationToken.None)).Should().BeOfType<NoContentResult>();
+        var secretRef = await SecretRefAsync(id);
+        (await ResolveAsync(secretRef)).Should().Be("first-secret");
+        return (id, secretRef);
+    }
+
+    /// <summary>The registration still names its first secret, which still resolves; the one stored for the change is retired.</summary>
+    private async Task AssertLiveCredentialUnchangedAsync(string id, string first)
+    {
+        (await SecretRefAsync(id)).Should().Be(first);
+        (await ResolveAsync(first)).Should().Be("first-secret", "the credential the live registration resolves never changed");
+        var secrets = await RegistrationSecretsAsync(id);
+        secrets.Should().HaveCount(2);
+        secrets.Single(s => s.Id == first).State.Should().Be(SecretState.Active);
+        secrets.Single(s => s.Id != first).State.Should().Be(SecretState.Disabled, "the secret stored for a change that did not commit is retired");
+    }
+
+    private async Task<string> SecretRefAsync(string registrationId) =>
+        (await _db.ScalarAsync<string>($"SELECT ClientSecretRef FROM EntraInstanceRegistrations WHERE Id = N'{registrationId}';"))!;
+
+    private async Task<SecretState> SecretStateAsync(string secretRef) =>
+        (SecretState)await _db.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Id = '{secretRef}';");
+
+    private async Task<List<(string Id, SecretState State)>> RegistrationSecretsAsync(string registrationId) =>
+        (await _db.RowsAsync($"SELECT Id, State FROM SecretDescriptors WHERE Name = N'{EntraClientSecretMaterialProvisioner.BuildSecretName(registrationId)}';"))
+            .Select(r => (((Guid)r["Id"]!).ToString("D"), (SecretState)(int)r["State"]!))
+            .ToList();
+
+    private async Task<string?> ResolveAsync(string secretRef)
+    {
+        await using var db = _db.NewDb();
+        try
+        {
+            var resolved = await new SqlSecretResolver(SecretStore(db), new PassThroughProtector()).ResolveAsync(new SecretRef(secretRef));
+            return resolved.Material.OpaqueString;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static SqlSecretStore SecretStore(AppertureDbContext db) =>
+        new(db, new PassThroughProtector(), new DefaultSecretAuditActorProvider());
+
+    private sealed class PassThroughProtector : ISecretProtector
+    {
+        public ValueTask<byte[]> ProtectAsync(ReadOnlyMemory<byte> plaintext, string keyId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(plaintext.ToArray());
+
+        public ValueTask<byte[]> UnprotectAsync(ReadOnlyMemory<byte> protectedPayload, string keyId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(protectedPayload.ToArray());
+    }
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
@@ -244,9 +487,11 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
             AzureTenantId = "11111111-1111-1111-1111-111111111111",
         };
 
-    private static UpdateEntraTenantRequestBody UpdateBody(EntraTenantListItemResponse item, bool allowMembers, bool enabled = true, string? displayName = null) =>
+    private static UpdateEntraTenantRequestBody UpdateBody(
+        EntraTenantListItemResponse item, bool allowMembers, bool enabled = true, string? displayName = null, string? clientSecret = null) =>
         new()
         {
+            ClientSecret = clientSecret,
             DisplayName = displayName ?? item.DisplayName,
             Authority = item.Authority,
             ClientId = item.ClientId,
@@ -280,19 +525,25 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
     private static IConfiguration Configuration() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Entra:ClientSecret"] = "deployment-secret" }).Build();
 
-    private static ConfigEntraTenantsController Tenants(AppertureDbContext db, IPrincipalContext principal) =>
+    private ConfigEntraTenantsController Tenants(
+        AppertureDbContext db,
+        IPrincipalContext principal,
+        ISecretStore? store = null,
+        bool localEnabled = true,
+        IAuditedUnitOfWork? unit = null) =>
         WithContext(new ConfigEntraTenantsController(
             new SqlEntraInstanceRegistrationRepository(db),
             principal,
             new AllowAll(),
             Configuration(),
-            Options.Create(new LocalAuthOptions { Enabled = true }),
+            Options.Create(new LocalAuthOptions { Enabled = localEnabled }),
             new SqlInstanceAuthUiPolicyRepository(db),
             Unused<IEntraOpenIdConnectConfigurationValidator>(),
             Unused<IEntraDirectoryDiscoveryService>(),
-            new EntraClientSecretMaterialProvisioner(Unused<ISecretStore>()),
+            new EntraClientSecretMaterialProvisioner(store ?? Unused<ISecretStore>()),
             Unused<ISecretResolver>(),
-            NewUnit(db, principal)));
+            unit ?? NewUnit(db, principal),
+            new SqlAuditEventWriter(_db.Options(), principal, HarnessCatalog, null, null, null)));
 
     private static ConfigAuthUiPolicyController Policy(AppertureDbContext db, IPrincipalContext principal) =>
         WithContext(new ConfigAuthUiPolicyController(

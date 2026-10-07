@@ -20,35 +20,22 @@ public sealed class EntraClientSecretMaterialProvisioner
         $"entra-registration:{registrationId}:client-secret";
 
     /// <summary>
-    /// Creates a new secret or adds an active version to an existing GUID ref.
+    /// Stores <paramref name="plaintext"/> as a new secret of its own and returns its GUID ref. It never adds a version to a
+    /// secret a registration already names: the store runs its own transaction, so the credential a registration resolves
+    /// changes only when the registration row naming the new ref commits (AUD-1.2). The caller retires whichever secret
+    /// ends up unused, and only once it knows whether that row committed.
     /// </summary>
-    public async ValueTask<(string SecretRef, bool CreatedNewSecret)> ReplaceAsync(
+    public async ValueTask<string> StoreNewAsync(
         string registrationId,
         string plaintext,
-        string? existingSecretRef,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(registrationId))
             throw new ArgumentException("Registration id is required.", nameof(registrationId));
         if (string.IsNullOrWhiteSpace(plaintext))
-            throw new ArgumentException("Secret value is required for replace.", nameof(plaintext));
+            throw new ArgumentException("Secret value is required.", nameof(plaintext));
 
         var material = new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: plaintext.Trim());
-
-        if (!string.IsNullOrWhiteSpace(existingSecretRef)
-            && Guid.TryParse(existingSecretRef.Trim(), out var existingGuid))
-        {
-            var secretId = new SecretId(existingGuid);
-            var existing = await _secretStore.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
-            if (existing is not null
-                && existing.State != SecretState.Disabled
-                && existing.State != SecretState.Revoked)
-            {
-                var version = await _secretStore.AddVersionAsync(secretId, material, cancellationToken).ConfigureAwait(false);
-                await _secretStore.ActivateVersionAsync(secretId, version, cancellationToken).ConfigureAwait(false);
-                return (existingGuid.ToString("D"), CreatedNewSecret: false);
-            }
-        }
 
         var descriptor = await _secretStore.CreateAsync(
                 new SecretCreateRequest(
@@ -65,7 +52,7 @@ public sealed class EntraClientSecretMaterialProvisioner
             .ConfigureAwait(false);
 
         await _secretStore.ActivateVersionAsync(descriptor.SecretId, newVersion, cancellationToken).ConfigureAwait(false);
-        return (descriptor.SecretId.Value.ToString("D"), CreatedNewSecret: true);
+        return descriptor.SecretId.Value.ToString("D");
     }
 
     public async ValueTask TryDisableOwnedSecretAsync(

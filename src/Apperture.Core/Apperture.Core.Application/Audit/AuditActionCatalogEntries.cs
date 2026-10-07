@@ -1276,6 +1276,21 @@ internal static class AuditActionCatalogEntries
             IntroducedAfterEpic37Migration = true,
             Writer = "ConfigEntraTenantsController.cs",
         },
+        // AUD-1.2 review: a registration change refused by a state guard read in its transaction (the sign-in lockout guard,
+        // or activating a disabled registration). Written after the transaction rolled back; nothing changed.
+        new()
+        {
+            Action = "entra.tenant_registration.change_refused",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.EntraTenantRegistration,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.TenantRegistrationChangeRefused,
+            IntroducedIn = "AUD-1.2",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConfigEntraTenantsController.cs",
+        },
         new()
         {
             Action = "auth.sign_in_policy.updated",

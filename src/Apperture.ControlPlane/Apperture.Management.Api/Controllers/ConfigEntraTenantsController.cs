@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Api.Controllers;
@@ -30,6 +31,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly EntraClientSecretMaterialProvisioner _clientSecretProvisioner;
     private readonly ISecretResolver _secretResolver;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
+    private readonly ILogger<ConfigEntraTenantsController>? _logger;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
@@ -42,8 +45,11 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         IEntraDirectoryDiscoveryService directoryDiscovery,
         EntraClientSecretMaterialProvisioner clientSecretProvisioner,
         ISecretResolver secretResolver,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null,
+        ILogger<ConfigEntraTenantsController>? logger = null)
     {
+        _logger = logger;
         _repository = repository;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -55,12 +61,42 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _clientSecretProvisioner = clientSecretProvisioner;
         _secretResolver = secretResolver;
         _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
     }
 
     private IAuditedUnitOfWork Unit =>
         _auditedUnitOfWork ?? throw new InvalidOperationException("Entra registration changes require the audited unit of work.");
 
     private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
+
+    /// <summary>
+    /// A guard refusal decided in the change's transaction: a W3 row of the administrator, written after the transaction
+    /// rolled back. A failure to write it is logged by the writer and never changes the refusal.
+    /// </summary>
+    private async Task RecordRefusalAsync(Apperture.Core.Application.Audit.AuditEvent? refusal)
+    {
+        if (refusal is not null && _auditEvents is not null)
+            await _auditEvents.TryWriteAsync(refusal, AuditActor.CurrentPrincipal, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Retires a client secret this registration owns and no longer names, outside any unit. Called only once it is known that
+    /// no committed registration row names it. Best effort: a failure leaves an unused secret and is logged, and never changes
+    /// the outcome of the registration change.
+    /// </summary>
+    private async Task RetireSecretAsync(string registrationId, string? secretRef)
+    {
+        if (string.IsNullOrWhiteSpace(secretRef))
+            return;
+        try
+        {
+            await _clientSecretProvisioner.TryDisableOwnedSecretAsync(registrationId, secretRef, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "An unused client secret of Entra registration {RegistrationId} could not be retired.", registrationId);
+        }
+    }
 
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<EntraTenantListItemResponse>), StatusCodes.Status200OK)]
@@ -117,8 +153,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         string? secretRef = null;
         if (!string.IsNullOrWhiteSpace(body.ClientSecret))
         {
-            (secretRef, _) = await _clientSecretProvisioner
-                .ReplaceAsync(registrationId, body.ClientSecret, existingSecretRef: null, cancellationToken)
+            secretRef = await _clientSecretProvisioner
+                .StoreNewAsync(registrationId, body.ClientSecret, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -140,6 +176,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         };
 
         EntraInstanceRegistration created;
+        var verifiedCommit = false;
         try
         {
             created = await Unit.ExecuteAsync(
@@ -160,14 +197,19 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                         ct);
                     return added;
                 },
-                async (_, ct) => await _repository.GetByIdAsync(registrationId, ct)
-                    ?? throw new InvalidOperationException($"Entra registration '{registrationId}' was verified as created but could not be read."),
+                async (_, ct) =>
+                {
+                    // Verified as committed: from here on the stored secret belongs to a committed registration.
+                    verifiedCommit = true;
+                    return await _repository.GetByIdAsync(registrationId, ct) ?? draft;
+                },
                 cancellationToken);
         }
-        catch (Exception ex) when (secretRef is not null && ex is not AuditOutcomeUnknownException)
+        catch (Exception ex) when (secretRef is not null && !verifiedCommit && ex is not AuditOutcomeUnknownException)
         {
-            // Nothing committed (an unknown outcome may have, so its secret stays): retire the secret stored for it.
-            await _clientSecretProvisioner.TryDisableOwnedSecretAsync(registrationId, secretRef, CancellationToken.None).ConfigureAwait(false);
+            // Nothing committed: retire the secret stored for it. An unknown outcome, or a failure after a verified commit,
+            // may name it, so it stays.
+            await RetireSecretAsync(registrationId, secretRef);
             throw;
         }
 
@@ -217,25 +259,31 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             return BadRequest(new { message = "rowVersionBase64 is not valid base64." });
         }
 
-        // The secret store runs its own transaction: a supplied secret is stored before the unit, as before AUD-1.2.
-        var secretReplaced = false;
-        var secretRef = existing.ClientSecretRef;
+        // The secret store runs its own transaction and cannot join the unit. A supplied secret is therefore stored as a new
+        // secret of its own, before the unit; the registration keeps resolving its current secret until the row naming the new
+        // one commits. Afterwards exactly one of them is unused and is retired: the previous one after a confirmed commit, the
+        // new one when nothing committed. After an unknown outcome either may be in use, so neither is retired.
+        string? newSecretRef = null;
         if (!string.IsNullOrWhiteSpace(body.ClientSecret))
         {
-            (secretRef, _) = await _clientSecretProvisioner
-                .ReplaceAsync(existing.Id, body.ClientSecret, existing.ClientSecretRef, cancellationToken)
+            newSecretRef = await _clientSecretProvisioner
+                .StoreNewAsync(existing.Id, body.ClientSecret, cancellationToken)
                 .ConfigureAwait(false);
-            secretReplaced = true;
         }
 
         var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
         ActionResult? refusal;
+        Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
+        string? previousSecretRef = null;
         try
         {
             refusal = await Unit.ExecuteAsync(
                 Operation(AuditActionNames.TenantRegistrationUpdated),
                 async (transaction, ct) =>
                 {
+                    refusalEvent = null;
+                    previousSecretRef = null;
+
                     // Every condition the change depends on is read in this transaction.
                     var current = await _repository.GetByIdAsync(id, ct);
                     if (current is null)
@@ -247,8 +295,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                     if (current.RowVersion is null || !current.RowVersion.SequenceEqual(expected))
                         throw new DbUpdateConcurrencyException("Entra registration was modified by another request.");
 
-                    var updatedModel = Updated(current, body, authenticationContextId, secretRef);
-                    var changed = ChangedSettings(current, updatedModel, secretReplaced);
+                    var updatedModel = Updated(current, body, authenticationContextId, newSecretRef ?? current.ClientSecretRef);
+                    var changed = ChangedSettings(current, updatedModel, secretReplaced: newSecretRef is not null);
                     if (changed.Count == 0)
                     {
                         // The same settings: nothing to write and no row (D7); the answer is the current registration.
@@ -261,11 +309,14 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                     var lockout = AuthenticationConfigurationGuard.ValidateNoLockout(_localOptions.Value, policy, simulatedEffective);
                     if (lockout is not null)
                     {
+                        refusalEvent = AuditEvents.TenantRegistrationChangeRefused(current.Id, "update", "sign_in_lockout");
                         transaction.DeclareNoOp();
                         return BadRequest(new { message = lockout });
                     }
 
                     await _repository.UpdateAsync(updatedModel, expected, ct);
+                    if (newSecretRef is not null)
+                        previousSecretRef = current.ClientSecretRef;
                     var stillActive = current.IsActive && updatedModel.Enabled;
                     await transaction.StageAsync(
                         AuditEvents.TenantRegistrationUpdated(current.Id, updatedModel.DisplayName, changed, updatedModel.Enabled, stillActive),
@@ -280,16 +331,31 @@ public sealed class ConfigEntraTenantsController : ControllerBase
 
                     return null;
                 },
+                // A verified commit is the attempt that ran last, so previousSecretRef is the one its row replaced.
                 (_, _) => Task.FromResult<ActionResult?>(null),
                 cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
+            await RetireSecretAsync(existing.Id, newSecretRef);
             return Conflict(new { message = "Registration was modified elsewhere. Refresh and try again." });
+        }
+        catch (Exception ex) when (ex is not AuditOutcomeUnknownException)
+        {
+            // Every other failure here is a confirmed rollback (a commit that could not be verified is outcome_unknown).
+            await RetireSecretAsync(existing.Id, newSecretRef);
+            throw;
         }
 
         if (refusal is not null)
+        {
+            await RetireSecretAsync(existing.Id, newSecretRef);
+            await RecordRefusalAsync(refusalEvent);
             return refusal;
+        }
+
+        // Committed (or nothing to change, which a supplied secret never is): the replaced secret is no longer named.
+        await RetireSecretAsync(existing.Id, previousSecretRef);
 
         var refreshed = await _repository.GetByIdAsync(id, cancellationToken);
         return Ok(ToListItem(refreshed!, DeploymentSecretPresent()));
@@ -305,11 +371,13 @@ public sealed class ConfigEntraTenantsController : ControllerBase
 
         var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
         EntraInstanceRegistration? deleted = null;
+        Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
         var refusal = await Unit.ExecuteAsync<IActionResult?>(
             Operation(AuditActionNames.TenantRegistrationDeleted),
             async (transaction, ct) =>
             {
                 deleted = null;
+                refusalEvent = null;
                 var existing = await _repository.GetByIdAsync(id, ct);
                 if (existing is null)
                 {
@@ -325,6 +393,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                     existing.IsActive);
                 if (err is not null)
                 {
+                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(existing.Id, "delete", "sign_in_lockout");
                     transaction.DeclareNoOp();
                     return BadRequest(new { message = err });
                 }
@@ -338,15 +407,14 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             cancellationToken);
 
         if (refusal is not null)
+        {
+            await RecordRefusalAsync(refusalEvent);
             return refusal;
+        }
 
         // After the delete committed, its stored secret is retired (best effort, outside the unit).
         if (deleted is not null)
-        {
-            await _clientSecretProvisioner
-                .TryDisableOwnedSecretAsync(deleted.Id, deleted.ClientSecretRef, CancellationToken.None)
-                .ConfigureAwait(false);
-        }
+            await RetireSecretAsync(deleted.Id, deleted.ClientSecretRef);
 
         return NoContent();
     }
@@ -361,10 +429,12 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             return Forbid();
 
         var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
+        Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
         var refusal = await Unit.ExecuteAsync<IActionResult?>(
             Operation(AuditActionNames.TenantRegistrationActivated),
             async (transaction, ct) =>
             {
+                refusalEvent = null;
                 var target = await _repository.GetByIdAsync(id, ct);
                 if (target is null)
                 {
@@ -374,6 +444,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
 
                 if (!target.Enabled)
                 {
+                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(target.Id, "activate", "registration_disabled");
                     transaction.DeclareNoOp();
                     return BadRequest(new { message = "Cannot activate a disabled registration." });
                 }
@@ -396,6 +467,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                 var lockout = AuthenticationConfigurationGuard.ValidateNoLockout(_localOptions.Value, policy, simulated);
                 if (lockout is not null)
                 {
+                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(target.Id, "activate", "sign_in_lockout");
                     transaction.DeclareNoOp();
                     return BadRequest(new { message = lockout });
                 }
@@ -408,6 +480,8 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             (_, _) => Task.FromResult<IActionResult?>(null),
             cancellationToken);
 
+        if (refusal is not null)
+            await RecordRefusalAsync(refusalEvent);
         return refusal ?? NoContent();
     }
 

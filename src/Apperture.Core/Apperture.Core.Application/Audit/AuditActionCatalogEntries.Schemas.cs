@@ -443,6 +443,13 @@ internal static class AuditDetailSchemas
         IdField("previousRegistrationId", required: false),
     ]);
 
+    internal static readonly AuditDetailSchema TenantRegistrationChangeRefused = new(
+    [
+        IdField("registrationId"),
+        EnumField("change", true, "update", "activate", "delete"),
+        EnumField("reason", true, "sign_in_lockout", "registration_disabled"),
+    ]);
+
     internal static readonly AuditDetailSchema AccessRequestPolicyChanged = new(
     [
         IdField("registrationId"),

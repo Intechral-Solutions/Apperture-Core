@@ -106,6 +106,7 @@ public static class AuditActionNames
     public const string TenantRegistrationUpdated = "entra.tenant_registration.updated";
     public const string TenantRegistrationDeleted = "entra.tenant_registration.deleted";
     public const string TenantRegistrationActivated = "entra.tenant_registration.activated";
+    public const string TenantRegistrationChangeRefused = "entra.tenant_registration.change_refused";
     public const string AccessRequestPolicyChanged = "entra.access_request.policy.changed";
     public const string SignInPolicyUpdated = "auth.sign_in_policy.updated";
 
