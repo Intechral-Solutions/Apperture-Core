@@ -458,6 +458,31 @@ internal static class AuditDetailSchemas
         FlagField("autoRedirectToEntra"),
     ]);
 
+    // ---- First-administrator bootstrap and bootstrap recovery ----
+
+    internal static readonly AuditDetailSchema FirstAdminCreated = new(
+    [
+        IdField("userId"),
+        UsernameField("username"),
+        FlagField("localSignInReady"),
+    ]);
+
+    internal static readonly AuditDetailSchema FirstAdminRejectedInvalidRequest = new(
+    [
+        EnumField("reason", true, "missing_fields", "invalid_identity_source", "password_policy", "username_policy"),
+    ]);
+
+    internal static readonly AuditDetailSchema RestorePlatformAccessExecuted = new(
+    [
+        IdField("userId"),
+        IdField("roleId"),
+    ]);
+
+    internal static readonly AuditDetailSchema RestorePlatformAccessRefused = new(
+    [
+        EnumField("reason", true, "not_authorized", "target_not_found"),
+    ]);
+
     // ---- Runtime enrollment ----
     // invitationId is the invitation row's id; the enrollment token itself is never recorded.
 

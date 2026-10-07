@@ -1,11 +1,9 @@
 using Apperture.Bootstrap;
 using Apperture.Bootstrap.Models;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
-using Apperture.Shared.Kernel;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Apperture.ControlPlane.Security;
@@ -47,7 +45,7 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
                 Outcome = "Denied",
                 Details = auth.Reason
             }, cancellationToken).ConfigureAwait(false);
-            await AppendRecoveryToPlatformAuditAsync("recovery.restore_platform_access.denied", auth.Reason ?? "Recovery not authorized.", cancellationToken).ConfigureAwait(false);
+            await RecordRefusalAsync(AuditEvents.RestorePlatformAccessDenied()).ConfigureAwait(false);
             return new BootstrapRecoveryResult { Success = false, Message = auth.Reason ?? "Recovery not authorized." };
         }
 
@@ -67,9 +65,29 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var roleRepository = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
-        var platformAudit = scope.ServiceProvider.GetService<IAuditService>();
+        var unit = scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>();
+        var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
 
-        var targetUser = await ResolveTargetUserAsync(request, userRepository, cancellationToken).ConfigureAwait(false);
+        // AUD-1.2: the target is resolved and the role assigned in one unit with its row, as the recovery tool. A target
+        // that already holds the role changes nothing and writes no row (D7).
+        var targetUser = await unit.ExecuteAsync<User?>(
+            new AuditedOperation(AuditActionNames.RestorePlatformAccessExecuted, AuditActor.RecoveryTool),
+            async (transaction, ct) =>
+            {
+                var target = await ResolveTargetUserAsync(request, userRepository, ct).ConfigureAwait(false);
+                if (target is null || target.AssignedRoleIds.Contains(platformAdminRoleId))
+                {
+                    transaction.DeclareNoOp();
+                    return target;
+                }
+
+                await roleRepository.AssignToUserAsync(target.Id, platformAdminRoleId, ct).ConfigureAwait(false);
+                await transaction.StageAsync(AuditEvents.RestorePlatformAccessExecuted(target.Id, platformAdminRoleId), ct).ConfigureAwait(false);
+                return target;
+            },
+            async (committed, ct) => await userRepository.GetByIdAsync(new UserId(committed.GetField("userId")!), ct).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
+
         if (targetUser is null)
         {
             await _auditWriter.WriteRecoveryAsync(new BootstrapRecoveryAuditRecord
@@ -80,24 +98,9 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
                 Outcome = "Failed",
                 Details = "Target user not found."
             }, cancellationToken).ConfigureAwait(false);
-            if (platformAudit is not null)
-            {
-                var failedRecord = new AuditRecord(
-                    new AuditRecordId(Guid.NewGuid().ToString("N")),
-                    new ActorId("recovery"),
-                    "recovery.restore_platform_access.failed",
-                    new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                    "recovery",
-                    DateTimeOffset.UtcNow,
-                    new CorrelationId(null),
-                    "Target user not found.");
-                await platformAudit.AppendAsync(failedRecord, cancellationToken).ConfigureAwait(false);
-            }
+            await RecordRefusalAsync(AuditEvents.RestorePlatformAccessTargetNotFound()).ConfigureAwait(false);
             return new BootstrapRecoveryResult { Success = false, Message = "Target user not found. Specify TargetUserId or TargetExternalId and TargetIdentitySource." };
         }
-
-        var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
-        await roleRepository.AssignToUserAsync(targetUser.Id, platformAdminRoleId, cancellationToken).ConfigureAwait(false);
 
         await _auditWriter.WriteRecoveryAsync(new BootstrapRecoveryAuditRecord
         {
@@ -107,20 +110,6 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
             Outcome = "Executed",
             Details = $"Platform admin assigned to user {targetUser.Id.Value}."
         }, cancellationToken).ConfigureAwait(false);
-
-        if (platformAudit is not null)
-        {
-            var record = new AuditRecord(
-                new AuditRecordId(Guid.NewGuid().ToString("N")),
-                new ActorId("recovery"),
-                "recovery.restore_platform_access.executed",
-                new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                "recovery",
-                DateTimeOffset.UtcNow,
-                new CorrelationId(null),
-                $"targetUserId={targetUser.Id.Value}");
-            await platformAudit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
-        }
 
         return new BootstrapRecoveryResult { Success = true, Message = $"Platform access restored for user {targetUser.Id.Value}." };
     }
@@ -151,24 +140,14 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
     }
 
     /// <summary>
-    /// Writes a recovery outcome to platform audit (durable). No secrets or proof. Used for denied and optionally other outcomes.
+    /// Writes a refused recovery to platform audit as a W3 row of the recovery tool. No request text, proof or identifier.
     /// </summary>
-    private async Task AppendRecoveryToPlatformAuditAsync(string action, string? details, CancellationToken cancellationToken)
+    private async Task RecordRefusalAsync(AuditEvent refusal)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
-        var platformAudit = scope.ServiceProvider.GetService<IAuditService>();
-        if (platformAudit is null)
-            return;
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId("recovery"),
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            "recovery",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        await platformAudit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
+        var events = scope.ServiceProvider.GetService<IAuditEventWriter>();
+        if (events is not null)
+            await events.TryWriteAsync(refusal, AuditActor.RecoveryTool, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static IdentitySource? ParseIdentitySource(string value)

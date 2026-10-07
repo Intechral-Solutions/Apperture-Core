@@ -109,6 +109,14 @@ public static class AuditActionNames
     public const string AccessRequestPolicyChanged = "entra.access_request.policy.changed";
     public const string SignInPolicyUpdated = "auth.sign_in_policy.updated";
 
+    // AUD-1.2: first-administrator bootstrap and bootstrap recovery
+    public const string FirstAdminCreated = "bootstrap.first_admin.created";
+    public const string FirstAdminRejectedAlreadyInitialized = "bootstrap.first_admin.rejected_already_initialized";
+    public const string FirstAdminRejectedInvalidRequest = "bootstrap.first_admin.rejected_invalid_request";
+    public const string RestorePlatformAccessExecuted = "recovery.restore_platform_access.executed";
+    public const string RestorePlatformAccessDenied = "recovery.restore_platform_access.denied";
+    public const string RestorePlatformAccessFailed = "recovery.restore_platform_access.failed";
+
     // AUD-1.2: runtime enrollment
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
     public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";

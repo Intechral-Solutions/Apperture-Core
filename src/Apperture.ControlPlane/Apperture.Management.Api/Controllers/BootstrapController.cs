@@ -1,6 +1,6 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authorization;
@@ -16,18 +16,13 @@ namespace Apperture.Management.Api.Controllers;
 [AllowAnonymous]
 public sealed class BootstrapController : ControllerBase
 {
-    private const string AuditOutcomeBootstrap = "bootstrap";
-    private const string AuditActionFirstAdminCreated = "bootstrap.first_admin.created";
-    private const string AuditActionFirstAdminRejectedInitialized = "bootstrap.first_admin.rejected_already_initialized";
-    private const string AuditActionFirstAdminRejectedInvalidRequest = "bootstrap.first_admin.rejected_invalid_request";
-
     private readonly IFirstAdminBootstrapService _bootstrap;
-    private readonly IAuditService _audit;
+    private readonly IAuditEventWriter? _auditEvents;
 
-    public BootstrapController(IFirstAdminBootstrapService bootstrap, IAuditService audit)
+    public BootstrapController(IFirstAdminBootstrapService bootstrap, IAuditEventWriter? auditEvents = null)
     {
         _bootstrap = bootstrap;
-        _audit = audit;
+        _auditEvents = auditEvents;
     }
 
     /// <summary>
@@ -53,10 +48,7 @@ public sealed class BootstrapController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.ExternalId))
         {
-            await AppendBootstrapAuditAsync(
-                AuditActionFirstAdminRejectedInvalidRequest,
-                "DisplayName and ExternalId are required.",
-                cancellationToken);
+            await RecordRefusalAsync(AuditEvents.FirstAdminRejectedInvalidRequest("missing_fields"));
             return BadRequest(new BootstrapErrorResponse(
                 "DisplayName and ExternalId are required.",
                 BootstrapErrorCodes.InvalidRequest,
@@ -66,10 +58,7 @@ public sealed class BootstrapController : ControllerBase
         if (!Enum.TryParse<IdentitySource>(request.IdentitySource, ignoreCase: true, out var source) ||
             (source != IdentitySource.Entra && source != IdentitySource.Local))
         {
-            await AppendBootstrapAuditAsync(
-                AuditActionFirstAdminRejectedInvalidRequest,
-                "IdentitySource must be 'Entra' or 'Local'.",
-                cancellationToken);
+            await RecordRefusalAsync(AuditEvents.FirstAdminRejectedInvalidRequest("invalid_identity_source"));
             return BadRequest(new BootstrapErrorResponse(
                 "IdentitySource must be 'Entra' or 'Local'.",
                 BootstrapErrorCodes.InvalidRequest,
@@ -88,10 +77,7 @@ public sealed class BootstrapController : ControllerBase
         }
         catch (PasswordPolicyException ex)
         {
-            await AppendBootstrapAuditAsync(
-                AuditActionFirstAdminRejectedInvalidRequest,
-                "Password rejected by policy",
-                cancellationToken);
+            await RecordRefusalAsync(AuditEvents.FirstAdminRejectedInvalidRequest("password_policy"));
             return BadRequest(new BootstrapErrorResponse(
                 ex.Message,
                 BootstrapErrorCodes.InvalidRequest,
@@ -99,10 +85,7 @@ public sealed class BootstrapController : ControllerBase
         }
         catch (UsernameException ex)
         {
-            await AppendBootstrapAuditAsync(
-                AuditActionFirstAdminRejectedInvalidRequest,
-                "Username rejected by policy",
-                cancellationToken);
+            await RecordRefusalAsync(AuditEvents.FirstAdminRejectedInvalidRequest("username_policy"));
             return BadRequest(new BootstrapErrorResponse(
                 ex.Message,
                 BootstrapErrorCodes.InvalidRequest,
@@ -111,8 +94,9 @@ public sealed class BootstrapController : ControllerBase
 
         return result.Kind switch
         {
-            FirstAdminBootstrapResultKind.Success => await CreatedFirstAdminAsync(result.UserId!.Value, cancellationToken),
-            FirstAdminBootstrapResultKind.AlreadyExists => await RejectAlreadyInitializedAsync(cancellationToken),
+            // The created row committed with the user in the bootstrap service (AUD-1.2).
+            FirstAdminBootstrapResultKind.Success => Created("/api/bootstrap/first-admin", new FirstAdminResponse(result.UserId!.Value)),
+            FirstAdminBootstrapResultKind.AlreadyExists => await RejectAlreadyInitializedAsync(),
             FirstAdminBootstrapResultKind.RoleNotFound => StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
                 new BootstrapErrorResponse(
@@ -132,39 +116,20 @@ public sealed class BootstrapController : ControllerBase
         };
     }
 
-    private async Task<ActionResult<FirstAdminResponse>> CreatedFirstAdminAsync(string userId, CancellationToken cancellationToken)
+    private async Task<ActionResult<FirstAdminResponse>> RejectAlreadyInitializedAsync()
     {
-        await AppendBootstrapAuditAsync(
-            AuditActionFirstAdminCreated,
-            $"Created first platform administrator userId={userId}",
-            cancellationToken);
-        return Created("/api/bootstrap/first-admin", new FirstAdminResponse(userId));
-    }
-
-    private async Task<ActionResult<FirstAdminResponse>> RejectAlreadyInitializedAsync(CancellationToken cancellationToken)
-    {
-        await AppendBootstrapAuditAsync(
-            AuditActionFirstAdminRejectedInitialized,
-            "First-admin bootstrap rejected because the platform is already initialized.",
-            cancellationToken);
+        await RecordRefusalAsync(AuditEvents.FirstAdminRejectedAlreadyInitialized());
         return Conflict(new BootstrapErrorResponse(
             "Platform is already initialized. First-admin bootstrap is not available.",
             BootstrapErrorCodes.AlreadyInitialized,
             Initialized: true));
     }
 
-    private async Task AppendBootstrapAuditAsync(string action, string? details, CancellationToken cancellationToken)
+    /// <summary>A refused request changed nothing: a W3 row of the anonymous caller that never changes the response.</summary>
+    private async Task RecordRefusalAsync(Apperture.Core.Application.Audit.AuditEvent refusal)
     {
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId("anonymous"),
-            action,
-            Resource: null,
-            Outcome: AuditOutcomeBootstrap,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        await _audit.AppendAsync(record, cancellationToken);
+        if (_auditEvents is not null)
+            await _auditEvents.TryWriteAsync(refusal, AuditActor.Anonymous, CancellationToken.None);
     }
 
     private static BootstrapStatusResponse ToStatusResponse(BootstrapSetupStatus status) =>

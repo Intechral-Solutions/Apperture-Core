@@ -300,6 +300,41 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         consumed["ActorKind"].Should().Be("user");
     }
 
+    // ---- First-administrator bootstrap ----
+
+    [Fact]
+    public async Task The_first_administrator_commits_with_its_anonymous_row_or_not_at_all()
+    {
+        var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+        await using (var db = _db.NewDb(failAudit))
+        {
+            var act = () => Bootstrap(db).TryCreateFirstAdminAsync("First Admin", IdentitySource.Local, "firstadmin", "quiet-maple-lantern-harbor");
+            await act.Should().ThrowAsync<Exception>();
+        }
+
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Users;")).Should().Be(0, "no administrator without its row");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM LocalCredentials;")).Should().Be(0);
+
+        FirstAdminBootstrapResult result;
+        await using (var db = _db.NewDb())
+            result = await Bootstrap(db).TryCreateFirstAdminAsync("First Admin", IdentitySource.Local, "firstadmin", "quiet-maple-lantern-harbor");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.Success);
+        var row = (await RowsAsync("user", result.UserId!.Value)).Should().ContainSingle().Which;
+        row["Action"].Should().Be(AuditActionNames.FirstAdminCreated);
+        row["Actor"].Should().Be("anonymous");
+        ((string)row["Details"]!).Should().NotContain("quiet-maple-lantern-harbor");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{result.UserId!.Value}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
+    }
+
+    private static FirstAdminBootstrapService Bootstrap(AppertureDbContext db) =>
+        new(
+            new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
+            new SqlRoleRepository(db),
+            new SqlLocalCredentialRepository(db),
+            new LocalPasswordHasher(),
+            NewUnit(db, null));
+
     // ---- helpers ----
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
