@@ -56,10 +56,74 @@ public sealed class EntraStepUpCallbackTests
 
     // ---- the rig --------------------------------------------------------------------------------------------------------
 
+    /// <summary>How the fake token endpoint signs the id_token it returns.</summary>
+    public enum IdTokenSignature
+    {
+        /// <summary>RS256 with a key the issuer publishes in its metadata.</summary>
+        TrustedKey,
+        /// <summary><c>alg: none</c> and an empty signature.</summary>
+        Unsigned,
+        /// <summary>A header that names RS256 and the published key id, with the signature removed.</summary>
+        UnsignedClaimingRs256,
+        /// <summary>RS256 with a key the issuer never published, under the published key's id.</summary>
+        UntrustedKeyWithTrustedKeyId,
+        /// <summary>RS256 with a key the issuer never published, under an unknown key id.</summary>
+        UntrustedKeyWithUnknownKeyId,
+        /// <summary>A trusted signature with bytes changed.</summary>
+        AlteredSignature,
+    }
+
+    /// <summary>The issuer's metadata served through a real configuration manager: a discovery document and its key set.</summary>
+    private sealed class PublishedMetadata : IDocumentRetriever
+    {
+        private int _keySetReads;
+
+        public List<RsaSecurityKey> Keys { get; } = new();
+
+        public int KeySetReads => Volatile.Read(ref _keySetReads);
+
+        public Task<string> GetDocumentAsync(string address, CancellationToken cancel)
+        {
+            if (address.EndsWith("/keys", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref _keySetReads);
+                var keys = Keys.Select(k =>
+                {
+                    var p = k.Rsa.ExportParameters(includePrivateParameters: false);
+                    return new { kty = "RSA", use = "sig", kid = k.KeyId, alg = "RS256", n = Base64UrlEncoder.Encode(p.Modulus), e = Base64UrlEncoder.Encode(p.Exponent) };
+                });
+                return Task.FromResult(JsonSerializer.Serialize(new { keys }));
+            }
+
+            return Task.FromResult(JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["issuer"] = Issuer,
+                ["authorization_endpoint"] = Issuer + "/authorize",
+                ["token_endpoint"] = Issuer + "/token",
+                ["end_session_endpoint"] = Issuer + "/logout",
+                ["jwks_uri"] = Issuer + "/keys",
+                ["id_token_signing_alg_values_supported"] = new[] { "RS256" },
+            }));
+        }
+    }
+
+    /// <summary>The handler's protocol validator, recording the nonce of every token-response validation and then running it unchanged.</summary>
+    private sealed class RecordingProtocolValidator : OpenIdConnectProtocolValidator
+    {
+        public List<string?> TokenResponseNonces { get; } = new();
+
+        public override void ValidateTokenResponse(OpenIdConnectProtocolValidationContext validationContext)
+        {
+            TokenResponseNonces.Add(validationContext.Nonce);
+            base.ValidateTokenResponse(validationContext);
+        }
+    }
+
     private sealed class Rig : IAsyncDisposable
     {
         private readonly RSA _rsa = RSA.Create(2048);
         private readonly RsaSecurityKey _key;
+        private readonly List<RSA> _otherKeys = new();
         private int _tokenRequests;
 
         public WebApplication App { get; private set; } = null!;
@@ -105,9 +169,30 @@ public sealed class EntraStepUpCallbackTests
 
         public Func<AuthenticationProperties, AuthenticationProperties>? MutateStateBeforeItIsSent { get; set; }
 
+        public IdTokenSignature TokenSignature { get; set; } = IdTokenSignature.TrustedKey;
+
+        /// <summary>The key the issuer publishes from the start.</summary>
+        public RsaSecurityKey TrustedKey => _key;
+
+        /// <summary>The key a <see cref="IdTokenSignature.TrustedKey"/> token is signed with (default: <see cref="TrustedKey"/>).</summary>
+        public RsaSecurityKey SigningKey { get; set; }
+
+        /// <summary>When set, the handler reads the issuer's metadata from these documents through a real configuration manager instead of a fixed configuration.</summary>
+        public PublishedMetadata? Metadata { get; set; }
+
+        public RecordingProtocolValidator ProtocolValidator { get; } = new();
+
         public Rig()
         {
             _key = new RsaSecurityKey(_rsa) { KeyId = "unit-test-key" };
+            SigningKey = _key;
+        }
+
+        public RsaSecurityKey NewKey(string keyId)
+        {
+            var rsa = RSA.Create(2048);
+            _otherKeys.Add(rsa);
+            return new RsaSecurityKey(rsa) { KeyId = keyId };
         }
 
         public async Task StartAsync(string environment = "Production")
@@ -175,9 +260,24 @@ public sealed class EntraStepUpCallbackTests
                     Issuer = Issuer,
                 };
                 configuration.SigningKeys.Add(_key);
-                options.Configuration = configuration;
-                options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
+                if (Metadata is null)
+                {
+                    options.Configuration = configuration;
+                    options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
+                }
+                else
+                {
+                    options.Configuration = null;
+                    options.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
+                        Issuer + "/.well-known/openid-configuration",
+                        new OpenIdConnectConfigurationRetriever(),
+                        Metadata);
+                }
+
                 options.Backchannel = new HttpClient(new FakeTokenEndpoint(this));
+                ProtocolValidator.RequireStateValidation = options.ProtocolValidator.RequireStateValidation;
+                ProtocolValidator.NonceLifetime = options.ProtocolValidator.NonceLifetime;
+                options.ProtocolValidator = ProtocolValidator;
 
                 var innerFail = options.Events.OnRemoteFailure;
                 options.Events.OnRemoteFailure = async context =>
@@ -303,15 +403,43 @@ public sealed class EntraStepUpCallbackTests
                     claims[k] = v;
             }
 
-            return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+            var descriptor = new SecurityTokenDescriptor
             {
                 Issuer = Issuer,
                 Audience = ClientId,
                 Claims = claims,
                 NotBefore = DateTime.UtcNow.AddMinutes(-1),
                 Expires = DateTime.UtcNow.AddMinutes(30),
-                SigningCredentials = new SigningCredentials(_key, SecurityAlgorithms.RsaSha256),
-            });
+            };
+            string Sign(RsaSecurityKey key)
+            {
+                descriptor.SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256);
+                return new JsonWebTokenHandler().CreateToken(descriptor);
+            }
+
+            switch (TokenSignature)
+            {
+                case IdTokenSignature.Unsigned:
+                    return new JsonWebTokenHandler().CreateToken(descriptor);
+                case IdTokenSignature.UnsignedClaimingRs256:
+                {
+                    var signed = Sign(SigningKey);
+                    return signed[..(signed.LastIndexOf('.') + 1)];
+                }
+                case IdTokenSignature.UntrustedKeyWithTrustedKeyId:
+                    return Sign(NewKey(_key.KeyId));
+                case IdTokenSignature.UntrustedKeyWithUnknownKeyId:
+                    return Sign(NewKey("unpublished-key"));
+                case IdTokenSignature.AlteredSignature:
+                {
+                    var chars = Sign(SigningKey).ToCharArray();
+                    var i = Array.LastIndexOf(chars, '.') + 10;
+                    chars[i] = chars[i] == 'A' ? 'B' : 'A';
+                    return new string(chars);
+                }
+                default:
+                    return Sign(SigningKey);
+            }
         }
 
         public int TokenRequests => Volatile.Read(ref _tokenRequests);
@@ -340,6 +468,8 @@ public sealed class EntraStepUpCallbackTests
             if (App is not null)
                 await App.DisposeAsync();
             _rsa.Dispose();
+            foreach (var rsa in _otherKeys)
+                rsa.Dispose();
         }
     }
 
@@ -998,9 +1128,10 @@ public sealed class EntraStepUpCallbackTests
     public async Task An_unlinked_identity_whose_nonce_fails_gets_no_access_request_session(NonceFault fault)
     {
         await using var rig = new Rig { TokenNonceOverride = fault == NonceFault.WrongNonce ? "forged-nonce" : null };
+        await rig.StartAsync();
+        // After StartAsync, whose own setup would otherwise win: an unlinked identity is what reaches the access-request session.
         rig.Association.Setup(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(EntraAssociationOutcome.Failure(EntraLinkFailureCodes.AccountNotLinked));
-        await rig.StartAsync();
 
         var response = await rig.PostCallbackAsync(Faulted(await BeginAsync(rig, "/signin"), fault));
 
@@ -1037,6 +1168,187 @@ public sealed class EntraStepUpCallbackTests
 
         rig.ReadSessionCookie(response).Should().BeNull();
         rig.Audit.Should().NotContain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
+    }
+
+    // ---- authentication policy: a signed id_token, validated against the issuer's published keys ----------------------------
+    // The handler validates the id_token it redeems from the token endpoint with RequireSignedTokens forced off, so it checks a
+    // signature only when one is present. The host requires one before anything acts on the identity. Every callback path is
+    // covered: normal sign-in, self-link and an Entra step-up complete through the handler; the access-request session and a
+    // local step-up end the response in the event itself.
+
+    public enum CallbackFlow
+    {
+        SignIn,
+        SelfLink,
+        AccessRequest,
+        LocalStepUp,
+        EntraStepUp,
+    }
+
+    public static TheoryData<IdTokenSignature, CallbackFlow> RejectedSignatures()
+    {
+        var data = new TheoryData<IdTokenSignature, CallbackFlow>();
+        foreach (var signature in Enum.GetValues<IdTokenSignature>().Where(s => s != IdTokenSignature.TrustedKey))
+        {
+            foreach (var flow in Enum.GetValues<CallbackFlow>())
+                data.Add(signature, flow);
+        }
+
+        return data;
+    }
+
+    /// <summary>Starts the flow, then posts the provider's callback. Rows recorded while starting (a step-up request) are dropped, so <c>rig.Audit</c> holds only what the callback recorded.</summary>
+    private static async Task<HttpResponseMessage> RunFlowAsync(Rig rig, CallbackFlow flow)
+    {
+        if (flow == CallbackFlow.AccessRequest)
+        {
+            rig.Association.Setup(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(EntraAssociationOutcome.Failure(EntraLinkFailureCodes.AccountNotLinked));
+        }
+
+        var challenge = flow switch
+        {
+            CallbackFlow.SelfLink => await BeginAsync(rig, "/signin/link"),
+            CallbackFlow.LocalStepUp => await rig.BeginStepUpAsync("Local"),
+            CallbackFlow.EntraStepUp => await rig.BeginStepUpAsync("Entra"),
+            _ => await BeginAsync(rig, "/signin"),
+        };
+        rig.Audit.Clear();
+        return await rig.PostCallbackAsync(challenge);
+    }
+
+    private static void NothingWasLinkedProvenAttributedOrIssued(Rig rig, HttpResponseMessage response)
+    {
+        rig.ReadSessionCookie(response).Should().BeNull("no platform or step-up session is issued");
+        SetsCookie(response, EntraAccessRequestAuthentication.CookieName).Should().BeFalse("no access-request session is issued");
+        Location(response).Should().Contain("error=");
+
+        rig.Association.Verify(a => a.CompleteSignInAsync(It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Association.Verify(a => a.CompleteLinkAsync(It.IsAny<UserId>(), It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Users.Verify(u => u.CompleteEntraLinkProofAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Users.Verify(u => u.UpdateLastAuthenticatedAtAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Users.Verify(u => u.UpdateAsync(It.IsAny<User>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Users.Verify(u => u.AddIdentityLinkAsync(It.IsAny<UserId>(), It.IsAny<IdentityLink>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        rig.Audit.Should().OnlyContain(a => a.Actor == AuditActor.Anonymous, "only an anonymous sign-in failure may be recorded");
+        rig.BridgeRows.Should().BeEmpty();
+        rig.LastFailure.Should().Contain("Signature", "the sign-in fails on the id_token's signature");
+    }
+
+    [Theory]
+    [MemberData(nameof(RejectedSignatures))]
+    public async Task An_id_token_without_a_signature_from_the_issuers_published_keys_is_rejected_on_every_path(IdTokenSignature signature, CallbackFlow flow)
+    {
+        await using var rig = new Rig { TokenSignature = signature };
+        await rig.StartAsync();
+
+        var response = await RunFlowAsync(rig, flow);
+
+        NothingWasLinkedProvenAttributedOrIssued(rig, response);
+    }
+
+    [Theory]
+    [InlineData(CallbackFlow.SignIn)]
+    [InlineData(CallbackFlow.SelfLink)]
+    [InlineData(CallbackFlow.AccessRequest)]
+    [InlineData(CallbackFlow.LocalStepUp)]
+    [InlineData(CallbackFlow.EntraStepUp)]
+    public async Task An_id_token_signed_with_a_key_from_the_issuers_metadata_completes_every_path(CallbackFlow flow)
+    {
+        await using var rig = new Rig();
+        await rig.StartAsync();
+
+        var response = await RunFlowAsync(rig, flow);
+
+        rig.LastFailure.Should().BeNull();
+        switch (flow)
+        {
+            case CallbackFlow.SignIn:
+                rig.ReadSessionCookie(response).Should().NotBeNull();
+                rig.Audit.Should().Contain(a => a.Event.Action == AuditActionNames.EntraSignInSucceeded && a.Actor == AuditActor.AuthenticatedUser(new UserId(UserA)));
+                break;
+            case CallbackFlow.SelfLink:
+                Location(response).Should().Be("http://localhost:9001/account?linked=1");
+                rig.Association.Verify(a => a.CompleteLinkAsync(new UserId(UserA), It.IsAny<EntraIdentityAssertion>(), It.IsAny<CancellationToken>()), Times.Once);
+                rig.ReadSessionCookie(response).Should().NotBeNull();
+                break;
+            case CallbackFlow.AccessRequest:
+                SetsCookie(response, EntraAccessRequestAuthentication.CookieName).Should().BeTrue();
+                rig.ReadSessionCookie(response).Should().BeNull("an unlinked identity gets only the access-request session");
+                break;
+            default:
+                rig.ReadSessionCookie(response).Should().NotBeNull();
+                rig.Audit.Should().Contain(a => a.Event.Action == StrongAuthenticationAuditActionNames.StepUpSatisfied);
+                break;
+        }
+    }
+
+    [Theory]
+    [InlineData(CallbackFlow.SignIn, 2)]
+    [InlineData(CallbackFlow.SelfLink, 2)]
+    [InlineData(CallbackFlow.EntraStepUp, 2)]
+    [InlineData(CallbackFlow.AccessRequest, 1)]
+    [InlineData(CallbackFlow.LocalStepUp, 1)]
+    public async Task The_handlers_own_token_response_validation_still_runs_after_the_early_check_with_the_same_nonce(CallbackFlow flow, int validations)
+    {
+        // The host validates the token response before acting on it. A path that completes through the handler is validated
+        // again by the handler afterwards; that second check must still see this browser's nonce and pass. A path that ends the
+        // response in the event is validated once, by the host.
+        await using var rig = new Rig();
+        await rig.StartAsync();
+
+        var response = await RunFlowAsync(rig, flow);
+
+        rig.LastFailure.Should().BeNull();
+        Location(response).Should().NotContain("error=");
+        rig.Nonce.Should().NotBeNullOrEmpty();
+        rig.ProtocolValidator.TokenResponseNonces.Should().HaveCount(validations).And.OnlyContain(n => n == rig.Nonce);
+    }
+
+    [Fact]
+    public async Task During_a_signing_key_rollover_a_token_signed_with_either_published_key_is_accepted()
+    {
+        await using var rig = new Rig { CodeIsSingleUse = false, Metadata = new PublishedMetadata() };
+        var next = rig.NewKey("next-key");
+        rig.Metadata.Keys.AddRange([rig.TrustedKey, next]);
+        await rig.StartAsync();
+
+        foreach (var key in new[] { rig.TrustedKey, next })
+        {
+            rig.SigningKey = key;
+            var response = await RunFlowAsync(rig, CallbackFlow.SignIn);
+            rig.ReadSessionCookie(response).Should().NotBeNull($"a token signed with the published key '{key.KeyId}' is trusted");
+        }
+    }
+
+    [Fact]
+    public async Task After_the_issuer_rolls_its_signing_key_the_new_key_is_trusted_from_refreshed_metadata()
+    {
+        await using var rig = new Rig { CodeIsSingleUse = false, Metadata = new PublishedMetadata() };
+        rig.Metadata.Keys.Add(rig.TrustedKey);
+        await rig.StartAsync();
+        rig.ReadSessionCookie(await RunFlowAsync(rig, CallbackFlow.SignIn)).Should().NotBeNull("the first key is published");
+        var readsBeforeRollover = rig.Metadata.KeySetReads;
+
+        // The issuer retires its key and publishes a new one. Nothing in the host names a key, and it is not restarted.
+        var rolled = rig.NewKey("rolled-key");
+        rig.Metadata.Keys.Clear();
+        rig.Metadata.Keys.Add(rolled);
+        rig.SigningKey = rolled;
+
+        // The handler meets a key it does not know yet, fails that sign-in and asks for a metadata refresh (IdentityModel
+        // refreshes in the background, so the sign-in that met the unknown key issues nothing; that is the framework's behaviour).
+        var metRolledKey = await RunFlowAsync(rig, CallbackFlow.SignIn);
+        if (rig.ReadSessionCookie(metRolledKey) is null)
+        {
+            rig.LastFailure.Should().Contain(nameof(SecurityTokenSignatureKeyNotFoundException));
+            for (var i = 0; i < 100 && rig.Metadata.KeySetReads == readsBeforeRollover; i++)
+                await Task.Delay(50);
+        }
+
+        rig.Metadata.KeySetReads.Should().BeGreaterThan(readsBeforeRollover, "the unknown key caused a metadata refresh");
+        var afterRollover = await RunFlowAsync(rig, CallbackFlow.SignIn);
+        rig.ReadSessionCookie(afterRollover).Should().NotBeNull("a key the issuer now publishes is trusted once the metadata is refreshed, without a restart");
     }
 
     // ---- regressions: the nearby flows must be untouched --------------------------------------------------------------------
