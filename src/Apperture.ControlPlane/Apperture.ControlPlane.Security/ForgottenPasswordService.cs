@@ -2,6 +2,7 @@ using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -27,6 +28,7 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
     private readonly AccountSecurityLinkBuilder _links;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly ILogger<ForgottenPasswordService>? _logger;
 
     public ForgottenPasswordService(
         IUserRepository users,
@@ -36,8 +38,10 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
         IAccountSecurityMailSender mail,
         AccountSecurityLinkBuilder links,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        ILogger<ForgottenPasswordService>? logger = null)
     {
+        _logger = logger;
         _users = users;
         _credentials = credentials;
         _hasher = hasher;
@@ -110,7 +114,8 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
             user.EmailAddress!,
             "Reset your Apperture password",
             $"Reset your Apperture local password by opening this one-time link:\n{_links.ResetPassword(issuedLink.Plaintext)}\n\nThis link expires and can be used once.",
-            cancellationToken);
+            cancellationToken,
+            _logger);
     }
 
     /// <summary>The outcome of a reset request's transaction. Never printed with its link.</summary>

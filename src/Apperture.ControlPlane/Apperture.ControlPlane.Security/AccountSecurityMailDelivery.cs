@@ -1,6 +1,7 @@
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Domain.Identity;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -39,7 +40,8 @@ internal static class AccountSecurityMailDelivery
         string recipient,
         string subject,
         string body,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
         AccountSecurityMailResult result;
         string outcome;
@@ -54,9 +56,11 @@ internal static class AccountSecurityMailDelivery
                     ? "not_configured"
                     : "send_failed";
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Includes cancellation: the change already committed, so the caller still gets its result.
+            // Includes cancellation: the change already committed, so the caller still gets its result. The exception is
+            // logged for operators (it reached the host's error log before AUD-1.2); the row records only "error".
+            logger?.LogWarning(ex, "Sending the {Purpose} message for request {RequestId} threw; delivery is unknown.", purpose, requestId);
             result = new AccountSecurityMailResult(false, DeliveryUnknown);
             outcome = AuditOutcomeCodes.Unknown;
             failure = "error";

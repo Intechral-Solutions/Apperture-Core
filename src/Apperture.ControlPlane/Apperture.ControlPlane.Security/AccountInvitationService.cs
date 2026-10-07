@@ -2,6 +2,7 @@ using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -29,6 +30,7 @@ public sealed class AccountInvitationService : IAccountInvitationService
     private readonly TimeProvider _time;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly ILogger<AccountInvitationService>? _logger;
 
     public AccountInvitationService(
         IUserRepository users,
@@ -40,8 +42,10 @@ public sealed class AccountInvitationService : IAccountInvitationService
         AccountSecurityLinkBuilder links,
         TimeProvider time,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        ILogger<AccountInvitationService>? logger = null)
     {
+        _logger = logger;
         _users = users;
         _credentials = credentials;
         _hasher = hasher;
@@ -148,7 +152,8 @@ public sealed class AccountInvitationService : IAccountInvitationService
             invitation.Destination,
             "Set up your Apperture account",
             $"An administrator invited you to choose your Apperture password. Open this one-time link:\n{_links.SetupPassword(invitation.Token.Plaintext)}\n\nThis invitation expires and can be used once.",
-            cancellationToken);
+            cancellationToken,
+            _logger);
         return new AccountInvitationResult(invitation.UserId, delivery.Succeeded, delivery.FailureSummary, invitation.Token.ExpiresAtUtc);
     }
 

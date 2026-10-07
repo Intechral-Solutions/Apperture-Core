@@ -2,6 +2,7 @@ using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
+using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -28,6 +29,7 @@ public sealed class AccountContactService : IAccountContactService
     private readonly IRecentAccountVerificationGate? _accountVerification;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly ILogger<AccountContactService>? _logger;
 
     public AccountContactService(
         IUserRepository users,
@@ -39,8 +41,10 @@ public sealed class AccountContactService : IAccountContactService
         IStrongAuthenticationGate? strongAuth = null,
         IRecentAccountVerificationGate? accountVerification = null,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        ILogger<AccountContactService>? logger = null)
     {
+        _logger = logger;
         _users = users;
         _credentials = credentials;
         _hasher = hasher;
@@ -246,7 +250,8 @@ public sealed class AccountContactService : IAccountContactService
             issued.Link.DestinationEmail!,
             "Verify your Apperture contact email",
             $"Confirm this address as your Apperture contact email by opening:\n{_links.VerifyEmail(issued.Link.Plaintext)}\n\nThis link expires and can be used once.",
-            cancellationToken);
+            cancellationToken,
+            _logger);
         return new AccountContactMutationResult(await SnapshotAsync(issued.User, cancellationToken), delivery.Succeeded, delivery.FailureSummary);
     }
 
