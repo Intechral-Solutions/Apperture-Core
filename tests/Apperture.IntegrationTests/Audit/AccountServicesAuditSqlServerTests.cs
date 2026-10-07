@@ -384,6 +384,30 @@ public sealed class AccountServicesAuditSqlServerTests : IAsyncLifetime
         (await RowsAsync("user", user)).Should().NotContain(r => (string)r["Action"]! == AuditActionNames.PasswordResetCompleted);
     }
 
+    [Fact]
+    public async Task Setting_an_email_preference_to_its_current_value_writes_neither_the_preference_nor_a_row()
+    {
+        // D7, D16 through the real operator service and the SQL unit: a change commits its preference row and its audit row;
+        // the same value again writes no preference row and records nothing.
+        const string Definition = "platform.schedule.expected_run_missing";
+        var (user, _) = await AddUserAsync("prefs");
+        var principal = new Principal(user);
+        await using (var db = _db.NewDb())
+            await Profile(db, principal).SetNotificationEmailPreferenceAsync(new UserId(user), Definition, false);
+        var written = await _db.ScalarAsync<DateTimeOffset>(
+            $"SELECT UpdatedAtUtc FROM NotificationUserPreferences WHERE UserId = N'{user}' AND NotificationDefinitionId = N'{Definition}' AND Channel = N'email';");
+        var rowsAfterChange = (await _db.RowsAsync($"SELECT Id FROM AuditLogs WHERE Actor = N'{user}';")).Count;
+        rowsAfterChange.Should().Be(1, "the change commits with its row");
+
+        await using (var db = _db.NewDb())
+            (await Profile(db, principal).SetNotificationEmailPreferenceAsync(new UserId(user), Definition, false)).Email.Enabled.Should().BeFalse();
+
+        (await _db.RowsAsync($"SELECT Id FROM AuditLogs WHERE Actor = N'{user}';")).Should().HaveCount(rowsAfterChange, "nothing changed, so nothing is recorded");
+        (await _db.ScalarAsync<DateTimeOffset>(
+                $"SELECT UpdatedAtUtc FROM NotificationUserPreferences WHERE UserId = N'{user}' AND NotificationDefinitionId = N'{Definition}' AND Channel = N'email';"))
+            .Should().Be(written, "an equal preference row is not written again");
+    }
+
     /// <summary>Runs an action from another session once, just before this context starts its first transaction.</summary>
     private sealed class BeforeFirstTransaction(Func<Task> action) : DbTransactionInterceptor
     {
