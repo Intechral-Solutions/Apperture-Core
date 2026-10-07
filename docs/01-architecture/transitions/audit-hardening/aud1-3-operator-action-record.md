@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **Implemented on branch `aud-1.3-operator-action-attribution`; not pushed, no PR.** This record holds the verified baseline, the writer inventory, the package decisions, the acceptance mapping, the failure and external-effect behaviour, the validation, and the findings with owners and the scope left for later packages.
+Status: **Implemented on branch `aud-1.3-operator-action-attribution`, with the completion and independent review pass of §11 applied; not pushed, no PR.** This record holds the verified baseline, the writer inventory, the package decisions, the acceptance mapping, the failure and external-effect behaviour, the validation, and the findings with owners and the scope left for later packages. §1 to §10 describe the package as first implemented, amended where §11 changed it; §11 records the completion pass, the review, its fixes and the evidence, tied to the commits it ran on.
 
 Base: `origin/master` at `78feee3` (merge of PR #16, AUD-1.2). Post-merge CI run 37626859965 succeeded for `build-and-test` and `browser-security`; the PR-head run for the reviewed head `00f8416` was green too.
 
@@ -22,6 +22,8 @@ In:
 | Run retry; blocked-work retry | `WorkflowRetryService` (`WorkflowRetryChannel`) |
 | Run park and resume | `WorkflowExternalControlService` |
 | Single-item retry | `OperationItemRetryService` |
+| Bulk item retry (orchestration over single-item retries), assigned by the owner on 2026-10-07 (§11.2) | `BulkOperationItemRetryService` |
+| Failed-item attention acknowledge and reopen, assigned by the owner on 2026-10-07 (§11.2) | `OperationItemAttentionService` |
 | The `system` and `unknown` actors on run actions: the retry refusal, the recovery refusals and denials, the scheduler operation denials and requests | `WorkflowRetryService`, `RecoveryController`, `SchedulerOperationsController` |
 | The `unknown` fallback in bulk retry (unreachable, see D14) | `BulkOperationItemRetryService` |
 | Real outcomes in `RecoveryController`, and the run-id/definition-id mix-up | `RecoveryController` |
@@ -32,7 +34,7 @@ Out, with owner:
 
 | Not in AUD-1.3 | Owner |
 |---|---|
-| **Bulk retry** (`execution.operation_item.bulk_retry.requested` and `.completed`) and **attention acknowledge and reopen** (`execution.operation_item.attention.*`). The gate's §13.1 table lists them as W1 and OR-1 requires every W1 writer converted, but no §22 package names them, and neither is in the Part 1 AUD-1.3 areas. Both stay on the append bridge with real actors. **Product decision needed: assign them (§8)** | Unassigned; proposed AUD-1.3 follow-up or AUD-1.4 |
+| ~~Bulk retry and attention acknowledge and reopen~~: unassigned at first implementation; **assigned to AUD-1.3 by the owner on 2026-10-07 and converted (§11.2)** | AUD-1.3 |
 | `audit.read.denied` and its actor (`AuditController`) | AUD-1.5 (gate §22 "the denial actor") |
 | Runtime shutdown request and its `RequestedBy` | AUD-1.4 |
 | Scheduler dispatch, blocked, failed and claim-recovery rows; the worker's definition-unavailable rows | W4 telemetry: AUD-1.5 (transition-only blocked writing) and AUD-1.6 |
@@ -52,18 +54,21 @@ W1 = required mutation, W3 = attempt or refusal, W4 = telemetry. Every W1 row be
 | `execution.workflow_retry.requested`; `recovery.blocked_work.retry_requested` through the recovery channel | W1, `request` | The unit's current principal; the retry's start request records it | The run being retried; `retryRunId` in details names the new run | New run and its start request, the original run's `retry_requested` event and the row, one unit | None | `requested`. Lost acknowledgement: the retry run is read back from the committed row. A refused retry (completed run, missing context) throws before commit |
 | `execution.workflow_retry.blocked` | W3, `attempt` | The current principal (was the literal `system`: `initiator_not_recorded`) | The run | After rollback | None | `blocked` |
 | `execution.operation_item.retry_requested` | W1, `request` | The unit's current principal; `OperationItemRetryAttempts.RequestedByActorId` and the child run's start request record it | `operation_item`; attempt id and child run id in details; related `RunId` | Attempt, child run and start request, dispatched mark, item retry stamp and row, one unit | None | `requested`. A replay of a key records nothing. Audit failure leaves no attempt (before this, a failure between the attempt and the dispatch left an attempt saying "requested" with nothing started) |
-| `execution.operation_item.retry_blocked` | W1, basis `change` | The unit's current principal | `operation_item` | The blocked attempt and the row, one unit | None | `blocked`. The attempt row is a committed change, so it is recorded with it |
+| `execution.operation_item.retry_blocked` | W1, basis `change` | The unit's current principal | `operation_item` | The blocked attempt and the row, one unit | None | `blocked`. The attempt row is a committed change, so it is recorded with it. A request that loses the race for its key records nothing (§11.3, R1) |
+| Bulk item retry (orchestration) | Its W1 rows are the item rows above, one per item whose retry committed a change, each naming the batch as `bulkRequestId`. The batch writes no row of its own (D16) | The unit's current principal, per item | `operation_item`, per item | One unit per item | None | Per item: `requested` or `blocked`; a skipped item records nothing; an item whose commit cannot be established is reported `OutcomeUnknown` and the batch goes on |
+| `execution.operation_item.attention.acknowledged` | W1, basis `change` | The unit's current principal; `OperationItemAttentionAcknowledgements.AcknowledgedByUserId` holds the same value | `operation_run`; the acknowledged item ids in details (D17) | Every acknowledgement of the request and the row, one unit | None | `succeeded`. Changing no item records nothing. A lost race for an item's one active acknowledgement reports that item `AlreadyAcknowledged` with the winner's acknowledgement and records nothing for it. Lost acknowledgement: reconstructed from the row's item list. Unverifiable: `outcome_unknown` |
+| `execution.operation_item.attention.reopened` | W1, basis `change` | The unit's current principal; `ReopenedByUserId` holds the same value | `operation_run`; the reopened item ids in details | Every reopening of the request and the row, one unit | None | `succeeded`. The update applies only to a still-active acknowledgement, so a concurrent second reopen reports `NotAcknowledged`, overwrites nothing and records nothing |
 | `recovery.blocked_work.retry_refused` | W3 | The current principal | The blocked run; the run's own definition in details | After the refusal | None | `rejected`. The blocked branch used to pass the run id where the definition id belongs (§3, D9) |
 | `recovery.retry.denied`, `recovery.run_cycle.denied` | W3 | The current principal, or `anonymous` (was `system` and `system:unknown`) | None (the run may not exist) | After the denial | None | `denied` |
 | `recovery.schedules.run_cycle_requested` (run cycle and recover stale) | W4, `telemetry` | The current principal, or `anonymous` | None | After the operation | The scheduler cycle it triggered is the scheduler's own | `succeeded` or `failed` (was `completed` even when the cycle threw) |
 
-Catalog: 147 actions from AUD-1.1, 12 from AUD-1.2 and 9 added here (`AuditActionCatalogTests` pins the list): `execution.workflow_start.requested`, `execution.operation_start.requested`, `execution.workflow_run.cancel_requested`, `execution.operation_run.cancel_requested`, `execution.workflow_run.park_requested`, `execution.workflow_run.resume_requested`, `execution.workflow_retry.requested`, `execution.operation_item.retry_requested` and `execution.operation_item.retry_blocked`. Eight existing actions gain structured producers (the two start refusals, the retry refusal, `recovery.blocked_work.retry_requested`, `.retry_refused`, `recovery.retry.denied`, `recovery.run_cycle.denied` and `recovery.schedules.run_cycle_requested`). `recovery.blocked_work.retry_dispatched` stays declared and is no longer written (D8).
+Catalog: 147 actions from AUD-1.1, 12 from AUD-1.2 and 9 added here (`AuditActionCatalogTests` pins the list): `execution.workflow_start.requested`, `execution.operation_start.requested`, `execution.workflow_run.cancel_requested`, `execution.operation_run.cancel_requested`, `execution.workflow_run.park_requested`, `execution.workflow_run.resume_requested`, `execution.workflow_retry.requested`, `execution.operation_item.retry_requested` and `execution.operation_item.retry_blocked`. Eight existing actions gain structured producers (the two start refusals, the retry refusal, `recovery.blocked_work.retry_requested`, `.retry_refused`, `recovery.retry.denied`, `recovery.run_cycle.denied` and `recovery.schedules.run_cycle_requested`). `recovery.blocked_work.retry_dispatched` stays declared and is no longer written (D8). The completion pass (§11) adds no action: `execution.operation_item.attention.acknowledged` and `.reopened` gain structured producers, and `execution.operation_item.bulk_retry.requested` and `.completed` stay declared, for the rows already written, and are no longer written (D16).
 
 ## 3. Decisions of the package
 
 | # | Decision | Basis |
 |---|---|---|
-| D1 | The included operations are the Part 1 AUD-1.3 actions and the refusals and denials beside them that carried a `system` or `unknown` actor. Bulk retry and attention acknowledge and reopen are W1 in gate §13.1 but belong to no §22 package; they are not converted here and §8 asks for an owner | Gate §13.1, §22; Part 1 AUD-1.3 areas |
+| D1 | The included operations are the Part 1 AUD-1.3 actions and the refusals and denials beside them that carried a `system` or `unknown` actor. Bulk retry and attention acknowledge and reopen were W1 in gate §13.1 but belonged to no §22 package. **Amended:** the owner assigned them to AUD-1.3 on 2026-10-07 (gate §22 ownership clarification), and §11.2 converts them | Gate §13.1, §22; Part 1 AUD-1.3 areas; owner decision 2026-10-07 |
 | D2 | `IAuditedTransaction` exposes the unit's resolved `Actor`. An operation that persists who requested it writes `Actor.RecordedValue` into the request row, so the request row and the audit row carry one value by construction, resolved once before the first attempt, from the authenticated context. Nothing a caller supplies is used | Gate §10.8, §13.4; clarification: derive from trusted context |
 | D3 | `WorkflowStartRequests` and `OperationStartRequests` gain a nullable `RequestedBy` (256). Existing rows stay null: the actor was never recorded and none is invented. `ClaimedBy` (the worker) is a separate column, so the requesting operator and the executing worker are two facts. `OperationRuns` and the lifecycle events gain no column: the gate asks for actor columns on request rows, and the run side is read through its start request and, for cancel, its cancel intent | Gate §22; Part 1 |
 | D4 | `StartWorkflowRequest` and `StartOperationRequest` carry `RequestedBy`. `AuditedExecutionStartService` replaces whatever the caller put there with the unit's actor. The scheduler records `system:scheduler`. A source scan pins every site that builds a start request | Clarification: system-initiated work keeps a system actor; `Aud13ConvertedWritersTests` |
@@ -78,6 +83,15 @@ Catalog: 147 actions from AUD-1.1, 12 from AUD-1.2 and 9 added here (`AuditActio
 | D13 | The run timeline shows the start request's requester on "Run requested" and the cancel intent's requester on the cancel event. Lifecycle events carry no actor of their own, and none is added | Gate §18 rows 3 and 4 (data from AUD-1.3) |
 | D14 | `BulkOperationItemRetryService` recorded `unknown` when no actor resolved. The retry authorization has already established one, so the fallback was unreachable (AUD-1.1 I-6) and is removed: no actor throws. Each item's retry is now its own audited unit, so one whose commit is unknown is reported as that item's `OutcomeUnknown` and the batch goes on; before it would have been reported as a dispatch failure, or, rethrown, would have denied the items that had committed | Review finding R12 of AUD-1.2; gate §13.2 |
 | D15 | Operations whose primary row depends on state read in the unit declare alternates: an item retry is `retry_requested` (a child run was started) or `retry_blocked` (the attempt was recorded as blocked) | Gate §13.5; D5 of AUD-1.2 |
+| D16 | **Bulk retry row cardinality.** The catalog declares `bulk_retry.requested` (basis `request`) and `.completed` (basis `confirmed_result`), both on the run. The batch persists no request of its own: its required mutations are the item retries, and each must stay its own unit so that partial results and per-item `outcome_unknown` are kept (owner decision). A batch row could therefore commit with none of them. The `requested` row was written before any work (gate §5.2 mode (d)), and the `completed` summary changes no state (§13.1: `confirmed_result` is W1 only when it changes state). So a bulk retry records one W1 row per item whose retry committed a change (`retry_requested` or `retry_blocked`), each naming the batch as `bulkRequestId`, and no batch row. The two batch actions stay declared for the rows already written, as `retry_dispatched` does (D8). The batch id is set by the bulk service, never read from a request body | Gate §5.2, §11.6, §11.7, §13.1; owner decision 2026-10-07 |
+| D17 | **Attention row cardinality.** The catalog declares acknowledge and reopen on the run, basis `change`. So one request is one unit: every acknowledgement (or reopening) it makes commits with one row on the run that lists the items it changed (`operationItemIds`, an id list bounded by the 100-item request limit and the 64-character item id), the requested and skipped counts, the disposition and the operator's reason (`operator_text`, bounded at 512 by the service). Skipped items changed nothing and are only counted. A request that changes no item records nothing. Before, each acknowledgement committed alone and the row was best effort afterwards, so a failure part way left some committed with an error response | Gate §11.1, §11.7, §12.4, §13.2 |
+| D18 | **A lost race is reported, not borrowed.** The acknowledgement and retry-attempt stores gain a `TryCreateAsync` that returns null when a concurrent request committed first, instead of handing back the winner's row as if this request had made it. The reopen is a conditional update on a still-active acknowledgement. The caller then declares a no-op and reports the winner's row as a replay. Duplicates are matched on the named index or key that expresses the rule (cancel intent primary key, queued control request index, start idempotency index, active acknowledgement index); an item attempt matches either of its two unique indexes, because two requests with one key also compute one attempt index, but only when an attempt with this key now exists. Any other duplicate keeps its meaning | Gate §13.5 "duplicate keys"; review R1, R2 |
+| D19 | **Audit invariant failures are not refusals.** The unit's and recorder's programming errors (gate §13.4 preconditions, a missing primary row, an undeclared action, an actor that cannot be recorded, a detail schema defect) throw `AuditInvariantException`, an `InvalidOperationException` as the gate states. The run action endpoints that map `InvalidOperationException` to 400 or 409 (direct starts, run retry, park, resume, blocked-work retry) exclude it, so it reaches the host's handler as a 500 | Gate §13.4; review R4 |
+| D20 | **A confirmed commit is never reported as a refusal.** When verification confirms a commit and the operation's reconstruction then fails, the unit throws `AuditCommittedResultUnavailableException` (not an `InvalidOperationException`), which the host maps to 500 with `code: committed_result_unavailable` and the operation event id: the change is applied, and the client reloads instead of repeating it | Gate §13.5 reconstruction; review R3 |
+| D21 | The run timeline names a cancel requester only on the lifecycle event of that same intent (the intent's `RequestedAt` equals the event's `OccurredAt`; both are written from one timestamp). An operation run's cancel intent is removed when the run completes (`OperationStartRequestProcessor`), and a later cancel writes a new one; the earlier event then shows no requester instead of the later one | Review R5 |
+| D22 | Request-row lifetime. Start requests, workflow cancel intents, control requests, item attempts and acknowledgements are never deleted. Operation cancel intents are removed when the run completes (pre-existing). The durable attribution is the audit row, which the gate keeps indefinitely (§20); the request row's requester is operational state. No persistence change is made: none is required by the gate, and keeping operation cancel intents would change the worker's cancel semantics. The timeline shows no requester on such an event (D21); AUD-1.5b can read it from the run's audit rows if the presentation needs it | Gate §20, §22; review R6 |
+| D23 | A blocked-work retry whose definition is not executable is recorded once, as the recovery channel's `recovery.blocked_work.retry_refused`. `WorkflowRetryService` writes `execution.workflow_retry.blocked` only on the run channel; before, both rows were written for one refusal | Review R7 |
+| D24 | The bulk retry result summary in the UI no longer counts an `OutcomeUnknown` item as "could not be dispatched": it says the item's retry could not be confirmed and to reload before retrying it. The server counts it in `FailedCount`, unchanged | Review R8 |
 
 ## 4. Acceptance mapping
 
@@ -105,33 +119,45 @@ Catalog: 147 actions from AUD-1.1, 12 from AUD-1.2 and 9 added here (`AuditActio
 
 Builds: `--artifacts-path artifacts/aud13`, `-m:1`. SQL Server: the local `apperture-test-sql` container (new SQL suites fail, never skip, without it, and each writes `EXECUTED against SQL Server catalog …`). Results are in §10 and are tied to the commits they ran on.
 
-Mutation evidence: **not produced.** The plan was to apply each of four mutations alone, rebuild, run the named tests and restore the file: (M-D) cancel stops recording `RequestedBy`; (M-E) the start service stops replacing a caller-supplied requester; (M-F) the item-retry attempt records no requester; (M-G) the cancel's unique-index race handler removed. The harness refused the first edit as audit tampering, and no workaround was attempted. The tests' specificity is argued from their assertions only: each compares the request row's requester with the audit row's actor and a caller-supplied `usr_forged` value, each atomicity test fails the audit insert and counts every table, and each race test lands a competing insert deterministically before the unit's own. Those are the mutations a reviewer should run; §8 asks for a decision.
+Mutation evidence at first implementation: **not produced** (superseded by §11.5, where the mutations were run with the owner's authorization). The plan was to apply each of four mutations alone, rebuild, run the named tests and restore the file: (M-D) cancel stops recording `RequestedBy`; (M-E) the start service stops replacing a caller-supplied requester; (M-F) the item-retry attempt records no requester; (M-G) the cancel's unique-index race handler removed. The harness refused the first edit as audit tampering, and no workaround was attempted. The tests' specificity is argued from their assertions only: each compares the request row's requester with the audit row's actor and a caller-supplied `usr_forged` value, each atomicity test fails the audit insert and counts every table, and each race test lands a competing insert deterministically before the unit's own. Those are the mutations a reviewer should run; §8 asks for a decision.
 
 ## 7. Findings and follow-ups
 
+As amended by the completion pass (§11). Resolved findings are listed in §11.3.
+
 | Finding | Severity | Owner |
 |---|---|---|
-| Bulk retry and attention acknowledge and reopen are W1 by gate §13.1 and belong to no package. They still write through the bridge, with real actors, and the bulk summary rows are not atomic with any change (the changes are the per-item retries, which are now atomic) | Medium (coverage gap, not a defect: AUD-1.6's M2 would fail on them) | **Decision needed** (§8) |
-| Lifecycle events carry no actor column. The timeline shows the requester of the start (from the start request) and of the cancel (from the cancel intent). A park or resume is shown through its control request, which already carried the actor; a retry's requester is on the retry run's own start request and is not joined onto the original run's `retry_requested` event | Low | AUD-1.5b |
+| ~~Bulk retry and attention acknowledge and reopen belong to no package~~ | | **Resolved:** assigned to AUD-1.3 and converted (§11.2) |
+| Lifecycle events carry no actor column. The timeline shows the requester of the start (from the start request) and of the cancel (from the cancel intent of that same event, D21). A park or resume is shown through its control request, which already carried the actor; a retry's requester is on the retry run's own start request (linked from the original run's `retry_requested` event by `RelatedRunId`) and is not joined onto that event | Low | AUD-1.5b |
+| The Run detail page renders the timeline actor as raw text (`RunDetail.razor:474`, gate §18 row 3), so operators now see user ids and `system:scheduler` where the cell was empty. The page already showed raw worker and control-request ids. The data is AUD-1.3's; its presentation is gate §18's AUD-1.5b (A1.5b-6) | Low | AUD-1.5b |
 | `OperationRuns` has no requester. Reading it needs the start request | Low | AUD-1.5b / AUD-1.5 |
 | `WorkflowStartRequests.RequestedBy` and `OperationStartRequests.RequestedBy` are null for every request made before this release | Informational | None. No row is invented |
-| Direct start controllers still catch `InvalidOperationException` from dispatch for business errors, so an invariant failure of the unit reads as 400 | Low | Proposed AUD-1.6 (same pre-existing pattern as AUD-1.2's §8) |
+| ~~Direct start controllers map an invariant failure of the unit to 400~~ | | **Resolved** for every run action endpoint this package converted (D19). The identity and governance endpoints of AUD-1.2 keep their broad `InvalidOperationException` catches; an audit invariant failure there still reads as 400 or 409 (pre-existing to this package) | AUD-1.6 (enforcement) |
+| An operation run's cancel intent is removed when the run completes, so its requester survives only in the audit row (D22) | Informational | None; AUD-1.5b if the timeline must show it |
+| Cancelling a run that has already finished is accepted and recorded as a `cancel_requested` request (pre-existing behaviour, now recorded truthfully as the durable intent it creates) | Low | Runtime correctness (owner to assign; not an audit defect) |
+| Two concurrent run retries (no idempotency key) can create two retry runs; two item retries with different keys that race for one attempt index fail the loser with a 500 (pre-existing; each committed retry is recorded once, by its own requester) | Low | Runtime correctness (owner to assign) |
+| An item retry does not check the dispatch result's `IsReplay`. A replay needs a start request with the item's dispatch key but no attempt with the item's key, which only partial pre-AUD-1.3 state could produce | Low | None now; reopen if such state is found |
+| The unit of work does not refuse pending changes already tracked on the scoped context when it opens, so an earlier unsaved change in the same request would commit inside the unit (AUD-1.1 design; no converted path leaves one) | Low | AUD-1.6 (M5 audited-entity interceptor) |
+| Parameter names on the direct start endpoints are the caller's own keys and are recorded as operator-supplied identifiers (bounded, identifier-shaped, at most 64). The gate records names, never values (§12.3) | Informational | None |
 | A cancel race against an existing intent from a different operator records nothing for the loser; the winner's own row is the record | Informational | None |
 
 The AUD-1.2 findings owned by AUD-1.3 stay as recorded there: the approval reconstruct read, the preference-endpoint `.First()`, the contact-verification clock and the `EmergencyAccessService` housekeeping. They are housekeeping of the identity family and were not part of this package's scope (the gate names none of them); they are carried forward with the same owner.
 
 ## 8. Decisions needed before PR preparation
 
-1. **Who converts bulk retry and attention acknowledge and reopen?** Both are listed W1 in gate §13.1, are on the append bridge, and are in no package's scope. They are operator run actions with real actors, in the same service family. Recommended: a follow-up inside AUD-1.3 before its PR, reusing the pattern here, or the AUD-1.4 package with the gate amended to say so. Left unconverted so this package stays within the gate's wording.
-2. **Mutation evidence.** The mutations in §6 were not run because the harness refused to edit audit attribution code even temporarily. Either the owner runs M-D to M-G, or the owner permits the temporary edits and they are run before the PR.
-3. Nothing else needs a product decision. Routine choices (D1 to D15) were made here.
+Both questions first raised here were answered by the owner on 2026-10-07:
+
+1. **Bulk retry and attention acknowledge and reopen** were assigned to AUD-1.3, with a narrow ownership clarification in the gate (§22) that leaves their requirements unchanged. Converted in §11.2; row cardinality in D16 and D17.
+2. **Mutation evidence.** Temporary source mutations were authorized, provided they are reverted, never committed and touch no live audit data, and without overriding tool permission controls. Results in §11.5.
+
+No product decision is open. Two package choices the owner may want to confirm at review: D16 (a bulk retry records its item rows and no batch row) and D22 (no persistence change for removed operation cancel intents).
 
 ## 9. Scope remaining
 
 - **AUD-1.4:** configuration lifecycle (including runtime shutdown requests and their `RequestedBy`).
 - **AUD-1.5:** query contract, the denial actor (`audit.read.denied`), transition-only blocked writing for the scheduler.
 - **AUD-1.5b:** the timeline and Run detail presentation of the data this package records.
-- **AUD-1.6:** enforcement (M2 needs the bulk and attention decision above).
+- **AUD-1.6:** enforcement. With bulk retry and attention converted, no AUD-1.3 W1 action is written through the append bridge.
 - IAM-10, IAM-11, OPS-1 and RCV-1 keep their findings. IAM-9 stays closed. RC1 is incomplete.
 
 ## 10. Results
@@ -147,3 +173,90 @@ Commits: `b458654` (requester on start requests and joinable dispatch), `4ede7a0
 | `Apperture.IntegrationTests.Audit` (all audit SQL suites), `ManagementHostGovernanceHttpTests` and `BrowserRequestTrustHttpTests` (the real host, so the new dependency graph resolves), `WorkflowExternalControlSqlServerTests`, `RecoveryWorkflowRemediationSqlServerTests` | 220 / 220 passed in 17 m 41 s |
 
 Not run for this package, with the reason: the full `Apperture.IntegrationTests` run (the classes above cover everything the change touches; PR CI runs the whole suite), the UI shared and client test projects and the SEC-1 browser suite (no UI code or browser-facing route changed; the run timeline shows two more actor strings through the same DTO), the IAM-9.5 UI evidence opt-in, and any real-tenant sign-in. Results from AUD-1.2's review (478 / 478 integration, 61 / 61 browser) belong to that head and are not repeated here. The pull request's CI on the final head is the complete build-and-test and browser-security checkpoint.
+
+## 11. Completion and independent review (2026-10-07)
+
+### 11.1 Baseline and commits
+
+Verified before editing: branch `aud-1.3-operator-action-attribution` at `fdef8fa`, base `origin/master` at `78feee3` (also the merge base), working tree clean apart from the untracked `bash.exe.stackdump`, which this pass leaves alone. Read: the RC1 program gate, the AUD-1.0 design gate (revision 3) and this record.
+
+**`4ede7a0` to `fdef8fa`.** Documentation only: this record (149 lines added) and one line in the audit-hardening README. No code changed between the tested commit and the head, so §10's results stand for `fdef8fa`.
+
+**"Vitest counts".** The word appears nowhere in the repository: not in this record, the gate, the API contracts, the commit messages or any project file. No Vitest suite exists (the only JavaScript test, `toast-gesture.test.mjs`, uses Node's built-in runner and is unrelated). The wording was in a handback summary, not in a repository document, so there is nothing to correct here; no Vitest result is or was claimed.
+
+Commits of this pass:
+
+| Commit | Content |
+|---|---|
+| `fa26897` | The bulk retry and attention conversions, the review fixes and their tests (code and tests only) |
+| The documentation commit that follows | This section, the amendments to §1 to §9, the gate's §22 ownership clarification and §27 row, and `docs/04-api/contracts.md`. It changes no code |
+
+### 11.2 Newly assigned conversions
+
+The owner assigned bulk item retry and failed-item attention acknowledge and reopen to AUD-1.3 (gate §22 ownership clarification; requirements unchanged).
+
+- **Acknowledge and reopen** (`OperationItemAttentionService`): one audited unit per request; every acknowledgement or reopening and one row on the run commit together (D17). The acknowledging user is the unit's actor. Permission and request validation stay before the unit; every per-item read (item, group, status, the active acknowledgement) repeats inside it. A request that changes no item declares a no-op. Lost acknowledgement: the result is rebuilt from the row's item list. The stores report a lost race instead of returning the winner (D18), and a reopen is a conditional update.
+- **Bulk retry** (`BulkOperationItemRetryService`): orchestration only. Each item is the existing single-item unit, now naming the batch (`bulkRequestId`, set by the service, never by a body). The best-effort `bulk_retry.requested` row written before any work and the `bulk_retry.completed` summary are removed (D16). Per-item results, partial success and per-item `OutcomeUnknown` are unchanged; a SQL test shows an item whose unit fails leaves the committed item and its row in place.
+
+Converted-writer inventory after this pass: start (workflow and operation, direct and procedure), cancel (workflow and operation), park, resume, workflow retry and blocked-work retry, single-item retry (requested and blocked), bulk item retry (through the single-item unit), attention acknowledge and reopen; W3 refusals and denials beside them; and the scheduler operations (W4). `Aud13ConvertedWritersTests` pins that none of the converted files uses the append bridge or names a placeholder actor, and lists every start-request construction site.
+
+### 11.3 Review findings and resolutions
+
+The review read the source against the gate rather than the earlier summary, with two independent read-only reviewers (atomicity and races; actor, target, persistence and timeline) whose findings were checked against the code before acting.
+
+| # | Finding | Branch-introduced? | Resolution |
+|---|---|---|---|
+| R1 | **Blocked item retry race.** Two requests with one key: the loser's insert failed, the store returned the winner's attempt, and the guard (`status != Blocked`) could not tell a blocked winner from its own attempt, so the loser staged `retry_blocked` for the winner's attempt under its own name | Yes (before, only a response message) | `TryCreateAsync` reports the lost race; the loser declares a no-op and reports the winner as a replay (D18). SQL tests for the blocked and requested paths |
+| R2 | Duplicate detection matched any 2601 or 2627 (cancel, park, the start dispatch services) | Yes for the joined paths | Matched on the named key or index (D18); cancel re-reads that the winning intent exists before answering `true`. The dispatch services also detach their losing rows on their own-transaction path, so nothing stale stays tracked |
+| R3 | A reconstruction that throws after a confirmed commit would surface as a 400 or 409 (an `InvalidOperationException`) or a generic 500 without the operation id | Yes | `AuditCommittedResultUnavailableException`, mapped to 500 `committed_result_unavailable` with the operation event id (D20). SQL test |
+| R4 | The unit's own invariant failures are `InvalidOperationException`s, which run retry, park, resume, blocked-work retry and the direct starts mapped to 409 or 400 | Yes (these paths are new to the unit) | `AuditInvariantException`, excluded by those endpoints (D19). The identity and governance endpoints of AUD-1.2 keep their broad catches (§7, owner AUD-1.6) |
+| R5 | The operation-run timeline attributed every `cancel_requested` event to whichever intent existed, so after an intent was removed and another written, an earlier event showed the later requester | Yes | Matched by timestamp (D21). Unit test |
+| R6 | Operation cancel intents are deleted when a run completes, so the request row's requester does not last | No (deletion pre-exists); the question is whether it is a required persistence change | Not required: the audit row is the durable record (gate §20); no persistence change, recorded as D22 for the owner to confirm |
+| R7 | A blocked-work retry refused for a non-executable definition wrote two refusal rows | No (both rows pre-existed; this package gave them real actors) | Recorded once, by the recovery channel (D23) |
+| R8 | The bulk retry summary counted `OutcomeUnknown` items as "could not be dispatched" | Yes (the category is new) | Summary says the retry could not be confirmed (D24). UI shared test |
+| R9 | Bulk retry and attention on the append bridge | n/a | Converted (§11.2) |
+
+Confirmed correct, with evidence in source and tests: the dispatch services join the unit's transaction and never commit; every losing path declares a no-op, so the unit rolls back and clears the change tracker; EF Core 10 takes a savepoint around each save inside the unit's transaction and a unique violation ends only the statement (no `XACT_ABORT`, no MARS), so the unit's transaction and its operation lock survive a lost race; the operation event id is generated once before the execution strategy; verification runs before any rerun; `outcome_unknown` reaches the host's handler on every converted endpoint; requesters come only from `transaction.Actor.RecordedValue` (a caller value is overwritten; the scheduler records `system:scheduler`; the worker's `ClaimedBy` and `AppliedBy` stay separate); no placeholder actor remains; historical `RequestedBy` stays null (the migration adds two nullable columns and backfills nothing); targets match the catalog, and the targetless refusals and denials (start blocked, recovery retry denied, scheduler operations) are rows about something that may not exist; starts record parameter names only.
+
+### 11.4 Timeline and read contract
+
+Exactly what changed for readers on this branch:
+
+- `RunTimelineQueryService`: "Run requested" carries the start request's `RequestedBy`; a `cancel_requested` lifecycle event carries the requester of the intent written with it (D21). No other event gains an actor. No DTO, client model, API route or Razor component changed. `RunDetail.razor:474` renders the actor string as it always has, so operators now see user ids and `system:scheduler` there (§7; presentation is AUD-1.5b).
+- Bulk retry: the `OutcomeUnknown` item category (first implementation) and the UI summary's wording for it (`OperationItemizationUiHelpers.FormatBulkRetryResultSummary`, this pass).
+- Responses: 500 `outcome_unknown` on the converted actions (first implementation), 500 `committed_result_unavailable` (this pass), and a 500 instead of 400 or 409 for an audit invariant failure on the run action endpoints. Documented in `docs/04-api/contracts.md`.
+
+No broader timeline redesign and no `UserRef` adoption were started.
+
+### 11.5 Mutation evidence
+
+Authorized by the owner on 2026-10-07: temporary source edits, each applied alone on top of `fa26897`, rebuilt, run against the named tests, then restored with `git checkout`; none was committed and none touched live audit data (every SQL test runs in its own scratch catalog). This time the tool accepted each edit; nothing was worked around. After the fourth, `git diff fa26897 -- src tests` was empty.
+
+| Mutation | Edit | Intended assertion that failed |
+|---|---|---|
+| M-D: cancel stops recording its requester | `WorkflowCancelService`: `RequestedBy = null` | SQL `A_cancel_commits_its_intent_its_event_and_its_row_with_one_actor`: expected `WorkflowCancelRequests.RequestedBy` to be the user, found null. Unit `RequestCancelAsync_PersistsCancelIntent_Idempotently`: expected `usr_unit_test_actor`, found null |
+| M-E: a start stops replacing a forged requester | `AuditedExecutionStartService`: `StartAsync(request)` instead of `request with { RequestedBy = … }` | SQL `A_workflow_start_commits_the_run_its_request_and_its_row_with_the_actor_the_unit_resolved`: expected `WorkflowStartRequests.RequestedBy` to be the user, found `usr_forged` |
+| M-F: an item retry omits its requester | `OperationItemRetryService`: `RequestedByActorId: null` on the requested attempt | SQL `An_item_retry_commits_…_with_one_actor`: expected `RequestedByActorId` to be the user, found null. SQL `A_bulk_retry_commits_each_item_…`: expected 2 attempts by the user, found 0 |
+| M-G: the cancel race handler removed | `WorkflowCancelService`: the duplicate filter made never to match | SQL `A_cancel_that_loses_a_race_for_the_one_intent_commits_nothing_and_records_nothing`: after the competing insert fired, the call under test threw `DbUpdateException` (`PK_WorkflowCancelRequests`) instead of answering `true` and recording nothing |
+
+Every failure is the step the test exists for, after its setup completed; none is a setup failure. The unmutated tree passes the same tests (§11.6).
+
+### 11.6 Validation
+
+Builds: `Apperture.slnx`, `--artifacts-path artifacts/aud13`, `-m:1`. SQL Server: the local `apperture-test-sql` container; the SA password was read from the container's own environment into the test process, never placed on a command line. Every SQL test of `OperatorActionAuditSqlServerTests` writes `EXECUTED against SQL Server catalog …` (38 markers in the 38-test run) and fails, never skips, without SQL Server.
+
+The results below ran on the tree committed as `fa26897` (the code is identical; the runs preceded the commit, and the mutation runs that followed were reverted to that tree).
+
+| Check | Result |
+|---|---|
+| Full solution build | Succeeded, 0 errors |
+| `Apperture.UnitTests` (full) | 3927 / 3927 passed |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `Apperture.Management.Ui.Shared.Tests` (full; the bulk retry summary changed) | 1490 / 1490 passed |
+| `Apperture.Management.Ui.Client.Tests` (full; the itemization panel renders that summary) | 511 / 511 passed |
+| `OperatorActionAuditSqlServerTests` (SQL Server) | 38 / 38 passed in 6 m 5 s: the 27 of §10 plus the item-retry race (blocked and requested), confirmed commit with a failing reconstruction, bulk retry (rows per item naming the batch with no batch row; a failing second item leaves the first), acknowledge (commit, audit failure, lost acknowledgement, unknown outcome, lost race) and reopen (commit, and a lost race that neither overwrites nor records) |
+| `Apperture.IntegrationTests.Audit` (all audit SQL suites, including the above), `WorkflowExternalControlSqlServerTests`, `RecoveryWorkflowRemediationSqlServerTests`, `OperationItemizationSqlServerTests` (the retry attempt store), `ManagementHostGovernanceHttpTests` and `BrowserRequestTrustHttpTests` (the real host, so the changed dependency graph resolves) | 235 / 235 passed in 27 m 40 s |
+
+After the mutations were restored, the tree checked out at `fa26897` was rebuilt (0 errors) and rerun: `Apperture.UnitTests` 3927 / 3927 and `OperatorActionAuditSqlServerTests` 38 / 38 passed.
+
+Not run, with the reason: the full `Apperture.IntegrationTests` run and the SEC-1 browser suite (the classes above cover what this pass touched; no browser-facing route changed; PR CI runs both); the IAM-9.5 UI evidence opt-in; any real-tenant sign-in.
