@@ -4,6 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
+/// <remarks>
+/// Lookups are untracked: a flow reads a link before its audited unit and again inside it, and the second read must come from
+/// the database. A tracked first read would make EF return that same instance, so a link consumed or revoked by another
+/// request in between would still look active inside the transaction (AUD-1.2 review). <see cref="UpdateAsync"/> loads the
+/// row it changes itself.
+/// </remarks>
 public sealed class SqlAccountActionTokenRepository : IAccountActionTokenRepository
 {
     private readonly AppertureDbContext _db;
@@ -19,6 +25,7 @@ public sealed class SqlAccountActionTokenRepository : IAccountActionTokenReposit
     public async ValueTask<AccountActionTokenRecord?> FindByHashAsync(string tokenHash, CancellationToken cancellationToken = default)
     {
         var entity = await _db.AccountActionTokens
+            .AsNoTracking()
             .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
         return entity is null ? null : ToRecord(entity);
     }
@@ -30,6 +37,7 @@ public sealed class SqlAccountActionTokenRepository : IAccountActionTokenReposit
         CancellationToken cancellationToken = default)
     {
         var rows = await _db.AccountActionTokens
+            .AsNoTracking()
             .Where(t =>
                 t.UserId == userId.Value
                 && t.Purpose == (int)purpose
@@ -46,6 +54,7 @@ public sealed class SqlAccountActionTokenRepository : IAccountActionTokenReposit
         CancellationToken cancellationToken = default)
     {
         var entity = await _db.AccountActionTokens
+            .AsNoTracking()
             .Where(t => t.UserId == userId.Value && t.Purpose == (int)purpose)
             .OrderByDescending(t => t.CreatedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);

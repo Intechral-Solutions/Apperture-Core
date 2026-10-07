@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Audit;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -352,6 +354,52 @@ public sealed class AccountServicesAuditSqlServerTests : IAsyncLifetime
 
         attempts.Started.Should().Be(1);
         (await _db.ScalarAsync<string>($"SELECT TokenHash FROM AccountActionTokens WHERE UserId = N'{user}';")).Should().Be(Hash(mail.SingleLink()));
+    }
+
+    [Fact]
+    public async Task A_reset_link_used_by_another_request_after_this_one_read_it_is_refused_inside_the_transaction()
+    {
+        // AUD-1.2 review: the flow reads the link before its unit (to name the actor) and again inside it. The second read must
+        // come from the database, not from the context's tracked copy of the first, or a link consumed in between is used twice.
+        var (user, username) = await AddUserAsync("reused");
+        await _db.ExecuteAsync($"UPDATE Users SET EmailAddress = N'reused@example.com', EmailVerifiedAtUtc = SYSDATETIMEOFFSET() WHERE Id = N'{user}';");
+        await using (var db = _db.NewDb())
+            await new SqlLocalCredentialRepository(db).SetPasswordAsync(new UserId(user), "original-hash", "salt", "pbkdf2");
+        var mail = new RecordingMail();
+        await using (var db = _db.NewDb())
+            await Forgotten(db, mail).RequestAsync(username);
+        var link = mail.SingleLink();
+
+        // Another request completes with the same link after this one's first read, before its transaction starts.
+        var usedElsewhere = new BeforeFirstTransaction(() => _db.ExecuteAsync(
+            $"UPDATE AccountActionTokens SET ConsumedAtUtc = SYSUTCDATETIME() WHERE UserId = N'{user}' AND ConsumedAtUtc IS NULL;"));
+        await using (var db = _db.NewDb(usedElsewhere))
+        {
+            var act = () => Forgotten(db, new RecordingMail()).CompleteAsync(link, "quiet-maple-lantern-harbor").AsTask();
+            (await act.Should().ThrowAsync<AccountSecurityException>()).Which.Code.Should().Be(AccountSecurityErrorCodes.TokenInvalid);
+        }
+
+        usedElsewhere.Ran.Should().BeTrue();
+        (await _db.ScalarAsync<string>($"SELECT PasswordHash FROM LocalCredentials WHERE UserId = N'{user}';")).Should().Be("original-hash");
+        (await RowsAsync("user", user)).Should().NotContain(r => (string)r["Action"]! == AuditActionNames.PasswordResetCompleted);
+    }
+
+    /// <summary>Runs an action from another session once, just before this context starts its first transaction.</summary>
+    private sealed class BeforeFirstTransaction(Func<Task> action) : DbTransactionInterceptor
+    {
+        public bool Ran { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection, TransactionStartingEventData eventData, InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
+        {
+            if (!Ran)
+            {
+                Ran = true;
+                await action();
+            }
+
+            return result;
+        }
     }
 
     [Fact]
