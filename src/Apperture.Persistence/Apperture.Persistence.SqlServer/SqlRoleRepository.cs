@@ -101,6 +101,19 @@ public sealed class SqlRoleRepository : IRoleRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<PermissionSetChange> ReplacePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
+    {
+        // The change is computed from the row this save replaces. Its RowVersion concurrency token makes the save fail if
+        // anyone changed the row after this read, so the diff is exactly what committed.
+        var entity = await _db.Roles.FirstOrDefaultAsync(e => e.Id == roleId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        var change = PermissionSetChange.Between(DeserializePermissions(entity.PermissionsJson), permissions);
+        entity.PermissionsJson = SerializePermissions(permissions);
+        await _db.SaveChangesAsync(cancellationToken);
+        return change;
+    }
+
+    /// <inheritdoc />
     public async ValueTask CreateAsync(Role role, CancellationToken cancellationToken = default)
     {
         _db.Roles.Add(new RoleEntity

@@ -150,10 +150,3 @@ public sealed class AuditActionCatalog
         Require(d.Details is null || d.WriteClass != AuditWriteClass.ListedException, "listed exceptions have no recorder producer");
     }
 }
-
-/// <summary>Action names owned by the audit foundation.</summary>
-public static class AuditActionNames
-{
-    public const string UsernameChanged = "governance.user.username.changed";
-    public const string RecoveryAccessCanonicalized = "emergency.access.canonicalized";
-}

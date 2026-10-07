@@ -22,11 +22,17 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
         var recorded = new RecordedOperation(operation);
         Operations.Add(recorded);
         var result = await attempt(recorded, cancellationToken);
-        if (!recorded.NoOp && recorded.Staged.All(e => e.Action != operation.PrimaryAction))
+        if (!recorded.NoOp && !recorded.Staged.Any(e => operation.AcceptsPrimary(e.Action)))
             throw new InvalidOperationException($"The operation expected a '{operation.PrimaryAction}' row and staged none.");
-        recorded.Completed = true;
+        recorded.Completed = !recorded.NoOp;
         return result;
     }
+
+    /// <summary>The actions of every committed staged event, in order.</summary>
+    public IReadOnlyList<string> Actions => Staged.Select(e => e.Action).ToList();
+
+    /// <summary>The single committed event of <paramref name="action"/>.</summary>
+    public AuditEvent Single(string action) => Staged.Single(e => e.Action == action);
 
     internal sealed class RecordedOperation(AuditedOperation operation) : IAuditedTransaction
     {

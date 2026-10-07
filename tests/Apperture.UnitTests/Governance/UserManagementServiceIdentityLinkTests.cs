@@ -1,8 +1,8 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -203,8 +203,11 @@ public sealed class UserManagementServiceIdentityLinkTests
     private static UserManagementService NewService(
         InMemoryUserRepository repo,
         IEntraIdentityAssociationService? entraAssociation = null,
-        bool soleAdmin = false) =>
-        new(
+        bool soleAdmin = false,
+        AuditRecording? audit = null)
+    {
+        audit ??= new AuditRecording();
+        return new(
             new StubPrincipalContext(),
             new StubPrincipalToUserResolver(),
             new AllowUserManageAuth(),
@@ -213,10 +216,12 @@ public sealed class UserManagementServiceIdentityLinkTests
             new InMemoryResourceDescriptorRegistry(),
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
-            new StubAuditService(),
             Options.Create(new LocalAuthOptions()),
             entraAssociation,
-            entraAssociation is null ? null : new UsableEntraOptionsMonitor());
+            entraAssociation is null ? null : new UsableEntraOptionsMonitor(),
+            auditedUnitOfWork: audit,
+            auditEvents: audit);
+    }
 
     /// <summary>Stands in for the real association service: pending link with active-registration tenant.</summary>
     private sealed class StubEntraAssociation : IEntraIdentityAssociationService
@@ -470,18 +475,4 @@ public sealed class UserManagementServiceIdentityLinkTests
         public bool VerifyPassword(string password, string hash, string salt) => true;
     }
 
-    private sealed class StubAuditService : IAuditService
-    {
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
-    }
 }

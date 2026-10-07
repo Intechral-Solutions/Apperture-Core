@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.PlatformEvents;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -44,6 +45,11 @@ internal sealed class ManagementHostExceptionHandler(ILogger<ManagementHostExcep
                 ["traceId"] = Activity.Current?.Id ?? httpContext.TraceIdentifier
             }
         };
+        if (mapping.Extensions is not null)
+        {
+            foreach (var (name, value) in mapping.Extensions)
+                problemDetails.Extensions[name] = value;
+        }
 
         httpContext.Response.StatusCode = mapping.StatusCode;
         httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
@@ -74,11 +80,36 @@ internal sealed class ManagementHostExceptionHandler(ILogger<ManagementHostExcep
                 StatusCodes.Status404NotFound,
                 "Not Found",
                 notFound.Message),
+            // An audited operation whose commit could be neither confirmed nor ruled out (audit hardening design gate §13.2):
+            // never "failed" or "unchanged", and never a prompt to retry blindly. The client reloads its state.
+            AuditOutcomeUnknownException unknown => new ExceptionMapping(
+                StatusCodes.Status500InternalServerError,
+                "The outcome could not be confirmed.",
+                "The operation may or may not have been applied. Refresh to confirm before trying again.",
+                new Dictionary<string, object?>
+                {
+                    ["code"] = AuditOutcomeUnknownException.Code,
+                    ["operationEventId"] = unknown.OperationEventId,
+                }),
+            // Verification confirmed a rollback, but the operation could not be completed within its bounded reruns.
+            AuditOperationNotCompletedException notCompleted => new ExceptionMapping(
+                StatusCodes.Status500InternalServerError,
+                "The operation could not be completed.",
+                "Nothing was changed.",
+                new Dictionary<string, object?>
+                {
+                    ["code"] = "operation_not_completed",
+                    ["operationEventId"] = notCompleted.OperationEventId,
+                }),
             _ => new ExceptionMapping(
                 StatusCodes.Status500InternalServerError,
                 "An error occurred while processing your request.",
                 Detail: null)
         };
 
-    internal readonly record struct ExceptionMapping(int StatusCode, string Title, string? Detail);
+    internal readonly record struct ExceptionMapping(
+        int StatusCode,
+        string Title,
+        string? Detail,
+        IReadOnlyDictionary<string, object?>? Extensions = null);
 }

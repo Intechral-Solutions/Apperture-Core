@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Api.Controllers;
@@ -281,10 +282,10 @@ public sealed class ManagementHostSessionIdentityHttpTests
         await services.GetRequiredService<ILocalCredentialRepository>().SetPasswordAsync(id, hash, salt, hasher.AlgorithmName);
 
         var mfa = services.GetRequiredService<INativeMfaService>();
-        await mfa.ResetAsync(id, actorId: null);
+        await mfa.ResetAsync(id, AuditActor.EmergencyCli);
         var enrollment = await mfa.BeginEnrollmentAsync(id, user.Username);
         var secret = Base32.Decode(enrollment.ManualEntryKey);
-        await mfa.CompleteEnrollmentAsync(id, Totp(secret, stepsAhead: 0));
+        await mfa.CompleteEnrollmentAsync(id, Totp(secret, stepsAhead: 0), AuditActor.EmergencyCli);
 
         return new RecoveryAccessAccount(id, user.Username, secret);
     }

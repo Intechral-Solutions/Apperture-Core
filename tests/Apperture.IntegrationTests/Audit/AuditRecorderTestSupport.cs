@@ -81,20 +81,27 @@ internal static class AuditRecorderTestSupport
         VerificationLockWait = TimeSpan.FromMilliseconds(750),
     };
 
-    /// <summary>The production rename service on a SQL context, with the given unit of work.</summary>
-    public static UserManagementService RenameService(AppertureDbContext db, IPrincipalContext principal, IAuditedUnitOfWork unit) =>
+    /// <summary>The production user administration service on a SQL context, with the given unit of work.</summary>
+    public static UserManagementService RenameService(
+        AppertureDbContext db,
+        IPrincipalContext principal,
+        IAuditedUnitOfWork unit,
+        IAuditEventWriter? events = null,
+        IEmergencyAccessService? emergencyAccess = null,
+        IResourceDescriptorRegistry? registry = null) =>
         new(
             principal,
             new NoResolver(),
             new AllowAll(),
             new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
             new SqlRoleRepository(db),
-            new InMemoryResourceDescriptorRegistry(),
+            registry ?? new InMemoryResourceDescriptorRegistry(),
             new SqlLocalCredentialRepository(db),
             new LocalPasswordHasher(),
-            new SqlAuditService(db),
             Options.Create(new LocalAuthOptions()),
-            auditedUnitOfWork: unit);
+            emergencyAccess: emergencyAccess,
+            auditedUnitOfWork: unit,
+            auditEvents: events);
 
     /// <summary>A signed-in person. The display name stands for a session claim the recorder must never trust.</summary>
     public sealed class Principal(string userId, string staleSessionName = "stale.session.name") : IPrincipalContext

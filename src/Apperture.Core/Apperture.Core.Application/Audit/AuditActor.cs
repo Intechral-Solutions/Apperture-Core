@@ -66,11 +66,28 @@ public sealed record AuditActor
     }
 
     /// <summary>
+    /// The user whose credentials this request's own sign-in flow has just verified. A sign-in has no principal context
+    /// yet (the session does not exist), so the flow names the user it authenticated. Only the sign-in and step-up flows
+    /// use this; every other operation records <see cref="CurrentPrincipal"/>, and a person is never passed in from
+    /// request input. A test pins the call sites.
+    /// </summary>
+    public static AuditActor AuthenticatedUser(Apperture.Core.Domain.Identity.UserId user) =>
+        ForUser(user.Value);
+
+    /// <summary>
     /// An identity verified by an external provider in the current request, with no platform user (§10.4). The triple
     /// must come from a validated authentication result, never from request input.
     /// </summary>
     internal static AuditActor ForExternal(AuditExternalActor external) =>
         new(AuditActorKinds.External, null, null, external ?? throw new ArgumentNullException(nameof(external)));
+
+    /// <summary>
+    /// An identity authenticated by an external provider in the current request, for which no platform user is the actor
+    /// (§10.4, OR-2): provider, tenant id and object id, all taken from the validated principal. Never from a request body,
+    /// query string, header or typed value; failed or unvalidated authentication is <see cref="Anonymous"/>. A test pins
+    /// the call sites to the flows that hold a validated principal.
+    /// </summary>
+    public static AuditActor ValidatedExternalIdentity(AuditExternalActor external) => ForExternal(external);
 
     /// <summary>The verbatim <c>Actor</c> column value: a user id, a literal, or the canonical external key.</summary>
     public string RecordedValue =>

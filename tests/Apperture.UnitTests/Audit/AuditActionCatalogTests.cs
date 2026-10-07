@@ -97,10 +97,16 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Get(action).WriteClass.Should().Be(expected);
 
     [Fact]
-    public void Only_the_two_AUD_1_1_actions_have_recorder_producers_and_data_access_is_reserved()
+    public void The_converted_actions_are_exactly_the_named_recorder_actions_and_data_access_is_reserved()
     {
-        Catalog.Definitions.Where(d => d.Details is not null).Select(d => d.Action)
-            .Should().BeEquivalentTo([AuditActionNames.UsernameChanged, AuditActionNames.RecoveryAccessCanonicalized]);
+        // An action has a detail schema (and so a typed producer) exactly when it is named in AuditActionNames: AUD-1.1's
+        // two actions plus each family AUD-1.2 to AUD-1.4 convert. Every other action stays on the append bridge.
+        var named = typeof(AuditActionNames).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral)
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+        named.Should().OnlyHaveUniqueItems();
+        Catalog.Definitions.Where(d => d.Details is not null).Select(d => d.Action).Should().BeEquivalentTo(named);
         Catalog.Definitions.Should().NotContain(d => d.Category == AuditCategories.DataAccess);
         AuditCategories.All.Should().Contain(AuditCategories.DataAccess);
     }

@@ -30,7 +30,21 @@ public interface IAuditedUnitOfWork
 /// <summary>The identity of one W1 operation.</summary>
 /// <param name="PrimaryAction">The action whose row identifies the operation (<c>Expect(primaryAction)</c>).</param>
 /// <param name="Actor">Who performs it: <see cref="AuditActor.CurrentPrincipal"/>, or a named non-human entry.</param>
-public sealed record AuditedOperation(string PrimaryAction, AuditActor Actor);
+/// <param name="AlternatePrimaryActions">
+/// Other actions that may identify the operation, for an operation whose primary row depends on state it reads inside its
+/// transaction (for example an invitation that is sent for the first time or resent). Exactly one primary row is staged,
+/// and verification accepts any of the declared actions as the matching event (§13.5).
+/// </param>
+public sealed record AuditedOperation(
+    string PrimaryAction,
+    AuditActor Actor,
+    IReadOnlyList<string>? AlternatePrimaryActions = null)
+{
+    /// <summary>True when <paramref name="action"/> may identify this operation.</summary>
+    public bool AcceptsPrimary(string action) =>
+        string.Equals(action, PrimaryAction, StringComparison.Ordinal)
+        || AlternatePrimaryActions?.Contains(action, StringComparer.Ordinal) == true;
+}
 
 /// <summary>The open audited transaction of one attempt.</summary>
 public interface IAuditedTransaction
@@ -98,14 +112,15 @@ public sealed class AuditOperationNotCompletedException(string operationEventId,
 
 /// <summary>
 /// Writes single-row events on a context of their own (§13.4), so they never flush a caller's pending changes:
-/// <see cref="WriteAsync"/> for W2 and W3 (the row commits before the method returns; a failure throws), and
-/// <see cref="TryWriteAsync"/> for W4 (best effort, logged, never throws).
+/// <see cref="WriteAsync"/> for W2 (the row commits before the method returns; a failure throws, so the result the row
+/// describes is not delivered), and <see cref="TryWriteAsync"/> for W3 and W4 (attempts, refusals, sign-out and telemetry:
+/// best effort, logged, never throws, the caller's response unchanged).
 /// </summary>
 public interface IAuditEventWriter
 {
     /// <summary>Commits the row in its own short transaction, reusing its event id on retry.</summary>
     Task WriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default);
 
-    /// <summary>As <see cref="WriteAsync"/>, but a failure is logged and reported as false.</summary>
+    /// <summary>As <see cref="WriteAsync"/>, but for W3 and W4 events: a failure is logged and reported as false.</summary>
     Task<bool> TryWriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default);
 }

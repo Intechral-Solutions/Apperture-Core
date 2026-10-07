@@ -66,9 +66,16 @@ public sealed class AuditDetailSchemaTests
         Enum.GetNames<AuditFieldKind>().Should().BeEquivalentTo(
             ["Id", "Enum", "Count", "Flag", "Timestamp", "Username", "NameSnapshot", "OperatorText", "IdList"]);
         var producers = typeof(AuditEvents).GetMethods(BindingFlags.Public | BindingFlags.Static);
-        producers.SelectMany(m => m.GetParameters()).Select(p => p.ParameterType)
-            .Should().OnlyContain(t => t == typeof(string) || t == typeof(UserId) || t == typeof(UsernameChangeOutcome),
-                "producers take typed values, never an arbitrary field name or a credential type");
+        var allowed = new[]
+        {
+            typeof(string), typeof(int), typeof(bool), typeof(UserId), typeof(RoleId), typeof(IdentitySource),
+            typeof(UsernameChangeOutcome), typeof(PermissionSetChange), typeof(IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>),
+        };
+        var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
+        parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),
+            "producers take typed values, never an arbitrary field name, a dictionary or a credential type");
+        parameters.Should().NotContain(p => AuditDetailSchema.IsSensitiveFieldName(p.Name!),
+            "no producer takes a password, token, secret or search value");
     }
 
     [Theory]
@@ -179,8 +186,9 @@ public sealed class AuditDetailSchemaTests
     [Fact]
     public void An_event_cannot_be_built_for_an_action_still_on_the_append_bridge()
     {
+        // Connection lifecycle stays on the bridge until AUD-1.4 converts it.
         var act = () => AuditEvent.Create(
-            AuditActionCatalog.Default.Get("governance.role.created"), null, AuditOutcomeCodes.Succeeded, Values());
+            AuditActionCatalog.Default.Get("connection.created"), null, AuditOutcomeCodes.Succeeded, Values());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*append bridge*");
     }
