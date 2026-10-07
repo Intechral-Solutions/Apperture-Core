@@ -30,7 +30,7 @@ public sealed class UserManagementServiceRenameUsernameTests
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         harness.Users.Changes.Should().BeEmpty();
-        harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Staged.Should().BeEmpty();
         harness.Recorder.Operations.Should().BeEmpty("authorization is refused before the unit of work opens");
     }
 
@@ -56,7 +56,6 @@ public sealed class UserManagementServiceRenameUsernameTests
         audit.Fields["previousUsername"].Should().Be("alice");
         audit.Fields["newUsername"].Should().Be("alice.renamed");
         audit.Fields["change"].Should().Be("assigned");
-        harness.Audit.Records.Should().BeEmpty("the rename no longer goes through the append bridge");
     }
 
     [Fact]
@@ -164,7 +163,7 @@ public sealed class UserManagementServiceRenameUsernameTests
 
         (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(code);
         harness.Users.Changes.Should().BeEmpty();
-        harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -177,7 +176,7 @@ public sealed class UserManagementServiceRenameUsernameTests
 
         (await act.Should().ThrowAsync<EmergencyAccessException>()).Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
         harness.Users.Changes.Should().BeEmpty();
-        harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -188,7 +187,7 @@ public sealed class UserManagementServiceRenameUsernameTests
         var act = () => harness.Service.RenameUsernameAsync(new UserId("ffffffffffffffffffffffff"), "someone.else").AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
-        harness.Audit.Records.Should().BeEmpty();
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -206,7 +205,6 @@ public sealed class UserManagementServiceRenameUsernameTests
     private sealed class Harness
     {
         public InMemoryUsers Users { get; } = new();
-        public RecordingAudit Audit { get; } = new();
         public RecordingRoles Roles { get; } = new();
         public RecordingCredentials Credentials { get; } = new();
         public RecordingAuditedUnitOfWork Recorder { get; } = new();
@@ -229,7 +227,6 @@ public sealed class UserManagementServiceRenameUsernameTests
                 new InMemoryResourceDescriptorRegistry(),
                 Credentials,
                 new StubHasher(),
-                Audit,
                 Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }),
                 auditedUnitOfWork: Recorder);
         }
@@ -334,24 +331,6 @@ public sealed class UserManagementServiceRenameUsernameTests
         }
     }
 
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<AuditRecord> Records { get; } = [];
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Records.Add(record);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
-    }
 
     private sealed class RecordingRoles : IRoleRepository
     {

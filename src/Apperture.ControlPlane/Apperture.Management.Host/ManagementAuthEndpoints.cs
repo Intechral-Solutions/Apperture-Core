@@ -1,9 +1,7 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
 using Apperture.Management.Ui.Shared.Auth;
-using Apperture.Shared.Kernel;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -150,26 +148,17 @@ internal static class ManagementAuthEndpoints
             return;
         }
 
-        var audit = ctx.RequestServices.GetService<IAuditService>();
-        if (audit is not null)
+        // W3 of the signed-in user; the writer never throws, so it never blocks the challenge.
+        var events = ctx.RequestServices.GetService<IAuditEventWriter>();
+        if (events is not null)
         {
-            var record = new AuditRecord(
-                new AuditRecordId(Guid.NewGuid().ToString("N")),
-                new ActorId(userId.Value),
-                StrongAuthenticationAuditActionNames.StepUpInitiated,
-                new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                "auth",
-                DateTimeOffset.UtcNow,
-                new CorrelationId(null),
-                $"userId={userId.Value} requestedContext={requestedContext}");
-            try
-            {
-                await audit.AppendAsync(record, ctx.RequestAborted);
-            }
-            catch
-            {
-                // Auditing must never block the challenge.
-            }
+            await events.TryWriteAsync(
+                AuditEvents.StepUpInitiated(
+                    userId,
+                    requestedContext,
+                    sessionSource == EntraStepUpFlowConstants.SessionSourceEntra ? "entra" : "local"),
+                AuditActor.CurrentPrincipal,
+                CancellationToken.None);
         }
 
         await ctx.ChallengeAsync(

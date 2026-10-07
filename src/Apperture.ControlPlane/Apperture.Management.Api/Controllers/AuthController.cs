@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
@@ -12,6 +13,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Api.Controllers;
@@ -24,14 +26,10 @@ namespace Apperture.Management.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class AuthController : ControllerBase
 {
-    private const string AuthActionLocalLoginSuccess = "auth.local.login.success";
     private const string AuthActionLocalLoginFailed = "auth.local.login.failed";
     private const string AuthActionUnlinkedPrincipal = "auth.unlinked_principal";
-    private const string AuthActionBreakGlassLoginSuccess = "auth.break_glass.login.success";
     private const string AuthActionBreakGlassLoginFailed = "auth.break_glass.login.failed";
     private const string AuthActionBreakGlassRejectedDisabled = "auth.break_glass.rejected_disabled";
-    private const string AuthActionLocalPasswordChangeSuccess = "auth.local.password_change.success";
-    private const string AuthActionLocalPasswordChangeFailed = "auth.local.password_change.failed";
 
     private const string PendingMfaCookieName = "apperture.mfa.pending";
 
@@ -56,6 +54,9 @@ public sealed class AuthController : ControllerBase
     private readonly IAccountContactService? _contact;
     private readonly IAccountActionTokenService? _actionTokens;
     private readonly IRecentAccountVerificationGate? _accountVerification;
+    private readonly ILogger<AuthController>? _logger;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public AuthController(
         IUserRepository userRepository,
@@ -78,8 +79,12 @@ public sealed class AuthController : ControllerBase
         IAccountInvitationService? invitations = null,
         IAccountContactService? contact = null,
         IAccountActionTokenService? actionTokens = null,
-        IRecentAccountVerificationGate? accountVerification = null)
+        IRecentAccountVerificationGate? accountVerification = null,
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null,
+        ILogger<AuthController>? logger = null)
     {
+        _logger = logger;
         _userRepository = userRepository;
         _localCredentialRepository = localCredentialRepository;
         _passwordHasher = passwordHasher;
@@ -101,7 +106,15 @@ public sealed class AuthController : ControllerBase
         _contact = contact;
         _actionTokens = actionTokens;
         _accountVerification = accountVerification;
+        _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
     }
+
+    private IAuditedUnitOfWork AuditedUnit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Password changes require the audited unit of work.");
+
+    private IAuditEventWriter AuditWriter =>
+        _auditEvents ?? throw new InvalidOperationException("Sign-in and password changes require the audit event writer.");
 
     /// <summary>Merged anonymous-safe sign-in capabilities and chooser policy for the management UI.</summary>
     [HttpGet("sign-in-options")]
@@ -227,124 +240,108 @@ public sealed class AuthController : ControllerBase
 
         var userId = await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken);
         if (userId is null)
-        {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(actor.Id.Value),
-                "Authenticated principal not linked to platform user",
-                cancellationToken);
-            return Forbid();
-        }
+            return await RefusePasswordChangeAsync(actor.Id.Value, "not_linked", Forbid());
 
         if (!_localOptions.Enabled)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "Local auth disabled",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
+            return await RefusePasswordChangeAsync(userId.Value, "local_auth_disabled", BadRequest(new LocalPasswordChangeErrorResponse(
                 "Local sign-in is disabled for this deployment.",
-                LocalPasswordChangeErrorCodes.LocalAuthDisabled));
+                LocalPasswordChangeErrorCodes.LocalAuthDisabled)));
         }
 
         if (request.NewPassword is null)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "Missing password fields",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
+            return await RefusePasswordChangeAsync(userId.Value, "missing_new_password", BadRequest(new LocalPasswordChangeErrorResponse(
                 "A new password is required.",
-                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+                LocalPasswordChangeErrorCodes.InvalidNewPassword)));
         }
 
+        // AUD-1.2: every check the change depends on is read in the transaction; the password, the revocation of the
+        // account's password links and the row commit together. A refusal changes nothing and is a W3 row written after.
+        var recentlyVerified = _accountVerification?.GetCurrent().IsSatisfied == true;
+        (string Reason, IActionResult Response)? refusal = null;
+        await AuditedUnit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.LocalPasswordChanged, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                refusal = await CheckPasswordChangeAsync(userId, request, recentlyVerified, ct);
+                if (refusal is not null)
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
+
+                var (hash, salt) = _passwordHasher.HashPassword(request.NewPassword);
+                await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, ct);
+                if (_actionTokens is not null)
+                    await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, ct);
+                await transaction.StageAsync(AuditEvents.LocalPasswordChanged(userId), ct);
+                return true;
+            },
+            (_, _) => Task.FromResult(true),
+            cancellationToken);
+
+        if (refusal is { } refused)
+            return await RefusePasswordChangeAsync(userId.Value, refused.Reason, refused.Response);
+        return NoContent();
+    }
+
+    /// <summary>The first reason the change is refused, read in the change's transaction; null when it may proceed.</summary>
+    private async Task<(string Reason, IActionResult Response)?> CheckPasswordChangeAsync(
+        UserId userId,
+        ChangeLocalPasswordRequest request,
+        bool recentlyVerified,
+        CancellationToken cancellationToken)
+    {
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null)
-        {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "Platform user not found",
-                cancellationToken);
-            return Forbid();
-        }
+            return ("user_not_found", Forbid());
 
         if (EmergencyAccessIdentity.IsSystemManaged(user))
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "System-managed recovery account",
-                cancellationToken);
-            return Conflict(new LocalPasswordChangeErrorResponse(
+            return ("system_managed", Conflict(new LocalPasswordChangeErrorResponse(
                 "This account is system-managed. Use Emergency Access operator tooling to change the password.",
-                LocalPasswordChangeErrorCodes.NoCredential));
+                LocalPasswordChangeErrorCodes.NoCredential)));
         }
 
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "No local identity link",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
+            return ("no_local_identity", BadRequest(new LocalPasswordChangeErrorResponse(
                 "This account does not have a local sign-in credential.",
-                LocalPasswordChangeErrorCodes.NoCredential));
+                LocalPasswordChangeErrorCodes.NoCredential)));
         }
 
         var credential = await _localCredentialRepository.GetByUserIdAsync(userId, cancellationToken);
         if (credential is null)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "No local credential row",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
+            return ("no_credential", BadRequest(new LocalPasswordChangeErrorResponse(
                 "This account does not have a local sign-in credential.",
-                LocalPasswordChangeErrorCodes.NoCredential));
+                LocalPasswordChangeErrorCodes.NoCredential)));
         }
 
         if (credential.IsDisabled)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "Local credential disabled",
-                cancellationToken);
-            return Conflict(new LocalPasswordChangeErrorResponse(
+            return ("credential_disabled", Conflict(new LocalPasswordChangeErrorResponse(
                 "Local sign-in is disabled for this account. Contact an administrator.",
-                LocalPasswordChangeErrorCodes.CredentialDisabled));
+                LocalPasswordChangeErrorCodes.CredentialDisabled)));
         }
 
-        var recentlyVerified = _accountVerification?.GetCurrent().IsSatisfied == true;
         if (!recentlyVerified)
         {
-            if (string.IsNullOrEmpty(request.CurrentPassword)
-                || !_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+            if (string.IsNullOrEmpty(request.CurrentPassword))
             {
-                await AppendAuthAuditAsync(
-                    AuthActionLocalPasswordChangeFailed,
-                    new ActorId(userId.Value),
-                    string.IsNullOrEmpty(request.CurrentPassword)
-                        ? "Recent account verification required"
-                        : "Current password verification failed",
-                    cancellationToken);
-                if (string.IsNullOrEmpty(request.CurrentPassword))
-                {
-                    return StatusCode(
-                        StatusCodes.Status403Forbidden,
-                        new LocalPasswordChangeErrorResponse(
-                            "Verify your identity to change your password.",
-                            LocalPasswordChangeErrorCodes.RecentVerificationRequired));
-                }
+                return ("verification_required", StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new LocalPasswordChangeErrorResponse(
+                        "Verify your identity to change your password.",
+                        LocalPasswordChangeErrorCodes.RecentVerificationRequired)));
+            }
 
-                return BadRequest(new LocalPasswordChangeErrorResponse(
+            if (!_passwordHasher.VerifyPassword(request.CurrentPassword, credential.PasswordHash, credential.Salt))
+            {
+                return ("wrong_current_password", BadRequest(new LocalPasswordChangeErrorResponse(
                     "Current password is incorrect.",
-                    LocalPasswordChangeErrorCodes.WrongCurrentPassword));
+                    LocalPasswordChangeErrorCodes.WrongCurrentPassword)));
             }
         }
 
@@ -354,31 +351,22 @@ public sealed class AuthController : ControllerBase
         }
         catch (PasswordPolicyException ex)
         {
-            await AppendAuthAuditAsync(
-                AuthActionLocalPasswordChangeFailed,
-                new ActorId(userId.Value),
-                "New password rejected by policy",
-                cancellationToken);
-            return BadRequest(new LocalPasswordChangeErrorResponse(
+            return ("policy_rejected", BadRequest(new LocalPasswordChangeErrorResponse(
                 ex.Message,
-                LocalPasswordChangeErrorCodes.InvalidNewPassword));
+                LocalPasswordChangeErrorCodes.InvalidNewPassword)));
         }
 
-        var (hash, salt) = _passwordHasher.HashPassword(request.NewPassword);
-        await _localCredentialRepository.SetPasswordAsync(
-            userId,
-            hash,
-            salt,
-            _passwordHasher.AlgorithmName,
-            cancellationToken);
-        if (_actionTokens is not null)
-            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
-        await AppendAuthAuditAsync(
-            AuthActionLocalPasswordChangeSuccess,
-            new ActorId(userId.Value),
-            null,
-            cancellationToken);
-        return NoContent();
+        return null;
+    }
+
+    /// <summary>Records a refused password change (W3, never changes the response) and returns the response.</summary>
+    private async Task<IActionResult> RefusePasswordChangeAsync(string userId, string reason, IActionResult response)
+    {
+        await AuditWriter.TryWriteAsync(
+            AuditEvents.LocalPasswordChangeRefused(userId, reason),
+            AuditActor.CurrentPrincipal,
+            CancellationToken.None);
+        return response;
     }
 
     /// <summary>Unauthenticated forgotten-password request. Always returns the same acknowledgement.</summary>
@@ -390,7 +378,24 @@ public sealed class AuthController : ControllerBase
         CancellationToken cancellationToken)
     {
         if (_forgottenPassword is not null)
-            await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+        {
+            try
+            {
+                await _forgottenPassword.RequestAsync(request.Identifier ?? "", cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Enumeration protection (AUD-1.2 review): a request that matches no eligible account changes nothing and
+                // writes only a best-effort W3 row, so it answers with the acknowledgement even when the database refuses
+                // writes. An eligible request whose change failed, or whose outcome is unknown, must answer the same way, or
+                // the difference names the account. The acknowledgement never says a link was issued; the failure is logged.
+                _logger?.LogError(
+                    ex,
+                    "A password reset request could not be completed (operation {OperationEventId}).",
+                    (ex as AuditOutcomeUnknownException)?.OperationEventId ?? (ex as AuditOperationNotCompletedException)?.OperationEventId);
+            }
+        }
+
         return Ok(new ForgotPasswordResponse(ForgottenPasswordService.GenericAcknowledgement));
     }
 
@@ -524,12 +529,9 @@ public sealed class AuthController : ControllerBase
             return Ok(new LocalLoginResponse("", "", RequiresMfa: true));
         }
 
+        // W2: the row commits before the session is issued; a failure to write it fails the request without a session.
+        await RecordSignInAsync(AuditEvents.LocalSignInSucceeded(user.Id, user.IsBreakGlassEligible, "password"), user.Id, cancellationToken);
         await SignInLocalAsync(user, assuranceMechanism: null, cancellationToken);
-        await AppendAuthAuditAsync(
-            user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
-            new ActorId(user.Id.Value),
-            null,
-            cancellationToken);
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
 
@@ -612,13 +614,13 @@ public sealed class AuthController : ControllerBase
             mechanism = AuthenticationAssuranceClaims.NativeRecoveryCodeMechanism;
         }
 
+        // W2 before the session (D4: a consumed recovery code stays consumed if this write fails; the user signs in again).
+        await RecordSignInAsync(
+            AuditEvents.LocalSignInSucceeded(user.Id, user.IsBreakGlassEligible, hasTotp ? "native_totp" : "native_recovery_code"),
+            user.Id,
+            cancellationToken);
         ClearPendingMfaCookie();
         await SignInLocalAsync(user, mechanism, cancellationToken);
-        await AppendAuthAuditAsync(
-            user.IsBreakGlassEligible ? EmergencyAccessAuditActionNames.LoginSuccess : AuthActionLocalLoginSuccess,
-            new ActorId(user.Id.Value),
-            $"mechanism={mechanism}",
-            cancellationToken);
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
 
@@ -696,11 +698,19 @@ public sealed class AuthController : ControllerBase
             IsPersistent = true,
             ExpiresUtc = DateTimeOffset.UtcNow.AddHours(12)
         };
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
 
-        await AppendAuthAuditAsync(AuthActionBreakGlassLoginSuccess, new ActorId(user.Id.Value), null, cancellationToken);
+        // W2: the row commits before the session is issued.
+        await RecordSignInAsync(AuditEvents.BreakGlassSignInSucceeded(user.Id), user.Id, cancellationToken);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, props);
         return Ok(new LocalLoginResponse(user.Id.Value, user.DisplayName));
     }
+
+    /// <summary>
+    /// Writes a sign-in's W2 row as the user this request just authenticated (D2). It commits before the caller issues the
+    /// session; when it cannot be written this throws and no session is issued.
+    /// </summary>
+    private Task RecordSignInAsync(Apperture.Core.Application.Audit.AuditEvent signedIn, UserId userId, CancellationToken cancellationToken) =>
+        AuditWriter.WriteAsync(signedIn, AuditActor.AuthenticatedUser(userId), cancellationToken);
 
     private async Task SignInLocalAsync(
         User user,

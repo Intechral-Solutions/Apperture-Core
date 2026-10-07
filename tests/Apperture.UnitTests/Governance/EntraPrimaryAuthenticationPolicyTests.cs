@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -223,12 +225,30 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         harness.Credentials.Disabled["admin-1"].Should().BeFalse();
     }
 
+    [Fact]
+    public async Task The_policy_acts_as_a_named_subsystem_against_the_user_and_leaving_sign_in_enabled_is_an_attempt_row()
+    {
+        var disabled = Harness.OrdinaryUser();
+        await disabled.Policy.ApplyAfterEntraProvenAsync(new UserId("usr-1"));
+        var deferred = Harness.SolePlatformAdministrator();
+        await deferred.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        var (change, changeActor) = disabled.Audit.Events.Should().ContainSingle().Subject;
+        changeActor.Should().Be(AuditActor.System("entra-primary-policy"), "the policy acts on its own; the user is the target");
+        change.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, "usr-1"));
+        change.Definition.WriteClass.Should().Be(AuditWriteClass.RequiredMutation);
+        var (kept, keptActor) = deferred.Audit.Events.Should().ContainSingle().Subject;
+        keptActor.Should().Be(AuditActor.System("entra-primary-policy"));
+        kept.Definition.WriteClass.Should().Be(AuditWriteClass.Attempt, "nothing changed (D6)");
+        kept.Definition.Basis.Should().Be(AuditBases.Attempt);
+        deferred.Audit.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+    }
     private sealed class Harness
     {
         public RecordingUsers Users { get; } = new();
         public RecordingCredentials Credentials { get; } = new();
         public RecordingRoles Roles { get; } = new();
-        public RecordingAudit Audit { get; } = new();
+        public AuditRecording Audit { get; } = new();
         public FakeEmergency Emergency { get; } = new();
         public EntraPrimaryAuthenticationPolicy Policy { get; }
 
@@ -238,10 +258,10 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 Users,
                 Credentials,
                 Roles,
-                Audit,
-                TimeProvider.System,
                 NullLogger<EntraPrimaryAuthenticationPolicy>.Instance,
-                Emergency);
+                Emergency,
+                Audit,
+                Audit);
         }
 
         public static Harness OrdinaryUser(bool alreadyDisabled = false)
@@ -355,19 +375,6 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         public ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            return ValueTask.CompletedTask;
-        }
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
     }
 
     private sealed class FakeEmergency : IEmergencyAccessService

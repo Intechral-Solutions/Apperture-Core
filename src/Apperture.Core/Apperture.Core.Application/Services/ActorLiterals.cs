@@ -82,6 +82,7 @@ public static class ActorLiterals
             System => "System",
             SystemScheduler => "Scheduler",
             SystemModuleLifecycle => "Module lifecycle",
+            SystemBootstrapConfiguration => "Startup configuration",
             Recovery => "Recovery tool",
             EmergencyCli => "Emergency access command line",
             SystemWorker => "Worker",
@@ -95,4 +96,7 @@ public static class ActorLiterals
 
     /// <summary>The module lifecycle subsystem.</summary>
     public const string SystemModuleLifecycle = "system:module-lifecycle";
+
+    /// <summary>The host applying its startup configuration's Platform Administrator principals.</summary>
+    public const string SystemBootstrapConfiguration = "system:bootstrap-configuration";
 }

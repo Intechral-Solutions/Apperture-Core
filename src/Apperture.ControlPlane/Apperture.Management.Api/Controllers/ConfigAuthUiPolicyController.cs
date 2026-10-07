@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Management.Api.Models;
@@ -21,20 +22,26 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly LocalAuthOptions _localOptions;
     private readonly EntraAuthOptions _entraOptions;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public ConfigAuthUiPolicyController(
         IInstanceAuthUiPolicyRepository policyRepository,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IOptions<LocalAuthOptions> localOptions,
-        IOptions<EntraAuthOptions> entraOptions)
+        IOptions<EntraAuthOptions> entraOptions,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _policyRepository = policyRepository;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _localOptions = localOptions.Value;
         _entraOptions = entraOptions.Value;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Sign-in policy changes require the audited unit of work.");
 
     [HttpGet]
     [ProducesResponseType(typeof(AuthUiPolicyResponse), StatusCodes.Status200OK)]
@@ -86,9 +93,42 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
             return BadRequest(new { message = "rowVersionBase64 is not valid base64." });
         }
 
+        // AUD-1.2: the policy and its row commit together; the same settings change nothing and write no row (D7).
         try
         {
-            await _policyRepository.SaveAsync(proposed, expected, cancellationToken);
+            await Unit.ExecuteAsync(
+                new AuditedOperation(AuditActionNames.SignInPolicyUpdated, AuditActor.CurrentPrincipal),
+                async (transaction, ct) =>
+                {
+                    var current = await _policyRepository.GetAsync(ct);
+                    if (current.RowVersion is null || !current.RowVersion.SequenceEqual(expected))
+                        throw new DbUpdateConcurrencyException("Instance auth UI policy was modified by another request.");
+
+                    var changed = new List<string>();
+                    if (current.ShowLocalSignInInPrimaryChooser != proposed.ShowLocalSignInInPrimaryChooser)
+                        changed.Add("showLocalSignInInPrimaryChooser");
+                    if (current.PreferEntraInChooser != proposed.PreferEntraInChooser)
+                        changed.Add("preferEntraInChooser");
+                    if (current.AutoRedirectToEntra != proposed.AutoRedirectToEntra)
+                        changed.Add("autoRedirectToEntra");
+                    if (changed.Count == 0)
+                    {
+                        transaction.DeclareNoOp();
+                        return false;
+                    }
+
+                    await _policyRepository.SaveAsync(proposed, expected, ct);
+                    await transaction.StageAsync(
+                        AuditEvents.SignInPolicyUpdated(
+                            changed,
+                            proposed.ShowLocalSignInInPrimaryChooser,
+                            proposed.PreferEntraInChooser,
+                            proposed.AutoRedirectToEntra),
+                        ct);
+                    return true;
+                },
+                (_, _) => Task.FromResult(true),
+                cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {

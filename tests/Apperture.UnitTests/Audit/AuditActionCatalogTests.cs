@@ -18,10 +18,31 @@ public sealed partial class AuditActionCatalogTests
 {
     private static readonly AuditActionCatalog Catalog = AuditActionCatalog.Default;
 
+    /// <summary>Actions AUD-1.2 adds to the AUD-1.1 inventory (record §3 and the gate's §22 new coverage).</summary>
+    private static readonly string[] Aud12Additions =
+    [
+        "account.security_mail.delivery_attempted",
+        "credential.password.reset_request.suppressed",
+        "governance.runtime.enrollment.completed",
+        "auth.entra.login.failed",
+        "auth.sign_out",
+        "entra.tenant_registration.created",
+        "entra.tenant_registration.updated",
+        "entra.tenant_registration.deleted",
+        "entra.tenant_registration.activated",
+        "entra.tenant_registration.change_refused",
+        "bootstrap.configured_admin.created",
+        "auth.sign_in_policy.updated",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
-        Catalog.Definitions.Should().HaveCount(147, "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names");
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud12Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.2").Select(d => d.Action).Should().BeEquivalentTo(Aud12Additions);
+        Catalog.Definitions.Should().HaveCount(
+            147 + Aud12Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 adds only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 
@@ -97,10 +118,16 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Get(action).WriteClass.Should().Be(expected);
 
     [Fact]
-    public void Only_the_two_AUD_1_1_actions_have_recorder_producers_and_data_access_is_reserved()
+    public void The_converted_actions_are_exactly_the_named_recorder_actions_and_data_access_is_reserved()
     {
-        Catalog.Definitions.Where(d => d.Details is not null).Select(d => d.Action)
-            .Should().BeEquivalentTo([AuditActionNames.UsernameChanged, AuditActionNames.RecoveryAccessCanonicalized]);
+        // An action has a detail schema (and so a typed producer) exactly when it is named in AuditActionNames: AUD-1.1's
+        // two actions plus each family AUD-1.2 to AUD-1.4 convert. Every other action stays on the append bridge.
+        var named = typeof(AuditActionNames).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral)
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+        named.Should().OnlyHaveUniqueItems();
+        Catalog.Definitions.Where(d => d.Details is not null).Select(d => d.Action).Should().BeEquivalentTo(named);
         Catalog.Definitions.Should().NotContain(d => d.Category == AuditCategories.DataAccess);
         AuditCategories.All.Should().Contain(AuditCategories.DataAccess);
     }

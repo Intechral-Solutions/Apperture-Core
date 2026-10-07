@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -29,7 +31,13 @@ public sealed class EntraAccessRequestServiceTests
         created.Status.Should().Be(EntraAccessRequestStatus.Pending);
         harness.Users.Added.Should().BeEmpty();
         harness.Requests.Items.Should().ContainSingle();
-        harness.Audit.Actions.Should().Contain(EntraAccessRequestAuditActionNames.Created);
+        var (createdRow, requester) = harness.Audit.Events.Should().ContainSingle().Subject;
+        createdRow.Action.Should().Be(EntraAccessRequestAuditActionNames.Created);
+        requester.Should().Be(
+            AuditActor.ValidatedExternalIdentity(new AuditExternalActor(AuditExternalActor.EntraProvider, Tid, Oid)),
+            "the requester has no user; the access-request session carries a validated tenant and object id");
+        createdRow.Target.Should().Be(new AuditTarget(AuditTargetTypes.EntraAccessRequest, created.Id));
+        createdRow.Fields.Values.Should().NotContain("jane@contoso.com", "email and UPN are never identity keys or recorded");
 
         var again = await harness.Service.SubmitAsync(principal);
         again.Id.Should().Be(created.Id);
@@ -67,6 +75,21 @@ public sealed class EntraAccessRequestServiceTests
         var act = () => harness.Service.SubmitAsync(Principal()).AsTask();
         await act.Should().ThrowAsync<EntraAccessRequestException>();
         harness.Requests.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_policy_disabled_after_the_eligibility_snapshot_refuses_the_submission_in_its_transaction()
+    {
+        // AUD-1.2 review (gate §13.4): every read the decision depends on is repeated in the transaction. The snapshot and the
+        // directory lookup see member requests allowed; the administrator turns them off before the unit runs.
+        var harness = Harness.Create(allowMembers: true);
+        harness.Registrations.MembersDisabledAfterReads = 2;
+
+        var act = () => harness.Service.SubmitAsync(Principal()).AsTask();
+
+        (await act.Should().ThrowAsync<EntraAccessRequestException>()).Which.Code.Should().Be(EntraAccessRequestErrorCodes.NotEligible);
+        harness.Requests.Items.Should().BeEmpty();
+        harness.Audit.Events.Should().BeEmpty();
     }
 
     [Fact]
@@ -128,7 +151,10 @@ public sealed class EntraAccessRequestServiceTests
 
         harness.Users.Added.Should().BeEmpty();
         harness.Requests.Items[created.Id].Status.Should().Be(EntraAccessRequestStatus.Rejected);
-        harness.Audit.Actions.Should().Contain(EntraAccessRequestAuditActionNames.Rejected);
+        var (rejected, reviewer) = harness.Audit.Events[^1];
+        rejected.Action.Should().Be(EntraAccessRequestAuditActionNames.Rejected);
+        reviewer.Should().Be(AuditActor.CurrentPrincipal, "the rejecting administrator is the actor");
+        rejected.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded, "a rejection is an administrator's decision, not a refused attempt");
         var snapshot = await harness.Service.GetSessionSnapshotAsync(Principal());
         snapshot.State.Should().Be(EntraAccessRequestSessionStates.Rejected);
         snapshot.Message.Should().Be("Your request was not approved.");
@@ -144,12 +170,14 @@ public sealed class EntraAccessRequestServiceTests
     {
         public RecordingUsers Users { get; } = new();
         public RecordingRequests Requests { get; } = new();
-        public RecordingAudit Audit { get; } = new();
+        public AuditRecording Audit { get; } = new();
         public StubDiscovery Discovery { get; } = new();
+        public StubRegistrations Registrations { get; }
         public EntraAccessRequestService Service { get; }
 
         private Harness(bool allowMembers, bool allowGuests, string userType)
         {
+            Registrations = new StubRegistrations(allowMembers, allowGuests);
             Discovery.User = DirectoryUser(userType);
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -159,13 +187,13 @@ public sealed class EntraAccessRequestServiceTests
                 new StubPrincipal(),
                 new AllowAllAuth(),
                 Users,
-                new StubRegistrations(allowMembers, allowGuests),
+                Registrations,
                 Discovery,
                 Requests,
                 new ThrowingProvisioning(),
                 config,
-                Audit,
-                TimeProvider.System);
+                TimeProvider.System,
+                auditedUnitOfWork: Audit);
         }
 
         public static Harness Create(bool allowMembers, bool allowGuests = false, string userType = "Member") =>
@@ -230,8 +258,29 @@ public sealed class EntraAccessRequestServiceTests
         public Task<EntraInstanceRegistration?> GetActiveAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<EntraInstanceRegistration?>(_registration);
 
+        /// <summary>After this many reads by id, member requests read as disabled (an administrator changed the policy).</summary>
+        public int MembersDisabledAfterReads { get; set; } = int.MaxValue;
+
+        private int _reads;
+
         public Task<EntraInstanceRegistration?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            Task.FromResult<EntraInstanceRegistration?>(id == "reg-1" ? _registration : null);
+            Task.FromResult<EntraInstanceRegistration?>(
+                id != "reg-1" ? null
+                : ++_reads > MembersDisabledAfterReads ? MembersDisabled()
+                : _registration);
+
+        private EntraInstanceRegistration MembersDisabled() => new()
+        {
+            Id = _registration.Id,
+            DisplayName = _registration.DisplayName,
+            Authority = _registration.Authority,
+            ClientId = _registration.ClientId,
+            Enabled = true,
+            AzureTenantId = _registration.AzureTenantId,
+            UsesDeploymentSecret = true,
+            AllowMemberAccessRequests = false,
+            AllowGuestAccessRequests = _registration.AllowGuestAccessRequests,
+        };
 
         public Task<IReadOnlyList<EntraInstanceRegistration>> ListAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<EntraInstanceRegistration>>([_registration]);
@@ -343,19 +392,6 @@ public sealed class EntraAccessRequestServiceTests
             ValueTask.FromResult<(IReadOnlyList<User>, int)>((_users.Values.ToList(), _users.Count));
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            return ValueTask.CompletedTask;
-        }
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
     }
 
     private sealed class AllowAllAuth : IAuthorizationService

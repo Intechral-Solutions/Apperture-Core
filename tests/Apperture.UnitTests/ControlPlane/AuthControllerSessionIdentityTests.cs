@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
@@ -100,6 +102,55 @@ public sealed class AuthControllerSessionIdentityTests
         actor.IsBreakGlassSession.Should().BeTrue();
     }
 
+// ---- AUD-1.2: a sign-in's W2 row commits before the session (gate §13.4) ----
+
+    [Fact]
+    public async Task A_local_sign_in_is_recorded_as_the_authenticated_user_before_the_session_is_issued()
+    {
+        var rig = new Rig(User(recoveryAccess: false), mfaRequired: false);
+
+        await rig.Controller().LocalLogin(new LocalLoginRequest(Username, "secret-passphrase"), CancellationToken.None);
+
+        var (signedIn, actor, bestEffort) = rig.Recording.Writer.Written.Should().ContainSingle().Subject;
+        bestEffort.Should().BeFalse("a sign-in success is W2, not an attempt");
+        signedIn.Action.Should().Be(AuditActionNames.LocalSignInSucceeded);
+        actor.Should().Be(AuditActor.AuthenticatedUser(UserId));
+        signedIn.Fields["mechanism"].Should().Be("password");
+        signedIn.Fields.Values.Should().NotContain("secret-passphrase");
+    }
+
+    [Fact]
+    public async Task When_the_sign_in_row_cannot_be_written_no_session_is_issued()
+    {
+        var rig = new Rig(User(recoveryAccess: false), mfaRequired: false);
+        rig.Recording.FailWrites = true;
+
+        var local = () => rig.Controller().LocalLogin(new LocalLoginRequest(Username, "secret-passphrase"), CancellationToken.None);
+        await local.Should().ThrowAsync<InvalidOperationException>();
+        var breakGlassRig = new Rig(User(recoveryAccess: true, username: "breakglass", displayName: "Recovery Access"), mfaRequired: false, breakGlassEnabled: true);
+        breakGlassRig.Recording.FailWrites = true;
+        var breakGlass = () => breakGlassRig.Controller().BreakGlassLogin(new LocalLoginRequest("breakglass", "secret-passphrase"), CancellationToken.None);
+        await breakGlass.Should().ThrowAsync<InvalidOperationException>();
+
+        rig.Auth.SignedIn.Should().BeEmpty("the success result is withheld when its W2 row fails");
+        breakGlassRig.Auth.SignedIn.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Recovery_access_completing_mfa_is_recorded_with_its_mechanism_before_the_session()
+    {
+        var rig = new Rig(User(recoveryAccess: true, username: "breakglass", displayName: "Recovery Access"), mfaRequired: true);
+        await rig.Controller().LocalLogin(new LocalLoginRequest("breakglass", "secret-passphrase"), CancellationToken.None);
+        rig.Recording.Writer.Written.Should().BeEmpty("no success before the second factor");
+
+        await rig.Controller(pendingTicketFrom: rig.LastResponse).LocalMfa(new LocalMfaChallengeRequest("123456", null), CancellationToken.None);
+
+        var signedIn = rig.Recording.Writer.Written.Should().ContainSingle().Subject.Event;
+        signedIn.Action.Should().Be(AuditActionNames.RecoveryAccessSignInSucceeded);
+        signedIn.Fields["mechanism"].Should().Be("native_totp");
+        signedIn.Fields.Values.Should().NotContain("123456");
+    }
+
     private static void AssertUserIdSession(ClaimsPrincipal session, bool expectBreakGlass)
     {
         session.FindAll(ClaimTypes.NameIdentifier).Select(c => c.Value).Should().Equal(UserId.Value);
@@ -135,6 +186,8 @@ public sealed class AuthControllerSessionIdentityTests
 
         public CapturingAuthenticationService Auth { get; } = new();
 
+        internal AuditRecording Recording { get; } = new();
+
         public HttpContext? LastResponse { get; private set; }
 
         public AuthController Controller(HttpContext? pendingTicketFrom = null)
@@ -162,7 +215,9 @@ public sealed class AuthControllerSessionIdentityTests
                 Options.Create(new EntraAuthOptions()),
                 Mock.Of<IInstanceAuthUiPolicyRepository>(),
                 nativeMfa: _mfa.Object,
-                pendingMfaTickets: _tickets);
+                pendingMfaTickets: _tickets,
+                auditedUnitOfWork: Recording,
+                auditEvents: Recording);
 
             var context = new DefaultHttpContext
             {

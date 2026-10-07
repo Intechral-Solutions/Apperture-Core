@@ -1,6 +1,8 @@
 using System.Net;
 using System.Security.Claims;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Management.Host;
@@ -424,6 +426,67 @@ public sealed class ManagementAuthEndpointsTests
         return await client.SendAsync(request);
     }
 
+    // ---- AUD-1.2: sign-out and a failed Microsoft round trip are W3 rows that never block (gate §22) ----
+
+    [Fact]
+    public async Task Signing_out_records_the_signed_in_user_before_the_session_ends()
+    {
+        var recording = new AuditRecording();
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, recording: recording);
+        using var client = Client(host);
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
+
+        var response = await client.PostAsync("/signout", content: null);
+
+        response.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
+        var (signedOut, actor) = recording.Events.Should().ContainSingle().Subject;
+        signedOut.Action.Should().Be(AuditActionNames.SignedOut);
+        actor.Should().Be(AuditActor.CurrentPrincipal);
+        signedOut.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, LinkedUserId));
+        signedOut.Fields["session"].Should().Be("local");
+    }
+
+    [Fact]
+    public async Task Signing_out_without_a_user_records_nothing_and_a_failed_row_never_blocks_the_sign_out()
+    {
+        var recording = new AuditRecording();
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: false, recording: recording);
+        using var client = Client(host);
+
+        var anonymous = await client.PostAsync("/signout", content: null);
+        anonymous.Headers.Location!.ToString().Should().Be("http://localhost:9001/login");
+        recording.Events.Should().BeEmpty("no user resolves, so there is no one to record");
+
+        recording.FailWrites = true;
+        client.DefaultRequestHeaders.Add("X-Test-Auth", "1");
+        client.DefaultRequestHeaders.Add("X-Test-Identity-Source", "Local");
+        var failed = await client.PostAsync("/signout", content: null);
+        failed.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        failed.Headers.Location!.ToString().Should().Be("http://localhost:9001/login", "the sign-out completed although its row failed");
+    }
+
+    [Fact]
+    public async Task A_cancelled_sign_in_is_recorded_once_as_an_anonymous_attempt_without_provider_text()
+    {
+        var recording = new AuditRecording();
+        var capture = new RedirectCapture();
+        await using var host = await StartAsync(capture, entraEnabled: true, environment: "Production", recording: recording);
+        using var client = Client(host);
+        var (state, cookies) = await BeginChallengeAsync(client, "/signin");
+
+        await PostCallbackAsync(client, state, cookies, ("error", "access_denied"), ("error_description", "AADSTS65004: declined"));
+
+        var (failed, actor) = recording.Events.Should().ContainSingle().Subject;
+        failed.Action.Should().Be(AuditActionNames.EntraSignInFailed);
+        actor.Should().Be(AuditActor.Anonymous);
+        failed.Fields["flow"].Should().Be("sign_in");
+        failed.Fields["reason"].Should().Be("cancelled");
+        failed.Fields.Values.Should().NotContain(v => v != null && v.ToString()!.Contains("AADSTS"));
+    }
+
     [Theory]
     [InlineData("Development")]
     [InlineData("Production")]
@@ -584,7 +647,8 @@ public sealed class ManagementAuthEndpointsTests
         RedirectCapture capture,
         bool entraEnabled,
         string? authenticationContextId = null,
-        string environment = "Development")
+        string environment = "Development",
+        AuditRecording? recording = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -608,6 +672,8 @@ public sealed class ManagementAuthEndpointsTests
         builder.Services.AddSingleton<IPrincipalContext, TestPrincipalContext>();
         builder.Services.AddSingleton<IPrincipalToUserResolver, TestPrincipalToUserResolver>();
         builder.Services.AddSingleton(capture);
+        if (recording is not null)
+            builder.Services.AddSingleton<IAuditEventWriter>(recording);
         builder.Services.PostConfigure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
         {
             var configuration = new OpenIdConnectConfiguration

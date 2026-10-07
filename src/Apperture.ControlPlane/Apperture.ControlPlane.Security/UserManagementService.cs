@@ -13,10 +13,14 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Auth administration service: permission checks, user/role/credential operations, and audit.
 /// </summary>
+/// <remarks>
+/// AUD-1.2 (audit hardening design gate §13): every change runs as one audited unit of work. The reads and safety checks
+/// the decision depends on, the change and its audit row commit together; a refusal changes nothing and its row is written
+/// after the transaction has rolled back. A request that changes nothing writes no row. A Recovery Access session marks its
+/// rows <c>viaRecoveryAccess</c> through the recorder, which replaces the earlier pre-mutation marker row.
+/// </remarks>
 public sealed class UserManagementService : IUserManagementService
 {
-    private const string AuditOutcome = "auth-admin";
-
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IAuthorizationService _auth;
@@ -25,7 +29,6 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IResourceDescriptorRegistry _descriptorRegistry;
     private readonly ILocalCredentialRepository _localCredentialRepository;
     private readonly ILocalPasswordHasher _passwordHasher;
-    private readonly IAuditService _audit;
     private readonly LocalAuthOptions _localOptions;
     private readonly IEntraIdentityAssociationService? _entraAssociation;
     private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
@@ -34,6 +37,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IAccountInvitationService? _invitations;
     private readonly IAccountActionTokenService? _actionTokens;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -44,7 +48,6 @@ public sealed class UserManagementService : IUserManagementService
         IResourceDescriptorRegistry descriptorRegistry,
         ILocalCredentialRepository localCredentialRepository,
         ILocalPasswordHasher passwordHasher,
-        IAuditService audit,
         IOptions<LocalAuthOptions> localOptions,
         IEntraIdentityAssociationService? entraAssociation = null,
         IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
@@ -52,9 +55,11 @@ public sealed class UserManagementService : IUserManagementService
         IEmergencyAccessService? emergencyAccess = null,
         IAccountInvitationService? invitations = null,
         IAccountActionTokenService? actionTokens = null,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null)
     {
         _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
         _entraAssociation = entraAssociation;
         _entraOptions = entraOptions;
         _strongAuthentication = strongAuthentication;
@@ -69,9 +74,18 @@ public sealed class UserManagementService : IUserManagementService
         _descriptorRegistry = descriptorRegistry;
         _localCredentialRepository = localCredentialRepository;
         _passwordHasher = passwordHasher;
-        _audit = audit;
         _localOptions = localOptions.Value;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("User administration requires the audited unit of work.");
+
+    private IAuditEventWriter Events =>
+        _auditEvents ?? throw new InvalidOperationException("User administration requires the audit event writer.");
+
+    private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
+
+    private static Task<bool> Done(AuditCommittedOperation committed, CancellationToken cancellationToken) => Task.FromResult(true);
 
     /// <inheritdoc />
     public async ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetUserPageAsync(int skip, int take, CancellationToken cancellationToken = default, string? query = null)
@@ -136,20 +150,33 @@ public sealed class UserManagementService : IUserManagementService
     /// <inheritdoc />
     public async ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequirePermissionAssignAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("permission.assign", actorId, cancellationToken);
+        await RequirePermissionAssignAsync(cancellationToken);
 
-        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
-        if (role is null)
-            throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(AuditActionNames.PermissionAssignmentUpdated),
+            async (transaction, refusals, ct) =>
+            {
+                var role = await _roleRepository.GetAsync(roleId, ct)
+                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                if (role.IsSystemRole)
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
 
-        if (role.IsSystemRole)
-            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+                ValidateCatalogPermissions(permissions);
 
-        ValidateCatalogPermissions(permissions);
+                // The diff is the one the replacement committed (D9). An identical set changes nothing and writes no row.
+                var change = await _roleRepository.ReplacePermissionsAsync(roleId, permissions, ct);
+                if (change.IsEmpty)
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
 
-        await _roleRepository.UpdatePermissionsAsync(roleId, permissions, cancellationToken);
-        await AppendAuditAsync(GovernanceAuditActionNames.PermissionAssignmentUpdated, actorId, roleId.Value, $"roleId={roleId.Value} permissionCount={permissions.Count}", cancellationToken);
+                await transaction.StageAsync(AuditEvents.PermissionAssignmentUpdated(roleId, change, permissions.Count), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -159,7 +186,7 @@ public sealed class UserManagementService : IUserManagementService
         IReadOnlyList<PermissionDescriptor>? permissions = null,
         CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireRoleManageAsync(cancellationToken);
+        await RequireRoleManageAsync(cancellationToken);
         var grants = permissions ?? Array.Empty<PermissionDescriptor>();
         if (grants.Count > 0)
             await RequirePermissionAssignAsync(cancellationToken);
@@ -167,8 +194,8 @@ public sealed class UserManagementService : IUserManagementService
         var normalizedName = NormalizeRoleName(name);
         var normalizedDescription = NormalizeRoleDescription(description);
         ValidateCatalogPermissions(grants);
-        await EnsureRoleNameAvailableAsync(normalizedName, excludeRoleId: null, cancellationToken);
 
+        // Built once, so a rerun after a confirmed rollback creates the same role.
         var role = new Role(
             NewUserCreatedRoleId(),
             normalizedName,
@@ -176,22 +203,25 @@ public sealed class UserManagementService : IUserManagementService
             grants,
             IsSystemRole: false);
 
-        try
-        {
-            await _roleRepository.CreateAsync(role, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
-        {
-            throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
-        }
+        return await Unit.ExecuteAsync(
+            Operation(AuditActionNames.RoleCreated),
+            async (transaction, ct) =>
+            {
+                await EnsureRoleNameAvailableAsync(normalizedName, excludeRoleId: null, ct);
+                try
+                {
+                    await _roleRepository.CreateAsync(role, ct);
+                }
+                catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
+                {
+                    throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
+                }
 
-        await AppendAuditAsync(
-            GovernanceAuditActionNames.RoleCreated,
-            actorId,
-            role.Id.Value,
-            $"roleId={role.Id.Value} name={role.Name} permissionCount={grants.Count}",
+                await transaction.StageAsync(AuditEvents.RoleCreated(role.Id, role.Name, grants), ct);
+                return role;
+            },
+            async (_, ct) => await _roleRepository.GetAsync(role.Id, ct) ?? role,
             cancellationToken);
-        return role;
     }
 
     /// <inheritdoc />
@@ -201,73 +231,87 @@ public sealed class UserManagementService : IUserManagementService
         string? description,
         CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireRoleManageAsync(cancellationToken);
-        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
-        if (role is null)
-            throw new InvalidOperationException($"Role {roleId.Value} not found.");
-        if (role.IsSystemRole)
-            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+        await RequireRoleManageAsync(cancellationToken);
 
-        var normalizedName = NormalizeRoleName(name);
-        var normalizedDescription = NormalizeRoleDescription(description);
-        await EnsureRoleNameAvailableAsync(normalizedName, roleId, cancellationToken);
+        return await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(AuditActionNames.RoleMetadataUpdated),
+            async (transaction, refusals, ct) =>
+            {
+                var role = await _roleRepository.GetAsync(roleId, ct)
+                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                if (role.IsSystemRole)
+                    return refusals.Refuse<Role>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
 
-        try
-        {
-            await _roleRepository.UpdateMetadataAsync(roleId, normalizedName, normalizedDescription, cancellationToken);
-        }
-        catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
-        {
-            throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
-        }
+                var normalizedName = NormalizeRoleName(name);
+                var normalizedDescription = NormalizeRoleDescription(description);
+                var updated = role with { Name = normalizedName, Description = normalizedDescription };
+                var descriptionChanged = !string.Equals(role.Description, normalizedDescription, StringComparison.Ordinal);
+                if (string.Equals(role.Name, normalizedName, StringComparison.Ordinal) && !descriptionChanged)
+                {
+                    transaction.DeclareNoOp();
+                    return updated;
+                }
 
-        var updated = role with { Name = normalizedName, Description = normalizedDescription };
-        await AppendAuditAsync(
-            GovernanceAuditActionNames.RoleMetadataUpdated,
-            actorId,
-            roleId.Value,
-            $"roleId={roleId.Value} name={normalizedName}",
+                await EnsureRoleNameAvailableAsync(normalizedName, roleId, ct);
+                try
+                {
+                    await _roleRepository.UpdateMetadataAsync(roleId, normalizedName, normalizedDescription, ct);
+                }
+                catch (InvalidOperationException ex) when (IsDuplicateRoleName(ex))
+                {
+                    throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
+                }
+
+                await transaction.StageAsync(
+                    AuditEvents.RoleMetadataUpdated(roleId, role.Name, normalizedName, descriptionChanged), ct);
+                return updated;
+            },
+            async (committed, ct) =>
+                await _roleRepository.GetAsync(roleId, ct)
+                ?? new Role(roleId, committed.GetField("newName") ?? NormalizeRoleName(name), NormalizeRoleDescription(description), [], IsSystemRole: false),
             cancellationToken);
-        return updated;
     }
 
     /// <inheritdoc />
     public async ValueTask DeleteRoleAsync(RoleId roleId, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireRoleManageAsync(cancellationToken);
-        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
-        if (role is null)
-            throw new InvalidOperationException($"Role {roleId.Value} not found.");
-        if (role.IsSystemRole)
-            throw await RefuseSystemRoleMutationAsync(actorId, roleId, cancellationToken);
+        await RequireRoleManageAsync(cancellationToken);
 
-        var result = await _roleRepository.TryDeleteUnassignedAsync(roleId, cancellationToken);
-        switch (result.Outcome)
-        {
-            case RoleUnassignedDeleteOutcome.NotFound:
-                throw new InvalidOperationException($"Role {roleId.Value} not found.");
-            case RoleUnassignedDeleteOutcome.AssignmentsRemain:
-                await AppendAuditAsync(
-                    GovernanceAuditActionNames.RoleMutationRejected,
-                    actorId,
-                    roleId.Value,
-                    $"roleId={roleId.Value} reason=assignments_remain assignmentCount={result.AssignmentCount}",
-                    cancellationToken);
-                throw new RoleLifecycleException(
-                    RoleLifecycleErrorCodes.AssignmentsRemain,
-                    "This role still has assignments and cannot be deleted.",
-                    result.AssignmentCount);
-            case RoleUnassignedDeleteOutcome.Deleted:
-                await AppendAuditAsync(
-                    GovernanceAuditActionNames.RoleDeleted,
-                    actorId,
-                    roleId.Value,
-                    $"roleId={roleId.Value} name={result.Name ?? role.Name}",
-                    cancellationToken);
-                return;
-            default:
-                throw new InvalidOperationException($"Unexpected role delete outcome {result.Outcome}.");
-        }
+        // A delete whose commit is verified after a lost acknowledgement is reported as done, never as not found (§13.6).
+        await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(AuditActionNames.RoleDeleted),
+            async (transaction, refusals, ct) =>
+            {
+                var role = await _roleRepository.GetAsync(roleId, ct)
+                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                if (role.IsSystemRole)
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
+
+                // Joins this transaction: the locked assignment count and the delete are part of it.
+                var result = await _roleRepository.TryDeleteUnassignedAsync(roleId, ct);
+                switch (result.Outcome)
+                {
+                    case RoleUnassignedDeleteOutcome.NotFound:
+                        throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                    case RoleUnassignedDeleteOutcome.AssignmentsRemain:
+                        return refusals.Refuse<bool>(
+                            transaction,
+                            AuditEvents.RoleMutationRejected(roleId, "assignments_remain", result.AssignmentCount),
+                            new RoleLifecycleException(
+                                RoleLifecycleErrorCodes.AssignmentsRemain,
+                                "This role still has assignments and cannot be deleted.",
+                                result.AssignmentCount));
+                    case RoleUnassignedDeleteOutcome.Deleted:
+                        await transaction.StageAsync(AuditEvents.RoleDeleted(roleId, result.Name ?? role.Name), ct);
+                        return true;
+                    default:
+                        throw new InvalidOperationException($"Unexpected role delete outcome {result.Outcome}.");
+                }
+            },
+            Done,
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -361,21 +405,8 @@ public sealed class UserManagementService : IUserManagementService
     private static bool IsDuplicateRoleName(InvalidOperationException ex) =>
         ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase);
 
-    private async ValueTask<RoleLifecycleException> RefuseSystemRoleMutationAsync(
-        ActorId actorId,
-        RoleId roleId,
-        CancellationToken cancellationToken)
-    {
-        await AppendAuditAsync(
-            GovernanceAuditActionNames.RoleMutationRejected,
-            actorId,
-            roleId.Value,
-            $"roleId={roleId.Value} reason=system_role",
-            cancellationToken);
-        return new RoleLifecycleException(
-            RoleLifecycleErrorCodes.SystemRole,
-            "This built-in role cannot be changed or deleted.");
-    }
+    private static RoleLifecycleException SystemRoleRefusal() =>
+        new(RoleLifecycleErrorCodes.SystemRole, "This built-in role cannot be changed or deleted.");
 
     /// <inheritdoc />
     public async ValueTask<UserId> CreateUserAsync(
@@ -387,8 +418,7 @@ public sealed class UserManagementService : IUserManagementService
         string? contactEmail = null,
         bool sendSetupInvitation = false)
     {
-        var actorId = await RequireUserManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("user.create", actorId, cancellationToken);
+        await RequireUserManageAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(displayName))
             throw new InvalidOperationException("Display name is required.");
         ValidateEntraExternalId(source, externalId);
@@ -400,7 +430,7 @@ public sealed class UserManagementService : IUserManagementService
 
         if (source == IdentitySource.Local)
         {
-            if (sendSetupInvitation && _invitations is null)
+            if (sendSetupInvitation && (_invitations is null || _actionTokens is null))
                 throw new InvalidOperationException("Apperture setup invitations are not available.");
             if (EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
             {
@@ -434,10 +464,8 @@ public sealed class UserManagementService : IUserManagementService
                 "Microsoft identities are added from the directory or by linking, not by creating a user with an object id alone.");
         }
 
-        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
-        if (existing is not null)
-            throw new InvalidOperationException("An identity link with this source and external id already exists.");
-
+        // Built once, so a rerun after a confirmed rollback creates the same user with the same credential. The salted hash
+        // is computed here and never leaves this method.
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var user = new User(
             userId,
@@ -448,19 +476,41 @@ public sealed class UserManagementService : IUserManagementService
         {
             Username = linkExternalId
         };
+        var credentialSet = source == IdentitySource.Local && !string.IsNullOrEmpty(password);
+        var credential = credentialSet ? _passwordHasher.HashPassword(password!) : default;
+        var invite = sendSetupInvitation && source == IdentitySource.Local;
+        // The invitation link is chosen once, like the user id, so a rerun issues the same link (AUD-1.2 D8).
+        var invitationToken = invite ? _actionTokens!.Prepare() : null;
+        PreparedSetupInvitation? invitation = null;
 
-        await _userRepository.AddAsync(user, cancellationToken);
+        // The user, its credential or invitation and their rows commit together: no user without the credential or the
+        // invitation it was created with (AUD-1.2). The invitation link is mailed once, after commit.
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.UserCreated),
+            async (transaction, ct) =>
+            {
+                invitation = null;
+                var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, ct);
+                if (existing is not null)
+                    throw new InvalidOperationException("An identity link with this source and external id already exists.");
 
-        if (source == IdentitySource.Local && !string.IsNullOrEmpty(password))
-        {
-            var (hash, salt) = _passwordHasher.HashPassword(password);
-            await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);
-        }
+                await _userRepository.AddAsync(user, ct);
+                if (credentialSet)
+                    await _localCredentialRepository.SetPasswordAsync(userId, credential.Hash, credential.Salt, _passwordHasher.AlgorithmName, ct);
 
-        await AppendAuditAsync("user.created", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
+                await transaction.StageAsync(
+                    AuditEvents.UserCreated(userId, linkExternalId, user.DisplayName, credentialSet, sendSetupInvitation), ct);
+                if (invite)
+                    invitation = await _invitations!.StageSetupInvitationAsync(transaction, userId, contactEmail, invitationToken!, ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
 
-        if (sendSetupInvitation && source == IdentitySource.Local)
-            await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
+        // The result is not part of this method's contract; a failed or unknown send is recorded by its own row and shown in
+        // the user's invitation state, and never reported as a failure of the committed creation.
+        if (invitation is not null)
+            await _invitations!.DeliverSetupInvitationAsync(invitation, AuditActor.CurrentPrincipal, cancellationToken);
 
         return userId;
     }
@@ -472,21 +522,11 @@ public sealed class UserManagementService : IUserManagementService
         CancellationToken cancellationToken = default)
     {
         await RequireUserManageAsync(cancellationToken);
-        return await SendSetupInvitationCoreAsync(userId, contactEmail, cancellationToken);
-    }
-
-    private async ValueTask<AccountInvitationResult> SendSetupInvitationCoreAsync(
-        UserId userId,
-        string? contactEmail,
-        CancellationToken cancellationToken)
-    {
         if (_invitations is null)
             throw new InvalidOperationException("Apperture setup invitations are not available.");
 
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
-        var email = contactEmail ?? user.PendingEmailAddress ?? user.EmailAddress;
-        return await _invitations.SendSetupInvitationAsync(userId, email ?? "", cancellationToken);
+        // The address falls back to the user's pending, then verified, one inside the invitation's transaction.
+        return await _invitations.SendSetupInvitationAsync(userId, contactEmail, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -495,8 +535,7 @@ public sealed class UserManagementService : IUserManagementService
         string requestedUsername,
         CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireUserManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("user.username.rename", actorId, cancellationToken);
+        await RequireUserManageAsync(cancellationToken);
 
         // AUD-1.1: one audited unit of work (audit hardening design gate §13). Policy, Recovery Access refusal, ownership
         // and the ledger/Local-link change run inside the unit's transaction, and the audit row commits with them. The
@@ -538,284 +577,397 @@ public sealed class UserManagementService : IUserManagementService
     /// <inheritdoc />
     public async ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string? externalId, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireUserManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("identity_link.add", actorId, cancellationToken);
+        await RequireUserManageAsync(cancellationToken);
         ValidateEntraExternalId(source, externalId);
 
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-            throw new IdentityLinkException(IdentityLinkErrorCodes.UserNotFound, $"User {userId.Value} not found.");
-
-        if (EmergencyAccessIdentity.IsSystemManaged(user))
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UnsafeOperation,
-                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
-        }
-
-        // A Local link's name is the user's username, so it may be omitted and then defaults to it.
-        var linkExternalId = source == IdentitySource.Local
-            ? string.IsNullOrWhiteSpace(externalId) ? user.Username : LocalAuthHelpers.NormalizeUsername(externalId)
-            : externalId!.Trim();
-
-        if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.ReservedUsername,
-                "That username is reserved for Emergency Access.");
-        }
-
-        if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
-            return;
-
+        // The pending Microsoft link is built from a directory lookup: an external read, so it runs before the transaction.
+        // The same checks as before run first, so an absent user or an existing Microsoft link is still reported ahead of
+        // any directory error; the transaction then re-checks everything against the state it commits against.
+        IdentityLink? pendingLink = null;
         if (source == IdentitySource.Entra && _entraAssociation is not null)
         {
-            if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra))
-            {
-                throw new IdentityLinkException(
-                    IdentityLinkErrorCodes.EntraLinkAlreadyPresent,
-                    "This user already has a Microsoft identity linked. Remove the existing link first.");
-            }
-
-            var pendingLink = await _entraAssociation.BuildPendingAdminLinkAsync(linkExternalId, cancellationToken);
+            var current = await RequireLinkableUserAsync(userId, cancellationToken);
+            var externalKey = externalId!.Trim();
+            if (current.IdentityLinks.Any(l => l.Source == source && l.ExternalId == externalKey))
+                return;
+            RequireNoEntraLink(current);
+            pendingLink = await _entraAssociation.BuildPendingAdminLinkAsync(externalKey, cancellationToken);
             if (string.IsNullOrEmpty(pendingLink.TenantId))
             {
                 throw new IdentityLinkException(
                     IdentityLinkErrorCodes.InvalidEntraExternalId,
                     "Microsoft identities can only be linked when a directory tenant is configured.");
             }
+        }
 
-            var existingEntra = await _userRepository.GetByIdentityLinkAsync(
-                ProviderIdentityKey.Entra(pendingLink.TenantId, pendingLink.ExternalId),
-                cancellationToken);
-            if (existingEntra is not null)
+        // Generated once, so a rerun after a confirmed rollback stores, and targets, the same link.
+        var linkId = IdentityLink.NewLinkId();
+        await Unit.ExecuteAsync(
+            Operation(pendingLink is not null ? AuditActionNames.EntraLinkPending : AuditActionNames.IdentityLinkAdded),
+            async (transaction, ct) =>
             {
-                throw new IdentityLinkException(
-                    IdentityLinkErrorCodes.ExternalIdInUse,
-                    "An identity link with this source and external id is already attached to another user.");
-            }
+                var user = await RequireLinkableUserAsync(userId, ct);
 
-            await _userRepository.AddIdentityLinkAsync(userId, pendingLink, cancellationToken);
-            await AppendAuditAsync(
-                EntraLinkAuditActionNames.Pending,
-                actorId,
-                userId.Value,
-                $"userId={userId.Value} oid={pendingLink.ExternalId} tenantId={pendingLink.TenantId}",
-                cancellationToken);
-            return;
-        }
+                // A Local link's name is the user's username, so it may be omitted and then defaults to it.
+                var linkExternalId = source == IdentitySource.Local
+                    ? string.IsNullOrWhiteSpace(externalId) ? user.Username : LocalAuthHelpers.NormalizeUsername(externalId)
+                    : externalId!.Trim();
 
-        // A Local link's external id is the user's username; it is not chosen separately.
-        if (source == IdentitySource.Local && !string.Equals(linkExternalId, user.Username, StringComparison.Ordinal))
-        {
-            throw new UsernameException(
-                UsernameErrorCodes.Mismatch,
-                "A local sign-in must use this user's existing username.");
-        }
+                if (source == IdentitySource.Local && EmergencyAccessIdentity.IsReservedLocalUsername(linkExternalId))
+                {
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.ReservedUsername,
+                        "That username is reserved for Emergency Access.");
+                }
 
-        var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, cancellationToken);
-        if (existing is not null)
-        {
-            throw new IdentityLinkException(
-                IdentityLinkErrorCodes.ExternalIdInUse,
-                "An identity link with this source and external id is already attached to another user.");
-        }
+                // Already linked: nothing changes and nothing is recorded; the request still succeeds.
+                if (user.IdentityLinks.Any(l => l.Source == source && l.ExternalId == linkExternalId))
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
 
-        await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
-        await AppendAuditAsync("identity_link.added", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
+                if (pendingLink is not null)
+                {
+                    RequireNoEntraLink(user);
+                    var existingEntra = await _userRepository.GetByIdentityLinkAsync(
+                        ProviderIdentityKey.Entra(pendingLink.TenantId!, pendingLink.ExternalId),
+                        ct);
+                    if (existingEntra is not null)
+                        throw ExternalIdInUse();
+
+                    await _userRepository.AddIdentityLinkAsync(userId, pendingLink with { LinkId = linkId }, ct);
+                    await transaction.StageAsync(
+                        AuditEvents.EntraLinkPending(userId, linkId, pendingLink.TenantId!, pendingLink.ExternalId), ct);
+                    return true;
+                }
+
+                // A Local link's external id is the user's username; it is not chosen separately.
+                if (source == IdentitySource.Local && !string.Equals(linkExternalId, user.Username, StringComparison.Ordinal))
+                {
+                    throw new UsernameException(
+                        UsernameErrorCodes.Mismatch,
+                        "A local sign-in must use this user's existing username.");
+                }
+
+                var existing = await _userRepository.GetByIdentityLinkAsync(source, linkExternalId, ct);
+                if (existing is not null)
+                    throw ExternalIdInUse();
+
+                if (source == IdentitySource.Local)
+                {
+                    await _userRepository.AddIdentityLinkAsync(
+                        userId, new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null, LinkId: linkId), ct);
+                }
+                else
+                {
+                    // A Microsoft link without the directory association needs a tenant the store requires; the store
+                    // refuses it, as it always has.
+                    await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, ct);
+                }
+
+                await transaction.StageAsync(AuditEvents.IdentityLinkAdded(userId, linkId, source, linkExternalId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
-    /// <inheritdoc />
-    public async ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+    private async ValueTask<User> RequireLinkableUserAsync(UserId userId, CancellationToken cancellationToken)
     {
-        var actorId = await RequireUserManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("identity_link.remove", actorId, cancellationToken);
-        var linkExternalId = source == IdentitySource.Local
-            ? LocalAuthHelpers.NormalizeUsername(externalId)
-            : externalId.Trim();
-
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
-        {
-            if (_emergencyAccess is not null)
-                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove", cancellationToken);
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UnsafeOperation,
-                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
-        }
-        if (user is not null && source == IdentitySource.Local)
-        {
-            if (_emergencyAccess is not null)
-                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "identity_link.remove_local", cancellationToken);
-            var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
-            var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
-            var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
-            var removedLink = user.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == linkExternalId);
-            if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
-            {
-                await AppendAuditAsync("auth_admin.blocked.last_admin_link_removed", actorId, userId.Value, $"userId={userId.Value} source={source}", cancellationToken);
-                throw new IdentityLinkException(
-                    IdentityLinkErrorCodes.LastViableSignInMethod,
-                    "Cannot remove the last sign-in method for the last platform administrator. A pending Microsoft identity is not a sign-in path until it has been used successfully.");
-            }
-        }
-
-        await _userRepository.RemoveIdentityLinkAsync(userId, source, linkExternalId, cancellationToken);
-        await AppendAuditAsync("identity_link.removed", actorId, userId.Value, $"userId={userId.Value} source={source} externalId={linkExternalId}", cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
-    {
-        var actorId = await RequireRoleAssignAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("role.assign", actorId, cancellationToken);
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
+            ?? throw new IdentityLinkException(IdentityLinkErrorCodes.UserNotFound, $"User {userId.Value} not found.");
         if (EmergencyAccessIdentity.IsSystemManaged(user))
         {
             throw new EmergencyAccessException(
                 EmergencyAccessErrorCodes.UnsafeOperation,
-                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+                "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
         }
-        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
-        if (role is null)
-            throw new InvalidOperationException($"Role {roleId.Value} not found.");
 
-        await _roleRepository.AssignToUserAsync(userId, roleId, cancellationToken);
-        await AppendAuditAsync(GovernanceAuditActionNames.RoleAssigned, actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
+        return user;
+    }
+
+    private static void RequireNoEntraLink(User user)
+    {
+        if (user.IdentityLinks.Any(l => l.Source == IdentitySource.Entra))
+        {
+            throw new IdentityLinkException(
+                IdentityLinkErrorCodes.EntraLinkAlreadyPresent,
+                "This user already has a Microsoft identity linked. Remove the existing link first.");
+        }
+    }
+
+    private static IdentityLinkException ExternalIdInUse() =>
+        new(IdentityLinkErrorCodes.ExternalIdInUse, "An identity link with this source and external id is already attached to another user.");
+
+    /// <inheritdoc />
+    public async ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default)
+    {
+        await RequireUserManageAsync(cancellationToken);
+        var linkExternalId = source == IdentitySource.Local
+            ? LocalAuthHelpers.NormalizeUsername(externalId)
+            : externalId.Trim();
+
+        await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(AuditActionNames.IdentityLinkRemoved),
+            async (transaction, refusals, ct) =>
+            {
+                var user = await _userRepository.GetByIdAsync(userId, ct);
+                if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
+                {
+                    if (await IsRecoveryAccessUserAsync(userId, ct))
+                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "identity_link.remove"), EmergencyAccessService.UnsafeOperationRefusal());
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.UnsafeOperation,
+                        "Recovery Access is system-managed. Identity links cannot be changed through ordinary user administration.");
+                }
+
+                var removedLink = user?.IdentityLinks.FirstOrDefault(l => l.Source == source && l.ExternalId == linkExternalId);
+                if (user is not null && source == IdentitySource.Local)
+                {
+                    if (await IsRecoveryAccessUserAsync(userId, ct))
+                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "identity_link.remove_local"), EmergencyAccessService.UnsafeOperationRefusal());
+                    var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
+                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+                    if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
+                    {
+                        return refusals.Refuse<bool>(
+                            transaction,
+                            AuditEvents.BlockedLastAdminLinkRemoved(userId, LinkTargetId(removedLink), source),
+                            new IdentityLinkException(
+                                IdentityLinkErrorCodes.LastViableSignInMethod,
+                                "Cannot remove the last sign-in method for the last platform administrator. A pending Microsoft identity is not a sign-in path until it has been used successfully."));
+                    }
+                }
+
+                // No such link: nothing changes and nothing is recorded; the request still succeeds, as it always has.
+                if (removedLink is null)
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                await _userRepository.RemoveIdentityLinkAsync(userId, source, linkExternalId, ct);
+                await transaction.StageAsync(
+                    AuditEvents.IdentityLinkRemoved(userId, LinkTargetId(removedLink), source, linkExternalId, removedLink.TenantId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The audit target of a link: its persisted id. A store that does not persist link ids (a test double) has none, and
+    /// its external id stands in.
+    /// </summary>
+    private static string LinkTargetId(IdentityLink link) => link.LinkId ?? link.ExternalId;
+
+    /// <summary>
+    /// True when the user is the designated Recovery Access account. Read inside the operation's transaction, so the safety
+    /// check sees the state the change would commit against; a refusal is recorded by the caller after the rollback.
+    /// </summary>
+    private async ValueTask<bool> IsRecoveryAccessUserAsync(UserId userId, CancellationToken cancellationToken) =>
+        _emergencyAccess is not null && await _emergencyAccess.IsDesignatedEmergencyUserAsync(userId, cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        await RequireRoleAssignAsync(cancellationToken);
+
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.RoleAssigned),
+            async (transaction, ct) =>
+            {
+                var user = await _userRepository.GetByIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                if (EmergencyAccessIdentity.IsSystemManaged(user))
+                {
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.UnsafeOperation,
+                        "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+                }
+
+                _ = await _roleRepository.GetAsync(roleId, ct)
+                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+
+                // Already assigned: nothing changes and nothing is recorded; the request still succeeds.
+                if (user.AssignedRoleIds.Any(r => r.Value == roleId.Value))
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                await _roleRepository.AssignToUserAsync(userId, roleId, ct);
+                await transaction.StageAsync(AuditEvents.RoleAssigned(userId, roleId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
     /// <inheritdoc />
     public async ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireRoleAssignAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("role.remove", actorId, cancellationToken);
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
-        if (EmergencyAccessIdentity.IsSystemManaged(user))
-        {
-            if (_emergencyAccess is not null)
-                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove", cancellationToken);
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UnsafeOperation,
-                "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
-        }
-        var role = await _roleRepository.GetAsync(roleId, cancellationToken);
-        if (role is null)
-            throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        await RequireRoleAssignAsync(cancellationToken);
 
-        if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
-        {
-            if (_emergencyAccess is not null)
-                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "role.remove_platform_administrator", cancellationToken);
-            var count = await _roleRepository.CountUserAssignmentsAsync(roleId, cancellationToken);
-            if (count <= 1)
+        await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(AuditActionNames.RoleRemoved),
+            async (transaction, refusals, ct) =>
             {
-                await AppendAuditAsync("auth_admin.blocked.last_platform_admin_removal", actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
-                throw new InvalidOperationException("Cannot remove the last platform administrator role assignment.");
-            }
-        }
+                var user = await _userRepository.GetByIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                if (EmergencyAccessIdentity.IsSystemManaged(user))
+                {
+                    if (await IsRecoveryAccessUserAsync(userId, ct))
+                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "role.remove"), EmergencyAccessService.UnsafeOperationRefusal());
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.UnsafeOperation,
+                        "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
+                }
 
-        await _roleRepository.RemoveFromUserAsync(userId, roleId, cancellationToken);
-        await AppendAuditAsync(GovernanceAuditActionNames.RoleRemoved, actorId, userId.Value, $"userId={userId.Value} roleId={roleId.Value}", cancellationToken);
+                _ = await _roleRepository.GetAsync(roleId, ct)
+                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+
+                if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
+                {
+                    if (await IsRecoveryAccessUserAsync(userId, ct))
+                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "role.remove_platform_administrator"), EmergencyAccessService.UnsafeOperationRefusal());
+                    var count = await _roleRepository.CountUserAssignmentsAsync(roleId, ct);
+                    if (count <= 1)
+                    {
+                        return refusals.Refuse<bool>(
+                            transaction,
+                            AuditEvents.BlockedLastPlatformAdminRemoval(userId, roleId),
+                            new InvalidOperationException("Cannot remove the last platform administrator role assignment."));
+                    }
+                }
+
+                // Not assigned: nothing changes and nothing is recorded; the request still succeeds.
+                if (!user.AssignedRoleIds.Any(r => r.Value == roleId.Value))
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                await _roleRepository.RemoveFromUserAsync(userId, roleId, ct);
+                await transaction.StageAsync(AuditEvents.RoleRemoved(userId, roleId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
     /// <inheritdoc />
     public async ValueTask SetLocalPasswordAsync(UserId userId, string newPassword, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireCredentialManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync("credential.password_set", actorId, cancellationToken);
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
-        if (EmergencyAccessIdentity.IsSystemManaged(user))
-        {
-            throw new EmergencyAccessException(
-                EmergencyAccessErrorCodes.UnsafeOperation,
-                "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
-        }
-        if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
-            throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
+        await RequireCredentialManageAsync(cancellationToken);
 
-        LocalPasswordPolicy.Require(newPassword, user);
+        // The salted hash is computed once and reused by a rerun; it never leaves this method.
+        (string Hash, string Salt)? credential = null;
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.PasswordSet),
+            async (transaction, ct) =>
+            {
+                var user = await _userRepository.GetByIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                if (EmergencyAccessIdentity.IsSystemManaged(user))
+                {
+                    throw new EmergencyAccessException(
+                        EmergencyAccessErrorCodes.UnsafeOperation,
+                        "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
+                }
+                if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+                    throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
-        var (hash, salt) = _passwordHasher.HashPassword(newPassword!);
-        await _localCredentialRepository.SetPasswordAsync(userId, hash, salt, _passwordHasher.AlgorithmName, cancellationToken);
-        if (_actionTokens is not null)
-            await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, cancellationToken);
-        await AppendAuditAsync("credential.password_set", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
+                LocalPasswordPolicy.Require(newPassword, user);
+
+                credential ??= _passwordHasher.HashPassword(newPassword!);
+                await _localCredentialRepository.SetPasswordAsync(userId, credential.Value.Hash, credential.Value.Salt, _passwordHasher.AlgorithmName, ct);
+                if (_actionTokens is not null)
+                    await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, ct);
+                await transaction.StageAsync(AuditEvents.PasswordSet(userId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
     /// <inheritdoc />
     public async ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
     {
-        var actorId = await RequireCredentialManageAsync(cancellationToken);
-        await AppendBreakGlassUseAuditIfNeededAsync(disabled ? "credential.disabled" : "credential.enabled", actorId, cancellationToken);
-        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
-        if (user is null)
-            throw new InvalidOperationException($"User {userId.Value} not found.");
-        if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
-            throw new InvalidOperationException("User has no Local identity link; cannot manage local credential.");
+        await RequireCredentialManageAsync(cancellationToken);
 
-        var cred = await _localCredentialRepository.GetByUserIdAsync(userId, cancellationToken);
-        if (cred is null)
-            throw new InvalidOperationException("User has no local credential row; set a password first.");
-
-        if (!disabled)
-        {
-            if (_strongAuthentication is null)
+        await Unit.ExecuteRefusableAsync(
+            Events,
+            Operation(disabled ? AuditActionNames.CredentialDisabled : AuditActionNames.LocalCredentialReenabled),
+            async (transaction, refusals, ct) =>
             {
-                throw new StrongAuthenticationException(
-                    StrongAuthenticationErrorCodes.NotConfigured,
-                    "Strong authentication is not available. Local sign-in cannot be re-enabled.");
-            }
+                var user = await _userRepository.GetByIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
+                    throw new InvalidOperationException("User has no Local identity link; cannot manage local credential.");
 
-            try
-            {
-                await _strongAuthentication.RequireRecentStrongAuthenticationAsync(cancellationToken);
-            }
-            catch (StrongAuthenticationException ex)
-            {
-                await AppendAuditAsync(
-                    StrongAuthenticationAuditActionNames.AssuranceInsufficient,
-                    actorId,
-                    userId.Value,
-                    $"userId={userId.Value} code={ex.Code}",
-                    cancellationToken);
-                throw;
-            }
-        }
+                var cred = await _localCredentialRepository.GetByUserIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException("User has no local credential row; set a password first.");
 
-        if (disabled)
-        {
-            if (EmergencyAccessIdentity.IsSystemManaged(user))
-            {
-                if (_emergencyAccess is not null)
-                    await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
-                throw new EmergencyAccessException(
-                    EmergencyAccessErrorCodes.UnsafeOperation,
-                    "Recovery Access is system-managed. The local credential cannot be disabled through ordinary user administration.");
-            }
+                if (!disabled)
+                {
+                    if (_strongAuthentication is null)
+                    {
+                        throw new StrongAuthenticationException(
+                            StrongAuthenticationErrorCodes.NotConfigured,
+                            "Strong authentication is not available. Local sign-in cannot be re-enabled.");
+                    }
 
-            if (_emergencyAccess is not null)
-                await _emergencyAccess.EnsureDestructiveChangeAllowedAsync(userId, "credential.disable", cancellationToken);
-            var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
-            var adminCount = await _roleRepository.CountUserAssignmentsAsync(platformAdminRoleId, cancellationToken);
-            var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
-            if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
-            {
-                await AppendAuditAsync("auth_admin.blocked.last_admin_credential_disabled", actorId, userId.Value, $"userId={userId.Value}", cancellationToken);
-                throw new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path.");
-            }
-        }
+                    try
+                    {
+                        await _strongAuthentication.RequireRecentStrongAuthenticationAsync(ct);
+                    }
+                    catch (StrongAuthenticationException ex)
+                    {
+                        return refusals.Refuse<bool>(transaction, AuditEvents.StrongAuthenticationInsufficient(userId, ex.Code), ex);
+                    }
+                }
+                else
+                {
+                    if (EmergencyAccessIdentity.IsSystemManaged(user))
+                    {
+                        if (await IsRecoveryAccessUserAsync(userId, ct))
+                            return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "credential.disable"), EmergencyAccessService.UnsafeOperationRefusal());
+                        throw new EmergencyAccessException(
+                            EmergencyAccessErrorCodes.UnsafeOperation,
+                            "Recovery Access is system-managed. The local credential cannot be disabled through ordinary user administration.");
+                    }
 
-        await _localCredentialRepository.SetDisabledAsync(userId, disabled, cancellationToken);
-        var action = disabled
-            ? "credential.disabled"
-            : StrongAuthenticationAuditActionNames.LocalReenabledStrongAdmin;
-        await AppendAuditAsync(action, actorId, userId.Value, $"userId={userId.Value} disabled={disabled}", cancellationToken);
+                    if (await IsRecoveryAccessUserAsync(userId, ct))
+                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "credential.disable"), EmergencyAccessService.UnsafeOperationRefusal());
+                    var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
+                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+                    if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
+                    {
+                        return refusals.Refuse<bool>(
+                            transaction,
+                            AuditEvents.BlockedLastAdminCredentialDisabled(userId),
+                            new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path."));
+                    }
+                }
+
+                // Already in the requested state: nothing changes and nothing is recorded; the request still succeeds.
+                if (cred.IsDisabled == disabled)
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                await _localCredentialRepository.SetDisabledAsync(userId, disabled, ct);
+                await transaction.StageAsync(
+                    disabled ? AuditEvents.CredentialDisabled(userId) : AuditEvents.LocalCredentialReenabled(userId), ct);
+                return true;
+            },
+            Done,
+            cancellationToken);
     }
 
     private async ValueTask RequireUserReadAsync(CancellationToken cancellationToken)
@@ -930,40 +1082,4 @@ public sealed class UserManagementService : IUserManagementService
                 "Entra external id must be the stable subject (oid or sub), not an email or UPN.");
     }
 
-    /// <summary>
-    /// If the current session is break-glass, appends a durable audit record for the auth-admin operation (visibility only; no secrets).
-    /// </summary>
-    private async ValueTask AppendBreakGlassUseAuditIfNeededAsync(string operation, ActorId actorId, CancellationToken cancellationToken)
-    {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
-        if (actor is not HumanActor human || !human.IsBreakGlassSession)
-            return;
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actorId,
-            GovernanceAuditActionNames.BreakGlassAdminOperation,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            "auth",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            $"operation={operation}");
-        await _audit.AppendAsync(record, cancellationToken);
-    }
-
-    private async ValueTask AppendAuditAsync(string action, ActorId actorId, string? resourceId, string? details, CancellationToken cancellationToken)
-    {
-        var resource = string.IsNullOrEmpty(resourceId)
-            ? null
-            : new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance);
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actorId,
-            action,
-            resource,
-            AuditOutcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        await _audit.AppendAsync(record, cancellationToken);
-    }
 }

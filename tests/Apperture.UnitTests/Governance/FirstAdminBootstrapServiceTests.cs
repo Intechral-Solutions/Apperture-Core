@@ -32,7 +32,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_rejects_the_reserved_recovery_username(string username)
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
 
@@ -44,7 +44,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_assigns_the_normalized_sign_in_name_as_username_and_local_link()
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "  Admin  ", "unique-local-passphrase");
 
@@ -55,6 +55,25 @@ public sealed class FirstAdminBootstrapServiceTests
             .Which.ExternalId.Should().Be(user.Username);
     }
 
+    [Fact]
+    public async Task The_first_administrator_commits_with_an_anonymous_created_row_and_a_refusal_writes_none()
+    {
+        var users = new CapturingUserRepository();
+        var audit = new Apperture.UnitTests.Audit.AuditRecording();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", password: null);
+        var reserved = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "breakglass", password: null);
+
+        reserved.Kind.Should().Be(FirstAdminBootstrapResultKind.DuplicateIdentityLink);
+        var (created, actor) = audit.Events.Should().ContainSingle().Subject;
+        created.Action.Should().Be(Apperture.Core.Application.Audit.AuditActionNames.FirstAdminCreated);
+        actor.Should().Be(Apperture.Core.Application.Audit.AuditActor.Anonymous, "the bootstrap request is unauthenticated");
+        created.Target.Should().Be(new Apperture.Core.Application.Audit.AuditTarget(Apperture.Core.Application.Audit.AuditTargetTypes.User, result.UserId!.Value));
+        created.Fields["localSignInReady"].Should().Be(false);
+        audit.Unit.Operations.Should().HaveCount(2).And.Contain(o => o.NoOp, "the refused attempt changed nothing");
+    }
+
     [Theory]
     [InlineData("jane@contoso.com", UsernameErrorCodes.Invalid)]
     [InlineData("ab", UsernameErrorCodes.Invalid)]
@@ -62,7 +81,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_refuses_a_name_that_fails_the_username_policy(string username, string code)
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
 
         var act = async () => await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
 

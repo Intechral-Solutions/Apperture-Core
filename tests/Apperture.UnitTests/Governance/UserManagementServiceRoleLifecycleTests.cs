@@ -1,8 +1,9 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -108,9 +109,87 @@ public sealed class UserManagementServiceRoleLifecycleTests
         var ex = await act.Should().ThrowAsync<RoleLifecycleException>();
         ex.Which.Code.Should().Be(RoleLifecycleErrorCodes.SystemRole);
         harness.Roles.MetadataUpdates.Should().BeEmpty();
-        harness.Audit.Actions.Should().Contain(GovernanceAuditActionNames.RoleMutationRejected);
-        harness.Audit.LastDetails.Should().Contain("reason=system_role");
-        harness.Audit.Actions.Should().NotContain(GovernanceAuditActionNames.RoleMetadataUpdated);
+
+        // AUD-1.2: the refusal is a W3 row written after the transaction rolled back, with the role as target.
+        harness.Audit.Actions.Should().Equal(GovernanceAuditActionNames.RoleMutationRejected);
+        harness.Audit.Writer.Written.Should().ContainSingle().Which.BestEffort.Should().BeTrue();
+        harness.Audit.Last.Fields["reason"].Should().Be("system_role");
+        harness.Audit.Last.Target!.Id.Should().Be(systemId.Value);
+        harness.Audit.Last.OutcomeCode.Should().Be(AuditOutcomeCodes.Rejected);
+    }
+
+    [Fact]
+    public async Task UpdateRoleMetadata_to_the_same_values_changes_nothing_and_records_nothing()
+    {
+        var harness = Harness.Create();
+        var created = await harness.Service.CreateRoleAsync("Operators", "Team");
+        harness.Audit.Clear();
+
+        var updated = await harness.Service.UpdateRoleMetadataAsync(created.Id, "Operators", "Team");
+
+        updated.Name.Should().Be("Operators");
+        harness.Roles.MetadataUpdates.Should().BeEmpty();
+        harness.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateRoleMetadata_records_the_previous_and_new_names()
+    {
+        var harness = Harness.Create();
+        var created = await harness.Service.CreateRoleAsync("Operators", "Team");
+        harness.Audit.Clear();
+
+        await harness.Service.UpdateRoleMetadataAsync(created.Id, "Reviewers", "Team");
+
+        var row = harness.Audit.Single(GovernanceAuditActionNames.RoleMetadataUpdated);
+        row.Target!.Id.Should().Be(created.Id.Value);
+        row.Fields["previousName"].Should().Be("Operators");
+        row.Fields["newName"].Should().Be("Reviewers");
+        row.Fields["descriptionChanged"].Should().Be(false);
+    }
+
+    [Fact]
+    public async Task SetRolePermissions_records_the_committed_additions_and_removals()
+    {
+        var harness = Harness.Create();
+        var other = new PermissionDescriptor(ActionConstants.UserManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance));
+        harness.Registry.RegisterPermission(other, ResourceFamily.Core);
+        var created = await harness.Service.CreateRoleAsync("Operators", null, [KnownPermission()]);
+        harness.Audit.Clear();
+
+        await harness.Service.SetRolePermissionsAsync(created.Id, [other]);
+
+        var row = harness.Audit.Single(GovernanceAuditActionNames.PermissionAssignmentUpdated);
+        row.Target!.Id.Should().Be(created.Id.Value);
+        row.Fields["permissionsAdded"].Should().BeEquivalentTo(new[] { "user.manage@User:instance" });
+        row.Fields["permissionsRemoved"].Should().BeEquivalentTo(new[] { "user.read@User:instance" });
+        row.Fields["permissionCount"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SetRolePermissions_to_the_same_set_changes_nothing_and_records_nothing()
+    {
+        var harness = Harness.Create();
+        var created = await harness.Service.CreateRoleAsync("Operators", null, [KnownPermission()]);
+        harness.Audit.Clear();
+
+        await harness.Service.SetRolePermissionsAsync(created.Id, [KnownPermission()]);
+
+        harness.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateRole_records_the_initial_grants_as_additions()
+    {
+        var harness = Harness.Create();
+
+        var role = await harness.Service.CreateRoleAsync("Operators", null, [KnownPermission()]);
+
+        var row = harness.Audit.Single(GovernanceAuditActionNames.RoleCreated);
+        row.Target!.Id.Should().Be(role.Id.Value);
+        row.Fields["name"].Should().Be("Operators");
+        row.Fields["permissionsAdded"].Should().BeEquivalentTo(new[] { "user.read@User:instance" });
+        harness.Audit.Events.Single().Actor.Should().Be(AuditActor.CurrentPrincipal);
     }
 
     [Fact]
@@ -206,9 +285,9 @@ public sealed class UserManagementServiceRoleLifecycleTests
         harness.Roles.Created.Should().ContainSingle(r => r.Id.Value == created.Id.Value);
         harness.Roles.Assigned.Should().ContainSingle(a => a.RoleId == created.Id.Value);
         harness.Roles.RemovedFromUser.Should().BeEmpty();
-        harness.Audit.Actions.Should().Contain(GovernanceAuditActionNames.RoleMutationRejected);
-        harness.Audit.LastDetails.Should().Contain("reason=assignments_remain");
-        harness.Audit.Actions.Should().NotContain(GovernanceAuditActionNames.RoleDeleted);
+        harness.Audit.Actions.Should().Equal(GovernanceAuditActionNames.RoleMutationRejected);
+        harness.Audit.Last.Fields["reason"].Should().Be("assignments_remain");
+        harness.Audit.Last.Fields["assignmentCount"].Should().Be(1);
     }
 
     [Fact]
@@ -269,18 +348,20 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
     private sealed class Harness
     {
-        private Harness(IUserManagementService service, RecordingRoles roles, RecordingUsers users, RecordingAudit audit)
+        private Harness(IUserManagementService service, RecordingRoles roles, RecordingUsers users, AuditRecording audit, InMemoryResourceDescriptorRegistry registry)
         {
             Service = service;
             Roles = roles;
             Users = users;
             Audit = audit;
+            Registry = registry;
         }
 
         public IUserManagementService Service { get; }
         public RecordingRoles Roles { get; }
         public RecordingUsers Users { get; }
-        public RecordingAudit Audit { get; }
+        public AuditRecording Audit { get; }
+        public InMemoryResourceDescriptorRegistry Registry { get; }
 
         public static Harness Create(
             bool allowRoleManage = true,
@@ -292,7 +373,7 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
             var roles = new RecordingRoles();
             var users = new RecordingUsers();
-            var audit = new RecordingAudit();
+            var audit = new AuditRecording();
             var service = new UserManagementService(
                 new StubPrincipal(),
                 new StubResolver(),
@@ -302,9 +383,10 @@ public sealed class UserManagementServiceRoleLifecycleTests
                 registry,
                 new StubCredentials(),
                 new StubHasher(),
-                audit,
-                Options.Create(new LocalAuthOptions()));
-            return new Harness(service, roles, users, audit);
+                Options.Create(new LocalAuthOptions()),
+                auditedUnitOfWork: audit,
+                auditEvents: audit);
+            return new Harness(service, roles, users, audit, registry);
         }
     }
 
@@ -387,6 +469,8 @@ public sealed class UserManagementServiceRoleLifecycleTests
         public ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
         {
             LastUpdatedPermissions = permissions;
+            if (_roles.TryGetValue(roleId.Value, out var role))
+                _roles[roleId.Value] = role with { Permissions = permissions };
             return ValueTask.CompletedTask;
         }
 
@@ -465,28 +549,6 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public string? LastDetails { get; private set; }
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            LastDetails = record.Details;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
     }
 
     private sealed class StubCredentials : ILocalCredentialRepository

@@ -1,44 +1,49 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Abstractions;
-using Apperture.Shared.Kernel;
 using Microsoft.Extensions.Logging;
 
 namespace Apperture.ControlPlane.Security;
 
 /// <inheritdoc />
+/// <remarks>
+/// AUD-1.2 (audit hardening design gate §13): enrollment, recovery-code generation, consumption and reset each commit with
+/// their audit row. New recovery codes are generated once per operation, outside its transaction, and reused by a rerun,
+/// so the codes returned are always the codes stored; they are never recorded.
+/// </remarks>
 public sealed class NativeMfaService : INativeMfaService
 {
     public const string TotpProtectorKeyId = "apperture.native-mfa.totp";
-    private const string AuditCategory = "auth";
 
     private readonly INativeTotpCredentialRepository _totp;
     private readonly INativeMfaRecoveryCodeRepository _recoveryCodes;
     private readonly ILocalPasswordHasher _hasher;
     private readonly ISecretProtector _protector;
-    private readonly IAuditService _audit;
     private readonly TimeProvider _time;
     private readonly ILogger<NativeMfaService> _logger;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public NativeMfaService(
         INativeTotpCredentialRepository totp,
         INativeMfaRecoveryCodeRepository recoveryCodes,
         ILocalPasswordHasher hasher,
         ISecretProtector protector,
-        IAuditService audit,
         TimeProvider time,
-        ILogger<NativeMfaService> logger)
+        ILogger<NativeMfaService> logger,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _totp = totp;
         _recoveryCodes = recoveryCodes;
         _hasher = hasher;
         _protector = protector;
-        _audit = audit;
         _time = time;
         _logger = logger;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Native MFA changes require the audited unit of work.");
 
     /// <inheritdoc />
     public async ValueTask<bool> IsEnrolledAsync(UserId userId, CancellationToken cancellationToken = default)
@@ -84,24 +89,34 @@ public sealed class NativeMfaService : INativeMfaService
     public async ValueTask<IReadOnlyList<string>> CompleteEnrollmentAsync(
         UserId userId,
         string totpCode,
+        AuditActor actor,
         CancellationToken cancellationToken = default)
     {
-        var stored = await _totp.GetByUserIdAsync(userId, cancellationToken)
-            ?? throw new InvalidOperationException("No pending authenticator enrollment exists.");
-        if (stored.IsEnrolled)
-            throw new InvalidOperationException("An authenticator is already enrolled.");
+        var codes = NewRecoveryCodes(userId);
 
-        var secret = await UnprotectSecretAsync(stored, cancellationToken);
-        var unix = _time.GetUtcNow().ToUnixTimeSeconds();
-        if (!Rfc6238Totp.Verify(secret, totpCode, unix, stored.LastUsedStep, out var matchedStep))
-            throw new InvalidOperationException("The authenticator code is not valid.");
+        // The enrollment, its recovery codes and both rows commit together.
+        return await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.MfaEnrolled, actor),
+            async (transaction, ct) =>
+            {
+                var stored = await _totp.GetByUserIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException("No pending authenticator enrollment exists.");
+                if (stored.IsEnrolled)
+                    throw new InvalidOperationException("An authenticator is already enrolled.");
 
-        var now = _time.GetUtcNow();
-        await _totp.MarkEnrolledAsync(userId, matchedStep, now, cancellationToken);
-        var codes = await PersistNewRecoveryCodesAsync(userId, cancellationToken);
-        await AuditAsync(EmergencyAccessAuditActionNames.MfaEnrolled, userId.Value, $"userId={userId.Value}", cancellationToken);
-        await AuditAsync(EmergencyAccessAuditActionNames.RecoveryCodesGenerated, userId.Value, $"userId={userId.Value} count={codes.Count}", cancellationToken);
-        return codes;
+                var secret = await UnprotectSecretAsync(stored, ct);
+                var unix = _time.GetUtcNow().ToUnixTimeSeconds();
+                if (!Rfc6238Totp.Verify(secret, totpCode, unix, stored.LastUsedStep, out var matchedStep))
+                    throw new InvalidOperationException("The authenticator code is not valid.");
+
+                await _totp.MarkEnrolledAsync(userId, matchedStep, _time.GetUtcNow(), ct);
+                await _recoveryCodes.ReplaceAllAsync(userId, codes.Records, ct);
+                await transaction.StageAsync(AuditEvents.MfaEnrolled(userId), ct);
+                await transaction.StageAsync(AuditEvents.RecoveryCodesGenerated(userId, codes.Plaintext.Count, regenerated: false), ct);
+                return codes.Plaintext;
+            },
+            (_, _) => Task.FromResult(codes.Plaintext),
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -127,56 +142,79 @@ public sealed class NativeMfaService : INativeMfaService
         if (normalized.Length == 0)
             return false;
 
-        var stored = await _totp.GetByUserIdAsync(userId, cancellationToken);
-        if (stored is not { IsEnrolled: true })
-            return false;
+        // The sign-in has no session yet: the user whose password and pending ticket this request verified is the actor.
+        return await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.RecoveryCodeConsumed, AuditActor.AuthenticatedUser(userId)),
+            async (transaction, ct) =>
+            {
+                var stored = await _totp.GetByUserIdAsync(userId, ct);
+                if (stored is not { IsEnrolled: true })
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-        var records = await _recoveryCodes.ListAsync(userId, cancellationToken);
-        foreach (var record in records)
-        {
-            if (record.ConsumedAtUtc is not null)
-                continue;
-            if (!_hasher.VerifyPassword(normalized, record.CodeHash, record.Salt))
-                continue;
+                var records = await _recoveryCodes.ListAsync(userId, ct);
+                var unused = records.Where(r => r.ConsumedAtUtc is null).ToList();
+                var match = unused.FirstOrDefault(r => _hasher.VerifyPassword(normalized, r.CodeHash, r.Salt));
+                if (match is null)
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-            await _recoveryCodes.MarkConsumedAsync(record.Id, _time.GetUtcNow(), cancellationToken);
-            await AuditAsync(
-                EmergencyAccessAuditActionNames.RecoveryCodeConsumed,
-                userId.Value,
-                $"userId={userId.Value}",
-                cancellationToken);
-            return true;
-        }
-
-        return false;
+                await _recoveryCodes.MarkConsumedAsync(match.Id, _time.GetUtcNow(), ct);
+                await transaction.StageAsync(AuditEvents.RecoveryCodeConsumed(userId, unused.Count - 1), ct);
+                return true;
+            },
+            (_, _) => Task.FromResult(true),
+            cancellationToken);
     }
 
     /// <inheritdoc />
     public async ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(
         UserId userId,
+        AuditActor actor,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsEnrolledAsync(userId, cancellationToken))
-            throw new InvalidOperationException("Native MFA must be enrolled before recovery codes can be generated.");
+        var codes = NewRecoveryCodes(userId);
+        return await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.RecoveryCodesGenerated, actor),
+            async (transaction, ct) =>
+            {
+                if (!await IsEnrolledAsync(userId, ct))
+                    throw new InvalidOperationException("Native MFA must be enrolled before recovery codes can be generated.");
 
-        var codes = await PersistNewRecoveryCodesAsync(userId, cancellationToken);
-        await AuditAsync(
-            EmergencyAccessAuditActionNames.RecoveryCodesGenerated,
-            userId.Value,
-            $"userId={userId.Value} count={codes.Count} regenerated=true",
+                await _recoveryCodes.ReplaceAllAsync(userId, codes.Records, ct);
+                await transaction.StageAsync(AuditEvents.RecoveryCodesGenerated(userId, codes.Plaintext.Count, regenerated: true), ct);
+                return codes.Plaintext;
+            },
+            (_, _) => Task.FromResult(codes.Plaintext),
             cancellationToken);
-        return codes;
     }
 
     /// <inheritdoc />
-    public async ValueTask ResetAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default)
+    public async ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default)
     {
-        await _totp.DeleteAsync(userId, cancellationToken);
-        await _recoveryCodes.DeleteAllAsync(userId, cancellationToken);
-        await AuditAsync(
-            EmergencyAccessAuditActionNames.MfaReset,
-            actorId?.Value ?? userId.Value,
-            $"userId={userId.Value}",
+        await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.MfaReset, actor),
+            async (transaction, ct) =>
+            {
+                // Nothing enrolled or pending and no codes: nothing changes and nothing is recorded.
+                var stored = await _totp.GetByUserIdAsync(userId, ct);
+                var records = await _recoveryCodes.ListAsync(userId, ct);
+                if (stored is null && records.Count == 0)
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                await _totp.DeleteAsync(userId, ct);
+                await _recoveryCodes.DeleteAllAsync(userId, ct);
+                await transaction.StageAsync(AuditEvents.MfaReset(userId), ct);
+                return true;
+            },
+            (_, _) => Task.FromResult(true),
             cancellationToken);
     }
 
@@ -192,7 +230,8 @@ public sealed class NativeMfaService : INativeMfaService
         return await _protector.UnprotectAsync(stored.ProtectedSecret, stored.ProtectorKeyId, cancellationToken);
     }
 
-    private async ValueTask<IReadOnlyList<string>> PersistNewRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken)
+    /// <summary>A new set of recovery codes: the plaintext to show once, and the hashed records to store.</summary>
+    private (IReadOnlyList<string> Plaintext, IReadOnlyList<NativeMfaRecoveryCodeRecord> Records) NewRecoveryCodes(UserId userId)
     {
         var plaintext = MfaRecoveryCodes.Generate();
         var records = new List<NativeMfaRecoveryCodeRecord>(plaintext.Count);
@@ -209,29 +248,6 @@ public sealed class NativeMfaService : INativeMfaService
                 ConsumedAtUtc: null));
         }
 
-        await _recoveryCodes.ReplaceAllAsync(userId, records, cancellationToken);
-        return plaintext;
-    }
-
-    private async ValueTask AuditAsync(string action, string actorId, string details, CancellationToken cancellationToken)
-    {
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(actorId),
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            AuditCategory,
-            _time.GetUtcNow(),
-            new CorrelationId(null),
-            details);
-
-        try
-        {
-            await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to append {AuditAction} audit record.", action);
-        }
+        return (plaintext, records);
     }
 }

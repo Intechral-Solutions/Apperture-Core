@@ -50,6 +50,23 @@ public interface IRoleRepository
     ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Replaces the permissions of a role and returns what that replacement added and removed (AUD-1.2 permission diffs).
+    /// The SQL implementation computes the change from the very row it updates, under that row's concurrency token, so the
+    /// diff is the one that committed, never an earlier read. The default composes the other members for test doubles.
+    /// Throws <see cref="InvalidOperationException"/> when the role is missing.
+    /// </summary>
+    async ValueTask<PermissionSetChange> ReplacePermissionsAsync(
+        RoleId roleId,
+        IReadOnlyList<PermissionDescriptor> permissions,
+        CancellationToken cancellationToken = default)
+    {
+        var role = await GetAsync(roleId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+        await UpdatePermissionsAsync(roleId, permissions, cancellationToken).ConfigureAwait(false);
+        return PermissionSetChange.Between(role.Permissions, permissions);
+    }
+
+    /// <summary>
     /// Inserts a user-created role row, including its initial permission JSON, in one save.
     /// Throws <see cref="InvalidOperationException"/> when the name collides with <c>IX_Roles_Name</c>.
     /// </summary>

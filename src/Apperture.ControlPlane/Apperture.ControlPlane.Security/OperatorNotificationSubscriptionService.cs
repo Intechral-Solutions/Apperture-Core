@@ -41,9 +41,17 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
         string userId,
         string definitionId,
         bool emailEnabled,
+        CancellationToken cancellationToken = default) =>
+        (await UpdateEmailEnabledAsync(userId, definitionId, emailEnabled, cancellationToken).ConfigureAwait(false)).Preference;
+
+    public async ValueTask<OperatorPreferenceUpdate<OperatorEmailSubscriptionPreference>> UpdateEmailEnabledAsync(
+        string userId,
+        string definitionId,
+        bool emailEnabled,
         CancellationToken cancellationToken = default)
     {
         var definition = await RequireSubscribableDefinitionAsync(definitionId, cancellationToken).ConfigureAwait(false);
+        var changed = false;
 
         if (emailEnabled)
         {
@@ -52,6 +60,7 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
                 .ConfigureAwait(false);
             if (existing is null)
             {
+                changed = true;
                 await _subscriptions.AddAsync(
                         new NotificationSubscriptionCreateCommand(
                             definitionId,
@@ -67,23 +76,27 @@ public sealed class OperatorNotificationSubscriptionService : IOperatorNotificat
             }
             else if (!existing.IsEnabled)
             {
+                changed = true;
                 await _subscriptions
                     .SetEnabledAsync(existing.Id, true, userId, cancellationToken)
                     .ConfigureAwait(false);
             }
-
-            await _preferences
-                .SetAsync(userId, definitionId, NotificationChannels.Email, isEnabled: true, updatedByActorId: userId, cancellationToken)
-                .ConfigureAwait(false);
         }
-        else
+
+        // Every set leaves an explicit row; an equal one needs no write.
+        var row = await _preferences
+            .GetAsync(userId, definitionId, NotificationChannels.Email, cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null || row.IsEnabled != emailEnabled)
         {
-            await _preferences
-                .SetAsync(userId, definitionId, NotificationChannels.Email, isEnabled: false, updatedByActorId: userId, cancellationToken)
+            changed = true;
+            row = await _preferences
+                .SetAsync(userId, definitionId, NotificationChannels.Email, emailEnabled, updatedByActorId: userId, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        return await BuildPreferenceAsync(userId, definition, cancellationToken).ConfigureAwait(false);
+        var preference = await BuildPreferenceAsync(userId, definition, cancellationToken).ConfigureAwait(false);
+        return new OperatorPreferenceUpdate<OperatorEmailSubscriptionPreference>(preference, changed, row.Id);
     }
 
     private async ValueTask<OperatorEmailSubscriptionPreference> BuildPreferenceAsync(

@@ -1,5 +1,7 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -60,7 +62,8 @@ public sealed class SqlPrincipalToUserResolverTests
     [Fact]
     public async Task Entra_session_resolves_by_user_id_and_touches_the_exact_tenant_and_object_id_link()
     {
-        var repo = RepositoryWith(User(new IdentityLink(IdentitySource.Local, "pat", null), new IdentityLink(IdentitySource.Entra, Oid, null, TenantA)));
+        // A proven link: its time is session bookkeeping. (A pending one is proven only with its row; see below.)
+        var repo = RepositoryWith(User(new IdentityLink(IdentitySource.Local, "pat", null), new IdentityLink(IdentitySource.Entra, Oid, DateTimeOffset.UtcNow.AddDays(-1), TenantA)));
 
         var resolved = await new SqlPrincipalToUserResolver(repo.Object).ResolveUserIdAsync(EntraActor(TenantA, Oid));
 
@@ -115,16 +118,54 @@ public sealed class SqlPrincipalToUserResolverTests
     }
 
     [Fact]
-    public async Task Pending_entra_link_applies_the_entra_primary_policy_after_binding()
+    public async Task Pending_entra_link_is_proven_with_its_row_as_the_sessions_user_then_the_policy_applies()
     {
-        // A null last-authenticated time is a pending (never proven) link.
-        var repo = RepositoryWith(User(new IdentityLink(IdentitySource.Entra, Oid, LastAuthenticatedAt: null, TenantA)));
+        // A null last-authenticated time is a pending (never proven) link. Setting it proves the link, so it happens in a unit
+        // with identity_link.entra.proven (AUD-1.2 review), never as session bookkeeping.
+        var pending = new IdentityLink(IdentitySource.Entra, Oid, LastAuthenticatedAt: null, TenantA, LinkId: "lnk-pending");
+        var repo = RepositoryWith(User(pending));
+        repo.Setup(r => r.FindIdentityLinkAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityLinkOwner(UserOne, pending));
+        var policy = new Mock<IEntraPrimaryAuthenticationPolicy>();
+        var unit = new RecordingAuditedUnitOfWork();
+
+        var resolved = await new SqlPrincipalToUserResolver(repo.Object, policy.Object, auditedUnitOfWork: unit).ResolveUserIdAsync(EntraActor(TenantA, Oid));
+
+        resolved.Should().Be(UserOne);
+        unit.Actions.Should().Equal(AuditActionNames.EntraLinkProven);
+        unit.Operations.Single().Operation.Actor.Should().Be(AuditActor.AuthenticatedUser(UserOne));
+        unit.Single(AuditActionNames.EntraLinkProven).Target!.Id.Should().Be("lnk-pending");
+        repo.Verify(r => r.UpdateLastAuthenticatedAtAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        policy.Verify(p => p.ApplyAfterEntraProvenAsync(UserOne, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Pending_entra_link_is_never_proven_without_its_row()
+    {
+        var repo = RepositoryWith(User(new IdentityLink(IdentitySource.Entra, Oid, LastAuthenticatedAt: null, TenantA, LinkId: "lnk-pending")));
         var policy = new Mock<IEntraPrimaryAuthenticationPolicy>();
 
         var resolved = await new SqlPrincipalToUserResolver(repo.Object, policy.Object).ResolveUserIdAsync(EntraActor(TenantA, Oid));
 
+        resolved.Should().Be(UserOne, "binding does not depend on the proof");
+        VerifyNothingTouched(repo);
+        policy.Verify(p => p.ApplyAfterEntraProvenAsync(It.IsAny<UserId>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task A_proof_whose_outcome_is_unknown_still_resolves_the_session_and_skips_the_policy()
+    {
+        var pending = new IdentityLink(IdentitySource.Entra, Oid, LastAuthenticatedAt: null, TenantA, LinkId: "lnk-pending");
+        var repo = RepositoryWith(User(pending));
+        repo.Setup(r => r.FindIdentityLinkAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityLinkOwner(UserOne, pending));
+        var policy = new Mock<IEntraPrimaryAuthenticationPolicy>();
+        var unit = new RecordingAuditedUnitOfWork { Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Unknown };
+
+        var resolved = await new SqlPrincipalToUserResolver(repo.Object, policy.Object, auditedUnitOfWork: unit).ResolveUserIdAsync(EntraActor(TenantA, Oid));
+
         resolved.Should().Be(UserOne);
-        policy.Verify(p => p.ApplyAfterEntraProvenAsync(UserOne, It.IsAny<CancellationToken>()), Times.Once);
+        policy.Verify(p => p.ApplyAfterEntraProvenAsync(It.IsAny<UserId>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

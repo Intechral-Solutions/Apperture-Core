@@ -7,17 +7,21 @@ using AuditEvent = Apperture.Core.Application.Audit.AuditEvent;
 
 namespace Apperture.Persistence.SqlServer.Audit;
 
+/// <summary>An actor as the recorder resolved it, with whether its session was established through Recovery Access.</summary>
+internal readonly record struct ResolvedActor(AuditActor Actor, bool ViaRecoveryAccess);
+
 /// <summary>Builds complete recorder rows (§11.8 rule 1) and recognises the audit unique-key violations.</summary>
 internal static class AuditRecorderRows
 {
     /// <summary>
     /// Resolves <see cref="AuditActor.CurrentPrincipal"/> from the authenticated context. A person is a user id (the session
-    /// identity since IAM-9.2); nothing here trusts a username claim.
+    /// identity since IAM-9.2); nothing here trusts a username claim. A session established through Recovery Access marks
+    /// the rows it writes <c>viaRecoveryAccess</c>: that comes from the principal, never from a caller.
     /// </summary>
-    public static async Task<AuditActor> ResolveAsync(AuditActor actor, IPrincipalContext? principals, CancellationToken cancellationToken)
+    public static async Task<ResolvedActor> ResolveAsync(AuditActor actor, IPrincipalContext? principals, CancellationToken cancellationToken)
     {
         if (!actor.IsCurrentPrincipal)
-            return actor;
+            return new ResolvedActor(actor, ViaRecoveryAccess: false);
         if (principals is null)
             throw new InvalidOperationException("An audited operation records the current principal, but no principal context is available here.");
 
@@ -25,8 +29,10 @@ internal static class AuditRecorderRows
             ?? throw new InvalidOperationException("An audited operation records the current principal, but no one is authenticated.");
         return current.Kind switch
         {
-            ActorKind.Human => AuditActor.ForUser(current.Id.Value),
-            ActorKind.System => AuditActor.System(),
+            ActorKind.Human => new ResolvedActor(
+                AuditActor.ForUser(current.Id.Value),
+                current is IRecoveryAccessSession { IsRecoveryAccessSession: true }),
+            ActorKind.System => new ResolvedActor(AuditActor.System(), ViaRecoveryAccess: false),
             _ => throw new InvalidOperationException($"An audited operation cannot record a {current.Kind} principal."),
         };
     }
@@ -55,10 +61,11 @@ internal static class AuditRecorderRows
         string? actorUsername,
         string eventId,
         string operationEventId,
-        DateTimeOffset at)
+        DateTimeOffset at,
+        bool viaRecoveryAccess = false)
     {
         var definition = auditEvent.Definition;
-        var details = definition.Details!.Serialize(definition.Action, definition.WriteClass, auditEvent.Fields);
+        var details = definition.Details!.Serialize(definition.Action, definition.WriteClass, auditEvent.Fields, viaRecoveryAccess);
         return new AuditLogEntity
         {
             At = at,

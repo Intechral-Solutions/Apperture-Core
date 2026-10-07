@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Apperture.Core.Application.Audit;
 
 namespace Apperture.UnitTests.Audit;
@@ -13,6 +14,13 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
     /// <summary>Every event staged by an operation that completed, in order.</summary>
     public IEnumerable<AuditEvent> Staged => Operations.Where(o => o.Completed).SelectMany(o => o.Staged);
 
+    /// <summary>
+    /// How the next changing operation's commit is acknowledged, as the SQL unit would report it after verification:
+    /// <see cref="CommitAcknowledgement.Lost"/> returns <c>reconstruct</c>'s result from the committed primary row instead
+    /// of the attempt's; <see cref="CommitAcknowledgement.Unknown"/> throws <see cref="AuditOutcomeUnknownException"/>.
+    /// </summary>
+    public CommitAcknowledgement Acknowledgement { get; set; } = CommitAcknowledgement.Received;
+
     public async Task<T> ExecuteAsync<T>(
         AuditedOperation operation,
         Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
@@ -22,11 +30,45 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
         var recorded = new RecordedOperation(operation);
         Operations.Add(recorded);
         var result = await attempt(recorded, cancellationToken);
-        if (!recorded.NoOp && recorded.Staged.All(e => e.Action != operation.PrimaryAction))
+        if (!recorded.NoOp && !recorded.Staged.Any(e => operation.AcceptsPrimary(e.Action)))
             throw new InvalidOperationException($"The operation expected a '{operation.PrimaryAction}' row and staged none.");
-        recorded.Completed = true;
-        return result;
+        if (recorded.NoOp)
+            return result;
+
+        switch (Acknowledgement)
+        {
+            case CommitAcknowledgement.Unknown:
+                // Neither commit nor rollback established: the attempt's rows are not counted as committed.
+                throw new AuditOutcomeUnknownException(recorded.OperationEventId);
+            case CommitAcknowledgement.Lost:
+                recorded.Completed = true;
+                var primary = recorded.Staged.First(e => operation.AcceptsPrimary(e.Action));
+                return await reconstruct(
+                    new AuditCommittedOperation(
+                        recorded.OperationEventId,
+                        primary.Action,
+                        primary.Target?.Type,
+                        primary.Target?.Id,
+                        JsonSerializer.Serialize(primary.Fields)),
+                    cancellationToken);
+            default:
+                recorded.Completed = true;
+                return result;
+        }
     }
+
+    internal enum CommitAcknowledgement
+    {
+        Received,
+        Lost,
+        Unknown,
+    }
+
+    /// <summary>The actions of every committed staged event, in order.</summary>
+    public IReadOnlyList<string> Actions => Staged.Select(e => e.Action).ToList();
+
+    /// <summary>The single committed event of <paramref name="action"/>.</summary>
+    public AuditEvent Single(string action) => Staged.Single(e => e.Action == action);
 
     internal sealed class RecordedOperation(AuditedOperation operation) : IAuditedTransaction
     {

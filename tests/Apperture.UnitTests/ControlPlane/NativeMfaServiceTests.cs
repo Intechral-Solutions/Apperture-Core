@@ -1,9 +1,10 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -23,22 +24,44 @@ public sealed class NativeMfaServiceTests
         var challenge = await harness.Mfa.BeginEnrollmentAsync(userId, "emergency");
         (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
 
-        var act = () => harness.Mfa.CompleteEnrollmentAsync(userId, "000000").AsTask();
+        var act = () => harness.Mfa.CompleteEnrollmentAsync(userId, "000000", AuditActor.EmergencyCli).AsTask();
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
+        harness.Recorder.Staged.Should().BeEmpty("a refused code commits nothing");
 
         var secret = Base32.Decode(challenge.ManualEntryKey);
         var code = Rfc6238Totp.Compute(secret, Now.ToUnixTimeSeconds());
-        var recoveryCodes = await harness.Mfa.CompleteEnrollmentAsync(userId, code);
+        var recoveryCodes = await harness.Mfa.CompleteEnrollmentAsync(userId, code, AuditActor.EmergencyCli);
 
         (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeTrue();
         recoveryCodes.Should().HaveCount(10);
         harness.Totp.LastProtectedSecret.Should().NotBeNull();
         Convert.ToBase64String(harness.Totp.LastProtectedSecret!).Should().NotBe(Convert.ToBase64String(secret));
         harness.Recovery.PlaintextNeverStored.Should().BeTrue();
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.MfaEnrolled);
-        harness.Audit.Details.Should().NotContain(code);
-        harness.Audit.Details.Should().NotContain(recoveryCodes[0]);
+
+        // AUD-1.2: the command line is the actor, the user is the target (the earlier rows named the user as actor).
+        var operation = harness.Recorder.Operations.Last();
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        operation.Staged.Select(e => e.Action).Should().Equal(AuditActionNames.MfaEnrolled, AuditActionNames.RecoveryCodesGenerated);
+        operation.Staged.Should().OnlyContain(e => e.Target!.Id == userId.Value);
+        harness.Recorder.Single(AuditActionNames.RecoveryCodesGenerated).Fields["count"].Should().Be(10);
+        harness.RecordedText().Should().NotContain(code).And.NotContain(recoveryCodes);
+    }
+
+    [Fact]
+    public async Task Reset_removes_the_authenticator_with_its_row_and_an_empty_reset_records_nothing()
+    {
+        var harness = Harness.Create();
+        await harness.Mfa.ResetAsync(harness.UserId, AuditActor.EmergencyCli);
+        harness.Recorder.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+
+        harness = await Harness.EnrolledAsync();
+        await harness.Mfa.ResetAsync(harness.UserId, AuditActor.EmergencyCli);
+
+        (await harness.Mfa.IsEnrolledAsync(harness.UserId)).Should().BeFalse();
+        var reset = harness.Recorder.Operations.Last();
+        reset.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        reset.Staged.Should().ContainSingle(e => e.Action == AuditActionNames.MfaReset && e.Target!.Id == harness.UserId.Value);
     }
 
     [Fact]
@@ -62,8 +85,16 @@ public sealed class NativeMfaServiceTests
         (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, code)).Should().BeTrue();
         (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, code)).Should().BeFalse();
         (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, "XXXX-XXXX-XXXX")).Should().BeFalse();
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.RecoveryCodeConsumed);
-        harness.Audit.Details.Should().NotContain(code);
+
+        // One row, for the one code that was consumed; the user signing in is the actor and the target.
+        var consumed = harness.Recorder.Operations.Should().ContainSingle(o => o.Completed).Which;
+        consumed.Operation.Actor.Should().Be(AuditActor.AuthenticatedUser(harness.UserId));
+        var row = consumed.Staged.Should().ContainSingle().Which;
+        row.Action.Should().Be(AuditActionNames.RecoveryCodeConsumed);
+        row.Target!.Id.Should().Be(harness.UserId.Value);
+        row.Fields["remaining"].Should().Be(9);
+        harness.Recorder.Operations.Count(o => o.NoOp).Should().Be(2, "a reused or wrong code changes nothing and records nothing");
+        harness.RecordedText().Should().NotContain(code);
     }
 
     [Fact]
@@ -72,10 +103,15 @@ public sealed class NativeMfaServiceTests
         var harness = await Harness.EnrolledAsync();
         var previous = harness.RecoveryCodes[0];
 
-        var next = await harness.Mfa.RegenerateRecoveryCodesAsync(harness.UserId);
+        var next = await harness.Mfa.RegenerateRecoveryCodesAsync(harness.UserId, AuditActor.EmergencyCli);
         next.Should().NotContain(previous);
         (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, previous)).Should().BeFalse();
         (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, next[0])).Should().BeTrue();
+
+        var regenerated = harness.Recorder.Single(AuditActionNames.RecoveryCodesGenerated);
+        regenerated.Fields["regenerated"].Should().Be(true);
+        harness.Recorder.Operations.First().Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        harness.RecordedText().Should().NotContain(next);
     }
 
     [Fact]
@@ -92,7 +128,7 @@ public sealed class NativeMfaServiceTests
         public NativeMfaService Mfa { get; }
         public MemoryTotp Totp { get; } = new();
         public MemoryRecovery Recovery { get; } = new();
-        public RecordingAudit Audit { get; } = new();
+        public RecordingAuditedUnitOfWork Recorder { get; private set; } = new();
         public byte[]? PlaintextSecret { get; private set; }
         public IReadOnlyList<string> RecoveryCodes { get; private set; } = [];
         public FixedTime Clock { get; } = new(Now);
@@ -104,9 +140,9 @@ public sealed class NativeMfaServiceTests
                 Recovery,
                 new LocalPasswordHasher(),
                 new XorProtector(),
-                Audit,
                 Clock,
-                NullLogger<NativeMfaService>.Instance);
+                NullLogger<NativeMfaService>.Instance,
+                new ForwardingUnit(this));
         }
 
         public static Harness Create() => new();
@@ -117,11 +153,25 @@ public sealed class NativeMfaServiceTests
             var challenge = await harness.Mfa.BeginEnrollmentAsync(harness.UserId, "emergency");
             harness.PlaintextSecret = Base32.Decode(challenge.ManualEntryKey);
             var code = Rfc6238Totp.Compute(harness.PlaintextSecret, Now.ToUnixTimeSeconds());
-            harness.RecoveryCodes = await harness.Mfa.CompleteEnrollmentAsync(harness.UserId, code);
+            harness.RecoveryCodes = await harness.Mfa.CompleteEnrollmentAsync(harness.UserId, code, AuditActor.EmergencyCli);
             harness.Clock.Advance(TimeSpan.FromSeconds(Rfc6238Totp.DefaultPeriodSeconds));
-            harness.Audit.Actions.Clear();
-            harness.Audit.Details.Clear();
+            harness.Recorder = new RecordingAuditedUnitOfWork();
             return harness;
+        }
+
+        /// <summary>Every string any recorded row holds, to prove no code or secret reached the audit trail.</summary>
+        public IReadOnlyList<string> RecordedText() =>
+            Recorder.Operations.SelectMany(o => o.Staged).SelectMany(e => e.Fields.Values).Select(v => v?.ToString() ?? "").ToList();
+
+        /// <summary>Lets a test start a fresh recording after setup without rebuilding the service.</summary>
+        private sealed class ForwardingUnit(Harness harness) : IAuditedUnitOfWork
+        {
+            public Task<T> ExecuteAsync<T>(
+                AuditedOperation operation,
+                Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
+                Func<AuditCommittedOperation, CancellationToken, Task<T>> reconstruct,
+                CancellationToken cancellationToken = default) =>
+                harness.Recorder.ExecuteAsync(operation, attempt, reconstruct, cancellationToken);
         }
     }
 
@@ -201,22 +251,6 @@ public sealed class NativeMfaServiceTests
             _codes.Clear();
             return ValueTask.CompletedTask;
         }
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public List<string> Details { get; } = [];
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            if (record.Details is not null)
-                Details.Add(record.Details);
-            return ValueTask.CompletedTask;
-        }
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
     }
 
     private sealed class FixedTime : TimeProvider

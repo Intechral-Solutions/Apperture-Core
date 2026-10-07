@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,9 +12,8 @@ namespace Apperture.ControlPlane.Security;
 /// Idempotent; delegates to <see cref="BootstrapPlatformAdminAssignment.ExecuteAsync"/>.
 /// </summary>
 /// <remarks>
-/// User-facing role assignment via API goes through <see cref="UserManagementService.AssignRoleAsync"/> and emits audit events.
-/// Bootstrap assignment is intentional platform setup; operators should review host logs for
-/// "Assigned Platform Administrator role" / "Created bootstrap user". A future pass may add durable audit if required.
+/// AUD-1.2: every user this step creates and every role it assigns commits with its audit row, recorded as
+/// <c>system:bootstrap-configuration</c> (see <see cref="BootstrapPlatformAdminAssignment"/>).
 /// </remarks>
 public sealed class BootstrapPlatformAdminAssignmentHostedService : IHostedService
 {
@@ -36,7 +36,8 @@ public sealed class BootstrapPlatformAdminAssignmentHostedService : IHostedServi
         using var scope = _scopeFactory.CreateScope();
         var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var roleRepo = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(_options.Value, userRepo, roleRepo, _logger, cancellationToken)
+        var unit = scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>();
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(_options.Value, userRepo, roleRepo, _logger, unit, cancellationToken)
             .ConfigureAwait(false);
     }
 

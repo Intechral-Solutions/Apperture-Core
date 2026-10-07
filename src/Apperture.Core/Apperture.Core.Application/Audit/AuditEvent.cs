@@ -81,8 +81,26 @@ public sealed class AuditEvent
 /// The typed producers (§12.1): one factory per converted action. There is no public way to write an arbitrary field
 /// name. AUD-1.2 to AUD-1.4 add producers as they convert their writers.
 /// </summary>
-public static class AuditEvents
+public static partial class AuditEvents
 {
+    /// <summary>Builds an event for a catalog action: null fields are omitted, and the schema validates the rest.</summary>
+    private static AuditEvent Event(
+        string action,
+        AuditTarget? target,
+        string outcome,
+        params (string Name, object? Value)[] fields) =>
+        AuditEvent.Create(
+            AuditActionCatalog.Default.Get(action),
+            target,
+            outcome,
+            fields.Where(f => f.Value is not null).ToDictionary(f => f.Name, f => f.Value, StringComparer.Ordinal));
+
+    private static AuditTarget Target(string type, string id) => new(type, id);
+
+    /// <summary>The audit identity of each permission (<see cref="PermissionSetChange.Identity"/>).</summary>
+    private static IReadOnlyList<string> Identities(IEnumerable<Apperture.Shared.Kernel.PermissionDescriptor> permissions) =>
+        permissions.Select(PermissionSetChange.Identity).ToList();
+
     /// <summary>
     /// An administrator renamed a user, or the user reclaimed one of their own retired names. The names are the ones the
     /// renaming transaction replaced and stored, never a separate read (IAM-9 §29.3).

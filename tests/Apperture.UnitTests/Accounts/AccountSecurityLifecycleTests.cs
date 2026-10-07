@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
@@ -76,7 +78,7 @@ public sealed class AccountSecurityLifecycleTests
         user.HasVerifiedContactEmail.Should().BeTrue();
         user.EmailAddress.Should().Be("user@example.com");
         user.PendingEmailAddress.Should().BeNull();
-        harness.Audit.HasAction(AccountSecurityAuditActionNames.EmailVerified).Should().BeTrue();
+        harness.Audit.Actions.Contains(AccountSecurityAuditActionNames.EmailVerified).Should().BeTrue();
     }
 
     [Fact]
@@ -131,7 +133,7 @@ public sealed class AccountSecurityLifecycleTests
         user = harness.Users.Get(harness.User.Id.Value);
         user.EmailAddress.Should().Be("new@example.com");
         user.PendingEmailAddress.Should().BeNull();
-        harness.Audit.HasAction(AccountSecurityAuditActionNames.EmailChanged).Should().BeTrue();
+        harness.Audit.Actions.Contains(AccountSecurityAuditActionNames.EmailChanged).Should().BeTrue();
     }
 
     [Fact]
@@ -226,8 +228,8 @@ public sealed class AccountSecurityLifecycleTests
         var expectedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(plaintext))).ToLowerInvariant();
         harness.Tokens.All.Should().OnlyContain(t => t.TokenHash != plaintext);
         harness.Tokens.All.Should().OnlyContain(t => t.TokenHash == expectedHash);
-        harness.Audit.DetailsContain(plaintext).Should().BeFalse();
-        harness.Audit.Records.Any(r => r.Details is not null && r.Details.Contains("token=", StringComparison.Ordinal)).Should().BeFalse();
+        harness.Audit.Events.Should().NotContain(e => e.Event.Fields.Values.Any(v => v != null && v.ToString()!.Contains(plaintext, StringComparison.Ordinal)));
+        harness.Audit.Events.Should().NotContain(e => e.Event.Fields.Keys.Any(AuditDetailSchema.IsSensitiveFieldName));
 
         var reset = () => harness.Forgotten.CompleteAsync(plaintext, "NewPassword1!").AsTask();
         await reset.Should().ThrowAsync<AccountSecurityException>().Where(ex => ex.Code == AccountSecurityErrorCodes.TokenInvalid);
@@ -267,8 +269,8 @@ public sealed class AccountSecurityLifecycleTests
         var stale = () => harness.Invitations.CompletePasswordSetupAsync(first, "chosen-harbor-passphrase").AsTask();
         await stale.Should().ThrowAsync<AccountSecurityException>();
         await harness.Invitations.CompletePasswordSetupAsync(second, "chosen-harbor-passphrase");
-        harness.Audit.HasAction(AccountSecurityAuditActionNames.InvitationResent).Should().BeTrue();
-        harness.Audit.HasAction(AccountSecurityAuditActionNames.InvitationAccepted).Should().BeTrue();
+        harness.Audit.Actions.Contains(AccountSecurityAuditActionNames.InvitationResent).Should().BeTrue();
+        harness.Audit.Actions.Contains(AccountSecurityAuditActionNames.InvitationAccepted).Should().BeTrue();
     }
 
     [Fact]
@@ -378,6 +380,145 @@ public sealed class AccountSecurityLifecycleTests
         ContactEmailAddress.Normalize("User@Example.COM").Should().Be("user@example.com");
     }
 
+    // ---- AUD-1.2: who each row names, and what it never contains ----
+
+    [Fact]
+    public async Task An_invitation_is_the_current_principals_change_against_the_invited_user_and_its_send_has_its_own_row()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+
+        await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+
+        var token = harness.Tokens.All.Should().ContainSingle().Subject;
+        harness.Audit.Actions.Should().Equal(AuditActionNames.InvitationSent, AuditActionNames.SecurityMailDeliveryAttempted);
+        var (sent, sentActor) = harness.Audit.Events[0];
+        sentActor.Should().Be(AuditActor.CurrentPrincipal, "the administrator invites; the invited user is the target (§15.3)");
+        sent.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, harness.User.Id.Value));
+        sent.Fields["requestId"].Should().Be(token.Id);
+        var (delivery, deliveryActor) = harness.Audit.Events[1];
+        deliveryActor.Should().Be(AuditActor.CurrentPrincipal);
+        delivery.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        delivery.Fields["purpose"].Should().Be("setup_invitation");
+        harness.Audit.Events.Should().NotContain(e => e.Event.Fields.Values.Any(v => v != null && v.ToString()!.Contains('@')),
+            "the contact address is never recorded");
+    }
+
+    [Fact]
+    public async Task A_resend_is_recorded_as_resent_and_a_failed_send_never_undoes_it()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+        await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+        harness.Audit.Clear();
+        harness.Mail.Succeed = false;
+
+        var result = await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+
+        result.DeliverySucceeded.Should().BeFalse();
+        harness.Audit.Actions.Should().Equal(AuditActionNames.InvitationResent, AuditActionNames.SecurityMailDeliveryAttempted);
+        var delivery = harness.Audit.Last;
+        delivery.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
+        delivery.Fields["failure"].Should().Be("send_failed");
+        harness.Tokens.All.Should().ContainSingle(t => t.IsActive(harness.Clock.GetUtcNow()), "the reissued link stays committed");
+    }
+
+    [Fact]
+    public async Task Completing_setup_is_recorded_as_the_user_the_link_was_issued_to()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+        await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+        var requestId = harness.Tokens.All.Single().Id;
+        harness.Audit.Clear();
+
+        await harness.Invitations.CompletePasswordSetupAsync(harness.LastToken(), "chosen-harbor-passphrase");
+
+        harness.Audit.Actions.Should().Equal(
+            AuditActionNames.PasswordSetupCompleted, AuditActionNames.InvitationAccepted, AuditActionNames.EmailVerified);
+        harness.Audit.Events.Should().OnlyContain(e => e.Actor == AuditActor.AuthenticatedUser(harness.User.Id));
+        harness.Audit.Single(AuditActionNames.InvitationAccepted).Fields["requestId"].Should().Be(requestId);
+        harness.Audit.Single(AuditActionNames.EmailVerified).Fields["via"].Should().Be("setup_invitation");
+    }
+
+    [Fact]
+    public async Task A_refused_setup_completion_leaves_the_link_usable_and_records_nothing()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+        await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+        var link = harness.LastToken();
+        harness.Audit.Clear();
+
+        var refused = () => harness.Invitations.CompletePasswordSetupAsync(link, "localuser-harbor-passphrase").AsTask();
+
+        await refused.Should().ThrowAsync<AccountSecurityException>().Where(ex => ex.Code == AccountSecurityErrorCodes.PasswordRequired);
+        harness.Audit.Events.Should().BeEmpty();
+        harness.Tokens.All.Should().ContainSingle(t => t.IsActive(harness.Clock.GetUtcNow()), "the refusal came before the consumption");
+        await harness.Invitations.CompletePasswordSetupAsync(link, "chosen-harbor-passphrase");
+    }
+
+    [Fact]
+    public async Task Asking_for_the_already_verified_address_changes_nothing_records_nothing_and_answers_as_before()
+    {
+        var harness = Harness.LocalUser();
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        await harness.Contact.VerifyAsync(harness.LastToken());
+        harness.Audit.Clear();
+        harness.Mail.Sent.Clear();
+        var tokens = harness.Tokens.All.Count;
+
+        var result = await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", "unique-local-passphrase");
+
+        result.DeliverySucceeded.Should().BeTrue();
+        result.Contact.Status.Should().Be("verified");
+        harness.Audit.Events.Should().BeEmpty("the request changed nothing (D7)");
+        harness.Mail.Sent.Should().BeEmpty();
+        harness.Tokens.All.Should().HaveCount(tokens);
+    }
+
+    [Fact]
+    public async Task Contact_requests_are_the_signed_in_users_and_a_link_is_used_as_the_user_it_was_issued_to()
+    {
+        var harness = Harness.LocalUser();
+
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        await harness.Contact.ResendAsync(harness.User.Id);
+        await harness.Contact.VerifyAsync(harness.LastToken());
+
+        harness.Audit.Actions.Should().Equal(
+            AuditActionNames.EmailVerificationRequested, AuditActionNames.SecurityMailDeliveryAttempted,
+            AuditActionNames.EmailVerificationRequested, AuditActionNames.SecurityMailDeliveryAttempted,
+            AuditActionNames.EmailVerified);
+        harness.Audit.Events.Take(4).Should().OnlyContain(e => e.Actor == AuditActor.CurrentPrincipal);
+        harness.Audit.Events[0].Event.Fields["resent"].Should().Be(false);
+        harness.Audit.Events[2].Event.Fields["resent"].Should().Be(true);
+        harness.Audit.Events[4].Actor.Should().Be(AuditActor.AuthenticatedUser(harness.User.Id));
+        harness.Audit.Events[4].Event.Fields["via"].Should().Be("verification_link");
+    }
+
+    [Fact]
+    public async Task A_reset_request_is_anonymous_and_one_matching_no_account_records_only_that_it_was_suppressed()
+    {
+        var harness = Harness.LocalUser();
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        await harness.Contact.VerifyAsync(harness.LastToken());
+        harness.Audit.Clear();
+
+        await harness.Forgotten.RequestAsync("nobody@example.com");
+        await harness.Forgotten.RequestAsync("localuser");
+        await harness.Forgotten.CompleteAsync(harness.LastToken(), "chosen-harbor-passphrase");
+
+        harness.Audit.Actions.Should().Equal(
+            AuditActionNames.PasswordResetRequestSuppressed,
+            AuditActionNames.PasswordResetRequested, AuditActionNames.SecurityMailDeliveryAttempted,
+            AuditActionNames.PasswordResetCompleted);
+        var (suppressed, suppressedActor) = harness.Audit.Events[0];
+        suppressedActor.Should().Be(AuditActor.Anonymous);
+        suppressed.Target.Should().BeNull();
+        suppressed.Fields.Should().BeEmpty("neither the identifier nor any account is recorded");
+        harness.Audit.Events[1].Actor.Should().Be(AuditActor.Anonymous, "the requester is not authenticated (§15.3)");
+        harness.Audit.Events[1].Event.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, harness.User.Id.Value));
+        harness.Audit.Events[2].Actor.Should().Be(AuditActor.Anonymous);
+        harness.Audit.Events[3].Actor.Should().Be(AuditActor.AuthenticatedUser(harness.User.Id));
+    }
+
     private static string ExtractToken(string body)
     {
         var marker = "token=";
@@ -395,7 +536,7 @@ public sealed class AccountSecurityLifecycleTests
         public required InMemoryLocalCredentialRepository Credentials { get; init; }
         public required InMemoryAccountActionTokenRepository Tokens { get; init; }
         public required RecordingAccountSecurityMailSender Mail { get; init; }
-        public required RecordingAuditService Audit { get; init; }
+        public required AuditRecording Audit { get; init; }
         public required MutableTimeProvider Clock { get; init; }
         public required LocalPasswordHasher Hasher { get; init; }
         public required AccountContactService Contact { get; init; }
@@ -438,7 +579,7 @@ public sealed class AccountSecurityLifecycleTests
 
             var tokens = new InMemoryAccountActionTokenRepository();
             var mail = new RecordingAccountSecurityMailSender();
-            var audit = new RecordingAuditService();
+            var audit = new AuditRecording();
             var clock = new MutableTimeProvider();
             var tokenService = new AccountActionTokenService(tokens, clock);
             var links = new AccountSecurityLinkBuilder(new ConfigurationBuilder().Build());
@@ -452,9 +593,9 @@ public sealed class AccountSecurityLifecycleTests
                 Audit = audit,
                 Clock = clock,
                 Hasher = hasher,
-                Contact = new AccountContactService(users, credentials, hasher, tokenService, mail, links, audit, accountVerification: accountVerification),
-                Invitations = new AccountInvitationService(users, credentials, hasher, tokenService, tokens, mail, links, audit, clock),
-                Forgotten = new ForgottenPasswordService(users, credentials, hasher, tokenService, mail, links, audit)
+                Contact = new AccountContactService(users, credentials, hasher, tokenService, mail, links, accountVerification: accountVerification, auditedUnitOfWork: audit, auditEvents: audit),
+                Invitations = new AccountInvitationService(users, credentials, hasher, tokenService, tokens, mail, links, clock, audit, audit),
+                Forgotten = new ForgottenPasswordService(users, credentials, hasher, tokenService, mail, links, audit, audit)
             };
         }
 
@@ -479,8 +620,9 @@ public sealed class AccountSecurityLifecycleTests
                     tokenService,
                     source.Mail,
                     links,
-                    source.Audit,
-                    accountVerification: accountVerification),
+                    accountVerification: accountVerification,
+                    auditedUnitOfWork: source.Audit,
+                    auditEvents: source.Audit),
                 Invitations = source.Invitations,
                 Forgotten = source.Forgotten
             };

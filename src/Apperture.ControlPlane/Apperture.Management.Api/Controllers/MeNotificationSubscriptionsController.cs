@@ -1,6 +1,8 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Identity;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,15 +18,18 @@ public sealed class MeNotificationSubscriptionsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IPrincipalToUserResolver _principalToUserResolver;
     private readonly IOperatorNotificationSubscriptionService _preferences;
+    private readonly IAccountProfileService _account;
 
     public MeNotificationSubscriptionsController(
         IPrincipalContext principalContext,
         IPrincipalToUserResolver principalToUserResolver,
-        IOperatorNotificationSubscriptionService preferences)
+        IOperatorNotificationSubscriptionService preferences,
+        IAccountProfileService account)
     {
         _principalContext = principalContext;
         _principalToUserResolver = principalToUserResolver;
         _preferences = preferences;
+        _account = account;
     }
 
     [HttpGet]
@@ -60,10 +65,13 @@ public sealed class MeNotificationSubscriptionsController : ControllerBase
 
         try
         {
-            var updated = await _preferences
-                .SetEmailEnabledAsync(userId, definitionId.Trim(), body.EmailEnabled, cancellationToken)
+            // The same audited change as the account page's (AUD-1.2): this route wrote the preference without a record.
+            var trimmed = definitionId.Trim();
+            await _account
+                .SetNotificationEmailPreferenceAsync(new UserId(userId), trimmed, body.EmailEnabled, cancellationToken)
                 .ConfigureAwait(false);
-            return Ok(ToDto(updated));
+            var rows = await _preferences.ListEmailPreferencesAsync(userId, cancellationToken).ConfigureAwait(false);
+            return Ok(ToDto(rows.First(r => string.Equals(r.DefinitionId, trimmed, StringComparison.Ordinal))));
         }
         catch (KeyNotFoundException ex)
         {

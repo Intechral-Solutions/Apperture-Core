@@ -756,7 +756,7 @@ public sealed class SqlUserRepository : IUserRepository
 
     private static IdentityLinkEntity ToEntity(UserId userId, IdentityLink link) => new()
     {
-        Id = Guid.NewGuid().ToString("N")[..24],
+        Id = link.LinkId ?? IdentityLink.NewLinkId(),
         UserId = userId.Value,
         Source = (int)link.Source,
         ExternalId = link.ExternalId,
@@ -780,7 +780,8 @@ public sealed class SqlUserRepository : IUserRepository
         l.ProviderSubject,
         l.DisplayNameSnapshot,
         l.UserPrincipalNameSnapshot,
-        l.MailSnapshot);
+        l.MailSnapshot,
+        l.Id);
 
     private static User ToDomain(UserEntity userEntity, List<IdentityLinkEntity> links, List<string> roleIds)
     {

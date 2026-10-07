@@ -46,11 +46,45 @@ public interface IAccountContactService
     ValueTask VerifyAsync(string token, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// A setup invitation staged in an audited transaction, held in memory until the transaction commits and its link is sent.
+/// Never recorded, logged or reconstructed: it carries the link's plaintext.
+/// </summary>
+public sealed record PreparedSetupInvitation(UserId UserId, string Destination, IssuedAccountActionToken Token)
+{
+    /// <summary>Never prints the link or the address.</summary>
+    public override string ToString() => $"PreparedSetupInvitation {{ UserId = {UserId.Value}, RequestId = {Token.Id} }}";
+}
+
 public interface IAccountInvitationService
 {
+    /// <summary>
+    /// Issues (or reissues) a setup invitation as one audited operation of the current principal, then sends its link once.
+    /// <paramref name="contactEmail"/> falls back to the user's pending, then verified, contact address.
+    /// </summary>
     ValueTask<AccountInvitationResult> SendSetupInvitationAsync(
         UserId userId,
-        string contactEmail,
+        string? contactEmail,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inside <paramref name="transaction"/>: checks the user can be invited, records the pending address, issues
+    /// <paramref name="token"/> (revoking earlier invitations) and stages the sent or resent row. Sends nothing.
+    /// </summary>
+    ValueTask<PreparedSetupInvitation> StageSetupInvitationAsync(
+        Apperture.Core.Application.Audit.IAuditedTransaction transaction,
+        UserId userId,
+        string? contactEmail,
+        PreparedAccountActionToken token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// After the invitation's transaction committed: sends its link once and records the send. A failed or unknown send is
+    /// reported in the result; it never undoes or contradicts the committed invitation.
+    /// </summary>
+    ValueTask<AccountInvitationResult> DeliverSetupInvitationAsync(
+        PreparedSetupInvitation invitation,
+        Apperture.Core.Application.Audit.AuditActor actor,
         CancellationToken cancellationToken = default);
 
     ValueTask CompletePasswordSetupAsync(string token, string newPassword, CancellationToken cancellationToken = default);

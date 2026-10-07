@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Management.Ui.Shared.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -54,20 +55,20 @@ internal static class EntraRemoteFailure
     }
 
     /// <summary>The provider answered <c>access_denied</c> and the callback's state and correlation validated.</summary>
-    public static Task HandleAccessDeniedAsync(AccessDeniedContext ctx, IConfiguration configuration)
+    public static async Task HandleAccessDeniedAsync(AccessDeniedContext ctx, IConfiguration configuration)
     {
         var target = ResolveRedirect(configuration, ctx.Properties, cancelled: true);
         Logger(ctx.HttpContext)?.LogInformation(
             "Microsoft {Purpose} was cancelled at the provider; the operator was returned to the management UI.",
             Purpose(ctx.Properties));
 
+        await RecordAsync(ctx.HttpContext, ctx.Properties, cancelled: true);
         ctx.Response.Redirect(target);
         ctx.HandleResponse();
-        return Task.CompletedTask;
     }
 
     /// <summary>Every other remote failure. <see cref="RemoteFailureContext.Properties"/> is null when the state did not validate.</summary>
-    public static Task HandleRemoteFailureAsync(RemoteFailureContext ctx, IConfiguration configuration)
+    public static async Task HandleRemoteFailureAsync(RemoteFailureContext ctx, IConfiguration configuration)
     {
         var target = ResolveRedirect(configuration, ctx.Properties, cancelled: false);
 
@@ -78,9 +79,27 @@ internal static class EntraRemoteFailure
             Purpose(ctx.Properties),
             ctx.Failure?.GetType().Name ?? "no failure");
 
+        await RecordAsync(ctx.HttpContext, ctx.Properties, cancelled: false);
         ctx.Response.Redirect(target);
         ctx.HandleResponse();
-        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// AUD-1.2 (gate §22): a W3 row of an anonymous caller, since no identity was validated. It names only the flow (from the
+    /// protected state, or <c>unknown</c> when it did not validate) and whether the provider reported a cancellation; never
+    /// the provider's text. The writer never throws, so the single redirect always follows.
+    /// </summary>
+    private static async Task RecordAsync(HttpContext httpContext, AuthenticationProperties? properties, bool cancelled)
+    {
+        var events = httpContext.RequestServices.GetService<IAuditEventWriter>();
+        if (events is null)
+            return;
+
+        var flow = properties is null ? "unknown"
+            : EntraStepUpFlowConstants.IsStepUpPurpose(properties) ? "step_up"
+            : EntraLinkFlowConstants.IsLinkPurpose(properties) ? "link"
+            : "sign_in";
+        await events.TryWriteAsync(AuditEvents.EntraSignInFailed(flow, cancelled), AuditActor.Anonymous, CancellationToken.None);
     }
 
     private static ILogger? Logger(HttpContext httpContext) =>

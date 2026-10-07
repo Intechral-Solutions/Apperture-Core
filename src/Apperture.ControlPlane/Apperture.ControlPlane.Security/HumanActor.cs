@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 
@@ -9,7 +10,7 @@ namespace Apperture.ControlPlane.Security;
 /// Entra tenant and object ids describe the identity link the session was issued through, so the resolver can
 /// require that link to still belong to the user.
 /// </summary>
-public sealed class HumanActor : IActor
+public sealed class HumanActor : IActor, IRecoveryAccessSession
 {
     public ActorId Id { get; }
     public ActorKind Kind => ActorKind.Human;
@@ -34,6 +35,9 @@ public sealed class HumanActor : IActor
     /// True when the session was established via the break-glass login endpoint. The authorization evaluator grants all permission checks for such sessions.
     /// </summary>
     public bool IsBreakGlassSession { get; }
+
+    /// <inheritdoc />
+    bool IRecoveryAccessSession.IsRecoveryAccessSession => IsBreakGlassSession;
 
     public HumanActor(
         ActorId id,

@@ -45,10 +45,9 @@ public interface IEmergencyAccessService
 
     ValueTask SetLocalPasswordAsync(UserId userId, string password, ActorId? actorId, CancellationToken cancellationToken = default);
 
-    ValueTask<bool> IsDesignatedEmergencyUserAsync(UserId userId, CancellationToken cancellationToken = default);
-
     /// <summary>
-    /// Throws when the operation would disable, un-role, or un-designate the healthy emergency account.
+    /// True when <paramref name="userId"/> is the designated Recovery Access account. A change that would remove that
+    /// recovery path checks this inside its own transaction and, when it refuses, records the refusal after the rollback.
     /// </summary>
-    ValueTask EnsureDestructiveChangeAllowedAsync(UserId userId, string operation, CancellationToken cancellationToken = default);
+    ValueTask<bool> IsDesignatedEmergencyUserAsync(UserId userId, CancellationToken cancellationToken = default);
 }

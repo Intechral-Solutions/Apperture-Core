@@ -92,6 +92,16 @@ public sealed partial class AuditDetailSchema
     /// <summary>The marker property replacing oversize W3 and W4 details.</summary>
     public const string OmittedProperty = "_omitted";
 
+    /// <summary>
+    /// The reserved property the recorder adds, as <c>true</c>, to a row written during a Recovery Access session (design
+    /// gate §22, AUD-1.2). It replaces the earlier pre-mutation marker row. A producer cannot declare or pass it: it comes
+    /// from the authenticated principal, never from a caller.
+    /// </summary>
+    public const string ViaRecoveryAccessProperty = "viaRecoveryAccess";
+
+    /// <summary>The longest item of an id list that declares no bound of its own.</summary>
+    public const int DefaultIdListItemLength = MaxIdLength;
+
     private static readonly JsonWriterOptions WriterOptions = new()
     {
         // Non-ASCII stays as UTF-8 rather than \uXXXX escapes, so the measured size is the stored size. HTML-sensitive
@@ -109,6 +119,8 @@ public sealed partial class AuditDetailSchema
                 throw new ArgumentException($"Audit field '{field.Name}' is declared twice.", nameof(fields));
             if (field.Name.StartsWith('_') || !FieldNamePattern().IsMatch(field.Name))
                 throw new ArgumentException($"Audit field name '{field.Name}' is not a plain camelCase name.", nameof(fields));
+            if (field.Name == ViaRecoveryAccessProperty)
+                throw new ArgumentException($"Audit field name '{field.Name}' is reserved for the recorder.", nameof(fields));
             if (IsSensitiveFieldName(field.Name))
                 throw new ArgumentException($"Audit field name '{field.Name}' names sensitive content, which is never recorded.", nameof(fields));
             if (field.Kind == AuditFieldKind.OperatorText && field.Required)
@@ -162,13 +174,17 @@ public sealed partial class AuditDetailSchema
     /// truncated. Still over: W1 and W2 throw <see cref="AuditDetailsOverflowException"/>; W3 and W4 store
     /// <c>{"_omitted":"size"}</c>.
     /// </summary>
-    public AuditSerializedDetails Serialize(string action, AuditWriteClass writeClass, IReadOnlyDictionary<string, object?> values)
+    public AuditSerializedDetails Serialize(
+        string action,
+        AuditWriteClass writeClass,
+        IReadOnlyDictionary<string, object?> values,
+        bool viaRecoveryAccess = false)
     {
         Validate(action, values);
 
         var working = new Dictionary<string, object?>(values, StringComparer.Ordinal);
         var truncated = new List<string>();
-        var json = Write(working, truncated);
+        var json = Write(working, truncated, viaRecoveryAccess);
         while (Utf8Length(json) > MaxDetailsBytes)
         {
             var next = Fields
@@ -182,7 +198,7 @@ public sealed partial class AuditDetailSchema
 
             working[next.Name] = ((string)working[next.Name]!)[..next.TruncatedLength];
             truncated.Add(next.Name);
-            json = Write(working, truncated);
+            json = Write(working, truncated, viaRecoveryAccess);
         }
 
         var bytes = Utf8Length(json);
@@ -200,7 +216,7 @@ public sealed partial class AuditDetailSchema
 
     private static int Utf8Length(string json) => Encoding.UTF8.GetByteCount(json);
 
-    private string Write(IReadOnlyDictionary<string, object?> values, IReadOnlyList<string> truncated)
+    private string Write(IReadOnlyDictionary<string, object?> values, IReadOnlyList<string> truncated, bool viaRecoveryAccess)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
@@ -238,6 +254,9 @@ public sealed partial class AuditDetailSchema
                         throw new InvalidOperationException($"Unsupported audit field value type {value.GetType().Name}.");
                 }
             }
+
+            if (viaRecoveryAccess)
+                writer.WriteBoolean(ViaRecoveryAccessProperty, true);
 
             if (truncated.Count > 0)
             {
@@ -297,9 +316,10 @@ public sealed partial class AuditDetailSchema
 
                 if (list.Count > field.MaxItems)
                     Fail($"has {list.Count} items, over its bound of {field.MaxItems}");
+                var itemBound = field.MaxLength > 0 ? field.MaxLength : DefaultIdListItemLength;
                 foreach (var item in list)
                 {
-                    if (string.IsNullOrEmpty(item) || item.Length > MaxIdLength)
+                    if (string.IsNullOrEmpty(item) || item.Length > itemBound)
                         Fail("has an empty or over-long item");
                 }
 

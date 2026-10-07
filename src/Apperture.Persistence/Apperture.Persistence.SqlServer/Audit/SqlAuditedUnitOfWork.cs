@@ -80,8 +80,12 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         CancellationToken cancellationToken = default)
     {
         var primary = _catalog.Get(operation.PrimaryAction);
-        if (primary.WriteClass != AuditWriteClass.RequiredMutation || primary.Details is null)
-            throw new InvalidOperationException($"Audit action '{primary.Action}' is not a converted W1 action and cannot identify an audited operation.");
+        foreach (var action in new[] { operation.PrimaryAction }.Concat(operation.AlternatePrimaryActions ?? []))
+        {
+            var candidate = _catalog.Get(action);
+            if (candidate.WriteClass != AuditWriteClass.RequiredMutation || candidate.Details is null)
+                throw new InvalidOperationException($"Audit action '{candidate.Action}' is not a converted W1 action and cannot identify an audited operation.");
+        }
 
         var actor = await AuditRecorderRows.ResolveAsync(operation.Actor, _principals, cancellationToken).ConfigureAwait(false);
 
@@ -92,7 +96,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         while (true)
         {
             var result = await strategy.ExecuteAsync(
-                ct => RunAttemptAsync(primary, actor, operationEventId, attempt, ct),
+                ct => RunAttemptAsync(primary, operation, actor, operationEventId, attempt, ct),
                 cancellationToken).ConfigureAwait(false);
 
             switch (result.Kind)
@@ -124,13 +128,14 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
 
     private async Task<AttemptResult<T>> RunAttemptAsync<T>(
         AuditActionDefinition primary,
-        AuditActor actor,
+        AuditedOperation operation,
+        ResolvedActor actor,
         string operationEventId,
         Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
         CancellationToken cancellationToken)
     {
         var transaction = await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        var unit = new AuditedTransaction(this, transaction, primary, actor, operationEventId);
+        var unit = new AuditedTransaction(this, transaction, operation, actor, operationEventId);
         T value;
         try
         {
@@ -161,7 +166,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
             await RollBackQuietlyAsync(transaction).ConfigureAwait(false);
             _db.ChangeTracker.Clear();
             if (AuditRecorderRows.IsEventIdViolation(ex))
-                return await ResolveEventIdViolationAsync<T>(primary, unit, ex).ConfigureAwait(false);
+                return await ResolveEventIdViolationAsync<T>(operation, unit, ex).ConfigureAwait(false);
             throw;
         }
 
@@ -173,7 +178,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         {
             await DisposeQuietlyAsync(transaction).ConfigureAwait(false);
             _db.ChangeTracker.Clear();
-            var verification = await VerifyAsync(primary.Action, operationEventId).ConfigureAwait(false);
+            var verification = await VerifyAsync(operation, operationEventId).ConfigureAwait(false);
             return verification.Kind switch
             {
                 VerificationKind.Committed => AttemptResult<T>.FromVerifiedCommit(verification.Row!),
@@ -190,7 +195,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
     /// An <c>EventId</c> duplicate: a prior success only if the duplicated id is the primary's and verification confirms
     /// the matching event. A duplicate on a secondary id is an internal error.
     /// </summary>
-    private async Task<AttemptResult<T>> ResolveEventIdViolationAsync<T>(AuditActionDefinition primary, AuditedTransaction unit, Exception violation)
+    private async Task<AttemptResult<T>> ResolveEventIdViolationAsync<T>(AuditedOperation operation, AuditedTransaction unit, Exception violation)
     {
         bool primaryExists;
         try
@@ -210,15 +215,16 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
         if (!primaryExists)
             throw new InvalidOperationException("A secondary audit event id collided with an existing row.", violation);
 
-        var verification = await VerifyAsync(primary.Action, unit.OperationEventId).ConfigureAwait(false);
+        var verification = await VerifyAsync(operation, unit.OperationEventId).ConfigureAwait(false);
         if (verification.Kind == VerificationKind.Committed)
             return AttemptResult<T>.FromVerifiedCommit(verification.Row!);
         throw new AuditOutcomeUnknownException(unit.OperationEventId, violation);
     }
 
     /// <summary>The verification procedure of §13.5, on a fresh connection.</summary>
-    private async Task<Verification> VerifyAsync(string primaryAction, string operationEventId)
+    private async Task<Verification> VerifyAsync(AuditedOperation operation, string operationEventId)
     {
+        var primaryAction = operation.PrimaryAction;
         try
         {
             await using var connection = await _verificationConnections
@@ -256,7 +262,7 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
                 {
                     var action = reader.GetString(0);
                     var recordedOperation = reader.IsDBNull(1) ? null : reader.GetString(1);
-                    if (!string.Equals(action, primaryAction, StringComparison.Ordinal)
+                    if (!operation.AcceptsPrimary(action)
                         || !string.Equals(recordedOperation, operationEventId, StringComparison.Ordinal))
                     {
                         _logger.LogError(
@@ -395,10 +401,12 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
     private sealed class AuditedTransaction(
         SqlAuditedUnitOfWork owner,
         IDbContextTransaction transaction,
-        AuditActionDefinition primary,
-        AuditActor actor,
+        AuditedOperation operation,
+        ResolvedActor resolved,
         string operationEventId) : IAuditedTransaction
     {
+        private readonly AuditActor actor = resolved.Actor;
+
         private readonly HashSet<AuditEvent> _staged = new(ReferenceEqualityComparer.Instance);
         private bool _sealed;
         private bool _noOp;
@@ -425,10 +433,11 @@ public sealed class SqlAuditedUnitOfWork : IAuditedUnitOfWork
                 throw new InvalidOperationException($"This '{auditEvent.Action}' event is already staged in this unit.");
 
             // The primary row carries the operation event id; a secondary row gets its own id per attempt.
-            var isPrimary = !PrimaryStaged && auditEvent.Action == primary.Action;
+            var isPrimary = !PrimaryStaged && operation.AcceptsPrimary(auditEvent.Action);
             var eventId = isPrimary ? OperationEventId : owner._eventIds.NewEventId();
             var username = await AuditRecorderRows.ReadUsernameAsync(db, actor, cancellationToken).ConfigureAwait(false);
-            db.AuditLogs.Add(AuditRecorderRows.Build(auditEvent, actor, username, eventId, OperationEventId, owner._time.GetUtcNow()));
+            db.AuditLogs.Add(AuditRecorderRows.Build(
+                auditEvent, actor, username, eventId, OperationEventId, owner._time.GetUtcNow(), resolved.ViaRecoveryAccess));
             if (isPrimary)
                 PrimaryStaged = true;
         }

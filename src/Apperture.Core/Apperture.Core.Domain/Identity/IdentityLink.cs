@@ -15,6 +15,11 @@ namespace Apperture.Core.Domain.Identity;
 /// <param name="DisplayNameSnapshot">Non-authoritative directory display name at association time.</param>
 /// <param name="UserPrincipalNameSnapshot">Non-authoritative directory UPN at association time.</param>
 /// <param name="MailSnapshot">Non-authoritative directory mail at association time.</param>
+/// <param name="LinkId">
+/// The link's persisted, stable id (null for a link not yet stored or built by a caller that does not need one). A caller
+/// that supplies it keeps it when the link is stored, so an audited operation that is rerun after a confirmed rollback
+/// targets the same link. It is the audit target of identity-link events.
+/// </param>
 public sealed record IdentityLink(
     IdentitySource Source,
     string ExternalId,
@@ -25,8 +30,12 @@ public sealed record IdentityLink(
     string? ProviderSubject = null,
     string? DisplayNameSnapshot = null,
     string? UserPrincipalNameSnapshot = null,
-    string? MailSnapshot = null)
+    string? MailSnapshot = null,
+    string? LinkId = null)
 {
+    /// <summary>A new stable link id, in the form the store uses.</summary>
+    public static string NewLinkId() => Guid.NewGuid().ToString("N")[..24];
+
     /// <summary>True when a successful authentication has proven this link belongs to the user.</summary>
     public bool IsProven => LastAuthenticatedAt is not null;
 }

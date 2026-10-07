@@ -56,7 +56,9 @@ public sealed class SqlAuditEventWriter : IAuditEventWriter
     /// <inheritdoc />
     public async Task<bool> TryWriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default)
     {
-        Require(auditEvent, AuditWriteClass.Telemetry);
+        // W3 (attempts, refusals, sign-out) and W4 (telemetry): own short transaction; a failure is logged and the caller's
+        // response is unchanged (§13.1).
+        Require(auditEvent, AuditWriteClass.Attempt, AuditWriteClass.Telemetry);
         try
         {
             await WriteCoreAsync(auditEvent, actor, cancellationToken).ConfigureAwait(false);
@@ -81,6 +83,7 @@ public sealed class SqlAuditEventWriter : IAuditEventWriter
     {
         var resolved = await AuditRecorderRows.ResolveAsync(actor, _principals, cancellationToken).ConfigureAwait(false);
         var eventId = _eventIds.NewEventId();
+        var recordedActor = resolved.Actor;
 
         await using var db = new AppertureDbContext(_contextOptions);
         var strategy = db.Database.CreateExecutionStrategy();
@@ -89,8 +92,9 @@ public sealed class SqlAuditEventWriter : IAuditEventWriter
             {
                 db.ChangeTracker.Clear();
                 await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-                var username = await AuditRecorderRows.ReadUsernameAsync(db, resolved, ct).ConfigureAwait(false);
-                db.AuditLogs.Add(AuditRecorderRows.Build(auditEvent, resolved, username, eventId, eventId, _time.GetUtcNow()));
+                var username = await AuditRecorderRows.ReadUsernameAsync(db, recordedActor, ct).ConfigureAwait(false);
+                db.AuditLogs.Add(AuditRecorderRows.Build(
+                    auditEvent, recordedActor, username, eventId, eventId, _time.GetUtcNow(), resolved.ViaRecoveryAccess));
                 try
                 {
                     await db.SaveChangesAsync(ct).ConfigureAwait(false);

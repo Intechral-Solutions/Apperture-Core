@@ -1,7 +1,7 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -32,8 +32,9 @@ public sealed class RolePermissionAssignmentValidationTests
             registry,
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
-            new StubAuditService(),
-            Options.Create(new LocalAuthOptions()));
+            Options.Create(new LocalAuthOptions()),
+            auditedUnitOfWork: new AuditRecording(),
+            auditEvents: new AuditRecording());
 
         var unknownPermission = new PermissionDescriptor(
             "unknown.action",
@@ -65,8 +66,9 @@ public sealed class RolePermissionAssignmentValidationTests
             registry,
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
-            new StubAuditService(),
-            Options.Create(new LocalAuthOptions()));
+            Options.Create(new LocalAuthOptions()),
+            auditedUnitOfWork: new AuditRecording(),
+            auditEvents: new AuditRecording());
 
         var knownPermission = new PermissionDescriptor(
             "user.read",
@@ -94,8 +96,9 @@ public sealed class RolePermissionAssignmentValidationTests
             registry,
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
-            new StubAuditService(),
-            Options.Create(new LocalAuthOptions()));
+            Options.Create(new LocalAuthOptions()),
+            auditedUnitOfWork: new AuditRecording(),
+            auditEvents: new AuditRecording());
 
         await userManagement.SetRolePermissionsAsync(new RoleId("role-1"), []);
 
@@ -166,16 +169,5 @@ public sealed class RolePermissionAssignmentValidationTests
         public string AlgorithmName => "stub";
         public (string Hash, string Salt) HashPassword(string password) => ("", "");
         public bool VerifyPassword(string password, string hash, string salt) => false;
-    }
-
-    private sealed class StubAuditService : IAuditService
-    {
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
     }
 }

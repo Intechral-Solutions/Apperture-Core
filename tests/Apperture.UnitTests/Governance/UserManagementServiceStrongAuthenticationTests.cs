@@ -1,8 +1,8 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -17,7 +17,8 @@ public sealed class UserManagementServiceStrongAuthenticationTests
     public async Task Reenable_without_recent_strong_authentication_is_rejected()
     {
         var creds = new RecordingCredentials("usr-1", disabled: true);
-        var service = Create(creds, new RejectingGate(StrongAuthenticationErrorCodes.Required));
+        var audit = new AuditRecording();
+        var service = Create(creds, new RejectingGate(StrongAuthenticationErrorCodes.Required), audit: audit);
 
         var act = () => service.SetLocalCredentialDisabledAsync(new UserId("usr-1"), disabled: false).AsTask();
 
@@ -25,6 +26,38 @@ public sealed class UserManagementServiceStrongAuthenticationTests
         ex.Which.Code.Should().Be(StrongAuthenticationErrorCodes.Required);
         creds.Disabled.Should().BeTrue();
         creds.Hash.Should().Be("hash-original");
+
+        // AUD-1.2: the refusal is decided inside the transaction and recorded after it rolled back, as a W3 row.
+        audit.Actions.Should().Equal(StrongAuthenticationAuditActionNames.AssuranceInsufficient);
+        audit.Writer.Written.Single().BestEffort.Should().BeTrue();
+        audit.Last.Fields["code"].Should().Be(StrongAuthenticationErrorCodes.Required);
+        audit.Last.Target!.Id.Should().Be("usr-1");
+    }
+
+    [Fact]
+    public async Task A_failed_refusal_row_does_not_change_the_refusal_the_caller_sees()
+    {
+        var creds = new RecordingCredentials("usr-1", disabled: true);
+        var audit = new AuditRecording { FailWrites = true };
+        var service = Create(creds, new RejectingGate(StrongAuthenticationErrorCodes.Required), audit: audit);
+
+        var act = () => service.SetLocalCredentialDisabledAsync(new UserId("usr-1"), disabled: false).AsTask();
+
+        (await act.Should().ThrowAsync<StrongAuthenticationException>()).Which.Code.Should().Be(StrongAuthenticationErrorCodes.Required);
+        audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Reenabling_an_enabled_credential_changes_nothing_and_records_nothing()
+    {
+        var creds = new RecordingCredentials("usr-1", disabled: false);
+        var audit = new AuditRecording();
+        var service = Create(creds, new AllowingGate(), audit: audit);
+
+        await service.SetLocalCredentialDisabledAsync(new UserId("usr-1"), disabled: false);
+
+        creds.Disabled.Should().BeFalse();
+        audit.Actions.Should().BeEmpty();
     }
 
     [Fact]
@@ -41,12 +74,15 @@ public sealed class UserManagementServiceStrongAuthenticationTests
     public async Task Reenable_with_recent_strong_authentication_succeeds_and_keeps_the_hash()
     {
         var creds = new RecordingCredentials("usr-1", disabled: true);
-        var service = Create(creds, new AllowingGate());
+        var audit = new AuditRecording();
+        var service = Create(creds, new AllowingGate(), audit: audit);
 
         await service.SetLocalCredentialDisabledAsync(new UserId("usr-1"), disabled: false);
 
         creds.Disabled.Should().BeFalse();
         creds.Hash.Should().Be("hash-original");
+        audit.Actions.Should().Equal(StrongAuthenticationAuditActionNames.LocalReenabledStrongAdmin);
+        audit.Last.Target!.Id.Should().Be("usr-1");
     }
 
     [Fact]
@@ -90,8 +126,10 @@ public sealed class UserManagementServiceStrongAuthenticationTests
     private static UserManagementService Create(
         RecordingCredentials creds,
         IStrongAuthenticationGate gate,
-        bool allowCredentialManage = true)
+        bool allowCredentialManage = true,
+        AuditRecording? audit = null)
     {
+        audit ??= new AuditRecording();
         var user = new User(
             new UserId("usr-1"),
             "Operator",
@@ -108,9 +146,10 @@ public sealed class UserManagementServiceStrongAuthenticationTests
             new InMemoryResourceDescriptorRegistry(),
             creds,
             new StubHasher(),
-            new SilentAudit(),
             Options.Create(new LocalAuthOptions()),
-            strongAuthentication: gate);
+            strongAuthentication: gate,
+            auditedUnitOfWork: audit,
+            auditEvents: audit);
     }
 
     private sealed class AllowingGate : IStrongAuthenticationGate
@@ -219,13 +258,5 @@ public sealed class UserManagementServiceStrongAuthenticationTests
         public string AlgorithmName => "stub";
         public (string Hash, string Salt) HashPassword(string password) => ("h", "s");
         public bool VerifyPassword(string password, string hash, string salt) => true;
-    }
-
-    private sealed class SilentAudit : IAuditService
-    {
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
     }
 }

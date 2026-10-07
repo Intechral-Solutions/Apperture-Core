@@ -182,6 +182,17 @@ public sealed class StubOperatorNotificationSubscriptionService : IOperatorNotif
         return ValueTask.FromResult(Build(userId, definitionId));
     }
 
+    public async ValueTask<OperatorPreferenceUpdate<OperatorEmailSubscriptionPreference>> UpdateEmailEnabledAsync(
+        string userId,
+        string definitionId,
+        bool emailEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        var changed = !_emailEnabled.TryGetValue((userId, definitionId), out var current) || current != emailEnabled;
+        var preference = await SetEmailEnabledAsync(userId, definitionId, emailEnabled, cancellationToken);
+        return new OperatorPreferenceUpdate<OperatorEmailSubscriptionPreference>(preference, changed, $"pref-{userId}-{definitionId}-email");
+    }
+
     private OperatorEmailSubscriptionPreference Build(string userId, string definitionId)
     {
         var (displayName, description) = _definitions[definitionId];
@@ -237,6 +248,17 @@ public sealed class StubOperatorNotificationToastPreferenceService : IOperatorNo
         SetCalls.Add((userId, definitionId, toastEnabled));
         _toastEnabled[(userId, definitionId)] = toastEnabled;
         return ValueTask.FromResult(Build(userId, definitionId));
+    }
+
+    public async ValueTask<OperatorPreferenceUpdate<OperatorToastPreference>> UpdateToastEnabledAsync(
+        string userId,
+        string definitionId,
+        bool toastEnabled,
+        CancellationToken cancellationToken = default)
+    {
+        var changed = !_toastEnabled.TryGetValue((userId, definitionId), out var current) || current != toastEnabled;
+        var preference = await SetToastEnabledAsync(userId, definitionId, toastEnabled, cancellationToken);
+        return new OperatorPreferenceUpdate<OperatorToastPreference>(preference, changed, $"pref-{userId}-{definitionId}-toast");
     }
 
     private OperatorToastPreference Build(string userId, string definitionId)

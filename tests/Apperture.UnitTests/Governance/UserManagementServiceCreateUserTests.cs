@@ -1,8 +1,9 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
@@ -42,7 +43,28 @@ public sealed class UserManagementServiceCreateUserTests
         harness.Hasher.LastPassword.Should().Be("unique-local-passphrase");
         harness.Credentials.Hashes[userId.Value].Should().Be("h");
         harness.Credentials.Disabled[userId.Value].Should().BeFalse();
-        harness.Audit.Actions.Should().Contain("user.created");
+
+        // AUD-1.2: the user, its credential and the row commit in one unit; the password is never recorded.
+        harness.Audit.Actions.Should().Equal("user.created");
+        var row = harness.Audit.Last;
+        row.Target!.Id.Should().Be(userId.Value);
+        row.Fields["username"].Should().Be("operator");
+        row.Fields["localSignInReady"].Should().Be(true);
+        row.Fields["setupInvitationRequested"].Should().Be(false);
+        row.Fields.Values.Should().NotContain("unique-local-passphrase").And.NotContain("h");
+        harness.Audit.Events.Single().Actor.Should().Be(AuditActor.CurrentPrincipal);
+    }
+
+    [Fact]
+    public async Task CreateUser_that_fails_after_the_user_was_added_commits_neither_user_nor_row()
+    {
+        var harness = Harness.Create();
+        harness.Credentials.FailNextSet = true;
+
+        var act = () => harness.Service.CreateUserAsync("Operator", IdentitySource.Local, "operator", "unique-local-passphrase").AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        harness.Audit.Actions.Should().BeEmpty("the operation did not complete, so its unit commits nothing");
     }
 
     [Fact]
@@ -134,7 +156,22 @@ public sealed class UserManagementServiceCreateUserTests
         await harness.Service.AssignRoleAsync(userId, roleId);
 
         harness.Roles.Assigned.Should().ContainSingle(a => a.UserId == userId.Value && a.RoleId == roleId.Value);
-        harness.Audit.Actions.Should().Contain(GovernanceAuditActionNames.RoleAssigned);
+        var row = harness.Audit.Single(GovernanceAuditActionNames.RoleAssigned);
+        row.Target!.Id.Should().Be(userId.Value, "the affected user is the target; the administrator is the actor");
+        row.Fields["roleId"].Should().Be(roleId.Value);
+    }
+
+    [Fact]
+    public async Task AssignRole_already_held_changes_nothing_and_records_nothing()
+    {
+        var harness = Harness.Create();
+        var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
+        harness.Users.Seed(new User(new UserId("held-1"), "Held", [], [roleId], IsBreakGlassEligible: false) { Username = "held1" });
+
+        await harness.Service.AssignRoleAsync(new UserId("held-1"), roleId);
+
+        harness.Roles.Assigned.Should().BeEmpty();
+        harness.Audit.Actions.Should().BeEmpty();
     }
 
     [Theory]
@@ -254,7 +291,7 @@ public sealed class UserManagementServiceCreateUserTests
         public RecordingUsers Users { get; } = new();
         public RecordingCredentials Credentials { get; } = new();
         public RecordingRoles Roles { get; } = new();
-        public RecordingAudit Audit { get; } = new();
+        public AuditRecording Audit { get; } = new();
         public RecordingHasher Hasher { get; } = new();
         public UserManagementService Service { get; }
 
@@ -269,8 +306,9 @@ public sealed class UserManagementServiceCreateUserTests
                 new InMemoryResourceDescriptorRegistry(),
                 Credentials,
                 Hasher,
-                Audit,
-                Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }));
+                Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }),
+                auditedUnitOfWork: Audit,
+                auditEvents: Audit);
         }
 
         public static Harness Create(bool allowUserManage = true, bool allowRoleAssign = true) =>
@@ -353,6 +391,9 @@ public sealed class UserManagementServiceCreateUserTests
         public Dictionary<string, string> Hashes { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, bool> Disabled { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>Fails the next credential write, as a database failure after the user row was added would.</summary>
+        public bool FailNextSet { get; set; }
+
         public ValueTask<LocalCredentialData?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken = default) =>
             Hashes.TryGetValue(userId.Value, out var hash)
                 ? ValueTask.FromResult<LocalCredentialData?>(new LocalCredentialData(userId, hash, "s", "stub", Disabled[userId.Value]))
@@ -360,6 +401,12 @@ public sealed class UserManagementServiceCreateUserTests
 
         public ValueTask SetPasswordAsync(UserId userId, string passwordHash, string salt, string algorithm, CancellationToken cancellationToken = default)
         {
+            if (FailNextSet)
+            {
+                FailNextSet = false;
+                throw new InvalidOperationException("Injected: the credential write failed.");
+            }
+
             Hashes[userId.Value] = passwordHash;
             Disabled[userId.Value] = false;
             return ValueTask.CompletedTask;
@@ -399,26 +446,6 @@ public sealed class UserManagementServiceCreateUserTests
 
         public ValueTask UpdatePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
     }
 
     private sealed class RecordingHasher : ILocalPasswordHasher

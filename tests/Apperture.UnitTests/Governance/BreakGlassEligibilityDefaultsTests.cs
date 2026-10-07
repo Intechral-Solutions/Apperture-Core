@@ -22,7 +22,7 @@ public sealed class BreakGlassEligibilityDefaultsTests
             true);
         var roleRepo = new StubRoleRepository(role);
 
-        var service = new FirstAdminBootstrapService(userRepo, roleRepo);
+        var service = new FirstAdminBootstrapService(userRepo, roleRepo, auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
         var result = await service.TryCreateFirstAdminAsync(
             "Admin",
             IdentitySource.Local,

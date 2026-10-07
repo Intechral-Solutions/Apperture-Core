@@ -10,7 +10,7 @@ namespace Apperture.UnitTests.ControlPlane;
 public sealed class EntraClientSecretMaterialProvisionerTests
 {
     [Fact]
-    public async Task ReplaceAsync_WhenNoExistingRef_CreatesActivatesAndReturnsGuid()
+    public async Task StoreNewAsync_CreatesActivatesAndReturnsGuid()
     {
         var secretId = SecretId.New();
         var store = new Mock<ISecretStore>();
@@ -29,38 +29,35 @@ public sealed class EntraClientSecretMaterialProvisionerTests
             .Returns(ValueTask.CompletedTask);
 
         var sut = new EntraClientSecretMaterialProvisioner(store.Object);
-        var (secretRef, created) = await sut.ReplaceAsync("reg-1", "plaintext-secret", existingSecretRef: null);
+        var secretRef = await sut.StoreNewAsync("reg-1", "plaintext-secret");
 
-        created.Should().BeTrue();
         secretRef.Should().Be(secretId.Value.ToString("D"));
         store.Verify(s => s.ActivateVersionAsync(secretId, "v1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task ReplaceAsync_WhenExistingRefActive_AddsNewVersion()
+    public async Task StoreNewAsync_never_touches_a_secret_a_registration_already_names()
     {
-        var existing = Guid.NewGuid();
-        var secretId = new SecretId(existing);
-        var store = new Mock<ISecretStore>();
-        store.Setup(s => s.GetAsync(secretId, It.IsAny<CancellationToken>()))
+        // AUD-1.2: a replacement is a secret of its own. Adding and activating a version on the live secret would change the
+        // credential the committed registration resolves before (or without) the registration change committing.
+        var created = SecretId.New();
+        var store = new Mock<ISecretStore>(MockBehavior.Strict);
+        store.Setup(s => s.CreateAsync(It.IsAny<SecretCreateRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SecretDescriptor(
-                secretId,
+                created,
                 EntraClientSecretMaterialProvisioner.BuildSecretName("reg-1"),
                 EntraClientSecretMaterialProvisioner.SecretProvider,
                 SecretMaterialType.OpaqueString,
-                ActiveVersion: "v1",
-                SecretState.Active,
+                ActiveVersion: null,
+                SecretState.Pending,
                 DateTimeOffset.UtcNow));
-        store.Setup(s => s.AddVersionAsync(secretId, It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("v2");
-        store.Setup(s => s.ActivateVersionAsync(secretId, "v2", It.IsAny<CancellationToken>()))
-            .Returns(ValueTask.CompletedTask);
+        store.Setup(s => s.AddVersionAsync(created, It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>())).ReturnsAsync("v1");
+        store.Setup(s => s.ActivateVersionAsync(created, "v1", It.IsAny<CancellationToken>())).Returns(ValueTask.CompletedTask);
 
         var sut = new EntraClientSecretMaterialProvisioner(store.Object);
-        var (secretRef, created) = await sut.ReplaceAsync("reg-1", "rotated", existing.ToString("D"));
+        var secretRef = await sut.StoreNewAsync("reg-1", "rotated");
 
-        created.Should().BeFalse();
-        secretRef.Should().Be(existing.ToString("D"));
-        store.Verify(s => s.CreateAsync(It.IsAny<SecretCreateRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        secretRef.Should().Be(created.Value.ToString("D"));
+        store.VerifyAll();
     }
 }

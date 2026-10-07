@@ -212,7 +212,7 @@ internal static class EmergencyCli
         var username = user.IdentityLinks.FirstOrDefault(l => l.Source == IdentitySource.Local)?.ExternalId
             ?? user.DisplayName;
         if (reset)
-            await mfa.ResetAsync(user.Id, CliActor);
+            await mfa.ResetAsync(user.Id, AuditActor.EmergencyCli);
 
         var challenge = await mfa.BeginEnrollmentAsync(user.Id, username);
         Console.WriteLine("Add this account in an authenticator app:");
@@ -221,7 +221,7 @@ internal static class EmergencyCli
         var totp = await ReadSecretAsync("Enter the 6-digit authenticator code:");
         if (totp is null)
             return 1;
-        var codes = await mfa.CompleteEnrollmentAsync(user.Id, totp);
+        var codes = await mfa.CompleteEnrollmentAsync(user.Id, totp, AuditActor.EmergencyCli);
         WriteRecoveryCodesOnce(codes);
         return 0;
     }
@@ -231,7 +231,7 @@ internal static class EmergencyCli
         var user = await ResolveUserAsync(users, args);
         if (user is null)
             return 1;
-        var codes = await mfa.RegenerateRecoveryCodesAsync(user.Id);
+        var codes = await mfa.RegenerateRecoveryCodesAsync(user.Id, AuditActor.EmergencyCli);
         WriteRecoveryCodesOnce(codes);
         return 0;
     }

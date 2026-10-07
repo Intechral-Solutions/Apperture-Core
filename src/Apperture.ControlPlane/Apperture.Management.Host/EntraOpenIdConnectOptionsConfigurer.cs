@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -13,6 +14,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Apperture.Management.Host;
 
@@ -73,6 +76,11 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         // authentication context; that is not an identity key and is not treated as a specific MFA method.
         options.MapInboundClaims = false;
 
+        // Authentication policy: every id_token must carry a signature that validates against the issuer's published signing
+        // keys. This is the framework default, stated here because the handler turns it off for the id_token it redeems from the
+        // token endpoint; RequireSignedIdTokenAsync restores it for that token before anything acts on the identity.
+        options.TokenValidationParameters.RequireSignedTokens = true;
+
         options.Events = new OpenIdConnectEvents
         {
             OnRedirectToIdentityProvider = OnRedirectToIdentityProvider,
@@ -123,6 +131,9 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     /// </summary>
     private async Task OnTokenValidatedAsync(TokenValidatedContext ctx)
     {
+        await RequireSignedIdTokenAsync(ctx);
+        RequireValidTokenResponse(ctx);
+
         var identity = (ClaimsIdentity?)ctx.Principal?.Identity;
         if (identity is not null)
         {
@@ -240,6 +251,74 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     }
 
     /// <summary>
+    /// Authentication policy: the id_token must be signed, and its signature must validate against the signing keys the
+    /// issuer publishes in its metadata. The handler validates the id_token it redeems from the token endpoint with
+    /// <c>RequireSignedTokens</c> forced off (the code flow's back channel is TLS), so it validates a signature only when one is
+    /// present and accepts an unsigned token; configuring the option does not change that. This validates the same token again
+    /// with the framework's own token handler and the handler's validation parameters, with a signature required. The keys come
+    /// from the handler's configuration manager, so metadata refresh, signing-key rollover and last-known-good configuration
+    /// behave as they do in the handler, and a key that is not yet known reaches the handler's catch, which requests a refresh.
+    /// Issuer, audience and lifetime are checked again under the same parameters. A failure throws before anything acts on
+    /// the identity, so the handler fails the sign-in through <c>OnRemoteFailure</c>: one redirect, recorded as
+    /// <c>anonymous</c>, nothing associated, recorded or issued.
+    /// </summary>
+    private static async Task RequireSignedIdTokenAsync(TokenValidatedContext ctx)
+    {
+        var idToken = ctx.TokenEndpointResponse?.IdToken;
+        if (string.IsNullOrEmpty(idToken))
+            throw new OpenIdConnectProtocolException("The sign-in response carried no id_token from the token endpoint to validate.");
+
+        var parameters = ctx.Options.TokenValidationParameters.Clone();
+        parameters.RequireSignedTokens = true;
+        if (ctx.Options.ConfigurationManager is BaseConfigurationManager manager)
+        {
+            parameters.ConfigurationManager = manager;
+        }
+        else
+        {
+            var configuration = ctx.Options.ConfigurationManager is null
+                ? null
+                : await ctx.Options.ConfigurationManager.GetConfigurationAsync(ctx.HttpContext.RequestAborted);
+            if (configuration is null)
+                throw new OpenIdConnectProtocolException("No issuer metadata is available to validate the id_token's signature.");
+
+            var issuer = new[] { configuration.Issuer };
+            parameters.ValidIssuers = parameters.ValidIssuers?.Concat(issuer) ?? issuer;
+            parameters.IssuerSigningKeys = parameters.IssuerSigningKeys?.Concat(configuration.SigningKeys) ?? configuration.SigningKeys;
+        }
+
+        var result = await ctx.Options.TokenHandler.ValidateTokenAsync(idToken, parameters);
+        if (result.Exception is not null)
+            throw result.Exception;
+        if (!result.IsValid)
+            throw new SecurityTokenInvalidSignatureException("The id_token did not validate with a signature required.");
+    }
+
+    /// <summary>
+    /// Runs the handler's own token-response checks (the nonce bound to this browser's nonce cookie, the id_token's required
+    /// claims, at_hash) before anything acts on the identity. The handler reads the nonce cookie before this event but validates
+    /// the token response only after the event returns, and never when the event handles the response itself (an access-request
+    /// session, a local step-up). By the time this returns, the handler has already checked the protected state and its
+    /// correlation cookie, redeemed the code with PKCE and the client secret, and validated the id_token's issuer, audience and
+    /// lifetime, and <see cref="RequireSignedIdTokenAsync"/> has validated its signature. A failure throws, so the handler fails
+    /// the sign-in through <c>OnRemoteFailure</c>: one redirect, recorded as <c>anonymous</c>, nothing associated, recorded or
+    /// issued.
+    /// </summary>
+    private static void RequireValidTokenResponse(TokenValidatedContext ctx)
+    {
+        if (ctx.TokenEndpointResponse is null || ctx.SecurityToken is null)
+            throw new OpenIdConnectProtocolException("The sign-in response carried no token response to validate.");
+
+        ctx.Options.ProtocolValidator.ValidateTokenResponse(new OpenIdConnectProtocolValidationContext
+        {
+            ClientId = ctx.Options.ClientId,
+            ProtocolMessage = ctx.TokenEndpointResponse,
+            ValidatedIdToken = ctx.SecurityToken,
+            Nonce = ctx.Nonce,
+        });
+    }
+
+    /// <summary>
     /// Completes an Entra step-up on the identity provider's callback, which is a CROSS-SITE <c>form_post</c>: the browser
     /// withholds the ordinary SameSite=Lax session cookie from it (SEC-1 finding F8), and this method never reads it. Nothing
     /// about the operator comes from the ambient request (<c>HttpContext.User</c>, the cookie scheme). Everything comes from
@@ -271,7 +350,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var stale = !EntraStepUpFlowConstants.IsFresh(ctx.Properties, clock.GetUtcNow());
         if (string.IsNullOrEmpty(initiatingUserId) || sessionSource is null || requested is null || stale)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, stale ? "reason=continuation_stale" : "reason=continuation_invalid");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, stale ? "continuation_stale" : "continuation_invalid");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.ContinuationInvalid);
             return;
         }
@@ -298,7 +377,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var user = users is null ? null : await users.GetByIdAsync(new UserId(initiatingUserId), ctx.HttpContext.RequestAborted);
         if (user is null)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=user_not_found");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "user_not_found");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
             return;
         }
@@ -341,7 +420,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var localLink = user.IdentityLinks.FirstOrDefault(l => l.Source == IdentitySource.Local);
         if (localLink is null || string.IsNullOrWhiteSpace(localLink.ExternalId))
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=no_local_identity");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "no_local_identity");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.UserNotFound);
             return;
         }
@@ -353,7 +432,7 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         var credential = credentials is null ? null : await credentials.GetByUserIdAsync(user.Id, ctx.HttpContext.RequestAborted);
         if (localOptions is not { Enabled: true } || credential is null || credential.IsDisabled)
         {
-            await AppendStepUpAuditAsync(ctx, objectId, initiatingUserId, "reason=local_session_unavailable");
+            await AppendStepUpAuditAsync(ctx, objectId, tenantId, initiatingUserId, "local_session_unavailable");
             FailWithRedirect(ctx, isLinking: false, isStepUp: true, EntraStepUpFailureCodes.LocalSessionUnavailable);
             return;
         }
@@ -374,31 +453,27 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         ctx.HandleResponse();
     }
 
-    /// <summary>Records a step-up refusal the step-up service never saw (its input was already unusable). No token, claim or state content.</summary>
-    private static async Task AppendStepUpAuditAsync(TokenValidatedContext ctx, string objectId, string? initiatingUserId, string reason)
+    /// <summary>
+    /// Records a step-up refusal the step-up service never saw (its input was already unusable) as a W3 row of the initiating
+    /// user from the protected state. Without an initiating user there is no one to attribute it to: the state is produced only
+    /// by this host's challenge, which always sets one, so that case is logged, not recorded. No token, claim or state content.
+    /// </summary>
+    private static async Task AppendStepUpAuditAsync(TokenValidatedContext ctx, string objectId, string tenantId, string? initiatingUserId, string reason)
     {
-        var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
-        if (audit is null)
+        if (string.IsNullOrEmpty(initiatingUserId))
+        {
+            ctx.HttpContext.RequestServices.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger("Apperture.Management.Host.EntraSignIn")
+                .LogWarning("A step-up callback carried no initiating user ({Reason}); it was refused unrecorded.", reason);
+            return;
+        }
+
+        var events = ctx.HttpContext.RequestServices.GetService<IAuditEventWriter>();
+        if (events is null)
             return;
 
-        var details = string.IsNullOrEmpty(initiatingUserId) ? $"oid={objectId} {reason}" : $"userId={initiatingUserId} oid={objectId} {reason}";
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(string.IsNullOrEmpty(initiatingUserId) ? objectId : initiatingUserId),
-            StrongAuthenticationAuditActionNames.StepUpFailed,
-            new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-            "auth",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        try
-        {
-            await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
-        }
-        catch
-        {
-            // Auditing must never block the refusal.
-        }
+        var user = new UserId(initiatingUserId);
+        await events.TryWriteAsync(AuditEvents.StepUpFailed(user, reason, tenantId, objectId), AuditActor.AuthenticatedUser(user), CancellationToken.None);
     }
 
     private async Task<bool> TryIssueAccessRequestSessionAsync(TokenValidatedContext ctx, string objectId, string tenantId)
@@ -455,23 +530,19 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         ctx.HandleResponse();
     }
 
-    /// <summary>The actor is the signed-in user's id; the directory identity it came through is recorded as detail.</summary>
+    /// <summary>
+    /// W2 (AUD-1.2): the sign-in row commits before the handler issues the session cookie, which happens only after this event
+    /// returns. A failure to write it throws, the handler fails the sign-in through <c>OnRemoteFailure</c>, and no session is
+    /// issued. The actor is the user this callback resolved; the directory identity it came through is recorded as detail.
+    /// </summary>
     private static async Task AppendLoginSuccessAuditAsync(TokenValidatedContext ctx, UserId userId, string objectId, string tenantId)
     {
-        var audit = ctx.HttpContext.RequestServices.GetService<IAuditService>();
-        if (audit is null)
-            return;
-
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            new ActorId(userId.Value),
-            "auth.entra.login.success",
-            Resource: null,
-            "auth",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            $"oid={objectId} tenantId={tenantId}");
-        await audit.AppendAsync(record, ctx.HttpContext.RequestAborted);
+        var events = ctx.HttpContext.RequestServices.GetService<IAuditEventWriter>()
+            ?? throw new InvalidOperationException("A Microsoft sign-in is recorded before its session is issued, and no audit writer is available.");
+        await events.WriteAsync(
+            AuditEvents.EntraSignInSucceeded(userId, tenantId, objectId),
+            AuditActor.AuthenticatedUser(userId),
+            ctx.HttpContext.RequestAborted);
     }
 
     public void Configure(OpenIdConnectOptions options) => Configure(Options.DefaultName, options);

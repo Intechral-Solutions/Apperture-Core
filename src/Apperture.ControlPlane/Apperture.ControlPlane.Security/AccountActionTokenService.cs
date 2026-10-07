@@ -16,31 +16,34 @@ public sealed class AccountActionTokenService : IAccountActionTokenService
         _time = time;
     }
 
+    public PreparedAccountActionToken Prepare() => new(Guid.NewGuid().ToString("N")[..24], CreatePlaintext());
+
     public async ValueTask<IssuedAccountActionToken> IssueAsync(
         UserId userId,
         AccountActionTokenPurpose purpose,
         string? destinationEmail,
         TimeSpan lifetime,
+        PreparedAccountActionToken prepared,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(prepared);
         await RevokeActiveAsync(userId, purpose, cancellationToken);
         var now = _time.GetUtcNow();
-        var plaintext = CreatePlaintext();
         var record = new AccountActionTokenRecord(
-            Guid.NewGuid().ToString("N")[..24],
+            prepared.Id,
             userId,
             purpose,
-            Hash(plaintext),
+            Hash(prepared.Plaintext),
             destinationEmail,
             now,
             now.Add(lifetime),
             ConsumedAtUtc: null,
             RevokedAtUtc: null);
         await _tokens.AddAsync(record, cancellationToken);
-        return new IssuedAccountActionToken(plaintext, record.ExpiresAtUtc, destinationEmail);
+        return new IssuedAccountActionToken(record.Id, prepared.Plaintext, record.ExpiresAtUtc, destinationEmail);
     }
 
-    public async ValueTask<AccountActionTokenRecord?> TryConsumeAsync(
+    public async ValueTask<AccountActionTokenRecord?> FindActiveAsync(
         string plaintext,
         AccountActionTokenPurpose purpose,
         CancellationToken cancellationToken = default)
@@ -49,10 +52,19 @@ public sealed class AccountActionTokenService : IAccountActionTokenService
             return null;
 
         var record = await _tokens.FindByHashAsync(Hash(plaintext.Trim()), cancellationToken);
-        var now = _time.GetUtcNow();
-        if (record is null || record.Purpose != purpose || !record.IsActive(now))
+        return record is not null && record.Purpose == purpose && record.IsActive(_time.GetUtcNow()) ? record : null;
+    }
+
+    public async ValueTask<AccountActionTokenRecord?> TryConsumeAsync(
+        string plaintext,
+        AccountActionTokenPurpose purpose,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await FindActiveAsync(plaintext, purpose, cancellationToken);
+        if (record is null)
             return null;
 
+        var now = _time.GetUtcNow();
         var consumed = record with { ConsumedAtUtc = now };
         await _tokens.UpdateAsync(consumed, cancellationToken);
         return consumed;

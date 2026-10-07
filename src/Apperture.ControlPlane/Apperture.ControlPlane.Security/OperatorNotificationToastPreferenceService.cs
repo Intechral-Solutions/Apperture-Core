@@ -47,15 +47,31 @@ public sealed class OperatorNotificationToastPreferenceService : IOperatorNotifi
         string userId,
         string definitionId,
         bool toastEnabled,
+        CancellationToken cancellationToken = default) =>
+        (await UpdateToastEnabledAsync(userId, definitionId, toastEnabled, cancellationToken).ConfigureAwait(false)).Preference;
+
+    public async ValueTask<OperatorPreferenceUpdate<OperatorToastPreference>> UpdateToastEnabledAsync(
+        string userId,
+        string definitionId,
+        bool toastEnabled,
         CancellationToken cancellationToken = default)
     {
         var definition = await RequireSubscribableDefinitionAsync(definitionId, cancellationToken).ConfigureAwait(false);
 
-        await _preferences
-            .SetAsync(userId, definitionId, NotificationChannels.Toast, toastEnabled, updatedByActorId: userId, cancellationToken)
+        // The explicit row is the whole of the toast preference: an equal row means there is nothing to write.
+        var row = await _preferences
+            .GetAsync(userId, definitionId, NotificationChannels.Toast, cancellationToken)
             .ConfigureAwait(false);
+        var changed = row is null || row.IsEnabled != toastEnabled;
+        if (changed)
+        {
+            row = await _preferences
+                .SetAsync(userId, definitionId, NotificationChannels.Toast, toastEnabled, updatedByActorId: userId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
-        return await BuildPreferenceAsync(userId, definition, cancellationToken).ConfigureAwait(false);
+        var preference = await BuildPreferenceAsync(userId, definition, cancellationToken).ConfigureAwait(false);
+        return new OperatorPreferenceUpdate<OperatorToastPreference>(preference, changed, row!.Id);
     }
 
     private async ValueTask<OperatorToastPreference> BuildPreferenceAsync(

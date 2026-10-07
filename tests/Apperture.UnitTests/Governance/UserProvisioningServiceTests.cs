@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
@@ -272,6 +274,51 @@ public sealed class UserProvisioningServiceTests
         ex.Which.Code.Should().Be(UserProvisioningErrorCodes.DuplicateIdentity, "an existing identity yields a failure, not a result");
         harness.Users.Added.Should().BeEmpty();
         harness.Requests.Items["req-1"].ProvisionedUserId.Should().Be("existing");
+        var (reconciled, actor) = harness.Audit.Events.Should().ContainSingle(
+            "the reconciliation committed with its row; the refusal followed the confirmed commit (clarification 4)").Subject;
+        reconciled.Action.Should().Be(UserProvisioningAuditActionNames.RequestReconciled);
+        actor.Should().Be(AuditActor.CurrentPrincipal);
+        reconciled.Target.Should().Be(new AuditTarget(AuditTargetTypes.EntraAccessRequest, "req-1"));
+        reconciled.Fields["userId"].Should().Be("existing");
+    }
+
+    [Fact]
+    public async Task A_provisioning_commits_the_user_its_initial_role_and_their_rows_and_mails_the_welcome_once_after()
+    {
+        var harness = Harness.Create();
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, SendWelcomeEmail: true, InitialRoleId: BootstrapConstants.PlatformAdminRoleId));
+
+        harness.Audit.Actions.Should().Equal(
+            UserProvisioningAuditActionNames.EntraDirectoryProvisioned,
+            AuditActionNames.RoleAssigned,
+            UserProvisioningAuditActionNames.WelcomeSent);
+        harness.Audit.Events.Should().OnlyContain(e => e.Actor == AuditActor.CurrentPrincipal, "the administrator provisions");
+        var provisioned = harness.Audit.Events[0].Event;
+        provisioned.Target.Should().Be(new AuditTarget(AuditTargetTypes.User, result.UserId.Value));
+        provisioned.Fields["tenantId"].Should().Be(Tid);
+        provisioned.Fields["objectId"].Should().Be(Oid);
+        provisioned.Fields.Values.Should().NotContain("jane@contoso.com", "email and UPN are never recorded");
+        harness.Audit.Events[2].Event.Definition.WriteClass.Should().Be(AuditWriteClass.Attempt);
+        harness.Mail.Recipients.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_welcome_send_that_throws_is_unknown_and_never_fails_the_committed_provisioning()
+    {
+        var harness = Harness.Create();
+        harness.Mail.Throw = true;
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, SendWelcomeEmail: true));
+
+        result.WelcomeMailDelivered.Should().BeFalse();
+        harness.Users.Added.Should().ContainSingle();
+        var welcome = harness.Audit.Last;
+        welcome.Action.Should().Be(UserProvisioningAuditActionNames.WelcomeFailed);
+        welcome.OutcomeCode.Should().Be(AuditOutcomeCodes.Unknown);
+        welcome.Fields["failure"].Should().Be("error");
     }
 
     [Fact]
@@ -310,7 +357,7 @@ public sealed class UserProvisioningServiceTests
     {
         public RecordingUsers Users { get; } = new();
         public RecordingRoles Roles { get; } = new();
-        public RecordingAudit Audit { get; } = new();
+        public AuditRecording Audit { get; } = new();
         public RecordingMail Mail { get; } = new();
         public RecordingRequests Requests { get; } = new();
         public StubDirectory Directory { get; } = new();
@@ -332,10 +379,11 @@ public sealed class UserProvisioningServiceTests
                 Directory,
                 new StubAssociation(),
                 Requests,
-                Audit,
                 TimeProvider.System,
                 Mail,
-                new AccountSecurityLinkBuilder(config));
+                new AccountSecurityLinkBuilder(config),
+                Audit,
+                Audit);
         }
 
         public static Harness Create(bool allowUserManage = true, bool allowRoleAssign = true) =>
@@ -588,35 +636,18 @@ public sealed class UserProvisioningServiceTests
             ValueTask.CompletedTask;
     }
 
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
-    }
-
     private sealed class RecordingMail : IAccountSecurityMailSender
     {
         public bool Fail { get; set; }
+        public bool Throw { get; set; }
         public List<string> Recipients { get; } = [];
 
         public ValueTask<AccountSecurityMailResult> SendAsync(
             string recipient, string subject, string plainTextBody, CancellationToken cancellationToken = default)
         {
             Recipients.Add(recipient);
+            if (Throw)
+                throw new InvalidOperationException("Injected: the transport threw.");
             return ValueTask.FromResult(Fail
                 ? new AccountSecurityMailResult(false, "smtp unavailable")
                 : new AccountSecurityMailResult(true, null));

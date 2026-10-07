@@ -16,16 +16,53 @@ public sealed class EmergencyAccessServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 31, 18, 0, 0, TimeSpan.Zero);
     private static readonly RoleId AdminRole = new(BootstrapConstants.PlatformAdminRoleId);
+    private static readonly ActorId Cli = new(EmergencyAccessService.CliActorId);
 
     [Fact]
     public async Task Platform_administrator_with_local_credential_can_be_designated()
     {
         var harness = Harness.WithAdmin("admin-1");
 
-        await harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli"));
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
 
         harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeTrue();
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.Designated);
+
+        // AUD-1.2: one unit. The command line is the actor and the account is the target (the earlier rows could name the
+        // account itself); the canonical identity it took commits in the same unit as a secondary row.
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        operation.Staged.Select(e => e.Action).Should().BeEquivalentTo(
+            [AuditActionNames.RecoveryAccessCanonicalized, AuditActionNames.RecoveryAccessDesignated]);
+        var designated = harness.Recorder.Single(AuditActionNames.RecoveryAccessDesignated);
+        designated.Target!.Id.Should().Be("admin-1");
+        designated.Fields.Should().NotContainKey("previousUserId", "nobody was designated before");
+    }
+
+    [Fact]
+    public async Task Designating_a_new_account_demotes_the_previous_one_and_records_it()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        harness.Users.Seed(Admin("old-ra", designated: true, username: "oldglass"));
+        harness.Credentials.Seed("old-ra", disabled: false);
+
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        harness.Users.Get("old-ra")!.IsBreakGlassEligible.Should().BeFalse();
+        harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeTrue();
+        harness.Recorder.Single(AuditActionNames.RecoveryAccessDesignated).Fields["previousUserId"].Should().Be("old-ra");
+    }
+
+    [Fact]
+    public async Task Re_designating_the_designated_canonical_account_changes_nothing_and_records_nothing()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        harness.Recorder.Operations.Should().HaveCount(2);
+        harness.Recorder.Operations[1].NoOp.Should().BeTrue();
+        harness.Recorder.Actions.Should().ContainSingle(a => a == AuditActionNames.RecoveryAccessDesignated);
     }
 
     [Fact]
@@ -33,43 +70,72 @@ public sealed class EmergencyAccessServiceTests
     {
         var harness = Harness.WithOrdinaryUser();
 
-        var act = () => harness.Emergency.DesignateAsync(new UserId("usr-1"), new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.DesignateAsync(new UserId("usr-1"), Cli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.NotPlatformAdministrator);
         harness.Users.Get("usr-1")!.IsBreakGlassEligible.Should().BeFalse();
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task Destructive_change_on_designated_account_is_rejected()
+    public async Task Only_the_designated_account_is_reported_as_the_recovery_path()
     {
+        // The safety check a destructive change runs inside its own transaction (the refusal row is the caller's).
         var harness = Harness.WithAdmin("admin-1");
-        await harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli"));
+        harness.Users.Seed(Admin("admin-2", designated: false));
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
 
-        var act = () => harness.Emergency.EnsureDestructiveChangeAllowedAsync(new UserId("admin-1"), "credential.disable").AsTask();
-
-        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
-        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.BlockedUnsafe);
+        (await harness.Emergency.IsDesignatedEmergencyUserAsync(new UserId("admin-1"))).Should().BeTrue();
+        (await harness.Emergency.IsDesignatedEmergencyUserAsync(new UserId("admin-2"))).Should().BeFalse();
     }
 
     [Fact]
     public async Task Revoke_without_confirm_fallback_is_rejected()
     {
         var harness = Harness.WithAdmin("admin-1");
-        await harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli"));
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
 
-        var act = () => harness.Emergency.RevokeAsync(confirmFallback: false, new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.RevokeAsync(confirmFallback: false, Cli).AsTask();
 
         await act.Should().ThrowAsync<EmergencyAccessException>();
         harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeTrue();
+        harness.Recorder.Actions.Should().NotContain(AuditActionNames.RecoveryAccessRevoked);
+    }
+
+    [Fact]
+    public async Task Revoke_with_confirm_fallback_commits_with_its_row_attributed_to_the_command_line()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        await harness.Emergency.RevokeAsync(confirmFallback: true, Cli);
+
+        harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeFalse();
+        var operation = harness.Recorder.Operations.Last();
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        operation.Staged.Should().ContainSingle().Which.Target!.Id.Should().Be("admin-1");
+    }
+
+    [Fact]
+    public async Task Command_line_password_set_commits_with_its_row_and_never_records_the_password()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+
+        await harness.Emergency.SetLocalPasswordAsync(new UserId("admin-1"), "quiet-maple-lantern-harbor", Cli);
+
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        var row = operation.Staged.Should().ContainSingle().Which;
+        row.Action.Should().Be(AuditActionNames.PasswordSet);
+        row.Fields.Values.Should().NotContain("quiet-maple-lantern-harbor");
     }
 
     [Fact]
     public async Task Posture_is_unhealthy_until_mfa_and_recovery_codes_exist()
     {
         var harness = Harness.WithAdmin("admin-1");
-        await harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli"));
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
 
         var before = await harness.Emergency.GetPostureAsync();
         before.IsHealthy.Should().BeFalse();
@@ -88,7 +154,7 @@ public sealed class EmergencyAccessServiceTests
         var harness = Harness.Empty();
         harness.Roles.RoleExists = true;
 
-        var userId = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli"));
+        var userId = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", Cli);
 
         var user = harness.Users.Get(userId.Value)!;
         user.IsBreakGlassEligible.Should().BeTrue();
@@ -98,8 +164,15 @@ public sealed class EmergencyAccessServiceTests
             l.Source == IdentitySource.Local && l.ExternalId == EmergencyAccessIdentity.LocalUsername);
         user.AssignedRoleIds.Should().Contain(AdminRole);
         harness.Credentials.Disabled[userId.Value].Should().BeFalse();
-        harness.Audit.Actions.Should().Contain(EmergencyAccessAuditActionNames.Provisioned);
-        harness.Audit.Details.Should().NotContain("quiet-maple-lantern-harbor");
+
+        // The account, its credential and the row commit in one unit; the password is never recorded.
+        var operation = harness.Recorder.Operations.Should().ContainSingle().Which;
+        operation.Operation.Actor.Should().Be(AuditActor.EmergencyCli);
+        var row = operation.Staged.Should().ContainSingle().Which;
+        row.Action.Should().Be(AuditActionNames.RecoveryAccessProvisioned);
+        row.Target!.Id.Should().Be(userId.Value);
+        row.Fields["username"].Should().Be(UsernamePolicy.RecoveryAccessUsername);
+        row.Fields.Values.Should().NotContain("quiet-maple-lantern-harbor");
     }
 
     [Fact]
@@ -108,7 +181,7 @@ public sealed class EmergencyAccessServiceTests
         var harness = Harness.Empty();
         harness.Roles.RoleExists = true;
 
-        var act = () => harness.Emergency.ProvisionAsync("password", new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.ProvisionAsync("password", Cli).AsTask();
 
         await act.Should().ThrowAsync<PasswordPolicyException>();
         harness.Users.All.Should().BeEmpty();
@@ -120,9 +193,9 @@ public sealed class EmergencyAccessServiceTests
     {
         var harness = Harness.Empty();
         harness.Roles.RoleExists = true;
-        var first = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli"));
+        var first = await harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", Cli);
 
-        var second = await harness.Emergency.ProvisionAsync("another-password", new ActorId("cli"));
+        var second = await harness.Emergency.ProvisionAsync("another-password", Cli);
 
         second.Should().Be(first);
         harness.Users.All.Should().ContainSingle(u => u.IsBreakGlassEligible);
@@ -157,7 +230,6 @@ public sealed class EmergencyAccessServiceTests
         staged.Target!.Id.Should().Be("emerg-1");
         staged.Fields["previousUsername"].Should().Be("oldglass");
         staged.Fields["newUsername"].Should().Be(EmergencyAccessIdentity.LocalUsername);
-        harness.Audit.Actions.Should().NotContain(EmergencyAccessAuditActionNames.Canonicalized, "the append path no longer writes it");
     }
 
     [Fact]
@@ -198,7 +270,7 @@ public sealed class EmergencyAccessServiceTests
             false)
         { Username = EmergencyAccessIdentity.LocalUsername });
 
-        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", Cli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
@@ -240,9 +312,9 @@ public sealed class EmergencyAccessServiceTests
         harness.Users.Seed(Admin("admin-2", designated: false));
         harness.Credentials.Seed("admin-2", disabled: false);
         harness.Roles.UserIds.Add(new UserId("admin-2"));
-        await harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli"));
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
 
-        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-2"), new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-2"), Cli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
@@ -259,7 +331,7 @@ public sealed class EmergencyAccessServiceTests
         harness.Users.Seed(Admin("former-ra", designated: false, username: "former.admin"));
         harness.Users.SeedRetiredLedgerEntry(EmergencyAccessIdentity.LocalUsername, "former-ra");
 
-        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-1"), new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
@@ -267,7 +339,7 @@ public sealed class EmergencyAccessServiceTests
         candidate.IsBreakGlassEligible.Should().BeFalse("the refusal happens before any designation change");
         candidate.Username.Should().Be("admin-1");
         harness.Users.LedgerEntry(EmergencyAccessIdentity.LocalUsername)!.UserId.Value.Should().Be("former-ra");
-        harness.Audit.Actions.Should().NotContain(EmergencyAccessAuditActionNames.Designated);
+        harness.Recorder.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -278,7 +350,7 @@ public sealed class EmergencyAccessServiceTests
         harness.Users.Seed(Admin("former-ra", designated: false, username: "former.admin"));
         harness.Users.SeedRetiredLedgerEntry(EmergencyAccessIdentity.LocalUsername, "former-ra");
 
-        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", new ActorId("cli")).AsTask();
+        var act = () => harness.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", Cli).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UsernameConflict);
@@ -302,7 +374,6 @@ public sealed class EmergencyAccessServiceTests
         public RecordingCredentials Credentials { get; } = new();
         public RecordingRoles Roles { get; } = new();
         public FakeMfa Mfa { get; } = new();
-        public RecordingAudit Audit { get; } = new();
         public RecordingAuditedUnitOfWork Recorder { get; } = new();
         public EmergencyAccessService Emergency { get; }
 
@@ -314,7 +385,6 @@ public sealed class EmergencyAccessServiceTests
                 Credentials,
                 new LocalPasswordHasher(),
                 Mfa,
-                Audit,
                 TimeProvider.System,
                 NullLogger<EmergencyAccessService>.Instance,
                 Recorder);
@@ -487,30 +557,14 @@ public sealed class EmergencyAccessServiceTests
             ValueTask.FromResult(user.IsBreakGlassEligible || Enrolled.GetValueOrDefault(user.Id.Value));
         public ValueTask<NativeMfaEnrollmentChallenge> BeginEnrollmentAsync(UserId userId, string accountName, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
-        public ValueTask<IReadOnlyList<string>> CompleteEnrollmentAsync(UserId userId, string totpCode, CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<string>> CompleteEnrollmentAsync(UserId userId, string totpCode, AuditActor actor, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
         public ValueTask<bool> VerifyTotpAsync(UserId userId, string totpCode, CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
         public ValueTask<bool> ConsumeRecoveryCodeAsync(UserId userId, string recoveryCode, CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
-        public ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) =>
+        public ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
-        public ValueTask ResetAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(UnusedCodes.GetValueOrDefault(userId.Value));
-    }
-
-    private sealed class RecordingAudit : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-        public List<string> Details { get; } = [];
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            if (record.Details is not null)
-                Details.Add(record.Details);
-            return ValueTask.CompletedTask;
-        }
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(new AuditPage([], null));
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => ValueTask.FromResult<AuditRecord?>(null);
     }
 }
