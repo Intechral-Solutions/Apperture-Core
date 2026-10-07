@@ -1,5 +1,5 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Abstractions;
@@ -23,8 +23,8 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
     private readonly IUserProvisioningService _provisioning;
     private readonly ISecretResolver? _secrets;
     private readonly IConfiguration _configuration;
-    private readonly IAuditService _audit;
     private readonly TimeProvider _clock;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public EntraAccessRequestService(
         IPrincipalContext principalContext,
@@ -35,9 +35,9 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         IEntraAccessRequestRepository requests,
         IUserProvisioningService provisioning,
         IConfiguration configuration,
-        IAuditService audit,
         TimeProvider clock,
-        ISecretResolver? secrets = null)
+        ISecretResolver? secrets = null,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _principalContext = principalContext;
         _auth = auth;
@@ -47,10 +47,13 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
         _requests = requests;
         _provisioning = provisioning;
         _configuration = configuration;
-        _audit = audit;
         _clock = clock;
         _secrets = secrets;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Access requests require the audited unit of work.");
 
     public async ValueTask<EntraAccessRequestSessionSnapshot> GetSessionSnapshotAsync(
         EntraAccessRequestPrincipal principal,
@@ -210,6 +213,7 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
                 "You cannot request access right now.");
         }
 
+        // A directory lookup is an external call: it runs before the transaction, never inside it.
         var directory = await TryGetDirectoryUserAsync(
             await _registrations.GetByIdAsync(principal.RegistrationId, cancellationToken),
             principal.ObjectId,
@@ -229,34 +233,50 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
             now,
             EntraAccessRequestStatus.Pending);
 
+        // The requester has no Apperture user. The access-request session is issued only by the sign-in handler after it
+        // validated the token and this instance's tenant check passed, in a data-protected cookie of its own scheme, so its
+        // tenant id and object id are a verified external identity (D1, clarification 2).
+        var requester = AuditActor.ValidatedExternalIdentity(
+            new AuditExternalActor(AuditExternalActor.EntraProvider, principal.TenantId, principal.ObjectId));
+
         try
         {
-            await _requests.AddAsync(request, cancellationToken);
-        }
-        catch (Exception)
-        {
-            var raced = await _requests.FindPendingAsync(
-                principal.TenantId,
-                principal.ObjectId,
+            return await Unit.ExecuteAsync(
+                new AuditedOperation(AuditActionNames.AccessRequestCreated, requester),
+                async (transaction, ct) =>
+                {
+                    // The identity, pending state and rate limit are read again in the transaction.
+                    if (await _users.GetByIdentityLinkAsync(ProviderIdentityKey.Entra(principal.TenantId, principal.ObjectId), ct) is not null)
+                        throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotEligible, "You already have access. Sign in with Microsoft again.");
+
+                    var pending = await _requests.FindPendingAsync(principal.TenantId, principal.ObjectId, ct);
+                    if (pending is not null)
+                    {
+                        transaction.DeclareNoOp();
+                        return pending;
+                    }
+
+                    if (await _requests.CountRecentForIdentityAsync(principal.TenantId, principal.ObjectId, now - RateLimitWindow, ct) >= RateLimitMax)
+                        throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.Throttled, "You cannot request access right now.");
+
+                    await _requests.AddAsync(request, ct);
+                    await transaction.StageAsync(
+                        AuditEvents.AccessRequestCreated(request.Id, request.RegistrationId, request.TenantId, request.ProviderObjectId), ct);
+                    return request;
+                },
+                (_, _) => Task.FromResult(request),
                 cancellationToken);
+        }
+        catch (Exception ex) when (ex is not EntraAccessRequestException
+            && ex is not AuditOutcomeUnknownException
+            && ex is not AuditOperationNotCompletedException)
+        {
+            // Another submission for the same identity committed first (the pending-request index refused this insert).
+            var raced = await _requests.FindPendingAsync(principal.TenantId, principal.ObjectId, cancellationToken);
             if (raced is not null)
                 return raced;
             throw;
         }
-
-        await _audit.AppendAsync(
-            new AuditRecord(
-                new AuditRecordId(Guid.NewGuid().ToString("N")),
-                new ActorId(principal.ObjectId),
-                EntraAccessRequestAuditActionNames.Created,
-                new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                EntraAccessRequestAuditActionNames.Outcome,
-                now,
-                new CorrelationId(null),
-                $"requestId={request.Id} oid={principal.ObjectId} registrationId={principal.RegistrationId}"),
-            cancellationToken);
-
-        return request;
     }
 
     public async ValueTask<(IReadOnlyList<EntraAccessRequest> Items, int PendingCount)> ListPendingForReviewAsync(
@@ -281,28 +301,30 @@ public sealed class EntraAccessRequestService : IEntraAccessRequestService
     public async ValueTask RejectAsync(string requestId, CancellationToken cancellationToken = default)
     {
         var actorId = await RequireUserManageAsync(cancellationToken);
-        var request = await _requests.GetByIdAsync(requestId, cancellationToken)
-            ?? throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotFound, "That access request was not found.");
-        if (request.Status != EntraAccessRequestStatus.Pending)
-            throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotPending, "That access request is no longer pending.");
+        var reviewedAt = _clock.GetUtcNow();
 
-        var updated = request with
-        {
-            Status = EntraAccessRequestStatus.Rejected,
-            ReviewedAtUtc = _clock.GetUtcNow(),
-            ReviewedByUserId = actorId.Value
-        };
-        await _requests.UpdateAsync(updated, cancellationToken);
-        await _audit.AppendAsync(
-            new AuditRecord(
-                new AuditRecordId(Guid.NewGuid().ToString("N")),
-                actorId,
-                EntraAccessRequestAuditActionNames.Rejected,
-                new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                EntraAccessRequestAuditActionNames.Outcome,
-                _clock.GetUtcNow(),
-                new CorrelationId(null),
-                $"requestId={request.Id} oid={request.ProviderObjectId}"),
+        // The administrator's decision: the pending check, the update and the row commit together.
+        await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.AccessRequestRejected, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var request = await _requests.GetByIdAsync(requestId, ct)
+                    ?? throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotFound, "That access request was not found.");
+                if (request.Status != EntraAccessRequestStatus.Pending)
+                    throw new EntraAccessRequestException(EntraAccessRequestErrorCodes.NotPending, "That access request is no longer pending.");
+
+                await _requests.UpdateAsync(
+                    request with
+                    {
+                        Status = EntraAccessRequestStatus.Rejected,
+                        ReviewedAtUtc = reviewedAt,
+                        ReviewedByUserId = actorId.Value
+                    },
+                    ct);
+                await transaction.StageAsync(AuditEvents.AccessRequestRejected(request.Id, request.TenantId, request.ProviderObjectId), ct);
+                return true;
+            },
+            (_, _) => Task.FromResult(true),
             cancellationToken);
     }
 

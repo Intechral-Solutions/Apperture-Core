@@ -1,12 +1,21 @@
 using Apperture.Core.Application.Accounts;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.ControlPlane.Security;
 
+/// <summary>
+/// Adds people from the Microsoft directory or from approved access requests.
+/// </summary>
+/// <remarks>
+/// AUD-1.2: each provisioning is one audited unit of work of the administrator. Directory reads run before it; the user,
+/// its link, the initial role assignment, the access request's approval or reconciliation and their rows commit together;
+/// the welcome mail is sent once after commit with its own W3 row. Approving a request whose identity already has a user
+/// commits the reconciliation and is refused only after that commit was confirmed (clarification 4).
+/// </remarks>
 public sealed class UserProvisioningService : IUserProvisioningService
 {
     private readonly IPrincipalContext _principalContext;
@@ -17,10 +26,11 @@ public sealed class UserProvisioningService : IUserProvisioningService
     private readonly IEntraProvisioningDirectoryService _directory;
     private readonly IEntraIdentityAssociationService _association;
     private readonly IEntraAccessRequestRepository _requests;
-    private readonly IAuditService _audit;
     private readonly TimeProvider _clock;
     private readonly IAccountSecurityMailSender _mail;
     private readonly AccountSecurityLinkBuilder _links;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public UserProvisioningService(
         IPrincipalContext principalContext,
@@ -31,10 +41,11 @@ public sealed class UserProvisioningService : IUserProvisioningService
         IEntraProvisioningDirectoryService directory,
         IEntraIdentityAssociationService association,
         IEntraAccessRequestRepository requests,
-        IAuditService audit,
         TimeProvider clock,
         IAccountSecurityMailSender mail,
-        AccountSecurityLinkBuilder links)
+        AccountSecurityLinkBuilder links,
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null)
     {
         _principalContext = principalContext;
         _auth = auth;
@@ -44,10 +55,11 @@ public sealed class UserProvisioningService : IUserProvisioningService
         _directory = directory;
         _association = association;
         _requests = requests;
-        _audit = audit;
         _clock = clock;
         _mail = mail;
         _links = links;
+        _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
     }
 
     public async ValueTask<UserProvisioningResult> ProvisionFromEntraDirectoryAsync(
@@ -109,39 +121,52 @@ public sealed class UserProvisioningService : IUserProvisioningService
             ? throw new UserProvisioningException(UserProvisioningErrorCodes.DisplayNameRequired, "A display name is required.")
             : directoryUser.DisplayName.Trim();
 
+        // Directory reads are external calls and run before the transaction; the user id and link id are chosen once.
         var pendingLink = await _association.BuildPendingAdminLinkAsync(objectId!, registration, cancellationToken);
+        pendingLink = pendingLink with { LinkId = pendingLink.LinkId ?? IdentityLink.NewLinkId() };
         var userId = NewUserId();
-        var created = await AddWithGeneratedUsernameAsync(
-            username => new User(
-                userId,
-                displayName,
-                [pendingLink],
-                [],
-                IsBreakGlassEligible: false)
-            {
-                Username = username
-            },
-            new UsernameGenerationSources(directoryUser.UserPrincipalName, directoryUser.Mail, displayName),
-            cancellationToken);
+        var reviewedAt = _clock.GetUtcNow();
 
-        var roleAssigned = await TryAssignRoleAsync(userId, request.InitialRoleId, cancellationToken);
-        await AuditAsync(
-            UserProvisioningAuditActionNames.EntraDirectoryProvisioned,
-            actorId,
-            userId.Value,
-            $"userId={userId.Value} oid={objectId} registrationId={registration.Id} proven=0",
+        // The user, its link, the initial role, the reconciled access request and their rows commit together (AUD-1.2).
+        var (created, roleAssigned, reconciled) = await Unit.ExecuteAsync(
+            Operation(AuditActionNames.ProvisionedFromDirectory),
+            async (transaction, ct) =>
+            {
+                var current = await _registrations.GetByIdAsync(registration.Id, ct);
+                if (current is null || !current.Enabled)
+                {
+                    throw new UserProvisioningException(
+                        UserProvisioningErrorCodes.RegistrationDisabled,
+                        "That Microsoft directory registration is disabled.");
+                }
+
+                var user = await AddWithGeneratedUsernameAsync(
+                    username => new User(userId, displayName, [pendingLink], [], IsBreakGlassEligible: false) { Username = username },
+                    new UsernameGenerationSources(directoryUser.UserPrincipalName, directoryUser.Mail, displayName),
+                    ct);
+                await transaction.StageAsync(
+                    AuditEvents.ProvisionedFromDirectory(userId, user.Username, tenantId, objectId!, registration.Id), ct);
+
+                var assigned = await TryAssignRoleAsync(transaction, userId, request.InitialRoleId, ct);
+                var reconciledId = await ReconcilePendingAsync(transaction, tenantId, objectId!, userId, actorId, reviewedAt, ct);
+                return (user, assigned, reconciledId);
+            },
+            async (_, ct) =>
+            {
+                var user = await _users.GetByIdAsync(userId, ct)
+                    ?? throw new InvalidOperationException($"User {userId.Value} was verified as created but could not be read.");
+                var latest = await _requests.FindLatestAsync(tenantId, objectId!, ct);
+                return (user, !string.IsNullOrWhiteSpace(request.InitialRoleId), latest?.ProvisionedUserId == userId.Value ? latest.Id : null);
+            },
             cancellationToken);
 
         var welcome = await TrySendWelcomeAsync(
-            actorId,
             userId,
             request.SendWelcomeEmail,
             directoryUser.Mail,
             displayName,
             registration.DisplayName,
             cancellationToken);
-
-        var reconciled = await ReconcilePendingAsync(tenantId, objectId!, userId, actorId, cancellationToken);
 
         return new UserProvisioningResult(
             userId,
@@ -163,152 +188,180 @@ public sealed class UserProvisioningService : IUserProvisioningService
         var actorId = await RequireUserManageAsync(cancellationToken);
         await RequireRoleAssignIfRequestedAsync(request.InitialRoleId, cancellationToken);
 
-        var accessRequest = await _requests.GetByIdAsync(request.RequestId, cancellationToken)
-            ?? throw new UserProvisioningException(
-                UserProvisioningErrorCodes.RequestNotFound,
-                "That access request was not found.");
-        if (accessRequest.Status != EntraAccessRequestStatus.Pending)
-        {
-            throw new UserProvisioningException(
-                UserProvisioningErrorCodes.RequestNotPending,
-                "That access request is no longer pending.");
-        }
-
-        var objectId = EntraTokenClaims.Normalize(accessRequest.ProviderObjectId);
-        var tenantId = EntraTokenClaims.Normalize(accessRequest.TenantId);
-        if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(objectId))
-        {
-            throw new UserProvisioningException(
-                UserProvisioningErrorCodes.InvalidObjectId,
-                "That access request does not have a Microsoft tenant and object id.");
-        }
-
-        var existing = await _users.GetByIdentityLinkAsync(
-            ProviderIdentityKey.Entra(tenantId, objectId!),
-            cancellationToken);
-        if (existing is not null)
-        {
-            var already = accessRequest with
+        var userId = NewUserId();
+        var linkId = IdentityLink.NewLinkId();
+        var reviewedAt = _clock.GetUtcNow();
+        var approval = await Unit.ExecuteAsync(
+            new AuditedOperation(
+                AuditActionNames.ProvisionedFromAccessRequest,
+                AuditActor.CurrentPrincipal,
+                [AuditActionNames.AccessRequestReconciled]),
+            async (transaction, ct) =>
             {
-                Status = EntraAccessRequestStatus.Approved,
-                ReviewedAtUtc = _clock.GetUtcNow(),
-                ReviewedByUserId = actorId.Value,
-                ProvisionedUserId = existing.Id.Value
-            };
-            await _requests.UpdateAsync(already, cancellationToken);
-            await AuditAsync(
-                UserProvisioningAuditActionNames.RequestReconciled,
-                actorId,
-                existing.Id.Value,
-                $"requestId={accessRequest.Id} userId={existing.Id.Value} oid={objectId}",
-                cancellationToken);
+                // Every check the approval depends on is read in this transaction.
+                var accessRequest = await _requests.GetByIdAsync(request.RequestId, ct)
+                    ?? throw new UserProvisioningException(
+                        UserProvisioningErrorCodes.RequestNotFound,
+                        "That access request was not found.");
+                if (accessRequest.Status != EntraAccessRequestStatus.Pending)
+                {
+                    throw new UserProvisioningException(
+                        UserProvisioningErrorCodes.RequestNotPending,
+                        "That access request is no longer pending.");
+                }
+
+                var objectId = EntraTokenClaims.Normalize(accessRequest.ProviderObjectId);
+                var tenantId = EntraTokenClaims.Normalize(accessRequest.TenantId);
+                if (string.IsNullOrEmpty(tenantId) || !EntraTokenClaims.IsValidObjectId(objectId))
+                {
+                    throw new UserProvisioningException(
+                        UserProvisioningErrorCodes.InvalidObjectId,
+                        "That access request does not have a Microsoft tenant and object id.");
+                }
+
+                var existing = await _users.GetByIdentityLinkAsync(ProviderIdentityKey.Entra(tenantId, objectId!), ct);
+                if (existing is not null)
+                {
+                    // The identity already belongs to a user: the request is closed against that user and committed, and only
+                    // then is the approval refused (clarification 4).
+                    await _requests.UpdateAsync(
+                        accessRequest with
+                        {
+                            Status = EntraAccessRequestStatus.Approved,
+                            ReviewedAtUtc = reviewedAt,
+                            ReviewedByUserId = actorId.Value,
+                            ProvisionedUserId = existing.Id.Value
+                        },
+                        ct);
+                    await transaction.StageAsync(AuditEvents.AccessRequestReconciled(accessRequest.Id, tenantId, objectId!, existing.Id), ct);
+                    return Approval.Reconciled;
+                }
+
+                var displayName = string.IsNullOrWhiteSpace(accessRequest.DisplayNameSnapshot)
+                    ? "Microsoft user"
+                    : accessRequest.DisplayNameSnapshot.Trim();
+                var link = new IdentityLink(
+                    IdentitySource.Entra,
+                    objectId!,
+                    LastAuthenticatedAt: accessRequest.AuthenticatedAtUtc,
+                    TenantId: accessRequest.TenantId,
+                    RegistrationId: accessRequest.RegistrationId,
+                    LinkedAt: reviewedAt,
+                    ProviderSubject: null,
+                    DisplayNameSnapshot: accessRequest.DisplayNameSnapshot,
+                    UserPrincipalNameSnapshot: accessRequest.UserPrincipalNameSnapshot,
+                    MailSnapshot: accessRequest.MailSnapshot,
+                    LinkId: linkId);
+
+                var created = await AddWithGeneratedUsernameAsync(
+                    username => new User(userId, displayName, [link], [], IsBreakGlassEligible: false) { Username = username },
+                    new UsernameGenerationSources(
+                        accessRequest.UserPrincipalNameSnapshot,
+                        accessRequest.MailSnapshot,
+                        accessRequest.DisplayNameSnapshot),
+                    ct);
+                await transaction.StageAsync(
+                    AuditEvents.ProvisionedFromAccessRequest(userId, created.Username, tenantId, objectId!, accessRequest.Id), ct);
+
+                var roleAssigned = await TryAssignRoleAsync(transaction, userId, request.InitialRoleId, ct);
+                await _requests.UpdateAsync(
+                    accessRequest with
+                    {
+                        Status = EntraAccessRequestStatus.Approved,
+                        ReviewedAtUtc = reviewedAt,
+                        ReviewedByUserId = actorId.Value,
+                        ProvisionedUserId = userId.Value
+                    },
+                    ct);
+                await transaction.StageAsync(AuditEvents.AccessRequestApproved(accessRequest.Id, tenantId, objectId!, userId), ct);
+                return new Approval(accessRequest, created, displayName, roleAssigned);
+            },
+            async (committed, ct) =>
+            {
+                if (committed.Action == AuditActionNames.AccessRequestReconciled)
+                    return Approval.Reconciled;
+                var accessRequest = await _requests.GetByIdAsync(request.RequestId, ct);
+                var user = await _users.GetByIdAsync(userId, ct);
+                if (accessRequest is null || user is null)
+                    throw new InvalidOperationException($"Access request {request.RequestId} was verified as approved but could not be read.");
+                return new Approval(accessRequest, user, user.DisplayName, !string.IsNullOrWhiteSpace(request.InitialRoleId));
+            },
+            cancellationToken);
+
+        if (ReferenceEquals(approval, Approval.Reconciled))
+        {
             throw new UserProvisioningException(
                 UserProvisioningErrorCodes.DuplicateIdentity,
                 "That Microsoft identity is already an Apperture user.");
         }
 
-        var displayName = string.IsNullOrWhiteSpace(accessRequest.DisplayNameSnapshot)
-            ? "Microsoft user"
-            : accessRequest.DisplayNameSnapshot.Trim();
-
-        var provenAt = accessRequest.AuthenticatedAtUtc;
-        var link = new IdentityLink(
-            IdentitySource.Entra,
-            objectId!,
-            LastAuthenticatedAt: provenAt,
-            TenantId: accessRequest.TenantId,
-            RegistrationId: accessRequest.RegistrationId,
-            LinkedAt: _clock.GetUtcNow(),
-            ProviderSubject: null,
-            DisplayNameSnapshot: accessRequest.DisplayNameSnapshot,
-            UserPrincipalNameSnapshot: accessRequest.UserPrincipalNameSnapshot,
-            MailSnapshot: accessRequest.MailSnapshot);
-
-        var userId = NewUserId();
-        var created = await AddWithGeneratedUsernameAsync(
-            username => new User(userId, displayName, [link], [], IsBreakGlassEligible: false) { Username = username },
-            new UsernameGenerationSources(
-                accessRequest.UserPrincipalNameSnapshot,
-                accessRequest.MailSnapshot,
-                accessRequest.DisplayNameSnapshot),
-            cancellationToken);
-
-        var roleAssigned = await TryAssignRoleAsync(userId, request.InitialRoleId, cancellationToken);
-        var approved = accessRequest with
-        {
-            Status = EntraAccessRequestStatus.Approved,
-            ReviewedAtUtc = _clock.GetUtcNow(),
-            ReviewedByUserId = actorId.Value,
-            ProvisionedUserId = userId.Value
-        };
-        await _requests.UpdateAsync(approved, cancellationToken);
-
-        await AuditAsync(
-            UserProvisioningAuditActionNames.AccessRequestProvisioned,
-            actorId,
-            userId.Value,
-            $"userId={userId.Value} oid={objectId} requestId={accessRequest.Id} proven=1 provenAt={provenAt:O}",
-            cancellationToken);
-        await AuditAsync(
-            EntraAccessRequestAuditActionNames.Approved,
-            actorId,
-            userId.Value,
-            $"requestId={accessRequest.Id} userId={userId.Value} oid={objectId}",
-            cancellationToken);
-
-        var registration = await _registrations.GetByIdAsync(accessRequest.RegistrationId, cancellationToken);
+        var registration = await _registrations.GetByIdAsync(approval.Request!.RegistrationId, cancellationToken);
         var welcome = await TrySendWelcomeAsync(
-            actorId,
             userId,
             request.SendWelcomeEmail,
-            accessRequest.MailSnapshot,
-            displayName,
+            approval.Request.MailSnapshot,
+            approval.DisplayName!,
             registration?.DisplayName,
             cancellationToken);
 
         return new UserProvisioningResult(
             userId,
-            created.Username,
-            displayName,
-            objectId!,
+            approval.User!.Username,
+            approval.DisplayName!,
+            EntraTokenClaims.Normalize(approval.Request.ProviderObjectId)!,
             EntraLinkProven: true,
             welcome.Attempted,
             welcome.Delivered,
             welcome.Failure,
-            roleAssigned,
-            accessRequest.Id);
+            approval.RoleAssigned,
+            approval.Request.Id);
     }
 
+    /// <summary>What an approval's transaction committed. <see cref="Reconciled"/> marks a request closed against an existing user.</summary>
+    private sealed record Approval(EntraAccessRequest? Request, User? User, string? DisplayName, bool RoleAssigned)
+    {
+        public static readonly Approval Reconciled = new(null, null, null, false);
+    }
+
+    private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new InvalidOperationException("Provisioning requires the audited unit of work.");
+
+    private IAuditEventWriter Events =>
+        _auditEvents ?? throw new InvalidOperationException("Provisioning requires the audit event writer.");
+
     private async ValueTask<string?> ReconcilePendingAsync(
+        IAuditedTransaction transaction,
         string tenantId,
         string objectId,
         UserId userId,
         ActorId actorId,
+        DateTimeOffset reviewedAt,
         CancellationToken cancellationToken)
     {
         var pending = await _requests.FindPendingAsync(tenantId, objectId, cancellationToken);
         if (pending is null)
             return null;
 
-        var updated = pending with
-        {
-            Status = EntraAccessRequestStatus.Approved,
-            ReviewedAtUtc = _clock.GetUtcNow(),
-            ReviewedByUserId = actorId.Value,
-            ProvisionedUserId = userId.Value
-        };
-        await _requests.UpdateAsync(updated, cancellationToken);
-        await AuditAsync(
-            UserProvisioningAuditActionNames.RequestReconciled,
-            actorId,
-            userId.Value,
-            $"requestId={pending.Id} userId={userId.Value} oid={objectId}",
+        await _requests.UpdateAsync(
+            pending with
+            {
+                Status = EntraAccessRequestStatus.Approved,
+                ReviewedAtUtc = reviewedAt,
+                ReviewedByUserId = actorId.Value,
+                ProvisionedUserId = userId.Value
+            },
             cancellationToken);
+        await transaction.StageAsync(AuditEvents.AccessRequestReconciled(pending.Id, tenantId, objectId, userId), cancellationToken);
         return pending.Id;
     }
 
+    /// <summary>
+    /// Sends the welcome mail once, after the user committed, and records the send as a W3 row. A failed or throwing send
+    /// is reported in the result and never undoes or contradicts the committed user.
+    /// </summary>
     private async ValueTask<(bool Attempted, bool Delivered, string? Failure)> TrySendWelcomeAsync(
-        ActorId actorId,
         UserId userId,
         bool requested,
         string? graphMail,
@@ -331,28 +384,32 @@ public sealed class UserProvisioningService : IUserProvisioningService
             "Sign in with Microsoft. You do not need to set an Apperture password.\n\n" +
             signIn;
 
-        var delivery = await _mail.SendAsync(mail, "You have access to Apperture", body, cancellationToken);
-        if (delivery.Succeeded)
+        AccountSecurityMailResult delivery;
+        string outcome;
+        string? failure;
+        try
         {
-            await AuditAsync(
-                UserProvisioningAuditActionNames.WelcomeSent,
-                actorId,
-                userId.Value,
-                $"userId={userId.Value} delivered=1",
-                cancellationToken);
-            return (true, true, null);
+            delivery = await _mail.SendAsync(mail, "You have access to Apperture", body, cancellationToken);
+            outcome = delivery.Succeeded ? AuditOutcomeCodes.Succeeded : AuditOutcomeCodes.Failed;
+            failure = delivery.Succeeded
+                ? null
+                : string.Equals(delivery.FailureSummary, AccountSecurityErrorCodes.SmtpNotConfigured, StringComparison.Ordinal)
+                    ? "not_configured"
+                    : "send_failed";
+        }
+        catch (Exception)
+        {
+            delivery = new AccountSecurityMailResult(false, AccountSecurityMailDelivery.DeliveryUnknown);
+            outcome = AuditOutcomeCodes.Unknown;
+            failure = "error";
         }
 
-        await AuditAsync(
-            UserProvisioningAuditActionNames.WelcomeFailed,
-            actorId,
-            userId.Value,
-            $"userId={userId.Value} purpose=welcome",
-            cancellationToken);
-        return (true, false, delivery.FailureSummary);
+        await Events.TryWriteAsync(AuditEvents.Welcome(userId, outcome, failure), AuditActor.CurrentPrincipal, CancellationToken.None);
+        return (true, delivery.Succeeded, delivery.FailureSummary);
     }
 
-    private async ValueTask<bool> TryAssignRoleAsync(UserId userId, string? roleId, CancellationToken cancellationToken)
+    /// <summary>Assigns the initial role inside the provisioning transaction, with its own assignment row.</summary>
+    private async ValueTask<bool> TryAssignRoleAsync(IAuditedTransaction transaction, UserId userId, string? roleId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(roleId))
             return false;
@@ -360,6 +417,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
         var role = await _roles.GetAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Role {roleId} was not found.");
         await _roles.AssignToUserAsync(userId, role.Id, cancellationToken);
+        await transaction.StageAsync(AuditEvents.RoleAssigned(userId, role.Id), cancellationToken);
         return true;
     }
 
@@ -392,22 +450,6 @@ public sealed class UserProvisioningService : IUserProvisioningService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to manage users.");
         return new ActorId(actor.Id.Value);
-    }
-
-    private async ValueTask AuditAsync(string action, ActorId actorId, string resourceId, string details, CancellationToken cancellationToken)
-    {
-        await _audit.AppendAsync(
-            new AuditRecord(
-                new AuditRecordId(Guid.NewGuid().ToString("N")),
-                actorId,
-                action,
-                new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance),
-                UserProvisioningAuditActionNames.Outcome,
-                _clock.GetUtcNow(),
-                new CorrelationId(null),
-                details),
-            cancellationToken);
-        _ = resourceId;
     }
 
     /// <summary>

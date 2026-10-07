@@ -237,6 +237,87 @@ internal static class AuditDetailSchemas
             "dimensions_too_large", "dimensions_too_small", "encode_failed"),
     ]);
 
+    // ---- Provisioning and access requests ----
+    // A Microsoft identity is its tenant id and object id (gate §10.4); email, UPN and display name are never keys.
+
+    internal static readonly AuditDetailSchema ProvisionedFromDirectory = new(
+    [
+        IdField("userId"),
+        UsernameField("username"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        IdField("registrationId"),
+    ]);
+
+    internal static readonly AuditDetailSchema ProvisionedFromAccessRequest = new(
+    [
+        IdField("userId"),
+        UsernameField("username"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        IdField("requestId"),
+    ]);
+
+    internal static readonly AuditDetailSchema AccessRequestCreated = new(
+    [
+        IdField("requestId"),
+        IdField("registrationId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+    ]);
+
+    internal static readonly AuditDetailSchema AccessRequestDecision = new(
+    [
+        IdField("requestId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        IdField("userId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema Welcome = new(
+    [
+        IdField("userId"),
+        EnumField("failure", false, "not_configured", "send_failed", "error"),
+    ]);
+
+    // ---- Entra association ----
+
+    internal static readonly AuditDetailSchema EntraLinkChange = new(
+    [
+        IdField("userId"),
+        IdField("linkId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+    ]);
+
+    internal static readonly AuditDetailSchema EntraLinkRefused = new(
+    [
+        IdField("userId"),
+        IdField("tenantId"),
+        IdField("objectId"),
+        EnumField("reason", true, "emergency_account", "user_already_has_entra_link", "owned_by_other_user", "concurrent_insert"),
+    ]);
+
+    internal static readonly AuditDetailSchema EntraTenantMismatch = new(
+    [
+        IdField("tenantId"),
+        IdField("objectId"),
+        EnumField("flow", true, "sign_in", "link"),
+        IdField("userId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ExternalIdentityOnly = new(
+    [
+        IdField("tenantId"),
+        IdField("objectId"),
+    ]);
+
+    internal static readonly AuditDetailSchema LocalDisabledEntraPrimary = new(
+    [
+        IdField("userId"),
+        FlagField("recoveryAccessHealthy"),
+    ]);
+
     // ---- Runtime enrollment ----
     // invitationId is the invitation row's id; the enrollment token itself is never recorded.
 

@@ -66,10 +66,11 @@ public sealed record AuditActor
     }
 
     /// <summary>
-    /// The user whose credentials this request's own sign-in flow has just verified. A sign-in has no principal context
-    /// yet (the session does not exist), so the flow names the user it authenticated. Only the sign-in and step-up flows
-    /// use this; every other operation records <see cref="CurrentPrincipal"/>, and a person is never passed in from
-    /// request input. A test pins the call sites.
+    /// The user this request's own flow has just authenticated, where no principal context exists yet: credentials verified
+    /// by a sign-in or step-up, an active one-time account link (setup, contact verification, reset) presented and checked
+    /// by its flow, or the initiating user of a Microsoft self-link carried in the sign-in handler's protected,
+    /// correlation-bound state. Every other operation records <see cref="CurrentPrincipal"/>, and a person is never passed
+    /// in from request input. A test pins the call sites.
     /// </summary>
     public static AuditActor AuthenticatedUser(Apperture.Core.Domain.Identity.UserId user) =>
         ForUser(user.Value);

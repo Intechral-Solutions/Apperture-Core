@@ -64,6 +64,27 @@ public static class AuditActionNames
     public const string NotificationToastOptedIn = "account.notification.toast.opted_in";
     public const string NotificationToastOptedOut = "account.notification.toast.opted_out";
 
+    // AUD-1.2: provisioning and access requests
+    public const string ProvisionedFromDirectory = "user.provisioned.entra_directory";
+    public const string ProvisionedFromAccessRequest = "user.provisioned.entra_access_request";
+    public const string AccessRequestCreated = "entra.access_request.created";
+    public const string AccessRequestApproved = "entra.access_request.approved";
+    public const string AccessRequestRejected = "entra.access_request.rejected";
+    public const string AccessRequestReconciled = "entra.access_request.reconciled_by_provisioning";
+    public const string WelcomeSent = "user.provisioning.welcome.sent";
+    public const string WelcomeFailed = "user.provisioning.welcome.failed";
+
+    // AUD-1.2: Entra association and the Entra-primary local-credential policy
+    public const string EntraLinkProven = "identity_link.entra.proven";
+    public const string EntraLinked = "identity_link.entra.linked";
+    public const string EntraLinkFailed = "identity_link.entra.link_failed";
+    public const string EntraLinkCollision = "identity_link.entra.collision";
+    public const string EntraTenantMismatch = "identity_link.entra.tenant_mismatch";
+    public const string EntraSignInRejectedUnlinked = "auth.entra.login.rejected_unlinked";
+    public const string LocalDisabledEntraPrimary = "credential.local.disabled_entra_primary";
+    public const string RecoveryAccessLocalProtected = "emergency.local.protected";
+    public const string LocalDisableDeferredLastAdmin = "credential.local.disable_deferred_last_entra_independent_admin";
+
     // AUD-1.2: runtime enrollment
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
     public const string RuntimeEnrollmentCompleted = "governance.runtime.enrollment.completed";

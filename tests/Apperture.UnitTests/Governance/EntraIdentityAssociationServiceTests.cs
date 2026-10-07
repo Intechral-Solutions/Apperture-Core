@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -319,11 +321,84 @@ public sealed class EntraIdentityAssociationServiceTests
         link.UserPrincipalNameSnapshot.Should().Be("guest_partner#EXT#@contoso.com");
     }
 
+    // ---- AUD-1.2: actors and targets (D1, D2, clarification 2) ----
+
+    [Fact]
+    public async Task A_refused_sign_in_is_recorded_as_the_validated_external_identity_never_as_a_user()
+    {
+        var harness = new Harness();
+
+        await harness.Service.CompleteSignInAsync(Assertion());
+        await harness.Service.CompleteSignInAsync(Assertion(tenantId: OtherTenantId));
+
+        var (unlinked, unlinkedActor) = harness.Audit.Events[0];
+        unlinked.Action.Should().Be(EntraLinkAuditActionNames.RejectedUnlinked);
+        unlinkedActor.Should().Be(External(ActiveTenantId, Oid));
+        unlinked.Target.Should().Be(new AuditTarget(AuditTargetTypes.ExternalIdentity, $"entra/{ActiveTenantId}/{Oid}"));
+        var (mismatch, mismatchActor) = harness.Audit.Events[1];
+        mismatch.Action.Should().Be(EntraLinkAuditActionNames.TenantMismatch);
+        mismatchActor.Should().Be(External(OtherTenantId, Oid), "the token was validated; only its tenant was not this instance's");
+        mismatch.Fields["flow"].Should().Be("sign_in");
+    }
+
+    [Fact]
+    public async Task Proving_a_pending_link_at_sign_in_is_the_signed_in_users_change_against_the_persisted_link()
+    {
+        var harness = new Harness();
+        var link = EntraLink(Oid, provenAt: null, tenantId: ActiveTenantId);
+        harness.Repository.Seed(NewUser("usr-1", link));
+
+        await harness.Service.CompleteSignInAsync(Assertion());
+
+        var (proven, actor) = harness.Audit.Events.Should().ContainSingle().Subject;
+        proven.Action.Should().Be(EntraLinkAuditActionNames.Proven);
+        actor.Should().Be(AuditActor.AuthenticatedUser(new UserId("usr-1")));
+        proven.Target.Should().Be(new AuditTarget(AuditTargetTypes.IdentityLink, link.LinkId!));
+    }
+
+    [Fact]
+    public async Task A_self_link_is_the_initiating_users_change_and_its_refusals_name_that_user()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(
+            NewUser("usr-1", LocalLink("operator")),
+            NewUser("usr-2", EntraLink(OtherOid, provenAt: Now, tenantId: ActiveTenantId)));
+
+        await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion());
+        await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion(objectId: OtherOid));
+
+        var added = harness.Repository.AddedLinks.Should().ContainSingle().Subject.Link;
+        var (linked, linkedActor) = harness.Audit.Events[0];
+        linked.Action.Should().Be(EntraLinkAuditActionNames.Linked);
+        linkedActor.Should().Be(AuditActor.AuthenticatedUser(new UserId("usr-1")), "the initiating user from the protected sign-in state");
+        linked.Target.Should().Be(new AuditTarget(AuditTargetTypes.IdentityLink, added.LinkId!), "the id the link was persisted with");
+        var (collision, collisionActor) = harness.Audit.Events[1];
+        collision.Action.Should().Be(EntraLinkAuditActionNames.Collision);
+        collisionActor.Should().Be(AuditActor.AuthenticatedUser(new UserId("usr-1")));
+        collision.OutcomeCode.Should().Be(AuditOutcomeCodes.Rejected);
+        collision.Definition.WriteClass.Should().Be(AuditWriteClass.Attempt);
+        collision.Target.Should().Be(new AuditTarget(AuditTargetTypes.ExternalIdentity, $"entra/{ActiveTenantId}/{OtherOid}"));
+    }
+
+    [Fact]
+    public async Task Linking_an_identity_already_proven_for_the_same_user_changes_nothing_and_records_nothing()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion());
+
+        harness.Audit.Events.Should().BeEmpty("re-linking the same proven identity is not a change (D7)");
+    }
+
+    private static AuditActor External(string tenantId, string objectId) =>
+        AuditActor.ValidatedExternalIdentity(new AuditExternalActor(AuditExternalActor.EntraProvider, tenantId, objectId));
+
     private static EntraIdentityAssertion Assertion(string? objectId = null, string? tenantId = null) =>
         new(objectId ?? Oid, tenantId ?? ActiveTenantId, "sub-value");
 
     private static IdentityLink EntraLink(string oid, DateTimeOffset? provenAt, string? tenantId) =>
-        new(IdentitySource.Entra, oid, provenAt, tenantId, "reg-1", Now.AddDays(-10));
+        new(IdentitySource.Entra, oid, provenAt, tenantId, "reg-1", Now.AddDays(-10), LinkId: "lnk-" + oid[..8] + (tenantId ?? "none0000")[..8]);
 
     private static IdentityLink LocalLink(string username) =>
         new(IdentitySource.Local, username, Now.AddDays(-10));
@@ -339,7 +414,7 @@ public sealed class EntraIdentityAssociationServiceTests
         public Harness()
         {
             Repository = new RecordingUserRepository();
-            Audit = new RecordingAuditService();
+            Audit = new AuditRecording();
             Directory = new StubDirectoryDiscovery();
             Service = new EntraIdentityAssociationService(
                 Repository,
@@ -351,15 +426,16 @@ public sealed class EntraIdentityAssociationServiceTests
                         [EntraAuthOptions.SectionName + ":" + nameof(EntraAuthOptions.ClientSecret)] = "deployment-secret"
                     })
                     .Build(),
-                Audit,
                 new FixedTimeProvider(Now),
                 NullLogger<EntraIdentityAssociationService>.Instance,
-                entraPrimaryPolicy: Policy);
+                entraPrimaryPolicy: Policy,
+                auditedUnitOfWork: Audit,
+                auditEvents: Audit);
         }
 
         public RecordingUserRepository Repository { get; }
 
-        public RecordingAuditService Audit { get; }
+        internal AuditRecording Audit { get; }
 
         public StubDirectoryDiscovery Directory { get; }
 
@@ -549,25 +625,5 @@ public sealed class EntraIdentityAssociationServiceTests
             ProofCalls.Add(new ProofCall(tenantId, objectId, provenAt));
             return ValueTask.CompletedTask;
         }
-    }
-
-    internal sealed class RecordingAuditService : IAuditService
-    {
-        public List<string> Actions { get; } = [];
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            Actions.Add(record.Action);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage([], null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
     }
 }
