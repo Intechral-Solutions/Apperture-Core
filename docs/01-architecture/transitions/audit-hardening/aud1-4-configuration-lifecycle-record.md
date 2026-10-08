@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) is done. Slice 1 (secret-store transaction participation) is in progress. Slices 2 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented and validated (§4.7), awaiting independent review. Slices 2 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`.
 
@@ -55,7 +55,7 @@ The product owner approved the four orientation recommendations. They are record
 | Slice | Scope | Status |
 |---|---|---|
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
-| 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **In progress** |
+| 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Implemented and validated; awaiting independent review** |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | Not started. Independent review of slices 1 and 2 before slice 3 |
 | 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | Not started. Independent review |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
@@ -66,7 +66,128 @@ The product owner approved the four orientation recommendations. They are record
 
 ## 4. Slice 1: secret-store transaction participation
 
-*To be completed with the implementation, files, transaction boundaries, Entra assessment and results.*
+### 4.1 The store before and after
+
+`SqlSecretStore` takes the request's scoped `AppertureDbContext`, the same instance the audited unit uses (pinned by `SecretStoreSharesTheUnitContextTests` with the hosts' registrations). Before this slice:
+
+| Operation | Before |
+|---|---|
+| Create, add version, disable, revoke version | Two saves: the change, then the `SecretAudits` row. A failure between them left a change without its row |
+| Activate version | Its own transaction inside the execution strategy, always. Inside an audited unit this was an error (a transaction was already open), which is why AUD-1.2 stored Entra secrets before the unit (D35). The `SecretAudits` row was written after that transaction committed |
+| Any failure | Whatever the operation had added or changed stayed tracked on the shared context, so a later save could apply it |
+
+After:
+
+| | Behaviour |
+|---|---|
+| Change and evidence | Each operation adds its `SecretAudits` row before it saves, and saves once, so the change and the row commit together |
+| A transaction is open on the context (an audited unit's, or any caller's) | The store **joins** it. It never begins, commits, rolls back or retries a transaction. The owner commits, and the unit verifies an uncertain commit and reruns only after a confirmed rollback (gate §13.5). There is no nested transaction and no nested execution strategy |
+| No transaction is open | Every mutating operation runs in a transaction of its own inside the execution strategy (previously only activation did). The behaviour callers see is unchanged |
+| Failure | The store stops tracking every entity the operation added, loaded or changed, so neither a later save nor a rerun applies it; a rerun reloads |
+| Non-relational provider (in-memory test contexts) | Runs without a transaction |
+
+Files: `PERS/SqlSecretStore.cs` (`ChangeAsync`, `TrackedAsync`, `AddAudit`).
+
+### 4.2 Recorder events (D-1)
+
+The store does not know who owns a secret or who acted, so it records nothing in `AuditLogs`. The **owning change** stages one Secrets-category row per owner-level secret change, as a secondary row of its own unit beside its primary row:
+
+| Action | Category, severity | Target | Fields | Staged when |
+|---|---|---|---|---|
+| `entra.tenant_registration.client_secret.stored` | `secrets`, `elevated`; W1, basis `change` | `entra_tenant_registration` | `registrationId`; `change`: `registration_created` or `registration_updated` | A supplied client secret was stored and the registration names it |
+| `entra.tenant_registration.client_secret.retired` | as above | as above | `registrationId`; `reason`: `replaced` or `registration_deleted` | The registration's own secret was disabled because the change stopped naming it |
+
+- Neither row carries the secret, its store id (the reference the registration holds), a version id or any free text. The schemas allow ids, closed values, flags and counts only, and a catalog test (`Recorder_secret_events_target_their_owner_and_can_carry_only_ids_and_closed_values`) holds every recorder Secrets action to that. No action targets `secret` (`No_action_targets_a_secret_…`).
+- The primary rows are unchanged: `entra.tenant_registration.updated` still lists `clientAuthentication` among the changed settings and `created` still carries `clientAuthenticationReplaced`.
+- Version-level detail (add version, activate) stays in `SecretAudits`, the store's own evidence; the audit log records the owner-level change.
+- Producers: `APP/Audit/AuditEvents.Secrets.cs`. Names: `AuditActionNames`. Schemas and catalog entries: `AuditActionCatalogEntries.Schemas.cs`, `AuditActionCatalogEntries.cs`. Later slices add their families' secret actions the same way (settings in slice 2, connections in slice 5).
+- **Owners of secret operations.** Every production caller of the store has a configuration owner: Entra registrations, platform settings, integration settings (also reached from integration delete) and connections. `ISecretStore` has no API or other caller, so there is no standalone secret operation without an owner, and no secret-reference exception was needed.
+
+### 4.3 Entra registrations (D35 amended)
+
+Before (AUD-1.2 D35): a supplied secret was stored as a secret of its own **before** the unit, and afterwards exactly one secret was retired, best effort and outside the unit: the replaced one after a verified commit, the new one when nothing committed, neither after an unknown outcome.
+
+After: everything happens **inside** the unit (`ConfigEntraTenantsController`, `EntraClientSecretMaterialProvisioner`).
+
+| Flow | Inside the unit, in order |
+|---|---|
+| Create | Store the supplied secret under the registration id chosen before the unit; add the registration naming it; stage `created` and, with a secret, `client_secret.stored` |
+| Update | Read and check (row version, change list, lockout guard); only if they pass, store the supplied secret as a new secret of its own; update the registration to name it; stage `updated` (and `policy.changed` if it applies); with a secret, stage `client_secret.stored`, disable the previous owned secret and stage `client_secret.retired` (`replaced`) |
+| Delete | Check the guard; delete; stage `deleted`; disable the owned secret and stage `client_secret.retired` (`registration_deleted`) |
+| Activate | Unchanged (no secret involved) |
+
+How each D35 guarantee is kept:
+
+| D35 guarantee | Now |
+|---|---|
+| A secret is never added as a version of the secret the live registration names | Kept: still a secret of its own (package decision P2) |
+| The registration resolves its current secret until the row naming the new one commits | Kept, by the transaction instead of by ordering |
+| Refusal, conflict, audit failure, confirmed rollback: the new secret is retired | **Stronger:** a refusal or conflict is decided before anything is stored, and any failure rolls the stored secret back, so no unused secret is left behind |
+| Verified commit: the replaced secret is retired | Kept, and now in the same transaction (no best-effort window) |
+| Unknown outcome: neither secret retired | **Stronger:** either the new secret, the row and the retirement all committed, or none did |
+| Create keeps a secret whose commit was verified | Kept: reconstruction reads the committed registration |
+| Delete retires the secret after the delete commits, best effort | Now atomic with the delete. A failure to retire it fails the delete instead of leaving an orphan (P4) |
+| Rows record that client authentication was replaced, never the secret or its ref | Kept, plus the Secrets-category rows, which carry neither |
+
+A rerun after a confirmed rollback stores a fresh secret; the rolled-back attempt's secret never existed.
+
+### 4.4 Callers left outside a unit until their slices
+
+Platform settings and integration settings (slice 2), integration delete through settings reset (slice 3) and connections (slice 5) still call the store outside any transaction. They get the standalone path: each store operation is now atomic with its `SecretAudits` row, and otherwise behaves as before. Their known defects, the live secret activated before the owning change and secrets orphaned when the owning change fails, remain until their slices convert them.
+
+### 4.5 Package decisions
+
+| # | Decision | Basis |
+|---|---|---|
+| P1 | Secret events are secondary rows staged by the owning change, one per owner-level change (stored, retired). The store writes no audit-log row; `SecretAudits` keeps version-level detail and its `system` actor unchanged | D-1; gate §7 (`SecretAudits` not merged) and §13.4; the prompt's "no duplicate primary events from the low-level store" |
+| P2 | An Entra replacement stays a new secret of its own, not a new version of the live one | Keeps D35's isolation and lets a rerun mint a fresh secret without touching the live one |
+| P3 | An update stores its secret only after every guard has passed | A refused or conflicting update then stores nothing at all |
+| P4 | Delete retires the owned secret in its unit; a database failure while retiring fails the delete | D-3; gate §13.2 (a change and its rows commit together) |
+| P5 | `TryDisableOwnedSecretAsync` reports whether it disabled a secret; a retirement row is staged only then | No row for a registration on the deployment secret, or naming a missing, foreign or already retired secret |
+| P6 | Outside a transaction every store mutation runs in its own transaction inside the execution strategy; on failure the store stops tracking what it touched | Atomic change and evidence; no stale tracked state on the shared context |
+
+### 4.6 Tests
+
+| Test | What it shows |
+|---|---|
+| `SecretStoreTransactionSqlServerTests` (new, SQL Server, 11) | Standalone lifecycle (create, add, activate, replace, revoke, disable), each change with its `SecretAudits` row; a refused activation persists nothing and leaves nothing tracked; inside a caller's transaction the store begins none of its own (one transaction counted), and rolls back or commits only with the caller, with nothing visible to another connection before the commit; inside an audited unit the secret change, its store evidence and the audit row commit together; an audit insert failure leaves the prior secret live and no store evidence; a confirmed-rollback rerun activates only its own version and records it once; a lost acknowledgement is verified without a rerun; an unknown outcome leaves the secret change and its audit row together committed or together absent; a store on **another** context escapes the unit's rollback (the negative case of the join); a secret-looking sentinel appears in no audit column, no `SecretAudits` column, no descriptor name, no captured unit log line and no exception message, and no audit column holds the secret's store id |
+| `AuthConfigurationAuditSqlServerTests` (amended, SQL Server, 15) | The D35 cases under the new sequencing: replacement commits with `stored` and `retired` rows sharing the update's operation event id; refused and conflicting updates store no secret; an update whose audit fails rolls back with its secret and its store evidence; a lost acknowledgement keeps the new secret and retires the old one with one transaction; an unknown outcome is wholly committed or wholly unchanged; create with a secret records its storage, and a create whose audit fails stores nothing; delete retires the secret in its unit, and a delete whose audit fails keeps the registration and the secret |
+| `SecretStoreSharesTheUnitContextTests` (new, unit, 2) | With the persistence, recorder and secrets registrations the hosts use, the store and the unit resolve one context per scope, and separate scopes get separate contexts |
+| `AuditActionCatalogTests` (3 changed or new) | The two AUD-1.4 actions, the catalog count, no action targets `secret`, and recorder Secrets actions are W1, elevated, owner-targeted and limited to ids, closed values, flags and counts |
+| `EntraClientSecretMaterialProvisionerTests` (2 new) | `TryDisableOwnedSecretAsync` reports true only when it disabled the registration's own usable secret |
+
+### 4.7 Results
+
+All runs on the tree committed as `7198cda` (§4.9). Builds used `--artifacts-path artifacts/aud14 -m:1`. SQL Server: the local `apperture-test-sql` container; credentials were read from `.env` into process environment only.
+
+| Check | Result |
+|---|---|
+| Full solution build (`Apperture.slnx`) | Succeeded, 0 errors |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `Apperture.UnitTests` (full) | 3936 / 3936 passed (3927 at the AUD-1.3 head, plus 9 new) |
+| `SecretStoreTransactionSqlServerTests`, `AuthConfigurationAuditSqlServerTests`, `ConnectionLifecycleAuditSqlServerTests`, `ManagementHostGovernanceHttpTests`, `BrowserRequestTrustHttpTests` | 97 / 97 passed. The two secret suites wrote 26 `EXECUTED against SQL Server catalog …` markers (one per test); the connection suite fails rather than skips without SQL Server; the real-host suites wrote to `Apperture_ManagementGovernanceTests` during the run (`last_user_update` 23:58 UTC, run ended about 00:01 UTC), and they resolve the changed controller from the host's dependency graph |
+
+The first SQL run had three failures, all in the new tests: two opened a caller transaction outside the execution strategy, which EF refuses for any save when retry on failure is on (production units open theirs inside it); one assertion expected a single `client_secret.stored` row although the arranged create writes one too. Corrected in the tests; no product change.
+
+Not run, with the reason: the full `Apperture.IntegrationTests` run (the affected suites above cover the store, its one in-unit caller and the host graph; PR CI runs the whole suite); the UI test projects and the SEC-1 browser suite (no UI, route or response changed); mutation runs of product code (not authorized for this package; the negative-case test above shows the join's dependence on the shared context without editing product code).
+
+### 4.8 Remaining risks for review
+
+- **Shared-context dependence.** Atomicity holds because the store and the unit share one scoped context. A caller that builds a store on another context, or a future change to either lifetime, would silently move secret changes outside the unit. `SecretStoreSharesTheUnitContextTests` pins the hosts' registrations; nothing prevents a hand-built store.
+- **Joined saves flush everything tracked.** Inside a unit the store's save also writes anything else the attempt has tracked, including staged audit rows. That is correct inside the unit (one transaction), and the unit's own postcondition still counts staged rows, but it means an audit insert failure can surface from a store call rather than from the unit's final save.
+- **Standalone retry.** Outside a transaction the execution strategy may rerun a store operation after a transient commit failure, as EF already did for these saves; there is no verification there. The callers left on that path are converted in slices 2, 3 and 5.
+- **Delete is now stricter.** An Entra registration delete fails if retiring its secret fails, where before it succeeded and logged. This needs a database failure on the same connection.
+- **Unconverted callers keep their defects** (§4.4) until their slices.
+
+### 4.9 Commits
+
+| Commit | Content |
+|---|---|
+| `f71a57c` | Slice 0: the gate's §22 and §27 rulings, the AUD-1.2 D35 amendment note, this record |
+| `7198cda` | Slice 1 code: `SqlSecretStore`, the Secrets catalog entries, names, schemas and producers, the Entra provisioner and controller, and the tests |
+| The documentation commit that follows | This section's results |
+
+**Next step:** independent architectural and security review of slices 0 and 1 (§3), then slice 2 (platform and integration settings).
 
 ## 5. Rules every slice follows
 
