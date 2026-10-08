@@ -270,6 +270,7 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         Field(stored, "change").Should().Be("registration_updated");
         Field(retired, "reason").Should().Be("replaced");
         AssertNoSecretMaterial(rows, "first-secret", "second-secret", first, second);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", "second-secret", first, second);
     }
 
     [Fact]
@@ -284,7 +285,7 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
             var body = CreateBody();
             body.ClientSecret = "failed-secret";
             var act = () => Tenants(db, principal, store: SecretStore(db)).Create(body, CancellationToken.None);
-            await act.Should().ThrowAsync<Exception>();
+            AssertNoSecretMaterial((await act.Should().ThrowAsync<Exception>()).Which, "failed-secret");
         }
 
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM EntraInstanceRegistrations;")).Should().Be(0);
@@ -299,6 +300,7 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         stored["OperationEventId"].Should().Be(created["EventId"]);
         Field(stored, "change").Should().Be("registration_created");
         AssertNoSecretMaterial(rows, "first-secret", "failed-secret", secretRef);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", "failed-secret", secretRef);
     }
 
     [Fact]
@@ -317,7 +319,7 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         await using (var db = _db.NewDb(failAudit))
         {
             var act = () => Tenants(db, principal, store: SecretStore(db)).Delete(id, CancellationToken.None);
-            await act.Should().ThrowAsync<Exception>();
+            AssertNoSecretMaterial((await act.Should().ThrowAsync<Exception>()).Which, "first-secret", secretRef);
         }
 
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be(1);
@@ -334,6 +336,7 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         retired["OperationEventId"].Should().Be(deleted["EventId"]);
         Field(retired, "reason").Should().Be("registration_deleted");
         AssertNoSecretMaterial(rows, "first-secret", secretRef);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", secretRef);
     }
 
     [Fact]
@@ -391,11 +394,12 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         await using (var db = _db.NewDb(failAudit))
         {
             var act = () => Tenants(db, principal, store: SecretStore(db)).Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None);
-            await act.Should().ThrowAsync<Exception>();
+            AssertNoSecretMaterial((await act.Should().ThrowAsync<Exception>()).Which, "first-secret", "second-secret", first);
         }
 
         await AssertLiveCredentialUnchangedAsync(id, first);
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(storeEvidenceBefore, "the store's evidence rolled back with it");
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", "second-secret", first);
     }
 
     [Fact]
@@ -539,18 +543,53 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         return details.RootElement.GetProperty(name).GetString();
     }
 
-    /// <summary>No audit column holds a secret value or a secret's store id, which is the reference a registration holds.</summary>
+    /// <summary>
+    /// No audit column holds a secret value or a secret's store id, which is the reference a registration holds. A reference is
+    /// checked in both GUID forms.
+    /// </summary>
     private static void AssertNoSecretMaterial(IEnumerable<Dictionary<string, object?>> rows, params string[] material)
     {
+        var forms = WithGuidForms(material);
         foreach (var row in rows)
         {
             foreach (var value in row.Values.OfType<string>())
             {
-                foreach (var item in material)
+                foreach (var item in forms)
                     value.Should().NotContainEquivalentOf(item, $"audit column values never hold a secret or its reference ({row["Action"]})");
             }
         }
     }
+
+    /// <summary>
+    /// The secret store's own evidence is keyed by the secret's id, so its id column legitimately holds the reference. No other
+    /// column of it, and no other place in the audit log, holds a secret or its reference.
+    /// </summary>
+    private async Task AssertStoreEvidenceHoldsNoSecretMaterialAsync(params string[] material)
+    {
+        var forms = WithGuidForms(material);
+        foreach (var row in await _db.RowsAsync("SELECT EventType, Version, Actor, Outcome FROM SecretAudits;"))
+        {
+            foreach (var value in row.Values.OfType<string>())
+            {
+                foreach (var item in forms)
+                    value.Should().NotContainEquivalentOf(item, "the store's evidence holds ids and event types only");
+            }
+        }
+    }
+
+    /// <summary>A failure of a converted flow never carries a secret or a reference in its message or any inner one.</summary>
+    private static void AssertNoSecretMaterial(Exception exception, params string[] material)
+    {
+        var forms = WithGuidForms(material);
+        for (Exception? e = exception; e is not null; e = e.InnerException)
+        {
+            foreach (var item in forms)
+                e.Message.Should().NotContainEquivalentOf(item, "exception text never holds a secret or its reference");
+        }
+    }
+
+    private static string[] WithGuidForms(string[] material) =>
+        material.SelectMany(m => Guid.TryParse(m, out var guid) ? new[] { m, guid.ToString("D"), guid.ToString("N") } : new[] { m }).Distinct().ToArray();
 
     private async Task<string> SecretRefAsync(string registrationId) =>
         (await _db.ScalarAsync<string>($"SELECT ClientSecretRef FROM EntraInstanceRegistrations WHERE Id = N'{registrationId}';"))!;

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Data.Common;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Security.Secrets.Models;
 using Apperture.Core.Security.Secrets.Providers;
@@ -6,6 +7,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Audit;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -72,8 +74,10 @@ public sealed class SecretStoreTransactionSqlServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Outside_a_transaction_a_refused_activation_persists_nothing_and_leaves_nothing_tracked_to_save_later()
+    public async Task Outside_a_transaction_a_refused_activation_changes_nothing()
     {
+        // A validation refusal: it throws before the store modifies anything, so this shows the refusal, not the cleanup of a
+        // staged change (that is the next test).
         await using var db = _db.NewDb();
         var store = Store(db);
         var descriptor = await store.CreateAsync(Request("owner:refused"));
@@ -83,9 +87,109 @@ public sealed class SecretStoreTransactionSqlServerTests : IAsyncLifetime
         var again = () => store.ActivateVersionAsync(descriptor.SecretId, version).AsTask();
         await again.Should().ThrowAsync<InvalidOperationException>("only a pending version can be activated");
 
-        db.ChangeTracker.Entries().Should().NotContain(e => e.State != EntityState.Unchanged, "a refused change leaves nothing for a later save to apply");
         await db.SaveChangesAsync();
         (await EventsAsync(descriptor.SecretId.Value)).Should().Equal("Create", "AddVersion", "ActivateVersion");
+    }
+
+    [Fact]
+    public async Task Outside_a_transaction_a_save_that_fails_after_staging_persists_nothing_and_leaves_no_staged_entry_to_save_later()
+    {
+        var (id, first) = await ArrangeLiveSecretAsync("owner:save-fails", Sentinel);
+        var eventsBefore = await EventsAsync(id);
+        var updatedBefore = await _db.ScalarAsync<DateTimeOffset>($"SELECT UpdatedAt FROM SecretDescriptors WHERE Id = '{id}';");
+
+        // The first statement that inserts the store's evidence row fails, with the version, the descriptor change and the
+        // evidence row all staged on the context. The interceptor is then spent, so a later save succeeds.
+        var failure = new FailOnceAtCommand(sql => sql.Contains("INSERT INTO [SecretAudits]", StringComparison.Ordinal));
+        var attempts = new AttemptCounter();
+        await using var db = _db.NewDb(failure, attempts);
+        failure.Context = db;
+        var store = Store(db);
+
+        var act = () => store.AddVersionAsync(new SecretId(id), Material("replacement-" + Sentinel)).AsTask();
+        var thrown = (await act.Should().ThrowAsync<Exception>()).Which;
+
+        failure.Failures.Should().Be(1);
+        attempts.Started.Should().Be(1, "an injected failure that is not transient is not rerun");
+        failure.StagedWhenFailed.Should().Contain(new[]
+        {
+            (nameof(SecretVersionEntity), EntityState.Added),
+            (nameof(SecretDescriptorEntity), EntityState.Modified),
+            (nameof(SecretAuditEntity), EntityState.Added),
+        }, "the failure came after a meaningful change was staged");
+
+        // Atomic: nothing of the change or its evidence is in the database.
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{id}';")).Should().Be(1);
+        (await _db.ScalarAsync<string>($"SELECT ActiveVersion FROM SecretDescriptors WHERE Id = '{id}';")).Should().Be(first);
+        (await _db.ScalarAsync<DateTimeOffset>($"SELECT UpdatedAt FROM SecretDescriptors WHERE Id = '{id}';")).Should().Be(updatedBefore);
+        (await EventsAsync(id)).Should().Equal(eventsBefore);
+
+        // Clean: nothing the failed operation staged is still tracked, so nothing can be saved by accident.
+        db.ChangeTracker.Entries().Should().NotContain(e => e.State != EntityState.Unchanged);
+        (await db.SaveChangesAsync()).Should().Be(0, "the failed change is not pending");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{id}';")).Should().Be(1);
+        (await EventsAsync(id)).Should().Equal(eventsBefore);
+
+        // A later operation on the same context persists only itself.
+        await store.AddVersionAsync(new SecretId(id), Material("second-" + Sentinel));
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{id}';")).Should().Be(2, "the failed version never existed");
+        (await EventsAsync(id)).Should().Equal([.. eventsBefore, "AddVersion"]);
+
+        AllMessages(thrown).Should().NotContain(m => m.Contains(Sentinel, StringComparison.Ordinal));
+        AssertNoReference(AllMessages(thrown), id);
+        await AssertSentinelOnlyInPayloadsAsync();
+    }
+
+    [Fact]
+    public async Task Outside_a_transaction_a_failed_commit_leaves_no_trace_and_does_not_discard_or_accept_other_pending_changes()
+    {
+        var (id, _) = await ArrangeLiveSecretAsync("owner:commit-fails", Sentinel);
+        var (otherId, _) = await ArrangeLiveSecretAsync("owner:other", "other-" + Sentinel);
+        var eventsBefore = await EventsAsync(id);
+
+        // Every statement runs in the store's transaction, then the server rolls the commit back.
+        await using var db = _db.NewDb(new RolledBackCommit());
+        var store = Store(db);
+        var other = (await db.SecretDescriptors.FindAsync(otherId))!;
+        other.Name = "owner:renamed-by-the-caller";
+
+        var act = () => store.DisableAsync(new SecretId(id)).AsTask();
+        await act.Should().ThrowAsync<InvalidOperationException>("the injected commit failure propagates unchanged");
+
+        (await _db.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Id = '{id}';")).Should().Be((int)SecretState.Active);
+        (await EventsAsync(id)).Should().Equal(eventsBefore);
+        (await _db.ScalarAsync<string>($"SELECT Name FROM SecretDescriptors WHERE Id = '{otherId}';")).Should().Be("owner:other");
+        db.ChangeTracker.Entries<SecretDescriptorEntity>().Should().NotContain(e => e.Entity.Id == id, "what the store itself changed is no longer tracked");
+
+        // The caller's own change is still pending, because the save that carried it was never confirmed.
+        db.Entry(other).State.Should().Be(EntityState.Modified, "a failed commit neither discards nor accepts changes it did not make");
+        await db.SaveChangesAsync();
+        (await _db.ScalarAsync<string>($"SELECT Name FROM SecretDescriptors WHERE Id = '{otherId}';")).Should().Be("owner:renamed-by-the-caller");
+        (await _db.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Id = '{id}';")).Should().Be((int)SecretState.Active, "the store's own failed change did not come back with it");
+        (await EventsAsync(id)).Should().Equal(eventsBefore);
+    }
+
+    [Fact]
+    public async Task Outside_a_transaction_a_lost_commit_acknowledgement_is_not_reported_as_a_rollback_and_is_not_rerun()
+    {
+        // The commit reaches the server and the acknowledgement is lost. Outside an audited unit nothing verifies it, so the
+        // store reports the original failure, never "nothing changed", and never reruns the create.
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        await using var db = _db.NewDb(lost, attempts);
+        var store = Store(db);
+
+        var act = () => store.CreateAsync(Request("owner:lost-ack")).AsTask();
+        var thrown = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+
+        thrown.Message.Should().Contain("Injected", "the original failure is reported as it is");
+        attempts.Started.Should().Be(1);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors WHERE Name = N'owner:lost-ack';")).Should().Be(1, "the change did commit");
+
+        db.ChangeTracker.Entries().Should().NotContain(e => e.State != EntityState.Unchanged, "nothing is left that a later save could insert again");
+        await db.SaveChangesAsync();
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors WHERE Name = N'owner:lost-ack';")).Should().Be(1);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(1);
     }
 
     // ---- Joined: a transaction is already open on the context ----
@@ -212,6 +316,9 @@ public sealed class SecretStoreTransactionSqlServerTests : IAsyncLifetime
         (await EventsAsync(id)).Should().Equal(eventsBefore, "no store evidence for a change that did not commit");
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs;")).Should().Be(0);
         AllMessages(thrown!).Should().NotContain(m => m.Contains(Sentinel, StringComparison.Ordinal));
+        AssertNoReference(AllMessages(thrown!), id);
+        await AssertSentinelOnlyInPayloadsAsync();
+        await AssertNoSecretIdInAuditLogsAsync(id);
     }
 
     [Fact]
@@ -360,7 +467,10 @@ public sealed class SecretStoreTransactionSqlServerTests : IAsyncLifetime
 
         logs.Messages.Should().NotContain(m => m.Contains(Sentinel, StringComparison.Ordinal));
         AllMessages(thrown!).Should().NotContain(m => m.Contains(Sentinel, StringComparison.Ordinal));
+        AssertNoReference(logs.Messages, id);
+        AssertNoReference(AllMessages(thrown!), id);
         await AssertSentinelOnlyInPayloadsAsync();
+        await AssertNoSecretIdInAuditLogsAsync(id);
     }
 
     // ---- helpers ----
@@ -425,13 +535,58 @@ public sealed class SecretStoreTransactionSqlServerTests : IAsyncLifetime
             row.Values.OfType<string>().Should().NotContain(v => v.Contains(Sentinel, StringComparison.Ordinal));
     }
 
-    /// <summary>A store id is the reference its owner holds; the audit log never records it (gate §12.3, §22).</summary>
+    /// <summary>
+    /// A store id is the reference its owner holds. The audit log never records it, in either GUID form (gate §12.3, §22). The
+    /// store's own evidence is keyed by it, but no other column of that evidence holds it.
+    /// </summary>
     private async Task AssertNoSecretIdInAuditLogsAsync(Guid id)
     {
         foreach (var row in await _db.RowsAsync("SELECT * FROM AuditLogs;"))
+            AssertNoReference(row.Values.OfType<string>(), id);
+
+        foreach (var row in await _db.RowsAsync("SELECT EventType, Version, Actor, Outcome FROM SecretAudits;"))
+            AssertNoReference(row.Values.OfType<string>(), id);
+    }
+
+    private static void AssertNoReference(IEnumerable<string> values, Guid id)
+    {
+        foreach (var form in new[] { id.ToString("D"), id.ToString("N") })
+            values.Should().NotContain(v => v.Contains(form, StringComparison.OrdinalIgnoreCase), $"a secret reference ({form.Length} characters) is never recorded");
+    }
+
+    /// <summary>
+    /// Fails the first command whose text matches, after recording what the context's change tracker held at that moment, then
+    /// lets later commands through.
+    /// </summary>
+    private sealed class FailOnceAtCommand(Func<string, bool> matches) : DbCommandInterceptor
+    {
+        public AppertureDbContext? Context { get; set; }
+
+        public int Failures { get; private set; }
+
+        public List<(string Entity, EntityState State)> StagedWhenFailed { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            row.Values.OfType<string>().Should().NotContain(
-                v => v.Contains(id.ToString("D"), StringComparison.OrdinalIgnoreCase) || v.Contains(id.ToString("N"), StringComparison.OrdinalIgnoreCase));
+            Check(command);
+            return ValueTask.FromResult(result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Check(command);
+            return ValueTask.FromResult(result);
+        }
+
+        private void Check(DbCommand command)
+        {
+            if (Failures > 0 || !matches(command.CommandText))
+                return;
+            Failures++;
+            StagedWhenFailed.AddRange(Context!.ChangeTracker.Entries().Select(e => (e.Metadata.ClrType.Name, e.State)));
+            throw new InvalidOperationException("Injected: the database refused this statement.");
         }
     }
 

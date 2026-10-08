@@ -5,6 +5,13 @@ namespace Apperture.Core.Security.Secrets.Abstractions;
 /// <summary>
 /// Governs secret metadata, version lifecycle, and audit retrieval.
 /// </summary>
+/// <remarks>
+/// A configuration change that owns a secret stores and retires it inside its audited unit (AUD-1.4), so the secret, the change
+/// and the audit rows commit or roll back together. That atomicity is a property of the implementation, not of this contract:
+/// it holds only for a store that joins the owner's SQL transaction, as <c>SqlSecretStore</c> does on the owner's context. A
+/// store whose effects are external to that transaction, such as the placeholder Key Vault and Vault stores, gives no such
+/// guarantee and would run an external effect inside an audited attempt.
+/// </remarks>
 public interface ISecretStore
 {
     /// <summary>

@@ -16,7 +16,10 @@ namespace Apperture.Persistence.SqlServer;
 /// back with its owner, whose unit handles verification. Without one, each operation runs in a transaction of its own inside
 /// the execution strategy.</para>
 /// <para>A failed operation leaves nothing it added or changed tracked on the shared context, so no later save can apply
-/// it.</para>
+/// it. Other pending changes on the context are neither discarded nor accepted by a failure.</para>
+/// <para>Atomicity with the owning change holds because this store joins the owner's SQL transaction. An <c>ISecretStore</c>
+/// that cannot, such as the placeholder Key Vault and Vault stores or any store whose effects are external, gives an owner no
+/// such guarantee, and calling it inside an audited attempt would run an external effect there.</para>
 /// <para><c>SecretAudits</c> is the store's own evidence. It is not the audit log: the configuration change that owns a
 /// secret records the actor and the Secrets-category row through the recorder.</para>
 /// </remarks>
@@ -39,7 +42,7 @@ public sealed class SqlSecretStore : ISecretStore
     public async ValueTask<SecretDescriptor> CreateAsync(SecretCreateRequest request, CancellationToken cancellationToken = default)
     {
         SecretDescriptorEntity? created = null;
-        await ChangeAsync(async (touched, ct) =>
+        await ChangeAsync((touched, _) =>
         {
             var entity = new SecretDescriptorEntity
             {
@@ -52,8 +55,8 @@ public sealed class SqlSecretStore : ISecretStore
             };
             touched.Add(_db.SecretDescriptors.Add(entity));
             AddAudit(touched, entity.Id, null, "Create");
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
             created = entity;
+            return Task.CompletedTask;
         }, cancellationToken).ConfigureAwait(false);
         return ToDescriptor(created!);
     }
@@ -95,7 +98,6 @@ public sealed class SqlSecretStore : ISecretStore
             }));
             descriptor.UpdatedAt = DateTimeOffset.UtcNow;
             AddAudit(touched, secretId.Value, version, "AddVersion");
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
             added = version;
         }, cancellationToken).ConfigureAwait(false);
         return added!;
@@ -116,7 +118,6 @@ public sealed class SqlSecretStore : ISecretStore
             descriptor.State = (int)SecretState.Active;
             descriptor.UpdatedAt = DateTimeOffset.UtcNow;
             AddAudit(touched, secretId.Value, version, "ActivateVersion");
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -129,7 +130,6 @@ public sealed class SqlSecretStore : ISecretStore
             descriptor.State = (int)SecretState.Disabled;
             descriptor.UpdatedAt = DateTimeOffset.UtcNow;
             AddAudit(touched, secretId.Value, null, "Disable");
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -148,7 +148,6 @@ public sealed class SqlSecretStore : ISecretStore
             }
 
             AddAudit(touched, secretId.Value, version, "RevokeVersion");
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -219,15 +218,24 @@ public sealed class SqlSecretStore : ISecretStore
     }
 
     /// <summary>
-    /// Runs one change, which saves itself and its <c>SecretAudits</c> row in one call. Inside a transaction already open on the
-    /// context it joins that transaction and never begins, commits or retries one: the owner does. Otherwise it runs in a
-    /// transaction of its own inside the execution strategy.
+    /// Runs one change: <paramref name="stage"/> loads and modifies entities and adds the <c>SecretAudits</c> row, and this method
+    /// saves them in one call, so the change and its evidence commit together. Inside a transaction already open on the context
+    /// it joins that transaction and never begins, commits or retries one: the owner does, and the save accepts changes as any
+    /// save does. Otherwise it runs in a transaction of its own inside the execution strategy and accepts changes only after the
+    /// commit, as EF's own save does: anything else tracked on the context stays pending until the commit is confirmed, so a
+    /// failed commit cannot make a rerun or a later save lose it.
     /// </summary>
-    private async Task ChangeAsync(Func<List<EntityEntry>, CancellationToken, Task> change, CancellationToken cancellationToken)
+    private async Task ChangeAsync(Func<List<EntityEntry>, CancellationToken, Task> stage, CancellationToken cancellationToken)
     {
         if (_db.Database.CurrentTransaction is not null || !_db.Database.IsRelational())
         {
-            await TrackedAsync(change, cancellationToken).ConfigureAwait(false);
+            await TrackedAsync(
+                async (touched, ct) =>
+                {
+                    await stage(touched, ct).ConfigureAwait(false);
+                    await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                },
+                cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -239,8 +247,10 @@ public sealed class SqlSecretStore : ISecretStore
                 await TrackedAsync(
                     async (touched, inner) =>
                     {
-                        await change(touched, inner).ConfigureAwait(false);
+                        await stage(touched, inner).ConfigureAwait(false);
+                        await _db.SaveChangesAsync(acceptAllChangesOnSuccess: false, inner).ConfigureAwait(false);
                         await transaction.CommitAsync(inner).ConfigureAwait(false);
+                        _db.ChangeTracker.AcceptAllChanges();
                     },
                     ct).ConfigureAwait(false);
             },
