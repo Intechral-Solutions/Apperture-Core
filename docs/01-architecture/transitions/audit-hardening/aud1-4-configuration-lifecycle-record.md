@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 1 is ready for slice 2, which has not started. Slices 2 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slices 3 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`.
 
@@ -56,7 +56,7 @@ The product owner approved the four orientation recommendations. They are record
 |---|---|---|
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
-| 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | Not started. Independent review of slices 1 and 2 before slice 3. Watch list: §4.11 |
+| 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
 | 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | Not started. Independent review |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
@@ -133,7 +133,7 @@ A rerun after a confirmed rollback stores a fresh secret; the rolled-back attemp
 
 ### 4.4 Callers left outside a unit until their slices
 
-Platform settings and integration settings (slice 2), integration delete through settings reset (slice 3) and connections (slice 5) still call the store outside any transaction. They get the standalone path: each store operation is now atomic with its `SecretAudits` row, and otherwise behaves as before. Their known defects, the live secret activated before the owning change and secrets orphaned when the owning change fails, remain until their slices convert them.
+Integration delete through settings reset (slice 3) and connections (slice 5) still call the store outside any transaction (platform and integration settings were converted in slice 2, §8; integration delete still resets its settings one unit at a time until slice 3). They get the standalone path: each store operation is now atomic with its `SecretAudits` row, and otherwise behaves as before. Their known defects, the live secret activated before the owning change and secrets orphaned when the owning change fails, remain until their slices convert them.
 
 ### 4.5 Package decisions
 
@@ -231,7 +231,7 @@ Not rerun: the full unit and integration suites. The remediation changes one sto
 
 ### 4.11 Slice 2 watch list
 
-- **Compensation after a failed upsert (DF1 of the review).** `PlatformSettingsService` and `IntegrationSettingsService` store a replacement secret, then save the setting row, and on failure retire the new secret as compensation. The repository does not detach the failed row, so the compensating save sends it again, fails, and leaves the new secret orphaned. This predates slice 1 and is unchanged by it. Slice 2 replaces the compensation with the audited unit and the joining store, which removes the case; its tests must prove that a failed setting save stores no secret.
+- **Compensation after a failed upsert (DF1 of the review). Resolved in slice 2 (§8.6).** `PlatformSettingsService` and `IntegrationSettingsService` store a replacement secret, then save the setting row, and on failure retire the new secret as compensation. The repository does not detach the failed row, so the compensating save sends it again, fails, and leaves the new secret orphaned. This predates slice 1 and is unchanged by it. Slice 2 replaces the compensation with the audited unit and the joining store, which removes the case; its tests must prove that a failed setting save stores no secret.
 - The live-secret-first defect and the in-transaction reset that integration delete calls stay in slice 2's scope (§3).
 - The store's exception messages (§7) are touched only if slice 2 changes a path that surfaces them.
 
@@ -276,3 +276,151 @@ Recorded at orientation; not changed by this package.
 | `docs/04-api/contracts.md` calls the shutdown audit action `runtime.shutdown.request`; the catalog name is `governance.runtime.shutdown.request.created` | Corrected in slice 7 |
 
 IAM-9 stays closed. The IAM-10, IAM-11, OPS-1 and RCV-1 findings stay open. RC1 is not complete.
+
+## 8. Slice 2: platform and integration settings
+
+Implemented on this branch after the slice 1 remediation (`d403c2d`). Not independently reviewed yet. Slice 3 has not started.
+
+### 8.1 Scope and writer inventory
+
+Source inspection found exactly the writers the orientation inventory listed, and no others. `SqlPlatformSettingValueRepository.UpsertAsync` and `DeleteScopedAsync` are called only by the two services, and the resolvers only read.
+
+| # | Writer | Controller | Before | Now |
+|---|---|---|---|---|
+| 1 | `PlatformSettingsService.SetAsync`, ordinary | `PUT /api/config/platform-settings/{key}` | Upsert, then a legacy `IAuditService` record built from text; skipped when no actor | One audited unit, `platform.settings.set` |
+| 2 | `PlatformSettingsService.SetAsync`, sensitive replace | same | Secret added and activated on the live secret (or a new one created) in the store's own transactions, then upsert, then the legacy record; a failed upsert was compensated | One audited unit; `platform.settings.set` and `platform.settings.secret.stored` |
+| 3 | `PlatformSettingsService.SetAsync`, sensitive clear | same | Row deleted, then the secret disabled, then the legacy record | One audited unit; `platform.settings.set` (clear) and, when a secret was disabled, `platform.settings.secret.retired` |
+| 4 | `PlatformSettingsService.ResetAsync` | `DELETE /api/config/platform-settings/{key}` | As clear, with the `reset` action | One audited unit; `platform.settings.reset` and, for a sensitive setting that owned a secret, `.secret.retired` |
+| 5 to 8 | `IntegrationSettingsService.SetAsync` (ordinary, replace, clear) and `ResetAsync` | `PUT` and `DELETE /api/integrations/{integrationId}/settings/{key}` | The same, with the owning resource context read for the legacy record | The same four units with the `integration.settings.*` actions |
+| 9 | `IntegrationManagementService.DeleteIntegrationAsync` calling `IIntegrationSettingsService.ResetAsync` per key | integration delete (not an HTTP setting route) | One reset per key, outside any transaction | Unchanged in shape: still one reset per key, now one audited unit each. Conversion of the delete, and its use of the in-transaction reset (§8.8), is slice 3 |
+
+Not writers: `SetAsync` with a blank sensitive secret operation (answers the current value), and the option, list and get routes.
+
+Authorization is unchanged: the controllers check `platformSettings.manage` and the integration manage permission before the service runs, and the services authorize nothing. The trusted actor now comes from the unit (§8.10).
+
+### 8.2 Transaction boundaries
+
+Every genuine mutation is one `IAuditedUnitOfWork.ExecuteAsync` with `AuditActor.CurrentPrincipal`. Before the unit: only validation that needs no stored state (the definition exists and is editable, the scope applies, the payload parses, a sensitive setting refuses a plain value, a replace carries a secret value). Inside the attempt, in this transaction: the option provider's allowed values, the notification safety check (platform), the override row and its row version, the secret store calls, the row write, the staged audit rows. The unit takes the operation lock first, as for every W1 writer. After the unit: only the response, which reads the resolved setting.
+
+The services take the unit as an optional last constructor argument and refuse to change anything without it, with an `AuditInvariantException`. The controllers exclude that exception from their `InvalidOperationException` to 400 mapping, and the `DELETE` routes map a lost race to 409 as `PUT` always did.
+
+### 8.3 Platform settings
+
+- **Ordinary set:** a changed value upserts the override and stages `platform.settings.set` with `operation=set`, the key, `sensitive=false`, the previous display value when an override existed and the new display value. A value equal to the stored one declares a no-op and records nothing; a stale row version is still a conflict first.
+- **Sensitive replace, clear:** §8.5.
+- **Reset:** a missing override is a no-op. Otherwise `platform.settings.reset` is staged, the override deleted and, for a sensitive setting that owned a usable secret, the secret disabled and `platform.settings.secret.retired` staged.
+
+### 8.4 Integration settings
+
+The same four operations on the integration scope. The target is the integration setting (`{integrationId}:{key}`), the fields carry `integrationId` and `key`, and the integration's owning resource context is recorded as the row's related resource context, as the previous records did. An integration that cannot be read leaves the context null, as before.
+
+### 8.5 Secret lifecycle
+
+| Case | Inside the unit |
+|---|---|
+| Replace, no override or an override whose secret is missing, disabled or revoked | A new secret of its own is created, a version added and activated, the row written naming it; `.secret.stored` with `change=created` |
+| Replace, override names a usable secret | A new version is added and activated **on that secret**, the row is rewritten with the same reference; `.secret.stored` with `change=replaced`. This keeps the existing versioning model (the reference is stable) and is safe only because the version is live when the unit commits and not before |
+| Clear, reset | The row is deleted, the secret the setting owns is disabled; `.secret.retired` with `reason=cleared` or `reset` only when one was disabled (a name and provider check keeps config-supplied references untouched) |
+
+This differs from Entra (§4.3), where a replacement is a new secret of its own. There the registration row names the secret and the previous one is retired in the same unit; here the setting row keeps its reference and the secret carries its versions, so a rollback removes the new version and the previous active version stays active.
+
+### 8.6 DF1 and the live-secret-first defect
+
+Both are removed by construction, not by compensation:
+
+- **Live-secret-first.** The version used to be added and activated through the store's own transactions before the row was saved, so a refused, conflicting or failed change still changed the credential the setting resolves. Now the store joins the unit's transaction, so the version is live only if the unit commits.
+- **DF1.** A failed upsert used to leave the new secret stored and the failed row tracked; the compensating disable then saved the failed row again, failed, and orphaned the secret. There is no compensation any more. A failed upsert rolls the unit back (new secret, versions, active-version change, store evidence and audit rows), the unit clears the change tracker, and the repository detaches the row of a failed first insert.
+
+### 8.7 Audit events, targets and row cardinality
+
+| Action | Category, severity | Target | Role | Fields |
+|---|---|---|---|---|
+| `platform.settings.set` | configuration, standard | `platform_setting`: key | primary | `key`, `operation` (`set`, `replace`, `clear`), `sensitive`, `previousValue`, `newValue` (ordinary only, bounded display text, truncatable), `previousConfigured` (sensitive only) |
+| `platform.settings.reset` | configuration, standard | `platform_setting`: key | primary | `key`, `sensitive`, `previousValue` (ordinary), `previousConfigured` (sensitive) |
+| `integration.settings.set` | configuration, standard | `integration_setting`: `{integrationId}:{key}` | primary | as platform, plus `integrationId` and `optionProviderKey` |
+| `integration.settings.reset` | configuration, standard | as above | primary | as platform reset, plus `integrationId` |
+| `platform.settings.secret.stored`, `.retired` | secrets, elevated | `platform_setting`: key | secondary | `key`, `change` (`created`, `replaced`) or `reason` (`cleared`, `reset`) |
+| `integration.settings.secret.stored`, `.retired` | secrets, elevated | `integration_setting` | secondary | `integrationId`, `key`, `change` or `reason` |
+
+All are W1 with basis `change`. The four set and reset actions were declared by AUD-1.0 as legacy-bridge entries and are converted here (schemas and typed producers added, no new names); the four secret actions are the only catalog additions (`IntroducedIn` AUD-1.4). Cardinality per operation: an ordinary set or reset writes one row; a sensitive replace writes two (`set`, `.stored`); a clear or reset writes one or two (`.retired` only when a secret was disabled). The primary row carries the operation event id as its event id; a secondary row shares the operation event id. The producers refuse a value for a sensitive setting. No field carries a secret, a version id or the store's reference, and the Secrets-category rows target the setting (D-1). `SecretAudits` is unchanged and separate, and now commits in the same transaction (§4.1). Severity is per action, so `set` stays standard even for a sensitive replace; the elevated `.stored` and `.retired` rows mark the secret change.
+
+### 8.8 The in-transaction integration reset
+
+`IIntegrationSettingResetInTransaction.ResetInTransactionAsync(IAuditedTransaction, integrationId, key, ct)`, implemented by `IntegrationSettingsService`. The contract is on the interface; in short:
+
+- It joins the transaction of the unit whose `IAuditedTransaction` the caller passes. It opens no unit, begins, commits and rolls back nothing, and saves nothing outside that transaction.
+- It stages its rows (`integration.settings.reset`, and `.secret.retired` when a secret was disabled) as secondary rows of the caller's unit **before** it changes anything, so a transaction that is not current fails the staging, with an `AuditInvariantException`, before any delete is saved. This is tested with the transaction of a finished unit.
+- With no override it changes and stages nothing and returns false (the caller's unit may already hold rows, so it is not declared a no-op there). An override removed by another request between the helper's read and delete is a concurrency conflict that rolls the caller back.
+- It authorizes nothing, as `ResetAsync` does not; the caller has authorized the larger change. The interface is `internal` to the services assembly and registered only as itself, so no controller or other assembly can resolve it and it is not a way to reset a setting from a request.
+- It takes no lock. Slice 3's integration delete acquires the integration row lock and the ownership gate in its own unit before its blocker checks (D-4), then calls this for each scoped key, then removes the integration.
+
+### 8.9 Concurrency and ambiguous commits
+
+| Case | Behaviour |
+|---|---|
+| Stale row version | Conflict (`DbUpdateConcurrencyException`, 409) before any secret is stored, checked even when the value would be unchanged. The repository's own check remains |
+| First-insert race | Two requests set a setting with no override; the other commits its insert first. The repository recognises the violation of `PK_PlatformSettingValues` or `IX_PlatformSettingValues_Key_ScopeKind_ScopeId` on its own insert, detaches the row and reports the concurrency conflict. It is never borrowed as the winner's success, and nothing it stored survives. Any other duplicate keeps its meaning |
+| Audit insert failure, failed upsert, confirmed rollback | Nothing persists. A confirmed rollback of an uncertain commit reruns the attempt (the unit's rule); the rolled-back attempt's version does not exist |
+| Lost acknowledgement of a commit | Verified from the committed primary row; the attempt is not run again, so no second version. The response is built from the committed state |
+| Verification unavailable | `outcome_unknown`; the secret change, the row and the audit rows are together committed or together absent |
+| Already completed or unchanged | No-op, no row |
+
+The reconstruction result of a set or reset carries no data beyond "applied": the evidence that the operation committed is the primary row with this operation's event id, and the response is the current resolved setting, as for Entra update.
+
+### 8.10 Actor and authorization
+
+The unit's actor is the authenticated principal resolved once before the first attempt. `UpdatedByPrincipalId` on the setting row is that actor's recorded value, so the row and the audit row share it by construction (AUD-1.3 D2). Previously the audit record was skipped when no actor resolved; now a change without a resolvable actor fails in the unit instead of going unrecorded. Authorization is unchanged. `SecretAudits` keeps its `system` actor (§4.5 P1).
+
+### 8.11 Intentional behaviour changes
+
+| Change | Why |
+|---|---|
+| Setting an ordinary override to the value it already holds writes nothing and records nothing (the row version no longer changes) | "A request that changes nothing records nothing" (§5). A stale row version is still a conflict |
+| A change with no actor fails instead of succeeding unrecorded | Mandatory evidence is never skipped |
+| A lost first-insert race and a reset that loses to another reset are 409 conflicts (before: an unhandled database error, or a silent success) | D18: a lost race is reported, not borrowed |
+| `DELETE` settings routes map a concurrency conflict to 409 | A converted route cannot surface it as an unhandled error |
+| Audit details are structured fields on a target; the legacy `key=... oldValue=...` text and its `platform-settings` and `integration-settings` outcome labels are gone | Gate §12 |
+| The two legacy action-name classes in the services assembly are removed; the names are in `AuditActionNames` | One source for the names |
+
+### 8.12 Tests
+
+| Test | What it shows |
+|---|---|
+| `SettingsAuditSqlServerTests` (new, SQL Server, 18) | Platform ordinary set, change, unchanged, reset, with actor, target, category and operation ids; platform sensitive replace (created), replace (replaced, same reference, two versions), clear and reset with the stored and retired rows sharing the operation and no secret or reference in any audit column or store evidence; the live-secret-first case (audit insert fails: the previous secret still resolves, version count, active version, row value and version, audit and evidence counts all unchanged, nothing tracked); DF1 (the setting insert fails on a first replacement: no secret, no version, no evidence, no row, nothing tracked, a later save writes nothing); stale row version stores nothing; the first-insert race for an ordinary and a sensitive setting; lost acknowledgement (one attempt, exactly one new version); confirmed rollback (two attempts, only the rerun's version); unknown outcome committed and not committed; no-ops write nothing; integration ordinary and sensitive lifecycles and a failed integration replacement; the in-transaction reset committing with the caller's unit and beginning no transaction, rolling back with it, and refusing a finished unit's transaction before changing anything |
+| `SettingsAuditTests` (new, unit, 12) | Which rows the services record, the unit's actor on the row, no-ops, stale version before no-op, lost acknowledgement without a second run, unknown outcome, the missing unit as an invariant error, sensitive producers refusing a value, closed secret fields, the in-transaction reset joining the caller's unit with no unit of its own and staging nothing without an override, and the helper's interface being internal |
+| Changed | The existing unit tests of both services now run on the recording unit and assert recorder events instead of legacy text; `SensitivePlatformSettingsTests` replaced its compensation tests (they asserted the old live-secret-first and compensation behaviour) with a stale-version test and a no-compensation test; the catalog test lists the four new actions |
+
+**Mutation evidence** (product code edited temporarily, restored byte for byte, never committed): storing the secret before and outside the unit (the old shape) failed the live-secret, DF1, stale-version, rerun, lost-acknowledgement and unknown-outcome tests; removing the first-insert classification failed both race cases; deleting before staging in the in-transaction reset failed the finished-transaction test. All 18 pass with the shipped code.
+
+### 8.13 Validation
+
+Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, credentials read from `.env` into the process environment only, builds with `--artifacts-path artifacts/aud14 -m:1`:
+
+| Command | Result |
+|---|---|
+| `dotnet build Apperture.slnx --artifacts-path artifacts/aud14 -m:1` | 0 errors |
+| `dotnet test tests/Apperture.UnitTests --artifacts-path artifacts/aud14 -m:1` (full project) | 3948 / 3948 passed (3936 before, 12 new) |
+| `dotnet test tests/Apperture.ArchTests ...` | 38 / 38 passed |
+| `dotnet test tests/Apperture.IntegrationTests --no-build --filter FullyQualifiedName~SettingsAuditSqlServerTests` | 18 / 18 passed |
+| `dotnet test tests/Apperture.IntegrationTests --no-build` filtered to the `IntegrationTests.Audit` namespace (every audit SQL suite, including the secret store and Entra suites), `ManagementHostIntegrationConfigurationHttpTests`, `ResourceOwnershipMoveConcurrencySqlServerTests`, `ConnectionLifecycleAuditSqlServerTests`, `ManagementHostGovernanceHttpTests`, `BrowserRequestTrustHttpTests`, `IntegrationTestSecretProtectorTests` | 290 / 290 passed, none skipped |
+
+The SQL suites fail rather than skip without SQL Server, and the new suite writes one `EXECUTED against SQL Server catalog` marker per test.
+
+Not run, with the reason: the full `Apperture.IntegrationTests` project (the affected suites above cover every consumer of the changed services, the store and the host graph; PR CI runs all of it), the UI test projects and the SEC-1 browser suite (no UI, route or response shape changed; the only response change is a 409 on the two `DELETE` routes).
+
+### 8.14 Remaining risks, findings and decisions for the owner
+
+- **Decision: ordinary setting values stay in the audit rows.** An ordinary setting's previous and new values are recorded as bounded display text, as before and as `platform-settings-registry.md` provides ("old/new value or redacted summary"). An ordinary setting that holds something sensitive without being marked sensitive would be recorded; the definition is then the defect. Gate §12.3 excludes only `IsSensitive` values. If the owner prefers names only (as for Entra), the `previousValue` and `newValue` fields come out of two schemas.
+- **Decision: validation refusals are not recorded.** Shape and definition errors (unknown key, not editable, bad payload, an option not allowed, the notification safety check) are unchanged: they refuse before anything changes and write no row, as before. The gate's W3 rule for state-guard refusals could apply to the notification safety check; no catalog action exists for it and none was invented.
+- **Integration delete is still not atomic with its settings** until slice 3: it resets each key in its own unit, then removes the integration in a separate save. A failure between them leaves a deleted-settings integration, as before.
+- **`ReplaceAsync` adds a version to any usable secret the override names, owned or not.** The adjacent comment says config-only references are not rotated in place, but the code does not check ownership. An override row only ever holds a reference this provisioner created, so no path reaches it; recorded, unchanged.
+- **Reconstruction after a verified commit returns the current setting**, which a later writer may have changed; the evidence of this operation is the primary row.
+- **A repository-level concurrency conflict is a 409 for `DELETE` routes now;** clients that treated the old 500 as a failure see a conflict.
+- Findings outside the package from §7 are unchanged.
+
+### 8.15 Changed files
+
+Source: `AuditActionNames.cs`, `AuditActionCatalogEntries.cs`, `AuditActionCatalogEntries.Schemas.cs`, `AuditEvents.Settings.cs` (new); `PlatformSettingsService.cs`, `IntegrationSettingsService.cs`, `PlatformSettingSecretMaterialProvisioner.cs`, `IIntegrationSettingResetInTransaction.cs` (new), `ServiceCollectionExtensions.PlatformSettings.cs`; `SqlPlatformSettingValueRepository.cs`; `ConfigPlatformSettingsController.cs`, `IntegrationSettingsController.cs`; `PlatformSettingsAuditActionNames.cs` and `IntegrationSettingsAuditActionNames.cs` removed. Tests: `SettingsAuditSqlServerTests.cs`, `SettingsAuditTests.cs` (new) and the adapted tests listed in §8.12. Docs: this record, the README row and `platform-settings-registry.md`.
+
+**Next step:** independent review of slices 1 and 2, then slice 3 (schedule delete and integration delete, D-4).
+
