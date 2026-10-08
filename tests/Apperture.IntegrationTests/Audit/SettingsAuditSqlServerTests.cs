@@ -90,6 +90,51 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(0);
     }
 
+    [Fact]
+    public async Task The_sender_address_is_recorded_and_the_smtp_username_is_audited_by_name_only()
+    {
+        var (_, principal) = await AdminAsync();
+        const string fromAddress = "notifications@example.test";
+        const string smtpUser = "smtp-user@example.test";
+
+        await SetPlatformAsync(principal, PlatformSettingKeys.NotificationsEmailFromAddress, fromAddress, null);
+        await SetPlatformAsync(principal, PlatformSettingKeys.NotificationsEmailSmtpUser, smtpUser, null);
+        await ResetPlatformAsync(principal, PlatformSettingKeys.NotificationsEmailFromAddress);
+        await ResetPlatformAsync(principal, PlatformSettingKeys.NotificationsEmailSmtpUser);
+
+        var rows = await AuditRowsAsync();
+        rows.Select(r => (string)r["Action"]!).Should().Equal(
+            AuditActionNames.PlatformSettingSet, AuditActionNames.PlatformSettingSet,
+            AuditActionNames.PlatformSettingReset, AuditActionNames.PlatformSettingReset);
+        Detail(rows[0], "newValue").Should().Be(fromAddress, "the sender address is an explicitly permitted operational email field");
+        Detail(rows[2], "previousValue").Should().Be(fromAddress);
+
+        Detail(rows[1], "key").Should().Be(PlatformSettingKeys.NotificationsEmailSmtpUser);
+        Detail(rows[1], "operation").Should().Be("set");
+        Detail(rows[1], "newValue").Should().BeNull();
+        Detail(rows[1], "previousValue").Should().BeNull();
+        Detail(rows[3], "previousValue").Should().BeNull();
+        foreach (var row in rows.Skip(1).Where((_, i) => i is 0 or 2))
+            ((string)row["Details"]!).Should().NotContain(smtpUser, "the username is credential-related even when formatted as an email address");
+        foreach (var column in rows.SelectMany(r => r.Where(c => c.Key != "Details").Select(c => c.Value)).OfType<string>())
+            column.Should().NotContain(smtpUser);
+    }
+
+    [Fact]
+    public async Task A_malformed_ordinary_override_can_still_be_reset_and_the_reset_is_audited_without_its_previous_value()
+    {
+        var (admin, principal) = await AdminAsync();
+        await InsertPlatformOverrideAsync(PlatformSettingKeys.NotificationsDeliveryBatchSize, "\"not-an-integer\"");
+
+        await ResetPlatformAsync(principal, PlatformSettingKeys.NotificationsDeliveryBatchSize);
+
+        var row = (await AuditRowsAsync()).Single();
+        row["Action"].Should().Be(AuditActionNames.PlatformSettingReset);
+        row["Actor"].Should().Be(admin);
+        Detail(row, "previousValue").Should().BeNull("a value that cannot be displayed is omitted");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(0, "the override is gone");
+    }
+
     // ---- Platform: sensitive settings ----
 
     [Fact]
@@ -297,6 +342,34 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         var rows = await AuditRowsAsync();
         rows.Count(r => (string)r["Action"]! == AuditActionNames.PlatformSettingSet).Should().Be(2);
         rows.Count(r => (string)r["Action"]! == AuditActionNames.PlatformSettingSecretStored).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_failed_response_read_after_a_verified_commit_is_reported_as_an_unavailable_result_without_rerunning_the_change()
+    {
+        var (_, principal) = await AdminAsync();
+        await ReplacePlatformSecretAsync(principal, Sentinel, null);
+        var secretRef = await PlatformSecretRefAsync();
+        var rowVersion = await PlatformRowVersionAsync(PlatformSecretKey);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lost, attempts))
+        {
+            var act = () => Platform(db, principal, decorateResolver: inner => new ReadFailingResolver(inner)).SetAsync(
+                PlatformSecretKey,
+                new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Replace, SecretValue = "replacement-" + Sentinel },
+                rowVersion);
+
+            var thrown = (await act.Should().ThrowAsync<AuditCommittedResultUnavailableException>()).Which;
+            thrown.OperationEventId.Should().NotBeNullOrEmpty();
+            AssertNoSecretMaterial(thrown, Sentinel, "replacement-" + Sentinel, secretRef);
+        }
+
+        attempts.Started.Should().Be(1, "a verified commit is not run again and nothing is retried");
+        (await VersionCountAsync(secretRef)).Should().Be(2, "exactly one version from the committed change, none from a retry");
+        (await ResolveAsync(secretRef)).Should().Be("replacement-" + Sentinel);
+        (await AuditRowsAsync()).Count(r => (string)r["Action"]! == AuditActionNames.PlatformSettingSet).Should().Be(2);
     }
 
     [Fact]
@@ -584,14 +657,19 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     // ---- service wiring ----
 
-    private PlatformSettingsService Platform(AppertureDbContext db, IPrincipalContext principal, IAuditedUnitOfWork? unit = null)
+    private PlatformSettingsService Platform(
+        AppertureDbContext db,
+        IPrincipalContext principal,
+        IAuditedUnitOfWork? unit = null,
+        Func<IPlatformSettingsResolver, IPlatformSettingsResolver>? decorateResolver = null)
     {
         var registry = new PlatformSettingDefinitionRegistry();
         var repository = new SqlPlatformSettingValueRepository(db);
+        IPlatformSettingsResolver resolver = new PlatformSettingsResolver(registry, repository, new ConfigurationBuilder().Build());
         return new PlatformSettingsService(
             registry,
             repository,
-            new PlatformSettingsResolver(registry, repository, new ConfigurationBuilder().Build()),
+            decorateResolver?.Invoke(resolver) ?? resolver,
             Coordinator(db, principal),
             new PlatformSettingSecretMaterialProvisioner(SecretStore(db)),
             unit ?? NewUnit(db, principal));
@@ -679,6 +757,15 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         await Integration(db, principal).SetAsync(
             IntegrationId, IntegrationSecretKey, new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear }, null);
     }
+
+    private Task InsertPlatformOverrideAsync(string key, string valueJson) =>
+        _db.ExecuteAsync(
+            $"""
+            INSERT INTO PlatformSettingValues (Id, [Key], ScopeKind, ScopeId, ValueJson, CreatedUtc, UpdatedUtc)
+            VALUES (N'{PlatformSettingScopeConstants.InstanceKind}:{PlatformSettingScopeConstants.InstanceId}:{key}', N'{key}',
+                    N'{PlatformSettingScopeConstants.InstanceKind}', N'{PlatformSettingScopeConstants.InstanceId}',
+                    N'{valueJson}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+            """);
 
     // ---- reading ----
 
@@ -824,6 +911,19 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         }
     }
 
+    /// <summary>Answers everything the change itself reads, and fails the response read that follows the commit.</summary>
+    private sealed class ReadFailingResolver(IPlatformSettingsResolver inner) : IPlatformSettingsResolver
+    {
+        public Task<IReadOnlyList<PlatformSettingResolvedValue>> ListResolvedAsync(CancellationToken cancellationToken = default) =>
+            inner.ListResolvedAsync(cancellationToken);
+
+        public Task<PlatformSettingResolvedValue?> GetResolvedAsync(string key, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Injected: the response read failed after the commit.");
+
+        public Task<object?> ResolveRawValueAsync(string key, CancellationToken cancellationToken = default) =>
+            inner.ResolveRawValueAsync(key, cancellationToken);
+    }
+
     private sealed class TestIntegrationRegistry : IIntegrationSettingDefinitionRegistry
     {
         private static readonly PlatformSettingValueScopeKind[] IntegrationScope = [PlatformSettingValueScopeKind.Integration];
@@ -840,7 +940,8 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
                 InputKind = PlatformSettingInputKind.Text,
                 AllowedValueScopes = IntegrationScope,
                 ConfigurationPath = "Test:Aud14:Integration:Text",
-                DefaultValue = string.Empty
+                DefaultValue = string.Empty,
+                AuditValue = PlatformSettingAuditValuePolicy.Record
             },
             new()
             {

@@ -57,4 +57,10 @@ public sealed record PlatformSettingDefinition
     /// Read APIs expose configuration status, never plaintext or the reference GUID.
     /// </summary>
     public bool IsSensitive { get; init; }
+
+    /// <summary>
+    /// Whether an audit row of a change may carry this setting's values. Independent of <see cref="IsSensitive"/> and of how the
+    /// setting is stored or read; it only governs audit content. See <see cref="PlatformSettingAuditValuePolicy"/>.
+    /// </summary>
+    public PlatformSettingAuditValuePolicy AuditValue { get; init; } = PlatformSettingAuditValuePolicy.ByShape;
 }

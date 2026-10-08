@@ -88,7 +88,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
             return null;
 
-        await Unit.ExecuteAsync(
+        return await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.PlatformSettingReset),
             async (transaction, ct) =>
             {
@@ -97,14 +98,16 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 {
                     // No override: nothing to reset and nothing recorded.
                     transaction.DeclareNoOp();
-                    return SettingChange.Unchanged;
+                    return false;
                 }
 
+                // A malformed override is still reset: a value that cannot be displayed is left out of the audit details.
                 var previousRef = def.IsSensitive ? ReadSecretRef(def, existing) : null;
                 await transaction.StageAsync(
                     def.IsSensitive
                         ? AuditEvents.PlatformSettingReset(key, sensitive: true, previousConfigured: !string.IsNullOrWhiteSpace(previousRef))
-                        : AuditEvents.PlatformSettingReset(key, sensitive: false, previousValue: DisplayOf(def, existing)),
+                        : AuditEvents.PlatformSettingReset(
+                            key, sensitive: false, previousValue: PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson)),
                     ct).ConfigureAwait(false);
 
                 if (!await _repository.DeleteAsync(key, ct).ConfigureAwait(false))
@@ -119,12 +122,10 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                     await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(key, "reset"), ct).ConfigureAwait(false);
                 }
 
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
+            ct => _resolver.GetResolvedAsync(key, ct),
             cancellationToken).ConfigureAwait(false);
-
-        return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
@@ -159,7 +160,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (string.IsNullOrWhiteSpace(payload.SecretValue))
             throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
 
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.PlatformSettingSet),
             async (transaction, ct) =>
             {
@@ -197,19 +199,18 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 await transaction.StageAsync(
                     AuditEvents.PlatformSettingSecretStored(def.Key, createdNew ? "created" : "replaced"),
                     ct).ConfigureAwait(false);
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
         PlatformSettingDefinition def,
         CancellationToken cancellationToken)
     {
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.PlatformSettingSet),
             async (transaction, ct) =>
             {
@@ -217,7 +218,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 if (existing is null)
                 {
                     transaction.DeclareNoOp();
-                    return SettingChange.Unchanged;
+                    return false;
                 }
 
                 var previousRef = ReadSecretRef(def, existing);
@@ -234,12 +235,10 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
 
                 if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
                     await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(def.Key, "cleared"), ct).ConfigureAwait(false);
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> SetOrdinaryAsync(
@@ -251,7 +250,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.PlatformSettingSet),
             async (transaction, ct) =>
             {
@@ -287,7 +287,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 {
                     // The same value: nothing to write and no row.
                     transaction.DeclareNoOp();
-                    return SettingChange.Unchanged;
+                    return false;
                 }
 
                 await _repository.UpsertAsync(
@@ -307,15 +307,13 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                         key,
                         AuditEvents.SettingOperations.Set,
                         sensitive: false,
-                        previousValue: existing is null ? null : DisplayOf(def, existing),
-                        newValue: PlatformSettingsValueCodec.ToDisplayString(parsed)),
+                        previousValue: existing is null ? null : PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson),
+                        newValue: PlatformSettingAuditValues.DisplayOrNull(def, parsed)),
                     ct).ConfigureAwait(false);
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private static string? ReadSecretRef(PlatformSettingDefinition def, PlatformSettingValue? row)
@@ -331,9 +329,6 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             return null;
         }
     }
-
-    private static string DisplayOf(PlatformSettingDefinition def, PlatformSettingValue row) =>
-        PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, row.ValueJson));
 
     private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
     {
@@ -358,12 +353,6 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
     {
         if (existing?.RowVersion is { } current && expectedRowVersion is not null && !current.SequenceEqual(expectedRowVersion))
             throw new DbUpdateConcurrencyException("Platform setting was modified by another request.");
-    }
-
-    private enum SettingChange
-    {
-        Unchanged,
-        Applied,
     }
 
     private async Task ValidateNotificationSafetyAsync(string key, object parsedValue, CancellationToken cancellationToken)

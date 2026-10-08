@@ -94,21 +94,20 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
 
         EnsureIntegrationValueScope(def, key);
 
-        await Unit.ExecuteAsync(
+        return await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.IntegrationSettingReset),
             async (transaction, ct) =>
             {
                 if (await ResetCoreAsync(transaction, integrationId, def, ct).ConfigureAwait(false))
-                    return SettingChange.Applied;
+                    return true;
 
                 // No override: nothing to reset and nothing recorded.
                 transaction.DeclareNoOp();
-                return SettingChange.Unchanged;
+                return false;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
+            ct => _resolver.GetResolvedAsync(integrationId, key, ct),
             cancellationToken).ConfigureAwait(false);
-
-        return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -154,7 +153,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 ? AuditEvents.IntegrationSettingReset(
                     integrationId, key, sensitive: true, previousConfigured: !string.IsNullOrWhiteSpace(previousRef), resourceContextId: resourceContextId)
                 : AuditEvents.IntegrationSettingReset(
-                    integrationId, key, sensitive: false, previousValue: DisplayOf(def, existing), resourceContextId: resourceContextId),
+                    integrationId, key, sensitive: false,
+                    previousValue: PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson),
+                    resourceContextId: resourceContextId),
             ct).ConfigureAwait(false);
 
         if (!await _repository
@@ -207,7 +208,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         if (string.IsNullOrWhiteSpace(payload.SecretValue))
             throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
 
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
@@ -251,12 +253,10 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 await transaction.StageAsync(
                     AuditEvents.IntegrationSettingSecretStored(integrationId, def.Key, createdNew ? "created" : "replaced", resourceContextId),
                     ct).ConfigureAwait(false);
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
@@ -264,7 +264,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         PlatformSettingDefinition def,
         CancellationToken cancellationToken)
     {
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
@@ -274,7 +275,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 if (existing is null)
                 {
                     transaction.DeclareNoOp();
-                    return SettingChange.Unchanged;
+                    return false;
                 }
 
                 var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
@@ -303,12 +304,10 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                         ct).ConfigureAwait(false);
                 }
 
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> SetOrdinaryAsync(
@@ -321,7 +320,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
-        await Unit.ExecuteAsync(
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
@@ -357,7 +357,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 {
                     // The same value: nothing to write and no row.
                     transaction.DeclareNoOp();
-                    return SettingChange.Unchanged;
+                    return false;
                 }
 
                 var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
@@ -379,17 +379,15 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                         key,
                         AuditEvents.SettingOperations.Set,
                         sensitive: false,
-                        previousValue: existing is null ? null : DisplayOf(def, existing),
-                        newValue: PlatformSettingsValueCodec.ToDisplayString(parsed),
+                        previousValue: existing is null ? null : PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson),
+                        newValue: PlatformSettingAuditValues.DisplayOrNull(def, parsed),
                         optionProviderKey: string.IsNullOrWhiteSpace(def.OptionProviderKey) ? null : def.OptionProviderKey,
                         resourceContextId: resourceContextId),
                     ct).ConfigureAwait(false);
-                return SettingChange.Applied;
+                return true;
             },
-            (_, _) => Task.FromResult(SettingChange.Applied),
-            cancellationToken).ConfigureAwait(false);
-
-        return (await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false))!;
+            ct => _resolver.GetResolvedAsync(integrationId, key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private static string? ReadSecretRef(PlatformSettingDefinition def, PlatformSettingValue? row)
@@ -405,9 +403,6 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             return null;
         }
     }
-
-    private static string DisplayOf(PlatformSettingDefinition def, PlatformSettingValue row) =>
-        PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, row.ValueJson));
 
     private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
     {
@@ -448,12 +443,6 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     {
         var integration = await _integrations.GetByIdAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false);
         return integration?.ResourceContextId.Value;
-    }
-
-    private enum SettingChange
-    {
-        Unchanged,
-        Applied,
     }
 
     private static void ValidateProviderMembership(

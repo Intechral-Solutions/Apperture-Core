@@ -243,7 +243,7 @@ Not rerun: the full unit and integration suites. The remediation changes one sto
 
 **Target.** One primary target from the closed vocabulary (§11.1): the configuration entity changed. A deleted target keeps its id and its name snapshot. Secret-store events target the owning entity (D-1).
 
-**Never recorded** (gate §12.3, D-1): secret values or references, credential material, connection strings, tokens, keys, values of `IsSensitive` settings, email addresses (except the subject address of an email-change event), search or filter text. Settings and fields are named, never their sensitive values. Free text only in declared, bounded `operator_text` fields.
+**Never recorded** (gate §12.3, D-1): secret values or references, credential material, connection strings, tokens, keys, values of `IsSensitive` settings, email addresses (except where gate §12.3 as amended permits them: the subject address of an email-change event, and the values of a setting whose definition declares an operational email field), search or filter text. Settings and fields are named, never their sensitive values. Free text only in declared, bounded `operator_text` fields.
 
 **Write classes** (gate §13.1). W1: every configuration mutation, including both deletes, secret-store events, module lifecycle state changes, the runtime shutdown request (basis `request`) and connection verify (basis `external_attempt`). W2: connection structure browse. W3: refusals, validation rejections, `schedule.delete_rejected`, ownership-move rejections, notification diagnostics sends (`external_attempt`). W4: module discovery and other telemetry, unchanged here.
 
@@ -410,7 +410,7 @@ Not run, with the reason: the full `Apperture.IntegrationTests` project (the aff
 
 ### 8.14 Remaining risks, findings and decisions for the owner
 
-- **Decision: ordinary setting values stay in the audit rows.** An ordinary setting's previous and new values are recorded as bounded display text, as before and as `platform-settings-registry.md` provides ("old/new value or redacted summary"). An ordinary setting that holds something sensitive without being marked sensitive would be recorded; the definition is then the defect. Gate §12.3 excludes only `IsSensitive` values. If the owner prefers names only (as for Entra), the `previousValue` and `newValue` fields come out of two schemas.
+- **Decision: ordinary setting values stay in the audit rows. Resolved by the owner's ruling of 2026-10-08 (§9.1): values are recorded as the setting's definition declares.** An ordinary setting's previous and new values are recorded as bounded display text, as before and as `platform-settings-registry.md` provides ("old/new value or redacted summary"). An ordinary setting that holds something sensitive without being marked sensitive would be recorded; the definition is then the defect. Gate §12.3 excludes only `IsSensitive` values. If the owner prefers names only (as for Entra), the `previousValue` and `newValue` fields come out of two schemas.
 - **Decision: validation refusals are not recorded.** Shape and definition errors (unknown key, not editable, bad payload, an option not allowed, the notification safety check) are unchanged: they refuse before anything changes and write no row, as before. The gate's W3 rule for state-guard refusals could apply to the notification safety check; no catalog action exists for it and none was invented.
 - **Integration delete is still not atomic with its settings** until slice 3: it resets each key in its own unit, then removes the integration in a separate save. A failure between them leaves a deleted-settings integration, as before.
 - **`ReplaceAsync` adds a version to any usable secret the override names, owned or not.** The adjacent comment says config-only references are not rotated in place, but the code does not check ownership. An override row only ever holds a reference this provisioner created, so no path reaches it; recorded, unchanged.
@@ -422,5 +422,114 @@ Not run, with the reason: the full `Apperture.IntegrationTests` project (the aff
 
 Source: `AuditActionNames.cs`, `AuditActionCatalogEntries.cs`, `AuditActionCatalogEntries.Schemas.cs`, `AuditEvents.Settings.cs` (new); `PlatformSettingsService.cs`, `IntegrationSettingsService.cs`, `PlatformSettingSecretMaterialProvisioner.cs`, `IIntegrationSettingResetInTransaction.cs` (new), `ServiceCollectionExtensions.PlatformSettings.cs`; `SqlPlatformSettingValueRepository.cs`; `ConfigPlatformSettingsController.cs`, `IntegrationSettingsController.cs`; `PlatformSettingsAuditActionNames.cs` and `IntegrationSettingsAuditActionNames.cs` removed. Tests: `SettingsAuditSqlServerTests.cs`, `SettingsAuditTests.cs` (new) and the adapted tests listed in §8.12. Docs: this record, the README row and `platform-settings-registry.md`.
 
-**Next step:** independent review of slices 1 and 2, then slice 3 (schedule delete and integration delete, D-4).
+**Next step (superseded by §9):** independent review of slices 1 and 2, then slice 3 (schedule delete and integration delete, D-4).
+
+## 9. Slice 2 independent review and bounded remediation
+
+Independent review of slice 2 at `fa784f0` returned **ready after bounded remediation**: no critical or high findings, one medium finding (M1), and low findings L1 to L3 and L5, with L4 and DF1 to DF5 carried forward. The owner resolved the audit-data policy question the review raised (§9.1). This section records the ruling, the corrections and their validation. Slice 3 has not started.
+
+### 9.1 Owner ruling (2026-10-08) and the gate amendment
+
+Email addresses are not categorically prohibited audit data; the blanket exclusion in gate §12.3 was broader than its purpose. The approved policy, now in gate §12.3 as an amendment:
+
+1. An operational email address may be recorded when directly relevant to the audited action and explicitly permitted by a structured audit schema.
+2. It must not enter generic audit messages, request snapshots, arbitrary metadata or unrelated fields. There is no general permission to record arbitrary addresses.
+3. Sensitive configuration values remain prohibited.
+4. Secrets, credentials, tokens, connection strings, private keys and secret references remain prohibited without exception.
+5. An SMTP username is a credential-related identifier: its changes are audited by setting name and safe metadata only, never its value, even when it is formatted as an email address.
+6. The general permission to record bounded non-sensitive setting values remains, subject to 2 to 5.
+
+The rule for the subject address of an email-change event is unchanged. No runtime setting sensitivity and no secret-storage behaviour changed to implement this.
+
+### 9.2 Findings and resolutions
+
+| Finding | Resolution |
+|---|---|
+| M1 (medium): `Notifications.Email.FromAddress` and `Notifications.Email.SmtpUser` are ordinary settings whose values were recorded | §9.3: a per-definition audit value policy applied in one place. `FromAddress` records both values; `SmtpUser` records the change by name and action only. Neither's classification changed |
+| L1: the response read ran outside the reconstruction delegate, so a verified commit followed by a failed read was a generic 500 | §9.4 |
+| L2: resetting a malformed ordinary override failed because the previous value could not be displayed | §9.5 |
+| L3: nothing pinned that the services, repository, secret store and unit share one context | §9.6: `SettingsServicesShareTheUnitContextTests` |
+| L5: documentation | §9.7 |
+| L4: the narrow window between the reset's read and its delete | Deferred, unchanged. The delete reports a lost race as a 409 and nothing is recorded for a reset this request did not make |
+| DF1: secret ownership is identified by a shared name (`platform-setting:{key}`) and provider | Deferred, unchanged |
+| DF2: integration delete with setting keys that have no definition, or are unscoped | Deferred. **Required input to slice 3 planning** |
+| DF3: concurrent settings writes do not take the integration-delete lock | Deferred. **Required input to slice 3 planning** |
+| DF4: a possible W3 refusal for the notification safety check (§8.14) | Deferred; needs a separate owner decision. No W3 action added |
+| DF5: replace-versus-clear deadlock and transient retry behaviour | Deferred, unchanged |
+
+### 9.3 M1: the audit value policy
+
+`PlatformSettingDefinition.AuditValue` (`PlatformSettingAuditValuePolicy`) declares what a setting's audit rows may carry, and `PlatformSettingAuditValues` is the only code that turns it into a value. Both services call it for the previous and the new value of a set and for the previous value of a reset, so there is no key comparison in either service and nothing scans a value for an email-shaped string.
+
+| Policy | Effect | Used by |
+|---|---|---|
+| `ByShape` (default) | Recorded only when the shape bounds the value: boolean, integer, duration, or a string or array validated against declared or provider options. Free text is omitted | Every definition that does not declare one, including every module-declared text setting |
+| `Record` | Bounded free text that is not an address | `Notifications.Email.SmtpHost`, `Scheduling.DefaultTimeZoneId` |
+| `RecordOperationalEmail` | An explicitly approved operational email field | `Notifications.Email.FromAddress` only |
+| `Omit` | Name and action only | `Notifications.Email.SmtpUser`, `Notifications.Email.FromDisplayName` |
+
+A sensitive setting records no value whatever it declares (`IsSensitive` wins), and the producers still refuse a value for a sensitive setting. The schemas are unchanged: the same closed, bounded `previousValue` and `newValue` fields, absent when omitted.
+
+**Other settings that can carry an address.** Every free-text platform setting was inspected: `SmtpHost`, `SmtpUser`, `FromAddress`, `FromDisplayName`, `Scheduling.DefaultTimeZoneId` and the demo text setting. `FromDisplayName` (a name that may contain an address) is now `Omit`, which is a change from slice 2 (its values were recorded). The demo text setting falls to the default and is omitted. A unit test fails if a new free-text platform setting does not declare a policy, and another if any setting other than `FromAddress` declares `RecordOperationalEmail`.
+
+**Module-declared settings.** `IntegrationSettingDefinition` has no audit declaration, so a module's String, MultilineString, Uri, TimeZone and Decimal settings now map to `ByShape` and their values are omitted; Boolean, Integer, Duration and Choice (declared options) are still recorded. This is the fail-closed reading of the ruling: the platform cannot tell a module's host name from a module's contact address. **Gap and proposed minimal extension:** let a module declare, per setting, `Record` or `Omit` (never `RecordOperationalEmail`, which only the platform registry grants), defaulting to omit, and review the declaration with the module. Nothing else in the design needs to change. Not implemented here because it widens the module SDK contract and needs an owner decision on who reviews a module's declaration.
+
+### 9.4 L1: the response read after a commit
+
+`SettingAuditedChange` runs every setting change and its response read for both services. When the unit had to verify an uncertain commit, the response is read inside the unit's `reconstruct` delegate, so a failed read surfaces as `AuditCommittedResultUnavailableException` (HTTP 500, `committed_result_unavailable`). When the unit acknowledged the commit directly, the read follows it, and a failure there is reported the same way, with the operation's event id, instead of as a generic error. A change declared a no-op committed nothing, so its read failure is an ordinary failure. Nothing is retried and no secret version is added.
+
+The three facts stay apart: the **proof of commit** is the unit's confirmation or its verification of the primary row; the **reconstruction** is the response built from committed state; and the response is the setting's **current state when it is read**, which is not necessarily the state this operation produced. A concurrent later writer's value can appear in it (§8.9, §8.14). The tests pin this: a write by another request between the commit and the read is returned, while the audit row still records what this request did.
+
+### 9.5 L2: a malformed override can still be reset
+
+`PlatformSettingAuditValues.DisplayStoredOrNull` returns no value for a stored value that cannot be parsed, as well as for a definition that records none. The reset therefore commits with its primary row and without `previousValue`; valid resets keep theirs. Sensitive settings are unchanged (they never read the stored value for display). A set over a malformed integration override records only its new value.
+
+**Observation, not changed.** A platform *set* over a malformed override still fails, before the unit stages anything: the notification safety check lists every resolved setting, and `PlatformSettingsResolver` throws on a malformed stored value. The reset is the repair path and works. Recorded under §9.9.
+
+### 9.6 L3: the shared context pin
+
+`SettingsServicesShareTheUnitContextTests` registers the persistence, audit recorder, SQL secrets and Management host settings registrations the hosts use, resolves both settings services in one scope and follows each service's own dependencies by reflection to the `AppertureDbContext` it holds: its audited unit, its settings repository, the secret store behind its provisioner, and (integration) the integration repository. Every one must be the scope's single context, and two scopes must not share one. The Slice 1 `SecretStoreSharesTheUnitContextTests` is unchanged. The behavioural proof that this makes secret changes atomic remains the SQL suite (§8.12).
+
+### 9.7 L5: corrections to earlier statements
+
+- `UpdatedByPrincipalId` on a setting row stores the normalized user identifier of the actor (`AuditActor.RecordedValue`), consistent with IAM-9.2a. §8.10 says the row stores the actor's recorded value; this states what that value is.
+- The response of a set or reset is the current resolved state, including a later writer's value, not an exact snapshot of the original mutation (§9.4). §8.9's wording that the response "is built from the committed state" means the current state at the time of the read.
+- A `DELETE` concurrency conflict returns 409, an identical-value `PUT` and a reset of an absent override are 200 no-ops that record nothing, and the other outcome semantics are in `docs/04-api/contracts.md` (Platform and integration settings API).
+- The values of an ordinary setting are recorded as its definition declares (§9.3), not as "ordinary values stay in the audit rows" (§8.14, §8.7).
+
+### 9.8 Tests and validation
+
+New or changed tests:
+
+| Test | What it shows |
+|---|---|
+| `SettingAuditValuePolicyTests` (unit, 44 cases across 19 methods) | The policy table; every free-text platform setting declares a policy; only `FromAddress` is an approved email field; no sensitive setting in either registry records a value; each module kind maps as §9.3 says; for both services: `FromAddress` values recorded on set and reset, `SmtpUser` by name and action only (email-formatted values absent from every field), an undeclared free-text setting given an address records nothing, a bounded setting still records, a sensitive setting stays value-free even when its definition declares a recording policy, identical values recorded for the same definition by both services; malformed override reset (platform, integration, sensitive), valid reset keeps its value; failed response read after a commit (direct and lost acknowledgement, set and reset) is `committed_result_unavailable` with one staged operation, after a no-op it is an ordinary failure; the response includes a later writer's value |
+| `SettingsServicesShareTheUnitContextTests` (unit, 2) | §9.6 |
+| `SettingsAuditSqlServerTests` (SQL, 18 to 21) | `FromAddress` recorded and `SmtpUser` omitted against SQL Server, with the email-formatted username absent from every audit column; a malformed override reset with its row and primary row; a lost acknowledgement followed by a failed response read: `committed_result_unavailable`, one attempt, exactly one new secret version (no duplicate), the secret resolves to the committed value |
+| `RecordingAuditedUnitOfWork` (test double) | Now wraps a failed reconstruction as the SQL unit does |
+| `SettingsAuditSqlServerTests` integration text setting | Declares `Record`, since it stands for a reviewed text setting |
+
+Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, connection string read from `.env` into the process environment only, `--artifacts-path artifacts/aud14r -m:1`:
+
+| Command | Result |
+|---|---|
+| `Apperture.UnitTests`, filtered to the new files, `SettingsAuditTests`, `Epic112*`, `Epic118*`, `SensitivePlatformSettingsTests`, `PlatformSettingsServiceValidationTests`, `PlatformSettingDefinitionRegistryTests`, `SecretStoreSharesTheUnitContextTests` and every `Audit` test (catalog and detail schemas included) | 404 / 404 passed |
+| `Apperture.IntegrationTests`, `SettingsAuditSqlServerTests` | 21 / 21 passed |
+| `Apperture.IntegrationTests`, the `IntegrationTests.Audit` namespace (every audit SQL suite), `ManagementHostIntegrationConfigurationHttpTests`, `ResourceOwnershipMoveConcurrencySqlServerTests`, `ConnectionLifecycleAuditSqlServerTests`, `ManagementHostGovernanceHttpTests`, `IntegrationTestSecretProtectorTests` | 272 / 272 passed, none skipped |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `dotnet build Apperture.slnx` | succeeded, 0 errors |
+
+Not rerun: the full unit and integration projects (the filtered runs cover every consumer of the changed services, definitions and recording double), the UI test projects and the browser suite (no UI, route or response shape changed).
+
+### 9.9 Remaining findings and observations
+
+- L4 and DF1 to DF5 as in §9.2. **DF2 and DF3 must be inputs to slice 3's plan**, which resets an integration's settings inside its delete: an undefined or unscoped key is left alone by the helper, and a concurrent settings write does not take the delete's lock.
+- Module-declared free-text settings are not audited by value until the SDK extension in §9.3 exists.
+- A platform set over a malformed stored override fails in the notification safety check because the resolver throws on it; reset repairs it. A resolver that tolerates a malformed row is a separate, unowned change.
+- `Uri` settings declared by a module could carry credentials in their userinfo; they are now omitted from audit values, which also closes that exposure for the audit rows, but the value is still readable and listed by the settings APIs as before.
+- `FromDisplayName` stopped recording values (§9.3).
+
+### 9.10 Closure
+
+Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1, L2, L3 and L5 are corrected and validated; L4 and DF1 to DF5 are carried forward without code. Slice 3 (schedule delete and integration delete, D-4) has not started; its preparation is in the commit report.
 

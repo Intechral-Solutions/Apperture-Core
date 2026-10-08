@@ -604,9 +604,20 @@ Never recorded:
 - search or filter text, or any digest of it (T-07, T-24);
 - parameter values (names only);
 - values of `IsSensitive` settings;
-- email addresses and UPNs, except the subject address of an email-change event.
+- email addresses and UPNs, except where a rule below permits them.
 
 Usernames may appear (IAM-9 §21).
+
+**Email addresses** (amended by the owner ruling of 2026-10-08; AUD-1.4 slice 2 review). An email address is not categorically prohibited audit data. The earlier blanket exclusion was broader than the concern it served, which is that an address must not leak into places nobody reviewed.
+
+1. An operational email address may be recorded when it is directly relevant to the audited action and a structured audit schema field explicitly permits it. Two cases are permitted today: the subject address of an email-change event (unchanged from the earlier rule), and the previous and new values of a setting whose definition declares `RecordOperationalEmail` (today only `Notifications.Email.FromAddress`).
+2. An email address must not enter a generic audit message, a request snapshot, arbitrary metadata or an unrelated field. This is not a licence to record arbitrary addresses: a field that is not declared to carry one carries none.
+3. Values of sensitive settings remain prohibited, as in the list above.
+4. Secrets, credentials, tokens, connection strings, private keys and secret references remain prohibited without exception.
+5. An SMTP username is a credential-related identifier. A change to it is audited by setting name and safe metadata only; its value is not recorded, even when it is formatted as an email address.
+6. The general permission to record the bounded, non-sensitive value of an ordinary setting remains, subject to rules 2 to 5.
+
+**Enforcement for settings.** The rule is carried by the setting's definition (`PlatformSettingDefinition.AuditValue`) and applied in one place (`PlatformSettingAuditValues`) that both settings services use; no service compares setting keys and nothing scans values. A sensitive setting records no value whatever its definition declares. An ordinary setting with no declaration records its value only when its shape bounds it (a boolean, an integer, a duration, or a choice validated against declared or provider-supplied options); free text, including every module-declared text setting, is omitted until a reviewed definition declares `Record` (bounded, not an address), `RecordOperationalEmail` or `Omit`. The setting's functional classification (`IsSensitive`, secret storage, how it is read) is not changed to achieve this.
 
 ### 12.4 Free-text fields
 

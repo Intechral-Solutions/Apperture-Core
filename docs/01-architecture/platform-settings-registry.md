@@ -248,6 +248,8 @@ Every create/update/delete of registry values should emit audit records:
 
 Secret values and secret references are never audited (AUD-1 gate section 12.3, amended here by the AUD-1.4 owner ruling on secret audit identifiers): a sensitive setting records whether a secret was configured, and the secret it stores or retires is recorded as an event on the setting that owns it, carrying no reference.
 
+An ordinary setting's old and new values are recorded only as its definition allows (`PlatformSettingDefinition.AuditValue`; AUD-1 gate section 12.3 as amended for email addresses). A definition declares `Record` (bounded text that is not an address), `RecordOperationalEmail` (an explicitly permitted operational email field; today only `Notifications.Email.FromAddress`) or `Omit` (name and action only; `Notifications.Email.SmtpUser` and `Notifications.Email.FromDisplayName`). With no declaration, a value is recorded only when its shape bounds it (boolean, integer, duration, or a validated choice); free text, including module-declared text settings, is omitted. The policy is independent of `IsSensitive` and of how a setting is stored or read.
+
 ## Role of appsettings
 
 | Use | Allowed |

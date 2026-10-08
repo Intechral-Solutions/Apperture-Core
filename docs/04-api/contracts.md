@@ -38,6 +38,10 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | POST | `/api/schedules/{id}/enable` | Enable schedule |
 | POST | `/api/schedules/{id}/disable` | Disable schedule |
 | DELETE | `/api/schedules/{id}` | Hard-delete a disabled schedule (LFC-1). Success **204**. Enabled **409** `{ "error": "Cannot delete schedule: it is still enabled. Disable it first." }`. Missing **404**. Unauthorized **403**. No request body. Historical firings are retained. |
+| PUT | `/api/config/platform-settings/{key}` | Set an instance setting, or replace or clear its secret. See [Platform and integration settings API](#platform-and-integration-settings-api). Requires `platformSettings.manage`. |
+| DELETE | `/api/config/platform-settings/{key}` | Reset an instance setting to its configured or default value. Success **200** with the resolved setting; unknown key or a key not applicable at instance scope **404**; concurrent change **409**. |
+| PUT | `/api/integrations/{integrationId}/settings/{key}` | As the platform route, for an integration-scoped setting. |
+| DELETE | `/api/integrations/{integrationId}/settings/{key}` | As the platform reset, for an integration-scoped setting. |
 | GET | `/api/environments` | Inspect the current environment (authorization gated) |
 | GET | `/api/runtime-instances` | Inspect governed runtime capabilities (validated capability ids + kind) list (authorization gated) |
 | GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect governed runtime capabilities for one runtime (capabilityId + kind) (authorization gated) |
@@ -63,6 +67,25 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 - **Validation**: Cron via Cronos format; timezone via IANA IDs; target config must be valid JSON with required key for chosen `TargetJobType`.
 - **Delete** (`DELETE /api/schedules/{id}`): No body. Disabled schedules return **204** after removing the definition, assignments, and assignment state. Enabled schedules return **409** and are not removed. Missing ids return **404**. Historical `ScheduleRuns`, start-request idempotency keys, audit rows, and notification instances that cite the schedule id are retained. There is no tombstone and no undelete. `POST /api/schedules` still requires `IntegrationId`.
 - **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). There is no `schedule.delete` permission. Create, edit, enable, and disable are not audited. Successful delete appends `schedule.deleted`; an authorized attempt on an enabled schedule appends `schedule.delete_rejected`. Unknown ids and unauthorized callers write neither.
+
+## Platform and integration settings API
+
+Each change to a setting (`PUT` and `DELETE` on `/api/config/platform-settings/{key}` and `/api/integrations/{integrationId}/settings/{key}`) is one audited unit: the setting row, the secret a sensitive setting owns, the secret store's own evidence and the audit rows commit together or not at all. See the [AUD-1.4 record](../01-architecture/transitions/audit-hardening/aud1-4-configuration-lifecycle-record.md).
+
+| Outcome | Status | Notes |
+|---|---|---|
+| Changed | **200** | The body is the setting as it resolves when the response is read. A concurrent writer's later value can appear in it; it is not a snapshot of what this request produced. The audit row records what this request did. |
+| Identical value (`PUT`) | **200** | The stored value already equals the submitted one: nothing is written, the row version does not change and no audit row is recorded. A stale `rowVersionBase64` is still a **409** first, even when the value is identical. |
+| Reset of an absent override (`DELETE`) | **200** | Nothing is removed and nothing is recorded; the body is the setting's current resolved value. |
+| Concurrent change (`PUT` or `DELETE`) | **409** | A stale row version, a lost first-insert race, or an override removed by another request between this request's read and its delete. Nothing this request stored survives. `DELETE` returns 409 here as `PUT` always did; it no longer surfaces as an unhandled error. |
+| Invalid request (`PUT`) | **400** | Unknown key, not editable, a payload that does not parse, a value that is not an allowed option, or the notification safety check. Nothing is changed and no row is recorded. A missing or invalid `rowVersionBase64` for an existing override is also **400**. |
+| Unknown setting, or not applicable at the route's scope (`DELETE`) | **404** | |
+| Not permitted | **403** | `platformSettings.manage`, or the integration manage permission. |
+| Commit could be neither confirmed nor ruled out | **500** `code: outcome_unknown`, `operationEventId` | The change and its audit rows are together committed or together absent. The client reloads before trying again. |
+| Commit confirmed, response could not be read back | **500** `code: committed_result_unavailable`, `operationEventId` | The change is applied, including when the commit was acknowledged directly and only the response read failed. The client reloads and does not repeat the request. |
+| Programming error of the audited write | **500** | Never a 400 or 409. |
+
+A malformed stored value of an ordinary setting can still be reset: the reset is recorded without a previous value. The audit rows of a setting change carry values only as the setting's definition allows (design gate §12.3): a sensitive setting never; an ordinary setting only when its definition declares it, or its shape bounds it. The sender address (`Notifications.Email.FromAddress`) records both values; the SMTP username (`Notifications.Email.SmtpUser`) records the change by name only.
 
 ## Recovery API (Epic 31)
 
