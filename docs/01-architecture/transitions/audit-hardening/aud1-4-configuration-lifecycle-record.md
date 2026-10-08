@@ -57,7 +57,7 @@ The product owner approved the four orientation recommendations. They are record
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
-| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | Not started. Independent review |
+| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented (§10); the integration delete (work packages 3 to 4b), the owner ruling it waits on (H1) and the closing documentation are not started. Independent review |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
@@ -531,5 +531,72 @@ Not rerun: the full unit and integration projects (the filtered runs cover every
 
 ### 9.10 Closure
 
-Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1, L2, L3 and L5 are corrected and validated; L4 and DF1 to DF5 are carried forward without code. Slice 3 (schedule delete and integration delete, D-4) has not started; its preparation is in the commit report.
+Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1, L2, L3 and L5 are corrected and validated; L4 and DF1 to DF5 are carried forward without code. Slice 3 (schedule delete and integration delete, D-4) was not started when this section was written; its progress is in §10.
+
+## 10. Slice 3: schedule and integration delete (in progress)
+
+Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete (D-4), its owner ruling on the cleanup of overrides whose definition is unavailable (H1), the integration settings lock and the closing documentation remain, and nothing below claims otherwise. Independent review of slice 3 has not happened.
+
+| Work package | Scope | Status |
+|---|---|---|
+| 1 | Catalog schemas and typed producers for `schedule.deleted` (W1) and `schedule.delete_rejected` (W3) | **Done** (§10.1) |
+| 2 | Schedule hard-delete as one audited unit; typed not-found; controller exception mapping | **Done** (§10.2 to §10.4) |
+| 3 | The integration row lock in the integration settings writers and in the three blocker writers | Not started |
+| 4a, 4b | The integration delete as one audited unit, with the settings and secret cleanup (waits on the H1 ruling) | Not started |
+| 5 | `docs/04-api/contracts.md` for both deletes and the closing record | Not started |
+
+### 10.1 Catalog and producers
+
+Both actions were declared by AUD-1.0 as legacy-bridge entries. They now carry detail schemas and typed producers (`AuditEvents.ScheduleDeleted`, `AuditEvents.ScheduleDeleteRejected`); no action was added and the action names moved into `AuditActionNames`.
+
+| Action | Class | Target | Related | Fields |
+|---|---|---|---|---|
+| `schedule.deleted` | W1, primary, Configuration, standard, basis `change` | `schedule`: the schedule id | the schedule, and its resource context | `name` (name snapshot), `integrationId` (optional), `assignmentsRemoved` (count) |
+| `schedule.delete_rejected` | W3 attempt, Configuration, standard, outcome `rejected` | `schedule`: the schedule id | as above | `name`, `integrationId` (optional), `reason` (closed set: `enabled`) |
+
+The recurrence, the target configuration and any free text have no field. A resource context id longer than the audit column is left out of the related reference instead of failing the row. The legacy `Details` text and its `succeeded` and `rejected` outcome labels are gone from this path.
+
+### 10.2 The delete as an audited unit
+
+`SqlScheduleManagementService.DeleteScheduleAsync` is one `IAuditedUnitOfWork.ExecuteAsync` with `AuditActor.CurrentPrincipal`. The unit owns the execution strategy and the transaction; the service no longer opens either, and no longer appends a legacy record after the commit. Inside the attempt, in this order: the unit's operation lock, the ownership gate (as before, so it still serializes with enable), the schedule row lock (`GetByIdForUpdateAsync`), the removal of the states, assignments and definition, then the primary row. Unchanged: the controller's `schedule.manage` check, the service's refusal of a missing actor before anything is read, the physical deletion, and the retention of history (`ScheduleRuns`, start-request idempotency keys, notification instances and earlier audit rows keep the dangling schedule id).
+
+| Case | Behaviour |
+|---|---|
+| Deleted | The graph removal and `schedule.deleted` commit together. HTTP 204 |
+| Missing | The attempt declares a no-op and stages nothing. `ScheduleNotFoundException`, HTTP 404 |
+| Enabled | The attempt declares a no-op, so nothing changes. A best-effort W3 `schedule.delete_rejected` row of the same principal is then written on its own context; a failure to write it is logged and never changes the refusal. `ScheduleDeleteRejectedException`, HTTP 409 |
+| Audit insert fails, or any failure inside the attempt | Everything rolls back: the definition, assignments and states remain and no row exists |
+| Lost acknowledgement after a real commit | The unit verifies the commit from the primary row (`EventId` equal to the operation event id) under the operation lock and reconstructs success from that row alone. The schedule is gone by design, and its absence is never read as a failed or missing delete. The attempt is not run again, so there is no false 404 |
+| Verified rollback | One rerun with the same operation event id. Its not-found and refusal results are genuine |
+| Verification unavailable, lock not granted | `outcome_unknown` (HTTP 500 with `code` and `operationEventId`); the delete and its row are together committed or together absent |
+| Two independent deletes of one schedule | The second waits on the gate and the row lock, then finds nothing: a genuine 404. One primary row |
+
+There is no response read after a schedule delete, so `committed_result_unavailable` cannot occur here. Without the unit the service refuses a delete with `AuditInvariantException` rather than deleting unaudited.
+
+### 10.3 Exception mapping
+
+`SchedulesController.Delete` no longer catches `InvalidOperationException`. It maps `UnauthorizedAccessException` to 403, `ScheduleDeleteRejectedException` to 409 and the new `ScheduleNotFoundException` (a subclass of `InvalidOperationException`, so base-type callers still fail closed) to 404. Anything else, an `AuditInvariantException`, a transaction or infrastructure failure, or an unknown or unconfirmed commit, reaches the host's handler (AUD-1.3 D19), where the audit outcomes already carry their codes. Before this change any such failure read as a false 404.
+
+### 10.4 Tests and validation
+
+| Test | What it shows |
+|---|---|
+| `ScheduleDeleteAuditEventTests` (unit, 9) | Catalog class, basis, category, target and fields of both actions; no field can carry the recurrence or free text; producer output and related references; what the schema refuses; the longest stored values fit; an oversized context id is left out |
+| `ScheduleDeleteTests` (unit, adapted, plus 5 new) | The previous behaviours on the recording unit, with the event fields; the gate is taken inside the unit and before anything is staged; a lost acknowledgement runs the attempt once; an unknown outcome; no unit is an audit invariant; a failed rejection row leaves the 409 unchanged |
+| `ScheduleServiceSharesTheUnitContextTests` (unit, 3) | With the production registrations (`AddApperturePersistence`, `AddAppertureAuditRecorder`, `AddSchedulePersistence`, `AddAppertureIntegrationWorkflows`, `AddAppertureGovernance`), the schedule service's unit, repository, ownership gate and integration repository each hold the scope's one `AppertureDbContext`; the W3 writer builds its own context from options; scopes do not share |
+| `SchedulesControllerTests` (unit, adapted, plus 2 new) | 204, 403, 404 for the typed not-found, 409; an audit invariant, a transaction or infrastructure error, `outcome_unknown`, `committed_result_unavailable` and `operation_not_completed` are never turned into a 404 |
+| `ScheduleDeleteAuditSqlServerTests` (SQL Server, 12) | Full graph removal with history preserved and exactly one primary row (actor, category, target, schedule and context references, correlation); the primary row carries the operation event id; an enabled schedule gives one rejection row and removes nothing; an unwritable rejection row leaves the 409; a typed not-found records nothing; audit insert failure rolls everything back; a lost acknowledgement is reported as success with one attempt and a missing schedule; a confirmed rollback reruns once; unknown outcome committed and not committed; the operation lock held by another session; two concurrent deletes commit one row and the loser is a 404 |
+| `ScheduleDeleteSqlServerTests` (SQL Server, 8, existing) | The previous graph, history and race tests, now through the real unit with the actor seeded |
+
+Validation (real SQL Server, `apperture-test-sql`, `APPERTURE_REQUIRE_SQL_TESTS=1`, credentials read from `.env` into the process environment only, `--artifacts-path artifacts/aud14s3 -m:1`):
+
+| Command | Result |
+|---|---|
+| `Apperture.UnitTests` filtered to `Scheduling`, `ResourceContexts`, `Audit` (catalog and schemas included), `SchedulesController`, `Epic36MultiHostScheduler` and `IntegrationDeleteReferentialLifecycle` | 668 / 668 passed |
+| `Apperture.IntegrationTests` filtered to `ScheduleDeleteAuditSqlServerTests`, `ScheduleDeleteSqlServerTests`, `ResourceOwnershipMoveConcurrencySqlServerTests`, `ResourceOwnershipMutationGateSqlServerTests` and `ResourceOwnershipLockingSqlServerTests` | 35 / 35 passed |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `dotnet build Apperture.slnx` | succeeded, 0 errors |
+
+Not rerun: the full unit and integration projects. Not changed: the integration delete, the integration settings writers, the blocker writers and secret ownership.
+
 

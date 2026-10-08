@@ -160,4 +160,8 @@ public static class AuditActionNames
     public const string PlatformSettingSecretRetired = "platform.settings.secret.retired";
     public const string IntegrationSettingSecretStored = "integration.settings.secret.stored";
     public const string IntegrationSettingSecretRetired = "integration.settings.secret.retired";
+
+    // AUD-1.4 slice 3: schedule hard-delete. Both were declared by AUD-1.0 as legacy-bridge entries and are converted here.
+    public const string ScheduleDeleted = "schedule.deleted";
+    public const string ScheduleDeleteRejected = "schedule.delete_rejected";
 }

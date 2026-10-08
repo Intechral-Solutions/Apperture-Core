@@ -885,8 +885,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 integrationRepository,
                 db,
                 gate,
-                principal,
-                new NullAuditService());
+                principal);
 
             var resourceContextManagement = new ResourceContextManagementService(
                 resourceContexts,

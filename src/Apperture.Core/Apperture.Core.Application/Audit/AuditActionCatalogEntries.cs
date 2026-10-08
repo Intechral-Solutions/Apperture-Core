@@ -1870,9 +1870,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Schedule,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ScheduleDeleted,
             IntroducedIn = "45f110aa",
             IntroducedAfterEpic37Migration = true,
-            Writer = "SqlScheduleManagementService.cs:377",
+            Writer = "SqlScheduleManagementService.cs",
         },
         new()
         {
@@ -1882,9 +1883,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Schedule,
             Basis = AuditBases.Attempt,
             WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ScheduleDeleteRejected,
             IntroducedIn = "45f110aa",
             IntroducedAfterEpic37Migration = true,
-            Writer = "SqlScheduleManagementService.cs:374",
+            Writer = "SqlScheduleManagementService.cs",
         },
         new()
         {

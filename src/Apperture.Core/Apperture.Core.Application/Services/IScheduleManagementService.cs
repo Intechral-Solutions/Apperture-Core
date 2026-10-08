@@ -83,9 +83,13 @@ public interface IScheduleManagementService
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">No authenticated actor.</exception>
     /// <exception cref="ScheduleDeleteRejectedException">The schedule is still enabled.</exception>
-    /// <exception cref="InvalidOperationException">The schedule does not exist.</exception>
+    /// <exception cref="ScheduleNotFoundException">The schedule does not exist.</exception>
     /// <remarks>
-    /// The default throws so in-memory test doubles keep compiling. The production service implements the delete.
+    /// <para>The production delete is one audited unit (AUD-1.4): the removal and its <c>schedule.deleted</c> row commit together
+    /// or not at all, and an uncertain commit is verified and either reconstructed as success or reported as
+    /// <c>outcome_unknown</c>. A refusal for an enabled schedule is a separate best-effort <c>schedule.delete_rejected</c> row.
+    /// Failures of the unit itself are not "not found" and are not <see cref="ScheduleNotFoundException"/>.</para>
+    /// <para>The default throws so in-memory test doubles keep compiling. The production service implements the delete.</para>
     /// </remarks>
     ValueTask DeleteScheduleAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("DeleteScheduleAsync is not implemented by this schedule service.");

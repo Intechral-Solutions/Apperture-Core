@@ -77,8 +77,7 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             integrationRepository,
             _db,
             new SqlResourceOwnershipMutationGate(_db),
-            new NullPrincipalContext(),
-            new NullAuditService());
+            new NullPrincipalContext());
 
         var recordingResourceContextRepository = new RecordingResourceContextRepository(new SqlResourceContextRepository(_db), _tracker);
         var recordingResourceContexts = new ResourceContextService(recordingResourceContextRepository, TimeProvider.System);
@@ -92,8 +91,7 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             integrationRepository,
             _db,
             Gate,
-            new NullPrincipalContext(),
-            new NullAuditService());
+            new NullPrincipalContext());
     }
 
     private ManagementServiceTestHarness.RecordingResourceOwnershipMutationGate Gate { get; }

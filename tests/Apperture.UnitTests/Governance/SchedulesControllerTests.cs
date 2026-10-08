@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Microsoft.AspNetCore.Http;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -321,12 +322,48 @@ public sealed class SchedulesControllerTests
     [Fact]
     public async Task Delete_WhenMissing_Returns404()
     {
-        var scheduleManagement = new DeleteStub { Error = new InvalidOperationException("Schedule sch-1 not found.") };
+        var scheduleManagement = new DeleteStub { Error = new ScheduleNotFoundException(new ScheduleId("missing")) };
         var controller = NewController(scheduleManagement, canManage: true);
 
         var result = await controller.Delete("missing", CancellationToken.None);
 
         result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task Delete_WhenTheServiceDeniesTheActor_Returns403()
+    {
+        var scheduleManagement = new DeleteStub { Error = new UnauthorizedAccessException("No authenticated actor.") };
+        var controller = NewController(scheduleManagement, canManage: true);
+
+        var result = await controller.Delete("sch-1", CancellationToken.None);
+
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task Delete_NeverMapsAnAuditInvariantOrAnInfrastructureFailureToNotFound()
+    {
+        // AUD-1.3 D19: a programming error of the audited write, a transaction failure and an unconfirmed commit are not
+        // "the schedule does not exist". They reach the host's handler (500) with their own codes.
+        var failures = new Exception[]
+        {
+            new AuditInvariantException("The audited operation expected a 'schedule.deleted' row and staged none."),
+            new InvalidOperationException("The ownership mutation gate must be acquired inside an already-open transaction."),
+            new ObjectDisposedException("AppertureDbContext"),
+            new AuditOutcomeUnknownException("evt-1"),
+            new AuditCommittedResultUnavailableException("evt-1", new InvalidOperationException("read failed")),
+            new AuditOperationNotCompletedException("evt-1"),
+        };
+
+        foreach (var failure in failures)
+        {
+            var controller = NewController(new DeleteStub { Error = failure }, canManage: true);
+
+            var act = async () => await controller.Delete("sch-1", CancellationToken.None);
+
+            (await act.Should().ThrowAsync<Exception>($"{failure.GetType().Name} must not be a 404")).Which.Should().BeSameAs(failure);
+        }
     }
 
     private static SchedulesController NewController(IScheduleManagementService schedules, bool canManage) =>

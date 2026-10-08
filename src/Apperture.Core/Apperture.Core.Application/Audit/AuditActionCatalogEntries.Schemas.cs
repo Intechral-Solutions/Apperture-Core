@@ -745,4 +745,23 @@ internal static class AuditDetailSchemas
         IdField("key"),
         EnumField("reason", true, "cleared", "reset"),
     ]);
+
+    // ---- Schedule hard-delete (AUD-1.4 slice 3) ----
+    // The schedule is the event's target and its related schedule reference, so the id is not repeated here. The name is a
+    // snapshot: the schedule no longer exists once the row is written. Neither the recurrence nor the target configuration is
+    // recorded.
+
+    internal static readonly AuditDetailSchema ScheduleDeleted = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        CountField("assignmentsRemoved"),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleDeleteRejected = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        EnumField("reason", true, "enabled"),
+    ]);
 }

@@ -108,8 +108,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             _db,
             ownershipGate,
-            new FixedPrincipalContext(),
-            Mock.Of<IAuditService>());
+            new FixedPrincipalContext());
 
         Service = new ResourceOwnershipMoveService(
             new FixedPrincipalContext(),

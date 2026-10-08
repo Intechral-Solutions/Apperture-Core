@@ -122,8 +122,7 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             IntegrationRepository,
             Db,
             ownershipGate,
-            Mock.Of<IPrincipalContext>(),
-            Mock.Of<IAuditService>());
+            Mock.Of<IPrincipalContext>());
 
         // Task 5 (CTX-3A Plan 4, §5.3): RunQueryService over the same DbContext, so
         // RunHistoricalSnapshotFilteringTests exercises the production server-side filter

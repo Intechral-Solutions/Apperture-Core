@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -12,6 +13,7 @@ using Apperture.Core.Domain.Workflow;
 using Apperture.Management.Api.Controllers;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using Apperture.UnitTests.Integration;
 using Apperture.UnitTests.ResourceContexts;
 using FluentAssertions;
@@ -107,17 +109,20 @@ public sealed class ScheduleDeleteTests
         (await h.Db.NotificationInstances.SingleAsync()).ScheduleId.Should().Be(schedule.Id.Value);
         (await h.Db.AuditLogs.SingleAsync()).Action.Should().Be("scheduler.schedule.dispatched");
 
-        var deleted = h.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.ScheduleDeleted).Subject;
-        deleted.Outcome.Should().Be("succeeded");
-        deleted.ScheduleId.Should().Be(schedule.Id.Value);
-        deleted.ResourceContextId.Should().Be(ResourceContextIds.SharedValue);
-        deleted.Details.Should().Contain("Nightly").And.NotContain("15 3");
-        h.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.ScheduleDeleteRejected);
+        var deleted = h.Audit.Single(AuditActionNames.ScheduleDeleted);
+        deleted.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        deleted.Target.Should().Be(new AuditTarget(AuditTargetTypes.Schedule, schedule.Id.Value));
+        deleted.Related.ScheduleId.Should().Be(schedule.Id.Value);
+        deleted.Related.ResourceContextId.Should().Be(ResourceContextIds.SharedValue);
+        deleted.Fields["name"].Should().Be("Nightly");
+        deleted.Fields["assignmentsRemoved"].Should().Be(1);
+        deleted.Fields.Should().NotContainKey("integrationId");
+        string.Join("|", deleted.Fields.Values.Select(v => v?.ToString())).Should().NotContain("15 3", "the recurrence is never recorded");
+        h.Audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleted }, "exactly one primary row and no rejection row");
 
         var again = async () => await h.Schedules.DeleteScheduleAsync(schedule.Id);
-        await again.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
-        h.Audit.Records.Count(r => r.Action == ActionConstants.ScheduleDeleted).Should().Be(1);
-        h.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.ScheduleDeleteRejected);
+        await again.Should().ThrowAsync<ScheduleNotFoundException>().WithMessage("*not found*");
+        h.Audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleted });
 
         var act = async () => await h.Repository.UpdateStateAsync(assignment.Id.Value, new ScheduleStateUpdate(null, DateTimeOffset.UtcNow, "Succeeded", null, null));
         await act.Should().NotThrowAsync();
@@ -138,11 +143,30 @@ public sealed class ScheduleDeleteTests
             .WithMessage(ScheduleDeleteRejectedException.EnabledMessage);
         (await h.Db.ScheduleDefinitions.SingleAsync()).Enabled.Should().BeTrue();
         (await h.Db.ScheduleAssignments.AnyAsync(a => a.Id == assignment.Id.Value)).Should().BeTrue();
-        var rejected = h.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.ScheduleDeleteRejected).Subject;
-        rejected.Outcome.Should().Be("rejected");
-        rejected.ScheduleId.Should().Be(schedule.Id.Value);
-        rejected.Details.Should().Contain("enabled").And.NotContain("15 3");
-        h.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.ScheduleDeleted);
+        var rejected = h.Audit.Single(AuditActionNames.ScheduleDeleteRejected);
+        rejected.OutcomeCode.Should().Be(AuditOutcomeCodes.Rejected);
+        rejected.Target.Should().Be(new AuditTarget(AuditTargetTypes.Schedule, schedule.Id.Value));
+        rejected.Related.ScheduleId.Should().Be(schedule.Id.Value);
+        rejected.Fields["reason"].Should().Be("enabled");
+        rejected.Fields["name"].Should().Be("Nightly");
+        string.Join("|", rejected.Fields.Values.Select(v => v?.ToString())).Should().NotContain("15 3");
+        h.Audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleteRejected });
+        h.Audit.Unit.Staged.Should().BeEmpty("the attempt declared a no-op and staged nothing");
+    }
+
+    [Fact]
+    public async Task A_failed_rejection_row_does_not_change_the_refusal()
+    {
+        await using var h = new Harness();
+        var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "15 3 * * *");
+        await h.Schedules.EnableAsync(schedule.Id);
+        h.Audit.FailWrites = true;
+
+        var act = async () => await h.Schedules.DeleteScheduleAsync(schedule.Id);
+
+        await act.Should().ThrowAsync<ScheduleDeleteRejectedException>().WithMessage(ScheduleDeleteRejectedException.EnabledMessage);
+        h.Audit.Actions.Should().BeEmpty("the W3 write failed and nothing else was recorded");
+        (await h.Db.ScheduleDefinitions.SingleAsync()).Enabled.Should().BeTrue();
     }
 
     [Fact]
@@ -152,8 +176,9 @@ public sealed class ScheduleDeleteTests
 
         var act = async () => await h.Schedules.DeleteScheduleAsync(new ScheduleId("missing"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
-        h.Audit.Records.Should().BeEmpty();
+        await act.Should().ThrowAsync<ScheduleNotFoundException>().WithMessage("*not found*");
+        h.Audit.Actions.Should().BeEmpty();
+        h.Audit.Unit.Staged.Should().BeEmpty();
     }
 
     [Fact]
@@ -166,7 +191,8 @@ public sealed class ScheduleDeleteTests
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         (await h.Db.ScheduleDefinitions.AnyAsync(s => s.Id == schedule.Id.Value)).Should().BeTrue();
-        h.Audit.Records.Should().BeEmpty();
+        h.Audit.Actions.Should().BeEmpty();
+        h.Audit.Unit.Operations.Should().BeEmpty("a missing actor fails before the unit opens");
         h.Gate.Acquires.Should().Be(0);
     }
 
@@ -203,7 +229,63 @@ public sealed class ScheduleDeleteTests
         var row = await h.Db.ScheduleDefinitions.SingleAsync();
         row.Enabled.Should().BeTrue();
         (await h.Db.ScheduleAssignments.CountAsync()).Should().Be(1);
-        h.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.ScheduleDeleteRejected);
+        h.Audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleteRejected });
+    }
+
+    [Fact]
+    public async Task The_gate_is_taken_inside_the_unit_before_anything_is_staged()
+    {
+        await using var h = new Harness();
+        var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
+        var observing = new Harness.ObservingGate(h.Audit);
+
+        await h.WithGate(observing).DeleteScheduleAsync(schedule.Id);
+
+        observing.Acquires.Should().Be(1);
+        observing.OperationsWhenAcquired.Should().Be(1, "the gate is acquired inside the audited unit, after its operation lock");
+        observing.StagedWhenAcquired.Should().Be(0, "the primary row is staged after the gate and the row lock");
+        h.Audit.Unit.Operations.Should().ContainSingle().Which.Operation.PrimaryAction.Should().Be(AuditActionNames.ScheduleDeleted);
+    }
+
+    [Fact]
+    public async Task A_lost_acknowledgement_reconstructs_the_delete_without_running_it_twice()
+    {
+        await using var h = new Harness();
+        var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
+        await h.Schedules.AssignToRuntimePlaneAsync(schedule.Id, new RuntimePlaneId("local"), null);
+        h.Audit.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Lost;
+
+        await h.Schedules.DeleteScheduleAsync(schedule.Id);
+
+        h.Audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleted });
+        h.Audit.Unit.Operations.Should().ContainSingle("the attempt ran once; the result came from the committed row");
+        (await h.Db.ScheduleDefinitions.AnyAsync(s => s.Id == schedule.Id.Value)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_unknown_outcome_is_reported_as_unknown()
+    {
+        await using var h = new Harness();
+        var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
+        h.Audit.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Unknown;
+
+        var act = async () => await h.Schedules.DeleteScheduleAsync(schedule.Id);
+
+        await act.Should().ThrowAsync<AuditOutcomeUnknownException>();
+        h.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Without_the_audited_unit_a_delete_is_an_audit_invariant_not_a_missing_schedule()
+    {
+        await using var h = new Harness();
+        var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
+        var withoutUnit = h.WithoutUnit();
+
+        var act = async () => await withoutUnit.DeleteScheduleAsync(schedule.Id);
+
+        await act.Should().ThrowAsync<AuditInvariantException>();
+        (await h.Db.ScheduleDefinitions.AnyAsync(s => s.Id == schedule.Id.Value)).Should().BeTrue();
     }
 
     [Fact]
@@ -224,7 +306,7 @@ public sealed class ScheduleDeleteTests
     {
         using var integrations = new IntegrationLifecycleTestHarness();
         var integration = await integrations.CreateIntegrationAsync();
-        var audit = new Harness.RecordingAudit();
+        var audit = new AuditRecording();
         var schedules = new SqlScheduleManagementService(
             new SqlScheduleRepository(integrations.Db),
             new Harness.StubClaimOptions(),
@@ -234,6 +316,7 @@ public sealed class ScheduleDeleteTests
             integrations.Db,
             new SqlResourceOwnershipMutationGate(integrations.Db),
             new Harness.FixedPrincipal(),
+            audit,
             audit);
         var schedule = await schedules.CreateScheduleAsync(new ScheduleDefinition(
             new ScheduleId("sch-attached"),
@@ -267,7 +350,7 @@ public sealed class ScheduleDeleteTests
         (await integrations.Db.ScheduleRuns.SingleAsync()).ScheduleId.Should().Be(schedule.Id.Value);
         integrations.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.IntegrationDeleted);
         integrations.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.ScheduleDeleted);
-        audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.ScheduleDeleted);
+        audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleted });
     }
 
     private sealed class Harness : IAsyncDisposable
@@ -295,7 +378,7 @@ public sealed class ScheduleDeleteTests
             });
             Db.SaveChanges();
 
-            Audit = new RecordingAudit();
+            Audit = new AuditRecording();
             Gate = new CountingGate();
             Repository = new SqlScheduleRepository(Db);
             ResourceContexts = new ResourceContextService(new SqlResourceContextRepository(Db), TimeProvider.System);
@@ -303,13 +386,24 @@ public sealed class ScheduleDeleteTests
         }
 
         public AppertureDbContext Db { get; }
-        public RecordingAudit Audit { get; }
+        public AuditRecording Audit { get; }
         public CountingGate Gate { get; }
         public SqlScheduleRepository Repository { get; }
         public IResourceContextService ResourceContexts { get; }
         public IScheduleManagementService Schedules { get; }
 
         public IScheduleManagementService WithGate(IResourceOwnershipMutationGate gate) => Build(gate);
+
+        public IScheduleManagementService WithoutUnit() =>
+            new SqlScheduleManagementService(
+                Repository,
+                new StubClaimOptions(),
+                TimeProvider.System,
+                ResourceContexts,
+                new SqlIntegrationRepository(Db),
+                Db,
+                Gate,
+                _principal);
 
         public async Task<ScheduleDefinition> CreateDisabledStandaloneAsync(string name, string cron, ResourceContextId? contextId = null)
         {
@@ -322,8 +416,7 @@ public sealed class ScheduleDeleteTests
                 new SqlIntegrationRepository(Db),
                 Db,
                 new SqlResourceOwnershipMutationGate(Db),
-                new FixedPrincipal(new FixedActor()),
-                new RecordingAudit());
+                new FixedPrincipal(new FixedActor()));
             return await setup.CreateScheduleAsync(new ScheduleDefinition(
                 new ScheduleId($"s-{Guid.NewGuid():N}"),
                 name,
@@ -349,6 +442,7 @@ public sealed class ScheduleDeleteTests
                 Db,
                 gate,
                 _principal,
+                Audit,
                 Audit);
 
         internal sealed class CountingGate : IResourceOwnershipMutationGate
@@ -383,18 +477,20 @@ public sealed class ScheduleDeleteTests
             }
         }
 
-        internal sealed class RecordingAudit : IAuditService
+        /// <summary>Records how far the audited unit had got when the gate was acquired.</summary>
+        internal sealed class ObservingGate(AuditRecording audit) : IResourceOwnershipMutationGate
         {
-            private readonly List<AuditRecord> _records = new();
-            public IReadOnlyList<AuditRecord> Records => _records;
-            public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+            public int Acquires { get; private set; }
+            public int OperationsWhenAcquired { get; private set; }
+            public int StagedWhenAcquired { get; private set; }
+
+            public ValueTask AcquireAsync(CancellationToken cancellationToken = default)
             {
-                _records.Add(record);
+                Acquires++;
+                OperationsWhenAcquired = audit.Unit.Operations.Count;
+                StagedWhenAcquired = audit.Unit.Operations.Sum(o => o.Staged.Count);
                 return ValueTask.CompletedTask;
             }
-            public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-            public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         }
 
         internal sealed class StubClaimOptions : ISchedulerClaimOptions
