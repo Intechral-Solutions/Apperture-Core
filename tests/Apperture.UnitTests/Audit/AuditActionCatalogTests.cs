@@ -49,6 +49,13 @@ public sealed partial class AuditActionCatalogTests
         "execution.operation_item.retry_blocked",
     ];
 
+    /// <summary>Actions AUD-1.4 adds (secret-store events, recorded on the configuration entity that owns the secret).</summary>
+    private static readonly string[] Aud14Additions =
+    [
+        "entra.tenant_registration.client_secret.stored",
+        "entra.tenant_registration.client_secret.retired",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -56,10 +63,38 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.2").Select(d => d.Action).Should().BeEquivalentTo(Aud12Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud13Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.3").Select(d => d.Action).Should().BeEquivalentTo(Aud13Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 and AUD-1.3 add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void No_action_targets_a_secret_because_a_secrets_store_id_is_the_reference_its_owner_holds()
+    {
+        // Gate §12.3 never records secret references, and the §22 ruling on secret audit identifiers targets the owning
+        // configuration entity instead. The secret target type stays in the closed vocabulary, unused.
+        AuditTargetTypes.All.Should().Contain(AuditTargetTypes.Secret);
+        Catalog.Definitions.Should().NotContain(d => d.TargetType == AuditTargetTypes.Secret);
+    }
+
+    [Fact]
+    public void Recorder_secret_events_target_their_owner_and_can_carry_only_ids_and_closed_values()
+    {
+        var secretEvents = Catalog.Definitions.Where(d => d.Category == AuditCategories.Secrets && d.Details is not null).ToList();
+        secretEvents.Select(d => d.Action).Should().Contain(Aud14Additions);
+        foreach (var definition in secretEvents)
+        {
+            definition.WriteClass.Should().Be(AuditWriteClass.RequiredMutation, definition.Action);
+            definition.Severity.Should().Be(AuditSeverities.Elevated, $"{definition.Action}: a change to a secret is elevated (§11.3)");
+            definition.TargetType.Should().NotBeNull(definition.Action).And.NotBe(AuditTargetTypes.Secret);
+
+            // No free text: an operator cannot type a value into a secret event, and an id names the owner, not the secret.
+            definition.Details!.Fields.Should().OnlyContain(
+                f => f.Kind == AuditFieldKind.Id || f.Kind == AuditFieldKind.Enum || f.Kind == AuditFieldKind.Flag || f.Kind == AuditFieldKind.Count,
+                definition.Action);
+        }
     }
 
     [Fact]

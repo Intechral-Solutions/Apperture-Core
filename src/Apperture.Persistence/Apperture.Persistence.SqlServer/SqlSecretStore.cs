@@ -1,6 +1,7 @@
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Security.Secrets.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -8,6 +9,17 @@ namespace Apperture.Persistence.SqlServer;
 /// SQL-backed ISecretStore implementation with envelope encryption via ISecretProtector.
 /// Stores descriptor metadata and encrypted payloads in the shared persistence schema.
 /// </summary>
+/// <remarks>
+/// <para><b>Transaction participation</b> (AUD-1.4; design gate §13.4 and its §22 ruling on the secret store). Each change and
+/// its <c>SecretAudits</c> row are saved by one call, so they commit together. When a transaction is already open on the
+/// context, such as an audited unit's, the store joins it: it neither begins nor commits one, and the change commits or rolls
+/// back with its owner, whose unit handles verification. Without one, each operation runs in a transaction of its own inside
+/// the execution strategy.</para>
+/// <para>A failed operation leaves nothing it added or changed tracked on the shared context, so no later save can apply
+/// it.</para>
+/// <para><c>SecretAudits</c> is the store's own evidence. It is not the audit log: the configuration change that owns a
+/// secret records the actor and the Secrets-category row through the recorder.</para>
+/// </remarks>
 public sealed class SqlSecretStore : ISecretStore
 {
     private readonly AppertureDbContext _db;
@@ -26,20 +38,24 @@ public sealed class SqlSecretStore : ISecretStore
 
     public async ValueTask<SecretDescriptor> CreateAsync(SecretCreateRequest request, CancellationToken cancellationToken = default)
     {
-        var id = Guid.NewGuid();
-        var entity = new SecretDescriptorEntity
+        SecretDescriptorEntity? created = null;
+        await ChangeAsync(async (touched, ct) =>
         {
-            Id = id,
-            Name = request.Name,
-            Provider = request.Provider,
-            MaterialType = (int)request.MaterialType,
-            State = (int)SecretState.Pending,
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-        _db.SecretDescriptors.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(entity.Id, null, "Create", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
-        return ToDescriptor(entity);
+            var entity = new SecretDescriptorEntity
+            {
+                Id = Guid.NewGuid(),
+                Name = request.Name,
+                Provider = request.Provider,
+                MaterialType = (int)request.MaterialType,
+                State = (int)SecretState.Pending,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            touched.Add(_db.SecretDescriptors.Add(entity));
+            AddAudit(touched, entity.Id, null, "Create");
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            created = entity;
+        }, cancellationToken).ConfigureAwait(false);
+        return ToDescriptor(created!);
     }
 
     public async ValueTask<SecretDescriptor?> GetAsync(SecretId secretId, CancellationToken cancellationToken = default)
@@ -59,84 +75,81 @@ public sealed class SqlSecretStore : ISecretStore
 
     public async ValueTask<string> AddVersionAsync(SecretId secretId, SecretMaterial material, CancellationToken cancellationToken = default)
     {
-        var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Secret {secretId} not found.");
-        var version = Guid.NewGuid().ToString("N")[..16];
         var payload = SerializeMaterial(material);
-        var keyId = "dpapi";
+        const string keyId = "dpapi";
         var protectedPayload = await _protector.ProtectAsync(payload, keyId, cancellationToken).ConfigureAwait(false);
-        var versionEntity = new SecretVersionEntity
+        string? added = null;
+        await ChangeAsync(async (touched, ct) =>
         {
-            SecretId = secretId.Value,
-            Version = version,
-            State = (int)SecretState.Pending,
-            ProtectedPayload = protectedPayload,
-            KeyId = keyId,
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-        _db.SecretVersions.Add(versionEntity);
-        descriptor.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, version, "AddVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
-        return version;
+            var descriptor = await FindDescriptorAsync(touched, secretId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Secret {secretId} not found.");
+            var version = Guid.NewGuid().ToString("N")[..16];
+            touched.Add(_db.SecretVersions.Add(new SecretVersionEntity
+            {
+                SecretId = secretId.Value,
+                Version = version,
+                State = (int)SecretState.Pending,
+                ProtectedPayload = protectedPayload,
+                KeyId = keyId,
+                CreatedAt = DateTimeOffset.UtcNow
+            }));
+            descriptor.UpdatedAt = DateTimeOffset.UtcNow;
+            AddAudit(touched, secretId.Value, version, "AddVersion");
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            added = version;
+        }, cancellationToken).ConfigureAwait(false);
+        return added!;
     }
 
     public async ValueTask ActivateVersionAsync(SecretId secretId, string version, CancellationToken cancellationToken = default)
     {
-        // EF Core SQL retry execution strategy does not allow user-initiated transactions
-        // unless the whole unit of work is wrapped inside the execution strategy.
-        var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
+        await ChangeAsync(async (touched, ct) =>
         {
-            await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false)
-                    ?? throw new InvalidOperationException($"Secret {secretId} not found.");
-                var versionEntity = await _db.SecretVersions.FindAsync([secretId.Value, version], cancellationToken).ConfigureAwait(false)
-                    ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
-                if (versionEntity.State != (int)SecretState.Pending)
-                    throw new InvalidOperationException($"Version {version} is not in Pending state.");
-                versionEntity.State = (int)SecretState.Active;
-                descriptor.ActiveVersion = version;
-                descriptor.State = (int)SecretState.Active;
-                descriptor.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                throw;
-            }
-
-            await AppendAuditAsync(secretId.Value, version, "ActivateVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+            var descriptor = await FindDescriptorAsync(touched, secretId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Secret {secretId} not found.");
+            var versionEntity = await FindVersionAsync(touched, secretId, version, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
+            if (versionEntity.State != (int)SecretState.Pending)
+                throw new InvalidOperationException($"Version {version} is not in Pending state.");
+            versionEntity.State = (int)SecretState.Active;
+            descriptor.ActiveVersion = version;
+            descriptor.State = (int)SecretState.Active;
+            descriptor.UpdatedAt = DateTimeOffset.UtcNow;
+            AddAudit(touched, secretId.Value, version, "ActivateVersion");
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisableAsync(SecretId secretId, CancellationToken cancellationToken = default)
     {
-        var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Secret {secretId} not found.");
-        descriptor.State = (int)SecretState.Disabled;
-        descriptor.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, null, "Disable", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
+        await ChangeAsync(async (touched, ct) =>
+        {
+            var descriptor = await FindDescriptorAsync(touched, secretId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Secret {secretId} not found.");
+            descriptor.State = (int)SecretState.Disabled;
+            descriptor.UpdatedAt = DateTimeOffset.UtcNow;
+            AddAudit(touched, secretId.Value, null, "Disable");
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask RevokeVersionAsync(SecretId secretId, string version, CancellationToken cancellationToken = default)
     {
-        var versionEntity = await _db.SecretVersions.FindAsync([secretId.Value, version], cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
-        versionEntity.State = (int)SecretState.Revoked;
-        var descriptor = await _db.SecretDescriptors.FindAsync([secretId.Value], cancellationToken).ConfigureAwait(false);
-        if (descriptor?.ActiveVersion == version)
+        await ChangeAsync(async (touched, ct) =>
         {
-            descriptor.ActiveVersion = null;
-            descriptor.UpdatedAt = DateTimeOffset.UtcNow;
-        }
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync(secretId.Value, version, "RevokeVersion", _auditActorProvider.GetActor(), "Success", cancellationToken).ConfigureAwait(false);
+            var versionEntity = await FindVersionAsync(touched, secretId, version, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Version {version} not found for secret {secretId}.");
+            versionEntity.State = (int)SecretState.Revoked;
+            var descriptor = await FindDescriptorAsync(touched, secretId, ct).ConfigureAwait(false);
+            if (descriptor?.ActiveVersion == version)
+            {
+                descriptor.ActiveVersion = null;
+                descriptor.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            AddAudit(touched, secretId.Value, version, "RevokeVersion");
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<SecretAuditPage> GetAuditAsync(SecretAuditQuery query, CancellationToken cancellationToken = default)
@@ -205,17 +218,79 @@ public sealed class SqlSecretStore : ISecretStore
         return result;
     }
 
-    private async Task AppendAuditAsync(Guid secretId, string? version, string eventType, string actor, string outcome, CancellationToken ct)
+    /// <summary>
+    /// Runs one change, which saves itself and its <c>SecretAudits</c> row in one call. Inside a transaction already open on the
+    /// context it joins that transaction and never begins, commits or retries one: the owner does. Otherwise it runs in a
+    /// transaction of its own inside the execution strategy.
+    /// </summary>
+    private async Task ChangeAsync(Func<List<EntityEntry>, CancellationToken, Task> change, CancellationToken cancellationToken)
     {
-        _db.SecretAudits.Add(new SecretAuditEntity
+        if (_db.Database.CurrentTransaction is not null || !_db.Database.IsRelational())
+        {
+            await TrackedAsync(change, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(
+            async ct =>
+            {
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+                await TrackedAsync(
+                    async (touched, inner) =>
+                    {
+                        await change(touched, inner).ConfigureAwait(false);
+                        await transaction.CommitAsync(inner).ConfigureAwait(false);
+                    },
+                    ct).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="change"/>; if it fails, stops tracking every entity it added, loaded or changed, so neither a later
+    /// save on the shared context nor a rerun sees a change that did not persist. A rerun reloads them.
+    /// </summary>
+    private static async Task TrackedAsync(Func<List<EntityEntry>, CancellationToken, Task> change, CancellationToken cancellationToken)
+    {
+        var touched = new List<EntityEntry>();
+        try
+        {
+            await change(touched, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            foreach (var entry in touched)
+                entry.State = EntityState.Detached;
+            throw;
+        }
+    }
+
+    private async Task<SecretDescriptorEntity?> FindDescriptorAsync(List<EntityEntry> touched, SecretId secretId, CancellationToken ct)
+    {
+        var entity = await _db.SecretDescriptors.FindAsync([secretId.Value], ct).ConfigureAwait(false);
+        if (entity is not null)
+            touched.Add(_db.Entry(entity));
+        return entity;
+    }
+
+    private async Task<SecretVersionEntity?> FindVersionAsync(List<EntityEntry> touched, SecretId secretId, string version, CancellationToken ct)
+    {
+        var entity = await _db.SecretVersions.FindAsync([secretId.Value, version], ct).ConfigureAwait(false);
+        if (entity is not null)
+            touched.Add(_db.Entry(entity));
+        return entity;
+    }
+
+    /// <summary>Adds the store's own evidence row, saved with the change it describes. It holds ids and the event type only.</summary>
+    private void AddAudit(List<EntityEntry> touched, Guid secretId, string? version, string eventType) =>
+        touched.Add(_db.SecretAudits.Add(new SecretAuditEntity
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = eventType,
             SecretId = secretId,
             Version = version,
-            Actor = actor,
-            Outcome = outcome
-        });
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-    }
+            Actor = _auditActorProvider.GetActor(),
+            Outcome = "Success"
+        }));
 }

@@ -651,4 +651,21 @@ internal static class AuditDetailSchemas
         IdField("runtimePlaneId", required: false),
         CountField("recoveredCount", required: false),
     ]);
+
+    // ---- AUD-1.4: secret-store events (Secrets category) ----
+    // The target and every id are the configuration entity that owns the secret (gate §22 ruling on secret audit
+    // identifiers). A secret's store id is the reference its owner holds, so no field carries it, and no field name can
+    // describe secret content (AuditDetailSchema.IsSensitiveFieldName).
+
+    internal static readonly AuditDetailSchema TenantRegistrationClientSecretStored = new(
+    [
+        IdField("registrationId"),
+        EnumField("change", true, "registration_created", "registration_updated"),
+    ]);
+
+    internal static readonly AuditDetailSchema TenantRegistrationClientSecretRetired = new(
+    [
+        IdField("registrationId"),
+        EnumField("reason", true, "replaced", "registration_deleted"),
+    ]);
 }

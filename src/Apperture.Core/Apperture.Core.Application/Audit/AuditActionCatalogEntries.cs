@@ -1291,6 +1291,35 @@ internal static class AuditActionCatalogEntries
             IntroducedAfterEpic37Migration = true,
             Writer = "ConfigEntraTenantsController.cs",
         },
+        // AUD-1.4 (gate §22 rulings on secret audit identifiers and secret-store transaction participation): the client
+        // secret a registration owns is stored and retired inside the registration change's unit, each recorded under the
+        // Secrets category on the registration. Neither the secret nor its store reference is recorded.
+        new()
+        {
+            Action = "entra.tenant_registration.client_secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.EntraTenantRegistration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.TenantRegistrationClientSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConfigEntraTenantsController.cs",
+        },
+        new()
+        {
+            Action = "entra.tenant_registration.client_secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.EntraTenantRegistration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.TenantRegistrationClientSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConfigEntraTenantsController.cs",
+        },
         new()
         {
             Action = "auth.sign_in_policy.updated",

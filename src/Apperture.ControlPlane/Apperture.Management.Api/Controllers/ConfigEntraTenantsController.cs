@@ -32,7 +32,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly ISecretResolver _secretResolver;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
-    private readonly ILogger<ConfigEntraTenantsController>? _logger;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
@@ -49,7 +48,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         IAuditEventWriter? auditEvents = null,
         ILogger<ConfigEntraTenantsController>? logger = null)
     {
-        _logger = logger;
+        _ = logger;
         _repository = repository;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -80,22 +79,14 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     }
 
     /// <summary>
-    /// Retires a client secret this registration owns and no longer names, outside any unit. Called only once it is known that
-    /// no committed registration row names it. Best effort: a failure leaves an unused secret and is logged, and never changes
-    /// the outcome of the registration change.
+    /// Inside the change's unit, retires the client secret this registration owns and is about to stop naming, and stages its
+    /// Secrets-category row. The secret store joins the unit's transaction (AUD-1.4), so the retirement commits or rolls back
+    /// with the change: nothing is retired for a change that does not commit.
     /// </summary>
-    private async Task RetireSecretAsync(string registrationId, string? secretRef)
+    private async Task RetireOwnedSecretAsync(IAuditedTransaction transaction, string registrationId, string? secretRef, string reason, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(secretRef))
-            return;
-        try
-        {
-            await _clientSecretProvisioner.TryDisableOwnedSecretAsync(registrationId, secretRef, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "An unused client secret of Entra registration {RegistrationId} could not be retired.", registrationId);
-        }
+        if (await _clientSecretProvisioner.TryDisableOwnedSecretAsync(registrationId, secretRef, ct).ConfigureAwait(false))
+            await transaction.StageAsync(AuditEvents.TenantRegistrationClientSecretRetired(registrationId, reason), ct);
     }
 
     [HttpGet]
@@ -146,19 +137,12 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (!TryParseAuthenticationContextId(body.AuthenticationContextId, out var authenticationContextId, out var contextError))
             return BadRequest(new { message = contextError });
 
-        // AUD-1.2: the secret store runs its own transaction, so the secret is stored first, outside the unit, under the
-        // registration id chosen here; the registration and its row then commit together. If nothing commits, the stored
-        // secret is retired. The secret itself is never recorded.
+        // A supplied secret is stored inside the unit under the registration id chosen here. The secret store joins the unit's
+        // transaction (AUD-1.4), so the secret, the registration naming it and their rows commit together, or none of them
+        // does. Neither the secret nor its reference is recorded.
         var registrationId = Guid.NewGuid().ToString("N");
-        string? secretRef = null;
-        if (!string.IsNullOrWhiteSpace(body.ClientSecret))
-        {
-            secretRef = await _clientSecretProvisioner
-                .StoreNewAsync(registrationId, body.ClientSecret, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var draft = new EntraInstanceRegistration
+        var secretSupplied = !string.IsNullOrWhiteSpace(body.ClientSecret);
+        EntraInstanceRegistration Draft(string? secretRef) => new()
         {
             Id = registrationId,
             DisplayName = body.DisplayName.Trim(),
@@ -175,43 +159,33 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             AllowGuestAccessRequests = body.AllowGuestAccessRequests
         };
 
-        EntraInstanceRegistration created;
-        var verifiedCommit = false;
-        try
-        {
-            created = await Unit.ExecuteAsync(
-                Operation(AuditActionNames.TenantRegistrationCreated),
-                async (transaction, ct) =>
-                {
-                    var added = await _repository.AddAsync(draft, ct);
-                    await transaction.StageAsync(
-                        AuditEvents.TenantRegistrationCreated(
-                            added.Id,
-                            added.DisplayName,
-                            added.ClientId,
-                            added.AzureTenantId,
-                            added.Enabled,
-                            clientAuthenticationReplaced: secretRef is not null,
-                            added.AllowMemberAccessRequests,
-                            added.AllowGuestAccessRequests),
-                        ct);
-                    return added;
-                },
-                async (_, ct) =>
-                {
-                    // Verified as committed: from here on the stored secret belongs to a committed registration.
-                    verifiedCommit = true;
-                    return await _repository.GetByIdAsync(registrationId, ct) ?? draft;
-                },
-                cancellationToken);
-        }
-        catch (Exception ex) when (secretRef is not null && !verifiedCommit && ex is not AuditOutcomeUnknownException)
-        {
-            // Nothing committed: retire the secret stored for it. An unknown outcome, or a failure after a verified commit,
-            // may name it, so it stays.
-            await RetireSecretAsync(registrationId, secretRef);
-            throw;
-        }
+        // A verified commit is the attempt that ran last, so this is the secret its row names.
+        string? storedSecretRef = null;
+        var created = await Unit.ExecuteAsync(
+            Operation(AuditActionNames.TenantRegistrationCreated),
+            async (transaction, ct) =>
+            {
+                storedSecretRef = secretSupplied
+                    ? await _clientSecretProvisioner.StoreNewAsync(registrationId, body.ClientSecret!, ct).ConfigureAwait(false)
+                    : null;
+                var added = await _repository.AddAsync(Draft(storedSecretRef), ct);
+                await transaction.StageAsync(
+                    AuditEvents.TenantRegistrationCreated(
+                        added.Id,
+                        added.DisplayName,
+                        added.ClientId,
+                        added.AzureTenantId,
+                        added.Enabled,
+                        clientAuthenticationReplaced: storedSecretRef is not null,
+                        added.AllowMemberAccessRequests,
+                        added.AllowGuestAccessRequests),
+                    ct);
+                if (storedSecretRef is not null)
+                    await transaction.StageAsync(AuditEvents.TenantRegistrationClientSecretStored(added.Id, "registration_created"), ct);
+                return added;
+            },
+            async (_, ct) => await _repository.GetByIdAsync(registrationId, ct) ?? Draft(storedSecretRef),
+            cancellationToken);
 
         var refreshed = await _repository.GetByIdAsync(created.Id, cancellationToken) ?? created;
         var dto = ToListItem(refreshed, DeploymentSecretPresent());
@@ -259,22 +233,15 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             return BadRequest(new { message = "rowVersionBase64 is not valid base64." });
         }
 
-        // The secret store runs its own transaction and cannot join the unit. A supplied secret is therefore stored as a new
-        // secret of its own, before the unit; the registration keeps resolving its current secret until the row naming the new
-        // one commits. Afterwards exactly one of them is unused and is retired: the previous one after a confirmed commit, the
-        // new one when nothing committed. After an unknown outcome either may be in use, so neither is retired.
-        string? newSecretRef = null;
-        if (!string.IsNullOrWhiteSpace(body.ClientSecret))
-        {
-            newSecretRef = await _clientSecretProvisioner
-                .StoreNewAsync(existing.Id, body.ClientSecret, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
+        // A supplied secret is stored as a new secret of its own, never as a version of the one the registration names, and only
+        // once every guard has passed. The secret store joins the unit's transaction (AUD-1.4): the new secret, the row naming
+        // it and the retirement of the secret it replaces commit together, or none of them does, so the registration resolves
+        // its current secret until the change commits, and a refused, conflicting, failed or rolled-back change stores and
+        // retires nothing. After an unknown outcome it is either all committed or none.
+        var secretSupplied = !string.IsNullOrWhiteSpace(body.ClientSecret);
         var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
         ActionResult? refusal;
         Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
-        string? previousSecretRef = null;
         try
         {
             refusal = await Unit.ExecuteAsync(
@@ -282,7 +249,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                 async (transaction, ct) =>
                 {
                     refusalEvent = null;
-                    previousSecretRef = null;
 
                     // Every condition the change depends on is read in this transaction.
                     var current = await _repository.GetByIdAsync(id, ct);
@@ -295,8 +261,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                     if (current.RowVersion is null || !current.RowVersion.SequenceEqual(expected))
                         throw new DbUpdateConcurrencyException("Entra registration was modified by another request.");
 
-                    var updatedModel = Updated(current, body, authenticationContextId, newSecretRef ?? current.ClientSecretRef);
-                    var changed = ChangedSettings(current, updatedModel, secretReplaced: newSecretRef is not null);
+                    // The guards and the change list do not depend on which secret the registration names.
+                    var updatedModel = Updated(current, body, authenticationContextId, current.ClientSecretRef);
+                    var changed = ChangedSettings(current, updatedModel, secretReplaced: secretSupplied);
                     if (changed.Count == 0)
                     {
                         // The same settings: nothing to write and no row (D7); the answer is the current registration.
@@ -314,9 +281,13 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                         return BadRequest(new { message = lockout });
                     }
 
+                    if (secretSupplied)
+                    {
+                        var newSecretRef = await _clientSecretProvisioner.StoreNewAsync(current.Id, body.ClientSecret!, ct).ConfigureAwait(false);
+                        updatedModel = Updated(current, body, authenticationContextId, newSecretRef);
+                    }
+
                     await _repository.UpdateAsync(updatedModel, expected, ct);
-                    if (newSecretRef is not null)
-                        previousSecretRef = current.ClientSecretRef;
                     var stillActive = current.IsActive && updatedModel.Enabled;
                     await transaction.StageAsync(
                         AuditEvents.TenantRegistrationUpdated(current.Id, updatedModel.DisplayName, changed, updatedModel.Enabled, stillActive),
@@ -329,33 +300,27 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                             ct);
                     }
 
+                    if (secretSupplied)
+                    {
+                        await transaction.StageAsync(AuditEvents.TenantRegistrationClientSecretStored(current.Id, "registration_updated"), ct);
+                        await RetireOwnedSecretAsync(transaction, current.Id, current.ClientSecretRef, "replaced", ct);
+                    }
+
                     return null;
                 },
-                // A verified commit is the attempt that ran last, so previousSecretRef is the one its row replaced.
                 (_, _) => Task.FromResult<ActionResult?>(null),
                 cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            await RetireSecretAsync(existing.Id, newSecretRef);
             return Conflict(new { message = "Registration was modified elsewhere. Refresh and try again." });
-        }
-        catch (Exception ex) when (ex is not AuditOutcomeUnknownException)
-        {
-            // Every other failure here is a confirmed rollback (a commit that could not be verified is outcome_unknown).
-            await RetireSecretAsync(existing.Id, newSecretRef);
-            throw;
         }
 
         if (refusal is not null)
         {
-            await RetireSecretAsync(existing.Id, newSecretRef);
             await RecordRefusalAsync(refusalEvent);
             return refusal;
         }
-
-        // Committed (or nothing to change, which a supplied secret never is): the replaced secret is no longer named.
-        await RetireSecretAsync(existing.Id, previousSecretRef);
 
         var refreshed = await _repository.GetByIdAsync(id, cancellationToken);
         return Ok(ToListItem(refreshed!, DeploymentSecretPresent()));
@@ -369,14 +334,13 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         if (!await AuthorizeManageAsync(cancellationToken))
             return Forbid();
 
+        // The registration's own secret is retired in the delete's unit, so it is retired exactly when the delete commits.
         var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
-        EntraInstanceRegistration? deleted = null;
         Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
         var refusal = await Unit.ExecuteAsync<IActionResult?>(
             Operation(AuditActionNames.TenantRegistrationDeleted),
             async (transaction, ct) =>
             {
-                deleted = null;
                 refusalEvent = null;
                 var existing = await _repository.GetByIdAsync(id, ct);
                 if (existing is null)
@@ -400,7 +364,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
 
                 await _repository.DeleteAsync(id, ct);
                 await transaction.StageAsync(AuditEvents.TenantRegistrationDeleted(existing.Id, existing.DisplayName, existing.IsActive), ct);
-                deleted = existing;
+                await RetireOwnedSecretAsync(transaction, existing.Id, existing.ClientSecretRef, "registration_deleted", ct);
                 return null;
             },
             (_, _) => Task.FromResult<IActionResult?>(null),
@@ -411,10 +375,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             await RecordRefusalAsync(refusalEvent);
             return refusal;
         }
-
-        // After the delete committed, its stored secret is retired (best effort, outside the unit).
-        if (deleted is not null)
-            await RetireSecretAsync(deleted.Id, deleted.ClientSecretRef);
 
         return NoContent();
     }

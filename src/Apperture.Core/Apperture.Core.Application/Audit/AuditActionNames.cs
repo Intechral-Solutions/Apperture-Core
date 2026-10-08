@@ -145,4 +145,8 @@ public static class AuditActionNames
     public const string RecoveryRetryDenied = "recovery.retry.denied";
     public const string SchedulerOperationDenied = "recovery.run_cycle.denied";
     public const string SchedulerOperationRequested = "recovery.schedules.run_cycle_requested";
+
+    // AUD-1.4: secret-store events, recorded under the Secrets category on the configuration entity that owns the secret.
+    public const string TenantRegistrationClientSecretStored = "entra.tenant_registration.client_secret.stored";
+    public const string TenantRegistrationClientSecretRetired = "entra.tenant_registration.client_secret.retired";
 }
