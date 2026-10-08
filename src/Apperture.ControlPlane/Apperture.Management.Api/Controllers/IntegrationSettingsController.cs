@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
@@ -122,8 +123,9 @@ public sealed class IntegrationSettingsController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
+            // A programming error of the audited write is not a refusal: it surfaces as the internal error it is.
             return BadRequest(new { message = ex.Message });
         }
         catch (DbUpdateConcurrencyException)
@@ -136,6 +138,7 @@ public sealed class IntegrationSettingsController : ControllerBase
     [ProducesResponseType(typeof(PlatformSettingResolvedDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<PlatformSettingResolvedDto>> Delete(
         string integrationId,
         string key,
@@ -153,8 +156,15 @@ public sealed class IntegrationSettingsController : ControllerBase
             return Forbid();
         }
 
-        var updated = await _service.ResetAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
-        return updated is null ? NotFound() : Ok(PlatformSettingsDtoMapper.ToDto(updated));
+        try
+        {
+            var updated = await _service.ResetAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+            return updated is null ? NotFound() : Ok(PlatformSettingsDtoMapper.ToDto(updated));
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "Setting was modified elsewhere. Refresh and try again." });
+        }
     }
 
     [HttpGet("{key}/options")]

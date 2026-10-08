@@ -43,7 +43,10 @@ public static class PlatformSettingsServiceCollectionExtensions
                 sp.GetRequiredService<IntegrationSettingDefinitionRegistry>(),
                 sp.GetServices<IModuleIntegrationSettingDefinitionContributor>()));
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
-        services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
+        services.AddScoped<IntegrationSettingsService>();
+        services.AddScoped<IIntegrationSettingsService>(sp => sp.GetRequiredService<IntegrationSettingsService>());
+        // Internal and registered only here: the in-transaction reset integration delete will call inside its own unit.
+        services.AddScoped<IIntegrationSettingResetInTransaction>(sp => sp.GetRequiredService<IntegrationSettingsService>());
         services.AddScoped<IntegrationSettingsAuthorization>();
         services.AddScoped<PlatformSettingSecretMaterialProvisioner>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();

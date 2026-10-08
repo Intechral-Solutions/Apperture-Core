@@ -54,6 +54,10 @@ public sealed partial class AuditActionCatalogTests
     [
         "entra.tenant_registration.client_secret.stored",
         "entra.tenant_registration.client_secret.retired",
+        "platform.settings.secret.stored",
+        "platform.settings.secret.retired",
+        "integration.settings.secret.stored",
+        "integration.settings.secret.retired",
     ];
 
     [Fact]

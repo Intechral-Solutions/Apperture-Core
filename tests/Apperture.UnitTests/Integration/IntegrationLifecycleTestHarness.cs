@@ -68,6 +68,7 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
         Db.SaveChanges();
 
         Audit = new RecordingAuditService();
+        SettingsAudit = new Apperture.UnitTests.Audit.AuditRecording();
         SecretStore = new InMemorySecretStore();
 
         _integrationRepository = new SqlIntegrationRepository(Db);
@@ -92,9 +93,8 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
             new IntegrationSettingsResolver(settingRegistry, settingRepository),
             optionProviderCoordinator,
             new PlatformSettingSecretMaterialProvisioner(SecretStore),
-            principalContext,
-            Audit,
-            _integrationRepository);
+            _integrationRepository,
+            SettingsAudit);
 
         Integrations = new IntegrationManagementService(
             principalContext,
@@ -143,9 +143,13 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
 
     public IIntegrationSettingsService Settings { get; }
 
+    /// <summary>The same service through the in-transaction reset integration delete will use inside its own unit (slice 3).</summary>
+    public IIntegrationSettingResetInTransaction ResetInTransaction => (IIntegrationSettingResetInTransaction)Settings;
+
     public InMemorySecretStore SecretStore { get; }
 
     public RecordingAuditService Audit { get; }
+    public Apperture.UnitTests.Audit.AuditRecording SettingsAudit { get; }
 
     /// <summary>An ordinary (non-sensitive, non-provider-backed) Integration-scoped setting key.</summary>
     public string SettingKey => PlatformSettingTestDefinitions.IntegrationScopedTextKey;

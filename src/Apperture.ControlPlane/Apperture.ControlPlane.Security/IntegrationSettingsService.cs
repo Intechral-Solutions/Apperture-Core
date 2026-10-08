@@ -1,25 +1,30 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
-using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
-public sealed class IntegrationSettingsService : IIntegrationSettingsService
+/// <summary>
+/// Integration-scoped settings. Every change is one audited unit (AUD-1.4), as for platform settings: the setting row, the
+/// secret a sensitive setting owns, the store's own evidence and the audit rows commit together or not at all, and the decision
+/// reads (the override row, its row version, the provider's allowed values) are taken inside the unit's transaction.
+/// </summary>
+/// <remarks>
+/// A setting's rows target the integration setting (the integration and the key) and carry the integration's owning resource
+/// context as a related reference, as the previous audit records did. Integration delete will reset its settings through
+/// <see cref="IIntegrationSettingResetInTransaction"/> inside its own unit (slice 3).
+/// </remarks>
+public sealed class IntegrationSettingsService : IIntegrationSettingsService, IIntegrationSettingResetInTransaction
 {
-    private const string AuditOutcome = "integration-settings";
-
     private readonly IIntegrationSettingDefinitionRegistry _registry;
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IIntegrationSettingsResolver _resolver;
     private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
     private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
-    private readonly IPrincipalContext _principalContext;
-    private readonly IAuditService _audit;
     private readonly IIntegrationRepository _integrations;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public IntegrationSettingsService(
         IIntegrationSettingDefinitionRegistry registry,
@@ -27,19 +32,22 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         IIntegrationSettingsResolver resolver,
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         PlatformSettingSecretMaterialProvisioner secretProvisioner,
-        IPrincipalContext principalContext,
-        IAuditService audit,
-        IIntegrationRepository integrations)
+        IIntegrationRepository integrations,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _registry = registry;
         _repository = repository;
         _resolver = resolver;
         _optionProviderCoordinator = optionProviderCoordinator;
         _secretProvisioner = secretProvisioner;
-        _principalContext = principalContext;
-        _audit = audit;
         _integrations = integrations;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Integration setting changes require the audited unit of work.");
+
+    private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
 
     public Task<IReadOnlyList<PlatformSettingResolvedValue>> ListAsync(
         string integrationId,
@@ -86,53 +94,86 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
 
         EnsureIntegrationValueScope(def, key);
 
-        var existing = await _repository
-            .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        if (existing is null)
-            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
-
-        string? previousRef = null;
-        if (def.IsSensitive)
-        {
-            try
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.IntegrationSettingReset),
+            async (transaction, ct) =>
             {
-                previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-            }
-            catch
-            {
-                previousRef = null;
-            }
-        }
+                if (await ResetCoreAsync(transaction, integrationId, def, ct).ConfigureAwait(false))
+                    return SettingChange.Applied;
 
-        var deleted = await _repository
-            .DeleteScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        if (!deleted)
-            return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
-
-        if (def.IsSensitive)
-        {
-            await _secretProvisioner
-                .TryDisableOwnedSecretAsync(key, previousRef, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
-        {
-            var details = def.IsSensitive
-                ? $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=reset sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}"
-                : $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} previousValue={PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson))}";
-            await AppendAuditAsync(
-                IntegrationSettingsAuditActionNames.Reset,
-                integrationId,
-                actor.Id,
-                details,
-                cancellationToken).ConfigureAwait(false);
-        }
+                // No override: nothing to reset and nothing recorded.
+                transaction.DeclareNoOp();
+                return SettingChange.Unchanged;
+            },
+            (_, _) => Task.FromResult(SettingChange.Applied),
+            cancellationToken).ConfigureAwait(false);
 
         return await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    async Task<bool> IIntegrationSettingResetInTransaction.ResetInTransactionAsync(
+        IAuditedTransaction transaction,
+        string integrationId,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        // A key with no registered definition is left alone, as ResetAsync leaves it.
+        var def = _registry.TryGet(key);
+        if (def is null)
+            return false;
+
+        EnsureIntegrationValueScope(def, key);
+        return await ResetCoreAsync(transaction, integrationId, def, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes the integration's override of the setting in the caller's transaction, disables the secret a sensitive setting
+    /// owns, and stages the rows. Returns false, having changed and staged nothing, when there is no override. The audit rows
+    /// are staged before anything changes, so a transaction that is not the current one fails here first.
+    /// </summary>
+    private async Task<bool> ResetCoreAsync(
+        IAuditedTransaction transaction,
+        string integrationId,
+        PlatformSettingDefinition def,
+        CancellationToken ct)
+    {
+        var key = def.Key;
+        var existing = await _repository
+            .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
+            .ConfigureAwait(false);
+        if (existing is null)
+            return false;
+
+        var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
+        var previousRef = def.IsSensitive ? ReadSecretRef(def, existing) : null;
+        await transaction.StageAsync(
+            def.IsSensitive
+                ? AuditEvents.IntegrationSettingReset(
+                    integrationId, key, sensitive: true, previousConfigured: !string.IsNullOrWhiteSpace(previousRef), resourceContextId: resourceContextId)
+                : AuditEvents.IntegrationSettingReset(
+                    integrationId, key, sensitive: false, previousValue: DisplayOf(def, existing), resourceContextId: resourceContextId),
+            ct).ConfigureAwait(false);
+
+        if (!await _repository
+                .DeleteScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
+                .ConfigureAwait(false))
+        {
+            // Removed by another request after this one read it: not a reset this request made.
+            throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
+        }
+
+        if (def.IsSensitive
+            && await _secretProvisioner.TryDisableOwnedSecretAsync(key, previousRef, ct).ConfigureAwait(false))
+        {
+            await transaction.StageAsync(
+                AuditEvents.IntegrationSettingSecretRetired(integrationId, key, "reset", resourceContextId),
+                ct).ConfigureAwait(false);
+        }
+
+        return true;
     }
 
     private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
@@ -166,63 +207,54 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         if (string.IsNullOrWhiteSpace(payload.SecretValue))
             throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
 
-        var existing = await _repository
-            .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        string? existingRef = null;
-        if (existing is not null)
-        {
-            try
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.IntegrationSettingSet),
+            async (transaction, ct) =>
             {
-                existingRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-            }
-            catch
-            {
-                existingRef = null;
-            }
-        }
-
-        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
-
-        var (secretRef, createdNew) = await _secretProvisioner
-            .ReplaceAsync(def.Key, payload.SecretValue, existingRef, cancellationToken)
-            .ConfigureAwait(false);
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var domain = new PlatformSettingValue
-        {
-            Key = def.Key,
-            ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
-            ScopeId = integrationId,
-            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
-            UpdatedByPrincipalId = actor?.Id.Value
-        };
-
-        try
-        {
-            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            if (createdNew)
-            {
-                await _secretProvisioner
-                    .TryDisableOwnedSecretAsync(def.Key, secretRef, cancellationToken)
+                var existing = await _repository
+                    .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
-            }
+                var existingRef = ReadSecretRef(def, existing);
 
-            throw;
-        }
+                // A stale row version is a conflict before anything is stored.
+                var expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+                RequireCurrentRowVersion(existing, expectedRowVersion);
 
-        if (actor is not null)
-        {
-            await AppendAuditAsync(
-                IntegrationSettingsAuditActionNames.Set,
-                integrationId,
-                actor.Id,
-                $"key={def.Key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=replace sensitive=true configured=true",
-                cancellationToken).ConfigureAwait(false);
-        }
+                var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
+
+                // The secret store joins this transaction: the new version is live only once the change commits.
+                var (secretRef, createdNew) = await _secretProvisioner
+                    .ReplaceAsync(def.Key, payload.SecretValue, existingRef, ct)
+                    .ConfigureAwait(false);
+
+                await _repository.UpsertAsync(
+                    new PlatformSettingValue
+                    {
+                        Key = def.Key,
+                        ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
+                        ScopeId = integrationId,
+                        ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
+                        UpdatedByPrincipalId = transaction.Actor.RecordedValue
+                    },
+                    expectedRowVersion,
+                    ct).ConfigureAwait(false);
+
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationSettingSet(
+                        integrationId,
+                        def.Key,
+                        AuditEvents.SettingOperations.Replace,
+                        sensitive: true,
+                        previousConfigured: !string.IsNullOrWhiteSpace(existingRef),
+                        resourceContextId: resourceContextId),
+                    ct).ConfigureAwait(false);
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationSettingSecretStored(integrationId, def.Key, createdNew ? "created" : "replaced", resourceContextId),
+                    ct).ConfigureAwait(false);
+                return SettingChange.Applied;
+            },
+            (_, _) => Task.FromResult(SettingChange.Applied),
+            cancellationToken).ConfigureAwait(false);
 
         return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
     }
@@ -232,39 +264,49 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         PlatformSettingDefinition def,
         CancellationToken cancellationToken)
     {
-        var existing = await _repository
-            .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        if (existing is null)
-            return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.IntegrationSettingSet),
+            async (transaction, ct) =>
+            {
+                var existing = await _repository
+                    .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
+                    .ConfigureAwait(false);
+                if (existing is null)
+                {
+                    transaction.DeclareNoOp();
+                    return SettingChange.Unchanged;
+                }
 
-        string? previousRef = null;
-        try
-        {
-            previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-        }
-        catch
-        {
-            previousRef = null;
-        }
+                var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
+                var previousRef = ReadSecretRef(def, existing);
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationSettingSet(
+                        integrationId,
+                        def.Key,
+                        AuditEvents.SettingOperations.Clear,
+                        sensitive: true,
+                        previousConfigured: !string.IsNullOrWhiteSpace(previousRef),
+                        resourceContextId: resourceContextId),
+                    ct).ConfigureAwait(false);
 
-        await _repository
-            .DeleteScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        await _secretProvisioner
-            .TryDisableOwnedSecretAsync(def.Key, previousRef, cancellationToken)
-            .ConfigureAwait(false);
+                if (!await _repository
+                        .DeleteScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
+                        .ConfigureAwait(false))
+                {
+                    throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
+                }
 
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
-        {
-            await AppendAuditAsync(
-                IntegrationSettingsAuditActionNames.Set,
-                integrationId,
-                actor.Id,
-                $"key={def.Key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} operation=clear sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}",
-                cancellationToken).ConfigureAwait(false);
-        }
+                if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
+                {
+                    await transaction.StageAsync(
+                        AuditEvents.IntegrationSettingSecretRetired(integrationId, def.Key, "cleared", resourceContextId),
+                        ct).ConfigureAwait(false);
+                }
+
+                return SettingChange.Applied;
+            },
+            (_, _) => Task.FromResult(SettingChange.Applied),
+            cancellationToken).ConfigureAwait(false);
 
         return (await _resolver.GetResolvedAsync(integrationId, def.Key, cancellationToken).ConfigureAwait(false))!;
     }
@@ -279,68 +321,93 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
-        if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
-        {
-            IReadOnlyList<PlatformSettingAllowedValue> options;
-            try
+        await Unit.ExecuteAsync(
+            Operation(AuditActionNames.IntegrationSettingSet),
+            async (transaction, ct) =>
             {
-                options = await _optionProviderCoordinator
-                    .GetOptionsForIntegrationSettingsValidationAsync(def, integrationId, cancellationToken)
+                if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
+                {
+                    IReadOnlyList<PlatformSettingAllowedValue> options;
+                    try
+                    {
+                        options = await _optionProviderCoordinator
+                            .GetOptionsForIntegrationSettingsValidationAsync(def, integrationId, ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        throw new InvalidOperationException(ex.Message);
+                    }
+                    catch (KeyNotFoundException ex)
+                    {
+                        throw new ArgumentException(ex.Message);
+                    }
+
+                    ValidateProviderMembership(def, parsed, options, key);
+                }
+
+                var existing = await _repository
+                    .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                throw new InvalidOperationException(ex.Message);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                throw new ArgumentException(ex.Message);
-            }
+                var expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+                RequireCurrentRowVersion(existing, expectedRowVersion);
 
-            ValidateProviderMembership(def, parsed, options, key);
-        }
+                var storedJson = PlatformSettingsValueCodec.ToStoredJson(def, parsed);
+                if (existing is not null && string.Equals(existing.ValueJson, storedJson, StringComparison.Ordinal))
+                {
+                    // The same value: nothing to write and no row.
+                    transaction.DeclareNoOp();
+                    return SettingChange.Unchanged;
+                }
 
-        var existing = await _repository
-            .GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId, cancellationToken)
-            .ConfigureAwait(false);
-        var oldDisplay = existing is null
-            ? null
-            : PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
+                var resourceContextId = await ResolveResourceContextIdAsync(integrationId, ct).ConfigureAwait(false);
+                await _repository.UpsertAsync(
+                    new PlatformSettingValue
+                    {
+                        Key = key,
+                        ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
+                        ScopeId = integrationId,
+                        ValueJson = storedJson,
+                        UpdatedByPrincipalId = transaction.Actor.RecordedValue
+                    },
+                    expectedRowVersion,
+                    ct).ConfigureAwait(false);
 
-        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var principalId = actor?.Id.Value;
-
-        var domain = new PlatformSettingValue
-        {
-            Key = key,
-            ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
-            ScopeId = integrationId,
-            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, parsed),
-            UpdatedByPrincipalId = principalId
-        };
-
-        await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-
-        if (actor is not null)
-        {
-            var providerSuffix = string.IsNullOrWhiteSpace(def.OptionProviderKey)
-                ? string.Empty
-                : $" optionProviderKey={def.OptionProviderKey}";
-            var details =
-                $"key={key} scope={PlatformSettingScopeConstants.IntegrationKind}:{integrationId} " +
-                $"oldValue={oldDisplay ?? "(none)"} newValue={PlatformSettingsValueCodec.ToDisplayString(parsed)}{providerSuffix}";
-            await AppendAuditAsync(
-                IntegrationSettingsAuditActionNames.Set,
-                integrationId,
-                actor.Id,
-                details,
-                cancellationToken).ConfigureAwait(false);
-        }
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationSettingSet(
+                        integrationId,
+                        key,
+                        AuditEvents.SettingOperations.Set,
+                        sensitive: false,
+                        previousValue: existing is null ? null : DisplayOf(def, existing),
+                        newValue: PlatformSettingsValueCodec.ToDisplayString(parsed),
+                        optionProviderKey: string.IsNullOrWhiteSpace(def.OptionProviderKey) ? null : def.OptionProviderKey,
+                        resourceContextId: resourceContextId),
+                    ct).ConfigureAwait(false);
+                return SettingChange.Applied;
+            },
+            (_, _) => Task.FromResult(SettingChange.Applied),
+            cancellationToken).ConfigureAwait(false);
 
         return (await _resolver.GetResolvedAsync(integrationId, key, cancellationToken).ConfigureAwait(false))!;
     }
+
+    private static string? ReadSecretRef(PlatformSettingDefinition def, PlatformSettingValue? row)
+    {
+        if (row is null)
+            return null;
+        try
+        {
+            return PlatformSettingsValueCodec.ParseFromStoredJson(def, row.ValueJson) as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string DisplayOf(PlatformSettingDefinition def, PlatformSettingValue row) =>
+        PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, row.ValueJson));
 
     private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
     {
@@ -360,6 +427,13 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         }
     }
 
+    /// <summary>The row version read in this transaction must be the one the caller saw; otherwise nothing is stored.</summary>
+    private static void RequireCurrentRowVersion(PlatformSettingValue? existing, byte[]? expectedRowVersion)
+    {
+        if (existing?.RowVersion is { } current && expectedRowVersion is not null && !current.SequenceEqual(expectedRowVersion))
+            throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
+    }
+
     private static void EnsureIntegrationValueScope(PlatformSettingDefinition def, string key)
     {
         if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Integration))
@@ -376,25 +450,10 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService
         return integration?.ResourceContextId.Value;
     }
 
-    private async ValueTask AppendAuditAsync(
-        string action,
-        string integrationId,
-        ActorId actorId,
-        string details,
-        CancellationToken cancellationToken)
+    private enum SettingChange
     {
-        var resourceContextId = await ResolveResourceContextIdAsync(integrationId, cancellationToken).ConfigureAwait(false);
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actorId,
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.Integration, integrationId),
-            AuditOutcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details,
-            ResourceContextId: resourceContextId);
-        await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
+        Unchanged,
+        Applied,
     }
 
     private static void ValidateProviderMembership(

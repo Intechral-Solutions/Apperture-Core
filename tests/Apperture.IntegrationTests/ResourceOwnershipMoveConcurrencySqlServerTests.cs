@@ -848,9 +848,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                     new PlatformSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository),
                     new IntegrationSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository)),
                 new PlatformSettingSecretMaterialProvisioner(new NullSecretStore()),
-                principal,
-                new NullAuditService(),
-                integrationRepository);
+                integrationRepository,
+                new Apperture.Persistence.SqlServer.Audit.SqlAuditedUnitOfWork(db, principals: principal));
 
             var integrations = new IntegrationManagementService(
                 principal, authzAllow, integrationRepository, resourceContexts, db, gate,

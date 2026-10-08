@@ -1586,9 +1586,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.IntegrationSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSet,
             IntroducedIn = "023a6677",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationSettingsService.cs:219",
+            Writer = "IntegrationSettingsService.cs",
         },
         new()
         {
@@ -1598,9 +1599,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.IntegrationSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingReset,
             IntroducedIn = "023a6677",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationSettingsService.cs:127",
+            Writer = "IntegrationSettingsService.cs",
         },
         new()
         {
@@ -1610,9 +1612,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.PlatformSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSet,
             IntroducedIn = "6964dd97",
             IntroducedAfterEpic37Migration = true,
-            Writer = "PlatformSettingsService.cs:206",
+            Writer = "PlatformSettingsService.cs",
         },
         new()
         {
@@ -1622,9 +1625,65 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.PlatformSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingReset,
             IntroducedIn = "6964dd97",
             IntroducedAfterEpic37Migration = true,
-            Writer = "PlatformSettingsService.cs:115",
+            Writer = "PlatformSettingsService.cs",
+        },
+        // AUD-1.4 (gate §22 rulings on secret audit identifiers and secret-store transaction participation): the secret a
+        // sensitive setting owns is stored and retired inside the setting change's unit, each recorded under the Secrets
+        // category on the setting. Neither the secret nor its store reference is recorded.
+        new()
+        {
+            Action = "platform.settings.secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.PlatformSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "PlatformSettingsService.cs",
+        },
+        new()
+        {
+            Action = "platform.settings.secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.PlatformSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "PlatformSettingsService.cs",
+        },
+        new()
+        {
+            Action = "integration.settings.secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.IntegrationSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "IntegrationSettingsService.cs",
+        },
+        new()
+        {
+            Action = "integration.settings.secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.IntegrationSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "IntegrationSettingsService.cs",
         },
         new()
         {

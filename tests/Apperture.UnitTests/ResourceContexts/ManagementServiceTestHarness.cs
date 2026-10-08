@@ -87,7 +87,7 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             // CTX-3B Plan 6a Task 5: shares this harness's recorder, so an Integration delete's
             // integration.deleted record would surface in AuditRecords alongside the ResourceContext ones.
             _auditService,
-            IntegrationManagementServiceTestDependencies.CreateSettingsService(_db, integrationRepository, _auditService));
+            IntegrationManagementServiceTestDependencies.CreateSettingsService(_db, integrationRepository));
 
         // CTX-3B follow-on (Connection creation gating): wired over the same resourceContexts (and thus,
         // when recordingGate is set, the same RecordingResourceContextRepository) so

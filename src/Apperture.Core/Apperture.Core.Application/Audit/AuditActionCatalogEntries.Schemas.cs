@@ -668,4 +668,81 @@ internal static class AuditDetailSchemas
         IdField("registrationId"),
         EnumField("reason", true, "replaced", "registration_deleted"),
     ]);
+
+    // ---- AUD-1.4: platform and integration settings ----
+    // A setting's value is recorded only for an ordinary setting, as its display text, bounded and truncatable. The value of a
+    // sensitive setting, the secret and the secret's store id (the reference the setting row holds) are never fields, and no
+    // field name can describe secret content (AuditDetailSchema.IsSensitiveFieldName). A secret event names the setting that
+    // owns the secret and carries closed values only.
+
+    /// <summary>An ordinary setting's value as text. A value is at most 512 characters stored; its display text adds list separators.</summary>
+    private static AuditFieldDefinition SettingValueField(string name) =>
+        new(name, AuditFieldKind.NameSnapshot, Required: false, MaxLength: 1024, TruncatedLength: 256);
+
+    private static readonly string[] SettingSetOperations = ["set", "replace", "clear"];
+
+    internal static readonly AuditDetailSchema PlatformSettingSet = new(
+    [
+        IdField("key"),
+        EnumField("operation", true, SettingSetOperations),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        SettingValueField("newValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingReset = new(
+    [
+        IdField("key"),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSet = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("operation", true, SettingSetOperations),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        SettingValueField("newValue"),
+        FlagField("previousConfigured", required: false),
+        IdField("optionProviderKey", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingReset = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingSecretStored = new(
+    [
+        IdField("key"),
+        EnumField("change", true, "created", "replaced"),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingSecretRetired = new(
+    [
+        IdField("key"),
+        EnumField("reason", true, "cleared", "reset"),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSecretStored = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("change", true, "created", "replaced"),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSecretRetired = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("reason", true, "cleared", "reset"),
+    ]);
 }
