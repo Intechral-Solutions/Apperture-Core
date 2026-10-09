@@ -101,7 +101,7 @@ RC1 is reached when all of these hold:
 |---|---|
 | D-26 | Federation is withdrawn from the active roadmap. See [ADR-0046](../02-decisions/ADR-0046-external-organization-access-and-federation-withdrawal.md). |
 | D-27 | Additional mapped Entra tenants are not in RC1. The capability stays a future external-organization access option. No Core-versus-premium ruling is made. |
-| D-28 | Contribution policy is unchanged. Apperture Core remains AGPL. A contributor agreement is revisited only if a future commercial model requires proprietary relicensing of contributed Core code. Separate proprietary assemblies do not by themselves require that. |
+| D-28 | Before the initial public release, Apperture Core adopted a contributor license agreement ([CLA.md](../../CLA.md)). Contributors retain copyright and grant rights sufficient for sublicensing and commercial or proprietary relicensing, which preserves the option to dual-license Core. Apperture Core remains `AGPL-3.0-only`. |
 | D-29 | "Artisan support" in the CLI direction was a mistaken framework reference. The intent is Development-mode pass-through to the platform's actual .NET tooling, including `dotnet` and EF tooling. No PHP or Laravel service is implied. |
 
 ## 4. Directions, Candidates, Deferred and Rejected

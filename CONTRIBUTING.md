@@ -1,5 +1,29 @@
 # Contributing to Apperture Core
 
+Pull requests are welcome. Please read this page, including the licensing terms below, before you submit one.
+
+## Licensing and the CLA
+
+Apperture Core is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`); see [LICENSE](LICENSE).
+
+- **You keep your copyright.** Contributors retain ownership of their contributions. Nothing is assigned to the project.
+- **You must agree to the CLA before merge.** Every contributor must agree to the [Apperture Individual Contributor License Agreement](CLA.md) (the "CLA") before a pull request can be merged.
+- **What the CLA grants.** It gives the project owner (currently Tennyson Edward Hull) a perpetual, worldwide, non-exclusive, irrevocable, royalty-free license to your contribution, with the right to sublicense it. That includes the right to license your contribution under other terms as part of Apperture Core, including commercial or proprietary licenses, alongside the AGPL. The grant is transferable; anyone who later acquires the project's rights must agree in writing to honor the CLA. Read [CLA.md](CLA.md) for the exact terms; it is the binding text, and this page is only a summary.
+- **Your contribution stays open source.** Under the CLA, a contribution that is included in Apperture Core is also licensed under the license Apperture Core uses at the time you submitted it, which is `AGPL-3.0-only` today.
+- **You must have the right to submit your work.** Only submit work you wrote yourself and have the right to contribute. If you have an employer, or anyone else who might have rights in your work, make sure you have their permission first. The CLA asks you to confirm this. There is no Entity CLA yet. If you are contributing on behalf of an employer or another legal entity, contact the maintainer before contributing.
+
+### Contributor License Agreement
+
+You must execute the CLA before your contribution can be merged. CLA execution is handled manually and privately by the maintainer; it is not automated, and it is not done in pull-request comments or issues.
+
+Contact the maintainer for CLA execution instructions before, or when, you open your first pull request. Do not post your name, address, or other personal contact details in a pull request or issue. Maintainers check that a CLA is on file during review and will not merge a pull request until it is.
+
+### Third-party material
+
+The CLA covers work that you own the copyright in. If your pull request includes anything you did not write (code copied or adapted from another project, generated output you do not own, bundled assets or data), say so in the pull request description. Name each item, where it came from, and its license, and explain why it is compatible with `AGPL-3.0-only`. Do not include third-party material without telling the maintainers; material that cannot be accepted under the project license will be removed.
+
+Do not remove or alter license notices in third-party or vendored files.
+
 ## Prerequisites
 
 - [.NET SDK](https://dotnet.microsoft.com/download) (version in [global.json](global.json))
