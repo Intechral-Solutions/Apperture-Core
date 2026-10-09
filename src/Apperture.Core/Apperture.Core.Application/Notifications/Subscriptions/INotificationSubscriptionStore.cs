@@ -40,8 +40,12 @@ public interface INotificationSubscriptionStore
     /// keeps its previous behaviour.
     /// </summary>
     /// <param name="reauthorize">
-    /// The caller's authorization check, run again once the lock is held. Null when the caller's authorization does not depend on
-    /// the integration, or has nothing to re-run. Ignored when there is no integration id.
+    /// The caller's authorization check, run again once the lock is held. <b>Required</b> when the caller's authorization depends
+    /// on the integration's owner, as it does for a subscription to an integration-scoped definition: a caller must revalidate
+    /// after the lock and must not leave the delegate out to skip that. Null is legitimate when the authorization is
+    /// instance-scoped and does not read the integration, as for a subscription to a platform- or module-scoped definition that
+    /// merely narrows to an integration. Ignored when there is no integration id. A new integration-sensitive caller must not rely
+    /// on null.
     /// </param>
     /// <exception cref="InvalidOperationException">The command names an integration that does not exist.</exception>
     ValueTask<NotificationSubscription> AddAsync(

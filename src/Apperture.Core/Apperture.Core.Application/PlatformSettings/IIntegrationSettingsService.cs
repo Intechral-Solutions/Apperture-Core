@@ -18,7 +18,10 @@ public interface IIntegrationSettingsService
     /// </summary>
     /// <param name="reauthorize">
     /// The caller's own authorization check, run again once the integration lock is held, so a decision taken before an
-    /// ownership move committed is not acted on afterwards. Null when the caller has nothing to re-run.
+    /// ownership move committed is not acted on afterwards. <b>Required</b> from any caller whose authorization depends on the
+    /// integration (its identity or owning resource context): it must repeat that decision against the integration as locked, and
+    /// a caller must not leave it out to skip the revalidation. Null is legitimate only for a caller that made no
+    /// integration-dependent decision. The settings endpoints pass it.
     /// </param>
     /// <exception cref="KeyNotFoundException">The integration does not exist (any more). Nothing was changed or recorded.</exception>
     Task<PlatformSettingResolvedValue> SetAsync(

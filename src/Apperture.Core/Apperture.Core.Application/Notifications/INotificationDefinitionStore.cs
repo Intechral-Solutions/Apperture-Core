@@ -51,7 +51,9 @@ public interface INotificationDefinitionStore
     /// </summary>
     /// <param name="reauthorize">
     /// The caller's authorization check, run again once the lock is held, so a decision taken before an ownership move committed
-    /// is not acted on afterwards. Null when the caller has nothing to re-run.
+    /// is not acted on afterwards. The definition is integration-scoped, so its authorization depends on the integration: a
+    /// caller must pass the check it made before the call and must not leave it out to skip the revalidation. Null is
+    /// legitimate only for a caller that made no integration-dependent decision. The definition service passes it.
     /// </param>
     /// <exception cref="InvalidOperationException">The integration does not exist.</exception>
     ValueTask<NotificationDefinition> CreateUserDefinitionAsync(

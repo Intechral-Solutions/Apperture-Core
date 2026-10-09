@@ -1684,7 +1684,7 @@ internal static class AuditActionCatalogEntries
             Details = AuditDetailSchemas.IntegrationSettingSecretRetired,
             IntroducedIn = "AUD-1.4",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationSettingsService.cs",
+            Writer = "IntegrationSettingsService.cs (reset, clear) and IntegrationSettingSecretRetirement.cs (integration delete)",
         },
         new()
         {

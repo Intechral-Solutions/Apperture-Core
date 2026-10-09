@@ -325,9 +325,10 @@ public sealed partial class IntegrationRowLockSqlServerTests
         string integrationId,
         Principal principal,
         IInterceptor? interceptor = null,
-        IAuthorizationEvaluationService? authorization = null)
+        IAuthorizationEvaluationService? authorization = null,
+        Func<AppertureDbContext>? dbFactory = null)
     {
-        await using var db = interceptor is null ? scratch.NewDb() : scratch.NewDb(interceptor);
+        await using var db = dbFactory?.Invoke() ?? (interceptor is null ? scratch.NewDb() : scratch.NewDb(interceptor));
         var store = new SqlSecretStore(db, new PassThroughProtector(), new DefaultSecretAuditActorProvider());
         var service = new IntegrationManagementService(
             principal,

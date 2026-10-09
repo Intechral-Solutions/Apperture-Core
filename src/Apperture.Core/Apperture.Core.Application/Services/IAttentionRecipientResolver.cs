@@ -30,7 +30,9 @@ public interface IAttentionRoutingManagementService
     /// </summary>
     /// <param name="reauthorize">
     /// The caller's own authorization check, run again once the lock is held, so a decision taken before an ownership move
-    /// committed is not acted on afterwards. Null when the caller has nothing to re-run.
+    /// committed is not acted on afterwards. The override belongs to the integration, so its authorization depends on the
+    /// integration: a caller must pass the check it made before the call and must not leave it out to skip the revalidation.
+    /// Null is legitimate only for a caller that made no integration-dependent decision. The routing endpoint passes it.
     /// </param>
     /// <exception cref="InvalidOperationException">The integration, or a named operational team, does not exist.</exception>
     ValueTask UpsertIntegrationRoutingAsync(

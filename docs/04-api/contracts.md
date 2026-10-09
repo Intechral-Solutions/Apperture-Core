@@ -37,7 +37,8 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | PATCH | `/api/schedules/{id}` | Update schedule (Epic 38). Body: UpdateScheduleRequestBody (Name?, RecurrenceExpression?, TimeZone?, Enabled?). Returns 200 with ScheduleDto; 400 with errors on validation failure. Target is immutable. |
 | POST | `/api/schedules/{id}/enable` | Enable schedule |
 | POST | `/api/schedules/{id}/disable` | Disable schedule |
-| DELETE | `/api/schedules/{id}` | Hard-delete a disabled schedule (LFC-1). Success **204**. Enabled **409** `{ "error": "Cannot delete schedule: it is still enabled. Disable it first." }`. Missing **404**. Unauthorized **403**. No request body. Historical firings are retained. |
+| DELETE | `/api/schedules/{id}` | Hard-delete a disabled schedule (LFC-1). Success **204**. Enabled **409** `{ "error": "Cannot delete schedule: it is still enabled. Disable it first." }`. Missing **404**. Unauthorized **403**. A commit that could be neither confirmed nor ruled out is **500** `code: outcome_unknown`. No request body. Historical firings are retained. |
+| DELETE | `/api/integrations/{id}` | Hard-delete an integration that nothing depends on, with its stored setting overrides. See [Integration delete](#integration-delete). Requires `integration.delete`. Success **204**; unauthorized **403**; missing **404**; a dependent **400**; an undetermined stored credential **409** `code: integration_setting_credential_undetermined`; a concurrent settings change **409**; unconfirmed commit **500** `code: outcome_unknown`. No request body. |
 | PUT | `/api/config/platform-settings/{key}` | Set an instance setting, or replace or clear its secret. See [Platform and integration settings API](#platform-and-integration-settings-api). Requires `platformSettings.manage`. |
 | DELETE | `/api/config/platform-settings/{key}` | Reset an instance setting to its configured or default value. Success **200** with the resolved setting; unknown key or a key not applicable at instance scope **404**; concurrent change **409**. |
 | PUT | `/api/integrations/{integrationId}/settings/{key}` | As the platform route, for an integration-scoped setting. |
@@ -86,6 +87,42 @@ Each change to a setting (`PUT` and `DELETE` on `/api/config/platform-settings/{
 | Programming error of the audited write | **500** | Never a 400 or 409. |
 
 A malformed stored value of an ordinary setting can still be reset: the reset is recorded without a previous value. The audit rows of a setting change carry values only as the setting's definition allows (design gate §12.3): a sensitive setting never; an ordinary setting only when its definition declares it, or its shape bounds it. The sender address (`Notifications.Email.FromAddress`) records both values; the SMTP username (`Notifications.Email.SmtpUser`) records the change by name only.
+
+## Integration delete
+
+`DELETE /api/integrations/{id}` has no request body. It removes the integration, every stored setting override that belongs to it, and the secrets those overrides provisioned where that can be shown to be safe, as one audited unit: all of it and the `integration.deleted` audit row commit together, or none does. The integration is gone for good (no tombstone, no undelete). Historical records that cite its id (runs, audit rows, notification instances, attention incidents) are kept.
+
+**Permission.** `integration.delete` on the integration. It is evaluated once as an early answer and again against the integration as it is locked inside the transaction, so an ownership move that commits while the delete waits is what the decision reads. Deleting never needs `integration.update`.
+
+| Outcome | Status | Body and notes |
+|---|---|---|
+| Deleted | **204** | No body. Also returned when the response to the commit was lost and verification found this request's own `integration.deleted` row committed: the delete is reported as done, from that row, never from the integration being absent. |
+| Not permitted, or no authenticated actor | **403** | Nothing changed. |
+| Integration does not exist | **404** | `{ "error": "Integration {id} not found." }`. Includes an integration that another request deleted and committed first. Nothing is recorded. |
+| A dependent still refers to it | **400** | `{ "error": "Cannot delete integration: …" }`, one of the five families below. Nothing changed and nothing recorded. |
+| A stored credential could not be safely disposed of | **409** | `{ "error": "Cannot delete integration: one or more of its settings hold a stored credential whose ownership could not be established, so it cannot be safely removed. Nothing was changed.", "code": "integration_setting_credential_undetermined" }`. The whole delete is refused. The body names no setting key, secret, reference or classification detail. Nothing changed and nothing recorded. |
+| Its settings changed during the delete | **409** | `{ "error": "The integration's settings were changed by another request. Reload and try again." }`, no `code`. Nothing changed. |
+| Commit could be neither confirmed nor ruled out | **500** `application/problem+json` with `code: outcome_unknown` and `operationEventId` | The delete and its audit row are together committed or together absent. The client reloads before acting. |
+| The operation could not be completed within its bounded reruns | **500** with `code: operation_not_completed` and `operationEventId` | A rollback was confirmed; nothing was changed. |
+| Any other audit, secret-retirement or infrastructure failure | **500** | Never reported as 400, 404 or 409. |
+
+A repeated `DELETE` is a new request, not a replay: there is no idempotency key, so once the first has returned 204 the second is **404**. A client that received `outcome_unknown` reloads the integration to see whether it exists.
+
+**The five dependents.** Each has no foreign key, and each is counted inside the transaction after the integration row is locked, in this order; the first one found is the one reported.
+
+| Dependent | Message | Cleared by |
+|---|---|---|
+| Bindings | `…N binding(s) reference it.` | Deleting the bindings |
+| Schedules | `…N schedule(s) reference it.` | Deleting the schedules (a schedule is disabled first) |
+| Notification definitions scoped to the integration | `…N notification definition(s) reference it. Delete them first.` | `DELETE /api/notification-definitions/{id}` |
+| Notification subscriptions that name the integration, whether the definition is scoped to it or not | `…N notification subscription(s) reference it. Remove them first.` | The existing subscription removal |
+| Attention-routing overrides | `…N attention routing override(s) reference it. Clear them first.` | `DELETE /api/integrations/{id}/attention-routing` |
+
+**Settings and their secrets.** Every stored override of the integration is removed, whether or not the setting's definition still exists or is still integration-scoped. A secret an override named is retired only when it was provisioned for that setting, nothing else in the known database locations refers to it, and the secret store permits it; one that is still referred to is kept and its override is still removed. If a stored credential's ownership cannot be established, the delete is refused (the 409 above) rather than guessed. The check covers the three known database locations and is not a serializable or globally complete search: a reference held elsewhere, or written at the same moment by an uncoordinated writer, is not seen. The reasoning and limits are in the [AUD-1.4 record](../01-architecture/transitions/audit-hardening/aud1-4-configuration-lifecycle-record.md) §11 and §12.
+
+**Audit.** One `integration.deleted` row (Configuration category) with the integration's name, module and `settingsRemoved`, the number of overrides removed. No setting key, value, secret or reference is recorded. Each secret retired has its own `integration.settings.secret.retired` row (Secrets category, reason `integration_deleted`). No per-setting reset rows are written. A blocked or refused delete records nothing.
+
+**What changed from the earlier endpoint.** Before audit hardening the delete answered **400** for a missing integration and for every `InvalidOperationException`, reset each setting in a separate transaction, deleted the integration in another, and appended a text audit record afterwards, so a failure partway left a half-deleted integration and an audit failure could not be told from a refusal. Now a missing integration is **404**, only the typed dependents are **400**, the credential refusal is a new **409**, and the whole delete is one transaction with one audit row. The management client surfaces any non-success with its `error` text, so its behaviour is unchanged.
 
 ## Recovery API (Epic 31)
 

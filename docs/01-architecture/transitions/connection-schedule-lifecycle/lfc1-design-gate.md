@@ -136,6 +136,8 @@ Movement: bindings may reference the same context or Shared (`ResourceContextRef
 
 The only deliberate cascade is Integration-scoped `PlatformSettingValues`, via `IIntegrationSettingsService.ResetAsync`, which disables a platform-owned secret through `TryDisableOwnedSecretAsync` instead of dropping the only pointer to an Active secret. CTX-2 historical tables are not updated; `IntegrationId` strings may dangle. One `integration.deleted` audit is appended after commit. A blocked delete writes no audit (`IntegrationDeleteReferentialLifecycleTests`). The UI confirm dialog lists what is automatic and what the operator must remove first.
 
+**Superseded by AUD-1.4 slice 3 (2026-10-09), for the settings cascade and the audit.** The delete is now one audited transaction under the integration row lock. It no longer calls `ResetAsync` per key: every persisted override is removed by its stored row id, and a secret is retired only where owner ruling H1 can establish that it is safe, otherwise the whole delete is refused (409). One `integration.deleted` row commits with the delete instead of a text record appended after it. The five blockers above, the 404 for a missing integration and the new 409 are specified in [docs/04-api/contracts.md](../../../04-api/contracts.md#integration-delete); the reasoning is in the [AUD-1.4 record](../audit-hardening/aud1-4-configuration-lifecycle-record.md) §11 to §13.
+
 `ConnectionSecretMaterialProvisioner` has create and rotate only. It has no disable method. The settings provisioner must not be reused against connection secrets: connection secret names use a different provider and a different name shape.
 
 ---

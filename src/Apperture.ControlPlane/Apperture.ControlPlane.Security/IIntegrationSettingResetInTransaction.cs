@@ -6,6 +6,7 @@ namespace Apperture.ControlPlane.Security;
 /// Resets one integration-scoped setting inside an audited unit that is already open, for an operation that removes settings
 /// as part of a larger change (AUD-1.4 slice 2). A unit does not nest, so the public
 /// <c>IIntegrationSettingsService.ResetAsync</c>, which opens its own, cannot be called from inside one.
+/// <b>Currently unused by production code, and unsuitable for historical-override cleanup:</b> see the last paragraph below.
 /// </summary>
 /// <remarks>
 /// <para><b>Contract.</b> The caller holds the open unit's <see cref="IAuditedTransaction"/> and has already authorized the
@@ -26,8 +27,10 @@ namespace Apperture.ControlPlane.Security;
 /// <para><b>Not used by the integration delete.</b> It was written for it, but this helper disables the secret a sensitive setting's
 /// name matches without looking for references that survive the delete, and ignores keys with no definition, which owner ruling
 /// H1 forbids. The integration delete (work package 4b) removes its overrides by row and takes its secret decisions from
-/// <c>IntegrationSettingSecretClassifier</c> and <c>IntegrationSettingSecretRetirement</c>. No production caller remains; a new
-/// caller must not use it for a setting whose secret an H1 plan governs.</para>
+/// <c>IntegrationSettingSecretClassifier</c> and <c>IntegrationSettingSecretRetirement</c>. No production caller remains; it is kept,
+/// with the slice 2 tests that pin its transactional behaviour, because removing it would touch the settings service and its
+/// fixtures for no gain, and it is not a way to clean up an integration's historical overrides. A new caller must not use it for
+/// a setting whose secret an H1 plan governs, nor to remove an override whose key may no longer have a definition.</para>
 /// </remarks>
 internal interface IIntegrationSettingResetInTransaction
 {

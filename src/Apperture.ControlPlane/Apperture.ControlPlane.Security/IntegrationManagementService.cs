@@ -328,7 +328,7 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
                     ct).ConfigureAwait(false);
 
                 // 5. Every persisted override, by row id, then the secrets the plan allows, then the integration.
-                await RemoveOverridesAsync(id.Value, plan, ct).ConfigureAwait(false);
+                await RemoveOverridesAsync(plan, ct).ConfigureAwait(false);
                 await retirement.RetireAsync(transaction, plan, resourceContextId, ct).ConfigureAwait(false);
 
                 var entity = await _db.Integrations.FirstOrDefaultAsync(e => e.Id == id.Value, ct).ConfigureAwait(false)
@@ -390,29 +390,33 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     }
 
     /// <summary>
-    /// Removes every override the plan lists, by row id, whatever its key's definition now says, and requires that none of the
-    /// integration's overrides remains. Neither the per-key settings reset (which skips keys with no definition and retires a
-    /// secret without looking for surviving references) nor a key-built row id is used: a historical row is removed as it was stored.
+    /// Removes every override the plan lists, by row id, whatever its key's definition now says. Neither the per-key settings reset
+    /// (which skips keys with no definition and retires a secret without looking for surviving references) nor a key-built row id
+    /// is used: a historical row is removed as it was stored.
     /// </summary>
-    private async Task RemoveOverridesAsync(string integrationId, IntegrationSettingDeletionPlan plan, CancellationToken ct)
+    /// <remarks>
+    /// <para>No count of the integration's overrides is taken afterwards, and that is deliberate (AUD-1.4 slice 3, work package 5).
+    /// <c>PlatformSettingValues</c> has no index that starts with the scope, so such a count reads the whole table, including the
+    /// rows another integration's delete has just removed and still holds locked. Under locking READ COMMITTED two deletes of
+    /// different integrations could then each wait on the other's rows and deadlock.</para>
+    /// <para>The check added nothing the transaction does not already guarantee. The plan was read after the integration row lock
+    /// was taken, with the predicate that selects an integration's overrides, and every writer of an integration-scoped override
+    /// (the four settings changes) takes that row lock first, so none can commit a new override between the plan and the commit;
+    /// the platform settings writer stores instance-scope rows only. Each row removed is deleted by its primary key and row version, so one
+    /// that vanished or changed since the plan fails the save, and the row count is checked against the plan before anything is
+    /// removed. A writer that bypassed the lock protocol is outside what this unit can coordinate and is not claimed to be caught.</para>
+    /// </remarks>
+    private async Task RemoveOverridesAsync(IntegrationSettingDeletionPlan plan, CancellationToken ct)
     {
-        if (plan.Overrides.Count > 0)
-        {
-            var rowIds = plan.Overrides.Select(o => o.RowId).ToList();
-            var rows = await _db.PlatformSettingValues.Where(v => rowIds.Contains(v.Id)).ToListAsync(ct).ConfigureAwait(false);
-            if (rows.Count != rowIds.Count)
-                throw new DbUpdateConcurrencyException("An integration setting was removed by another request during the delete.");
+        if (plan.Overrides.Count == 0)
+            return;
 
-            _db.PlatformSettingValues.RemoveRange(rows);
-            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        }
+        var rowIds = plan.Overrides.Select(o => o.RowId).ToList();
+        var rows = await _db.PlatformSettingValues.Where(v => rowIds.Contains(v.Id)).ToListAsync(ct).ConfigureAwait(false);
+        if (rows.Count != rowIds.Count)
+            throw new DbUpdateConcurrencyException("An integration setting was removed by another request during the delete.");
 
-        // Nothing may survive the integration. The overrides' own writers hold the integration row lock, so this only fails if a
-        // writer outside that protocol added one; the delete then rolls back rather than leave an orphan.
-        var remaining = await _db.PlatformSettingValues.AsNoTracking()
-            .CountAsync(v => v.ScopeKind == PlatformSettingScopeConstants.IntegrationKind && v.ScopeId == integrationId, ct)
-            .ConfigureAwait(false);
-        if (remaining > 0)
-            throw new DbUpdateConcurrencyException("An integration setting was added by another request during the delete.");
+        _db.PlatformSettingValues.RemoveRange(rows);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 }

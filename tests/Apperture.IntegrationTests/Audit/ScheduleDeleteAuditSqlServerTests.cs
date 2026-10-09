@@ -165,7 +165,9 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
         await using (var db = _db.NewDb(failAudit))
         {
             var act = () => Schedules(db, principal, NewUnit(db, principal)).DeleteScheduleAsync(new ScheduleId(seeded.ScheduleId)).AsTask();
-            await act.Should().ThrowAsync<Exception>();
+            // The injected failure itself, as the save reports it, not any exception: a typed not-found or refusal is not this.
+            (await act.Should().ThrowAsync<DbUpdateException>())
+                .Which.InnerException.Should().BeOfType<InvalidOperationException>().Which.Message.Should().StartWith("Injected:");
             db.ChangeTracker.Entries().Should().BeEmpty("nothing the failed attempt tracked is left to save");
         }
 
