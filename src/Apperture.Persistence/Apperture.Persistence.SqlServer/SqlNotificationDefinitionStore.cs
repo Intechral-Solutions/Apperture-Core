@@ -73,36 +73,62 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
 
     public async ValueTask<NotificationDefinition> CreateUserDefinitionAsync(
         NotificationDefinitionCreateCommand command,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
         var id = NotificationDefinitionId.New();
         var now = DateTimeOffset.UtcNow;
         var primaryEventType = ExtractPrimaryEventType(command.RuleJson);
-        var entity = new NotificationDefinitionEntity
-        {
-            Id = id.Value,
-            DisplayName = command.DisplayName,
-            Description = command.Description,
-            SourceKind = NotificationSourceKinds.PlatformEvent,
-            Origin = NotificationDefinitionOrigins.UserCreated,
-            Scope = NotificationDefinitionScopes.Integration,
-            Mutability = NotificationDefinitionMutabilities.FullyEditable,
-            IntegrationId = command.IntegrationId,
-            PrimaryEventType = primaryEventType,
-            IsEnabled = command.IsEnabled,
-            DefaultSeverity = command.DefaultSeverity,
-            RuleJson = command.RuleJson,
-            TemplateJson = command.TemplateJson,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-            CreatedByActorId = command.CreatedByActorId,
-            UpdatedByActorId = command.CreatedByActorId,
-            ToastEnabledByDefault = command.ToastEnabledByDefault,
-        };
 
-        _db.NotificationDefinitions.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDomain(entity);
+        // One transaction: the integration row lock, then the insert, then the commit that releases the lock. The execution
+        // strategy owns the transaction, so a retry reruns the whole attempt, lock included.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            await IntegrationRowLock.AcquireAsync(_db, command.IntegrationId, reauthorize, cancellationToken).ConfigureAwait(false);
+
+            var entity = new NotificationDefinitionEntity
+            {
+                Id = id.Value,
+                DisplayName = command.DisplayName,
+                Description = command.Description,
+                SourceKind = NotificationSourceKinds.PlatformEvent,
+                Origin = NotificationDefinitionOrigins.UserCreated,
+                Scope = NotificationDefinitionScopes.Integration,
+                Mutability = NotificationDefinitionMutabilities.FullyEditable,
+                IntegrationId = command.IntegrationId,
+                PrimaryEventType = primaryEventType,
+                IsEnabled = command.IsEnabled,
+                DefaultSeverity = command.DefaultSeverity,
+                RuleJson = command.RuleJson,
+                TemplateJson = command.TemplateJson,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                CreatedByActorId = command.CreatedByActorId,
+                UpdatedByActorId = command.CreatedByActorId,
+                ToastEnabledByDefault = command.ToastEnabledByDefault,
+            };
+
+            _db.NotificationDefinitions.Add(entity);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Only this attempt's own row: a rerun builds it again, and nothing else tracked on the context is touched.
+                _db.Entry(entity).State = EntityState.Detached;
+                throw;
+            }
+
+            return ToDomain(entity);
+        }).ConfigureAwait(false);
     }
 
     public async ValueTask<NotificationDefinition?> UpdateAsync(

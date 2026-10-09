@@ -115,7 +115,10 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
                 request.DefaultSeverity,
                 actorId,
                 request.ToastEnabledByDefault),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            // The store locks the integration row, then runs this again: an ownership move that committed after the check at the
+            // top is seen here, and none can commit before the definition does.
+            ct => _authorization.RequireIntegrationManageAsync(request.IntegrationId, ct)).ConfigureAwait(false);
     }
 
     public async ValueTask<NotificationDefinition?> UpdateAsync(

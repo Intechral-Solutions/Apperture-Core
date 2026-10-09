@@ -43,7 +43,18 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     public SettingsAuditSqlServerTests(ITestOutputHelper output) => _output = output;
 
-    public async Task InitializeAsync() => _db = await AuditSqlScratch.CreateAsync("Apperture_Aud14Settings_");
+    public async Task InitializeAsync()
+    {
+        _db = await AuditSqlScratch.CreateAsync("Apperture_Aud14Settings_");
+
+        // Every integration setting change takes the integration row lock and requires the row (AUD-1.4 slice 3), so the
+        // integration these tests change settings of is a real one, owned by the Shared context.
+        await _db.ExecuteAsync(
+            $"""
+            INSERT INTO Integrations (Id, DisplayName, ModuleId, ScopeKey, ResourceContextId, State, CreatedAt, UpdatedAt)
+            VALUES (N'{IntegrationId}', N'Settings Test Integration', N'Sample.Mod', N'instance', N'shared', 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+            """);
+    }
 
     public async Task DisposeAsync()
     {

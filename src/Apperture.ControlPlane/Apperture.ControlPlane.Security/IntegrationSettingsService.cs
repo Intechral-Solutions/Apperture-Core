@@ -15,6 +15,13 @@ namespace Apperture.ControlPlane.Security;
 /// A setting's rows target the integration setting (the integration and the key) and carry the integration's owning resource
 /// context as a related reference, as the previous audit records did. Integration delete will reset its settings through
 /// <see cref="IIntegrationSettingResetInTransaction"/> inside its own unit (slice 3).
+/// <para><b>Integration row lock (slice 3).</b> Nothing has a foreign key from a setting to its integration, so a change that
+/// commits after an integration delete has passed its checks would leave an orphaned override, and for a sensitive setting an
+/// orphaned live secret. Every public change therefore takes the integration row lock as the first act of its unit's attempt,
+/// after the unit's operation lock and before any setting row is read, and keeps it to the commit. An integration that is gone by
+/// then is a <see cref="KeyNotFoundException"/>: nothing is changed, staged or provisioned. The lock order is the unit's
+/// operation lock, the integration row, the setting row, then the secret. The in-transaction reset takes no lock of its own: its
+/// caller, the integration delete, already holds the row.</para>
 /// </remarks>
 public sealed class IntegrationSettingsService : IIntegrationSettingsService, IIntegrationSettingResetInTransaction
 {
@@ -65,7 +72,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         string key,
         PlatformSettingUpdatePayload payload,
         string? rowVersionBase64,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
         var def = _registry.TryGet(key)
             ?? throw new ArgumentException($"Unknown integration setting key '{key}'.", nameof(key));
@@ -76,17 +84,18 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             throw new InvalidOperationException($"Setting '{key}' is not editable.");
 
         if (def.IsSensitive)
-            return await SetSensitiveAsync(integrationId, def, payload, rowVersionBase64, cancellationToken)
+            return await SetSensitiveAsync(integrationId, def, payload, rowVersionBase64, reauthorize, cancellationToken)
                 .ConfigureAwait(false);
 
-        return await SetOrdinaryAsync(integrationId, def, payload, rowVersionBase64, cancellationToken)
+        return await SetOrdinaryAsync(integrationId, def, payload, rowVersionBase64, reauthorize, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public async Task<PlatformSettingResolvedValue?> ResetAsync(
         string integrationId,
         string key,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
         var def = _registry.TryGet(key);
         if (def is null)
@@ -99,6 +108,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingReset),
             async (transaction, ct) =>
             {
+                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (await ResetCoreAsync(transaction, integrationId, def, ct).ConfigureAwait(false))
                     return true;
 
@@ -182,6 +192,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         PlatformSettingDefinition def,
         PlatformSettingUpdatePayload payload,
         string? rowVersionBase64,
+        Func<CancellationToken, ValueTask>? reauthorize,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(payload.ScalarValue) || payload.ArrayValues is not null)
@@ -203,7 +214,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         }
 
         if (operation == PlatformSettingSecretOperations.Clear)
-            return await ClearSensitiveAsync(integrationId, def, cancellationToken).ConfigureAwait(false);
+            return await ClearSensitiveAsync(integrationId, def, reauthorize, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(payload.SecretValue))
             throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
@@ -213,6 +224,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
+                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -262,6 +274,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
         string integrationId,
         PlatformSettingDefinition def,
+        Func<CancellationToken, ValueTask>? reauthorize,
         CancellationToken cancellationToken)
     {
         return (await SettingAuditedChange.ExecuteAsync(
@@ -269,6 +282,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
+                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -315,6 +329,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         PlatformSettingDefinition def,
         PlatformSettingUpdatePayload payload,
         string? rowVersionBase64,
+        Func<CancellationToken, ValueTask>? reauthorize,
         CancellationToken cancellationToken)
     {
         var key = def.Key;
@@ -325,6 +340,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
+                // Before the provider's options are read: they describe the integration, which is now fixed until the commit.
+                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
                 {
                     IReadOnlyList<PlatformSettingAllowedValue> options;
@@ -437,6 +454,26 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 $"Setting '{key}' is not applicable at integration value scope.",
                 nameof(key));
         }
+    }
+
+    /// <summary>
+    /// Takes the integration row lock (<c>UPDLOCK</c>, held to the end of the unit's transaction) and requires the integration to
+    /// exist, then re-runs the caller's authorization against it. Must be the first act of an attempt, after the unit's operation
+    /// lock; the helper opens no transaction of its own and the lock is released only by the unit's commit or rollback.
+    /// </summary>
+    private async Task LockIntegrationAsync(
+        string integrationId,
+        Func<CancellationToken, ValueTask>? reauthorize,
+        CancellationToken cancellationToken)
+    {
+        // Untracked, so a rerun of the attempt after a verified rollback reads the row afresh.
+        if (await _integrations.GetByIdForUpdateAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false) is null)
+            throw new KeyNotFoundException($"Integration {integrationId} not found.");
+
+        // The row is now fixed until the commit: an ownership move that committed before the lock is visible to this check, and
+        // none can commit after it.
+        if (reauthorize is not null)
+            await reauthorize(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<string?> ResolveResourceContextIdAsync(string integrationId, CancellationToken cancellationToken)

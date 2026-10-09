@@ -17,10 +17,80 @@ public sealed class SqlNotificationDefinitionStoreTests
         return new AppertureDbContext(opts);
     }
 
+    /// <summary>
+    /// The integration a definition is created for. Creating takes the integration row lock and requires the row (AUD-1.4 slice 3),
+    /// so a definition for an integration id with no row is refused.
+    /// </summary>
+    private static async Task SeedIntegrationAsync(AppertureDbContext db, string id)
+    {
+        db.Integrations.Add(new IntegrationEntity
+        {
+            Id = id,
+            DisplayName = "Test Integration",
+            ModuleId = "Sample.Mod",
+            ResourceContextId = "shared",
+            State = 0,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Create_for_an_integration_that_does_not_exist_is_refused_and_stores_nothing()
+    {
+        await using var db = CreateDb();
+        var sut = new SqlNotificationDefinitionStore(db);
+
+        var act = async () => await sut.CreateUserDefinitionAsync(
+            new NotificationDefinitionCreateCommand(
+                "My alert",
+                null,
+                "int-gone",
+                NotificationValidationTestHelpers.ValidUserRuleJson,
+                NotificationValidationTestHelpers.ValidUserTemplateJson,
+                true,
+                null,
+                null));
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("int-gone");
+        (await db.NotificationDefinitions.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Create_runs_the_callers_authorization_again_after_the_integration_is_locked_and_stores_nothing_when_it_fails()
+    {
+        await using var db = CreateDb();
+        await SeedIntegrationAsync(db, "int-1");
+        var sut = new SqlNotificationDefinitionStore(db);
+        var reauthorized = 0;
+
+        var act = async () => await sut.CreateUserDefinitionAsync(
+            new NotificationDefinitionCreateCommand(
+                "My alert",
+                null,
+                "int-1",
+                NotificationValidationTestHelpers.ValidUserRuleJson,
+                NotificationValidationTestHelpers.ValidUserTemplateJson,
+                true,
+                null,
+                null),
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                throw new UnauthorizedAccessException("moved");
+            });
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        reauthorized.Should().Be(1);
+        (await db.NotificationDefinitions.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
     [Fact]
     public async Task Create_list_get_update_enabled_and_builtin_mutability()
     {
         await using var db = CreateDb();
+        await SeedIntegrationAsync(db, "int-1");
         var sut = new SqlNotificationDefinitionStore(db);
 
         var builtin = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
@@ -147,6 +217,7 @@ public sealed class SqlNotificationDefinitionStoreTests
         // ToastEnabledByDefault value entirely -- this pins that it now actually lands in storage and
         // survives a fresh (untracked) read.
         await using var db = CreateDb();
+        await SeedIntegrationAsync(db, "int-1");
         var sut = new SqlNotificationDefinitionStore(db);
 
         var created = await sut.CreateUserDefinitionAsync(
@@ -175,6 +246,7 @@ public sealed class SqlNotificationDefinitionStoreTests
         // caller could never flip it after creation. This pins "null = no change" (matching IsEnabled /
         // DefaultSeverity) and that setting it does not disturb any other field.
         await using var db = CreateDb();
+        await SeedIntegrationAsync(db, "int-1");
         var sut = new SqlNotificationDefinitionStore(db);
 
         var created = await sut.CreateUserDefinitionAsync(

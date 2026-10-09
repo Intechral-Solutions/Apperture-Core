@@ -22,7 +22,7 @@ internal class PlatformSettingRepositoryFake : IPlatformSettingValueRepository
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default) =>
         DeleteScopedAsync(key, PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, cancellationToken);
 
-    public Task<PlatformSettingValue?> GetScopedAsync(
+    public virtual Task<PlatformSettingValue?> GetScopedAsync(
         string key,
         string scopeKind,
         string scopeId,

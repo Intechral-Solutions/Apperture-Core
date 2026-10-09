@@ -23,11 +23,22 @@ public interface IAttentionRoutingManagementService
         string conditionKey,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Creates or updates an Integration's attention-routing override for one condition. The write runs in one transaction that
+    /// first takes the integration row lock and requires the integration to exist, so an integration delete that wins the lock
+    /// makes this refuse, and an override that commits first is visible to the delete's blocker check (AUD-1.4).
+    /// </summary>
+    /// <param name="reauthorize">
+    /// The caller's own authorization check, run again once the lock is held, so a decision taken before an ownership move
+    /// committed is not acted on afterwards. Null when the caller has nothing to re-run.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The integration, or a named operational team, does not exist.</exception>
     ValueTask UpsertIntegrationRoutingAsync(
         IntegrationId integrationId,
         string conditionKey,
         AttentionRoutingUpsertCommand command,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null);
 
     ValueTask UpsertInstanceDefaultRoutingAsync(
         string conditionKey,

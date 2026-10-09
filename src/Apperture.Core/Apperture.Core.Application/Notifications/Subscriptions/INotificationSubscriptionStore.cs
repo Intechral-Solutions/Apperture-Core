@@ -33,9 +33,21 @@ public interface INotificationSubscriptionStore
         NotificationSubscriptionId id,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Adds a subscription. When the command carries an integration id, the row is inserted in one transaction that first takes the
+    /// integration row lock and requires the integration to exist, and holds the lock to the commit (AUD-1.4), as for
+    /// <see cref="INotificationDefinitionStore.CreateUserDefinitionAsync"/>. A command without an integration id takes no lock and
+    /// keeps its previous behaviour.
+    /// </summary>
+    /// <param name="reauthorize">
+    /// The caller's authorization check, run again once the lock is held. Null when the caller's authorization does not depend on
+    /// the integration, or has nothing to re-run. Ignored when there is no integration id.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The command names an integration that does not exist.</exception>
     ValueTask<NotificationSubscription> AddAsync(
         NotificationSubscriptionCreateCommand command,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null);
 
     ValueTask<bool> RemoveAsync(
         NotificationSubscriptionId id,

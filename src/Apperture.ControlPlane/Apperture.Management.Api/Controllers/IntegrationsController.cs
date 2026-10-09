@@ -329,7 +329,14 @@ public sealed class IntegrationsController : ControllerBase
                             body.ReminderIntervalTicks is { } rt ? TimeSpan.FromTicks(rt) : null,
                             body.PrimaryOperationalTeamId,
                             body.EscalationOperationalTeamId),
-                        cancellationToken)
+                        cancellationToken,
+                        // The read check made above, run again under the integration row lock (an ownership move that committed
+                        // in between is seen by it).
+                        async ct =>
+                        {
+                            if (await _integrationService.GetIntegrationAsync(intId, ct).ConfigureAwait(false) is null)
+                                throw new InvalidOperationException($"Integration {id} was not found.");
+                        })
                     .ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)

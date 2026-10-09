@@ -116,8 +116,19 @@ public sealed class IntegrationSettingsController : ControllerBase
                 key,
                 PlatformSettingsDtoMapper.ToIntegrationPayload(body),
                 body.RowVersionBase64,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                ReauthorizeManageAsync(integrationId)).ConfigureAwait(false);
             return Ok(PlatformSettingsDtoMapper.ToDto(updated));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The same check as above, re-run under the integration lock after an ownership move.
+            return Forbid();
+        }
+        catch (KeyNotFoundException)
+        {
+            // Deleted between the existence check above and the change's own locked read.
+            return NotFound();
         }
         catch (ArgumentException ex)
         {
@@ -158,8 +169,17 @@ public sealed class IntegrationSettingsController : ControllerBase
 
         try
         {
-            var updated = await _service.ResetAsync(integrationId, key, cancellationToken).ConfigureAwait(false);
+            var updated = await _service.ResetAsync(integrationId, key, cancellationToken, ReauthorizeManageAsync(integrationId))
+                .ConfigureAwait(false);
             return updated is null ? NotFound() : Ok(PlatformSettingsDtoMapper.ToDto(updated));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -218,6 +238,13 @@ public sealed class IntegrationSettingsController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// The manage check this action already made, for the service to run again once it holds the integration row lock: an
+    /// ownership move that committed in between is then seen by the check, and none can commit after it.
+    /// </summary>
+    private Func<CancellationToken, ValueTask> ReauthorizeManageAsync(string integrationId) =>
+        async ct => await _authorization.RequireIntegrationManageAsync(integrationId, ct).ConfigureAwait(false);
 
     private async Task<bool> IntegrationExistsAsync(string integrationId, CancellationToken cancellationToken)
     {

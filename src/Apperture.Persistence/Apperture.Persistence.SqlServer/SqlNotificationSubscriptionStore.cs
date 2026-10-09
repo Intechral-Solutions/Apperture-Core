@@ -53,11 +53,13 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
 
     public async ValueTask<NotificationSubscription> AddAsync(
         NotificationSubscriptionCreateCommand command,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
         var id = NotificationSubscriptionId.New();
         var now = DateTimeOffset.UtcNow;
-        var entity = new NotificationSubscriptionEntity
+
+        NotificationSubscriptionEntity NewEntity() => new()
         {
             Id = id.Value,
             NotificationDefinitionId = command.NotificationDefinitionId,
@@ -72,9 +74,44 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
             CreatedByActorId = command.CreatedByActorId,
             UpdatedByActorId = command.CreatedByActorId,
         };
-        _db.NotificationSubscriptions.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDomain(entity);
+
+        if (string.IsNullOrWhiteSpace(command.IntegrationId))
+        {
+            // Nothing refers to an integration, so there is no row to lock: the previous behaviour, unchanged.
+            var plain = NewEntity();
+            _db.NotificationSubscriptions.Add(plain);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToDomain(plain);
+        }
+
+        // One transaction: the integration row lock, then the insert, then the commit that releases the lock. The execution
+        // strategy owns the transaction, so a retry reruns the whole attempt, lock included.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+
+            await IntegrationRowLock.AcquireAsync(_db, command.IntegrationId, reauthorize, cancellationToken).ConfigureAwait(false);
+
+            var entity = NewEntity();
+            _db.NotificationSubscriptions.Add(entity);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Only this attempt's own row: a rerun builds it again, and nothing else tracked on the context is touched.
+                _db.Entry(entity).State = EntityState.Detached;
+                throw;
+            }
+
+            return ToDomain(entity);
+        }).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> RemoveAsync(

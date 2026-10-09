@@ -70,6 +70,14 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
         ValidateRecipientKind(kind);
 
         var actorId = await GetActorIdAsync(cancellationToken).ConfigureAwait(false);
+
+        // An integration-scoped definition is authorized against its integration, so that check is run again once the store holds
+        // the integration row lock. A platform- or module-scoped definition is authorized by the definition alone: the integration id
+        // is only a row to refer to, and the store still locks it and requires it to exist.
+        Func<CancellationToken, ValueTask>? reauthorize = string.IsNullOrWhiteSpace(definition.IntegrationId)
+            ? null
+            : ct => _authorization.RequireDefinitionAccessAsync(definition.IntegrationId, manage: true, ct);
+
         return await _subscriptions.AddAsync(
                 new NotificationSubscriptionCreateCommand(
                     definitionId,
@@ -80,7 +88,8 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
                     NotificationSubscriptionOrigins.AdminAssigned,
                     IsEnabled: true,
                     actorId),
-                cancellationToken)
+                cancellationToken,
+                reauthorize)
             .ConfigureAwait(false);
     }
 

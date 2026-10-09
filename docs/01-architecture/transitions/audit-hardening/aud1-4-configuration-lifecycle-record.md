@@ -57,7 +57,7 @@ The product owner approved the four orientation recommendations. They are record
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
-| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented (§10); the integration delete (work packages 3 to 4b), the owner ruling it waits on (H1) and the closing documentation are not started. Independent review |
+| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented and independently reviewed; work package 3 (the integration row lock in the writers the integration delete must coordinate with) is implemented (§10); the integration delete itself (work packages 4a and 4b), the owner ruling it needed (H1, approved) and the closing documentation are not started. Independent review |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
@@ -535,13 +535,13 @@ Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1
 
 ## 10. Slice 3: schedule and integration delete (in progress)
 
-Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete (D-4), its owner ruling on the cleanup of overrides whose definition is unavailable (H1), the integration settings lock and the closing documentation remain, and nothing below claims otherwise. Independent review of slice 3 has not happened.
+Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete (D-4), its owner ruling on the cleanup of overrides whose definition is unavailable (H1) and the closing documentation remain, and nothing below claims otherwise. Work packages 1 and 2 have been independently reviewed and accepted; work package 3 has not been reviewed.
 
 | Work package | Scope | Status |
 |---|---|---|
 | 1 | Catalog schemas and typed producers for `schedule.deleted` (W1) and `schedule.delete_rejected` (W3) | **Done** (§10.1) |
 | 2 | Schedule hard-delete as one audited unit; typed not-found; controller exception mapping | **Done** (§10.2 to §10.4) |
-| 3 | The integration row lock in the integration settings writers and in the three blocker writers | Not started |
+| 3 | The integration row lock in the integration settings writers and in the three blocker writers | **Done** (§10.5 to §10.7) |
 | 4a, 4b | The integration delete as one audited unit, with the settings and secret cleanup (waits on the H1 ruling) | Not started |
 | 5 | `docs/04-api/contracts.md` for both deletes and the closing record | Not started |
 
@@ -598,5 +598,52 @@ Validation (real SQL Server, `apperture-test-sql`, `APPERTURE_REQUIRE_SQL_TESTS=
 | `dotnet build Apperture.slnx` | succeeded, 0 errors |
 
 Not rerun: the full unit and integration projects. Not changed: the integration delete, the integration settings writers, the blocker writers and secret ownership.
+
+### 10.5 Work package 3: the integration row lock in the writers
+
+Nothing has a foreign key from an integration setting, a notification definition, a notification subscription or an attention-routing override to its integration. An integration delete counts its blockers and then removes the row, so any of these writers committing after the count would leave a row that refers to a deleted integration (and, for a sensitive setting, a live secret nobody can reach). Each writer now takes the integration row lock (`GetByIdForUpdateAsync`, `UPDLOCK, ROWLOCK`, the statement an ownership move and a binding create already use) inside the transaction that writes its row, requires the integration to exist, and keeps the lock to the commit. A delete that holds the row makes the writer wait and then refuse; a row that committed first is visible to the delete's blocker count.
+
+| Writer | Lock position | Integration missing |
+|---|---|---|
+| `IntegrationSettingsService.SetAsync` (ordinary, sensitive replace, sensitive clear) and `ResetAsync` | First act of the audited unit's attempt, after the unit's operation lock and before the provider's options, the setting row and the secret | `KeyNotFoundException`; nothing is changed, staged or provisioned. The controller returns 404 (the host handler maps the same exception to 404) |
+| `SqlNotificationDefinitionStore.CreateUserDefinitionAsync` | First statement after the store's own execution-strategy transaction begins; the insert and the commit follow | `InvalidOperationException` (the contract the definition create already had); 400 |
+| `SqlNotificationSubscriptionStore.AddAsync` | As above, only when the command names an integration. A subscription without one takes no lock and keeps its previous behaviour (the operator self-subscription is unchanged) | `InvalidOperationException`; 400. A platform- or module-scoped definition with an integration id on the subscription previously had no existence check at all |
+| `AttentionRoutingManagementService.UpsertIntegrationRoutingAsync` | First statement of one execution-strategy transaction that holds the lock through the team check, the insert-or-update decision, the write and the commit | `InvalidOperationException`; 404 (the controller's existing mapping) |
+
+None of these writers was converted to an audited unit, and no ownership gate dependency was added. The in-transaction reset used by the future integration delete (`IIntegrationSettingResetInTransaction`) is unchanged and takes no lock: its caller holds the row.
+
+**Authorization and ownership moves.** Each writer's authorization depends on the integration's governed identity, which includes its owning resource context, and was decided before the transaction. An ownership move that committed in between would have been acted on stale. The lock is the point at which the identity stops moving (a move holds the same row lock), so each caller can pass an optional `reauthorize` delegate that the writer runs once the lock is held: the settings controller re-runs `RequireIntegrationManageAsync`, the definition service the same check it made at the top, the subscription service the definition-access check (only for an integration-scoped definition: a platform-scoped one is authorized by the definition alone), and the routing endpoint the integration read check it made. The policy is the same checks as before; only their timing moved. A refusal at that point is `UnauthorizedAccessException` (403) with nothing stored. The settings writers could not simply authorize inside the service, because the integration delete (`integration.delete`) calls the reset today, and a delete-only role must not need `integration.update`.
+
+**Lock order.** Audited operation lock (settings only), integration row, then the setting row or the dependent row, then the secret. The writers take no ownership gate, so they cannot invert with a mover that holds the gate and then the row.
+
+**Transaction safety.** Each store and the routing service use the execution strategy and a transaction of their own, with no ambient unit around them. A failed attempt detaches only the row it added or loaded; nothing else on the context is cleared.
+
+### 10.6 Tests and validation of work package 3
+
+| Test | What it shows |
+|---|---|
+| `IntegrationRowLockSqlServerTests` (SQL Server, 58) | For each of the seven writer paths, on a locking READ COMMITTED catalog and on a READ_COMMITTED_SNAPSHOT catalog: a second session holds the row, the server's own wait list shows the writer waiting on `Integrations`, nothing is changed while it waits, and it completes when the integration survives; when the competing session deletes the integration the writer refuses with the documented exception and leaves no row, no secret version, no store evidence and no audit row; a failing re-run authorization changes nothing; an ownership move that commits while the writer waits is what the re-run check reads; an integration-scoped definition's subscription is authorized twice; routing insert then update keeps one row; a subscription without an integration is not held up by the row; a sensitive replace commits its row, secret and both audit rows together; five writers racing for one integration over six rounds produce no deadlock victim; a mover holding the ownership gate does not hold a writer up |
+| Unit tests, adapted and new | The settings service locks before the provider and the setting read; a missing integration is `KeyNotFoundException` for set and reset; re-run authorization; both stores and the routing service refuse a missing integration and run the re-check; the definition service checks the integration twice |
+| Existing fixtures | Synthetic integration ids now have an integration row (the Slice 2 settings SQL suite) or a mock that answers the locking read (the settings unit tests). Assertions were not changed |
+
+The wait-and-refuse cases were also run with the lock temporarily replaced by a plain read at all three lock sites: all 28 failed ("the writer did not wait"). The code was restored.
+
+Validation (real SQL Server, `APPERTURE_REQUIRE_SQL_TESTS=1`, credentials read from `.env` into the process only, `--artifacts-path artifacts/aud14w3 -m:1`):
+
+| Command | Result |
+|---|---|
+| `Apperture.UnitTests` (all) | 4028 / 4028 passed |
+| `Apperture.IntegrationTests` (all, includes the Slice 2 settings audit suite and the schedule delete suites) | 626 / 626 passed |
+| `Apperture.ArchTests` | 38 / 38 passed |
+| `dotnet build Apperture.slnx` | succeeded, 0 errors |
+
+### 10.7 Boundary and carried findings
+
+These tests prove that the writers take and respect the lock. The race between an integration delete and each writer, in both orders, needs the audited integration delete and is proven by its own tests (work package 4b); no temporary delete was written to run them early.
+
+- The provider's option lookup for a provider-backed integration setting now runs while the integration row is held (it was already inside the unit). A provider that makes a slow external call lengthens the hold. Not changed here.
+- The attention-routing endpoint is authorized by integration read only (section 7); the re-run keeps that policy and does not fix it.
+- `ClearIntegrationRoutingAsync`, subscription removal and definition update do not create a reference and take no lock.
+- A commit whose acknowledgement is lost is retried by the connection's execution strategy; the definition and subscription ids are fixed across attempts, so a retry after a real commit fails on the key instead of creating a second row.
 
 

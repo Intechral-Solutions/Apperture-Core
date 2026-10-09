@@ -484,7 +484,7 @@ public sealed class SettingAuditValuePolicyTests
                     Reads,
                     PlatformSettingOptionProviderTestHarness.CreateCoordinator(new Mock<IPlatformSettingOptionProvider>().Object),
                     secrets,
-                    new Mock<Apperture.Core.Application.Services.IIntegrationRepository>().Object,
+                    ExistingIntegration(),
                     Audit);
             }
         }
@@ -492,6 +492,32 @@ public sealed class SettingAuditValuePolicyTests
         public AuditRecording Audit { get; }
 
         public ReadGate Reads { get; }
+
+        /// <summary>
+        /// The integration the service changes settings of. A change takes the integration row lock and requires the row
+        /// (AUD-1.4 slice 3), so the repository answers for it on both the plain and the locking read.
+        /// </summary>
+        private static Apperture.Core.Application.Services.IIntegrationRepository ExistingIntegration()
+        {
+            ValueTask<Apperture.Core.Domain.Integration.Integration?> Find(Apperture.Core.Domain.Integration.IntegrationId id) =>
+                ValueTask.FromResult<Apperture.Core.Domain.Integration.Integration?>(
+                    new Apperture.Core.Domain.Integration.Integration(
+                        id,
+                        "Test Integration",
+                        "mod-1",
+                        null,
+                        Apperture.Core.Domain.Integration.IntegrationState.Active,
+                        null,
+                        DateTimeOffset.UtcNow,
+                        DateTimeOffset.UtcNow));
+
+            var integrations = new Mock<Apperture.Core.Application.Services.IIntegrationRepository>();
+            integrations.Setup(x => x.GetByIdAsync(It.IsAny<Apperture.Core.Domain.Integration.IntegrationId>(), It.IsAny<CancellationToken>()))
+                .Returns((Apperture.Core.Domain.Integration.IntegrationId id, CancellationToken _) => Find(id));
+            integrations.Setup(x => x.GetByIdForUpdateAsync(It.IsAny<Apperture.Core.Domain.Integration.IntegrationId>(), It.IsAny<CancellationToken>()))
+                .Returns((Apperture.Core.Domain.Integration.IntegrationId id, CancellationToken _) => Find(id));
+            return integrations.Object;
+        }
 
         public async Task<PlatformSettingResolvedValue> SetAsync(string value, string? rowVersion) =>
             _service == Service.Platform
