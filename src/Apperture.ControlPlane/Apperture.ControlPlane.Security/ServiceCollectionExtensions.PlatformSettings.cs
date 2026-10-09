@@ -45,7 +45,7 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
         services.AddScoped<IntegrationSettingsService>();
         services.AddScoped<IIntegrationSettingsService>(sp => sp.GetRequiredService<IntegrationSettingsService>());
-        // Internal and registered only here: the in-transaction reset integration delete will call inside its own unit.
+        // Internal and registered only here: the in-transaction reset. The integration delete does not use it (owner ruling H1).
         services.AddScoped<IIntegrationSettingResetInTransaction>(sp => sp.GetRequiredService<IntegrationSettingsService>());
         services.AddScoped<IntegrationSettingsAuthorization>();
         services.AddScoped<PlatformSettingSecretMaterialProvisioner>();

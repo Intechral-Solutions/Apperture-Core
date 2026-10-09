@@ -13,15 +13,15 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 /// <remarks>
 /// A setting's rows target the integration setting (the integration and the key) and carry the integration's owning resource
-/// context as a related reference, as the previous audit records did. Integration delete will reset its settings through
-/// <see cref="IIntegrationSettingResetInTransaction"/> inside its own unit (slice 3).
+/// context as a related reference, as the previous audit records did. Integration delete does not go through this service: it
+/// removes every override by row and disposes of their secrets under owner ruling H1 inside its own unit (slice 3).
 /// <para><b>Integration row lock (slice 3).</b> Nothing has a foreign key from a setting to its integration, so a change that
 /// commits after an integration delete has passed its checks would leave an orphaned override, and for a sensitive setting an
 /// orphaned live secret. Every public change therefore takes the integration row lock as the first act of its unit's attempt,
 /// after the unit's operation lock and before any setting row is read, and keeps it to the commit. An integration that is gone by
 /// then is a <see cref="KeyNotFoundException"/>: nothing is changed, staged or provisioned. The lock order is the unit's
-/// operation lock, the integration row, the setting row, then the secret. The in-transaction reset takes no lock of its own: its
-/// caller, the integration delete, already holds the row.</para>
+/// operation lock, the integration row, the setting row, then the secret. The integration delete takes the same row lock in its
+/// own unit, so a change and a delete of one integration are serialized. The in-transaction reset takes no lock of its own.</para>
 /// </remarks>
 public sealed class IntegrationSettingsService : IIntegrationSettingsService, IIntegrationSettingResetInTransaction
 {

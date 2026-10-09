@@ -29,7 +29,7 @@ namespace Apperture.IntegrationTests.Audit;
 /// blocker and removes no integration.
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
-public sealed class IntegrationSettingSecretDispositionSqlServerTests : IClassFixture<IntegrationSettingSecretDispositionSqlServerTests.Catalogs>
+public sealed partial class IntegrationSettingSecretDispositionSqlServerTests : IClassFixture<IntegrationSettingSecretDispositionSqlServerTests.Catalogs>
 {
     private const string CredentialKey = "Sample.Credential";
     private const string OtherKey = "Sample.Other.Credential";

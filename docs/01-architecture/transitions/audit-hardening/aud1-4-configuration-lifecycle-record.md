@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slice 3 is in progress (§10 and §11: the schedule delete, the integration row locks, and the mechanisms the integration delete needs; the integration delete itself is not converted). Slices 4 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slice 3 is in progress (§10 to §12: the schedule delete, the integration row locks, the H1 mechanisms and the audited integration delete; work package 5, the slice's closing documentation, has not started, and work packages 3, 4a and 4b await their combined independent review). Slices 4 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`.
 
@@ -57,7 +57,7 @@ The product owner approved the four orientation recommendations. They are record
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
-| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented and independently reviewed; work package 3 (the integration row lock in the writers the integration delete must coordinate with) is implemented (§10); work package 4a, the mechanisms the integration delete needs under the approved owner ruling H1, is implemented (§11); the integration delete itself (work package 4b) and the closing documentation are not started. Independent review |
+| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented and independently reviewed; work package 3 (the integration row lock in the writers the integration delete must coordinate with) is implemented (§10); work package 4a, the mechanisms the integration delete needs under the approved owner ruling H1, is implemented (§11); work package 4b, the integration delete as one audited unit, is implemented (§12); the closing documentation (work package 5) is not started. Combined independent review of work packages 3, 4a and 4b pending |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
@@ -535,7 +535,7 @@ Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1
 
 ## 10. Slice 3: schedule and integration delete (in progress)
 
-Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete itself (D-4; work package 4b) and the closing documentation remain, and nothing below claims otherwise. The owner approved ruling H1 (§11.1) for the cleanup of overrides whose definition is unavailable, and work package 4a (§11) built the mechanisms the delete needs. Work packages 1 and 2 have been independently reviewed and accepted; work packages 3 and 4a have not been reviewed. A combined independent review of work packages 3, 4a and 4b is scheduled for after 4b.
+Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the closing documentation (work package 5) remains, and nothing below claims otherwise. The owner approved ruling H1 (§11.1) for the cleanup of overrides whose definition is unavailable; work package 4a (§11) built the mechanisms the delete needs and work package 4b (§12) converted the integration delete (D-4). Work packages 1 and 2 have been independently reviewed and accepted; work packages 3, 4a and 4b have not been reviewed and await one combined independent review.
 
 | Work package | Scope | Status |
 |---|---|---|
@@ -543,7 +543,7 @@ Slice 3 is implemented in work packages from the planning report approved on thi
 | 2 | Schedule hard-delete as one audited unit; typed not-found; controller exception mapping | **Done** (§10.2 to §10.4) |
 | 3 | The integration row lock in the integration settings writers and in the three blocker writers | **Done** (§10.5 to §10.7) |
 | 4a | The mechanisms the integration delete needs: `integration.deleted` schema and producer, the persisted-override and surviving-reference inventory, the H1 classifier, and transactional secret retirement | **Done** (§11). Implemented and validated; no delete is converted |
-| 4b | The integration delete as one audited unit: the lock, the blockers, the coordinated removal using the 4a primitives, M6 | Not started |
+| 4b | The integration delete as one audited unit: the lock, the blockers, the coordinated removal using the 4a primitives, M6 | **Done** (§12). Implemented and validated; not reviewed |
 | 5 | `docs/04-api/contracts.md` for both deletes and the closing record | Not started |
 
 ### 10.1 Catalog and producers
@@ -773,6 +773,8 @@ The scan is a read, not a lock, and is not stable under either isolation mode. U
 
 ### 11.10 Dependencies for work package 4b
 
+*Addressed by work package 4b (§12), with these departures: the overrides are removed by their stored row id, not through `DeleteScopedAsync`, which rebuilds the id from the key and would miss a row stored under another id shape (a correction of the second bullet); the primary row is staged before the removals; the H1 refusal is a 409 with a code, not the blockers' 400 (§12.7); and the connection-reference gap is accepted as bounded (§12.8), not closed.*
+
 - Acquire the integration row lock first, then the blocker checks, then `ClassifyAsync`, all inside the unit; call `plan.ThrowIfRefused()` before any change.
 - Remove **every** override in `plan.Overrides` (the repository's `DeleteScopedAsync` works without a definition), then `RetireAsync`, then stage `integration.deleted` with `settingsRemoved = plan.Overrides.Count` (staging the primary row first is also fine; the helper only needs a current transaction).
 - Do not call `IIntegrationSettingResetInTransaction` for a setting the plan governs (§11.1). Per-key `integration.settings.reset` rows for the removed overrides are 4b's decision; the count on `integration.deleted` is the required evidence.
@@ -807,6 +809,134 @@ Not run, with the reason: the full `Apperture.IntegrationTests` project (the fil
 ### 11.12 State after work package 4a
 
 Work package 4a is implemented and validated; it is not reviewed. The integration delete is exactly as it was: it still resets each setting in its own unit, removes the integration in a separate save, and appends the legacy audit record afterwards. Work package 4b converts it with the primitives above; work package 5 closes the slice. Slice 3 is not complete.
+
+## 12. Work package 4b: the audited integration delete
+
+Implemented on this branch after work package 4a. **Not independently reviewed**: work packages 3, 4a and 4b get one combined review now. Slice 3 is not closed: work package 5 (`docs/04-api/contracts.md` for both deletes, the closing record and the deferred LOW findings of work packages 1 and 2) remains, and nothing here claims AUD-1.4 complete.
+
+### 12.1 The delete as one audited unit
+
+`IntegrationManagementService.DeleteIntegrationAsync` is one `IAuditedUnitOfWork.ExecuteAsync` with `AuditActor.CurrentPrincipal` and primary action `integration.deleted`. The unit owns the execution strategy and the transaction; the service opens neither and commits nothing itself. The legacy `IAuditService` append after the commit, the per-key `IIntegrationSettingsService.ResetAsync` calls in units of their own, and the separate save of the integration row are gone, and the service no longer depends on `IAuditService` or `IIntegrationSettingsService`.
+
+| Step | Where | What |
+|---|---|---|
+| 0 | Before the unit | A missing actor is refused (403). The integration is read and `integration.delete` evaluated as an early answer (404, 403) before a unit is opened. This decides nothing: steps 2 and 3 repeat it |
+| 1 | Unit | The unit's own operation lock (`sp_getapplock` on `apperture.audit-op.{operationEventId}`: per operation, so it serializes nothing between operations) |
+| 2 | Attempt | The integration row lock: `GetByIdForUpdateAsync` (`UPDLOCK, ROWLOCK`, untracked), held to the commit or rollback. Missing: `IntegrationNotFoundException`, nothing staged |
+| 3 | Attempt | `integration.delete` evaluated again against the row as locked |
+| 4 | Attempt | The five blockers, counted (§12.2) |
+| 5 | Attempt | `IntegrationSettingSecretClassifier.ClassifyAsync` on the unit's context and transaction, then `plan.ThrowIfRefused()`, before any stage or change |
+| 6 | Attempt | Stage `integration.deleted` (`settingsRemoved` = the plan's override count) |
+| 7 | Attempt | Remove every override in the plan by row id; require that none of the integration's overrides remains (§12.4) |
+| 8 | Attempt | `IntegrationSettingSecretRetirement.RetireAsync`: each safely owned, unshared secret disabled once, each with its Secrets-category row (reason `integration_deleted`) |
+| 9 | Attempt | Remove the integration row |
+| 10 | Unit | Save, check every staged row was inserted, commit; on an uncertain commit, verify (§12.6) |
+
+**Lock order:** operation lock, integration row, then the rows the attempt reads and writes (blocker tables, setting rows, secret descriptors). **No ownership gate.** The mover (`ResourceOwnershipMoveService.MoveIntegrationAsync`), binding create and attached-schedule create take the gate and then this row; a delete that took the gate after the row could deadlock with them, and a delete moves no ownership and makes nothing archive-blocking, so it needs none. The WP3 writers take no gate either. The delete therefore adds no edge to the lock graph: everything that contends with it does so on the integration row, which is first for both.
+
+### 12.2 The five blockers under the lock
+
+The CTX-3B referential-lifecycle inventory's five current-state blockers, counted inside the transaction after the row lock, in this order: `Bindings`, `ScheduleDefinitions`, `NotificationDefinitions` (integration-scoped), `NotificationSubscriptions` by their own `IntegrationId` (so an integration-associated subscription under a platform- or module-scoped definition counts; one with no integration id is not a blocker), and `IntegrationAttentionRoutings`. A blocker is `IntegrationDeleteBlockedException` (typed `Blocker` and `Count`, the operator-facing message unchanged), and the attempt rolls back with nothing staged or changed.
+
+**Why a plain count is enough under both isolation modes.** Every writer that can add a blocker row holds this same row lock from before its insert to its commit: binding create and attached-schedule create (already), notification definition create, integration-associated subscription add and attention-routing upsert (WP3). So when the delete holds the row, no uncommitted blocker row of this integration can exist, and every one that committed did so before the delete's lock was granted. Under locking READ COMMITTED the count reads committed rows; under READ_COMMITTED_SNAPSHOT each count statement reads the data committed before it started, which includes all of them. A writer that arrives later waits on the row and, if the delete commits, wakes to a missing integration and refuses. No count is taken before the lock and none decides anything outside the transaction.
+
+Graph: no table has a foreign key to `Integrations` (the model was inspected), so the integration row and its `PlatformSettingValues` are the whole delete graph; nothing cascades. Historical `IntegrationId` columns (runs, start requests, workflow instances, platform events, notification instances, attention incidents, audit rows) are untouched and dangle, as CTX-2 established. `ScheduleAssignments` and `ScheduleStates` are covered by the schedule blocker.
+
+### 12.3 Authorization and ownership moves
+
+`integration.delete` is evaluated against `integration.GetIdentity()` of the row **as locked**, so a move or any identity change that committed while the delete waited is what the decision reads, and none can commit after it until the delete ends. A refusal there is `UnauthorizedAccessException` (403) with nothing changed. The delete's internal removal of settings and secrets authorizes nothing further: deleting never needs `integration.update`. `IIntegrationManagementService.DeleteIntegrationAsync` is the only entry point (the controller calls it); the 4a primitives are building blocks that change nothing without a caller's unit and a plan, and the in-transaction settings reset is not called.
+
+Today's policy for `integration.delete` does not itself read the owning resource context (the identity carries the scope key); the post-lock evaluation still matters for role and identity changes, and the SQL test proves its timing with a context-sensitive policy: a move that commits while the delete waits is the owner the second check reads, and the delete is refused.
+
+### 12.4 Historical overrides and H1
+
+The plan's `Overrides` (WP4a §11.4) is every persisted override of the integration, found by ownership alone. The delete removes them **by their stored row id**, tracked and saved in the unit, so a key with no definition, a reclassified key and a row whose id predates today's `{kind}:{scope}:{key}` shape are all removed. The row count must match the plan (otherwise `DbUpdateConcurrencyException`, rollback), and afterwards no override of the integration may remain: the overrides' own writers hold the row lock, so this only fires if a writer outside the protocol added one, and the delete then rolls back rather than orphan it. The legacy `IIntegrationSettingResetInTransaction` is not used (WP4a §11.1).
+
+Classification runs on the request's scoped context, which is the unit's: the inventory's queries, the store's descriptor reads and the reference scan join the open transaction (`SettingsServicesShareTheUnitContextTests` and `IntegrationServiceSharesTheUnitContextTests` pin the context; the SQL tests run them in the real unit). It runs after the blockers and immediately before the mutations, so the read-to-retirement window is the rest of one attempt. An ambiguous plan refuses before anything is staged; the refusal is never caught, never declared a no-op. A secret retained because a surviving reference holds it stays active and its override is still removed.
+
+**WP4a review of the interpretation boundaries (no correction needed).** A missing or reclassified definition is only a hint and does not suppress store evidence; a malformed value on an ordinary or undefined setting still reports any GUID token it holds, which is then judged by the store's provenance; a secret named by several overrides is one disposition and is retired at most once, and a name that matches one of several keys is still a mismatch (refusal unless a survivor retains it); a retained-by-survivor outcome needs a confirmed surviving reference, and the absence of one is never presented as global proof (§11.9). The SQL suite exercises each through the delete path. **No WP4a code was changed in 4b** apart from adding the refusal's machine code (`IntegrationDeleteRefusalCodes`).
+
+### 12.5 Audit evidence
+
+| Row | Role | Content |
+|---|---|---|
+| `integration.deleted` | primary, W1, Configuration, standard, basis `change` | Target `integration:{id}`; related resource context (the owner as locked) and module; `name` (snapshot), `moduleId`, `settingsRemoved` (every override removed, defined or not). No key, value, secret or reference |
+| `integration.settings.secret.retired` | secondary, Secrets, elevated | One per secret retired; target `{integrationId}:{key}`; reason `integration_deleted`; no secret or id |
+
+Both carry the unit's actor and share the operation event id; the primary row's event id is that id. **Package decision P-4b-1: no per-key `integration.settings.reset` rows.** The gate requires none for a delete (§13.6 and §22 list the delete's own row), a removed key with no definition has no sensitivity to record, and a reset row describes an operator resetting one setting, not the removal of an integration; the count on the primary row is the evidence. Before this package the delete wrote one reset row (and possibly one retirement row with reason `reset`) per key in separate units, plus a legacy text record; all of that is replaced by the rows above, written once, in the delete's own transaction.
+
+### 12.6 Ambiguous commits (M6)
+
+The unit's verification is unchanged and reused: on an uncertain commit it takes the operation lock on a fresh connection and reads the primary row by **this operation's event id**. Present: a verified commit, and the delete reports success (204) through a reconstruction that returns success from that row alone and never reads the integration; the attempt is not rerun, so there is no second primary row, retirement row or `Disable`. Absent: a confirmed rollback, and the attempt reruns once with the same event id (one of everything). Lock not granted or verification failed: `outcome_unknown` (500 with code and event id). Success is never inferred from the integration being absent: inside the attempt a missing integration is `IntegrationNotFoundException` (404), whether it never existed or another delete committed first, and that operation's own primary row is the only success evidence.
+
+### 12.7 HTTP mapping
+
+| Outcome | Exception | Status |
+|---|---|---|
+| Deleted, or verified commit after a lost acknowledgement | none | 204 |
+| No actor, or `integration.delete` denied before or under the lock | `UnauthorizedAccessException` | 403 |
+| Integration does not exist | `IntegrationNotFoundException` (new, typed) | **404** (was 400) |
+| A blocker | `IntegrationDeleteBlockedException` (new, typed) | 400 with the same `{ error }` message as before |
+| Undetermined credential disposition (H1) | `IntegrationSettingDispositionRefusedException` | **409** `{ error, code: "integration_setting_credential_undetermined" }` (new) |
+| An override changed by a writer outside the protocol during the delete | `DbUpdateConcurrencyException` | 409 |
+| Audit invariant, retirement failure, transaction or infrastructure failure, `outcome_unknown`, `committed_result_unavailable`, `operation_not_completed` | as thrown | The host handler (500, with the audit codes); never a 4xx |
+
+The controller no longer maps every `InvalidOperationException` to 400 (AUD-1.3 D19). Mapping is by type, never by message text. The 404 for a missing integration is an intentional change from the previous 400, made to match the schedule delete; the management client surfaces any non-success with its `{ error }` message, so the UI is unaffected. Blockers keep 400 so the existing client and UI contract (`ManagementClientIntegrationDeleteTests`) is unchanged. The refusal's message names no secret, reference, key or classification detail; its keys are on the typed refusal and are not returned. A retirement failure's message names nothing and does not carry the store's exception (whose message embeds the secret id), so the host handler's error log of the exception cannot carry the id either.
+
+### 12.8 Connection references (bounded risk, unchanged)
+
+Verified: connection create and update take no integration lock and accept operator-supplied GUID references (§11.8). The delete performs its inventory inside its audited transaction, after the lock and the blockers and immediately before the mutations, so every reference committed before the scan is seen and the window is not widened. A connection that comes to name a candidate secret after the scan and before the commit is not seen under either isolation mode; the delete may then retire a secret that connection names. This is the limit owner ruling H1 accepts (§11.1 E, §11.9); it is not closed here, no connection writer was changed, and nothing claims the scan is serializable or snapshot-stable.
+
+### 12.9 Tests
+
+| Test | What it shows |
+|---|---|
+| `IntegrationRowLockSqlServerTests` (+52, SQL Server, both isolation modes) | **Writer first** (the writer paused just after its own locked read, the delete shown by the server's lock-wait list to be waiting on `Integrations`, then the writer released), for all seven WP3 writers: a definition, an integration-associated subscription and a routing override make the delete refuse with the matching typed blocker and nothing committed; an ordinary set, a sensitive replace, a clear and a reset are followed by a delete that removes whatever they left (`settingsRemoved` 1, 1, 0, 0) and retires the replace's new secret. **Delete first** (the delete paused just after its locked read, the writer shown waiting): the writer wakes to a missing integration and refuses (`KeyNotFoundException` or `InvalidOperationException`), leaving no override, definition, subscription, routing, secret, version or setting audit row; the prepared secret of the clear case is retired by the delete. **Delete first and refused** (a pre-existing blocker): the writer then completes normally. An ownership move committed while the delete waits is what the delete's second check reads (refused, nothing changed). A mover holding the ownership gate waits for the delete's row and then finds the integration gone, with no deadlock. Five writers and a delete racing for one integration over six rounds: no deadlock victim, every failure a protocol refusal, and either the integration survives with no `integration.deleted` row or nothing refers to it and no setting secret it owned is still usable. A subscription with no integration is not held up and does not block |
+| `IntegrationSettingSecretDispositionSqlServerTests` (+36, SQL Server, both isolation modes) | Through the real delete: ordinary, undefined and reclassified overrides and a legacy-id row are removed and counted (`settingsRemoved` 4), no per-key reset rows; owned secrets of an undefined and a reclassified key retired; an owned secret retired with both rows in one operation, actor, category, target, context, module, event ids, no key in the primary details, no secret material anywhere; retained for each of the four survivor kinds with the override still removed; ambiguous ownership and a key mismatch with two overrides refuse with nothing changed (including the safe secret) and a message naming nothing; a secret named twice retired once; an audit insert failure and a failure of the final integration delete each roll back the integration, overrides, secret, store evidence and every row; a lost acknowledgement is one success with one of everything and no rerun; a confirmed rollback reruns once; an unconfirmed commit is `outcome_unknown` and nothing reads as done; a second delete and a row that vanished before the lock are 404 with one primary row at most; authorization is checked twice, only `integration.delete`, and a refusal under the lock changes nothing. GUID formats `D`, `N`, `B`, `P`, upper and lower case, appear in the overrides and survivors |
+| `IntegrationsControllerDeleteTests` (unit, 7) | 204, 403, 404, 400 with the message, 409 with the code and no key, secret or classification, 409 for a concurrency conflict; audit invariants, retirement failures, plain `InvalidOperationException` and the three audit outcomes reach the host handler unchanged |
+| `IntegrationDeleteReferentialLifecycleTests` (unit, adapted and 3 new) | The previous behaviours on the recording unit with typed exceptions; one staged primary row and no legacy record; a refused delete commits nothing; a missing integration is typed; a sensitive setting's retirement is recorded under the delete with no reset rows; the delete refuses without its unit |
+| `IntegrationServiceSharesTheUnitContextTests` (unit, new) | With the Management host's registrations the delete's unit, repository, classifier inventory, secret stores and retirement each hold the scope's one context |
+| Adapted | Test harnesses that construct `IntegrationManagementService` without deleting no longer pass the removed dependencies; `ScheduleDeleteTests` asserts the staged row |
+
+A further race, **two deletes**: the second passes its early check, waits on the row inside its unit while the first commits, and is then `IntegrationNotFoundException` with one primary row in all (2 cases, both modes; part of the 52 race cases counted below).
+
+**Mutation evidence** (product code edited temporarily, restored byte for byte and rebuilt, never committed):
+
+| Mutation | Result |
+|---|---|
+| The delete reads the integration row without the lock | 49 failures across the race and delete-path suites (the waits are never observed; blockers committed after the count; post-lock authorization never sees the move) |
+| Overrides removed by a key-built id instead of the stored row id | 2 failures (the legacy-id row survives and the delete rolls back) |
+| H1 refusal skipped, in the delete and in the retirement's own guard | 4 failures (both refusal cases delete). With only the delete's call removed the retirement's guard still refuses and the unit rolls back, so that single mutation is not observable by design |
+| The primary row not staged in the delete's transaction | 24 failures (the unit refuses to commit without it) |
+| A missing integration under the lock read as success (a no-op returning 204) | 4 failures: the row that vanished before the lock and the two-delete race |
+
+**Validation** (real SQL Server `apperture-test-sql`, `APPERTURE_REQUIRE_SQL_TESTS=1`, credentials read from `.env` by the test process and never on a command line, `--artifacts-path artifacts/aud14w4b -m:1`):
+
+| Command | Result |
+|---|---|
+| `git diff --check` | clean |
+| `dotnet build Apperture.slnx` | succeeded, 0 errors |
+| `dotnet test tests/Apperture.UnitTests` (all) | 4077 / 4077 passed (4065 before, 12 new) |
+| `dotnet test tests/Apperture.ArchTests` | 38 / 38 passed |
+| `dotnet test tests/Apperture.IntegrationTests --filter IntegrationRowLockSqlServerTests` | 110 / 110 passed (58 WP3, 52 new) |
+| `dotnet test tests/Apperture.IntegrationTests --filter IntegrationSettingSecretDispositionSqlServerTests` | 117 / 117 passed (81 WP4a, 36 new) |
+| `dotnet test tests/Apperture.IntegrationTests` filtered to the `IntegrationTests.Audit` namespace (every audit SQL suite: the two above, settings, secret store, Entra, schedule delete, the classification benchmark), `ManagementHostIntegrationConfigurationHttpTests`, `ResourceOwnershipMoveConcurrencySqlServerTests`, `ScheduleDeleteSqlServerTests`, `ManagementHostGovernanceHttpTests` (the real Management host's dependency graph, which now builds the converted service) and `IntegrationTestSecretProtectorTests` | 517 / 517 passed, none skipped (29 minutes) |
+
+Not run, with the reason: the full `Apperture.IntegrationTests` project (the filtered run covers every consumer of the changed service, constructor and catalog entry; PR CI runs all of it), the UI test projects and the SEC-1 browser suite (no UI changed; the API change is the status of a missing id and the new 409).
+
+### 12.10 Residual risks and findings
+
+- **Connection references** (§12.8): accepted, bounded, documented; not closed.
+- **Status change**: deleting a missing integration is now 404 (was 400); a credential refusal is a new 409. `docs/04-api/contracts.md` is updated with both deletes in work package 5.
+- **No W3 refusal row** for a blocked or H1-refused integration delete. Before, a blocked delete wrote no audit row either; the catalog has no `integration.delete_rejected` action and none was invented (the schedule delete's W3 row exists because the gate names it).
+- **An actor that maps to no user** now fails in the unit (as every converted writer does) instead of deleting with a legacy record carrying the raw actor id.
+- **`IIntegrationSettingResetInTransaction`** has no production caller any more; it is kept, with its documentation corrected, and its removal is left to work package 5 or later.
+- The early check before the unit is advisory; its 404 or 403 can only be stricter than the unit's own decision a moment later, never more permissive.
+- The WP1/WP2 optional LOW findings remain with work package 5. Findings outside AUD-1.4 (§7) are unchanged.
+
+### 12.11 State after work package 4b
+
+The integration hard-delete is converted. Slice 3 is not closed: work package 5 (contracts and the closing record) remains, and work packages 3, 4a and 4b await their combined independent review. AUD-1.4 is not complete; slices 4 to 8 have not started.
 
 
 

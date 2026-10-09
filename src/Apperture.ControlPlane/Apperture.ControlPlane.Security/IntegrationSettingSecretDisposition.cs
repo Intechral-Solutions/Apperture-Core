@@ -229,6 +229,13 @@ public sealed class IntegrationSettingDeletionPlan
         $"Plan for an integration: {Overrides.Count} override(s), {Retirements.Count} secret(s) to retire, {(IsRefused ? "refused" : "not refused")}";
 }
 
+/// <summary>Stable machine codes of an integration delete's refusals, for the API.</summary>
+public static class IntegrationDeleteRefusalCodes
+{
+    /// <summary>A setting holds a stored credential whose ownership or disposition could not be established (owner ruling H1).</summary>
+    public const string UndeterminedCredential = "integration_setting_credential_undetermined";
+}
+
 /// <summary>
 /// An integration delete is refused because one or more of its setting overrides hold a credential whose ownership or disposition
 /// could not be determined. Nothing was changed. The message names no secret, reference or metadata of one; the keys of the

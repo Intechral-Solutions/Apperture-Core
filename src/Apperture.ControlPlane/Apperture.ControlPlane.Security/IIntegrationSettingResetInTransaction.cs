@@ -4,7 +4,7 @@ namespace Apperture.ControlPlane.Security;
 
 /// <summary>
 /// Resets one integration-scoped setting inside an audited unit that is already open, for an operation that removes settings
-/// as part of a larger change (integration delete, AUD-1.4 slice 3). A unit does not nest, so the public
+/// as part of a larger change (AUD-1.4 slice 2). A unit does not nest, so the public
 /// <c>IIntegrationSettingsService.ResetAsync</c>, which opens its own, cannot be called from inside one.
 /// </summary>
 /// <remarks>
@@ -22,13 +22,12 @@ namespace Apperture.ControlPlane.Security;
 /// nothing and returns false, since the caller's unit may already hold staged rows and cannot be declared a no-op here.</para>
 /// <para>A setting removed by another request between the helper's read and its delete is a concurrency conflict
 /// (<c>DbUpdateConcurrencyException</c>) that rolls the caller's unit back; it is never reported as a reset this request made.</para>
-/// <para>Intended use, slice 3: integration delete acquires the integration row lock, runs its blocker checks, then calls this for
-/// each key of <c>PlatformSettingValues</c> scoped to the integration, before it removes the integration row, all in its one unit.
-/// The caller's lock and ownership gate are untouched: the helper takes no lock of its own.</para>
-/// <para><b>Not the integration delete's secret disposition.</b> This helper disables the secret a sensitive setting's name matches
-/// without looking for references that survive the delete, and ignores keys with no definition. The integration delete takes its
-/// override list and its secret decisions from <c>IntegrationSettingSecretClassifier</c> (work package 4a, owner ruling H1) and must
-/// not call this for a setting whose secret that plan governs.</para>
+/// <para>The caller's lock and ownership gate are untouched: the helper takes no lock of its own.</para>
+/// <para><b>Not used by the integration delete.</b> It was written for it, but this helper disables the secret a sensitive setting's
+/// name matches without looking for references that survive the delete, and ignores keys with no definition, which owner ruling
+/// H1 forbids. The integration delete (work package 4b) removes its overrides by row and takes its secret decisions from
+/// <c>IntegrationSettingSecretClassifier</c> and <c>IntegrationSettingSecretRetirement</c>. No production caller remains; a new
+/// caller must not use it for a setting whose secret an H1 plan governs.</para>
 /// </remarks>
 internal interface IIntegrationSettingResetInTransaction
 {

@@ -1577,7 +1577,7 @@ internal static class AuditActionCatalogEntries
             Details = AuditDetailSchemas.IntegrationDeleted,
             IntroducedIn = "2609ba11",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationManagementService.cs:353",
+            Writer = "IntegrationManagementService.cs",
         },
         new()
         {

@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
@@ -9,6 +10,7 @@ using Client = Apperture.Management.Client;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Management.Api.Controllers;
 
@@ -580,7 +582,11 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
-    /// Deletes an integration.
+    /// Deletes an integration: 204 when deleted (including a delete whose commit was verified after a lost acknowledgement), 403,
+    /// 404 when it does not exist, 400 with the operator-facing reason when a dependent blocks it, 409 when one of its settings
+    /// holds a stored credential whose ownership could not be established, 409 when another request changed its settings during
+    /// the delete. Anything else (an audit invariant, a transaction or infrastructure failure, an unconfirmed commit) reaches the
+    /// host's handler: it is never reported as a missing integration or a refusal (AUD-1.3 D19).
     /// </summary>
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
@@ -594,9 +600,22 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (IntegrationNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (IntegrationDeleteBlockedException ex)
         {
             return BadRequest(new { error = ex.Message });
+        }
+        catch (IntegrationSettingDispositionRefusedException ex)
+        {
+            // The message names no secret, reference, setting key or metadata of a secret.
+            return Conflict(new { error = ex.Message, code = IntegrationDeleteRefusalCodes.UndeterminedCredential });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { error = "The integration's settings were changed by another request. Reload and try again." });
         }
     }
 

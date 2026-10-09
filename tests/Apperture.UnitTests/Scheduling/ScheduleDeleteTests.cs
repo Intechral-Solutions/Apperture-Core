@@ -348,7 +348,7 @@ public sealed class ScheduleDeleteTests
         (await integrations.Db.Integrations.AnyAsync(i => i.Id == integration.Id.Value)).Should().BeFalse();
         (await integrations.Db.ScheduleDefinitions.AnyAsync()).Should().BeFalse();
         (await integrations.Db.ScheduleRuns.SingleAsync()).ScheduleId.Should().Be(schedule.Id.Value);
-        integrations.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.IntegrationDeleted);
+        integrations.DeleteAudit.Actions.Should().Equal(AuditActionNames.IntegrationDeleted);
         integrations.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.ScheduleDeleted);
         audit.Actions.Should().Equal(new[] { AuditActionNames.ScheduleDeleted });
     }

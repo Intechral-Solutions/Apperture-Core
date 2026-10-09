@@ -35,7 +35,7 @@ namespace Apperture.IntegrationTests.Audit;
 /// orders) belongs to the integration delete's own tests: it needs the audited integration delete.
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
-public sealed class IntegrationRowLockSqlServerTests : IClassFixture<IntegrationRowLockSqlServerTests.Catalogs>
+public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<IntegrationRowLockSqlServerTests.Catalogs>
 {
     private const string TextKey = "Test.W3.Integration.Text";
     private const string SecretKey = "Test.W3.Integration.Secret";
@@ -365,11 +365,12 @@ public sealed class IntegrationRowLockSqlServerTests : IClassFixture<Integration
         string integrationId,
         Principal principal,
         string definitionId,
-        Func<AppertureDbContext, string, CancellationToken, ValueTask>? reauthorize)
+        Func<AppertureDbContext, string, CancellationToken, ValueTask>? reauthorize,
+        Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor? interceptor = null)
     {
         return async () =>
         {
-            await using var db = scratch.NewDb();
+            await using var db = interceptor is null ? scratch.NewDb() : scratch.NewDb(interceptor);
             Func<CancellationToken, ValueTask>? recheck = reauthorize is null ? null : ct => reauthorize(db, integrationId, ct);
             switch (kind)
             {

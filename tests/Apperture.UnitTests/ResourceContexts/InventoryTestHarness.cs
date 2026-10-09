@@ -99,9 +99,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             integrationRepository,
             ResourceContexts,
             Db,
-            ownershipGate,
-            new IntegrationManagementServiceTestDependencies.RecordingAuditService(),
-            IntegrationManagementServiceTestDependencies.CreateSettingsService(Db, integrationRepository));
+            ownershipGate);
 
         _connections = new ConnectionManagementService(
             new AlwaysActor(),

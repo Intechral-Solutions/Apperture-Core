@@ -832,28 +832,10 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             var authzAllow = new AlwaysAllowAuthorizationEvaluationService();
             var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
 
-            // CTX-3B Plan 6a Task 5: IntegrationManagementService now also takes IAuditService (for the
-            // integration.deleted record) and IIntegrationSettingsService (for secret-safe Integration-scoped
-            // setting cleanup on delete). These tests never delete Integrations, but the settings service is
-            // still the real one over the same DbContext rather than a no-op double, so a future orphaned-secret
-            // regression could not hide behind a stub here.
-            var settingRegistry = new IntegrationSettingDefinitionRegistry();
-            var settingRepository = new SqlPlatformSettingValueRepository(db);
-            var integrationSettings = new IntegrationSettingsService(
-                settingRegistry,
-                settingRepository,
-                new IntegrationSettingsResolver(settingRegistry, settingRepository),
-                new PlatformSettingOptionProviderCoordinator(
-                    new PlatformSettingOptionProviderRegistry([]),
-                    new PlatformSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository),
-                    new IntegrationSettingOptionProviderAuthorization(principal, authzAllow, integrationRepository)),
-                new PlatformSettingSecretMaterialProvisioner(new NullSecretStore()),
-                integrationRepository,
-                new Apperture.Persistence.SqlServer.Audit.SqlAuditedUnitOfWork(db, principals: principal));
-
+            // These tests never delete an integration, so the delete's collaborators (the audited unit and the settings-secret
+            // classifier and retirement) are not supplied; the delete would refuse to run without them.
             var integrations = new IntegrationManagementService(
-                principal, authzAllow, integrationRepository, resourceContexts, db, gate,
-                new NullAuditService(), integrationSettings);
+                principal, authzAllow, integrationRepository, resourceContexts, db, gate);
 
             var connections = new ConnectionManagementService(
                 principal,
