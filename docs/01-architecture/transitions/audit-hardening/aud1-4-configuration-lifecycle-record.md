@@ -557,7 +557,7 @@ Both actions were declared by AUD-1.0 as legacy-bridge entries. They now carry d
 | `schedule.deleted` | W1, primary, Configuration, standard, basis `change` | `schedule`: the schedule id | the schedule, and its resource context | `name` (name snapshot), `integrationId` (optional), `assignmentsRemoved` (count) |
 | `schedule.delete_rejected` | W3 attempt, Configuration, standard, outcome `rejected` | `schedule`: the schedule id | as above | `name`, `integrationId` (optional), `reason` (closed set: `enabled`) |
 
-The recurrence, the target configuration and any free text have no field. A resource context id longer than the audit column is left out of the related reference instead of failing the row. The legacy `Details` text and its `succeeded` and `rejected` outcome labels are gone from this path.
+The recurrence, the target configuration and any free text have no field. A resource context id longer than the audit column is left out of the related reference instead of failing the row. *That omission is defensive code and is unreachable for persisted schedule data (clarified in work package 5, §13.4): `ScheduleDefinitions.ResourceContextId` is required, 64 characters, and a restricted foreign key to `ResourceContexts.Id` (also 64), and the audit column it is copied to (`AuditLogs.ResourceContextId`) is 64, so a stored schedule's context id always fits. The branch would run only for a value that never came from a stored schedule; the same bound applies to `integration.deleted` (§11.3), whose source column is also required and 64.* The legacy `Details` text and its `succeeded` and `rejected` outcome labels are gone from this path.
 
 ### 10.2 The delete as an audited unit
 
@@ -963,7 +963,7 @@ Written after the combined independent review of work packages 3, 4a and 4b. Thi
 | Optional: catalog `Writer` of `integration.settings.secret.retired` names one producer | Corrected (§13.5) |
 | Optional: `IIntegrationSettingResetInTransaction` has no production caller | Kept, documentation made explicit (§13.5) |
 | Observation: audited units can deadlock in the recorder's own verification count | **Tracked, not implemented**: §7 (deferred, proposed AUD-1.6) |
-| WP1 and WP2 optional LOW findings (L1, L2) | §13.4 |
+| WP1 and WP2 optional LOW findings (L1, L2) | **Resolved** (§13.4): L1 verified, L2 by documentation |
 
 ### 13.2 L-1: the recount removed
 
@@ -1005,12 +1005,12 @@ For the last two the integration cannot be deleted through the API until someone
 
 ### 13.4 The earlier WP1 and WP2 LOW findings
 
-**The review's text is not in the repository.** The records of work packages 1 and 2 (§10) name the findings only as "the WP1/WP2 optional LOW findings", and the work package 5 brief gave them as "L1: test exception assertion" and "L2: documentation clarification". No review file, commit message or other record states them more exactly, so they are not reconstructed beyond that.
+The work package 5 brief carried the findings only as "L1: test exception assertion" and "L2: documentation clarification". The original review text was recovered afterwards by the architectural planner and is applied below. Both findings are **resolved**.
 
-- **L1 (test exception assertion): applied on the best evidence, to be confirmed.** The one assertion in the WP1 and WP2 tests that accepts any exception is `ScheduleDeleteAuditSqlServerTests.When_the_audit_row_cannot_be_inserted_the_whole_delete_rolls_back`, which asserted `ThrowAsync<Exception>()` after injecting a failure on the audit insert. It now asserts what the save reports: a `DbUpdateException` whose inner exception is the injected `InvalidOperationException`, so a typed not-found, a refusal or an unrelated failure no longer satisfies it. The case passes. If the review meant a different assertion, the owner should say which.
-- **L2 (documentation clarification): not applied.** No text in §10 or the schedule delete contract could be tied to it, and inventing a clarification for an unknown finding would put an unreviewed claim in the record. `docs/04-api/contracts.md` now states the schedule delete's 500 `outcome_unknown` outcome, which was missing (§13.5), but that is not claimed to be the finding. The owner is asked for the review's L2 text.
+- **L1 (`ScheduleDeleteAuditSqlServerTests.cs:168`): resolved and verified.** Original finding: the rollback test accepts any `Exception` and would still pass if an audit insert failure surfaced as `ScheduleNotFoundException`; recommendation: add a negative assertion excluding `ScheduleNotFoundException` and the rejected-delete exception. Work package 5 had replaced the broad assertion (applied then as a best-evidence candidate, since the finding was not yet recovered). The current assertion is `ThrowAsync<DbUpdateException>()` with an inner exception of exactly type `InvalidOperationException` whose message starts with `Injected:`. That meets the recommendation and exceeds it: `ScheduleNotFoundException` and `ScheduleDeleteRejectedException` derive from `InvalidOperationException`, not `DbUpdateException`, so neither can satisfy the outer assertion, and nothing but the injected audit-insert failure can satisfy the inner one. A negative assertion would add nothing, so the test was not changed again. It passed in the work package 5 validation (§13.7, 12 of 12 in `ScheduleDeleteAuditSqlServerTests`).
+- **L2 (`AuditEvents.Schedules.cs:57`, §10.1): resolved through documentation.** Original finding: §10.1 describes the W1 resource-context id omission without saying it cannot happen with real data; recommendation: note in the closing record that it is unreachable, no code change. §10.1 now says so. Verified against the current model: `ScheduleDefinitions.ResourceContextId` is required with a maximum length of 64 and a restricted foreign key to `ResourceContexts.Id` (also 64), and the audit column the value is copied to, `AuditLogs.ResourceContextId`, is 64. A persisted schedule's context id therefore always fits, and the omission in `BoundedId` is defensive code that real data does not reach. The same holds for `integration.deleted` (`Integrations.ResourceContextId` is required, 64, with the same foreign key). Reachable behaviour is unchanged: the producer still omits an id over 64 characters rather than failing the row, and a unit test pins that defensive behaviour. No application code changed.
 
-The accepted schedule delete implementation was not reopened.
+`docs/04-api/contracts.md` also now states the schedule delete's 500 `outcome_unknown` outcome (§13.5); that is a separate correction and is not claimed to be either finding. The accepted schedule delete implementation was not reopened.
 
 ### 13.5 Contracts, interface documentation and catalog metadata
 
@@ -1060,13 +1060,14 @@ Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, the con
 | 4b Integration hard-delete as one audited unit | Done; combined review READY TO ACCEPT |
 | 5 Remediation, contracts, record reconciliation | Done (this section); awaiting the owner's review |
 
-**Proposed verdict: Slice 3 is READY TO CLOSE.** Both deletes are one audited unit with verified commit (M6) and the lost-acknowledgement-then-missing-target case; the integration delete takes the integration row lock first (D-4) and removes every historical override under owner ruling H1, refusing atomically where a credential's disposition cannot be established; an independent review found no critical, high or medium defect; its two LOW findings are dispositioned (§13.2, §13.3); both deletes are specified in `docs/04-api/contracts.md`; and the focused validation in §13.7 passed. This is a proposal for the owner. It is not an acceptance of work package 5 and not approval to merge.
+**Proposed verdict: Slice 3 is READY TO CLOSE, pending the owner's acceptance of work package 5 and CI on the pull request.** Both deletes are one audited unit with verified commit (M6) and the lost-acknowledgement-then-missing-target case; the integration delete takes the integration row lock first (D-4) and removes every historical override under owner ruling H1, refusing atomically where a credential's disposition cannot be established; an independent review found no critical, high or medium defect; its two LOW findings are dispositioned (§13.2, §13.3); both deletes are specified in `docs/04-api/contracts.md`; and the focused validation in §13.7 passed. This is a proposal for the owner. It is not an acceptance of work package 5 and not approval to merge.
 
 **Remaining before the owner can accept:**
 
 1. The owner's review of work package 5: the removed recount (§13.2), the corrected remediation text (§13.3), the contract and the new tests.
-2. The review's L1 and L2 text for the WP1 and WP2 findings, if the owner wants them closed exactly (§13.4). Neither is a blocker for the delete behaviour.
-3. CI on the pull request, which runs the full unit and integration projects that were not run here (§13.7).
+2. CI on the pull request, which runs the full unit and integration projects that were not run here (§13.7).
+
+The WP1 and WP2 findings L1 and L2 are resolved (§13.4); nothing from the earlier reviews is outstanding. Every LOW finding of the combined review (§13.1) and of the WP1 and WP2 review is resolved or explicitly accepted: L-1 fixed, L-2 corrected in documentation with H1's refusal accepted as designed, the WP1 and WP2 findings resolved, and the audited-unit deadlock observation tracked as a deferred item (§7).
 
 **Not part of this verdict.** The audited-unit deadlock mechanism (§7) is tracked, not fixed, and its placement is the owner's decision. AUD-1.4 as a whole is **not complete**: slices 4 to 8 have not started. RC1 requirement 5 is met only after AUD-1.6 has merged and passed acceptance (design gate §14), and nothing here changes that.
 
