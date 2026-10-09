@@ -51,6 +51,30 @@ public sealed class SettingsServicesShareTheUnitContextTests
         Context(Dependency(integration, "_integrations")).Should().BeSameAs(context);
     }
 
+    /// <summary>
+    /// AUD-1.4 slice 3, work package 4a: the integration delete's inventory reads, and its retirement writes, on the context the
+    /// audited unit's transaction is open on. A classifier or retirement holding another context would read outside that
+    /// transaction or disable a secret outside it.
+    /// </summary>
+    [Fact]
+    public void The_integration_delete_inventory_classifier_and_retirement_hold_the_scopes_context_and_secret_store()
+    {
+        using var provider = Services().BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var scoped = scope.ServiceProvider;
+        var context = scoped.GetRequiredService<AppertureDbContext>();
+
+        var inventory = scoped.GetRequiredService<IntegrationSettingSecretInventory>();
+        var classifier = scoped.GetRequiredService<IntegrationSettingSecretClassifier>();
+        var retirement = scoped.GetRequiredService<IntegrationSettingSecretRetirement>();
+
+        Context(inventory).Should().BeSameAs(context, "the inventory reads inside the unit's transaction");
+        Dependency(classifier, "_inventory").Should().BeSameAs(inventory, "the classifier scans through the scope's inventory");
+        Context(Dependency(classifier, "_secretStore").Should().BeOfType<SqlSecretStore>().Subject).Should().BeSameAs(context);
+        Context(Dependency(retirement, "_secretStore").Should().BeOfType<SqlSecretStore>().Subject)
+            .Should().BeSameAs(context, "a retirement joins the unit's transaction only on the unit's context");
+    }
+
     [Fact]
     public void The_two_services_in_one_scope_share_one_unit_and_separate_scopes_share_nothing()
     {

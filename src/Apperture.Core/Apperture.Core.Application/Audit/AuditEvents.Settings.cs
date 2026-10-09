@@ -107,7 +107,10 @@ public static partial class AuditEvents
         SettingEvent(AuditActionNames.IntegrationSettingSecretStored, integrationId, key, resourceContextId,
             ("integrationId", integrationId), ("key", key), ("change", change));
 
-    /// <summary>As <see cref="PlatformSettingSecretRetired"/>, for an integration-scoped setting.</summary>
+    /// <summary>
+    /// As <see cref="PlatformSettingSecretRetired"/>, for an integration-scoped setting. <paramref name="reason"/> is
+    /// <c>cleared</c>, <c>reset</c>, or <see cref="IntegrationDeletedSecretRetirementReason"/> when the integration was deleted.
+    /// </summary>
     public static AuditEvent IntegrationSettingSecretRetired(string integrationId, string key, string reason, string? resourceContextId = null) =>
         SettingEvent(AuditActionNames.IntegrationSettingSecretRetired, integrationId, key, resourceContextId,
             ("integrationId", integrationId), ("key", key), ("reason", reason));

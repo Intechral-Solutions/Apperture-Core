@@ -1574,6 +1574,7 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Integration,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationDeleted,
             IntroducedIn = "2609ba11",
             IntroducedAfterEpic37Migration = true,
             Writer = "IntegrationManagementService.cs:353",

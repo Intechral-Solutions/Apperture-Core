@@ -25,6 +25,10 @@ namespace Apperture.ControlPlane.Security;
 /// <para>Intended use, slice 3: integration delete acquires the integration row lock, runs its blocker checks, then calls this for
 /// each key of <c>PlatformSettingValues</c> scoped to the integration, before it removes the integration row, all in its one unit.
 /// The caller's lock and ownership gate are untouched: the helper takes no lock of its own.</para>
+/// <para><b>Not the integration delete's secret disposition.</b> This helper disables the secret a sensitive setting's name matches
+/// without looking for references that survive the delete, and ignores keys with no definition. The integration delete takes its
+/// override list and its secret decisions from <c>IntegrationSettingSecretClassifier</c> (work package 4a, owner ruling H1) and must
+/// not call this for a setting whose secret that plan governs.</para>
 /// </remarks>
 internal interface IIntegrationSettingResetInTransaction
 {

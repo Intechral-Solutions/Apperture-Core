@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slices 3 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slice 3 is in progress (§10 and §11: the schedule delete, the integration row locks, and the mechanisms the integration delete needs; the integration delete itself is not converted). Slices 4 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`.
 
@@ -57,7 +57,7 @@ The product owner approved the four orientation recommendations. They are record
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
-| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented and independently reviewed; work package 3 (the integration row lock in the writers the integration delete must coordinate with) is implemented (§10); the integration delete itself (work packages 4a and 4b), the owner ruling it needed (H1, approved) and the closing documentation are not started. Independent review |
+| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **In progress.** Work packages 1 and 2 (the schedule delete) are implemented and independently reviewed; work package 3 (the integration row lock in the writers the integration delete must coordinate with) is implemented (§10); work package 4a, the mechanisms the integration delete needs under the approved owner ruling H1, is implemented (§11); the integration delete itself (work package 4b) and the closing documentation are not started. Independent review |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
@@ -535,14 +535,15 @@ Slice 2 is **closed** for AUD-1.4 once this remediation is on the branch: M1, L1
 
 ## 10. Slice 3: schedule and integration delete (in progress)
 
-Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete (D-4), its owner ruling on the cleanup of overrides whose definition is unavailable (H1) and the closing documentation remain, and nothing below claims otherwise. Work packages 1 and 2 have been independently reviewed and accepted; work package 3 has not been reviewed.
+Slice 3 is implemented in work packages from the planning report approved on this branch. **This section records only what is done.** Slice 3 is not complete: the integration delete itself (D-4; work package 4b) and the closing documentation remain, and nothing below claims otherwise. The owner approved ruling H1 (§11.1) for the cleanup of overrides whose definition is unavailable, and work package 4a (§11) built the mechanisms the delete needs. Work packages 1 and 2 have been independently reviewed and accepted; work packages 3 and 4a have not been reviewed. A combined independent review of work packages 3, 4a and 4b is scheduled for after 4b.
 
 | Work package | Scope | Status |
 |---|---|---|
 | 1 | Catalog schemas and typed producers for `schedule.deleted` (W1) and `schedule.delete_rejected` (W3) | **Done** (§10.1) |
 | 2 | Schedule hard-delete as one audited unit; typed not-found; controller exception mapping | **Done** (§10.2 to §10.4) |
 | 3 | The integration row lock in the integration settings writers and in the three blocker writers | **Done** (§10.5 to §10.7) |
-| 4a, 4b | The integration delete as one audited unit, with the settings and secret cleanup (waits on the H1 ruling) | Not started |
+| 4a | The mechanisms the integration delete needs: `integration.deleted` schema and producer, the persisted-override and surviving-reference inventory, the H1 classifier, and transactional secret retirement | **Done** (§11). Implemented and validated; no delete is converted |
+| 4b | The integration delete as one audited unit: the lock, the blockers, the coordinated removal using the 4a primitives, M6 | Not started |
 | 5 | `docs/04-api/contracts.md` for both deletes and the closing record | Not started |
 
 ### 10.1 Catalog and producers
@@ -645,5 +646,167 @@ These tests prove that the writers take and respect the lock. The race between a
 - The attention-routing endpoint is authorized by integration read only (section 7); the re-run keeps that policy and does not fix it.
 - `ClearIntegrationRoutingAsync`, subscription removal and definition update do not create a reference and take no lock.
 - A commit whose acknowledgement is lost is retried by the connection's execution strategy; the definition and subscription ids are fixed across attempts, so a retry after a real commit fails on the key instead of creating a second row.
+
+## 11. Work package 4a: the mechanisms for the integration delete
+
+Implemented on this branch after work package 3. **Not independently reviewed**: work packages 3, 4a and 4b get one combined review after 4b. This package prepares the mechanisms work package 4b needs and converts nothing: `IntegrationManagementService.DeleteIntegrationAsync` and its controller are unchanged, and nothing emits `integration.deleted` yet. The blocker counts, the coordinated deletion under the integration row lock, M6 (including a lost acknowledgement followed by a missing integration) and the controller's exception mapping are work package 4b. The closing documentation and the deferred LOW findings of work packages 1 and 2 stay with work package 5.
+
+### 11.1 Owner ruling H1 (approved): refined conservative option B
+
+During integration deletion:
+
+A. Remove every persisted integration-owned setting override, even when its definition is missing, was reclassified, or is no longer integration-scoped.
+
+B. Retire an associated settings-provisioned secret only when all of the following can be established safely: credible provenance shows the secret belongs to the integration's settings lifecycle; the secret's originating setting key corresponds to the historical override; no known surviving database reference requires the secret; and the secret store's lifecycle rules permit retirement.
+
+C. If credible evidence of a usable settings-provisioned secret exists but ownership or safe disposition cannot be determined, refuse the whole integration deletion, atomically.
+
+D. Never expose secret values or secret references in audit details, ordinary logs or API responses.
+
+E. Do not claim exhaustive global referential knowledge. The supported evidence model has known limits (§11.9).
+
+F. Avoid elaborate remediation infrastructure until real-world evidence establishes a need.
+
+This settles DF2 of the slice 2 review (§9.2: keys with no definition, or not integration-scoped) as policy; work package 4a builds the mechanism and 4b applies it. Work package 4b takes its override list and its secret decisions from the 4a plan. **The statement in §8.8 and on `IIntegrationSettingResetInTransaction` that the delete will call the in-transaction reset for each scoped key is superseded for settings whose secret the plan governs**: that helper ignores keys with no definition and disables whatever secret a sensitive setting's name matches without looking for surviving references, which is exactly what H1 forbids. The interface now says so. LFC-1 §2.4 and the CTX-3B inventory still describe the old cascade and are for work package 5.
+
+### 11.2 What was added
+
+| Symbol | Assembly | Role |
+|---|---|---|
+| `AuditActionNames.IntegrationDeleted`, `AuditDetailSchemas.IntegrationDeleted`, `AuditEvents.IntegrationDeleted` | Application | The `integration.deleted` W1 contract and typed producer (§11.3) |
+| `AuditEvents.IntegrationDeletedSecretRetirementReason` and the `integration_deleted` value of the `integration.settings.secret.retired` reason | Application | The Secrets-category row of a retirement the delete makes |
+| `SecretReferenceReader` (internal) | Security | Reads references as GUIDs (§11.5) |
+| `IntegrationSettingSecretInventory` | Security | Read-only inventory: persisted overrides, surviving references (§11.4, §11.5) |
+| `IntegrationSettingSecretClassifier` | Security | The H1 classifier; returns an `IntegrationSettingDeletionPlan` (§11.6) |
+| `IntegrationSettingDeletionPlan`, `IntegrationOverrideDisposition`, `PlannedSecretRetirement`, `IntegrationSettingDispositionRefusal`, `IntegrationSettingOverride`, `SurvivingSecretReference` and the outcome enums | Security | Result types. No `ToString` and no public member shows a secret, a reference or a stored value; the secret ids and stored values are `internal` |
+| `IntegrationSettingSecretRetirement` | Security | Transactional retirement of what a plan allows (§11.7) |
+| `IntegrationSettingDispositionRefusedException`, `IntegrationSettingSecretRetirementException` | Security | Typed failures with messages that name no secret |
+| Registrations in `AddApperturePlatformSettingsManagementHost` | Security | The three services, scoped, on the request's one context |
+
+### 11.3 The `integration.deleted` contract
+
+Declared by AUD-1.0 as a legacy-bridge entry; it now has a schema and a producer. No action was added.
+
+| | |
+|---|---|
+| Class | W1, `RequiredMutation`, basis `change`, Configuration, standard severity |
+| Target | `integration`: the integration id |
+| Related | `ResourceContextId` (the integration's owning context, left out when it exceeds the column) and `ModuleId` |
+| Fields | `name` (name snapshot, required, truncatable), `moduleId` (optional id), `settingsRemoved` (count, required: the number of persisted integration-scoped overrides the delete removed, whether or not a definition for each still exists) |
+| Never recorded | A setting key, value, secret or reference. The overrides are counted, not listed. A secret the delete retired has its own Secrets-category row, `integration.settings.secret.retired` with reason `integration_deleted`, targeting `{integrationId}:{key}` (D-1) |
+
+A field named for a secret, credential or token cannot be declared (the schema refuses such names), which is why the count is `settingsRemoved` and not a count of secrets. The producer refuses a negative count and a name over 256 characters, and the schema refuses any undeclared field. The Secrets-category reason enum gained `integration_deleted`; the other two values are unchanged. The legacy `IAuditService` append in the current delete is untouched and still runs until 4b.
+
+### 11.4 Persisted overrides
+
+`IntegrationSettingSecretInventory.ListOverridesAsync` returns every `PlatformSettingValues` row whose scope is the integration (`ScopeKind = Integration`, `ScopeId` the integration id), in key order, untracked. It consults no definition, provider, registry or schema, applies no allow-list and sits under no query filter (there are none on this table). A removed key, a key that is now applicable at the instance scope only, and a current key are all returned. The set to remove is the set the delete's own predicate selects, so the inventory and the removal cannot disagree. The plan's `Overrides` lists them all; `Retirements` lists only the secrets that passed the rules of §11.6. These are separate questions and are answered separately.
+
+### 11.5 Surviving references and GUID comparison
+
+`FindSurvivingReferencesAsync` reads three known locations in full, untracked and with only the needed columns projected, and compares by GUID value:
+
+| Location | Read as |
+|---|---|
+| `PlatformSettingValues`, every row outside the deleting integration (every scope, other integrations included) | `ValueJson`, a JSON document; every string in it |
+| `Connections.SecretRefsJson` | A JSON object of field key to reference; the values (the names are field keys) |
+| `EntraInstanceRegistrations.ClientSecretRef` | A plain text |
+
+A reference is a text that `Guid.TryParse` accepts after trimming, the way the provisioners and `SqlSecretResolver` parse it: formats `D`, `N`, `B`, `P` and `X`, either case. The comparison is on the `Guid`; nothing compares JSON or raw text, and no query is narrowed by text, so no format can be missed by a prefilter. A value that is not what its column should hold is still searched: invalid JSON, an array where a text belongs, and a text with a GUID embedded in other characters all report every GUID-looking token (`D` or 32 hex digits, braces and parentheses irrelevant). That can only make a secret be retained, never retired. A malformed value that cannot mention the candidate blocks nothing. The limit: a format `X` GUID is read when it is the whole value or a whole JSON string, not when embedded in other text.
+
+References held by this integration's own overrides are not survivors: the delete removes them. A reference from another integration, a platform or other setting, a connection or an Entra registration is. The scan is O(rows) over configuration data, runs only when a credible candidate exists, tracks nothing, saves nothing and opens no transaction. It joins the caller's transaction when there is one.
+
+### 11.6 The H1 classifier
+
+Read-only; run it inside the caller's transaction after the caller took its integration row lock.
+
+**Evidence.** The override row alone proves nothing: a setting that holds a reference does not own the secret it names. The secret store records no owner id; its provenance is the provider (`platform-setting`) and the name (`platform-setting:{key}`) the settings lifecycle gave it. That says which setting key a secret was made for, not which integration owns it (two integrations' overrides of one key have secrets with the same name). Ownership by this integration is therefore established by three facts together: the secret is settings-provisioned and usable, its name matches the key of the one override that refers to it, and nothing outside this integration refers to it.
+
+**A definition is a hint, never a gate.** A definition that declares the setting sensitive raises the bar: a value on it that is not one readable reference is ambiguous. Without a definition, or with an ordinary one, any GUID the value holds is still looked up in the store, and a settings-provisioned secret found is treated exactly as for a sensitive setting. A missing or reclassified definition therefore cannot hide a credential and cannot authorize its retirement.
+
+| Outcome | When |
+|---|---|
+| `NoApplicableSecret` | No reference; the reference resolves to nothing; the secret has another provider (never retired here); the secret is already disabled or revoked |
+| `RetireAfterOverrideRemoval` | A usable settings-provisioned secret, exactly one override refers to it, its name is `platform-setting:{that key}`, and no surviving reference exists |
+| `RetainSharedReference` | A usable settings-provisioned secret that a surviving reference still holds |
+| `Ambiguous` | `UnreadableReference` (a sensitive setting's value is not one readable reference); `OwnershipNotEstablished` (the secret's name carries no setting key); `SettingKeyMismatch` (the name is for another key, or several overrides refer to the secret) |
+
+Several overrides referring to one secret share **one** disposition and the secret is planned for retirement at most once. A secret that one override names twice, in different formats, is retired once. Any ambiguous override refuses the whole delete: the plan carries a typed `Refusal` (the keys and reasons), `ThrowIfRefused` raises `IntegrationSettingDispositionRefusedException` (an `InvalidOperationException`, like the delete's other blockers, with a message that names no secret, reference, key or metadata), and a refused plan carries **no** retirement, so the secret that was safe is not retired either. Ambiguity is never reported as a successful no-op.
+
+**Package decision P-4a-1.** A credible secret that a surviving reference still holds is *retained* even when its ownership is unclear. The disposition is then decided (leave it alone), and leaving it alone is safe whoever owns it. Ambiguity refuses only when the choice between retiring and retaining cannot be made safely.
+
+**Package decision P-4a-2.** An unreadable value is ambiguous only on a setting whose definition declares it sensitive. On any other setting a value that names no GUID is simply no reference, so a malformed value unrelated to a credential does not block a delete. The remedy for a refused delete is to reset the setting, which removes the row; a stored credential the instance can no longer find is not recoverable by this package.
+
+### 11.7 Transactional retirement and atomic refusal
+
+`IntegrationSettingSecretRetirement.RetireAsync(transaction, plan, resourceContextId)` retires what a non-refused plan allows, inside the caller's audited unit.
+
+- It commits, begins and rolls back nothing. The SQL secret store joins the unit's transaction on the shared context (slice 1; `SettingsServicesShareTheUnitContextTests` pins that the inventory, classifier and retirement hold the scope's one context and store), so a secret's disabling, the store's own evidence and the retirement row commit or roll back with the caller's delete. A caller that refuses or fails afterwards rolls them all back. It never declares a no-op, and because it stages a row for each secret it retires, the unit refuses a no-op declared after it (a partly changed unit cannot become one).
+- Classify first, as a read, then act: a refused plan carries no retirement, and `RetireAsync` throws before reading or staging if given one. Nothing is mutated before every credible ambiguity has been evaluated.
+- Each secret is re-read in the caller's transaction (skipped without a row if it is no longer a usable settings-provisioned secret of that key), deduplicated, staged *before* it is changed (so a transaction that is not current fails before any change), then disabled. One Secrets-category row each, a secondary row of the caller's unit, reason `integration_deleted`, carrying neither secret nor id.
+- A store failure whose text names the secret (the store's messages embed its id) is reported as `IntegrationSettingSecretRetirementException`, whose message names nothing and which carries the setting key and the failure's type name. The store's exception is deliberately not attached. Any other failure (a staged row that cannot be saved) propagates unchanged.
+- The order of the caller's work stays the caller's: the overrides are removed before the retirements run, so a secret is never retired while the row that named it remains.
+
+### 11.8 Concurrency and consistency
+
+The primitives take no lock, open no transaction and assume the caller holds the integration row lock (WP3), taken first. They add no lock-order edge: the lock order stays the operation lock, the integration row, the setting row, then the secret.
+
+What the known writers guarantee, from the code:
+
+| Writer of a reference | Coordinated with the delete |
+|---|---|
+| This integration's settings writers; notification definition create, admin subscription add, attention-routing upsert | Yes, by the integration row lock (WP3). The setting writers cannot add a reference to this integration's overrides while the delete holds the row |
+| Another integration's settings writer, and platform settings | No lock in common. They create or version a secret of their own, and no path copies a reference between rows |
+| Connection create and update | **No.** They take no integration lock and accept operator-supplied references (`ValidateConnectionMaterial` checks only that a reference parses as a GUID, not that it exists or whose it is) |
+| Entra registration writers | No. They store a secret of their own |
+
+The scan is a read, not a lock, and is not stable under either isolation mode. Under locking READ COMMITTED it waits on a writer's uncommitted row and then sees it, but releases its read locks as it goes, so a reference committed after the read is not seen. Under READ_COMMITTED_SNAPSHOT it reads the last committed version and does not see an uncommitted reference at all. `Under_locking_read_committed_a_reference_being_written_makes_the_scan_wait_but_under_snapshot_isolation_it_is_not_seen` shows both against SQL Server. No assurance that a read-only scan is stable under RCSI is claimed. A connection written to name a candidate secret between the scan and the commit therefore survives the delete with a reference to a retired secret; H1 accepts this limit (§11.1 E).
+
+**Gap for 4b.** A connection write is the one known writer that can race the scan and is not coordinated. Work package 4b should state this as accepted, or decide whether a connection reference to a settings-provisioned secret should be refused at the connection writer; that is not decided or done here. The delete-versus-writer race suite for the WP3 writers is 4b's.
+
+### 11.9 Known limits of the evidence model
+
+- Three database locations only. A reference in configuration files, in an external system, or in any table or column added later is invisible.
+- Provenance is a provider and a name pattern, not an owner id. A secret created by hand with the settings provider and a conforming name is indistinguishable from a provisioned one.
+- A settings-provisioned secret that no override of this integration names is not found at all (there is nothing to start from). Orphaned secrets from earlier defects are out of scope.
+- The scan is neither locked nor stable (§11.8).
+- Embedded format `X` GUIDs in malformed text (§11.5).
+
+### 11.10 Dependencies for work package 4b
+
+- Acquire the integration row lock first, then the blocker checks, then `ClassifyAsync`, all inside the unit; call `plan.ThrowIfRefused()` before any change.
+- Remove **every** override in `plan.Overrides` (the repository's `DeleteScopedAsync` works without a definition), then `RetireAsync`, then stage `integration.deleted` with `settingsRemoved = plan.Overrides.Count` (staging the primary row first is also fine; the helper only needs a current transaction).
+- Do not call `IIntegrationSettingResetInTransaction` for a setting the plan governs (§11.1). Per-key `integration.settings.reset` rows for the removed overrides are 4b's decision; the count on `integration.deleted` is the required evidence.
+- Map `IntegrationSettingDispositionRefusedException` like the delete's other blockers (a refusal, with nothing changed) and exclude `IntegrationSettingSecretRetirementException` and `AuditInvariantException` from any refusal mapping.
+- Decide the connection-reference gap (§11.8).
+- Replace the legacy `IAuditService` append with the staged event and update the tests that assert it.
+
+### 11.11 Tests and validation
+
+| Test | What it shows |
+|---|---|
+| `IntegrationSettingSecretDispositionSqlServerTests` (SQL Server, 81 cases) | Each case on a locking READ COMMITTED catalog and on a READ_COMMITTED_SNAPSHOT catalog, with an execution marker each, and the delete's steps run in a real audited unit by a harness that is not the delete. An ordinary historical override; a removed definition and a reclassified one, each with an owned secret still retired; overrides with no definition, a reclassified definition and a current one all removed and counted. An owned secret with a matching key and no survivor retired with `integration.deleted` and its Secrets row as one operation, with the store's `Disable` evidence and no secret, id or plaintext in any audit or store column. Retained for another integration's override, a platform setting, a connection's references and an Entra registration. GUID equivalence: formats `D`, `N`, `B`, `P`, `X`, upper case, against the four survivor kinds (19 combinations per isolation mode; `X` is longer than the Entra column), with the override itself written in padded upper-case `N`. Unexpected shapes: a connection's invalid JSON that mentions the secret retains it, one that cannot mention it blocks nothing. Two overrides naming one secret in different formats get one ambiguous disposition and retire nothing; one override naming its secret twice retires it once. A name with no key, a name for another key, and an unreadable credential value refuse; an unreadable ordinary value does not. A surviving reference decides over unclear ownership. Another provider's secret, a dangling reference and a disabled secret are never retired. A refused delete changes nothing, not even the secret that was safe, and its exception names no secret. An audit failure after the retirement rolls back the secret, the overrides, the store evidence and every row. A rolled-back commit reruns and retires once. Classification is read-only: nothing tracked, nothing saved, no transaction, only `SELECT` statements. The scan waits on an uncommitted writer under locking READ COMMITTED and does not see it under snapshot isolation |
+| `IntegrationSettingSecretDispositionTests` (unit, 8) | The classifier's logic on an in-memory context: the plan, the redaction of every printed form, a refused plan retiring nothing, staging before the change, once-only retirement, a secret that stopped being usable, a store failure reported without the secret's id, and non-credential and unreadable values |
+| `SecretReferenceReaderTests` (unit, 18) | Every format, case and padding, as JSON text and as plain text; a connection's references by value and not by name; arrays; embedded and malformed text; what is not a reference |
+| `IntegrationDeleteAuditEventTests` (unit, 10) | The catalog class, basis, category, target and fields; no field for a value, secret, reference or free text; the producer and its related references; the serialized details; refused payloads; the longest stored values; the `integration_deleted` retirement reason |
+| `SettingsServicesShareTheUnitContextTests` (unit, 1 new) | The inventory, classifier and retirement hold the scope's one context and secret store |
+
+**Mutation evidence** (product code edited temporarily, restored byte for byte, never committed): not scanning connections failed 19 cases; never refusing on ambiguity failed 10; ignoring surviving references failed every retain case; accepting only the `D` text format failed the format matrix. All pass with the shipped code.
+
+Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, credentials read from `.env` by the test process (never on a command line), builds with `--artifacts-path artifacts/aud14w4a -m:1`:
+
+| Command | Result |
+|---|---|
+| `dotnet build Apperture.slnx` | succeeded, 0 errors |
+| `dotnet test tests/Apperture.UnitTests` (all) | 4065 / 4065 passed (4028 before, 37 new) |
+| `dotnet test tests/Apperture.ArchTests` | 38 / 38 passed |
+| `dotnet test tests/Apperture.IntegrationTests --filter IntegrationSettingSecretDispositionSqlServerTests` | 81 / 81 passed |
+| `dotnet test tests/Apperture.IntegrationTests` filtered to the `IntegrationTests.Audit` namespace (every audit SQL suite, including this one, the settings, secret store, Entra and schedule delete suites and the classification benchmark), `ManagementHostIntegrationConfigurationHttpTests`, `ResourceOwnershipMoveConcurrencySqlServerTests`, `ScheduleDeleteSqlServerTests`, `ManagementHostGovernanceHttpTests` and `IntegrationTestSecretProtectorTests` | 429 / 429 passed, none skipped (21 minutes, the benchmark included) |
+
+Not run, with the reason: the full `Apperture.IntegrationTests` project (the filtered run covers every consumer of the changed catalog entry, retirement reason and registrations; PR CI runs all of it), the UI test projects and the SEC-1 browser suite (no UI, route or response changed).
+
+### 11.12 State after work package 4a
+
+Work package 4a is implemented and validated; it is not reviewed. The integration delete is exactly as it was: it still resets each setting in its own unit, removes the integration in a separate save, and appends the legacy audit record afterwards. Work package 4b converts it with the primitives above; work package 5 closes the slice. Slice 3 is not complete.
+
 
 

@@ -51,6 +51,12 @@ public static class PlatformSettingsServiceCollectionExtensions
         services.AddScoped<PlatformSettingSecretMaterialProvisioner>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
 
+        // Integration delete's settings inventory, secret classifier and transactional retirement (slice 3, work package 4a).
+        // Scoped, so each takes the request's one context, the one the audited unit and the secret store use.
+        services.AddScoped<IntegrationSettingSecretInventory>();
+        services.AddScoped<IntegrationSettingSecretClassifier>();
+        services.AddScoped<IntegrationSettingSecretRetirement>();
+
         services.AddSingleton<IPostConfigureOptions<NotificationEvaluationOptions>, NotificationEvaluationOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<NotificationInstanceOptions>, NotificationInstanceOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<NotificationDeliveryOptions>, NotificationDeliveryOptionsPlatformSettingsPostConfigure>();

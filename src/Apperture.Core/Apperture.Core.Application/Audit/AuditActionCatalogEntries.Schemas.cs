@@ -743,7 +743,21 @@ internal static class AuditDetailSchemas
     [
         IdField("integrationId"),
         IdField("key"),
-        EnumField("reason", true, "cleared", "reset"),
+        EnumField("reason", true, "cleared", "reset", "integration_deleted"),
+    ]);
+
+    // ---- Integration hard-delete (AUD-1.4 slice 3, work package 4a) ----
+    // The integration is the event's target, so its id is not repeated; its owning resource context and its module are the
+    // related references. The name is a snapshot, since the integration no longer exists once the row is written. The count is
+    // the number of persisted integration-scoped setting overrides the delete removed, whatever their definition now says. Which
+    // overrides, their values, and the secrets they referenced are never recorded here: a secret the delete retired has its own
+    // Secrets-category row under the integration setting it belonged to.
+
+    internal static readonly AuditDetailSchema IntegrationDeleted = new(
+    [
+        NameField("name"),
+        IdField("moduleId", required: false),
+        CountField("settingsRemoved"),
     ]);
 
     // ---- Schedule hard-delete (AUD-1.4 slice 3) ----

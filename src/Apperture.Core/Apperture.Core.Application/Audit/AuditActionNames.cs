@@ -164,4 +164,7 @@ public static class AuditActionNames
     // AUD-1.4 slice 3: schedule hard-delete. Both were declared by AUD-1.0 as legacy-bridge entries and are converted here.
     public const string ScheduleDeleted = "schedule.deleted";
     public const string ScheduleDeleteRejected = "schedule.delete_rejected";
+
+    // AUD-1.4 slice 3, work package 4a: integration hard-delete. Declared by AUD-1.0 as a legacy-bridge entry, converted here.
+    public const string IntegrationDeleted = "integration.deleted";
 }
