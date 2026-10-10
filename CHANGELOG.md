@@ -16,4 +16,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - API contracts overview
 - Module authoring guide, manifest spec, module types
 - Root config: .gitignore, .editorconfig, .gitattributes, Directory.Build.props, Directory.Packages.props, global.json
-- License: GNU AGPL v3.0 (building towards Enterprise offering)
+- License: GNU Affero General Public License v3.0 only (AGPL-3.0-only)
