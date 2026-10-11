@@ -45,4 +45,10 @@ For AI agents and contributors: see [AGENTS.md](AGENTS.md) and [.ai/playbooks/](
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). AGPL is used to build towards an Enterprise offering. See [LICENSE](LICENSE) for full terms.
+Apperture Core is free and open-source software, licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The full license text is in [LICENSE](LICENSE).
+
+Copyright (c) 2026 Tennyson Edward Hull and contributors.
+
+Use, modification, and redistribution are governed by the AGPLv3. If you modify Apperture Core and let users interact with your modified version over a network, the AGPL's corresponding-source requirements apply (see section 13 of the license).
+
+Contributions require agreement to the Apperture Individual Contributor License Agreement ([CLA.md](CLA.md)). See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute and how the CLA works.
