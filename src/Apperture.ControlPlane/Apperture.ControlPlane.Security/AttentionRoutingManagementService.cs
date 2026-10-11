@@ -53,33 +53,68 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
         IntegrationId integrationId,
         string conditionKey,
         AttentionRoutingUpsertCommand command,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
-        if (await _integrations.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
-            throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
-
-        await ValidateTeamIdsAsync(command.PrimaryOperationalTeamId, command.EscalationOperationalTeamId, cancellationToken)
-            .ConfigureAwait(false);
-
-        var row = await _db.IntegrationAttentionRoutings
-            .FirstOrDefaultAsync(
-                x => x.IntegrationId == integrationId.Value && x.ConditionKey == conditionKey,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (row is null)
+        // AUD-1.4 slice 3: an override has no foreign key to its integration, so the integration row lock is what keeps an
+        // integration delete from counting its blockers, deleting, and leaving this override behind. One transaction: the
+        // integration row lock and existence check, the team check, the read that decides insert or update, the write, then the
+        // commit that releases the lock. The execution strategy owns it, so a retry reruns every step in a new transaction.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            row = new IntegrationAttentionRoutingEntity
-            {
-                Id = NewRoutingId(),
-                IntegrationId = integrationId.Value,
-                ConditionKey = conditionKey,
-            };
-            _db.IntegrationAttentionRoutings.Add(row);
-        }
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
 
-        ApplyCommand(row, command);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            IntegrationAttentionRoutingEntity? row = null;
+            try
+            {
+                // Untracked and locking: the integration is fixed until the commit.
+                if (await _integrations.GetByIdForUpdateAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
+                    throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
+
+                // The caller's check, run again now that the row cannot move: an ownership move that committed after the check
+                // made before this call is seen here.
+                if (reauthorize is not null)
+                    await reauthorize(cancellationToken).ConfigureAwait(false);
+
+                await ValidateTeamIdsAsync(command.PrimaryOperationalTeamId, command.EscalationOperationalTeamId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                row = await _db.IntegrationAttentionRoutings
+                    .FirstOrDefaultAsync(
+                        x => x.IntegrationId == integrationId.Value && x.ConditionKey == conditionKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (row is null)
+                {
+                    row = new IntegrationAttentionRoutingEntity
+                    {
+                        Id = NewRoutingId(),
+                        IntegrationId = integrationId.Value,
+                        ConditionKey = conditionKey,
+                    };
+                    _db.IntegrationAttentionRoutings.Add(row);
+                }
+
+                ApplyCommand(row, command);
+                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Only the row this attempt loaded or added: a rerun reads it again, and nothing else tracked on the context is
+                // touched. A leftover Added row would otherwise be saved a second time beside the rerun's own.
+                if (row is not null)
+                    _db.Entry(row).State = EntityState.Detached;
+                throw;
+            }
+
+            return true;
+        }).ConfigureAwait(false);
     }
 
     /// <summary>

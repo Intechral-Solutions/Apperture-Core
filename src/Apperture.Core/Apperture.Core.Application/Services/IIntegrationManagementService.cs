@@ -93,7 +93,10 @@ public interface IIntegrationManagementService
     ValueTask<DomainIntegration> RetireIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Deletes an integration. Fails if bindings or schedules reference it.
+    /// Hard-deletes an integration and every persisted setting override it owns, as one audited unit. Refused, with nothing
+    /// changed, when a binding, schedule, integration-scoped notification definition, integration-associated notification
+    /// subscription or attention-routing override still refers to it, or when one of its settings holds a stored credential whose
+    /// safe disposition cannot be established.
     /// </summary>
     ValueTask DeleteIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default);
 }

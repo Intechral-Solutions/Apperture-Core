@@ -1,6 +1,7 @@
 using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.CampusNexus.Models;
 using Apperture.ControlPlane.Security;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -251,8 +252,7 @@ public sealed class Epic116CampusNexusCampusesOptionProviderTests
             resolver.Object,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            principalContext.Object,
-            audit.Object);
+            new AuditRecording());
     }
 
     private static Mock<IIntegrationRepository> CreateIntegrationRepository(bool integrationExists)

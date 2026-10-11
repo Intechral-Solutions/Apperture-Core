@@ -59,8 +59,8 @@ internal static class IntegrationManagementServiceTestDependencies
     public static IIntegrationSettingsService CreateSettingsService(
         AppertureDbContext db,
         IIntegrationRepository integrations,
-        IAuditService? audit = null,
-        ISecretStore? secretStore = null)
+        ISecretStore? secretStore = null,
+        Apperture.Core.Application.Audit.IAuditedUnitOfWork? auditedUnit = null)
     {
         var registry = new IntegrationSettingDefinitionRegistry();
         var repository = new SqlPlatformSettingValueRepository(db);
@@ -83,9 +83,8 @@ internal static class IntegrationManagementServiceTestDependencies
             resolver,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(secretStore ?? Mock.Of<ISecretStore>()),
-            principalContext,
-            audit ?? new RecordingAuditService(),
-            integrations);
+            integrations,
+            auditedUnit ?? new Apperture.UnitTests.Audit.AuditRecording());
     }
 
     private static IPrincipalContext CreatePrincipalContext()

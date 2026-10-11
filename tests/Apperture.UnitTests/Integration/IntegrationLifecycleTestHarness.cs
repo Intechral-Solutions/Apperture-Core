@@ -68,6 +68,8 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
         Db.SaveChanges();
 
         Audit = new RecordingAuditService();
+        SettingsAudit = new Apperture.UnitTests.Audit.AuditRecording();
+        DeleteAudit = new Apperture.UnitTests.Audit.AuditRecording();
         SecretStore = new InMemorySecretStore();
 
         _integrationRepository = new SqlIntegrationRepository(Db);
@@ -92,9 +94,8 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
             new IntegrationSettingsResolver(settingRegistry, settingRepository),
             optionProviderCoordinator,
             new PlatformSettingSecretMaterialProvisioner(SecretStore),
-            principalContext,
-            Audit,
-            _integrationRepository);
+            _integrationRepository,
+            SettingsAudit);
 
         Integrations = new IntegrationManagementService(
             principalContext,
@@ -105,8 +106,11 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
             // Real SqlResourceOwnershipMutationGate is a documented no-op on EF Core InMemory; these tests
             // are about referential lifecycle, not gate ordering.
             new SqlResourceOwnershipMutationGate(Db),
-            Audit,
-            Settings);
+            // The delete's real H1 primitives over the same context, registry and secret store, and a recording unit: the
+            // transactional guarantees are proven against SQL Server (IntegrationDeleteAuditSqlServerTests).
+            new IntegrationSettingSecretClassifier(new IntegrationSettingSecretInventory(Db), SecretStore, settingRegistry),
+            new IntegrationSettingSecretRetirement(SecretStore),
+            DeleteAudit);
 
         Definitions = new NotificationDefinitionService(
             _definitionStore,
@@ -143,9 +147,26 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
 
     public IIntegrationSettingsService Settings { get; }
 
+    /// <summary>The same service through the in-transaction reset integration delete will use inside its own unit (slice 3).</summary>
+    public IIntegrationSettingResetInTransaction ResetInTransaction => (IIntegrationSettingResetInTransaction)Settings;
+
     public InMemorySecretStore SecretStore { get; }
 
     public RecordingAuditService Audit { get; }
+    public Apperture.UnitTests.Audit.AuditRecording SettingsAudit { get; }
+
+    /// <summary>What the integration delete's audited unit committed.</summary>
+    public Apperture.UnitTests.Audit.AuditRecording DeleteAudit { get; }
+
+    /// <summary>The same service over the same context, built without the delete's audited unit and H1 collaborators.</summary>
+    public IIntegrationManagementService WithoutDeleteCollaborators() =>
+        new IntegrationManagementService(
+            new FixedPrincipalContext(new FixedActor()),
+            new AlwaysAllowAuthorizationEvaluationService(),
+            _integrationRepository,
+            new ResourceContextService(new SqlResourceContextRepository(Db), TimeProvider.System),
+            Db,
+            new SqlResourceOwnershipMutationGate(Db));
 
     /// <summary>An ordinary (non-sensitive, non-provider-backed) Integration-scoped setting key.</summary>
     public string SettingKey => PlatformSettingTestDefinitions.IntegrationScopedTextKey;

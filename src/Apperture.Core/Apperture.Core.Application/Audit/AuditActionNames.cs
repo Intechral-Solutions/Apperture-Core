@@ -145,4 +145,26 @@ public static class AuditActionNames
     public const string RecoveryRetryDenied = "recovery.retry.denied";
     public const string SchedulerOperationDenied = "recovery.run_cycle.denied";
     public const string SchedulerOperationRequested = "recovery.schedules.run_cycle_requested";
+
+    // AUD-1.4: secret-store events, recorded under the Secrets category on the configuration entity that owns the secret.
+    public const string TenantRegistrationClientSecretStored = "entra.tenant_registration.client_secret.stored";
+    public const string TenantRegistrationClientSecretRetired = "entra.tenant_registration.client_secret.retired";
+
+    // AUD-1.4: platform and integration settings. The set and reset actions were declared by AUD-1.0 and are converted here; the
+    // secret actions are the Secrets-category rows of the same units, recorded on the setting that owns the secret.
+    public const string PlatformSettingSet = "platform.settings.set";
+    public const string PlatformSettingReset = "platform.settings.reset";
+    public const string IntegrationSettingSet = "integration.settings.set";
+    public const string IntegrationSettingReset = "integration.settings.reset";
+    public const string PlatformSettingSecretStored = "platform.settings.secret.stored";
+    public const string PlatformSettingSecretRetired = "platform.settings.secret.retired";
+    public const string IntegrationSettingSecretStored = "integration.settings.secret.stored";
+    public const string IntegrationSettingSecretRetired = "integration.settings.secret.retired";
+
+    // AUD-1.4 slice 3: schedule hard-delete. Both were declared by AUD-1.0 as legacy-bridge entries and are converted here.
+    public const string ScheduleDeleted = "schedule.deleted";
+    public const string ScheduleDeleteRejected = "schedule.delete_rejected";
+
+    // AUD-1.4 slice 3, work package 4a: integration hard-delete. Declared by AUD-1.0 as a legacy-bridge entry, converted here.
+    public const string IntegrationDeleted = "integration.deleted";
 }

@@ -50,14 +50,22 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
             case CommitAcknowledgement.Lost:
                 recorded.Completed = true;
                 var primary = recorded.Staged.First(e => operation.AcceptsPrimary(e.Action));
-                return await reconstruct(
-                    new AuditCommittedOperation(
-                        recorded.OperationEventId,
-                        primary.Action,
-                        primary.Target?.Type,
-                        primary.Target?.Id,
-                        JsonSerializer.Serialize(primary.Fields)),
-                    cancellationToken);
+                try
+                {
+                    return await reconstruct(
+                        new AuditCommittedOperation(
+                            recorded.OperationEventId,
+                            primary.Action,
+                            primary.Target?.Type,
+                            primary.Target?.Id,
+                            JsonSerializer.Serialize(primary.Fields)),
+                        cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // As the SQL unit: the change is committed, so a failed reconstruction is reported as such.
+                    throw new AuditCommittedResultUnavailableException(recorded.OperationEventId, ex);
+                }
             default:
                 recorded.Completed = true;
                 return result;

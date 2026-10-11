@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Application.Services;
@@ -14,7 +15,7 @@ namespace Apperture.UnitTests.PlatformSettings;
 public sealed class Epic112PlatformSettingsServiceAuditTests
 {
     [Fact]
-    public async Task SetAsync_writes_readable_array_audit_details()
+    public async Task SetAsync_records_readable_array_value_on_the_setting()
     {
         var def = PlatformSettingTestDefinitions.MultiSelectSample;
         var repo = new Mock<IPlatformSettingValueRepository>();
@@ -25,16 +26,7 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             .ReturnsAsync(Array.Empty<PlatformSettingResolvedValue>());
         resolver.Setup(x => x.GetResolvedAsync(def.Key, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Resolved(def, ["alpha", "beta"]));
-        var actor = new Mock<IActor>();
-        actor.Setup(x => x.Id).Returns(new ActorId("actor-1"));
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(actor.Object);
-        string? auditDetails = null;
-        var audit = new Mock<IAuditService>();
-        audit.Setup(x => x.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<AuditRecord, CancellationToken>((record, _) => auditDetails = record.Details)
-            .Returns(ValueTask.CompletedTask);
+        var recorded = new AuditRecording();
 
         var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(
             new Mock<IPlatformSettingOptionProvider>().Object);
@@ -45,8 +37,7 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             resolver.Object,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            principalContext.Object,
-            audit.Object);
+            recorded);
 
         await sut.SetAsync(
             def.Key,
@@ -54,7 +45,10 @@ public sealed class Epic112PlatformSettingsServiceAuditTests
             null,
             CancellationToken.None);
 
-        auditDetails.Should().Contain("newValue=[alpha, beta]");
+        var set = recorded.Single("platform.settings.set");
+        set.Fields["newValue"].Should().Be("[alpha, beta]");
+        set.Fields["operation"].Should().Be("set");
+        set.Fields["sensitive"].Should().Be(false);
     }
 
     [Fact]

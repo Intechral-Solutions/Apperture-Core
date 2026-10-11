@@ -162,9 +162,7 @@ public sealed class IntegrationFleetContextFilterTests
                 integrationRepository,
                 resourceContexts,
                 db,
-                new SqlResourceOwnershipMutationGate(db),
-                new IntegrationManagementServiceTestDependencies.RecordingAuditService(),
-                IntegrationManagementServiceTestDependencies.CreateSettingsService(db, integrationRepository));
+                new SqlResourceOwnershipMutationGate(db));
 
             var slots = new Mock<IModuleSlotRegistry>();
             slots.Setup(x => x.GetSlotsForModule(It.IsAny<string>())).Returns(new List<ICapabilitySlot>());

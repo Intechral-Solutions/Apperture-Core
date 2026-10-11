@@ -1,6 +1,8 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Core.Security.Secrets.Models;
 using Apperture.Persistence.SqlServer;
@@ -158,12 +160,16 @@ public sealed class IntegrationDeleteReferentialLifecycleTests
 
         await h.Integrations.DeleteIntegrationAsync(integration.Id);
 
-        var record = h.Audit.Records.Should().ContainSingle(r => r.Action == ActionConstants.IntegrationDeleted).Subject;
-        record.ResourceContextId.Should().Be(integration.ResourceContextId.Value,
+        // AUD-1.4 slice 3: a staged W1 row of the delete's own unit, not a legacy record appended after it.
+        h.DeleteAudit.Actions.Should().Equal(AuditActionNames.IntegrationDeleted);
+        var deleted = h.DeleteAudit.Single(AuditActionNames.IntegrationDeleted);
+        deleted.Related.ResourceContextId.Should().Be(integration.ResourceContextId.Value,
             "the delete is attributable to the Context that owned the Integration");
-        record.Details.Should().Contain(integration.Id.Value);
-        record.Details.Should().Contain(integration.DisplayName);
-        record.Outcome.Should().Be("succeeded");
+        deleted.Target.Should().Be(new AuditTarget(AuditTargetTypes.Integration, integration.Id.Value));
+        deleted.Fields["name"].Should().Be(integration.DisplayName);
+        deleted.Fields["settingsRemoved"].Should().Be(0);
+        deleted.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        h.Audit.Records.Should().NotContain(r => r.Action == ActionConstants.IntegrationDeleted, "the legacy append is gone");
     }
 
     [Fact]
@@ -174,9 +180,58 @@ public sealed class IntegrationDeleteReferentialLifecycleTests
         await h.AddAttentionRoutingAsync(integration.Id.Value);
 
         var act = async () => await h.Integrations.DeleteIntegrationAsync(integration.Id);
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        var thrown = await act.Should().ThrowAsync<IntegrationDeleteBlockedException>();
+        thrown.Which.Blocker.Should().Be(IntegrationDeleteBlocker.AttentionRoutings);
 
         h.Audit.Records.Should().BeEmpty("nothing was deleted, so nothing is recorded as deleted");
+        h.DeleteAudit.Actions.Should().BeEmpty("a refused delete commits no row");
+        (await h.Db.Integrations.CountAsync(i => i.Id == integration.Id.Value)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_missing_integration_is_a_typed_not_found_and_records_nothing()
+    {
+        using var h = new IntegrationLifecycleTestHarness();
+
+        var act = async () => await h.Integrations.DeleteIntegrationAsync(new IntegrationId("int_missing"));
+
+        await act.Should().ThrowAsync<IntegrationNotFoundException>();
+        h.DeleteAudit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Removing_a_sensitive_setting_on_delete_records_its_secret_retirement_under_the_delete()
+    {
+        using var h = new IntegrationLifecycleTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        await h.Settings.SetAsync(integration.Id.Value, h.SensitiveSettingKey,
+            new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Replace, SecretValue = "hunter2" },
+            rowVersionBase64: null);
+        await h.Settings.SetAsync(integration.Id.Value, h.SettingKey,
+            new PlatformSettingUpdatePayload { ScalarValue = "x" }, rowVersionBase64: null);
+
+        await h.Integrations.DeleteIntegrationAsync(integration.Id);
+
+        h.DeleteAudit.Actions.Should().BeEquivalentTo(
+            [AuditActionNames.IntegrationDeleted, AuditActionNames.IntegrationSettingSecretRetired],
+            "one primary row and one Secrets-category row; no per-key reset rows");
+        h.DeleteAudit.Single(AuditActionNames.IntegrationDeleted).Fields["settingsRemoved"].Should().Be(2);
+        var retired = h.DeleteAudit.Single(AuditActionNames.IntegrationSettingSecretRetired);
+        retired.Fields["reason"].Should().Be("integration_deleted");
+        retired.Fields["key"].Should().Be(h.SensitiveSettingKey);
+    }
+
+    [Fact]
+    public async Task The_delete_without_its_audited_unit_refuses_rather_than_delete_unaudited()
+    {
+        using var h = new IntegrationLifecycleTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var unaudited = h.WithoutDeleteCollaborators();
+
+        var act = async () => await unaudited.DeleteIntegrationAsync(integration.Id);
+
+        await act.Should().ThrowAsync<AuditInvariantException>();
+        (await h.Db.Integrations.CountAsync(i => i.Id == integration.Id.Value)).Should().Be(1);
     }
 
     [Fact]

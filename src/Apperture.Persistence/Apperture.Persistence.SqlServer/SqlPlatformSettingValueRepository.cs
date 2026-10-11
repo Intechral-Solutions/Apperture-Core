@@ -75,8 +75,28 @@ public sealed class SqlPlatformSettingValueRepository : IPlatformSettingValueRep
             entity.UpdatedByPrincipalId = value.UpdatedByPrincipalId;
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (entity is { RowVersion: null or { Length: 0 } } && IsFirstInsertRace(ex))
+        {
+            // Two requests set a setting that has no override yet, and the other committed its insert first. This request is
+            // stale in the same way a mismatched row version is: it saw no override, and one now exists. It is reported as the
+            // concurrency conflict it is, never borrowed as the other request's success. Any other duplicate keeps its
+            // meaning. Inside a caller's transaction EF rolled this save back to its savepoint; the row is no longer tracked,
+            // so no later save can flush it.
+            _db.Entry(entity).State = EntityState.Detached;
+            throw new DbUpdateConcurrencyException("Platform setting was created by another request.", ex);
+        }
     }
+
+    /// <summary>The primary key and the unique index that both express "one override per setting and scope".</summary>
+    private static bool IsFirstInsertRace(DbUpdateException ex) =>
+        SqlUniqueKeyViolation.IsOnIndex(ex, PrimaryKeyName) || SqlUniqueKeyViolation.IsOnIndex(ex, ScopedKeyIndexName);
+
+    internal const string PrimaryKeyName = "PK_PlatformSettingValues";
+    internal const string ScopedKeyIndexName = "IX_PlatformSettingValues_Key_ScopeKind_ScopeId";
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default) =>
         DeleteScopedAsync(key, PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, cancellationToken);

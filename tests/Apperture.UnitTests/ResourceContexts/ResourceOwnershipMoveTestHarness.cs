@@ -73,9 +73,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             ResourceContexts,
             _db,
-            ownershipGate,
-            new IntegrationManagementServiceTestDependencies.RecordingAuditService(),
-            IntegrationManagementServiceTestDependencies.CreateSettingsService(_db, IntegrationRepository));
+            ownershipGate);
 
         var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -108,8 +106,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             _db,
             ownershipGate,
-            new FixedPrincipalContext(),
-            Mock.Of<IAuditService>());
+            new FixedPrincipalContext());
 
         Service = new ResourceOwnershipMoveService(
             new FixedPrincipalContext(),

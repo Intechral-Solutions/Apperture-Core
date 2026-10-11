@@ -43,10 +43,19 @@ public static class PlatformSettingsServiceCollectionExtensions
                 sp.GetRequiredService<IntegrationSettingDefinitionRegistry>(),
                 sp.GetServices<IModuleIntegrationSettingDefinitionContributor>()));
         services.AddScoped<IIntegrationSettingsResolver, IntegrationSettingsResolver>();
-        services.AddScoped<IIntegrationSettingsService, IntegrationSettingsService>();
+        services.AddScoped<IntegrationSettingsService>();
+        services.AddScoped<IIntegrationSettingsService>(sp => sp.GetRequiredService<IntegrationSettingsService>());
+        // Internal and registered only here: the in-transaction reset. The integration delete does not use it (owner ruling H1).
+        services.AddScoped<IIntegrationSettingResetInTransaction>(sp => sp.GetRequiredService<IntegrationSettingsService>());
         services.AddScoped<IntegrationSettingsAuthorization>();
         services.AddScoped<PlatformSettingSecretMaterialProvisioner>();
         services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
+
+        // Integration delete's settings inventory, secret classifier and transactional retirement (slice 3, work package 4a).
+        // Scoped, so each takes the request's one context, the one the audited unit and the secret store use.
+        services.AddScoped<IntegrationSettingSecretInventory>();
+        services.AddScoped<IntegrationSettingSecretClassifier>();
+        services.AddScoped<IntegrationSettingSecretRetirement>();
 
         services.AddSingleton<IPostConfigureOptions<NotificationEvaluationOptions>, NotificationEvaluationOptionsPlatformSettingsPostConfigure>();
         services.AddSingleton<IPostConfigureOptions<NotificationInstanceOptions>, NotificationInstanceOptionsPlatformSettingsPostConfigure>();

@@ -2,14 +2,12 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
-using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.Workflow;
+using Apperture.IntegrationTests.Audit;
 using Apperture.Persistence.SqlServer;
-using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -279,13 +277,26 @@ public sealed class ScheduleDeleteSqlServerTests
         rows.Should().NotContain(r => r.Referenced == "ScheduleDefinitions" && r.Parent != "ScheduleDefinitions");
     }
 
+    /// <summary>The signed-in administrator of every delete here. The audited unit records and verifies their row.</summary>
+    private const string ActorId = "usr_lfc11_sql_actor";
+
+    /// <summary>A scratch catalog with the acting user in it. Fails, never skips, when SQL Server is unreachable.</summary>
     private static async Task<SqlServerScratchDatabase> RequireFixtureAsync(string catalogPrefix)
     {
         var fixture = await SqlServerScratchDatabase.CreateAsync(catalogPrefix);
         fixture.Should().NotBeNull(
             "LFC-1.1 SQL proof requires these tests to run against SQL Server. " +
             SqlServerTestConfiguration.DescribeActiveConfiguration());
-        return fixture!;
+
+        // The audited unit attributes the delete to this user, so the account must exist.
+        await using var db = fixture!.NewDb();
+        await db.Database.ExecuteSqlRawAsync(
+            $"""
+            INSERT INTO Users (Id, Username, DisplayName, IsBreakGlassEligible) VALUES (N'{ActorId}', N'lfc11.sql.actor', N'{ActorId}', 0);
+            INSERT INTO UsernameLedger (Username, UserId, AssignedAtUtc) VALUES (N'lfc11.sql.actor', N'{ActorId}', SYSDATETIMEOFFSET());
+            INSERT INTO IdentityLinks (Id, UserId, Source, ExternalId, LinkedAt) VALUES (N'L{ActorId}', N'{ActorId}', 1, N'lfc11.sql.actor', SYSDATETIMEOFFSET());
+            """);
+        return fixture;
     }
 
     private static async Task<string> SeedDisabledScheduleAsync(SqlServerScratchDatabase fixture, string name)
@@ -336,6 +347,7 @@ public sealed class ScheduleDeleteSqlServerTests
         public static Env Build(AppertureDbContext db, TimeSpan? gateTimeout = null)
         {
             var repository = new SqlScheduleRepository(db);
+            var principal = new AuditRecorderTestSupport.Principal(ActorId);
             var schedules = new SqlScheduleManagementService(
                 repository,
                 new StubClaimOptions(),
@@ -344,37 +356,9 @@ public sealed class ScheduleDeleteSqlServerTests
                 new SqlIntegrationRepository(db),
                 db,
                 new SqlResourceOwnershipMutationGate(db, gateTimeout),
-                new FixedPrincipal(),
-                new NullAudit());
+                principal,
+                AuditRecorderTestSupport.NewUnit(db, principal));
             return new Env { Schedules = schedules, Repository = repository };
-        }
-    }
-
-    private sealed class NullAudit : IAuditService
-    {
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-    }
-
-    private sealed class FixedPrincipal : IPrincipalContext
-    {
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IActor?>(new FixedActor());
-
-        private sealed class FixedActor : IActor
-        {
-            public ActorId Id => new("lfc11-sql-actor");
-            public ActorKind Kind => ActorKind.Human;
-            public string? DisplayName => "LFC-1.1 SQL actor";
         }
     }
 

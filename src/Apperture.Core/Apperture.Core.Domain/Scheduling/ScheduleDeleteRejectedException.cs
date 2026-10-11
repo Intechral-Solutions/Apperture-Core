@@ -5,8 +5,9 @@ namespace Apperture.Core.Domain.Scheduling;
 /// </summary>
 /// <remarks>
 /// Inherits <see cref="InvalidOperationException"/> so a caller that only catches the base type still
-/// fails closed. Controllers catch this type first and map it to 409; a plain
-/// <see cref="InvalidOperationException"/> from delete means the schedule does not exist (404).
+/// fails closed. Controllers catch this type and map it to 409. A schedule that does not
+/// exist is a <see cref="ScheduleNotFoundException"/> (404); no other <see cref="InvalidOperationException"/> from delete is a
+/// refusal.
 /// </remarks>
 public sealed class ScheduleDeleteRejectedException : InvalidOperationException
 {

@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -109,6 +111,144 @@ public sealed class Epic118IntegrationSettingsTests
         stored!.ValueJson.Should().Be($"\"{IntegrationId}:beta\"");
     }
 
+    // ---- the integration row lock (AUD-1.4 slice 3) ----
+
+    [Fact]
+    public async Task Set_for_an_integration_that_does_not_exist_is_a_not_found_that_stores_and_records_nothing()
+    {
+        var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
+        var repo = new PlatformSettingRepositoryFake();
+        var recorded = new AuditRecording();
+        var service = CreateIntegrationSettingsService(
+            def,
+            repo,
+            new TestIntegrationOptionsOptionProvider(),
+            audit: recorded,
+            integrations: CreateIntegrationRepository(integrationExists: false));
+
+        var act = () => service.SetAsync(
+            IntegrationId,
+            def.Key,
+            new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
+            null);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>();
+        (await repo.GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, IntegrationId)).Should().BeNull();
+        recorded.Actions.Should().BeEmpty();
+        recorded.Unit.Staged.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Reset_for_an_integration_that_does_not_exist_is_a_not_found_even_when_an_override_remains()
+    {
+        var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
+        var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
+        {
+            Key = def.Key,
+            ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
+            ScopeId = IntegrationId,
+            ValueJson = $"\"{IntegrationId}:beta\"",
+            RowVersion = [1],
+        });
+        var recorded = new AuditRecording();
+        var service = CreateIntegrationSettingsService(
+            def,
+            repo,
+            new TestIntegrationOptionsOptionProvider(),
+            audit: recorded,
+            integrations: CreateIntegrationRepository(integrationExists: false));
+
+        var act = () => service.ResetAsync(IntegrationId, def.Key);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>();
+        (await repo.GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, IntegrationId)).Should().NotBeNull("nothing was removed");
+        recorded.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_integration_is_locked_before_the_provider_is_asked_for_options_and_before_the_setting_is_read()
+    {
+        var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
+        var steps = new List<string>();
+        var integrations = CreateIntegrationRepository(integrationExists: true);
+        integrations.Setup(x => x.GetByIdForUpdateAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .Returns((IntegrationId id, CancellationToken _) =>
+            {
+                steps.Add("lock");
+                return ValueTask.FromResult<DomainIntegration?>(new DomainIntegration(
+                    id, "Test Integration", "mod-1", null, IntegrationState.Active, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+            });
+        var service = CreateIntegrationSettingsService(
+            def,
+            new OrderRecordingRepository(steps),
+            new OrderRecordingOptionProvider(new TestIntegrationOptionsOptionProvider(), steps),
+            integrations: integrations);
+
+        await service.SetAsync(
+            IntegrationId,
+            def.Key,
+            new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
+            null);
+
+        // The last read is the response, taken after the commit.
+        steps.Should().Equal("lock", "options", "read", "write", "read");
+    }
+
+    private sealed class OrderRecordingRepository(List<string> steps) : PlatformSettingRepositoryFake
+    {
+        public override Task<PlatformSettingValue?> GetScopedAsync(string key, string scopeKind, string scopeId, CancellationToken cancellationToken = default)
+        {
+            steps.Add("read");
+            return base.GetScopedAsync(key, scopeKind, scopeId, cancellationToken);
+        }
+
+        public override Task UpsertAsync(PlatformSettingValue value, byte[]? expectedRowVersion, CancellationToken cancellationToken = default)
+        {
+            steps.Add("write");
+            return base.UpsertAsync(value, expectedRowVersion, cancellationToken);
+        }
+    }
+
+    private sealed class OrderRecordingOptionProvider(IPlatformSettingOptionProvider inner, List<string> steps) : IPlatformSettingOptionProvider
+    {
+        public string ProviderKey => inner.ProviderKey;
+
+        public Task<IReadOnlyList<PlatformSettingAllowedValue>> GetOptionsAsync(
+            PlatformSettingDefinition definition,
+            PlatformSettingOptionProviderContext context,
+            CancellationToken cancellationToken = default)
+        {
+            steps.Add("options");
+            return inner.GetOptionsAsync(definition, context, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task The_callers_authorization_runs_again_under_the_lock_and_a_refusal_changes_and_records_nothing()
+    {
+        var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
+        var repo = new PlatformSettingRepositoryFake();
+        var recorded = new AuditRecording();
+        var service = CreateIntegrationSettingsService(def, repo, new TestIntegrationOptionsOptionProvider(), audit: recorded);
+        var reauthorized = 0;
+
+        var act = () => service.SetAsync(
+            IntegrationId,
+            def.Key,
+            new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
+            null,
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                throw new UnauthorizedAccessException("moved");
+            });
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        reauthorized.Should().Be(1);
+        (await repo.GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, IntegrationId)).Should().BeNull();
+        recorded.Actions.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task Set_rejects_invalid_provider_value()
     {
@@ -137,8 +277,7 @@ public sealed class Epic118IntegrationSettingsTests
             new Mock<IPlatformSettingsResolver>().Object,
             PlatformSettingOptionProviderTestHarness.CreateCoordinator(new TestIntegrationOptionsOptionProvider()),
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            new Mock<IPrincipalContext>().Object,
-            new Mock<IAuditService>().Object);
+            new AuditRecording());
 
         var act = () => platformService.SetAsync(
             def.Key,
@@ -217,17 +356,13 @@ public sealed class Epic118IntegrationSettingsTests
     public async Task Set_writes_integration_settings_audit()
     {
         var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
-        var audit = new Mock<IAuditService>();
-        AuditRecord? captured = null;
-        audit.Setup(x => x.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<AuditRecord, CancellationToken>((record, _) => captured = record)
-            .Returns(ValueTask.CompletedTask);
+        var recorded = new AuditRecording();
 
         var service = CreateIntegrationSettingsService(
             def,
             new PlatformSettingRepositoryFake(),
             new TestIntegrationOptionsOptionProvider(),
-            audit: audit);
+            audit: recorded);
 
         await service.SetAsync(
             IntegrationId,
@@ -235,44 +370,46 @@ public sealed class Epic118IntegrationSettingsTests
             new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
             null);
 
-        captured.Should().NotBeNull();
-        captured!.Action.Should().Be(IntegrationSettingsAuditActionNames.Set);
-        captured.Resource.ResourceType.Should().Be(ResourceTypeConstants.Integration);
-        captured.Resource.ScopeKey.Should().Be(IntegrationId);
-        captured.Details.Should().Contain(PlatformSettingScopeConstants.IntegrationKind);
+        var set = recorded.Single(AuditActionNames.IntegrationSettingSet);
+        set.Target!.Type.Should().Be(AuditTargetTypes.IntegrationSetting);
+        set.Target.Id.Should().Be(AuditEvents.IntegrationSettingTargetId(IntegrationId, def.Key));
+        set.Fields["integrationId"].Should().Be(IntegrationId);
+        set.Fields["key"].Should().Be(def.Key);
+        set.Fields["operation"].Should().Be("set");
+        set.Fields["newValue"].Should().Be($"{IntegrationId}:beta");
     }
 
     [Fact]
     public async Task SetAsync_AuditsWithTheIntegrationsCurrentResourceContextId()
     {
         var def = PlatformSettingTestDefinitions.IntegrationScopedSelectSample;
-        var audit = new Mock<IAuditService>();
-        string? capturedContext = null;
-        audit.Setup(x => x.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<AuditRecord, CancellationToken>((record, _) => capturedContext = record.ResourceContextId)
-            .Returns(ValueTask.CompletedTask);
+        var recorded = new AuditRecording();
 
         var integrations = new Mock<IIntegrationRepository>();
+        ValueTask<DomainIntegration?> Owned(IntegrationId id) => ValueTask.FromResult<DomainIntegration?>(
+            new DomainIntegration(
+                id,
+                "Test Integration",
+                "mod-1",
+                null,
+                IntegrationState.Active,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow)
+            {
+                ResourceContextId = new ResourceContextId("app-a")
+            });
         integrations.Setup(x => x.GetByIdAsync(new IntegrationId(IntegrationId), It.IsAny<CancellationToken>()))
-            .Returns((IntegrationId id, CancellationToken _) => ValueTask.FromResult<DomainIntegration?>(
-                new DomainIntegration(
-                    id,
-                    "Test Integration",
-                    "mod-1",
-                    null,
-                    IntegrationState.Active,
-                    null,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow)
-                {
-                    ResourceContextId = new ResourceContextId("app-a")
-                }));
+            .Returns((IntegrationId id, CancellationToken _) => Owned(id));
+        // The change takes the integration row lock and requires the row (AUD-1.4): the same row, read for update.
+        integrations.Setup(x => x.GetByIdForUpdateAsync(new IntegrationId(IntegrationId), It.IsAny<CancellationToken>()))
+            .Returns((IntegrationId id, CancellationToken _) => Owned(id));
 
         var service = CreateIntegrationSettingsService(
             def,
             new PlatformSettingRepositoryFake(),
             new TestIntegrationOptionsOptionProvider(),
-            audit: audit,
+            audit: recorded,
             integrations: integrations);
 
         await service.SetAsync(
@@ -281,21 +418,20 @@ public sealed class Epic118IntegrationSettingsTests
             new PlatformSettingUpdatePayload { ScalarValue = $"{IntegrationId}:beta" },
             null);
 
-        capturedContext.Should().Be("app-a");
+        recorded.Single(AuditActionNames.IntegrationSettingSet).Related.ResourceContextId.Should().Be("app-a");
     }
 
     private static IntegrationSettingsService CreateIntegrationSettingsService(
         PlatformSettingDefinition def,
         IPlatformSettingValueRepository repo,
         IPlatformSettingOptionProvider provider,
-        Mock<IAuditService>? audit = null,
+        AuditRecording? audit = null,
         Mock<IIntegrationRepository>? integrations = null)
     {
         integrations ??= CreateIntegrationRepository(integrationExists: true);
         var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(provider, integrations: integrations);
         var resolver = new IntegrationSettingsResolver(new TestIntegrationSettingDefinitionRegistry(), repo);
         var (principalContext, _, _) = PlatformSettingOptionProviderTestHarness.CreateDefaultAuthMocks();
-        var auditMock = audit ?? new Mock<IAuditService>();
 
         return new IntegrationSettingsService(
             new TestIntegrationSettingDefinitionRegistry(),
@@ -303,9 +439,8 @@ public sealed class Epic118IntegrationSettingsTests
             resolver,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            principalContext.Object,
-            auditMock.Object,
-            integrations.Object);
+            integrations.Object,
+            audit ?? new AuditRecording());
     }
 
     private static IntegrationSettingsController CreateIntegrationSettingsController(
@@ -334,9 +469,8 @@ public sealed class Epic118IntegrationSettingsTests
             resolver,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            principal.Object,
-            new Mock<IAuditService>().Object,
-            integrations.Object);
+            integrations.Object,
+            new AuditRecording());
 
         var integrationAuth = new IntegrationSettingsAuthorization(
             principalContext.Object,
@@ -354,23 +488,28 @@ public sealed class Epic118IntegrationSettingsTests
     private static Mock<IIntegrationRepository> CreateIntegrationRepository(bool integrationExists)
     {
         var integrations = new Mock<IIntegrationRepository>();
-        integrations.Setup(x => x.GetByIdAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
-            .Returns((IntegrationId id, CancellationToken _) =>
-            {
-                if (!integrationExists || !string.Equals(id.Value, IntegrationId, StringComparison.Ordinal))
-                    return ValueTask.FromResult<DomainIntegration?>(null);
+        ValueTask<DomainIntegration?> Find(IntegrationId id)
+        {
+            if (!integrationExists || !string.Equals(id.Value, IntegrationId, StringComparison.Ordinal))
+                return ValueTask.FromResult<DomainIntegration?>(null);
 
-                return ValueTask.FromResult<DomainIntegration?>(
-                    new DomainIntegration(
-                        id,
-                        "Test Integration",
-                        "mod-1",
-                        null,
-                        IntegrationState.Active,
-                        null,
-                        DateTimeOffset.UtcNow,
-                        DateTimeOffset.UtcNow));
-            });
+            return ValueTask.FromResult<DomainIntegration?>(
+                new DomainIntegration(
+                    id,
+                    "Test Integration",
+                    "mod-1",
+                    null,
+                    IntegrationState.Active,
+                    null,
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow));
+        }
+
+        integrations.Setup(x => x.GetByIdAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .Returns((IntegrationId id, CancellationToken _) => Find(id));
+        // The change takes the integration row lock and requires the row (AUD-1.4): the same row, read for update.
+        integrations.Setup(x => x.GetByIdForUpdateAsync(It.IsAny<IntegrationId>(), It.IsAny<CancellationToken>()))
+            .Returns((IntegrationId id, CancellationToken _) => Find(id));
 
         return integrations;
     }

@@ -42,7 +42,7 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
         var authorization = new NotificationDefinitionAuthorization(
             new FixedPrincipalContext(new FixedActor()),
             new ConfigurableAuthorizationService(denyInstanceManage),
-            new ConfigurableAuthorizationEvaluationService(denyIntegrationUpdate),
+            new ConfigurableAuthorizationEvaluationService(denyIntegrationUpdate, () => IntegrationUpdateChecks++),
             _integrations);
 
         Definitions = new NotificationDefinitionService(
@@ -58,6 +58,9 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
     }
 
     public AppertureDbContext Db => _db;
+
+    /// <summary>How many times the Integration-scoped <c>integration.update</c> gate has been evaluated.</summary>
+    public int IntegrationUpdateChecks { get; private set; }
 
     public INotificationDefinitionService Definitions { get; }
 
@@ -260,13 +263,23 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
     {
         private readonly bool _denyIntegrationUpdate;
 
-        public ConfigurableAuthorizationEvaluationService(bool denyIntegrationUpdate) =>
+        private readonly Action? _onIntegrationUpdate;
+
+        public ConfigurableAuthorizationEvaluationService(bool denyIntegrationUpdate, Action? onIntegrationUpdate = null)
+        {
             _denyIntegrationUpdate = denyIntegrationUpdate;
+            _onIntegrationUpdate = onIntegrationUpdate;
+        }
 
         public ValueTask<bool> EvaluateAsync(AuthorizationEvaluationContext context, CancellationToken cancellationToken = default)
         {
-            if (_denyIntegrationUpdate && string.Equals(context.Permission.Action, ActionConstants.IntegrationUpdate, StringComparison.Ordinal))
-                return ValueTask.FromResult(false);
+            if (string.Equals(context.Permission.Action, ActionConstants.IntegrationUpdate, StringComparison.Ordinal))
+            {
+                _onIntegrationUpdate?.Invoke();
+                if (_denyIntegrationUpdate)
+                    return ValueTask.FromResult(false);
+            }
+
             return ValueTask.FromResult(true);
         }
     }

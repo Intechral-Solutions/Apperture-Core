@@ -1291,6 +1291,35 @@ internal static class AuditActionCatalogEntries
             IntroducedAfterEpic37Migration = true,
             Writer = "ConfigEntraTenantsController.cs",
         },
+        // AUD-1.4 (gate §22 rulings on secret audit identifiers and secret-store transaction participation): the client
+        // secret a registration owns is stored and retired inside the registration change's unit, each recorded under the
+        // Secrets category on the registration. Neither the secret nor its store reference is recorded.
+        new()
+        {
+            Action = "entra.tenant_registration.client_secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.EntraTenantRegistration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.TenantRegistrationClientSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConfigEntraTenantsController.cs",
+        },
+        new()
+        {
+            Action = "entra.tenant_registration.client_secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.EntraTenantRegistration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.TenantRegistrationClientSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConfigEntraTenantsController.cs",
+        },
         new()
         {
             Action = "auth.sign_in_policy.updated",
@@ -1545,9 +1574,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Integration,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationDeleted,
             IntroducedIn = "2609ba11",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationManagementService.cs:353",
+            Writer = "IntegrationManagementService.cs",
         },
         new()
         {
@@ -1557,9 +1587,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.IntegrationSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSet,
             IntroducedIn = "023a6677",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationSettingsService.cs:219",
+            Writer = "IntegrationSettingsService.cs",
         },
         new()
         {
@@ -1569,9 +1600,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.IntegrationSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingReset,
             IntroducedIn = "023a6677",
             IntroducedAfterEpic37Migration = true,
-            Writer = "IntegrationSettingsService.cs:127",
+            Writer = "IntegrationSettingsService.cs",
         },
         new()
         {
@@ -1581,9 +1613,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.PlatformSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSet,
             IntroducedIn = "6964dd97",
             IntroducedAfterEpic37Migration = true,
-            Writer = "PlatformSettingsService.cs:206",
+            Writer = "PlatformSettingsService.cs",
         },
         new()
         {
@@ -1593,9 +1626,65 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.PlatformSetting,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingReset,
             IntroducedIn = "6964dd97",
             IntroducedAfterEpic37Migration = true,
-            Writer = "PlatformSettingsService.cs:115",
+            Writer = "PlatformSettingsService.cs",
+        },
+        // AUD-1.4 (gate §22 rulings on secret audit identifiers and secret-store transaction participation): the secret a
+        // sensitive setting owns is stored and retired inside the setting change's unit, each recorded under the Secrets
+        // category on the setting. Neither the secret nor its store reference is recorded.
+        new()
+        {
+            Action = "platform.settings.secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.PlatformSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "PlatformSettingsService.cs",
+        },
+        new()
+        {
+            Action = "platform.settings.secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.PlatformSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.PlatformSettingSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "PlatformSettingsService.cs",
+        },
+        new()
+        {
+            Action = "integration.settings.secret.stored",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.IntegrationSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSecretStored,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "IntegrationSettingsService.cs",
+        },
+        new()
+        {
+            Action = "integration.settings.secret.retired",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.IntegrationSetting,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.IntegrationSettingSecretRetired,
+            IntroducedIn = "AUD-1.4",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "IntegrationSettingsService.cs (reset, clear) and IntegrationSettingSecretRetirement.cs (integration delete)",
         },
         new()
         {
@@ -1782,9 +1871,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Schedule,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ScheduleDeleted,
             IntroducedIn = "45f110aa",
             IntroducedAfterEpic37Migration = true,
-            Writer = "SqlScheduleManagementService.cs:377",
+            Writer = "SqlScheduleManagementService.cs",
         },
         new()
         {
@@ -1794,9 +1884,10 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Schedule,
             Basis = AuditBases.Attempt,
             WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ScheduleDeleteRejected,
             IntroducedIn = "45f110aa",
             IntroducedAfterEpic37Migration = true,
-            Writer = "SqlScheduleManagementService.cs:374",
+            Writer = "SqlScheduleManagementService.cs",
         },
         new()
         {

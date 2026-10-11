@@ -1,7 +1,7 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
@@ -13,7 +13,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// SQL-backed schedule management. Epic 28, Epic 36. Epic 66: lifecycle evidence on write paths.
+/// SQL-backed schedule management. Epic 28, Epic 36. Epic 66: lifecycle evidence on write paths. The hard-delete is one
+/// audited unit (AUD-1.4): the removal and its audit row commit together or not at all.
 /// </summary>
 public sealed class SqlScheduleManagementService : IScheduleManagementService
 {
@@ -25,7 +26,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
     private readonly IPrincipalContext _principalContext;
-    private readonly IAuditService _audit;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAuditEventWriter? _auditEvents;
 
     public SqlScheduleManagementService(
         IScheduleRepository repo,
@@ -36,7 +38,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         AppertureDbContext db,
         IResourceOwnershipMutationGate ownershipGate,
         IPrincipalContext principalContext,
-        IAuditService audit)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAuditEventWriter? auditEvents = null)
     {
         _repo = repo;
         _claimOptions = claimOptions;
@@ -46,8 +49,12 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         _db = db;
         _ownershipGate = ownershipGate;
         _principalContext = principalContext;
-        _audit = audit;
+        _auditedUnitOfWork = auditedUnitOfWork;
+        _auditEvents = auditEvents;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Schedule deletion requires the audited unit of work.");
 
     public async ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
         await _repo.GetDefinitionAsync(id, cancellationToken);
@@ -321,91 +328,89 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     {
         // Authorization for schedules is instance-scoped schedule.manage, enforced by the controller
         // before this method runs (same as enable/disable). A missing actor still fails here, before
-        // any read or audit, so a direct caller cannot delete anonymously.
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is null)
+        // any read or audit, so a direct caller cannot delete anonymously. The row's actor is the unit's, resolved from the
+        // same principal; nothing a caller supplies is recorded.
+        if (await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false) is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        var attempt = await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
-
-            // Same application lock Enable uses. Enable cannot commit Enabled=true between this
-            // acquisition and the locked re-read, and this delete cannot remove a row Enable has
-            // already decided to turn on.
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            var fresh = await _repo.GetByIdForUpdateAsync(scheduleId, cancellationToken).ConfigureAwait(false);
-            if (fresh is null)
-                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.NotFound, null, 0);
-
-            if (fresh.Enabled)
-                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Enabled, fresh, 0);
-
-            // Archived owning contexts are allowed. Delete does not call the reactivation guard:
-            // removing a disabled schedule does not make anything live.
-            var removed = await _repo.DeleteDisabledScheduleGraphAsync(scheduleId, cancellationToken).ConfigureAwait(false);
-            if (!removed.Deleted)
+        // One audited unit (AUD-1.4, gate §13.6): the unit owns the execution strategy and the transaction, and its first
+        // statement is the operation lock. Lock order inside it: that lock, the ownership gate, the schedule row, then the
+        // graph removal and the primary row. The removal and `schedule.deleted` commit together or not at all.
+        var attempt = await Unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ScheduleDeleted, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
             {
-                var again = await _repo.GetDefinitionAsync(scheduleId, cancellationToken).ConfigureAwait(false);
-                if (again is { Enabled: true })
-                    return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Enabled, again, 0);
-                return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.NotFound, null, 0);
-            }
+                // Same application lock Enable uses. Enable cannot commit Enabled=true between this
+                // acquisition and the locked re-read, and this delete cannot remove a row Enable has
+                // already decided to turn on.
+                await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
 
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return new ScheduleDeleteAttempt(ScheduleDeleteAttemptKind.Deleted, fresh, removed.AssignmentsRemoved);
-        }).ConfigureAwait(false);
+                var fresh = await _repo.GetByIdForUpdateAsync(scheduleId, ct).ConfigureAwait(false);
+                if (fresh is null)
+                {
+                    transaction.DeclareNoOp();
+                    return ScheduleDeleteAttempt.NotFound;
+                }
 
-        // Audit is after the transaction, matching integration.deleted: the SQL delete and the audit
-        // append do not share a commit. A lost success-audit row is preferred to refusing a delete
-        // that has already committed. A rejection audit failure happens before any row is removed,
-        // so the schedule is still enabled and the caller can retry.
+                if (fresh.Enabled)
+                {
+                    transaction.DeclareNoOp();
+                    return ScheduleDeleteAttempt.Refused(fresh);
+                }
+
+                // Archived owning contexts are allowed. Delete does not call the reactivation guard:
+                // removing a disabled schedule does not make anything live.
+                var removed = await _repo.DeleteDisabledScheduleGraphAsync(scheduleId, ct).ConfigureAwait(false);
+                if (!removed.Deleted)
+                {
+                    // Nothing was removed or staged. The row lock makes this unreachable in practice; if it happens the
+                    // schedule changed under us and the answer is whatever the fresh read says.
+                    transaction.DeclareNoOp();
+                    var again = await _repo.GetDefinitionAsync(scheduleId, ct).ConfigureAwait(false);
+                    return again is { Enabled: true } ? ScheduleDeleteAttempt.Refused(again) : ScheduleDeleteAttempt.NotFound;
+                }
+
+                await transaction.StageAsync(
+                    AuditEvents.ScheduleDeleted(
+                        fresh.Id.Value,
+                        fresh.Name,
+                        fresh.IntegrationId?.Value,
+                        removed.AssignmentsRemoved,
+                        fresh.ResourceContextId?.Value),
+                    ct).ConfigureAwait(false);
+                return ScheduleDeleteAttempt.Removed;
+            },
+            // A verified commit is a successful delete, built from the committed primary row alone. The schedule is gone by
+            // design, so its absence is never read as a failed or missing delete.
+            (_, _) => Task.FromResult(ScheduleDeleteAttempt.Removed),
+            cancellationToken).ConfigureAwait(false);
+
         switch (attempt.Kind)
         {
             case ScheduleDeleteAttemptKind.NotFound:
-                throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+                throw new ScheduleNotFoundException(scheduleId);
             case ScheduleDeleteAttemptKind.Enabled:
-                await AppendDeleteAuditAsync(actor, attempt.Definition!, ActionConstants.ScheduleDeleteRejected, "rejected", assignmentsRemoved: null, cancellationToken).ConfigureAwait(false);
+                // A W3 row of the same principal, written after the attempt's transaction ended. A failure to write it is
+                // logged by the writer and never changes the refusal.
+                if (_auditEvents is not null)
+                {
+                    var definition = attempt.Definition!;
+                    await _auditEvents.TryWriteAsync(
+                        AuditEvents.ScheduleDeleteRejected(
+                            definition.Id.Value,
+                            definition.Name,
+                            definition.IntegrationId?.Value,
+                            definition.ResourceContextId?.Value),
+                        AuditActor.CurrentPrincipal,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+
                 throw new ScheduleDeleteRejectedException(scheduleId);
             case ScheduleDeleteAttemptKind.Deleted:
-                await AppendDeleteAuditAsync(actor, attempt.Definition!, ActionConstants.ScheduleDeleted, "succeeded", attempt.AssignmentsRemoved, cancellationToken).ConfigureAwait(false);
                 return;
             default:
-                throw new InvalidOperationException($"Unexpected schedule delete outcome for {scheduleId.Value}.");
+                throw new AuditInvariantException($"Unexpected schedule delete outcome for {scheduleId.Value}.");
         }
-    }
-
-    private async ValueTask AppendDeleteAuditAsync(
-        IActor actor,
-        ScheduleDefinition definition,
-        string action,
-        string outcome,
-        int? assignmentsRemoved,
-        CancellationToken cancellationToken)
-    {
-        var integrationPhrase = definition.IntegrationId is { } integrationId
-            ? $"integration {integrationId.Value}"
-            : "no integration";
-        var details = assignmentsRemoved is { } count
-            ? $"Deleted schedule '{definition.Name}' ({definition.Id.Value}); {integrationPhrase}; removed {count} assignment(s)."
-            : $"Cannot delete schedule '{definition.Name}' ({definition.Id.Value}); {integrationPhrase}; it is still enabled.";
-        await _audit.AppendAsync(new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actor.Id,
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.Schedule, definition.Id.Value),
-            Outcome: outcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            Details: details,
-            ScheduleId: definition.Id.Value,
-            ResourceContextId: definition.ResourceContextId?.Value), cancellationToken).ConfigureAwait(false);
     }
 
     private enum ScheduleDeleteAttemptKind
@@ -415,5 +420,10 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         Deleted
     }
 
-    private sealed record ScheduleDeleteAttempt(ScheduleDeleteAttemptKind Kind, ScheduleDefinition? Definition, int AssignmentsRemoved);
+    private sealed record ScheduleDeleteAttempt(ScheduleDeleteAttemptKind Kind, ScheduleDefinition? Definition)
+    {
+        public static ScheduleDeleteAttempt NotFound { get; } = new(ScheduleDeleteAttemptKind.NotFound, null);
+        public static ScheduleDeleteAttempt Removed { get; } = new(ScheduleDeleteAttemptKind.Deleted, null);
+        public static ScheduleDeleteAttempt Refused(ScheduleDefinition definition) => new(ScheduleDeleteAttemptKind.Enabled, definition);
+    }
 }

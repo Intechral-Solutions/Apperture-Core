@@ -52,8 +52,12 @@ internal sealed class InMemorySecretStore : ISecretStore
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>How many times <see cref="DisableAsync"/> was called.</summary>
+    public int DisableCalls { get; private set; }
+
     public ValueTask DisableAsync(SecretId secretId, CancellationToken cancellationToken = default)
     {
+        DisableCalls++;
         if (_entries.TryGetValue(secretId.Value, out var e))
             e.State = SecretState.Disabled;
         return ValueTask.CompletedTask;

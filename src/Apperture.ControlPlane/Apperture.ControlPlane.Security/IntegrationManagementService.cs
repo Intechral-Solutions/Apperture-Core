@@ -1,8 +1,8 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
@@ -14,7 +14,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Integration management workflow with authorization enforcement. Epic 49.
+/// Integration management workflow with authorization enforcement. Epic 49. The hard-delete is one audited unit (AUD-1.4 slice 3,
+/// work package 4b): the integration, its setting overrides, the secrets they owned and the audit rows commit together or not at all.
 /// </summary>
 public sealed class IntegrationManagementService : IIntegrationManagementService
 {
@@ -24,8 +25,9 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
-    private readonly IAuditService _audit;
-    private readonly IIntegrationSettingsService _integrationSettings;
+    private readonly IntegrationSettingSecretClassifier? _settingSecretClassifier;
+    private readonly IntegrationSettingSecretRetirement? _settingSecretRetirement;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public IntegrationManagementService(
         IPrincipalContext principalContext,
@@ -34,8 +36,9 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         IResourceContextService resourceContexts,
         AppertureDbContext db,
         IResourceOwnershipMutationGate ownershipGate,
-        IAuditService audit,
-        IIntegrationSettingsService integrationSettings)
+        IntegrationSettingSecretClassifier? settingSecretClassifier = null,
+        IntegrationSettingSecretRetirement? settingSecretRetirement = null,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -43,10 +46,11 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
-        _audit = audit;
-        // CTX-3B Plan 6a Task 5: no DI cycle -- IntegrationSettingsService depends on IIntegrationRepository,
-        // not on IIntegrationManagementService.
-        _integrationSettings = integrationSettings;
+        // The delete's collaborators. Optional so the services that only create, read and update integrations need none of
+        // them; the delete refuses to run without all three rather than delete unaudited.
+        _settingSecretClassifier = settingSecretClassifier;
+        _settingSecretRetirement = settingSecretRetirement;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
 
     /// <inheritdoc />
@@ -260,105 +264,159 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         UpdateIntegrationAsync(id, new UpdateIntegrationRequest(State: IntegrationState.Retired), cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 3, work package 4b; design gate §13.6). The unit owns the execution strategy
+    /// and the transaction; its first statement is its own operation lock. Inside the attempt, in this order:</para>
+    /// <list type="number">
+    /// <item>The integration row lock (<c>UPDLOCK</c>, held to the commit or rollback): owner ruling D-4, the lock the WP3 writers,
+    /// binding create, attached-schedule create and the ownership mover take. No ownership gate: the mover takes the gate and then
+    /// this row, so a delete that took the gate after the row could deadlock with it, and the delete moves no ownership.</item>
+    /// <item><c>integration.delete</c> authorized again against the row as locked, so an ownership move that committed while the
+    /// delete waited is what the decision reads, and none can commit after it.</item>
+    /// <item>The five blockers of the CTX-3B inventory. Every writer of a blocker row holds this row lock to its commit, so a count
+    /// taken now sees every blocker that committed first and no blocker can commit before this transaction ends.</item>
+    /// <item>The settings-secret disposition plan (owner ruling H1), refused as a whole before anything changes.</item>
+    /// <item>The primary row, the removal of every persisted integration-scoped override by row id whatever its definition says,
+    /// the retirement of the secrets the plan classified as safe (each with its Secrets-category row), then the integration row.</item>
+    /// </list>
+    /// <para>A verified commit after a lost acknowledgement is a success built from the committed primary row (matched by this
+    /// operation's event id), never from the integration's absence. A missing integration is <see cref="IntegrationNotFoundException"/>;
+    /// a blocker is <see cref="IntegrationDeleteBlockedException"/>; an undetermined credential disposition is
+    /// <see cref="IntegrationSettingDispositionRefusedException"/>. Each of those changed nothing.</para>
+    /// </remarks>
     public async ValueTask DeleteIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default)
     {
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
-        if (actor is null)
-            throw new UnauthorizedAccessException("No authenticated actor.");
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var existing = await _integrationRepository.GetByIdAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
+        var unit = _auditedUnitOfWork
+            ?? throw new AuditInvariantException("Integration deletion requires the audited unit of work.");
+        var classifier = _settingSecretClassifier
+            ?? throw new AuditInvariantException("Integration deletion requires the integration setting secret classifier.");
+        var retirement = _settingSecretRetirement
+            ?? throw new AuditInvariantException("Integration deletion requires the integration setting secret retirement.");
 
-        var identity = existing.GetIdentity();
+        // An early answer for a missing integration or a caller with no delete permission on it, before a unit is opened. It
+        // decides nothing: the unit reads the row again under its lock and authorizes again against that.
+        var existing = await _integrationRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+            ?? throw new IntegrationNotFoundException(id);
+        await AuthorizeDeleteAsync(actor, existing, cancellationToken).ConfigureAwait(false);
+
+        await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.IntegrationDeleted, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                // 1. The integration row, locked to the end of this transaction. Untracked, so a rerun reads it afresh.
+                var integration = await _integrationRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new IntegrationNotFoundException(id);
+
+                // 2. The decision is made on the integration as it is now: its owning context cannot move until the commit.
+                await AuthorizeDeleteAsync(actor, integration, ct).ConfigureAwait(false);
+
+                // 3. Every blocker, counted under the lock.
+                await RequireNoBlockersAsync(id.Value, ct).ConfigureAwait(false);
+
+                // 4. Which overrides to remove and what to do with the secrets they name, read in this transaction. An
+                //    undetermined disposition refuses the whole delete here, before anything is staged or changed.
+                var plan = await classifier.ClassifyAsync(id.Value, ct).ConfigureAwait(false);
+                plan.ThrowIfRefused();
+
+                var resourceContextId = integration.ResourceContextId.Value;
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationDeleted(
+                        id.Value, integration.DisplayName, integration.ModuleId, plan.Overrides.Count, resourceContextId),
+                    ct).ConfigureAwait(false);
+
+                // 5. Every persisted override, by row id, then the secrets the plan allows, then the integration.
+                await RemoveOverridesAsync(plan, ct).ConfigureAwait(false);
+                await retirement.RetireAsync(transaction, plan, resourceContextId, ct).ConfigureAwait(false);
+
+                var entity = await _db.Integrations.FirstOrDefaultAsync(e => e.Id == id.Value, ct).ConfigureAwait(false)
+                    ?? throw new DbUpdateConcurrencyException("The integration was removed by another request while it was locked.");
+                _db.Integrations.Remove(entity);
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                return true;
+            },
+            // A verified commit is a successful delete, built from the committed primary row alone (the unit matched it by this
+            // operation's event id). The integration is gone by design, so its absence is never read as a failed or missing delete.
+            (_, _) => Task.FromResult(true),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask AuthorizeDeleteAsync(IActor actor, DomainIntegration integration, CancellationToken cancellationToken)
+    {
+        var identity = integration.GetIdentity();
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
                 new PermissionDescriptor(ActionConstants.IntegrationDelete, GovernedResourceDescriptor.FromIdentity(identity)),
                 GovernedResourceDescriptor.FromIdentity(identity),
                 identity),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to delete this integration.");
+    }
 
-        var bindingCount = await _db.Bindings.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+    /// <summary>
+    /// The five current-state blockers of the CTX-3B referential-lifecycle inventory, counted inside the delete's transaction while
+    /// it holds the integration row lock. None has a foreign key; each is clearable by an operator.
+    /// </summary>
+    private async Task RequireNoBlockersAsync(string integrationId, CancellationToken ct)
+    {
+        var bindingCount = await _db.Bindings.CountAsync(e => e.IntegrationId == integrationId, ct).ConfigureAwait(false);
         if (bindingCount > 0)
-            throw new InvalidOperationException($"Cannot delete integration: {bindingCount} binding(s) reference it.");
+            throw new IntegrationDeleteBlockedException(IntegrationDeleteBlocker.Bindings, bindingCount);
 
-        var scheduleCount = await _db.ScheduleDefinitions.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        var scheduleCount = await _db.ScheduleDefinitions.CountAsync(e => e.IntegrationId == integrationId, ct).ConfigureAwait(false);
         if (scheduleCount > 0)
-            throw new InvalidOperationException($"Cannot delete integration: {scheduleCount} schedule(s) reference it.");
+            throw new IntegrationDeleteBlockedException(IntegrationDeleteBlocker.Schedules, scheduleCount);
 
-        // CTX-3B referential-lifecycle inventory (docs/.../ctx3b-integration-delete-referential-inventory.md):
-        // none of these three has a foreign key, so nothing enforced them before. Block, matching the
-        // existing Binding/Schedule precedent, rather than silently orphaning operator configuration.
-        // Each blocker is clearable by an operator: definitions via DELETE api/notification-definitions/{id}
-        // (Plan 6a Task 2), subscriptions via the existing subscription removal, and routing overrides via
-        // DELETE api/integrations/{id}/attention-routing (Plan 6a Task 3).
-        //
-        // Every blocker runs -- and must pass -- before any cleanup or removal below: a refused delete
-        // destroys nothing, least of all a setting value whose only pointer to an Active secret it holds.
-        var notificationDefinitionCount = await _db.NotificationDefinitions.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        // Definitions via DELETE api/notification-definitions/{id}, subscriptions via the existing subscription removal, and
+        // routing overrides via DELETE api/integrations/{id}/attention-routing are the operator's ways to clear these.
+        var notificationDefinitionCount = await _db.NotificationDefinitions.CountAsync(e => e.IntegrationId == integrationId, ct).ConfigureAwait(false);
         if (notificationDefinitionCount > 0)
-            throw new InvalidOperationException(
-                $"Cannot delete integration: {notificationDefinitionCount} notification definition(s) reference it. Delete them first.");
+            throw new IntegrationDeleteBlockedException(IntegrationDeleteBlocker.NotificationDefinitions, notificationDefinitionCount);
 
-        // Subscriptions carry their own nullable IntegrationId independently of NotificationDefinitionId,
-        // so an Integration-scoped subscription can exist under a Platform- or Module-scoped definition and
-        // is NOT covered by the blocker above. See the inventory's Decisions section.
-        var notificationSubscriptionCount = await _db.NotificationSubscriptions.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        // Subscriptions carry their own nullable IntegrationId independently of NotificationDefinitionId, so an integration-scoped
+        // subscription can exist under a platform- or module-scoped definition and is not covered by the blocker above. A
+        // subscription with no integration id is not a blocker.
+        var notificationSubscriptionCount = await _db.NotificationSubscriptions.CountAsync(e => e.IntegrationId == integrationId, ct).ConfigureAwait(false);
         if (notificationSubscriptionCount > 0)
-            throw new InvalidOperationException(
-                $"Cannot delete integration: {notificationSubscriptionCount} notification subscription(s) reference it. Remove them first.");
+            throw new IntegrationDeleteBlockedException(IntegrationDeleteBlocker.NotificationSubscriptions, notificationSubscriptionCount);
 
-        var attentionRoutingCount = await _db.IntegrationAttentionRoutings.CountAsync(e => e.IntegrationId == id.Value, cancellationToken);
+        var attentionRoutingCount = await _db.IntegrationAttentionRoutings.CountAsync(e => e.IntegrationId == integrationId, ct).ConfigureAwait(false);
         if (attentionRoutingCount > 0)
-            throw new InvalidOperationException(
-                $"Cannot delete integration: {attentionRoutingCount} attention routing override(s) reference it. Clear them first.");
+            throw new IntegrationDeleteBlockedException(IntegrationDeleteBlocker.AttentionRoutings, attentionRoutingCount);
+    }
 
-        var entity = await _db.Integrations.FirstOrDefaultAsync(e => e.Id == id.Value, cancellationToken);
-        if (entity is null)
+    /// <summary>
+    /// Removes every override the plan lists, by row id, whatever its key's definition now says. Neither the per-key settings reset
+    /// (which skips keys with no definition and retires a secret without looking for surviving references) nor a key-built row id
+    /// is used: a historical row is removed as it was stored.
+    /// </summary>
+    /// <remarks>
+    /// <para>No count of the integration's overrides is taken afterwards, and that is deliberate (AUD-1.4 slice 3, work package 5).
+    /// <c>PlatformSettingValues</c> has no index that starts with the scope, so such a count reads the whole table, including the
+    /// rows another integration's delete has just removed and still holds locked. Under locking READ COMMITTED two deletes of
+    /// different integrations could then each wait on the other's rows and deadlock.</para>
+    /// <para>The check added nothing the transaction does not already guarantee. The plan was read after the integration row lock
+    /// was taken, with the predicate that selects an integration's overrides, and every writer of an integration-scoped override
+    /// (the four settings changes) takes that row lock first, so none can commit a new override between the plan and the commit;
+    /// the platform settings writer stores instance-scope rows only. Each row removed is deleted by its primary key and row version, so one
+    /// that vanished or changed since the plan fails the save, and the row count is checked against the plan before anything is
+    /// removed. A writer that bypassed the lock protocol is outside what this unit can coordinate and is not claimed to be caught.</para>
+    /// </remarks>
+    private async Task RemoveOverridesAsync(IntegrationSettingDeletionPlan plan, CancellationToken ct)
+    {
+        if (plan.Overrides.Count == 0)
             return;
 
-        // Integration-scoped PlatformSettingValues have no independent meaning without the Integration
-        // (unlike NotificationDefinitions/AttentionRoutings above, which are independently meaningful
-        // operator configuration) -- clean them up rather than requiring separate manual deletion first.
-        //
-        // Delegated to IIntegrationSettingsService.ResetAsync rather than removing rows directly, because
-        // a sensitive setting's row holds only an opaque ISecretStore reference: deleting the row alone
-        // would orphan an Active secret permanently. ResetAsync is the established lifecycle -- delete the
-        // scoped value, disable the owned secret via TryDisableOwnedSecretAsync, write the per-key audit --
-        // and reusing it keeps secret disposal in the one place that owns it.
-        //
-        // Runs before the Integration row is removed, so ResetAsync's own audit can still resolve the
-        // owning ResourceContext from the still-present Integration.
-        //
-        // Deliberately not atomic with the row delete below: the SQL store and ISecretStore are different
-        // stores and do not share a transaction. This follows IntegrationSettingsService's existing reset
-        // failure behavior rather than inventing new semantics; see the inventory doc.
-        var scopedSettingKeys = await _db.PlatformSettingValues
-            .Where(v => v.ScopeKind == PlatformSettingScopeConstants.IntegrationKind && v.ScopeId == id.Value)
-            .Select(v => v.Key)
-            .ToListAsync(cancellationToken);
+        var rowIds = plan.Overrides.Select(o => o.RowId).ToList();
+        var rows = await _db.PlatformSettingValues.Where(v => rowIds.Contains(v.Id)).ToListAsync(ct).ConfigureAwait(false);
+        if (rows.Count != rowIds.Count)
+            throw new DbUpdateConcurrencyException("An integration setting was removed by another request during the delete.");
 
-        foreach (var key in scopedSettingKeys)
-            await _integrationSettings.ResetAsync(id.Value, key, cancellationToken).ConfigureAwait(false);
-
-        _db.Integrations.Remove(entity);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        // Product decision P2: one audit record for the destructive operation itself. Records the owning
-        // Context, the identity, and what was deliberately cleaned up alongside it. Appended after the
-        // delete has committed and deliberately outside any transaction, matching this method's existing
-        // shape: a lost audit row for a completed delete is strictly better than refusing the delete.
-        await _audit.AppendAsync(new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actor.Id,
-            ActionConstants.IntegrationDeleted,
-            new ResourceDescriptor(ResourceTypeConstants.Integration, id.Value),
-            Outcome: "succeeded",
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            Details: $"Deleted integration '{existing.DisplayName}' ({id.Value}); cleaned up {scopedSettingKeys.Count} integration-scoped setting value(s).",
-            ResourceContextId: existing.ResourceContextId.Value), cancellationToken).ConfigureAwait(false);
+        _db.PlatformSettingValues.RemoveRange(rows);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 }

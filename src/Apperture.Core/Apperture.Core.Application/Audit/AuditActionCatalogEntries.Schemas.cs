@@ -651,4 +651,131 @@ internal static class AuditDetailSchemas
         IdField("runtimePlaneId", required: false),
         CountField("recoveredCount", required: false),
     ]);
+
+    // ---- AUD-1.4: secret-store events (Secrets category) ----
+    // The target and every id are the configuration entity that owns the secret (gate §22 ruling on secret audit
+    // identifiers). A secret's store id is the reference its owner holds, so no field carries it, and no field name can
+    // describe secret content (AuditDetailSchema.IsSensitiveFieldName).
+
+    internal static readonly AuditDetailSchema TenantRegistrationClientSecretStored = new(
+    [
+        IdField("registrationId"),
+        EnumField("change", true, "registration_created", "registration_updated"),
+    ]);
+
+    internal static readonly AuditDetailSchema TenantRegistrationClientSecretRetired = new(
+    [
+        IdField("registrationId"),
+        EnumField("reason", true, "replaced", "registration_deleted"),
+    ]);
+
+    // ---- AUD-1.4: platform and integration settings ----
+    // A setting's value is recorded only for an ordinary setting, as its display text, bounded and truncatable. The value of a
+    // sensitive setting, the secret and the secret's store id (the reference the setting row holds) are never fields, and no
+    // field name can describe secret content (AuditDetailSchema.IsSensitiveFieldName). A secret event names the setting that
+    // owns the secret and carries closed values only.
+
+    /// <summary>An ordinary setting's value as text. A value is at most 512 characters stored; its display text adds list separators.</summary>
+    private static AuditFieldDefinition SettingValueField(string name) =>
+        new(name, AuditFieldKind.NameSnapshot, Required: false, MaxLength: 1024, TruncatedLength: 256);
+
+    private static readonly string[] SettingSetOperations = ["set", "replace", "clear"];
+
+    internal static readonly AuditDetailSchema PlatformSettingSet = new(
+    [
+        IdField("key"),
+        EnumField("operation", true, SettingSetOperations),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        SettingValueField("newValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingReset = new(
+    [
+        IdField("key"),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSet = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("operation", true, SettingSetOperations),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        SettingValueField("newValue"),
+        FlagField("previousConfigured", required: false),
+        IdField("optionProviderKey", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingReset = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        FlagField("sensitive"),
+        SettingValueField("previousValue"),
+        FlagField("previousConfigured", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingSecretStored = new(
+    [
+        IdField("key"),
+        EnumField("change", true, "created", "replaced"),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingSecretRetired = new(
+    [
+        IdField("key"),
+        EnumField("reason", true, "cleared", "reset"),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSecretStored = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("change", true, "created", "replaced"),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationSettingSecretRetired = new(
+    [
+        IdField("integrationId"),
+        IdField("key"),
+        EnumField("reason", true, "cleared", "reset", "integration_deleted"),
+    ]);
+
+    // ---- Integration hard-delete (AUD-1.4 slice 3, work package 4a) ----
+    // The integration is the event's target, so its id is not repeated; its owning resource context and its module are the
+    // related references. The name is a snapshot, since the integration no longer exists once the row is written. The count is
+    // the number of persisted integration-scoped setting overrides the delete removed, whatever their definition now says. Which
+    // overrides, their values, and the secrets they referenced are never recorded here: a secret the delete retired has its own
+    // Secrets-category row under the integration setting it belonged to.
+
+    internal static readonly AuditDetailSchema IntegrationDeleted = new(
+    [
+        NameField("name"),
+        IdField("moduleId", required: false),
+        CountField("settingsRemoved"),
+    ]);
+
+    // ---- Schedule hard-delete (AUD-1.4 slice 3) ----
+    // The schedule is the event's target and its related schedule reference, so the id is not repeated here. The name is a
+    // snapshot: the schedule no longer exists once the row is written. Neither the recurrence nor the target configuration is
+    // recorded.
+
+    internal static readonly AuditDetailSchema ScheduleDeleted = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        CountField("assignmentsRemoved"),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleDeleteRejected = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        EnumField("reason", true, "enabled"),
+    ]);
 }

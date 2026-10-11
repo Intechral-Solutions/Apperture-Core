@@ -1,24 +1,31 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
-using Apperture.Core.Domain.Governance;
-using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
+/// <summary>
+/// Platform settings (instance value scope). Every change is one audited unit (AUD-1.4): the setting row, the secret a
+/// sensitive setting owns, the store's own evidence and the audit rows commit together or not at all.
+/// </summary>
+/// <remarks>
+/// <para>Only validation that needs no stored state (the definition, the payload's shape) runs before the unit. Everything the
+/// decision depends on (the override row, its row version, the notification safety check, the provider's allowed values) is
+/// read inside the unit's transaction. A sensitive replace stores its version, activates it and updates the row in that
+/// transaction, so the previous secret stays live until the change commits and there is nothing to compensate if it does not.</para>
+/// <para>A change that leaves the stored state as it was (an identical value, a clear or reset of an absent override) is declared a
+/// no-op and records nothing.</para>
+/// </remarks>
 public sealed class PlatformSettingsService : IPlatformSettingsService
 {
-    private const string AuditOutcome = "platform-settings";
-
     private readonly IPlatformSettingDefinitionRegistry _registry;
     private readonly IPlatformSettingValueRepository _repository;
     private readonly IPlatformSettingsResolver _resolver;
     private readonly PlatformSettingOptionProviderCoordinator _optionProviderCoordinator;
     private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
-    private readonly IPrincipalContext _principalContext;
-    private readonly IAuditService _audit;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public PlatformSettingsService(
         IPlatformSettingDefinitionRegistry registry,
@@ -26,17 +33,20 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         IPlatformSettingsResolver resolver,
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         PlatformSettingSecretMaterialProvisioner secretProvisioner,
-        IPrincipalContext principalContext,
-        IAuditService audit)
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _registry = registry;
         _repository = repository;
         _resolver = resolver;
         _optionProviderCoordinator = optionProviderCoordinator;
         _secretProvisioner = secretProvisioner;
-        _principalContext = principalContext;
-        _audit = audit;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Platform setting changes require the audited unit of work.");
+
+    private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
 
     public Task<IReadOnlyList<PlatformSettingResolvedValue>> ListAsync(CancellationToken cancellationToken = default) =>
         _resolver.ListResolvedAsync(cancellationToken);
@@ -78,48 +88,44 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (!def.AllowedValueScopes.Contains(PlatformSettingValueScopeKind.Instance))
             return null;
 
-        var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
-
-        string? previousRef = null;
-        if (def.IsSensitive)
-        {
-            try
+        return await SettingAuditedChange.ExecuteAsync(
+            Unit,
+            Operation(AuditActionNames.PlatformSettingReset),
+            async (transaction, ct) =>
             {
-                previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-            }
-            catch
-            {
-                previousRef = null;
-            }
-        }
+                var existing = await _repository.GetByKeyAsync(key, ct).ConfigureAwait(false);
+                if (existing is null)
+                {
+                    // No override: nothing to reset and nothing recorded.
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-        var deleted = await _repository.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
-        if (!deleted)
-            return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+                // A malformed override is still reset: a value that cannot be displayed is left out of the audit details.
+                var previousRef = def.IsSensitive ? ReadSecretRef(def, existing) : null;
+                await transaction.StageAsync(
+                    def.IsSensitive
+                        ? AuditEvents.PlatformSettingReset(key, sensitive: true, previousConfigured: !string.IsNullOrWhiteSpace(previousRef))
+                        : AuditEvents.PlatformSettingReset(
+                            key, sensitive: false, previousValue: PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson)),
+                    ct).ConfigureAwait(false);
 
-        if (def.IsSensitive)
-        {
-            await _secretProvisioner
-                .TryDisableOwnedSecretAsync(key, previousRef, cancellationToken)
-                .ConfigureAwait(false);
-        }
+                if (!await _repository.DeleteAsync(key, ct).ConfigureAwait(false))
+                {
+                    // The override was removed by another request after this one read it: not a reset this request made.
+                    throw new DbUpdateConcurrencyException("Platform setting was modified by another request.");
+                }
 
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
-        {
-            var details = def.IsSensitive
-                ? $"key={key} operation=reset sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}"
-                : $"key={key} previousValue={PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson))}";
-            await AppendAuditAsync(
-                PlatformSettingsAuditActionNames.Reset,
-                actor.Id,
-                details,
-                cancellationToken).ConfigureAwait(false);
-        }
+                if (def.IsSensitive
+                    && await _secretProvisioner.TryDisableOwnedSecretAsync(key, previousRef, ct).ConfigureAwait(false))
+                {
+                    await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(key, "reset"), ct).ConfigureAwait(false);
+                }
 
-        return await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false);
+                return true;
+            },
+            ct => _resolver.GetResolvedAsync(key, ct),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
@@ -154,99 +160,85 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         if (string.IsNullOrWhiteSpace(payload.SecretValue))
             throw new ArgumentException("SecretValue is required when SecretOperation is replace.", nameof(payload));
 
-        var existing = await _repository.GetByKeyAsync(def.Key, cancellationToken).ConfigureAwait(false);
-        string? existingRef = null;
-        if (existing is not null)
-        {
-            try
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
+            Operation(AuditActionNames.PlatformSettingSet),
+            async (transaction, ct) =>
             {
-                existingRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-            }
-            catch
-            {
-                existingRef = null;
-            }
-        }
+                var existing = await _repository.GetByKeyAsync(def.Key, ct).ConfigureAwait(false);
+                var existingRef = ReadSecretRef(def, existing);
 
-        // Config-only GUID refs are not rotated in place — create a new owned secret and write a DB override.
-        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+                // A stale row version is a conflict before anything is stored.
+                var expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+                RequireCurrentRowVersion(existing, expectedRowVersion);
 
-        var (secretRef, createdNew) = await _secretProvisioner
-            .ReplaceAsync(def.Key, payload.SecretValue, existingRef, cancellationToken)
-            .ConfigureAwait(false);
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var domain = new PlatformSettingValue
-        {
-            Key = def.Key,
-            ScopeKind = PlatformSettingScopeConstants.InstanceKind,
-            ScopeId = PlatformSettingScopeConstants.InstanceId,
-            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
-            UpdatedByPrincipalId = actor?.Id.Value
-        };
-
-        try
-        {
-            await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            if (createdNew)
-            {
-                await _secretProvisioner
-                    .TryDisableOwnedSecretAsync(def.Key, secretRef, cancellationToken)
+                // The secret store joins this transaction: the new version is live only once the change commits.
+                var (secretRef, createdNew) = await _secretProvisioner
+                    .ReplaceAsync(def.Key, payload.SecretValue, existingRef, ct)
                     .ConfigureAwait(false);
-            }
 
-            throw;
-        }
+                await _repository.UpsertAsync(
+                    new PlatformSettingValue
+                    {
+                        Key = def.Key,
+                        ScopeKind = PlatformSettingScopeConstants.InstanceKind,
+                        ScopeId = PlatformSettingScopeConstants.InstanceId,
+                        ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, secretRef),
+                        UpdatedByPrincipalId = transaction.Actor.RecordedValue
+                    },
+                    expectedRowVersion,
+                    ct).ConfigureAwait(false);
 
-        if (actor is not null)
-        {
-            await AppendAuditAsync(
-                PlatformSettingsAuditActionNames.Set,
-                actor.Id,
-                $"key={def.Key} operation=replace sensitive=true configured=true",
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+                await transaction.StageAsync(
+                    AuditEvents.PlatformSettingSet(
+                        def.Key,
+                        AuditEvents.SettingOperations.Replace,
+                        sensitive: true,
+                        previousConfigured: !string.IsNullOrWhiteSpace(existingRef)),
+                    ct).ConfigureAwait(false);
+                await transaction.StageAsync(
+                    AuditEvents.PlatformSettingSecretStored(def.Key, createdNew ? "created" : "replaced"),
+                    ct).ConfigureAwait(false);
+                return true;
+            },
+            ct => _resolver.GetResolvedAsync(def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> ClearSensitiveAsync(
         PlatformSettingDefinition def,
         CancellationToken cancellationToken)
     {
-        var existing = await _repository.GetByKeyAsync(def.Key, cancellationToken).ConfigureAwait(false);
-        if (existing is null)
-            return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
+            Operation(AuditActionNames.PlatformSettingSet),
+            async (transaction, ct) =>
+            {
+                var existing = await _repository.GetByKeyAsync(def.Key, ct).ConfigureAwait(false);
+                if (existing is null)
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-        string? previousRef = null;
-        try
-        {
-            previousRef = PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson) as string;
-        }
-        catch
-        {
-            previousRef = null;
-        }
+                var previousRef = ReadSecretRef(def, existing);
+                await transaction.StageAsync(
+                    AuditEvents.PlatformSettingSet(
+                        def.Key,
+                        AuditEvents.SettingOperations.Clear,
+                        sensitive: true,
+                        previousConfigured: !string.IsNullOrWhiteSpace(previousRef)),
+                    ct).ConfigureAwait(false);
 
-        await _repository.DeleteAsync(def.Key, cancellationToken).ConfigureAwait(false);
-        await _secretProvisioner
-            .TryDisableOwnedSecretAsync(def.Key, previousRef, cancellationToken)
-            .ConfigureAwait(false);
+                if (!await _repository.DeleteAsync(def.Key, ct).ConfigureAwait(false))
+                    throw new DbUpdateConcurrencyException("Platform setting was modified by another request.");
 
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        if (actor is not null)
-        {
-            await AppendAuditAsync(
-                PlatformSettingsAuditActionNames.Set,
-                actor.Id,
-                $"key={def.Key} operation=clear sensitive=true previousConfigured={(string.IsNullOrWhiteSpace(previousRef) ? "false" : "true")}",
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        return (await _resolver.GetResolvedAsync(def.Key, cancellationToken).ConfigureAwait(false))!;
+                if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
+                    await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(def.Key, "cleared"), ct).ConfigureAwait(false);
+                return true;
+            },
+            ct => _resolver.GetResolvedAsync(def.Key, ct),
+            cancellationToken).ConfigureAwait(false))!;
     }
 
     private async Task<PlatformSettingResolvedValue> SetOrdinaryAsync(
@@ -258,63 +250,84 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         var key = def.Key;
         var parsed = PlatformSettingsUpdateParser.Parse(def, payload);
 
-        if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
-        {
-            IReadOnlyList<PlatformSettingAllowedValue> options;
-            try
+        return (await SettingAuditedChange.ExecuteAsync(
+            Unit,
+            Operation(AuditActionNames.PlatformSettingSet),
+            async (transaction, ct) =>
             {
-                options = await _optionProviderCoordinator
-                    .GetOptionsForValidationAsync(def, payload.IntegrationId, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                throw new InvalidOperationException(ex.Message);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                throw new ArgumentException(ex.Message);
-            }
+                if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
+                {
+                    IReadOnlyList<PlatformSettingAllowedValue> options;
+                    try
+                    {
+                        options = await _optionProviderCoordinator
+                            .GetOptionsForValidationAsync(def, payload.IntegrationId, ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        throw new InvalidOperationException(ex.Message);
+                    }
+                    catch (KeyNotFoundException ex)
+                    {
+                        throw new ArgumentException(ex.Message);
+                    }
 
-            ValidateProviderMembership(def, parsed, options, key);
+                    ValidateProviderMembership(def, parsed, options, key);
+                }
+
+                await ValidateNotificationSafetyAsync(key, parsed, ct).ConfigureAwait(false);
+
+                var existing = await _repository.GetByKeyAsync(key, ct).ConfigureAwait(false);
+                var expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
+                RequireCurrentRowVersion(existing, expectedRowVersion);
+
+                var storedJson = PlatformSettingsValueCodec.ToStoredJson(def, parsed);
+                if (existing is not null && string.Equals(existing.ValueJson, storedJson, StringComparison.Ordinal))
+                {
+                    // The same value: nothing to write and no row.
+                    transaction.DeclareNoOp();
+                    return false;
+                }
+
+                await _repository.UpsertAsync(
+                    new PlatformSettingValue
+                    {
+                        Key = key,
+                        ScopeKind = PlatformSettingScopeConstants.InstanceKind,
+                        ScopeId = PlatformSettingScopeConstants.InstanceId,
+                        ValueJson = storedJson,
+                        UpdatedByPrincipalId = transaction.Actor.RecordedValue
+                    },
+                    expectedRowVersion,
+                    ct).ConfigureAwait(false);
+
+                await transaction.StageAsync(
+                    AuditEvents.PlatformSettingSet(
+                        key,
+                        AuditEvents.SettingOperations.Set,
+                        sensitive: false,
+                        previousValue: existing is null ? null : PlatformSettingAuditValues.DisplayStoredOrNull(def, existing.ValueJson),
+                        newValue: PlatformSettingAuditValues.DisplayOrNull(def, parsed)),
+                    ct).ConfigureAwait(false);
+                return true;
+            },
+            ct => _resolver.GetResolvedAsync(key, ct),
+            cancellationToken).ConfigureAwait(false))!;
+    }
+
+    private static string? ReadSecretRef(PlatformSettingDefinition def, PlatformSettingValue? row)
+    {
+        if (row is null)
+            return null;
+        try
+        {
+            return PlatformSettingsValueCodec.ParseFromStoredJson(def, row.ValueJson) as string;
         }
-
-        await ValidateNotificationSafetyAsync(key, parsed, cancellationToken).ConfigureAwait(false);
-
-        var existing = await _repository.GetByKeyAsync(key, cancellationToken).ConfigureAwait(false);
-        var oldDisplay = existing is null
-            ? null
-            : PlatformSettingsValueCodec.ToDisplayString(PlatformSettingsValueCodec.ParseFromStoredJson(def, existing.ValueJson));
-
-        byte[]? expectedRowVersion = ParseExpectedRowVersion(existing, rowVersionBase64);
-
-        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
-        var principalId = actor?.Id.Value;
-
-        var domain = new PlatformSettingValue
+        catch
         {
-            Key = key,
-            ScopeKind = PlatformSettingScopeConstants.InstanceKind,
-            ScopeId = PlatformSettingScopeConstants.InstanceId,
-            ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, parsed),
-            UpdatedByPrincipalId = principalId
-        };
-
-        await _repository.UpsertAsync(domain, expectedRowVersion, cancellationToken).ConfigureAwait(false);
-
-        if (actor is not null)
-        {
-            var details =
-                $"key={key} scope={PlatformSettingScopeConstants.InstanceKind}:{PlatformSettingScopeConstants.InstanceId} " +
-                $"oldValue={oldDisplay ?? "(none)"} newValue={PlatformSettingsValueCodec.ToDisplayString(parsed)}";
-            await AppendAuditAsync(
-                PlatformSettingsAuditActionNames.Set,
-                actor.Id,
-                details,
-                cancellationToken).ConfigureAwait(false);
+            return null;
         }
-
-        return (await _resolver.GetResolvedAsync(key, cancellationToken).ConfigureAwait(false))!;
     }
 
     private static byte[]? ParseExpectedRowVersion(PlatformSettingValue? existing, string? rowVersionBase64)
@@ -333,6 +346,13 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         {
             throw new ArgumentException("rowVersionBase64 is not valid base64.", nameof(rowVersionBase64), ex);
         }
+    }
+
+    /// <summary>The row version read in this transaction must be the one the caller saw; otherwise nothing is stored.</summary>
+    private static void RequireCurrentRowVersion(PlatformSettingValue? existing, byte[]? expectedRowVersion)
+    {
+        if (existing?.RowVersion is { } current && expectedRowVersion is not null && !current.SequenceEqual(expectedRowVersion))
+            throw new DbUpdateConcurrencyException("Platform setting was modified by another request.");
     }
 
     private async Task ValidateNotificationSafetyAsync(string key, object parsedValue, CancellationToken cancellationToken)
@@ -359,20 +379,6 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
 
     private static bool GetBool(IReadOnlyDictionary<string, object> effective, string key) =>
         effective.TryGetValue(key, out var value) && value is bool b && b;
-
-    private async ValueTask AppendAuditAsync(string action, ActorId actorId, string details, CancellationToken cancellationToken)
-    {
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actorId,
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance),
-            AuditOutcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details);
-        await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
-    }
 
     private static void ValidateProviderMembership(
         PlatformSettingDefinition def,

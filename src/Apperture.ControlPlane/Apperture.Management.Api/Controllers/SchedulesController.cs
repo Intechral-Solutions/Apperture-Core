@@ -254,7 +254,8 @@ public sealed class SchedulesController : ControllerBase
     }
 
     /// <summary>
-    /// Hard-deletes a disabled schedule. Enabled schedules are refused. Historical firings are retained.
+    /// Hard-deletes a disabled schedule. Enabled schedules are refused. Historical firings are retained. The delete and its
+    /// audit row commit together; a commit that could not be confirmed returns 500 <c>outcome_unknown</c>.
     /// </summary>
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -278,8 +279,10 @@ public sealed class SchedulesController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException)
+        catch (ScheduleNotFoundException)
         {
+            // Only a genuinely missing schedule is a 404. An audit invariant, a transaction or an infrastructure failure
+            // is not "not found": it reaches the host's handler (AUD-1.3 D19), as does an unknown or unconfirmed commit.
             return NotFound();
         }
     }

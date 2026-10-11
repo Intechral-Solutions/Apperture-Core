@@ -9,12 +9,12 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
         Bool(PlatformSettingKeys.NotificationsDeliveryEnabled, "Notification delivery", "Dispatches notification delivery outbox (live send when enabled).", PlatformSettingCategory.Notifications, "Notifications:Delivery:Enabled", false),
         Int(PlatformSettingKeys.NotificationsDeliveryPollIntervalSeconds, "Delivery poll interval (seconds)", "How often the delivery worker polls the outbox.", PlatformSettingCategory.Notifications, "Notifications:Delivery:PollIntervalSeconds", 30, min: 5),
         Int(PlatformSettingKeys.NotificationsDeliveryBatchSize, "Delivery batch size", "Maximum outbox rows claimed per poll.", PlatformSettingCategory.Notifications, "Notifications:Delivery:BatchSize", 20, min: 1),
-        String(PlatformSettingKeys.NotificationsEmailSmtpHost, "SMTP host", "SMTP server hostname for notification email delivery.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpHost", ""),
+        String(PlatformSettingKeys.NotificationsEmailSmtpHost, "SMTP host", "SMTP server hostname for notification email delivery.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpHost", "", PlatformSettingAuditValuePolicy.Record),
         Int(PlatformSettingKeys.NotificationsEmailSmtpPort, "SMTP port", "SMTP server port (typically 587).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpPort", 587, min: 1, max: 65535),
         Bool(PlatformSettingKeys.NotificationsEmailSmtpUseSsl, "SMTP use SSL/TLS", "Enable SSL/TLS for SMTP connections.", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUseSsl", true),
-        String(PlatformSettingKeys.NotificationsEmailSmtpUser, "SMTP username", "SMTP authentication username (optional).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUser", ""),
-        String(PlatformSettingKeys.NotificationsEmailFromAddress, "From address", "Sender email address for notification messages.", PlatformSettingCategory.Notifications, "Notifications:Email:FromAddress", ""),
-        String(PlatformSettingKeys.NotificationsEmailFromDisplayName, "From display name", "Optional sender display name for notification email.", PlatformSettingCategory.Notifications, "Notifications:Email:FromDisplayName", ""),
+        String(PlatformSettingKeys.NotificationsEmailSmtpUser, "SMTP username", "SMTP authentication username (optional).", PlatformSettingCategory.Notifications, "Notifications:Email:SmtpUser", "", PlatformSettingAuditValuePolicy.Omit),
+        String(PlatformSettingKeys.NotificationsEmailFromAddress, "From address", "Sender email address for notification messages.", PlatformSettingCategory.Notifications, "Notifications:Email:FromAddress", "", PlatformSettingAuditValuePolicy.RecordOperationalEmail),
+        String(PlatformSettingKeys.NotificationsEmailFromDisplayName, "From display name", "Optional sender display name for notification email.", PlatformSettingCategory.Notifications, "Notifications:Email:FromDisplayName", "", PlatformSettingAuditValuePolicy.Omit),
         Secret(
             PlatformSettingKeys.NotificationsEmailSmtpPasswordRef,
             "SMTP password",
@@ -31,6 +31,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             PlatformSettingCategory.Scheduling,
             "Scheduling:DefaultTimeZoneId",
             "UTC",
+            PlatformSettingAuditValuePolicy.Record,
             requiresRestart: false)
     ];
 
@@ -92,7 +93,7 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
 
     private static PlatformSettingDefinition String(
         string key, string displayName, string description, PlatformSettingCategory category,
-        string configurationPath, string defaultValue, bool requiresRestart = true) =>
+        string configurationPath, string defaultValue, PlatformSettingAuditValuePolicy auditValue, bool requiresRestart = true) =>
         new()
         {
             Key = key,
@@ -103,7 +104,8 @@ public sealed class PlatformSettingDefinitionRegistry : IPlatformSettingDefiniti
             InputKind = PlatformSettingInputKind.Text,
             ConfigurationPath = configurationPath,
             DefaultValue = defaultValue,
-            RequiresRestart = requiresRestart
+            RequiresRestart = requiresRestart,
+            AuditValue = auditValue
         };
 
     private static PlatformSettingDefinition Secret(

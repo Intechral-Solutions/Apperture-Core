@@ -44,9 +44,22 @@ public interface INotificationDefinitionStore
         NotificationDefinitionId id,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Creates an integration-scoped user definition in one transaction that first takes the integration row lock and requires the
+    /// integration to exist, and holds the lock to the commit (AUD-1.4): an integration delete that wins the lock makes this refuse,
+    /// and a definition that commits first is visible to the delete's blocker count.
+    /// </summary>
+    /// <param name="reauthorize">
+    /// The caller's authorization check, run again once the lock is held, so a decision taken before an ownership move committed
+    /// is not acted on afterwards. The definition is integration-scoped, so its authorization depends on the integration: a
+    /// caller must pass the check it made before the call and must not leave it out to skip the revalidation. Null is
+    /// legitimate only for a caller that made no integration-dependent decision. The definition service passes it.
+    /// </param>
+    /// <exception cref="InvalidOperationException">The integration does not exist.</exception>
     ValueTask<NotificationDefinition> CreateUserDefinitionAsync(
         NotificationDefinitionCreateCommand command,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null);
 
     ValueTask<NotificationDefinition?> UpdateAsync(
         NotificationDefinitionId id,

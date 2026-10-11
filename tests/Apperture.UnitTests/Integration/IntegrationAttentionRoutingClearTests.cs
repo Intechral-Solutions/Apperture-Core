@@ -92,6 +92,78 @@ public sealed class IntegrationAttentionRoutingClearTests
         (await h.Db.IntegrationAttentionRoutings.CountAsync(r => r.IntegrationId == integration.Id.Value)).Should().Be(0);
     }
 
+    // ---- the upsert under the integration row lock (AUD-1.4 slice 3) ----
+
+    [Fact]
+    public async Task Upserting_for_an_unknown_integration_is_refused_and_stores_nothing()
+    {
+        using var h = new AttentionRoutingTestHarness();
+
+        var act = () => h.Routing.UpsertIntegrationRoutingAsync(
+            new IntegrationId("int_does_not_exist"), AttentionConditionKeys.ExpectedRunMissing, h.SampleCommand()).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*int_does_not_exist was not found*");
+        (await h.Db.IntegrationAttentionRoutings.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Upserting_twice_updates_the_one_override_and_keeps_a_single_row()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var changed = new AttentionRoutingUpsertCommand(
+            IsEnabled: false,
+            SendResolvedNotification: false,
+            SuppressRemindersWhenAcknowledged: false,
+            SuppressEscalationWhenAcknowledged: false,
+            EscalationAfter: TimeSpan.FromMinutes(90),
+            ReminderInterval: TimeSpan.FromMinutes(20),
+            PrimaryOperationalTeamId: null,
+            EscalationOperationalTeamId: null);
+
+        await h.Routing.UpsertIntegrationRoutingAsync(integration.Id, AttentionConditionKeys.ExpectedRunMissing, h.SampleCommand());
+        await h.Routing.UpsertIntegrationRoutingAsync(integration.Id, AttentionConditionKeys.ExpectedRunMissing, changed);
+
+        var row = await h.Db.IntegrationAttentionRoutings.AsNoTracking().SingleAsync(r => r.IntegrationId == integration.Id.Value);
+        row.IsEnabled.Should().BeFalse();
+        row.EscalationAfterTicks.Should().Be(TimeSpan.FromMinutes(90).Ticks);
+    }
+
+    [Fact]
+    public async Task The_callers_authorization_runs_again_once_the_integration_is_locked_and_a_refusal_stores_nothing()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var reauthorized = 0;
+
+        var act = () => h.Routing.UpsertIntegrationRoutingAsync(
+            integration.Id,
+            AttentionConditionKeys.ExpectedRunMissing,
+            h.SampleCommand(),
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                throw new UnauthorizedAccessException("moved");
+            }).AsTask();
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        reauthorized.Should().Be(1);
+        (await h.Db.IntegrationAttentionRoutings.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task An_unknown_team_is_refused_and_stores_nothing()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var command = h.SampleCommand() with { PrimaryOperationalTeamId = "team-gone" };
+
+        var act = () => h.Routing.UpsertIntegrationRoutingAsync(integration.Id, AttentionConditionKeys.ExpectedRunMissing, command).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*team-gone*");
+        (await h.Db.IntegrationAttentionRoutings.CountAsync()).Should().Be(0);
+    }
+
     [Fact]
     public async Task Clearing_for_an_unknown_integration_throws_like_upsert_does()
     {

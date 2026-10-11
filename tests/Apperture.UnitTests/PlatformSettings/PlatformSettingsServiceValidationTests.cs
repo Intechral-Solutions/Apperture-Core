@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Secrets.Abstractions;
@@ -34,8 +35,7 @@ public sealed class PlatformSettingsServiceValidationTests
             resolver.Object,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(Mock.Of<ISecretStore>()),
-            principalContext.Object,
-            audit.Object);
+            new AuditRecording());
 
         var act = () => sut.SetAsync(
             PlatformSettingKeys.NotificationsDeliveryEnabled,

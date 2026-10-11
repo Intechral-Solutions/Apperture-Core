@@ -604,9 +604,20 @@ Never recorded:
 - search or filter text, or any digest of it (T-07, T-24);
 - parameter values (names only);
 - values of `IsSensitive` settings;
-- email addresses and UPNs, except the subject address of an email-change event.
+- email addresses and UPNs, except where a rule below permits them.
 
 Usernames may appear (IAM-9 §21).
+
+**Email addresses** (amended by the owner ruling of 2026-10-08; AUD-1.4 slice 2 review). An email address is not categorically prohibited audit data. The earlier blanket exclusion was broader than the concern it served, which is that an address must not leak into places nobody reviewed.
+
+1. An operational email address may be recorded when it is directly relevant to the audited action and a structured audit schema field explicitly permits it. Two cases are permitted today: the subject address of an email-change event (unchanged from the earlier rule), and the previous and new values of a setting whose definition declares `RecordOperationalEmail` (today only `Notifications.Email.FromAddress`).
+2. An email address must not enter a generic audit message, a request snapshot, arbitrary metadata or an unrelated field. This is not a licence to record arbitrary addresses: a field that is not declared to carry one carries none.
+3. Values of sensitive settings remain prohibited, as in the list above.
+4. Secrets, credentials, tokens, connection strings, private keys and secret references remain prohibited without exception.
+5. An SMTP username is a credential-related identifier. A change to it is audited by setting name and safe metadata only; its value is not recorded, even when it is formatted as an email address.
+6. The general permission to record the bounded, non-sensitive value of an ordinary setting remains, subject to rules 2 to 5.
+
+**Enforcement for settings.** The rule is carried by the setting's definition (`PlatformSettingDefinition.AuditValue`) and applied in one place (`PlatformSettingAuditValues`) that both settings services use; no service compares setting keys and nothing scans values. A sensitive setting records no value whatever its definition declares. An ordinary setting with no declaration records its value only when its shape bounds it (a boolean, an integer, a duration, or a choice validated against declared or provider-supplied options); free text, including every module-declared text setting, is omitted until a reviewed definition declares `Record` (bounded, not an address), `RecordOperationalEmail` or `Omit`. The setting's functional classification (`IsSensitive`, secret storage, how it is read) is not changed to achieve this.
 
 ### 12.4 Free-text fields
 
@@ -1214,6 +1225,12 @@ Each package has its own branch, and each branch needs the owner's confirmation.
 - Handle the runtime-shutdown duplicate case.
 - Team events stay in LST-1.4.
 
+*Owner rulings (product owner, 2026-10-07).* Four clarifications approved at the start of AUD-1.4. They assign ownership and mechanism only; the requirements of §11, §12 and §13 are unchanged. Detail is in the [AUD-1.4 record](aud1-4-configuration-lifecycle-record.md).
+- **Secret audit identifiers.** A secret-store event is recorded under the Secrets category with the owning configuration entity as its target (for example the connection, setting or tenant registration). It never records a secret value or a secret reference, consistent with §12.3. In this codebase a secret's store id is its reference, so the `secret` target type of §11.1 stays in the vocabulary and is not used.
+- **Attention routing and contact groups.** AUD-1.4 owns the attention-routing rules: instance defaults, and the integration override upsert and clear. Attention contact groups are stored as operational teams, so their create, update and membership changes are team events and stay in LST-1.4.
+- **Secret-store transaction participation.** The SQL secret store joins a transaction already open on its context, such as an audited unit's, instead of opening and committing its own (§13.4). Secret changes then commit or roll back with the owning change and its rows. Outside a transaction it keeps standalone behaviour. This amends the AUD-1.2 secret sequencing (record D35).
+- **Integration delete locking.** When integration delete is converted, it acquires the integration row lock inside the audited unit before its blocker checks, which serializes it with binding creation and attached-schedule creation.
+
 **Acceptance:**
 - M7 for each action.
 - M6 for each delete, including a lost acknowledgement followed by an apparently missing target.
@@ -1384,6 +1401,7 @@ None open. Revision 2's R-1 is resolved by OR-13 (T-B).
 | [Program gate](../../rc1-program-gate.md) §5, §8 | IAM-10 sequencing clarification with the hard dependency preserved; F-8 split approved; AUD-1.0 approved |
 | Roadmap, pre-release roadmap, `.ai/memory/decisions-index.md`, transitions index | AUD-1.0 approved; AUD-1.1 next, not started |
 | This gate, §22 AUD-1.3 | Ownership clarification of 2026-10-07: bulk item retry and attention acknowledge and reopen assigned to AUD-1.3; requirements unchanged |
+| This gate, §22 AUD-1.4 | Owner rulings of 2026-10-07: secret audit identifiers (owning entity, never a secret reference), attention routing rules in AUD-1.4 and contact groups in LST-1.4, secret-store transaction participation (amends AUD-1.2 D35), integration delete locking; requirements unchanged |
 
 Not edited: the IAM-9 closure audit and Part 1, which are historical or working records. The `deploy/README.md` correction is AUD-1.1 work.
 

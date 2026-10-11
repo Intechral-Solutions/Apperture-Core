@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.UnitTests.Audit;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -56,8 +57,8 @@ public sealed class SensitivePlatformSettingsTests
         var store = new InMemorySecretStore();
         var repo = new PlatformSettingRepositoryFake();
         var resolver = CreateResolver(def, repo);
-        string? auditDetails = null;
-        var sut = CreateService(def, repo, resolver, store, details => auditDetails = details);
+        var recorded = new AuditRecording();
+        var sut = CreateService(def, repo, resolver, store, recorded);
 
         var result = await sut.SetAsync(
             def.Key,
@@ -80,10 +81,17 @@ public sealed class SensitivePlatformSettingsTests
         Guid.TryParse(PlatformSettingsValueCodec.ParseFromStoredJson(def, stored.ValueJson) as string, out _)
             .Should().BeTrue();
 
-        auditDetails.Should().Contain("operation=replace");
-        auditDetails.Should().Contain("sensitive=true");
-        auditDetails.Should().NotContain("s3cret-password");
-        auditDetails.Should().NotContain(result.CurrentValue.ToString());
+        recorded.Actions.Should().Equal("platform.settings.set", "platform.settings.secret.stored");
+        var set = recorded.Single("platform.settings.set");
+        set.Fields["operation"].Should().Be("replace");
+        set.Fields["sensitive"].Should().Be(true);
+        set.Target!.Id.Should().Be(def.Key);
+        recorded.Single("platform.settings.secret.stored").Fields["change"].Should().Be("created");
+        foreach (var text in recorded.Events.Select(e => FieldText(e.Event)))
+        {
+            text.Should().NotContain("s3cret-password");
+            text.Should().NotContain(result.CurrentValue.ToString()!);
+        }
     }
 
     [Fact]
@@ -132,13 +140,13 @@ public sealed class SensitivePlatformSettingsTests
     }
 
     [Fact]
-    public async Task Failed_replace_retains_previous_working_reference()
+    public async Task A_stale_row_version_is_a_conflict_before_any_secret_is_stored()
     {
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var provisioner = new PlatformSettingSecretMaterialProvisioner(store);
         var (existingRef, _) = await provisioner.ReplaceAsync(def.Key, "keep-me", null);
-        var repo = new ThrowingUpsertRepository(new PlatformSettingValue
+        var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
         {
             Key = def.Key,
             ScopeKind = PlatformSettingScopeConstants.InstanceKind,
@@ -146,7 +154,8 @@ public sealed class SensitivePlatformSettingsTests
             ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, existingRef),
             RowVersion = [1]
         });
-        var sut = CreateService(def, repo, CreateResolver(def, repo), store);
+        var recorded = new AuditRecording();
+        var sut = CreateService(def, repo, CreateResolver(def, repo), store, recorded);
 
         var act = () => sut.SetAsync(
             def.Key,
@@ -155,22 +164,26 @@ public sealed class SensitivePlatformSettingsTests
                 SecretOperation = PlatformSettingSecretOperations.Replace,
                 SecretValue = "replacement"
             },
-            Convert.ToBase64String([1]));
+            Convert.ToBase64String([2]));
 
-        // Rotation succeeded on same secret id before upsert; content may update, but ref stays.
-        // For create-new path with throwing upsert we'd disable — exercise rotate path: ref unchanged.
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*upsert failed*");
-        (await repo.GetByKeyAsync(def.Key))!.ValueJson.Should().Contain(existingRef);
-        store.ActiveOpaque(existingRef).Should().Be("replacement");
+        await act.Should().ThrowAsync<Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException>();
+        store.ActiveOpaque(existingRef).Should().Be("keep-me", "the live credential is untouched");
+        store.VersionCount(existingRef).Should().Be(1, "no version was added for a stale request");
+        store.Descriptors.Should().ContainSingle();
+        recorded.Actions.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task Failed_create_cleans_up_orphaned_new_secret()
+    public async Task A_failed_upsert_records_nothing_and_attempts_no_compensation()
     {
+        // The secret store joins the unit's transaction, so a failed save rolls the new secret back with the row and its audit
+        // rows; the service no longer disables the new secret itself (the old compensation, whose own save re-sent the failed
+        // row). That rollback is proven against SQL Server (SettingsAuditSqlServerTests); this shows the service's side of it.
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var repo = new ThrowingUpsertRepository();
-        var sut = CreateService(def, repo, CreateResolver(def, repo), store);
+        var recorded = new AuditRecording();
+        var sut = CreateService(def, repo, CreateResolver(def, repo), store, recorded);
 
         var act = () => sut.SetAsync(
             def.Key,
@@ -182,8 +195,8 @@ public sealed class SensitivePlatformSettingsTests
             null);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*upsert failed*");
-        store.Descriptors.Should().ContainSingle();
-        store.Descriptors[0].State.Should().Be(SecretState.Disabled);
+        recorded.Actions.Should().BeEmpty("a change that did not complete records nothing");
+        store.DisableCalls.Should().Be(0, "nothing is compensated; the unit's rollback undoes the secret");
     }
 
     [Fact]
@@ -200,8 +213,8 @@ public sealed class SensitivePlatformSettingsTests
             ScopeId = PlatformSettingScopeConstants.InstanceId,
             ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, existingRef)
         });
-        string? auditDetails = null;
-        var sut = CreateService(def, repo, CreateResolver(def, repo), store, d => auditDetails = d);
+        var recorded = new AuditRecording();
+        var sut = CreateService(def, repo, CreateResolver(def, repo), store, recorded);
 
         var result = await sut.SetAsync(
             def.Key,
@@ -212,8 +225,15 @@ public sealed class SensitivePlatformSettingsTests
         result.IsSecretConfigured.Should().BeFalse();
         (await repo.GetByKeyAsync(def.Key)).Should().BeNull();
         store.Get(existingRef)!.State.Should().Be(SecretState.Disabled);
-        auditDetails.Should().Contain("operation=clear");
-        auditDetails.Should().NotContain("to-clear");
+        recorded.Actions.Should().Equal("platform.settings.set", "platform.settings.secret.retired");
+        recorded.Single("platform.settings.set").Fields["operation"].Should().Be("clear");
+        recorded.Single("platform.settings.set").Fields["previousConfigured"].Should().Be(true);
+        recorded.Single("platform.settings.secret.retired").Fields["reason"].Should().Be("cleared");
+        foreach (var text in recorded.Events.Select(e => FieldText(e.Event)))
+        {
+            text.Should().NotContain("to-clear");
+            text.Should().NotContain(existingRef);
+        }
     }
 
     [Fact]
@@ -230,16 +250,21 @@ public sealed class SensitivePlatformSettingsTests
             ScopeId = PlatformSettingScopeConstants.InstanceId,
             ValueJson = PlatformSettingsValueCodec.ToStoredJson(def, existingRef)
         });
-        string? auditDetails = null;
-        var sut = CreateService(def, repo, CreateResolver(def, repo), store, d => auditDetails = d);
+        var recorded = new AuditRecording();
+        var sut = CreateService(def, repo, CreateResolver(def, repo), store, recorded);
 
         var result = await sut.ResetAsync(def.Key);
 
         result!.HasPlatformOverride.Should().BeFalse();
         (await repo.GetByKeyAsync(def.Key)).Should().BeNull();
         store.Get(existingRef)!.State.Should().Be(SecretState.Disabled);
-        auditDetails.Should().Contain("operation=reset");
-        auditDetails.Should().NotContain("reset-me");
+        recorded.Actions.Should().Equal("platform.settings.reset", "platform.settings.secret.retired");
+        recorded.Single("platform.settings.secret.retired").Fields["reason"].Should().Be("reset");
+        foreach (var text in recorded.Events.Select(e => FieldText(e.Event)))
+        {
+            text.Should().NotContain("reset-me");
+            text.Should().NotContain(existingRef);
+        }
     }
 
     [Fact]
@@ -288,18 +313,8 @@ public sealed class SensitivePlatformSettingsTests
         IPlatformSettingValueRepository repo,
         IPlatformSettingsResolver resolver,
         InMemorySecretStore store,
-        Action<string>? onAudit = null)
+        AuditRecording? recording = null)
     {
-        var actor = new Mock<IActor>();
-        actor.Setup(x => x.Id).Returns(new ActorId("actor-1"));
-        var principalContext = new Mock<IPrincipalContext>();
-        principalContext.Setup(x => x.GetCurrentActorAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(actor.Object);
-        var audit = new Mock<IAuditService>();
-        audit.Setup(x => x.AppendAsync(It.IsAny<AuditRecord>(), It.IsAny<CancellationToken>()))
-            .Callback<AuditRecord, CancellationToken>((r, _) => onAudit?.Invoke(r.Details ?? string.Empty))
-            .Returns(ValueTask.CompletedTask);
-
         var coordinator = PlatformSettingOptionProviderTestHarness.CreateCoordinator(
             new Mock<IPlatformSettingOptionProvider>().Object);
 
@@ -309,9 +324,12 @@ public sealed class SensitivePlatformSettingsTests
             resolver,
             coordinator,
             new PlatformSettingSecretMaterialProvisioner(store),
-            principalContext.Object,
-            audit.Object);
+            recording ?? new AuditRecording());
     }
+
+    /// <summary>Every field value of an event as text, to assert that no secret or reference is among them.</summary>
+    private static string FieldText(Apperture.Core.Application.Audit.AuditEvent auditEvent) =>
+        string.Join("|", auditEvent.Fields.Select(f => f.Value?.ToString() ?? string.Empty));
 
     private static IPlatformSettingsResolver CreateResolver(
         PlatformSettingDefinition def,
