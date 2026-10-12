@@ -196,9 +196,9 @@ public sealed class AuditDetailSchemaTests
     [Fact]
     public void An_event_cannot_be_built_for_an_action_still_on_the_append_bridge()
     {
-        // Notification definitions stay on the bridge until AUD-1.4 slice 6 converts them.
+        // Module lifecycle stays on the bridge until AUD-1.4 slice 7 converts it.
         var act = () => AuditEvent.Create(
-            AuditActionCatalog.Default.Get("notification.definition.deleted"), null, AuditOutcomeCodes.Succeeded, Values());
+            AuditActionCatalog.Default.Get("module.lifecycle.install"), null, AuditOutcomeCodes.Succeeded, Values());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*append bridge*");
     }

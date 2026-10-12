@@ -853,6 +853,139 @@ internal static class AuditDetailSchemas
         FlagField("policyOverridesSet"),
     ]);
 
+    // ---- Notification definitions, subscriptions, managed contacts and diagnostics (AUD-1.4 slice 6) ----
+    // A definition's name is a snapshot; its rule and template (free text with subjects, bodies and links) are never recorded, only
+    // the names of the parts that changed. A subscription is identified by its definition and its recipient's id (a user, team or
+    // contact id, never an address). A managed contact's address, display name and directory identity are a third party's and have
+    // no field at all.
+
+    private static readonly string[] RecipientKinds = ["principal", "operationalTeam", "managedContact"];
+
+    private static readonly string[] DeliveryModes = ["immediate", "muted", "digestOnly", "immediateAndDigest"];
+
+    internal static readonly AuditDetailSchema NotificationDefinitionCreated = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        FlagField("enabled"),
+        FlagField("toastEnabledByDefault"),
+        IdField("defaultSeverity", required: false),
+        IdField("primaryEventType", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationDefinitionUpdated = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        FieldKeysField("changedFields", required: true),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationDefinitionEnableChanged = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationDefinitionDeleted = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        CountField("subscriptionsRemoved"),
+        CountField("userOptOutsRemoved"),
+        CountField("userPreferencesRemoved"),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationSubscriptionAdded = new(
+    [
+        IdField("definitionId"),
+        IdField("integrationId", required: false),
+        EnumField("recipientKind", true, RecipientKinds),
+        IdField("recipientRef"),
+        EnumField("deliveryMode", true, DeliveryModes),
+        FlagField("managedContactCreated", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationSubscriptionRemoved = new(
+    [
+        IdField("definitionId"),
+        IdField("integrationId", required: false),
+        EnumField("recipientKind", true, RecipientKinds),
+        IdField("recipientRef"),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationSubscriptionUpdated = new(
+    [
+        IdField("definitionId"),
+        IdField("integrationId", required: false),
+        EnumField("change", true, "enabled", "disabled", "delivery_mode"),
+        EnumField("deliveryMode", false, DeliveryModes),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationSubscriptionUserOptOut = new(
+    [
+        IdField("definitionId"),
+        IdField("userId"),
+        IdField("operationalTeamId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ManagedContactCreated = new(
+    [
+        EnumField("source", true, "custom", "entra"),
+        EnumField("via", true, "admin", "subscription", "entra_import"),
+        FlagField("enabled"),
+        FlagField("hasEmail"),
+    ]);
+
+    internal static readonly AuditDetailSchema ManagedContactUpdated = new(
+    [
+        EnumField("source", true, "custom", "entra"),
+        FieldKeysField("changedFields", required: true),
+        FlagField("enabled"),
+    ]);
+
+    internal static readonly AuditDetailSchema ManagedContactUserLinked = new(
+    [
+        IdField("userId"),
+        IdField("previousUserId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ManagedContactUserUnlinked = new(
+    [
+        IdField("previousUserId"),
+    ]);
+
+    internal static readonly AuditDetailSchema ManagedContactGroupImported = new(
+    [
+        FlagField("created"),
+    ]);
+
+    /// <summary>What the transport reported about one send: acceptance by the server is not delivery to a mailbox.</summary>
+    internal static readonly string[] SendResults = ["accepted", "rejected", "failed", "cancelled"];
+
+    internal static readonly AuditDetailSchema NotificationSmtpTestAttempted = new(
+    [
+        EnumField("result", true, SendResults),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationPipelineTestAttempted = new(
+    [
+        IdField("integrationId", required: false),
+        FlagField("dispatchRequested"),
+        CountField("instancesCreated"),
+        CountField("outboxRowsCreated"),
+        CountField("sendsAttempted"),
+        CountField("sendsAccepted"),
+        CountField("sendsRejected"),
+        CountField("sendsFailed"),
+        CountField("sendsUnknown"),
+    ]);
+
+    internal static readonly AuditDetailSchema NotificationDiagnosticsTestRefused = new(
+    [
+        EnumField("test", true, "smtp", "pipeline"),
+        EnumField("reason", true, "invalid_input", "not_configured", "delivery_disabled", "no_definition"),
+    ]);
+
     // ---- Connections (AUD-1.4 slice 5) ----
     // The connection is the event's target and its owning resource context the related reference, so neither is repeated. Names are
     // snapshots; the connector is an id. A change is described by the names of the fields that differ, never their values: config

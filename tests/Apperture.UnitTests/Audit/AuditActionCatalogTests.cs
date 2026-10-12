@@ -84,6 +84,28 @@ public sealed partial class AuditActionCatalogTests
         "connection.secret.stored",
     ];
 
+    /// <summary>Actions AUD-1.4 slice 6 adds (notification definition create, update, enable and disable, subscriptions, managed contacts and diagnostics); the definition delete converts a declared action.</summary>
+    private static readonly string[] Aud14Slice6Additions =
+    [
+        "notification.definition.created",
+        "notification.definition.updated",
+        "notification.definition.enabled",
+        "notification.definition.disabled",
+        "notification.subscription.added",
+        "notification.subscription.removed",
+        "notification.subscription.updated",
+        "notification.subscription.user_opt_out_set",
+        "notification.subscription.user_opt_out_removed",
+        "managed_contact.created",
+        "managed_contact.updated",
+        "managed_contact.user_linked",
+        "managed_contact.user_unlinked",
+        "managed_contact.group_imported",
+        "notification.diagnostics.smtp_test_attempted",
+        "notification.diagnostics.pipeline_test_attempted",
+        "notification.diagnostics.test_refused",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -96,8 +118,10 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice4Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice5Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 5").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice5Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice6Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 6").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice6Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length,
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length,
             "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
