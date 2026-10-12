@@ -170,7 +170,7 @@ public sealed class Slice6AuditEventTests
     [InlineData("accepted", AuditOutcomeCodes.Succeeded)]
     [InlineData("rejected", AuditOutcomeCodes.Failed)]
     [InlineData("failed", AuditOutcomeCodes.Failed)]
-    [InlineData("cancelled", AuditOutcomeCodes.Unknown)]
+    [InlineData("no_answer", AuditOutcomeCodes.Unknown)]
     public void An_smtp_test_records_what_the_transport_reported_and_acceptance_is_not_delivery(string result, string outcome)
     {
         var evt = AuditEvents.NotificationSmtpTestAttempted(result);

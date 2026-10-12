@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Diagnostics;
@@ -81,8 +82,8 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
     /// <para>A live send reaches the SMTP server from this request, after the authorization check and with no database transaction
     /// open. What it did is recorded afterwards as one W3 <c>external_attempt</c> row, <c>notification.diagnostics.smtp_test_attempted</c>,
     /// of the operator who asked: <c>accepted</c> (the server took the message, never delivery), <c>rejected</c> (the server refused
-    /// a recipient or the message), <c>failed</c> (another transport error) or <c>cancelled</c> (no answer: the message may or may not
-    /// have left, recorded as outcome unknown). A request that never reached the transport (no recipient, or email not configured)
+    /// a recipient or the message), <c>failed</c> (another transport error after the attempt began) or <c>no_answer</c> (cancelled,
+    /// timed out or lost: the message may or may not have left, recorded as outcome unknown). A request that never reached the transport (no recipient, or email not configured)
     /// is a separate <c>notification.diagnostics.test_refused</c> attempt row. The recipient, the subject, the body and the
     /// transport's error text are never recorded.</para>
     /// </remarks>
@@ -141,11 +142,11 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
                     cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // A channel that threw gave no answer: the message may or may not have left.
+            // A channel that threw gave no answer: the message may or may not have left (a cancellation included).
             await _auditEvents.TryWriteAsync(
-                AuditEvents.NotificationSmtpTestAttempted(ex is OperationCanceledException ? "cancelled" : "failed"),
+                AuditEvents.NotificationSmtpTestAttempted("no_answer"),
                 AuditActor.CurrentPrincipal,
                 CancellationToken.None).ConfigureAwait(false);
             throw;
@@ -153,7 +154,11 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
 
         if (sendResult.Observed == EmailSendDisposition.NotAttempted)
         {
-            await RecordRefusedAsync("smtp", "not_configured").ConfigureAwait(false);
+            // Nothing was sent: the channel is not configured, or the address could not be used.
+            var configured = string.Equals(sendResult.FailureSummary, AttentionNotificationSuppressionReasons.SmtpNotConfigured, StringComparison.Ordinal)
+                || string.Equals(sendResult.FailureSummary, AttentionNotificationSuppressionReasons.SmtpFromNotConfigured, StringComparison.Ordinal)
+                || string.Equals(sendResult.FailureSummary, SmtpEmailNotificationChannel.CredentialUnavailable, StringComparison.Ordinal);
+            await RecordRefusedAsync("smtp", configured ? "not_configured" : "invalid_input").ConfigureAwait(false);
         }
         else
         {
@@ -276,7 +281,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
     {
         EmailSendDisposition.Accepted => "accepted",
         EmailSendDisposition.Rejected => "rejected",
-        EmailSendDisposition.Cancelled => "cancelled",
+        EmailSendDisposition.NoAnswer => "no_answer",
         _ => "failed",
     };
 

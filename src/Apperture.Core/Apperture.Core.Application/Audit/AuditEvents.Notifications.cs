@@ -228,7 +228,8 @@ public static partial class AuditEvents
     /// <summary>
     /// A live SMTP test reached the transport. <paramref name="result"/> is what the transport reported: accepted (the server
     /// took the message; never delivery), rejected (the server refused a recipient or the message), failed (any other transport
-    /// error) or cancelled (the call was cancelled before an answer, so the message may or may not have left).
+    /// error after the attempt began) or no_answer (the call was cancelled, timed out or lost before an answer, so the message may or
+    /// may not have left).
     /// </summary>
     public static AuditEvent NotificationSmtpTestAttempted(string result)
     {
@@ -236,7 +237,7 @@ public static partial class AuditEvents
         {
             "accepted" => AuditOutcomeCodes.Succeeded,
             "rejected" or "failed" => AuditOutcomeCodes.Failed,
-            "cancelled" => AuditOutcomeCodes.Unknown,
+            "no_answer" => AuditOutcomeCodes.Unknown,
             _ => throw new ArgumentException($"'{result}' is not a send result.", nameof(result)),
         };
         return AuditEvent.Create(

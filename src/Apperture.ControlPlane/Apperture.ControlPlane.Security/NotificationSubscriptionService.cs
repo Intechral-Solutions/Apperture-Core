@@ -4,7 +4,9 @@ using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
+using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.ControlPlane.Security;
 
@@ -88,11 +90,16 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
             .ConfigureAwait(false);
 
         ValidateIntegrationScope(definition, request.IntegrationId);
+        ValidateDeliveryMode(request.DeliveryMode);
         if (string.IsNullOrWhiteSpace(request.ManagedContactInput))
         {
             if (string.IsNullOrWhiteSpace(request.RecipientKind) || string.IsNullOrWhiteSpace(request.RecipientRef))
                 throw new InvalidOperationException("Recipient kind and ref, or managedContactInput, is required.");
             ValidateRecipientKind(request.RecipientKind);
+
+            // A reference is an id (a user, a team or a managed contact). An address typed here would be recorded as the recipient.
+            if (request.RecipientRef.Contains('@', StringComparison.Ordinal))
+                throw new InvalidOperationException("A recipient reference is an id, not an email address. Use managedContactInput for an address.");
         }
 
         var subscriptionId = NotificationSubscriptionId.New();
@@ -128,18 +135,28 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
                 if (await _subscriptions.ExistsAsync(definitionId, request.IntegrationId, kind, recipientRef, ct).ConfigureAwait(false))
                     throw new InvalidOperationException("This recipient is already subscribed to the notification definition.");
 
-                var added = await _subscriptions.AddAsync(
-                    new NotificationSubscriptionCreateCommand(
-                        definitionId,
-                        request.IntegrationId,
-                        kind,
-                        recipientRef,
-                        request.DeliveryMode,
-                        NotificationSubscriptionOrigins.AdminAssigned,
-                        IsEnabled: true,
-                        transaction.Actor.RecordedValue,
-                        subscriptionId),
-                    ct).ConfigureAwait(false);
+                NotificationSubscription added;
+                try
+                {
+                    added = await _subscriptions.AddAsync(
+                        new NotificationSubscriptionCreateCommand(
+                            definitionId,
+                            request.IntegrationId,
+                            kind,
+                            recipientRef,
+                            request.DeliveryMode,
+                            NotificationSubscriptionOrigins.AdminAssigned,
+                            IsEnabled: true,
+                            transaction.Actor.RecordedValue,
+                            subscriptionId),
+                        ct).ConfigureAwait(false);
+                }
+                catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, SubscriptionIndexWithoutIntegration)
+                    || SqlUniqueKeyViolation.IsOnIndex(ex, SubscriptionIndexWithIntegration))
+                {
+                    // The account's own opt-in writes the same platform-wide row without this definition's lock, and committed first.
+                    throw new InvalidOperationException("This recipient is already subscribed to the notification definition.");
+                }
 
                 await transaction.StageAsync(
                     AuditEvents.NotificationSubscriptionAdded(
@@ -279,7 +296,8 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
                 transaction.DeclareNoOp();
                 return sub;
             },
-            async (committed, ct) => await _subscriptions.GetAsync(id, ct).ConfigureAwait(false),
+            async (committed, ct) => await _subscriptions.GetAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Notification subscription {subscriptionId} could not be read back."),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -405,6 +423,9 @@ public sealed class NotificationSubscriptionService : INotificationSubscriptionS
             .ResolvePreviewAsync(definitionId, request.IntegrationId, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private const string SubscriptionIndexWithoutIntegration = "IX_NotificationSubscriptions_NotificationDefinitionId_RecipientKind_RecipientRef";
+    private const string SubscriptionIndexWithIntegration = "IX_NotificationSubscriptions_NotificationDefinitionId_IntegrationId_RecipientKind_RecipientRef";
 
     private async ValueTask<NotificationDefinition> RequireDefinitionAsync(
         string definitionId,

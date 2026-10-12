@@ -14,7 +14,7 @@ public sealed class NotificationDispatchTally
 
     public int Failed { get; private set; }
 
-    /// <summary>Sends cancelled before an answer: the message may or may not have left.</summary>
+    /// <summary>Sends that got no answer (cancelled, timed out, connection lost): the message may or may not have left.</summary>
     public int Unknown { get; private set; }
 
     public int NotAttempted { get; private set; }
@@ -32,7 +32,7 @@ public sealed class NotificationDispatchTally
             case EmailSendDisposition.Rejected:
                 Rejected++;
                 break;
-            case EmailSendDisposition.Cancelled:
+            case EmailSendDisposition.NoAnswer:
                 Unknown++;
                 break;
             case EmailSendDisposition.NotAttempted:

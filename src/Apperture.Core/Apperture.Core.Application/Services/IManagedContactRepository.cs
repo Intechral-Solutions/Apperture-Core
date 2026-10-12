@@ -55,6 +55,12 @@ public interface IManagedContactRepository
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Refreshes only the directory link's last-synced time (and its update time) for this Entra object id, touching no contact field.
+    /// For an import that found the contact already matching the directory; a no-op when there is no such link.
+    /// </summary>
+    Task TouchEntraLinkSyncAsync(string entraObjectId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default);
+
     Task<ManagedContactIdentityLinkRepositoryRow?> FindIdentityLinkByEntraObjectIdAsync(
         string entraObjectId,
         CancellationToken cancellationToken = default);

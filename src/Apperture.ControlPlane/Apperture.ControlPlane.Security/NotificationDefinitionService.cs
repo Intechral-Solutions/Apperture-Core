@@ -247,7 +247,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
                     ct).ConfigureAwait(false);
                 return updated;
             },
-            async (committed, ct) => await _store.GetAsync(definitionId, ct).ConfigureAwait(false),
+            async (committed, ct) => await _store.GetAsync(definitionId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Notification definition {id} could not be read back."),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -294,7 +295,8 @@ public sealed class NotificationDefinitionService : INotificationDefinitionServi
                     ct).ConfigureAwait(false);
                 return updated;
             },
-            async (committed, ct) => await _store.GetAsync(definitionId, ct).ConfigureAwait(false),
+            async (committed, ct) => await _store.GetAsync(definitionId, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Notification definition {id} could not be read back."),
             cancellationToken).ConfigureAwait(false);
     }
 

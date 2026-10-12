@@ -311,8 +311,7 @@ public sealed class ManagedContactManagementService : IManagedContactManagementS
                     // refreshed on its own, as it always was.
                     try
                     {
-                        await _contacts.UpsertFromEntraDirectoryUserAsync(
-                            u.DisplayName, u.Mail, u.UserPrincipalName, u.ObjectId, _time.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+                        await _contacts.TouchEntraLinkSyncAsync(u.ObjectId, _time.GetUtcNow(), cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception) when (!cancellationToken.IsCancellationRequested)
                     {

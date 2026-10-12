@@ -275,6 +275,28 @@ public sealed class SqlManagedContactRepository : IManagedContactRepository
         return new UpsertEntraManagedContactResult(contactId, Created: true, linkDto2);
     }
 
+    public async Task TouchEntraLinkSyncAsync(string entraObjectId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+    {
+        var oid = entraObjectId.Trim();
+        var link = await _db.ManagedContactIdentityLinks
+            .FirstOrDefaultAsync(x => x.Provider == ManagedContactIdentityProviders.Entra && x.ExternalObjectId == oid, cancellationToken)
+            .ConfigureAwait(false);
+        if (link is null)
+            return;
+        link.LastSyncedAtUtc = nowUtc;
+        link.UpdatedAtUtc = nowUtc;
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Only this link was touched; leave nothing pending for the next save on this context.
+            _db.Entry(link).State = EntityState.Detached;
+            throw;
+        }
+    }
+
     public async Task<ManagedContactIdentityLinkRepositoryRow?> FindIdentityLinkByEntraObjectIdAsync(
         string entraObjectId,
         CancellationToken cancellationToken = default)

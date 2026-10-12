@@ -960,7 +960,7 @@ internal static class AuditDetailSchemas
     ]);
 
     /// <summary>What the transport reported about one send: acceptance by the server is not delivery to a mailbox.</summary>
-    internal static readonly string[] SendResults = ["accepted", "rejected", "failed", "cancelled"];
+    internal static readonly string[] SendResults = ["accepted", "rejected", "failed", "no_answer"];
 
     internal static readonly AuditDetailSchema NotificationSmtpTestAttempted = new(
     [

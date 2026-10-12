@@ -61,8 +61,24 @@ internal static class SmtpEmailTransport
     /// </summary>
     internal static EmailSendDisposition Classify(Exception ex, CancellationToken cancellationToken)
     {
-        if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
-            return EmailSendDisposition.Cancelled;
+        // An address the platform could not even build is a failure before any call: nothing was sent.
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is FormatException)
+                return EmailSendDisposition.NotAttempted;
+        }
+
+        // A cancelled call, a timeout and a connection that broke after the session began have no answer: the message may have left.
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException or TimeoutException or System.IO.IOException
+                || current is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.TimedOut or System.Net.Sockets.SocketError.ConnectionReset or System.Net.Sockets.SocketError.ConnectionAborted }
+                || (current is SmtpException timedOut && timedOut.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase)))
+            {
+                return EmailSendDisposition.NoAnswer;
+            }
+        }
+
         for (Exception? current = ex; current is not null; current = current.InnerException)
         {
             if (current is SmtpFailedRecipientException or SmtpFailedRecipientsException)

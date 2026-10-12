@@ -24,8 +24,11 @@ public enum EmailSendDisposition
     /// <summary>Any other transport error after the attempt began.</summary>
     Failed,
 
-    /// <summary>The call was cancelled before an answer: the message may or may not have left.</summary>
-    Cancelled,
+    /// <summary>
+    /// No answer arrived: the call was cancelled, timed out, or the connection broke after the session began. The message may or may
+    /// not have left, so this is an unknown outcome and never a failure.
+    /// </summary>
+    NoAnswer,
 }
 
 public sealed record EmailNotificationSendResult(

@@ -154,7 +154,7 @@ public sealed class NotificationDispatchProcessor
         catch (Exception)
         {
             // The channel gave no answer: the message may or may not have left. Counted as unknown, then thrown as before.
-            tally?.Record(EmailSendDisposition.Cancelled);
+            tally?.Record(EmailSendDisposition.NoAnswer);
             throw;
         }
 

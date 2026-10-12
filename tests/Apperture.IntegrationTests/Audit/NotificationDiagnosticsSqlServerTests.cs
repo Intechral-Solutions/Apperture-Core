@@ -55,7 +55,7 @@ public sealed class NotificationDiagnosticsSqlServerTests : IClassFixture<AuditI
         var definitionId = "ndef_" + Guid.NewGuid().ToString("N")[..12];
 
         (await writer.TryWriteAsync(AuditEvents.NotificationSmtpTestAttempted("accepted"), AuditActor.CurrentPrincipal)).Should().BeTrue();
-        (await writer.TryWriteAsync(AuditEvents.NotificationSmtpTestAttempted("cancelled"), AuditActor.CurrentPrincipal)).Should().BeTrue();
+        (await writer.TryWriteAsync(AuditEvents.NotificationSmtpTestAttempted("no_answer"), AuditActor.CurrentPrincipal)).Should().BeTrue();
         (await writer.TryWriteAsync(
             AuditEvents.NotificationPipelineTestAttempted(definitionId, "int-x", true, 1, 3, 3, 1, 1, 0, 1, null), AuditActor.CurrentPrincipal)).Should().BeTrue();
         (await writer.TryWriteAsync(AuditEvents.NotificationDiagnosticsTestRefused("smtp", "not_configured"), AuditActor.CurrentPrincipal)).Should().BeTrue();
@@ -75,7 +75,7 @@ public sealed class NotificationDiagnosticsSqlServerTests : IClassFixture<AuditI
         var smtp = await scratch.RowsAsync(
             $"SELECT TOP 2 * FROM AuditLogs WHERE Action = N'{AuditActionNames.NotificationSmtpTestAttempted}' AND Actor = N'{admin}' ORDER BY Id DESC;");
         smtp.Select(r => ((string)r["Outcome"]!, Detail(r, "result"))).Should().BeEquivalentTo(
-            new[] { (AuditOutcomeCodes.Succeeded, "accepted"), (AuditOutcomeCodes.Unknown, "cancelled") });
+            new[] { (AuditOutcomeCodes.Succeeded, "accepted"), (AuditOutcomeCodes.Unknown, "no_answer") });
         smtp.Should().OnlyContain(r => (string)r["Basis"]! == AuditBases.ExternalAttempt && (string)r["TargetType"]! == AuditTargetTypes.Instance);
 
         var refused = (await scratch.RowsAsync(
@@ -224,7 +224,7 @@ public sealed class NotificationDiagnosticsSqlServerTests : IClassFixture<AuditI
         {
             var r when r.StartsWith($"{stem}1", StringComparison.Ordinal) => new EmailNotificationSendResult(false, null, TransportErrorSentinel, EmailSendDisposition.Rejected),
             var r when r.StartsWith($"{stem}2", StringComparison.Ordinal) => new EmailNotificationSendResult(false, null, TransportErrorSentinel, EmailSendDisposition.Failed),
-            var r when r.StartsWith($"{stem}3", StringComparison.Ordinal) => new EmailNotificationSendResult(false, null, "The operation was canceled.", EmailSendDisposition.Cancelled),
+            var r when r.StartsWith($"{stem}3", StringComparison.Ordinal) => new EmailNotificationSendResult(false, null, "The operation was canceled.", EmailSendDisposition.NoAnswer),
             _ => Accepted(),
         });
         var tally = new NotificationDispatchTally();

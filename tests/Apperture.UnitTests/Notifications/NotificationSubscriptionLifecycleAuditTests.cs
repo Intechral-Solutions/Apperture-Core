@@ -270,6 +270,54 @@ public sealed class NotificationSubscriptionLifecycleAuditTests
     }
 
     [Fact]
+    public async Task An_unsupported_delivery_mode_on_add_is_a_refusal_before_the_unit_opens_and_not_an_audit_schema_error()
+    {
+        using var h = new NotificationDefinitionTestHarness();
+        var (integrationId, definitionId) = await ArrangeAsync(h);
+
+        var act = () => h.Subscriptions.AddRecipientAsync(definitionId, ByRef(integrationId, "user-1", mode: "whenever")).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unsupported delivery mode*");
+        h.AuditUnit.Operations.Should().BeEmpty();
+        (await h.Db.NotificationSubscriptions.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task An_address_typed_as_a_recipient_reference_is_refused_so_it_can_never_be_recorded_as_one()
+    {
+        using var h = new NotificationDefinitionTestHarness();
+        var (integrationId, definitionId) = await ArrangeAsync(h);
+
+        var act = () => h.Subscriptions.AddRecipientAsync(definitionId, ByRef(integrationId, AddressSentinel)).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*id, not an email address*");
+        h.AuditUnit.Operations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Every_subscription_writer_and_the_definition_delete_check_management_again_under_the_lock()
+    {
+        using var h = new NotificationDefinitionTestHarness();
+        var (integrationId, definitionId) = await ArrangeAsync(h);
+        var sub = await h.Subscriptions.AddRecipientAsync(definitionId, ByRef(integrationId, "user-keep"));
+        var other = await h.Subscriptions.AddRecipientAsync(definitionId, ByRef(integrationId, "user-other"));
+        await h.Subscriptions.SetUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-out", null));
+
+        int Checks(Func<Task> operation)
+        {
+            var before = h.IntegrationUpdateChecks;
+            operation().GetAwaiter().GetResult();
+            return h.IntegrationUpdateChecks - before;
+        }
+
+        Checks(async () => await h.Subscriptions.PatchAsync(definitionId, sub.Id.Value, new NotificationSubscriptionPatchRequest(false, null))).Should().Be(2, "patch");
+        Checks(async () => await h.Subscriptions.RemoveAsync(definitionId, other.Id.Value)).Should().Be(2, "remove");
+        Checks(async () => await h.Subscriptions.SetUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-new", null))).Should().Be(2, "opt-out set");
+        Checks(async () => await h.Subscriptions.RemoveUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-out", null))).Should().Be(2, "opt-out removed");
+        Checks(async () => await h.Definitions.DeleteAsync(definitionId)).Should().Be(2, "definition delete");
+    }
+
+    [Fact]
     public async Task A_lost_acknowledgement_returns_the_committed_result()
     {
         using var h = new NotificationDefinitionTestHarness();

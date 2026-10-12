@@ -277,7 +277,7 @@ public sealed class NotificationPipelineTestServiceTests
     [InlineData(EmailSendDisposition.Accepted, "accepted", AuditOutcomeCodes.Succeeded)]
     [InlineData(EmailSendDisposition.Rejected, "rejected", AuditOutcomeCodes.Failed)]
     [InlineData(EmailSendDisposition.Failed, "failed", AuditOutcomeCodes.Failed)]
-    [InlineData(EmailSendDisposition.Cancelled, "cancelled", AuditOutcomeCodes.Unknown)]
+    [InlineData(EmailSendDisposition.NoAnswer, "no_answer", AuditOutcomeCodes.Unknown)]
     public async Task A_live_smtp_test_records_what_the_transport_reported_and_never_delivery(EmailSendDisposition disposition, string result, string outcome)
     {
         var events = new RecordingAuditEventWriter();
@@ -327,7 +327,7 @@ public sealed class NotificationPipelineTestServiceTests
     }
 
     [Fact]
-    public async Task A_channel_that_throws_is_recorded_as_failed_or_cancelled_and_the_exception_still_propagates()
+    public async Task A_channel_that_throws_gave_no_answer_and_the_exception_still_propagates()
     {
         var events = new RecordingAuditEventWriter();
         var channel = new Mock<IEmailNotificationChannel>();
@@ -340,7 +340,7 @@ public sealed class NotificationPipelineTestServiceTests
         await FluentActions.Awaiting(() => sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com")).AsTask()).Should().ThrowAsync<InvalidOperationException>();
 
         events.Written.Select(w => (w.Event.Fields["result"], w.Event.OutcomeCode)).Should().Equal(
-            ("cancelled", AuditOutcomeCodes.Unknown), ("failed", AuditOutcomeCodes.Failed));
+            ("no_answer", AuditOutcomeCodes.Unknown), ("no_answer", AuditOutcomeCodes.Unknown));
         Everything(events).Should().NotContain("mx.internal.example");
     }
 
@@ -492,7 +492,7 @@ public sealed class NotificationPipelineTestServiceTests
     [Fact]
     public async Task A_send_cancelled_before_an_answer_makes_the_outcome_unknown()
     {
-        var run = ArrangeLive(i => Sent(i == 0 ? EmailSendDisposition.Accepted : EmailSendDisposition.Cancelled));
+        var run = ArrangeLive(i => Sent(i == 0 ? EmailSendDisposition.Accepted : EmailSendDisposition.NoAnswer));
 
         await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
 
@@ -569,15 +569,62 @@ public sealed class NotificationPipelineTestServiceTests
     }
 
     [Fact]
-    public void A_cancelled_call_is_cancelled_only_when_the_caller_cancelled()
+    public void A_call_with_no_answer_is_never_a_failure_because_the_message_may_have_left()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        SmtpEmailTransport.Classify(new OperationCanceledException(), cts.Token).Should().Be(EmailSendDisposition.Cancelled);
-        SmtpEmailTransport.Classify(new OperationCanceledException(), CancellationToken.None).Should().Be(EmailSendDisposition.Failed,
-            "a timeout the caller did not ask for is a transport error");
+        SmtpEmailTransport.Classify(new OperationCanceledException(), cts.Token).Should().Be(EmailSendDisposition.NoAnswer);
+        SmtpEmailTransport.Classify(new OperationCanceledException(), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer, "a timeout the caller did not ask for has no answer either");
+        SmtpEmailTransport.Classify(new TimeoutException(), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer);
+        SmtpEmailTransport.Classify(new System.Net.Mail.SmtpException("Failure sending mail.", new System.IO.IOException("Unable to read data from the transport connection.")), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NoAnswer, "a connection lost after the session began");
+        SmtpEmailTransport.Classify(new System.Net.Mail.SmtpException("The operation has timed out."), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer);
         SmtpEmailTransport.Classify(new InvalidOperationException(), CancellationToken.None).Should().Be(EmailSendDisposition.Failed);
+    }
+
+    [Fact]
+    public void An_address_the_platform_could_not_build_is_not_an_attempt()
+    {
+        SmtpEmailTransport.Classify(new FormatException("The specified string is not in the form required for an e-mail address."), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NotAttempted);
+        SmtpEmailTransport.Classify(new InvalidOperationException("outer", new FormatException()), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NotAttempted);
+    }
+
+    [Fact]
+    public async Task A_smtp_test_whose_address_could_not_be_used_is_refused_as_invalid_input_and_one_whose_credential_failed_as_not_configured()
+    {
+        var events = new RecordingAuditEventWriter();
+        var channel = new Mock<IEmailNotificationChannel>();
+        channel.SetupSequence(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailNotificationSendResult(false, null, "The specified string is not in the form required for an e-mail address.", EmailSendDisposition.NotAttempted))
+            .ReturnsAsync(new EmailNotificationSendResult(false, null, SmtpEmailNotificationChannel.CredentialUnavailable, EmailSendDisposition.NotAttempted));
+        var sut = CreateSut(emailChannel: channel.Object, events: events);
+
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("not an address"));
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com"));
+
+        events.Actions.Should().Equal(AuditActionNames.NotificationDiagnosticsTestRefused, AuditActionNames.NotificationDiagnosticsTestRefused);
+        events.Written.Select(w => w.Event.Fields["reason"]).Should().Equal("invalid_input", "not_configured");
+        Everything(events).Should().NotContain("not an address");
+    }
+
+    [Fact]
+    public async Task The_channel_does_not_send_and_says_so_when_the_credential_cannot_be_resolved()
+    {
+        var credentials = new Mock<IEmailSmtpCredentialResolver>();
+        credentials.Setup(c => c.ResolvePasswordAsync(It.IsAny<EmailNotificationOptions>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("secret store is down"));
+        var channel = new SmtpEmailNotificationChannel(
+            Options.Create(new EmailNotificationOptions { Enabled = true, SmtpHost = "smtp.example.com", FromAddress = "noreply@example.com" }),
+            credentials.Object,
+            NullLogger<SmtpEmailNotificationChannel>.Instance);
+
+        var result = await channel.SendAsync(new EmailNotificationSendRequest("ops@example.com", "s", "b"));
+
+        result.Observed.Should().Be(EmailSendDisposition.NotAttempted);
+        result.FailureSummary.Should().Be(SmtpEmailNotificationChannel.CredentialUnavailable);
     }
 
     private sealed class AllowAuth : IAuthorizationService
