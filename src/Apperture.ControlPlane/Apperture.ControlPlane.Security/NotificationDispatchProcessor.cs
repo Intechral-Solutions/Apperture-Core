@@ -40,6 +40,32 @@ public sealed class NotificationDispatchProcessor
         var opts = _options.Value;
         var now = _time.GetUtcNow();
         var claimed = await _outbox.ClaimPendingAsync(opts.BatchSize, now, cancellationToken).ConfigureAwait(false);
+        return await ProcessClaimedAsync(claimed, opts, now, tally: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Claims and dispatches only the pending outbox rows of one notification instance, and counts what the transport reported for
+    /// each send into <paramref name="tally"/> as it happens, so the caller still has the counts when a later step is cancelled
+    /// (AUD-1.4 slice 6). A diagnostic request that sends what it created uses this and never another instance's rows.
+    /// </summary>
+    public async ValueTask<int> ProcessInstanceAsync(
+        NotificationInstanceId instanceId,
+        NotificationDispatchTally tally,
+        CancellationToken cancellationToken = default)
+    {
+        var opts = _options.Value;
+        var now = _time.GetUtcNow();
+        var claimed = await _outbox.ClaimPendingForInstanceAsync(instanceId, opts.BatchSize, now, cancellationToken).ConfigureAwait(false);
+        return await ProcessClaimedAsync(claimed, opts, now, tally, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<int> ProcessClaimedAsync(
+        IReadOnlyList<NotificationDeliveryOutbox> claimed,
+        NotificationDeliveryOptions opts,
+        DateTimeOffset now,
+        NotificationDispatchTally? tally,
+        CancellationToken cancellationToken)
+    {
         if (claimed.Count == 0)
             return 0;
 
@@ -49,7 +75,7 @@ public sealed class NotificationDispatchProcessor
             if (row.Status == NotificationOutboxStatuses.Succeeded)
                 continue;
 
-            if (await ProcessRowAsync(row, opts, now, cancellationToken).ConfigureAwait(false))
+            if (await ProcessRowAsync(row, opts, now, tally, cancellationToken).ConfigureAwait(false))
                 processed++;
         }
 
@@ -60,6 +86,7 @@ public sealed class NotificationDispatchProcessor
         NotificationDeliveryOutbox row,
         NotificationDeliveryOptions opts,
         DateTimeOffset now,
+        NotificationDispatchTally? tally,
         CancellationToken cancellationToken)
     {
         var instance = await _instances.GetByIdAsync(row.NotificationInstanceId, cancellationToken).ConfigureAwait(false);
@@ -111,15 +138,27 @@ public sealed class NotificationDispatchProcessor
 
         var attemptNumber = row.AttemptCount + 1;
         var emailMessage = ComposeEmailMessage(instance);
-        var sendResult = await _emailChannel
-            .SendAsync(
-                new EmailNotificationSendRequest(
-                    row.RecipientEmail,
-                    instance.RenderedSubject,
-                    emailMessage.PlainTextBody,
-                    emailMessage.HtmlBody),
-                cancellationToken)
-            .ConfigureAwait(false);
+        EmailNotificationSendResult sendResult;
+        try
+        {
+            sendResult = await _emailChannel
+                .SendAsync(
+                    new EmailNotificationSendRequest(
+                        row.RecipientEmail,
+                        instance.RenderedSubject,
+                        emailMessage.PlainTextBody,
+                        emailMessage.HtmlBody),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The channel gave no answer: the message may or may not have left. Counted as unknown, then thrown as before.
+            tally?.Record(EmailSendDisposition.Cancelled);
+            throw;
+        }
+
+        tally?.Record(sendResult.Observed);
 
         if (sendResult.Succeeded)
         {

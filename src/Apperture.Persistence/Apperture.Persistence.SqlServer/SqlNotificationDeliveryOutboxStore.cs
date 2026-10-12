@@ -12,16 +12,31 @@ public sealed class SqlNotificationDeliveryOutboxStore : INotificationDeliveryOu
 
     public SqlNotificationDeliveryOutboxStore(AppertureDbContext db) => _db = db;
 
-    public async ValueTask<IReadOnlyList<NotificationDeliveryOutbox>> ClaimPendingAsync(
+    public ValueTask<IReadOnlyList<NotificationDeliveryOutbox>> ClaimPendingAsync(
         int batchSize,
         DateTimeOffset utcNow,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ClaimAsync(null, batchSize, utcNow, cancellationToken);
+
+    public ValueTask<IReadOnlyList<NotificationDeliveryOutbox>> ClaimPendingForInstanceAsync(
+        NotificationInstanceId instanceId,
+        int batchSize,
+        DateTimeOffset utcNow,
+        CancellationToken cancellationToken = default) =>
+        ClaimAsync(instanceId.Value, batchSize, utcNow, cancellationToken);
+
+    private async ValueTask<IReadOnlyList<NotificationDeliveryOutbox>> ClaimAsync(
+        string? instanceId,
+        int batchSize,
+        DateTimeOffset utcNow,
+        CancellationToken cancellationToken)
     {
         var take = Math.Clamp(batchSize, 1, 100);
         var candidates = await _db.NotificationDeliveryOutbox
             .Where(
                 x => x.Status == NotificationOutboxStatuses.Pending
-                     && (x.NextAttemptAtUtc == null || x.NextAttemptAtUtc <= utcNow))
+                     && (x.NextAttemptAtUtc == null || x.NextAttemptAtUtc <= utcNow)
+                     && (instanceId == null || x.NotificationInstanceId == instanceId))
             .OrderBy(x => x.CreatedAtUtc)
             .Take(take)
             .AsNoTracking()

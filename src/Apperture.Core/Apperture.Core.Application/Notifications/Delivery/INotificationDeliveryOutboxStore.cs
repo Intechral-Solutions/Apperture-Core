@@ -10,6 +10,16 @@ public interface INotificationDeliveryOutboxStore
         DateTimeOffset utcNow,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// <see cref="ClaimPendingAsync"/> limited to the outbox rows of one notification instance: the claim of a request that sends
+    /// only what it created (AUD-1.4 slice 6), so it never sends another instance's rows.
+    /// </summary>
+    ValueTask<IReadOnlyList<NotificationDeliveryOutbox>> ClaimPendingForInstanceAsync(
+        NotificationInstanceId instanceId,
+        int batchSize,
+        DateTimeOffset utcNow,
+        CancellationToken cancellationToken = default);
+
     ValueTask<bool> TryMarkDeliveringAsync(
         NotificationDeliveryOutboxId id,
         DateTimeOffset utcNow,
