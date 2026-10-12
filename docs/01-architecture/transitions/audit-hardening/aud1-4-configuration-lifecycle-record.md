@@ -1279,7 +1279,7 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 | WP3 | Connection verify and structure browse | **Done** (16.5) |
 | WP4 | Resource context create, update, archive and unarchive | **Done** (16.6) |
 | WP5 | Ownership moves (integration, connection, schedule) | **Done** (16.7) |
-| WP6 | Real-unit concurrency coverage, validation, independent review, closure | Planned |
+| WP6 | Real-unit concurrency coverage, validation, independent review, closure | **In progress** (16.8) |
 
 ### 16.4 Intentional behavior changes
 
@@ -1348,3 +1348,23 @@ The pair shares the operation's event id as its correlation (they were two separ
 **Locks.** Unchanged: gate, then the moved row. The attached schedules are updated by the narrow ownership update without their own locks, as before, so a schedule writer holding a schedule row simply makes the move wait for it; no writer of a schedule waits for the integration row while holding a schedule row, so no cycle exists. The move still reads bindings, connections and integrations for validation with plain reads under the gate; every writer that could change what those reads decide takes the gate first.
 
 **Tests.** `ResourceMoveAuditTests` (unit, rewritten for staged rows, the recorded rejection, a lost acknowledgement, an unknown outcome, the missing unit, and the DI pin that the unit, repositories and gate share one context while the rejection writer has its own), and the existing move preview, mutation and gate suites unchanged; SQL Server `OwnershipMoveSqlServerTests` (36, replacing the earlier filtering suite that ran over the legacy bridge: M7 for four kinds of move on both isolation modes, the filtering semantics, exactly two rows however many schedules move, a failure after the integration row moved rolling back the integration and its schedules together, a blocked move recorded at the source and nowhere else, a rejection that cannot be written not changing the answer, a move into an archived context, the M6 matrix, a lost acknowledgement returning the rebuilt result) and the earlier `ResourceOwnershipMoveConcurrencySqlServerTests` (10) now running through the converted services.
+
+### 16.8 Real-unit concurrency evidence (work package 6)
+
+Slice 4 left one gap (finding L4): the ownership race suite runs its set-up through a unit that opens a transaction and stages nothing, so no race of the **real** audited unit against an ownership move or an Application archive had been exercised. `OwnershipRealUnitRaceSqlServerTests` closes it. Every racer is a real service on a context of its own with the real unit, the real gate and the real repositories, as two HTTP requests would be, on a locking READ COMMITTED catalog and on a READ_COMMITTED_SNAPSHOT catalog.
+
+**How a race is made deterministic.** A third session holds the ownership gate. The first writer is started and the server's own lock view is read until it is seen waiting for an application lock; only then is the second started and seen waiting in turn; then the gate is released. The lock manager grants a queue of exclusive requests in arrival order, so which writer commits first is fixed by the test, and **both orders** run. A writer that did not wait for the gate fails the test (it did not take the gate). The row-queued variant (a connection move and a rotation, which both need the connection row) does the same with a held row. No sleeps, no test hooks.
+
+| Race | Order 1 | Order 2 | Invariant checked in both |
+|---|---|---|---|
+| Integration move into T, archive of T | Move commits; the archive is refused (T owns a live integration) | Archive commits; the move is blocked (`target_archived`) and recorded at the source | An archived Application never owns a live integration |
+| Integration move, binding creation to a connection staying in the source | Move commits; the binding is refused | Binding commits; the move is blocked (`binding_connection_unreachable`) | No integration in the target holds a binding to a connection that stayed in the source |
+| Integration move, attached schedule creation | Create after the move: the schedule inherits the target | Create before the move: the move carries it (`schedulesMoved` 1) | Every schedule is in its integration's context; the rows name the owner each writer locked |
+| Integration move, activation | Both applied; the activation row names the target | Both applied; the activation row names the source | The integration ends moved and active |
+| Application archive, connection creation in it | Archive commits; the creation is refused (`ResourceContextArchivedException`) | Creation commits; the archive is refused | An archived Application never owns a live connection |
+| Two moves of one connection | The second pair starts where the first ended | (the other pair first) | The writer that committed last owns the result |
+| Connection move, secret rotation (queued on the row) | Both applied; the rotation row names the target | Both applied; the rotation row names the source | The credential is the rotated one; moving contexts moved no secret |
+
+28 cases (7 races x 2 orders x 2 isolation modes). The carried-forward integration delete races stay with their own suites (slice 3); the secret races (queued rotations, rotation with retirement, a rotation across a move, a change made during a probe) are in `ConnectionLifecycleSqlServerTests` and `ConnectionVerifyBrowseSqlServerTests` (16.5).
+
+**What these do not prove.** They prove the order the gate and the row locks impose, and that the units' decisions read what the previous writer committed. They do not prove behaviour when the gate times out (15 s) under sustained load, and they do not search for interleavings beyond the queue positions chosen. No mutation run was made: the tests assert on the server's wait list before the gate is released, so a writer that stopped taking the gate fails them by not waiting.
