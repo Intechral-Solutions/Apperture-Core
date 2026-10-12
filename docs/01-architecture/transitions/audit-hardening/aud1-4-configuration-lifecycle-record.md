@@ -2,9 +2,9 @@
 
 Date: 2026-10-07
 
-Status: **In progress on branch `aud-1.4-configuration-lifecycle`; not pushed, no PR.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) are implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings) is implemented and validated (§8), awaiting independent review. Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) is implemented and validated, and **proposed READY TO CLOSE (§13.8), pending the owner's review of work package 5**. Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). Slices 4 to 8 have not started. This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slices 4 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
 
-Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`.
+Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`. Before PR #18 merged, the branch took `origin/master` (`0314419`, the licensing and third-party notice merges) in a normal merge, `539d907`, which changed no file under `src/` or `tests/` and left the 109-file AUD-1.4 change set unchanged (§14).
 
 Contract: [AUD-1.0 design gate](aud1-design-gate.md), revision 3, §22 "AUD-1.4 Configuration lifecycle", with the owner rulings of 2026-10-07 recorded there. Builds on the [AUD-1.1 foundation](aud1-1-foundation-record.md), the [AUD-1.2 identity and governance record](aud1-2-identity-governance-record.md) and the [AUD-1.3 operator action record](aud1-3-operator-action-record.md). Governing program contract: [rc1-program-gate.md](../../rc1-program-gate.md), RC1 requirement 5.
 
@@ -56,8 +56,8 @@ The product owner approved the four orientation recommendations. They are record
 |---|---|---|
 | 0 | This record; the gate's §22 and §27 rulings; the AUD-1.2 D35 amendment note | **Done** |
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
-| 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Implemented and validated; awaiting independent review** (§8). Independent review of slices 1 and 2 before slice 3 |
-| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **Implemented and validated; proposed READY TO CLOSE, pending the owner's review of work package 5** (§13.8). Work packages 1 and 2 (the schedule delete) were independently reviewed and accepted; work package 3 (the integration row lock, §10), 4a (the H1 mechanisms, §11) and 4b (the integration delete as one audited unit, §12) were independently reviewed together, READY TO ACCEPT (§13.1); work package 5 (§13) remediated the review's findings and wrote the contracts and this closing record |
+| 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Done.** Implemented and validated (§8); independently reviewed, ready after bounded remediation (§9); closed (§9.10) |
+| 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **CLOSED** (§14): work package 5 accepted by the owner, merged with PR #18 as `54ae117` (2026-10-11), post-merge CI passed. Work packages 1 and 2 (the schedule delete) were independently reviewed and accepted; work package 3 (the integration row lock, §10), 4a (the H1 mechanisms, §11) and 4b (the integration delete as one audited unit, §12) were independently reviewed together, READY TO ACCEPT (§13.1); work package 5 (§13) remediated the review's findings and wrote the contracts and this closing record |
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
@@ -267,20 +267,20 @@ Recorded at orientation; not changed by this package.
 
 | Finding | Owner |
 |---|---|
-| The integration-level attention-routing write routes (`PUT` and `DELETE /api/integrations/{id}/attention-routing`) are authorized by integration read only; the routing service checks nothing itself | Security defect, unowned (candidate IAM-10 or an owner-directed fix). AUD-1.4 will attribute these writes; that does not fix their authorization |
+| The integration-level attention-routing write routes (`PUT` and `DELETE /api/integrations/{id}/attention-routing`) are authorized by integration read only; the routing service checks nothing itself | Security defect. **Provisionally assigned to AUD-1.4 slice 7** (which converts `AttentionRoutingManagementService`), pending security triage (slice 3 closeout, 2026-10-11). Triage may route it to IAM-10 or an earlier owner-directed fix instead. Slice 7 will attribute these writes; attributing them does not fix their authorization, and nothing has changed in the routes' authorization |
 | A worker with no configured runtime id applies the oldest queued shutdown request of any runtime | Runtime package, unowned |
 | The worker's `applied` shutdown transition has no audit row (gate §11.6 cites it only as an example of `confirmed_result`) | Unassigned; for the AUD-1.6 writer inventory |
 | A diagnostic pipeline test that dispatches immediately processes the whole pending outbox batch | Existing defect, unowned |
 | `SqlSecretStore` exception messages embed the secret id (`Secret {id} not found.`, `Version … not found for secret {id}.`), which is the reference its owner holds. Pre-existing, found in the slice 1 review. The Entra flows cannot reach them in practice (the id comes from the registration's own row) and no recorder row carries a message | RCV-1 or optional cleanup; unchanged here because no AUD-1.4 invariant covers exception text and no path converted by slice 1 surfaces it |
 | `SqlSecretResolver` echoes an invalid ref value in its exception text; the `PlatformSettingUpdatePayload` record's generated `ToString` would print its secret value; the SMTP test recipient is logged | RCV-1 or optional cleanup; guarded here only where a slice touches it |
 | `docs/04-api/contracts.md` calls the shutdown audit action `runtime.shutdown.request`; the catalog name is `governance.runtime.shutdown.request.created` | Corrected in slice 7 |
-| **Audited units can deadlock in the recorder's own verification count (AUD-1.1; found by the slice 3 independent review).** After saving its audit rows, `SqlAuditedUnitOfWork` counts the rows with its operation's event id (`AuditLogs.OperationEventId`, line 169 of the unit) to check that every staged row was inserted. The column has no supporting index, so under locking READ COMMITTED the count scans the table and waits on another audited unit's uncommitted audit rows. Two units that have each inserted a row can then wait on each other, and one is a deadlock victim (SQL Server error 1205). The reviewer reproduced it in a SQL Server tempdb model with the table shape (2 of 2 trials). It has **not been observed in production** and its product-level rate is not established. Beyond the model, the slice 3 pair case (§13.2), which releases two real deletes at the instant both have inserted their audit rows, saw it in the shipped unit on a locking catalog: the deadlock victim's statement was this count and the retry then committed. That shows the mechanism is real under forced simultaneity; it is not evidence of how often requests collide. The unit's execution strategy retries a deadlock victim, so correctness holds and the unit stays atomic; the retry still costs a rerun and latency, and under heavy concurrency could exhaust its retries. It exists in every audited unit since AUD-1.1; slice 3 neither introduced nor widened it, and removing the post-delete recount (§13.2) is unrelated to it. Not changed here | **Deferred; proposed AUD-1.6** (as the reviewer suggested). Not added to AUD-1.6's scope and no epic created or reordered by this record: the owner decides where it lands. **Proposed work:** an index on `AuditLogs.OperationEventId` (a migration, so the AUD-1.6 owner's call) or a count that does not scan. **Validation to ask for:** a real-SQL-Server test, on locking READ COMMITTED and READ_COMMITTED_SNAPSHOT catalogs, in which two audited units each insert a row and verify at once and neither is a deadlock victim, with the plan showing a seek; and the slice 3 pair case (`Two_deletes_of_different_integrations_…`), which reports its deadlock victims, showing none |
+| **Audited units can deadlock in the recorder's own verification count (AUD-1.1; found by the slice 3 independent review).** After saving its audit rows, `SqlAuditedUnitOfWork` counts the rows with its operation's event id (`AuditLogs.OperationEventId`, line 169 of the unit) to check that every staged row was inserted. The column has no supporting index, so under locking READ COMMITTED the count scans the table and waits on another audited unit's uncommitted audit rows. Two units that have each inserted a row can then wait on each other, and one is a deadlock victim (SQL Server error 1205). The reviewer reproduced it in a SQL Server tempdb model with the table shape (2 of 2 trials). It has **not been observed in production** and its product-level rate is not established. Beyond the model, the slice 3 pair case (§13.2), which releases two real deletes at the instant both have inserted their audit rows, saw it in the shipped unit on a locking catalog: the deadlock victim's statement was this count and the retry then committed. That shows the mechanism is real under forced simultaneity; it is not evidence of how often requests collide. The unit's execution strategy retries a deadlock victim, so correctness holds and the unit stays atomic; the retry still costs a rerun and latency, and under heavy concurrency could exhaust its retries. It exists in every audited unit since AUD-1.1; slice 3 neither introduced nor widened it, and removing the post-delete recount (§13.2) is unrelated to it. Not changed here | **Deferred; assigned to proposed AUD-1.6** (slice 3 closeout, 2026-10-11; the reviewer suggested it). The design gate's AUD-1.6 entry is not amended by this record, so AUD-1.6 planning must take it up from here; no epic was created or reordered. **Proposed work:** an index on `AuditLogs.OperationEventId` (a migration, so the AUD-1.6 owner's call) or a count that does not scan. **Validation to ask for:** a real-SQL-Server test, on locking READ COMMITTED and READ_COMMITTED_SNAPSHOT catalogs, in which two audited units each insert a row and verify at once and neither is a deadlock victim, with the plan showing a seek; and the slice 3 pair case (`Two_deletes_of_different_integrations_…`), which reports its deadlock victims, showing none |
 
 IAM-9 stays closed. The IAM-10, IAM-11, OPS-1 and RCV-1 findings stay open. RC1 is not complete.
 
 ## 8. Slice 2: platform and integration settings
 
-Implemented on this branch after the slice 1 remediation (`d403c2d`). Not independently reviewed yet. Slice 3 has not started.
+Implemented on this branch after the slice 1 remediation (`d403c2d`). Not independently reviewed yet. Slice 3 has not started. *(Status when written. Slice 2 was then independently reviewed and remediated, §9, and closed, §9.10. Slice 3 followed and is closed, §14.)*
 
 ### 8.1 Scope and writer inventory
 
@@ -944,7 +944,7 @@ The integration hard-delete is converted. AUD-1.4 is not complete; slices 4 to 8
 
 ## 13. Work package 5: review, remediation and the close of slice 3
 
-Written after the combined independent review of work packages 3, 4a and 4b. This package changed one line of product behaviour (§13.2), documentation and tests; it reopened no ruling and did not repeat the review. **The owner has not yet reviewed or accepted work package 5, and nothing here approves a merge.**
+Written after the combined independent review of work packages 3, 4a and 4b. This package changed one line of product behaviour (§13.2), documentation and tests; it reopened no ruling and did not repeat the review. **The owner has not yet reviewed or accepted work package 5, and nothing here approves a merge.** *(Status when written. The owner accepted work package 5 and merged PR #18; see §14.)*
 
 ### 13.1 The combined review
 
@@ -1051,6 +1051,8 @@ Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, the con
 
 ### 13.8 Slice 3 work packages and the proposed verdict
 
+*The verdict below is the proposal made before the owner's decision. It is kept as written. Both conditions it lists were then met, and slice 3 was closed (§14).*
+
 | Work package | Status |
 |---|---|
 | 1 `schedule.deleted` and `schedule.delete_rejected` contracts | Done; independently reviewed and accepted |
@@ -1070,6 +1072,51 @@ Real SQL Server (`apperture-test-sql`), `APPERTURE_REQUIRE_SQL_TESTS=1`, the con
 The WP1 and WP2 findings L1 and L2 are resolved (§13.4); nothing from the earlier reviews is outstanding. Every LOW finding of the combined review (§13.1) and of the WP1 and WP2 review is resolved or explicitly accepted: L-1 fixed, L-2 corrected in documentation with H1's refusal accepted as designed, the WP1 and WP2 findings resolved, and the audited-unit deadlock observation tracked as a deferred item (§7).
 
 **Not part of this verdict.** The audited-unit deadlock mechanism (§7) is tracked, not fixed, and its placement is the owner's decision. AUD-1.4 as a whole is **not complete**: slices 4 to 8 have not started. RC1 requirement 5 is met only after AUD-1.6 has merged and passed acceptance (design gate §14), and nothing here changes that.
+
+## 14. Slice 3 closeout
+
+Date: 2026-10-11. Written after PR #18 merged. It records the owner's decision and the merge evidence and changes no code, ruling, contract or limitation.
+
+### 14.1 Owner acceptance
+
+The owner accepted work package 5 and approved and merged PR #18 (GitHub records the merge by `tennysonhull` at 2026-10-11 17:27:37 UTC). That settles the first of the two conditions in §13.8. Work package 5 itself was not independently re-reviewed (§13); the independent review verdicts stand as recorded in §13.1 and §13.4.
+
+### 14.2 The merge
+
+| | |
+|---|---|
+| Pull request | #18, `aud-1.4-configuration-lifecycle` into `master` |
+| Merge commit | `54ae11781b4ec5b099e270920b9c3d05e7589f84`, parents `0314419` (`master`) and `539d907` (the branch) |
+| Reviewed head | `a8d6b9b`, the head the independent reviews and work package 5 closed on |
+| Branch update | `539d907`, a normal merge of `origin/master` (`0314419`) into the branch, made before the merge. `master` had advanced through the licensing and contributor governance merge (PR #19, `d07577a`) and the third-party notice merge (PR #20, `0314419`). No file overlapped, nothing was resolved, no file under `src/` or `tests/` changed, and the 109-file AUD-1.4 change set against `master` was identical before and after |
+| Result | The merge commit's tree (`4e5507b4ad14`) equals the tree of `539d907`: `master` holds exactly the reviewed implementation plus the governance and notice files |
+
+### 14.3 CI
+
+The first run on the pull request (run 37911882582, head `a8d6b9b`) never executed: GitHub did not start either job because of an account billing restriction, so it is not a test result and is not counted. After the restriction cleared:
+
+| Run | Commit | Result | Jobs |
+|---|---|---|---|
+| 38146637969 (pull request) | `539d907` | success | `build-and-test` and `browser-security` both executed and passed |
+| 38159760341 (post-merge push to `master`) | `54ae117` | **success** | `build-and-test`: 13 of 13 steps, 16 minutes. `browser-security`: 15 of 16 steps (the failure-only artifact upload is skipped by design), 18 minutes |
+
+Both runs report the same totals: **7,332 tests passed, 0 failed, 67 skipped**. The skips are the opt-in browser suite that `build-and-test` does not enable (62, by design and pinned by a CI guard test) and the five browser tests that need `APPERTURE_UI_EVIDENCE` (5). The full unit and integration projects that §13.7 recorded as not run locally ran in these jobs. That settles the second condition in §13.8.
+
+### 14.4 State of the slices
+
+| Slice | State |
+|---|---|
+| 0 to 2 | Done (§3) |
+| 3 | **CLOSED.** Work package 5 accepted, merged, post-merge CI passed |
+| 4 to 8 | **Not started.** On `master` the only audited operation in `IntegrationManagementService` and `SqlScheduleManagementService` is each delete; the catalog holds no integration, binding or schedule lifecycle action beyond `integration.deleted` and `schedule.deleted` and `schedule.delete_rejected`; the connection, resource-context and attention-routing services have no audited operation; no AUD-1.4 commit follows the merge |
+
+### 14.5 Findings carried out of slice 3
+
+- **`AuditLogs.OperationEventId` verification-count deadlock (§7):** assigned to proposed AUD-1.6. The design gate's AUD-1.6 entry is not amended here, so AUD-1.6 planning has to take it up from this record.
+- **Attention-routing write routes authorized by integration read only (§7):** provisionally assigned to slice 7, pending security triage. Triage may move it to IAM-10 or to an earlier owner-directed fix. The routes' authorization is unchanged.
+- The other §7 findings keep their owners. The accepted limitations in §13.6 are carried forward unchanged.
+
+AUD-1.4 as a whole is **not complete**. RC1 requirement 5 is met only after AUD-1.6 has merged and passed acceptance (design gate §14), and nothing here changes that.
 
 
 
