@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
@@ -832,10 +833,13 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
             var authzAllow = new AlwaysAllowAuthorizationEvaluationService();
             var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
 
-            // These tests never delete an integration, so the delete's collaborators (the audited unit and the settings-secret
-            // classifier and retirement) are not supplied; the delete would refuse to run without them.
+            // These tests never delete an integration, so the delete's collaborators (the settings-secret
+            // classifier and retirement) are not supplied; the delete would refuse to run without them. Creates and updates run in
+            // a unit that opens the real transaction these races depend on (the gate must be taken inside one) but records no
+            // audit rows: the races are about ownership serialization, and the audit behaviour has its own suites.
             var integrations = new IntegrationManagementService(
-                principal, authzAllow, integrationRepository, resourceContexts, db, gate);
+                principal, authzAllow, integrationRepository, resourceContexts, db, gate,
+                auditedUnitOfWork: new TransactionOnlyUnit(db));
 
             var connections = new ConnectionManagementService(
                 principal,
@@ -930,6 +934,40 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
 
         public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("Not exercised by these tests.");
+    }
+
+    /// <summary>
+    /// A unit that does what the races need of one: it runs the attempt in a real transaction inside the context's execution
+    /// strategy (clearing tracked state first, as the production unit does) and commits. It stages nothing and verifies nothing.
+    /// </summary>
+    private sealed class TransactionOnlyUnit(AppertureDbContext db) : IAuditedUnitOfWork
+    {
+        public Task<T> ExecuteAsync<T>(
+            AuditedOperation operation,
+            Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
+            Func<AuditCommittedOperation, CancellationToken, Task<T>> reconstruct,
+            CancellationToken cancellationToken = default) =>
+            db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                db.ChangeTracker.Clear();
+                await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+                var result = await attempt(new Transaction(), cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return result;
+            });
+
+        private sealed class Transaction : IAuditedTransaction
+        {
+            public string OperationEventId { get; } = Guid.NewGuid().ToString("N");
+
+            public AuditActor Actor => AuditActor.System();
+
+            public ValueTask StageAsync(Apperture.Core.Application.Audit.AuditEvent auditEvent, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+            public void DeclareNoOp()
+            {
+            }
+        }
     }
 
     private sealed class FixedPrincipalContext : IPrincipalContext

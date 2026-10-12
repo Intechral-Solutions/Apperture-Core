@@ -73,7 +73,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             ResourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(

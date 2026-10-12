@@ -14,8 +14,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Integration management workflow with authorization enforcement. Epic 49. The hard-delete is one audited unit (AUD-1.4 slice 3,
-/// work package 4b): the integration, its setting overrides, the secrets they owned and the audit rows commit together or not at all.
+/// Integration management workflow with authorization enforcement. Epic 49. Every mutation is one audited unit: the hard-delete
+/// (AUD-1.4 slice 3, work package 4b: the integration, its setting overrides, the secrets they owned and the audit rows commit
+/// together or not at all) and create, update and the state transitions (slice 4).
 /// </summary>
 public sealed class IntegrationManagementService : IIntegrationManagementService
 {
@@ -46,8 +47,8 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
-        // The delete's collaborators. Optional so the services that only create, read and update integrations need none of
-        // them; the delete refuses to run without all three rather than delete unaudited.
+        // Optional so a service that only reads integrations needs none of them; every mutation refuses to run without the unit
+        // rather than change anything unaudited, and the delete also needs the two settings-secret collaborators.
         _settingSecretClassifier = settingSecretClassifier;
         _settingSecretRetirement = settingSecretRetirement;
         _auditedUnitOfWork = auditedUnitOfWork;
@@ -112,11 +113,22 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 4). Inside the attempt, in this order: the ownership gate (a new Active
+    /// integration is an archive-blocking resource entering a context, so it must not interleave with an Archive evaluating that
+    /// context), the owning context (a supplied context must exist and be Active; none means the reserved Shared context), the
+    /// integration, and <c>integration.created</c>. The identity is chosen before the unit, so a rerun after a confirmed rollback
+    /// creates the same integration, and a verified commit after a lost acknowledgement is reconstructed from the committed row by
+    /// that id. A settings dictionary is recorded only as "provided", never by key or value.</para>
+    /// </remarks>
     public async ValueTask<DomainIntegration> CreateIntegrationAsync(CreateIntegrationRequest request, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
+
+        var unit = _auditedUnitOfWork
+            ?? throw new AuditInvariantException("Integration creation requires the audited unit of work.");
 
         var scopeKey = request.ScopeKey ?? ScopeKeyConstants.Instance;
         var allowed = await _authorizationEvaluation.EvaluateAsync(
@@ -128,128 +140,164 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to create integrations.");
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
-
-            // Gate first: a new Active Integration is an archive-blocking resource entering a context, so
-            // this must not interleave with a concurrent Archive evaluating that same context's ownership
-            // summary (CTX-3B follow-on: closes the create-vs-archive race Plan 2's own final review flagged).
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
-            // existing create clients stay compatible. A supplied context must exist and be Active.
-            var owningContext = await _resourceContexts.ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken).ConfigureAwait(false);
-
-            var id = new IntegrationId(Guid.NewGuid().ToString("N")[..24]);
-            var now = DateTimeOffset.UtcNow;
-            var integration = new DomainIntegration(id, request.DisplayName, request.ModuleId, request.ScopeKey, IntegrationState.Active, request.Settings, now, now)
+        var id = new IntegrationId(Guid.NewGuid().ToString("N")[..24]);
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.IntegrationCreated, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
             {
-                ResourceContextId = owningContext.Id
-            };
+                // Gate first: closes the create-vs-archive race (CTX-3B follow-on).
+                await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
 
-            await _integrationRepository.AddAsync(integration, cancellationToken).ConfigureAwait(false);
+                // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so existing create
+                // clients stay compatible. A supplied context must exist and be Active.
+                var owningContext = await _resourceContexts.ResolveForNewOwnershipAsync(request.ResourceContextId, ct).ConfigureAwait(false);
 
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return integration;
-        }).ConfigureAwait(false);
+                var now = DateTimeOffset.UtcNow;
+                var integration = new DomainIntegration(id, request.DisplayName, request.ModuleId, request.ScopeKey, IntegrationState.Active, request.Settings, now, now)
+                {
+                    ResourceContextId = owningContext.Id
+                };
+
+                await transaction.StageAsync(
+                    AuditEvents.IntegrationCreated(
+                        id.Value, integration.DisplayName, integration.ModuleId, request.Settings is { Count: > 0 }, owningContext.Id.Value),
+                    ct).ConfigureAwait(false);
+                await _integrationRepository.AddAsync(integration, ct).ConfigureAwait(false);
+                return integration;
+            },
+            async (committed, ct) => await _integrationRepository.GetByIdAsync(id, ct).ConfigureAwait(false)
+                ?? throw new IntegrationNotFoundException(id),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 4). An early read and <c>integration.update</c> check answer a missing or
+    /// forbidden request before a unit opens; they decide nothing. Inside the attempt, in this order:</para>
+    /// <list type="number">
+    /// <item>The ownership gate, when the request names the Active or Inactive state. A Retired integration becoming live is
+    /// archive-blocking, and the current state is not known before the row is locked, so the decision comes from the request
+    /// (gate first, then the row: the order every ownership writer uses).</item>
+    /// <item>The integration row, locked to the end of the transaction, and <c>integration.update</c> authorized again against it
+    /// as locked, so an ownership move that committed while this request waited is what the decision reads.</item>
+    /// <item>The change is computed against the locked row: a request that changes nothing records nothing and returns the
+    /// integration as it is; otherwise the reactivation guard runs, the one primary row is staged and the row is written.</item>
+    /// </list>
+    /// <para>The merge is made over the locked row, so two concurrent updates of different fields both survive. The primary row is
+    /// named by the state transition when the state changed (<c>integration.activated</c>, <c>deactivated</c>, <c>retired</c>),
+    /// otherwise <c>integration.updated</c>; either way the changed field names, never values, are recorded.</para>
+    /// </remarks>
     public async ValueTask<DomainIntegration> UpdateIntegrationAsync(IntegrationId id, UpdateIntegrationRequest request, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var existing = await _integrationRepository.GetByIdAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
+        var unit = _auditedUnitOfWork
+            ?? throw new AuditInvariantException("Integration changes require the audited unit of work.");
 
-        var identity = existing.GetIdentity();
+        var existing = await _integrationRepository.GetByIdAsync(id, cancellationToken)
+            ?? throw new IntegrationNotFoundException(id);
+        await AuthorizeUpdateAsync(actor, existing, cancellationToken).ConfigureAwait(false);
+
+        var needsGate = request.State is IntegrationState.Active or IntegrationState.Inactive;
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.IntegrationUpdated, AuditActor.CurrentPrincipal, AuditActionNames.IntegrationUpdateActions),
+            async (transaction, ct) =>
+            {
+                if (needsGate)
+                    await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
+
+                var fresh = await _integrationRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new IntegrationNotFoundException(id);
+                await AuthorizeUpdateAsync(actor, fresh, ct).ConfigureAwait(false);
+
+                var targetState = request.State ?? fresh.State;
+                var stateChanges = targetState != fresh.State;
+                var changed = new List<string>();
+                if (request.DisplayName is not null && !string.Equals(request.DisplayName, fresh.DisplayName, StringComparison.Ordinal))
+                    changed.Add("displayName");
+                if (request.Settings is not null && !SettingsEqual(request.Settings, fresh.Settings))
+                    changed.Add("settings");
+
+                if (!stateChanges && changed.Count == 0)
+                {
+                    transaction.DeclareNoOp();
+                    return fresh;
+                }
+
+                // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing it owns may become
+                // live again. It fires on a change into Active and on Retired -> Inactive, and on no other update.
+                if (stateChanges && targetState == IntegrationState.Active)
+                {
+                    await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                        fresh.ResourceContextId, _resourceContexts, "activating this integration", ct).ConfigureAwait(false);
+                }
+                else if (stateChanges && fresh.State == IntegrationState.Retired && targetState == IntegrationState.Inactive)
+                {
+                    await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                        fresh.ResourceContextId, _resourceContexts, "reactivating this integration", ct).ConfigureAwait(false);
+                }
+
+                var updated = fresh with
+                {
+                    DisplayName = request.DisplayName ?? fresh.DisplayName,
+                    State = targetState,
+                    Settings = request.Settings ?? fresh.Settings,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+
+                var resourceContextId = fresh.ResourceContextId.Value;
+                var auditEvent = stateChanges
+                    ? AuditEvents.IntegrationStateChanged(
+                        TransitionAction(targetState), id.Value, updated.DisplayName, updated.ModuleId, fresh.State, targetState, changed, resourceContextId)
+                    : AuditEvents.IntegrationUpdated(id.Value, updated.DisplayName, updated.ModuleId, changed, resourceContextId);
+                await transaction.StageAsync(auditEvent, ct).ConfigureAwait(false);
+                await _integrationRepository.UpdateAsync(updated, ct).ConfigureAwait(false);
+                return updated;
+            },
+            async (committed, ct) => await _integrationRepository.GetByIdAsync(id, ct).ConfigureAwait(false)
+                ?? throw new IntegrationNotFoundException(id),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string TransitionAction(IntegrationState toState) => toState switch
+    {
+        IntegrationState.Active => AuditActionNames.IntegrationActivated,
+        IntegrationState.Inactive => AuditActionNames.IntegrationDeactivated,
+        _ => AuditActionNames.IntegrationRetired,
+    };
+
+    /// <summary>Two settings dictionaries are equal when they hold the same pairs; none and empty are the same (nothing is stored for either).</summary>
+    private static bool SettingsEqual(IReadOnlyDictionary<string, string>? left, IReadOnlyDictionary<string, string>? right)
+    {
+        var leftCount = left?.Count ?? 0;
+        if (leftCount != (right?.Count ?? 0))
+            return false;
+        if (leftCount == 0)
+            return true;
+        foreach (var (key, value) in left!)
+        {
+            if (!right!.TryGetValue(key, out var other) || !string.Equals(value, other, StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
+    }
+
+    private async ValueTask AuthorizeUpdateAsync(IActor actor, DomainIntegration integration, CancellationToken cancellationToken)
+    {
+        var identity = integration.GetIdentity();
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
                 new PermissionDescriptor(ActionConstants.IntegrationUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
                 GovernedResourceDescriptor.FromIdentity(identity),
                 identity),
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to update this integration.");
-
-        // Retired -> {Active, Inactive} both flip this Integration from non-blocking to archive-blocking
-        // (ResourceContextOwnershipSummary.BlocksArchive counts anything that is not Retired), so both
-        // transitions must run under the ownership gate to avoid racing a concurrent Archive that reads an
-        // empty ownership summary (CTX-3B follow-on). This is wider than the pre-existing CTX-3A
-        // reactivation guard below, which only ever fired on the "can dispatch" definition of live
-        // (any state -> Active).
-        var becomesArchiveBlocking = request.State is not null
-            && request.State != IntegrationState.Retired
-            && existing.State == IntegrationState.Retired;
-
-        if (!becomesArchiveBlocking)
-        {
-            // No archive-blocking transition: behave exactly as before the CTX-3B follow-on -- no gate,
-            // no transaction, so ordinary field-only updates carry no added overhead.
-
-            // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
-            // it owns may become live again. Only fires on the transition INTO Active; other field
-            // updates on an already-non-Active integration under an archived context remain allowed.
-            if (request.State == IntegrationState.Active && existing.State != IntegrationState.Active)
-            {
-                await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
-                    existing.ResourceContextId, _resourceContexts, "activating this integration", cancellationToken).ConfigureAwait(false);
-            }
-
-            var updated = MergeUpdate(existing, request);
-            await _integrationRepository.UpdateAsync(updated, cancellationToken);
-            return updated;
-        }
-
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
-
-            // Gate first: Retired -> {Active, Inactive} makes this Integration archive-blocking, so this
-            // must not interleave with a concurrent Archive evaluating the owning context's ownership
-            // summary (CTX-3B follow-on).
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            // Re-read fresh: `existing` was captured before the gate and may be stale.
-            var fresh = await _integrationRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Integration {id.Value} not found.");
-
-            var actionPhrase = request.State == IntegrationState.Active
-                ? "activating this integration"
-                : "reactivating this integration";
-            await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
-                fresh.ResourceContextId, _resourceContexts, actionPhrase, cancellationToken).ConfigureAwait(false);
-
-            var updated = MergeUpdate(fresh, request);
-            await _integrationRepository.UpdateAsync(updated, cancellationToken).ConfigureAwait(false);
-
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return updated;
-        }).ConfigureAwait(false);
     }
-
-    private static DomainIntegration MergeUpdate(DomainIntegration current, UpdateIntegrationRequest request) =>
-        current with
-        {
-            DisplayName = request.DisplayName ?? current.DisplayName,
-            State = request.State ?? current.State,
-            Settings = request.Settings ?? current.Settings,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
 
     /// <inheritdoc />
     public ValueTask<DomainIntegration> ActivateIntegrationAsync(IntegrationId id, CancellationToken cancellationToken = default) =>

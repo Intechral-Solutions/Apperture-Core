@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
@@ -498,7 +499,7 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -531,7 +532,7 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }
@@ -556,7 +557,7 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }
@@ -581,7 +582,7 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }
@@ -602,7 +603,7 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }

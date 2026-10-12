@@ -166,7 +166,8 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
             _integrationRepository,
             new ResourceContextService(new SqlResourceContextRepository(Db), TimeProvider.System),
             Db,
-            new SqlResourceOwnershipMutationGate(Db));
+            new SqlResourceOwnershipMutationGate(Db),
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
     /// <summary>An ordinary (non-sensitive, non-provider-backed) Integration-scoped setting key.</summary>
     public string SettingKey => PlatformSettingTestDefinitions.IntegrationScopedTextKey;

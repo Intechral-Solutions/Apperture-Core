@@ -63,6 +63,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         SubscriptionAdd,
         RoutingUpsert,
         RoutingClear,
+        IntegrationUpdate,
     }
 
     public static IEnumerable<object[]> Cases() =>
@@ -136,7 +137,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(() => writer);
         thrown.GetType().Should().Be(
-            IsSettingsWriter(kind) ? typeof(KeyNotFoundException) : typeof(InvalidOperationException),
+            ExpectedRefusal(kind),
             "a removed integration is a plain refusal, never an audit invariant or a database error");
         thrown.Message.Should().Contain(ctx.IntegrationId);
 
@@ -300,7 +301,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -350,6 +351,12 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
     // ---- wiring ----
 
     private AuditSqlScratch Scratch(bool rcsi) => rcsi ? _catalogs.Rcsi : _catalogs.Locking;
+
+    /// <summary>The exact refusal a writer that wakes to a removed integration throws.</summary>
+    private static Type ExpectedRefusal(WriterKind kind) =>
+        IsSettingsWriter(kind) ? typeof(KeyNotFoundException)
+        : kind == WriterKind.IntegrationUpdate ? typeof(IntegrationNotFoundException)
+        : typeof(InvalidOperationException);
 
     private static bool IsSettingsWriter(WriterKind kind) =>
         kind is WriterKind.SettingSet or WriterKind.SecretReplace or WriterKind.SecretClear or WriterKind.SettingReset;
@@ -437,6 +444,19 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                     await Routing(db).ClearIntegrationRoutingAsync(
                         new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, reauthorize: recheck);
                     break;
+                case WriterKind.IntegrationUpdate:
+                    // The audited update: its own operation lock, then the integration row (a rename takes no ownership gate).
+                    await new IntegrationManagementService(
+                            principal,
+                            new AllowAll(),
+                            new SqlIntegrationRepository(db),
+                            new ResourceContextService(new SqlResourceContextRepository(db), TimeProvider.System),
+                            db,
+                            new SqlResourceOwnershipMutationGate(db),
+                            auditedUnitOfWork: NewUnit(db, principal))
+                        .UpdateIntegrationAsync(
+                            new IntegrationId(integrationId), new UpdateIntegrationRequest(DisplayName: "Renamed " + Guid.NewGuid().ToString("N")[..6]));
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind));
             }
@@ -476,6 +496,9 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                 break;
             case WriterKind.RoutingClear:
                 after.Routings.Should().Be(before.Routings - 1, "the override that existed before the writer waited was removed");
+                break;
+            case WriterKind.IntegrationUpdate:
+                after.AuditLogs.Should().Be(before.AuditLogs + 1, "the one integration.updated row");
                 break;
         }
     }

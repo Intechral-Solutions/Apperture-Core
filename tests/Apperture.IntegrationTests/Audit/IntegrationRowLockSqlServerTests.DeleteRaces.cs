@@ -95,7 +95,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
         var refused = await Capture(writer);
 
         refused.Should().NotBeNull("the integration is gone by the time the writer holds its row");
-        refused!.GetType().Should().Be(IsSettingsWriter(kind) ? typeof(KeyNotFoundException) : typeof(InvalidOperationException));
+        refused!.GetType().Should().Be(ExpectedRefusal(kind));
 
         (await IntegrationExistsAsync(scratch, integrationId)).Should().BeFalse();
         var after = await StateAsync(scratch, integrationId);
@@ -317,7 +317,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -334,7 +334,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
             results.OfType<SqlException>().Should().BeEmpty($"round {round}: no deadlock victim ({DeadlockVictim}) or lock failure");
             results.OfType<DbUpdateException>().Should().BeEmpty($"round {round}");
             results.Where(r => r is not null).Should().OnlyContain(
-                r => r is KeyNotFoundException || r is IntegrationDeleteBlockedException || r.GetType() == typeof(InvalidOperationException),
+                r => r is KeyNotFoundException || r is IntegrationDeleteBlockedException || r.GetType() == typeof(InvalidOperationException) || r is IntegrationNotFoundException,
                 $"round {round}: every failure is a refusal by the protocol");
 
             var state = await StateAsync(scratch, integrationId);
@@ -461,9 +461,13 @@ public sealed partial class IntegrationRowLockSqlServerTests
         scratch.ScalarAsync<int>(
             $"""
             SELECT COUNT(*) FROM AuditLogs
-            WHERE TargetId LIKE N'{integrationId}:%'
-              AND Action IN (N'{AuditActionNames.IntegrationSettingSet}', N'{AuditActionNames.IntegrationSettingReset}',
-                             N'{AuditActionNames.IntegrationSettingSecretStored}', N'{AuditActionNames.IntegrationSettingSecretRetired}')
+            WHERE (TargetId LIKE N'{integrationId}:%'
+                   AND Action IN (N'{AuditActionNames.IntegrationSettingSet}', N'{AuditActionNames.IntegrationSettingReset}',
+                                  N'{AuditActionNames.IntegrationSettingSecretStored}', N'{AuditActionNames.IntegrationSettingSecretRetired}')
+                   OR TargetId = N'{integrationId}'
+                   AND Action IN (N'{AuditActionNames.IntegrationCreated}', N'{AuditActionNames.IntegrationUpdated}',
+                                  N'{AuditActionNames.IntegrationActivated}', N'{AuditActionNames.IntegrationDeactivated}',
+                                  N'{AuditActionNames.IntegrationRetired}'))
               AND OperationEventId <> (SELECT OperationEventId FROM AuditLogs d WHERE d.Action = N'{AuditActionNames.IntegrationDeleted}' AND d.TargetId = N'{integrationId}')
               AND Id > (SELECT Id FROM AuditLogs d WHERE d.Action = N'{AuditActionNames.IntegrationDeleted}' AND d.TargetId = N'{integrationId}');
             """);
