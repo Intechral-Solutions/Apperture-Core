@@ -861,7 +861,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 new BindingEligibilityService(connectionRepository, connectorRegistry),
                 integrationRepository,
                 db,
-                gate);
+                gate,
+                auditedUnitOfWork: new TransactionOnlyUnit(db));
 
             var schedules = new SqlScheduleManagementService(
                 scheduleRepository,

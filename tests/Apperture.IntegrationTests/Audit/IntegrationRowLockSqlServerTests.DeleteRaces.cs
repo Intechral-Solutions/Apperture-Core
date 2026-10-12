@@ -103,6 +103,8 @@ public sealed partial class IntegrationRowLockSqlServerTests
         after.Definitions.Should().Be(0);
         after.Subscriptions.Should().Be(0);
         after.Routings.Should().Be(0);
+        after.Bindings.Should().Be(0, "no binding is added to a deleted integration");
+        after.Schedules.Should().Be(0, "no schedule is added to a deleted integration");
         var secretsAfter = await SecretCountsAsync(scratch);
         secretsAfter.Descriptors.Should().Be(secretsBefore.Descriptors, "the writer stored no secret");
         secretsAfter.Versions.Should().Be(secretsBefore.Versions, "the writer added no version");
@@ -317,7 +319,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear, WriterKind.IntegrationUpdate,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -387,12 +389,13 @@ public sealed partial class IntegrationRowLockSqlServerTests
     // ---- wiring for the delete ----
 
     private static bool AddsABlocker(WriterKind kind) =>
-        kind is WriterKind.DefinitionCreate or WriterKind.SubscriptionAdd or WriterKind.RoutingUpsert;
+        kind is WriterKind.DefinitionCreate or WriterKind.SubscriptionAdd or WriterKind.RoutingUpsert or WriterKind.BindingCreate;
 
     private static IntegrationDeleteBlocker BlockerOf(WriterKind kind) => kind switch
     {
         WriterKind.DefinitionCreate => IntegrationDeleteBlocker.NotificationDefinitions,
         WriterKind.SubscriptionAdd => IntegrationDeleteBlocker.NotificationSubscriptions,
+        WriterKind.BindingCreate => IntegrationDeleteBlocker.Bindings,
         _ => IntegrationDeleteBlocker.AttentionRoutings,
     };
 
@@ -467,7 +470,9 @@ public sealed partial class IntegrationRowLockSqlServerTests
                    OR TargetId = N'{integrationId}'
                    AND Action IN (N'{AuditActionNames.IntegrationCreated}', N'{AuditActionNames.IntegrationUpdated}',
                                   N'{AuditActionNames.IntegrationActivated}', N'{AuditActionNames.IntegrationDeactivated}',
-                                  N'{AuditActionNames.IntegrationRetired}'))
+                                  N'{AuditActionNames.IntegrationRetired}')
+                   OR Action IN (N'{AuditActionNames.BindingCreated}', N'{AuditActionNames.ScheduleCreated}')
+                   AND JSON_VALUE(Details, N'$.integrationId') = N'{integrationId}')
               AND OperationEventId <> (SELECT OperationEventId FROM AuditLogs d WHERE d.Action = N'{AuditActionNames.IntegrationDeleted}' AND d.TargetId = N'{integrationId}')
               AND Id > (SELECT Id FROM AuditLogs d WHERE d.Action = N'{AuditActionNames.IntegrationDeleted}' AND d.TargetId = N'{integrationId}');
             """);

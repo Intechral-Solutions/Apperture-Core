@@ -5,6 +5,7 @@ using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
@@ -64,6 +65,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         RoutingUpsert,
         RoutingClear,
         IntegrationUpdate,
+        BindingCreate,
     }
 
     public static IEnumerable<object[]> Cases() =>
@@ -301,7 +303,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear, WriterKind.IntegrationUpdate,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -444,6 +446,22 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                     await Routing(db).ClearIntegrationRoutingAsync(
                         new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, reauthorize: recheck);
                     break;
+                case WriterKind.BindingCreate:
+                    // The audited binding create: operation lock, ownership gate, then the integration row, then the connection row.
+                    await EnsureSharedConnectionAsync(scratch);
+                    await new BindingService(
+                            principal,
+                            new AllowAll(),
+                            new SqlBindingRepository(db),
+                            new SqlConnectionRepository(db),
+                            new EveryConnectionEligible(db),
+                            new SqlIntegrationRepository(db),
+                            db,
+                            new SqlResourceOwnershipMutationGate(db),
+                            NewUnit(db, principal))
+                        .CreateBindingAsync(
+                            "Sample.Mod", "slot-" + Guid.NewGuid().ToString("N")[..6], "Contract.Type", new ConnectionId(SharedConnectionId), new IntegrationId(integrationId));
+                    break;
                 case WriterKind.IntegrationUpdate:
                     // The audited update: its own operation lock, then the integration row (a rename takes no ownership gate).
                     await new IntegrationManagementService(
@@ -500,6 +518,10 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
             case WriterKind.IntegrationUpdate:
                 after.AuditLogs.Should().Be(before.AuditLogs + 1, "the one integration.updated row");
                 break;
+            case WriterKind.BindingCreate:
+                after.Bindings.Should().Be(before.Bindings + 1);
+                after.AuditLogs.Should().Be(before.AuditLogs + 1, "the one binding.created row");
+                break;
         }
     }
 
@@ -543,6 +565,34 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         new(enabled, true, true, true, TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(10), null, null);
 
     // ---- data ----
+
+    private const string SharedConnectionId = "conn-w3-shared";
+    private const string EmptyJson = "{}";
+
+    /// <summary>One Active connection in the Shared context that every binding writer of a catalog binds. Idempotent.</summary>
+    private static Task EnsureSharedConnectionAsync(AuditSqlScratch scratch) =>
+        scratch.ExecuteAsync(
+            $"""
+            IF NOT EXISTS (SELECT 1 FROM Connections WHERE Id = N'{SharedConnectionId}')
+              INSERT INTO Connections (Id, ConnectorDefinitionId, Name, ConfigJson, SecretRefsJson, ResourceContextId, State, LastVerificationStatus)
+              VALUES (N'{SharedConnectionId}', N'test.connector', N'Shared Connection', N'{EmptyJson}', N'{EmptyJson}', N'shared', 0, 0);
+            """);
+
+    /// <summary>Every stored connection is eligible: these races are about locks, not about connector contracts.</summary>
+    private sealed class EveryConnectionEligible(AppertureDbContext db) : IBindingEligibilityService
+    {
+        public async ValueTask<IReadOnlyList<Connection>> GetEligibleConnectionsAsync(
+            string moduleId,
+            string slotName,
+            string contractType,
+            ResourceContextId? owningResourceContextId = null,
+            CancellationToken cancellationToken = default)
+        {
+            var repository = new SqlConnectionRepository(db);
+            var connection = await repository.GetByIdAsync(new ConnectionId(SharedConnectionId), cancellationToken);
+            return connection is null ? [] : [connection];
+        }
+    }
 
     private static async Task<string> NewIntegrationAsync(AuditSqlScratch scratch)
     {
@@ -612,7 +662,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
     // ---- state and blocking ----
 
     private sealed record State(
-        int Values, string Secrets, int Versions, int SecretAudits, int AuditLogs, int Definitions, int Subscriptions, int Routings);
+        int Values, string Secrets, int Versions, int SecretAudits, int AuditLogs, int Definitions, int Subscriptions, int Routings, int Bindings, int Schedules);
 
     private static async Task<State> StateAsync(AuditSqlScratch scratch, string integrationId)
     {
@@ -628,12 +678,14 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
               (SELECT COUNT(*) FROM AuditLogs) AS AuditLogs,
               (SELECT COUNT(*) FROM NotificationDefinitions WHERE IntegrationId = N'{integrationId}') AS Defs,
               (SELECT COUNT(*) FROM NotificationSubscriptions WHERE IntegrationId = N'{integrationId}') AS Subs,
-              (SELECT COUNT(*) FROM IntegrationAttentionRoutings WHERE IntegrationId = N'{integrationId}') AS Routs;
+              (SELECT COUNT(*) FROM IntegrationAttentionRoutings WHERE IntegrationId = N'{integrationId}') AS Routs,
+              (SELECT COUNT(*) FROM Bindings WHERE IntegrationId = N'{integrationId}') AS Binds,
+              (SELECT COUNT(*) FROM ScheduleDefinitions WHERE IntegrationId = N'{integrationId}') AS Scheds;
             """);
         var row = rows.Single();
         return new State(
             (int)row["Vals"]!, (string)row["Secrets"]!, (int)row["Versions"]!, (int)row["SecretAudits"]!,
-            (int)row["AuditLogs"]!, (int)row["Defs"]!, (int)row["Subs"]!, (int)row["Routs"]!);
+            (int)row["AuditLogs"]!, (int)row["Defs"]!, (int)row["Subs"]!, (int)row["Routs"]!, (int)row["Binds"]!, (int)row["Scheds"]!);
     }
 
     /// <summary>

@@ -43,6 +43,13 @@ public interface IBindingRepository
     ValueTask<Binding?> GetByIdAsync(BindingId id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a binding by id and, on a relational provider, locks its row (<c>UPDLOCK, ROWLOCK</c>) until the ambient transaction
+    /// ends, so a second delete of the same binding waits and then finds it gone. Untracked, so an execution-strategy rerun reads
+    /// afresh. Must be called inside an open transaction. AUD-1.4 slice 4.
+    /// </summary>
+    ValueTask<Binding?> GetByIdForUpdateAsync(BindingId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets all bindings that reference the given connection. Used for Used In projection.
     /// </summary>
     ValueTask<IReadOnlyList<Binding>> GetByConnectionIdAsync(ConnectionId connectionId, CancellationToken cancellationToken = default);

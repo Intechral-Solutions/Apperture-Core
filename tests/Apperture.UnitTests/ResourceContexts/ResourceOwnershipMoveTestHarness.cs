@@ -97,7 +97,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             new BindingEligibilityService(ConnectionRepository, connectorRegistry),
             IntegrationRepository,
             _db,
-            ownershipGate);
+            ownershipGate,
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,

@@ -85,7 +85,7 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             ResourceContexts,
             Db,
             ownershipGate,
-            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
+            auditedUnitOfWork: AuditUnit);
 
         ConnectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -111,7 +111,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             Eligibility,
             IntegrationRepository,
             Db,
-            ownershipGate);
+            ownershipGate,
+            AuditUnit);
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
@@ -152,6 +153,9 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
     public IConnectionManagementService Connections { get; }
     public IBindingEligibilityService Eligibility { get; }
     public IBindingService Bindings { get; }
+
+    /// <summary>The recording audited unit the integration, binding and schedule services of this harness share.</summary>
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork AuditUnit { get; } = new();
     public IScheduleManagementService Schedules { get; }
     public IRunQueryService RunQueryService { get; }
 
