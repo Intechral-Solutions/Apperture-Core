@@ -152,6 +152,34 @@ Every change below is one audited unit: the change and its one audit row commit 
 - A binding that another request deleted first is still a quiet no-op (the HTTP routes answer 404 or 204 as before). There is no unique index on a binding slot: two creates for one slot are serialized by the integration row lock and the second is refused as "already bound".
 - Audit data excludes integration settings keys and values, schedule recurrence, time zone, target configuration and execution policy, and anything a connection holds. A binding records the connection's id, which is an entity id and not a secret reference.
 
+## Connection, application and ownership-move lifecycle
+
+Every change below is one audited unit: the change, anything that moves with it, and its audit rows commit together or not at all, and a commit whose acknowledgement is lost is verified from the committed row and reported as the success it was. A commit that could be neither confirmed nor ruled out is **500** with `code: outcome_unknown`; a verified commit whose result could not be read back is **500** `committed_result_unavailable`. Request and response shapes, permissions and the success and refusal statuses of the existing routes are unchanged except where this section says so.
+
+| Operation | Route | Audit row |
+|---|---|---|
+| Create connection | `POST /api/connections` | `connection.created` (Configuration): name, connector, how many secret fields were stored; plus one `connection.secret.stored` (Secrets) per stored field |
+| Update connection | `PATCH /api/connections/{id}` | `connection.updated` (Configuration): the names of the changed config fields; or `connection.secret_rotated` (Secrets, elevated) when any secret field changed, counting the fields, plus one `connection.secret.stored` per field whose material was stored |
+| Retire connection | `DELETE /api/connections/{id}` | `connection.retired` |
+| Verify connection | `POST /api/connections/{id}/test-connect` | `connection.verified` (basis `external_attempt`): what the verifier answered (`succeeded` for a success, `failed` for a failure or a verifier that threw, `unknown` for an unavailable answer), never its summary |
+| Browse structure | `POST /api/connections/{id}/tools/sql-structure/{schemas\|tables\|columns}` | `connection.structure_browsed` (required event): the operation, how it ended and counts, never what was browsed; or `connection.structure_browse_failed` (attempt) when the request threw or was cancelled |
+| Create Application | `POST /api/resource-contexts` | `resource_context.created` (Governance): name and slug |
+| Update Application | `PATCH /api/resource-contexts/{id}` | `resource_context.updated`: the names of the changed fields (name, slug, description) |
+| Archive, unarchive Application | `POST /api/resource-contexts/{id}/archive`, `/unarchive` | `resource_context.archived`, `resource_context.unarchived` |
+| Move integration, connection, schedule | `POST /api/integrations/{id}/ownership/move`, `/api/connections/{id}/ownership/move`, `/api/schedules/{id}/ownership/move` | `{integration\|connection\|schedule}.ownership.moved_out` (related to the source context) and `.moved_in` (related to the target), sharing one correlation id; an integration move counts its attached schedules and lists their ids (up to 500). A blocked move: `.ownership.move_rejected` (attempt, related to the source), written after the unit |
+
+**What changed for callers**
+
+- **A connection credential changes only if the request commits.** A request that supplies `SecretValues` stores the material inside the same transaction as the connection row and its audit rows. A refusal, a failed save, a failed audit write or an uncommitted unknown outcome leaves the previous credential live, and a failed create leaves no secret behind. Before, the new version was activated first and a later failure left it live.
+- **A request that changes nothing records nothing.** Retiring a retired connection, an unchanged connection `PATCH`, an Application `PATCH` that changes no field, archiving an archived Application and unarchiving an active one (the reserved Shared context included) answer as before and write nothing.
+- **A connection `PATCH` merges over the connection as it is when the update runs**, so two overlapping updates of different fields both survive. **Verification writes only the verification columns**, so a rename, rotation or retirement made while the remote host was being probed is kept (a retired connection used to be written back as Active).
+- **An Application `PATCH` is all or nothing.** It used to commit a rename before a refused re-slug and audit the rename; the refusal now leaves nothing changed. A create or re-slug that loses a race on the slug is the same **400** as a slug already in use (it was an unmapped **500**).
+- **Archiving while the ownership gate is busy is a retryable `409`** with `code: ownership_operation_busy`, like every other ownership route (it was a **500**).
+- **A browse that threw or was cancelled** is recorded as `connection.structure_browse_failed`; a remote refusal is a delivered answer and is recorded as `connection.structure_browsed`. A browse whose required row cannot be written returns no result.
+- **Routes no longer report a programming error of an audited write as a refusal.** The connection, Application and move routes exclude an audit invariant from their `InvalidOperationException` mapping.
+- A blocked move still answers with its preview and changes nothing. Its rejection row is written after the transaction as a best-effort attempt of the same principal.
+- Audit data excludes config values, secret values and references, connection strings, the verifier's summary and what a remote system returned. A secret is identified only by the connection and the connector's declared field name.
+
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.

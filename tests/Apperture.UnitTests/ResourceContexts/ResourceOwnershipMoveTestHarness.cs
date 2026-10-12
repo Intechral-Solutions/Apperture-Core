@@ -1,10 +1,10 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
@@ -16,6 +16,7 @@ using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using AuditEvent = Apperture.Core.Application.Audit.AuditEvent;
 using DomainIntegration = Apperture.Core.Domain.Integration.Integration;
 
 namespace Apperture.UnitTests.ResourceContexts;
@@ -33,7 +34,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
     private readonly AppertureDbContext _db;
     private int _nextSequence;
 
-    public ResourceOwnershipMoveTestHarness(string? grantedAction = "any", string? grantedResourceType = "any", IAuditService? audit = null)
+    public ResourceOwnershipMoveTestHarness(string? grantedAction = "any", string? grantedResourceType = "any", IAuditedUnitOfWork? moveUnit = null, bool withoutAuditedUnit = false)
     {
         _db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
@@ -119,36 +120,40 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             ScheduleRepository,
             BindingRepository,
             ResourceContexts,
-            _db,
             ownershipGate,
-            audit ?? Audit);
+            withoutAuditedUnit ? null : moveUnit ?? MoveUnit,
+            AuditWriter);
     }
 
     public IResourceOwnershipMoveService Service { get; }
 
     /// <summary>
-    /// The recording double most tests inspect via <c>.Records</c>. Always constructed, even when a test
-    /// substitutes a different <see cref="IAuditService"/> (e.g. <see cref="ThrowingAuditService"/>) into
-    /// the real <see cref="ResourceOwnershipMoveService"/> via the <c>audit:</c> constructor parameter --
-    /// in that case this property simply stays empty, since it was never wired into the service under test.
+    /// The unit the move service runs in: the rows each move staged (the pair of a committed move, none for a blocked one) and
+    /// which operations declared themselves no-ops. Always constructed; a test that passes its own <c>moveUnit</c> to the
+    /// constructor leaves this empty, since it was never wired into the service under test.
     /// </summary>
-    public RecordingAuditService Audit { get; } = new();
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork MoveUnit { get; } = new();
 
-    public sealed class RecordingAuditService : IAuditService
+    /// <summary>The recorder's single-row writer as the move service sees it: the best-effort rows written after a unit (a blocked move's rejection).</summary>
+    internal RecordingAuditEventWriter AuditWriter { get; } = new();
+
+    internal sealed class RecordingAuditEventWriter : IAuditEventWriter
     {
-        private readonly List<AuditRecord> _records = new();
-        public IReadOnlyList<AuditRecord> Records => _records;
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+        private readonly List<AuditEvent> _attempts = [];
+        private readonly List<AuditActor> _actors = [];
+
+        public IReadOnlyList<AuditEvent> Attempts => _attempts;
+        public IReadOnlyList<AuditActor> Actors => _actors;
+
+        public Task WriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("The move service writes no required single-row event.");
+
+        public Task<bool> TryWriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default)
         {
-            _records.Add(record);
-            return ValueTask.CompletedTask;
+            _attempts.Add(auditEvent);
+            _actors.Add(actor);
+            return Task.FromResult(true);
         }
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ResourceOwnershipMoveTestHarness.");
     }
 
     /// <summary>The harness's own <see cref="AppertureDbContext"/>, exposed so fixtures can seed state

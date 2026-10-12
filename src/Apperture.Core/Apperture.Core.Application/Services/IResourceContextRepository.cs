@@ -15,6 +15,18 @@ public interface IResourceContextRepository
     /// <summary>Gets a ResourceContext by id. Returns null when it does not exist.</summary>
     ValueTask<ResourceContext?> GetByIdAsync(ResourceContextId id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets a ResourceContext by id and, on a relational store, holds a row lock (<c>UPDLOCK, ROWLOCK</c>) to the end of the
+    /// open transaction, so two writers of one context serialize and the second reads what the first committed. Returns null when
+    /// it does not exist.
+    /// </summary>
+    /// <remarks>
+    /// The default exists only so in-memory test doubles keep working; it reads without a lock. The lock order is the ownership
+    /// gate first (a writer that takes it), then this row.
+    /// </remarks>
+    ValueTask<ResourceContext?> GetByIdForUpdateAsync(ResourceContextId id, CancellationToken cancellationToken = default) =>
+        GetByIdAsync(id, cancellationToken);
+
     /// <summary>Gets a ResourceContext by normalized slug. Returns null when it does not exist.</summary>
     ValueTask<ResourceContext?> GetBySlugAsync(string normalizedSlug, CancellationToken cancellationToken = default);
 

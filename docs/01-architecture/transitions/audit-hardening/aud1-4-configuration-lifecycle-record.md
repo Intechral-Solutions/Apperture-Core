@@ -1277,8 +1277,8 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 | WP1 | Audit contracts: typed actions, producers and schemas for the connection, context and move families | **Done** (16.5) |
 | WP2 | Connection create, update (rotation) and retire as audited units | **Done** (16.5) |
 | WP3 | Connection verify and structure browse | **Done** (16.5) |
-| WP4 | Resource context create, update, archive and unarchive | Planned |
-| WP5 | Ownership moves (integration, connection, schedule) | Planned |
+| WP4 | Resource context create, update, archive and unarchive | **Done** (16.6) |
+| WP5 | Ownership moves (integration, connection, schedule) | **Done** (16.7) |
 | WP6 | Real-unit concurrency coverage, validation, independent review, closure | Planned |
 
 ### 16.4 Intentional behavior changes
@@ -1292,6 +1292,11 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 | Verification writes only the three verification columns, over the row as locked after the probe | A rename, rotation or retirement made while the remote host was being probed was overwritten, and a retired connection could be written back as Active |
 | A structure browse that threw or was cancelled is the new attempt action `connection.structure_browse_failed` (W3); a browse that returned a result, a remote refusal included, is `connection.structure_browsed` (W2) | A required event cannot be withheld from a result that was never delivered |
 | `connection.secret_rotated` records counts of the fields it changed; the keys are on `connection.updated` and on the per-field `connection.secret.stored` rows | The catalog rule that a Secrets-category event carries ids, closed values, flags and counts only |
+| An Application `PATCH` is all or nothing: it used to commit a rename and then audit it even when a later re-slug was refused | S5-6. The three saves are one unit now, so a refused slug change fails the whole operation and leaves nothing changed |
+| A create or re-slug that loses the race on `UX_ResourceContexts_Slug` is the 400 "slug already in use" | It was an unmapped 500 |
+| Archiving while the ownership gate is busy is a 409 with `code: ownership_operation_busy` | It was an unmapped 500; every other ownership route already answers 409 |
+| A blocked ownership move is recorded after its unit, as a best-effort attempt row, instead of inside the transaction | A unit cannot stage a refusal (S5-5). The answer to the caller is unchanged and the move still changes nothing |
+| The ownership gate is no longer the first statement of a move or an archive: the unit's own operation lock (unique to the operation, so never contended) comes first | The unit's contract (gate section 13.4). It adds no edge to the lock order |
 
 ### 16.5 Connections (work packages 1 to 3)
 
@@ -1310,3 +1315,36 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 **Not changed.** Retire still does not disable the connection's secrets, and an update that points a field at another secret leaves the old one in the store (no secret is retired by a connection change). A request that supplies `SecretValues` for a field already naming a GUID adds a version to that secret without checking that the secret belongs to this connection (secret ownership is by name convention only); recorded as a risk (16.10).
 
 **Tests.** `Slice5AuditEventTests` (unit: catalog classes, schemas, every producer, bounds), `ConnectionLifecycleAuditTests` (unit: staged rows per operation, no-ops, authorization on the locked row, ambiguous commits, verification order and statuses), `ConnectionServiceSharesTheUnitContextTests` (the unit, repository, secret store and gate hold one scoped context), `ConnectionToolAccessTests` and `ConnectionToolInvocationTests` (browse over a recording event writer); SQL Server: `ConnectionLifecycleSqlServerTests` (66: M7 for six operations on both isolation modes; the M6 matrix; every way a rotation can fail, each proving the previous credential still resolves and nothing of the new one exists; queued rotations, rotation with retirement, rename with config change, rotation across a move) and `ConnectionVerifyBrowseSqlServerTests` (37: the committed record, the probe outside any transaction, a rename, config change, rotation or retirement made during the probe kept, the record waiting for the row, the M6 matrix, the browse's required row withholding the result when it cannot be written, attempt rows, a broken attempt writer not masking the exception). Seeding writes no audit row (the audit table is append-only); each case that needs an empty audit table takes a catalog of its own.
+
+### 16.6 Resource contexts (work package 4)
+
+**Create, update, archive, unarchive** are audited units around the unchanged `ResourceContextService` rules. `ResourceContextService` keeps saving through the repository; run inside the unit, those saves are inside its transaction, so no in-transaction variant was needed.
+
+| Operation | Inside the attempt, in order |
+|---|---|
+| Create | The service chooses the identity, so a verified commit after a lost acknowledgement is reconstructed from the primary row's target; the slug availability read and the insert; a lost race on `UX_ResourceContexts_Slug` is recognised and answered as the slug-in-use refusal; `resource_context.created` |
+| Update | The context row, locked (`GetByIdForUpdateAsync`, new); the up-to-three changes the request may carry; the changed fields counted by comparing before and after each delegate (a re-slug that normalizes to the stored slug saves nothing); `resource_context.updated` naming them, or a declared no-op |
+| Archive | The ownership gate, then the context row (locked), then the "nothing live" evaluation and the state change; `resource_context.archived`. Archiving an archived context is a declared no-op. The summary read for the 409 body stays outside the unit, after the refusal |
+| Unarchive | The context row (locked), the state change; `resource_context.unarchived`, or a declared no-op for an active context |
+
+**Lock order (S5-7).** The gate-first order of every ownership writer is unchanged. The new context row lock is taken after the gate by archive, and alone (no gate) by update and unarchive: neither can make anything live or move anything, and a creation into the context still takes the gate and reads the state it finds. No cycle is possible: the gated paths only read the context row, and update and unarchive wait for nothing but that row. A test pins that update and unarchive are not held up by a mover holding the gate while archive waits for it.
+
+**Authorization** is the unchanged instance-scoped `resource_context.manage` check, evaluated before the unit opens. The controller still reads the context first, so an unknown id answers 404 before authorization (an existing property, not changed here).
+
+**Tests.** `ResourceContextManagementServiceTests` (unit, 27: staged rows per operation, names not values, no-ops, the refused re-slug, ambiguous commits, the gate observed for archive and not for update or unarchive, the missing unit), `ResourceContextsControllerAuditMappingTests` (3), the extended `ManagementServiceTestHarness`; SQL Server `ResourceContextSqlServerTests` (40: M7 for four operations on both isolation modes; the M6 matrix; the refused re-slug rolling the rename back; no-op requests leaving the row version alone; the slug race resolved by an uncommitted insert held in another session; an archive refused for live ownership changing nothing; update and unarchive not held by the gate while archive waits; two updates queued on the row both kept).
+
+### 16.7 Ownership moves (work package 5)
+
+**One unit per move** replacing the hand-rolled gated transaction of each family. Inside the attempt, in order: the ownership gate; the moved row, locked; authorization (`integration.update` or `connection.update` against the row as locked, so a move that committed while this one waited is what the decision reads; `schedule.manage` before the read for a schedule, deliberately, so the exception type cannot reveal whether a schedule exists); the validator preview uses, unchanged; then, for a committed move, the pair of rows and every update: the moved row and, for an integration, each attached schedule from the validator's one authoritative read.
+
+| Row | Class | Target | Related context | Fields |
+|---|---|---|---|---|
+| `*.ownership.moved_out` | primary, W1, basis `change` | the moved resource | the source | name snapshot, source and target context ids, and for an integration `schedulesMoved` (exact) and `scheduleIds` (first 500) |
+| `*.ownership.moved_in` | secondary, W1 | the same | the target | the same |
+| `*.ownership.move_rejected` | W3 attempt, after the unit | the same | the source | name, source and target ids, the sorted distinct blocker codes |
+
+The pair shares the operation's event id as its correlation (they were two separate random ids). A blocked move declares a no-op, so nothing is staged; its rejection is written after the unit with the recorder's single-row writer as a best-effort row of the same principal, and a failure to write it never changes the preview returned (S5-5). A move that committed with a lost acknowledgement returns a result rebuilt from the primary row and the current state: both contexts, an integration's moved schedules, a connection's using integrations; the preview of a move that has already happened cannot be recomputed.
+
+**Locks.** Unchanged: gate, then the moved row. The attached schedules are updated by the narrow ownership update without their own locks, as before, so a schedule writer holding a schedule row simply makes the move wait for it; no writer of a schedule waits for the integration row while holding a schedule row, so no cycle exists. The move still reads bindings, connections and integrations for validation with plain reads under the gate; every writer that could change what those reads decide takes the gate first.
+
+**Tests.** `ResourceMoveAuditTests` (unit, rewritten for staged rows, the recorded rejection, a lost acknowledgement, an unknown outcome, the missing unit, and the DI pin that the unit, repositories and gate share one context while the rejection writer has its own), and the existing move preview, mutation and gate suites unchanged; SQL Server `OwnershipMoveSqlServerTests` (36, replacing the earlier filtering suite that ran over the legacy bridge: M7 for four kinds of move on both isolation modes, the filtering semantics, exactly two rows however many schedules move, a failure after the integration row moved rolling back the integration and its schedules together, a blocked move recorded at the source and nowhere else, a rejection that cannot be written not changing the answer, a move into an archived context, the M6 matrix, a lost acknowledgement returning the rebuilt result) and the earlier `ResourceOwnershipMoveConcurrencySqlServerTests` (10) now running through the converted services.

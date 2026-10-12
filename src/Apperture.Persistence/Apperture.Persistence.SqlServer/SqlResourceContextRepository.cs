@@ -29,6 +29,30 @@ public sealed class SqlResourceContextRepository : IResourceContextRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<ResourceContext?> GetByIdForUpdateAsync(ResourceContextId id, CancellationToken cancellationToken = default)
+    {
+        List<ResourceContextEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: a rerun after a confirmed rollback must not find a stale tracked row. The UPDLOCK hint
+            // lives in the SQL text, so the lock is taken and held to the end of the transaction whatever the tracking.
+            rows = await _db.ResourceContexts
+                .FromSqlInterpolated($"SELECT * FROM [ResourceContexts] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            rows = await _db.ResourceContexts.AsNoTracking()
+                .Where(e => e.Id == id.Value)
+                .ToListAsync(cancellationToken);
+        }
+
+        var entity = rows.SingleOrDefault();
+        return entity is null ? null : ToDomain(entity);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<ResourceContext?> GetBySlugAsync(string normalizedSlug, CancellationToken cancellationToken = default)
     {
         var entity = await _db.ResourceContexts.AsNoTracking()

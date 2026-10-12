@@ -40,6 +40,21 @@ internal sealed class LockedRowHolder : IAsyncDisposable
         return new LockedRowHolder(connection, transaction, (int)(await spid.ExecuteScalarAsync())!);
     }
 
+    /// <summary>
+    /// A session with an open transaction that holds nothing yet. A test then runs its own statements in it (an insert it will not
+    /// commit, for example) to make a writer wait on what those statements lock.
+    /// </summary>
+    public static async Task<LockedRowHolder> BeginAsync(string connectionString)
+    {
+        var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+        await using var spid = connection.CreateCommand();
+        spid.Transaction = transaction;
+        spid.CommandText = "SELECT CAST(@@SPID AS int);";
+        return new LockedRowHolder(connection, transaction, (int)(await spid.ExecuteScalarAsync())!);
+    }
+
     public async Task ExecuteAsync(string sql, params (string Name, string Value)[] parameters)
     {
         await using var command = _connection.CreateCommand();

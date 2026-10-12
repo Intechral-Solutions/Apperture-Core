@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
@@ -59,7 +61,7 @@ public sealed class ResourceContextsController(
             return CreatedAtAction(nameof(Get), new { id = created.Id.Value }, ToDto(created));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException) { return BadRequest(new { error = ex.Message }); }
     }
 
     /// <summary>
@@ -86,7 +88,7 @@ public sealed class ResourceContextsController(
             return Ok(ToDto(updated));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             // A caller without resource_context.manage is rejected above (UnauthorizedAccessException,
             // checked first) regardless of the target; only once authorized does the deterministic
@@ -123,7 +125,8 @@ public sealed class ResourceContextsController(
             return Ok(ToDto(archived));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException)
+        catch (ResourceOwnershipBusyException ex) { return Conflict(new { error = ex.Message, code = ex.Code }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             // A caller without resource_context.manage is rejected above (UnauthorizedAccessException,
             // checked first) regardless of the target. Only once authorized does the deterministic
@@ -157,7 +160,7 @@ public sealed class ResourceContextsController(
             return Ok(ToDto(unarchived));
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException) { return BadRequest(new { error = ex.Message }); }
     }
 
     /// <summary>
