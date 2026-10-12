@@ -60,6 +60,23 @@ public sealed partial class AuditActionCatalogTests
         "integration.settings.secret.retired",
     ];
 
+    /// <summary>Actions AUD-1.4 slice 4 adds (integration, binding and schedule lifecycle).</summary>
+    private static readonly string[] Aud14Slice4Additions =
+    [
+        "integration.created",
+        "integration.updated",
+        "integration.activated",
+        "integration.deactivated",
+        "integration.retired",
+        "binding.created",
+        "binding.deleted",
+        "schedule.created",
+        "schedule.updated",
+        "schedule.enabled",
+        "schedule.disabled",
+        "schedule.assigned",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -68,8 +85,10 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud13Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.3").Select(d => d.Action).Should().BeEquivalentTo(Aud13Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice4Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice4Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length,
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length,
             "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
@@ -291,7 +310,7 @@ public sealed partial class AuditActionCatalogTests
     [Fact]
     public void The_database_check_constraint_spells_exactly_the_closed_vocabulary()
     {
-        var sql = Aud1_AuditFoundation.ClassificationSetCheckSql;
+        var sql = AuditLogSchema.ClassificationSetCheckSql;
         foreach (var (column, values) in new (string, IReadOnlySet<string>)[]
         {
             ("ActorKind", AuditActorKinds.Stored), ("ActorAttribution", AuditAttributions.Stored), ("Category", AuditCategories.All),
@@ -307,7 +326,19 @@ public sealed partial class AuditActionCatalogTests
 
         sql.Should().Contain(NoTrailingSpace("ClassificationState"));
         Aud1_AuditFoundation.ProducerCheckSql.Should().Contain(NoTrailingSpace("Producer")).And.Contain(NoTrailingSpace("DetailsFormat"));
-        AuditLogSchema.ClassificationSetCheckSql.Should().Be(sql);
+        Aud14_BindingTargetType.ClassificationSetCheckSql.Should().Be(sql);
+    }
+
+    [Fact]
+    public void The_binding_migration_changes_only_the_target_vocabulary_of_the_frozen_aud11_check()
+    {
+        var before = Aud1_AuditFoundation.ClassificationSetCheckSql;
+        var after = Aud14_BindingTargetType.ClassificationSetCheckSql;
+
+        after.Should().NotBe(before);
+        after.Replace("N'schedule', N'binding', ", "N'schedule', ", StringComparison.Ordinal).Should().Be(before);
+        InList(before, "TargetType").Should().NotContain(AuditTargetTypes.Binding, "the AUD-1.1 constraint predates the binding target");
+        InList(after, "TargetType").Should().Contain(AuditTargetTypes.Binding);
     }
 
     private static string NoTrailingSpace(string column) => $"DATALENGTH([{column}]) = DATALENGTH(RTRIM([{column}]))";

@@ -408,13 +408,14 @@ Closed vocabulary:
 | Area | Values |
 |---|---|
 | Identity and governance | `user`, `role`, `identity_link`, `external_identity`, `entra_access_request`, `entra_tenant_registration`, `auth_policy` |
-| Configuration | `resource_context`, `integration`, `connection`, `schedule`, `platform_setting`, `integration_setting`, `notification_definition`, `notification_subscription`, `managed_contact`, `operational_team`, `module` |
+| Configuration | `resource_context`, `integration`, `connection`, `schedule`, `binding`, `platform_setting`, `integration_setting`, `notification_definition`, `notification_subscription`, `managed_contact`, `operational_team`, `module` |
 | Operations | `workflow_run`, `operation_run`, `operation_item`, `runtime_instance` |
 | Other | `secret`, `instance` |
 
 - `external_identity` ids use the §10.4 canonical form.
 - A new value needs a gate amendment.
 - A deleted target keeps its id. Its name snapshot goes in `targetName`.
+- **Amendment, 2026-10-12 (AUD-1.4 slice 4, owner ruling):** `binding` is added to the Configuration row. A binding is the unit of a slot delegation (module, slot, and the connection or capability it binds) and has no name of its own, so its events target the binding and carry the owning integration as a field. The vocabulary is also spelled out in the `AuditLogs` classification check constraint, so the amendment is a migration that replaces that constraint with one accepting `binding` (record §15). Nothing about an existing row changes.
 
 ### 11.2 Category
 

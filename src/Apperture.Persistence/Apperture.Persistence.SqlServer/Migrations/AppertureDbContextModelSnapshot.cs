@@ -327,7 +327,7 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                             t.HasTrigger("TR_AuditLogs_GuardUpdate");
 
-                            t.HasCheckConstraint("CK_AuditLogs_ClassificationSet", Aud1_AuditFoundation.ClassificationSetCheckSql);
+                            t.HasCheckConstraint("CK_AuditLogs_ClassificationSet", Aud14_BindingTargetType.ClassificationSetCheckSql);
 
                             t.HasCheckConstraint("CK_AuditLogs_Producer", Aud1_AuditFoundation.ProducerCheckSql);
                         });

@@ -167,4 +167,27 @@ public static class AuditActionNames
 
     // AUD-1.4 slice 3, work package 4a: integration hard-delete. Declared by AUD-1.0 as a legacy-bridge entry, converted here.
     public const string IntegrationDeleted = "integration.deleted";
+
+    // AUD-1.4 slice 4: integration, binding and schedule lifecycle. New actions; the writers they describe had no recorder row.
+    // A state change of an integration or the enabled flag of a schedule is named by the transition, so a request that changes
+    // the state and other fields records one row under the transition's action.
+    public const string IntegrationCreated = "integration.created";
+    public const string IntegrationUpdated = "integration.updated";
+    public const string IntegrationActivated = "integration.activated";
+    public const string IntegrationDeactivated = "integration.deactivated";
+    public const string IntegrationRetired = "integration.retired";
+    public const string BindingCreated = "binding.created";
+    public const string BindingDeleted = "binding.deleted";
+    public const string ScheduleCreated = "schedule.created";
+    public const string ScheduleUpdated = "schedule.updated";
+    public const string ScheduleEnabled = "schedule.enabled";
+    public const string ScheduleDisabled = "schedule.disabled";
+    public const string ScheduleAssigned = "schedule.assigned";
+
+    /// <summary>The primary actions an integration update may be recorded under, depending on the state transition it makes.</summary>
+    public static IReadOnlyList<string> IntegrationUpdateActions { get; } =
+        [IntegrationUpdated, IntegrationActivated, IntegrationDeactivated, IntegrationRetired];
+
+    /// <summary>The primary actions a schedule update may be recorded under, depending on whether it changes the enabled flag.</summary>
+    public static IReadOnlyList<string> ScheduleUpdateActions { get; } = [ScheduleUpdated, ScheduleEnabled, ScheduleDisabled];
 }

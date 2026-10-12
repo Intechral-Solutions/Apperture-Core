@@ -778,4 +778,78 @@ internal static class AuditDetailSchemas
         IdField("integrationId", required: false),
         EnumField("reason", true, "enabled"),
     ]);
+
+    // ---- Integration, binding and schedule lifecycle (AUD-1.4 slice 4) ----
+    // The entity is the event's target, so its id is not repeated. Names are snapshots. A change is described by the names of the
+    // fields that differ, never by their values: an integration's settings dictionary and a schedule's recurrence, time zone,
+    // target configuration and execution policy reference have no field that could carry a value.
+
+    /// <summary>The integration fields an update can change, other than its state (named, never valued).</summary>
+    internal static readonly string[] IntegrationChangeFields = ["displayName", "settings"];
+
+    /// <summary>The schedule fields an update can change, other than the enabled flag (named, never valued).</summary>
+    internal static readonly string[] ScheduleChangeFields = ["name", "recurrence", "timeZone"];
+
+    private static readonly string[] IntegrationStateValues = ["active", "inactive", "retired"];
+
+    internal static readonly AuditDetailSchema IntegrationCreated = new(
+    [
+        NameField("name"),
+        IdField("moduleId", required: false),
+        FlagField("settingsProvided"),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationUpdated = new(
+    [
+        NameField("name"),
+        IdField("moduleId", required: false),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: true, MaxItems: 4),
+    ]);
+
+    internal static readonly AuditDetailSchema IntegrationStateChanged = new(
+    [
+        NameField("name"),
+        IdField("moduleId", required: false),
+        EnumField("fromState", true, IntegrationStateValues),
+        EnumField("toState", true, IntegrationStateValues),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: false, MaxItems: 4),
+    ]);
+
+    internal static readonly AuditDetailSchema BindingChanged = new(
+    [
+        IdField("moduleId"),
+        IdField("slotName"),
+        IdField("integrationId", required: false),
+        IdField("connectionId", required: false),
+        IdField("capabilityId", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleCreated = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        FlagField("enabled"),
+        IdField("runtimePlaneId", required: false),
+        CountField("assignmentsCreated"),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleUpdated = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: true, MaxItems: 4),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleEnabledChanged = new(
+    [
+        NameField("name"),
+        IdField("integrationId", required: false),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: false, MaxItems: 4),
+    ]);
+
+    internal static readonly AuditDetailSchema ScheduleAssigned = new(
+    [
+        IdField("runtimePlaneId"),
+        FlagField("policyOverridesSet"),
+    ]);
 }
