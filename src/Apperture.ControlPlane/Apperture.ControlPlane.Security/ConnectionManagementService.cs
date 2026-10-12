@@ -187,6 +187,10 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                     .ResolveForNewOwnershipAsync(request.ResourceContextId, ct)
                     .ConfigureAwait(false);
 
+                // The identity is minted here, so no secret can already be owned by this connection: any supplied reference
+                // names someone else's secret (or none) and is refused. Secret material comes in through SecretValues.
+                await _secretProvisioner.EnsureReferencesOwnedAsync(id, normalizedSecretRefs, ct).ConfigureAwait(false);
+
                 // Rebuilt on every attempt: a rerun after a confirmed rollback starts from the request again.
                 var mergedSecretRefs = new Dictionary<string, string>(normalizedSecretRefs, StringComparer.Ordinal);
                 var storedFields = new List<string>();
@@ -316,6 +320,19 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                 ApplyCampusNexusAuthModeDefault(def, baselineConfig);
                 var configChanged = ChangedKeys(baselineConfig, nextConfig);
                 var refsChanged = ChangedKeys(fresh.SecretRefs, workingSecretRefs);
+
+                // A reference this request adds or points elsewhere must be owned by this connection field. So must every
+                // reference when the request changes config: config decides where the credential is sent (a host, a base
+                // URL), so a reference that is not this connection's own must not travel with a new destination. A request
+                // that only renames, or leaves config and references as stored, does not re-prove a legacy reference (such a
+                // row stays editable), but the reference can never be rotated: the provisioner proves ownership of every
+                // reference it adds a version to, whatever the row says. A poisoned reference is repaired by dropping it in
+                // the request that supplies the connection's own material.
+                await _secretProvisioner.EnsureReferencesOwnedAsync(
+                    fresh.Id,
+                    workingSecretRefs.Where(kv => configChanged.Count > 0 || refsChanged.Contains(kv.Key)),
+                    ct).ConfigureAwait(false);
+
                 if (!nameChanged && configChanged.Count == 0 && refsChanged.Count == 0 && materialFields.Count == 0)
                 {
                     transaction.DeclareNoOp();

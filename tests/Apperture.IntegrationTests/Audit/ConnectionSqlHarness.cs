@@ -76,6 +76,20 @@ internal static class ConnectionSqlHarness
         return new Seeded(id.Value, refs.GetValueOrDefault("Password"));
     }
 
+    /// <summary>
+    /// Seeds one more active secret in the real store under an explicit provider and name (no audit row), for the cases that need a
+    /// secret that is, or only looks like, a connection's own.
+    /// </summary>
+    internal static async Task<string> SeedSecretAsync(AuditSqlScratch scratch, string provider, string name, string material)
+    {
+        await using var db = scratch.NewDb();
+        var store = SecretStore(db);
+        var descriptor = await store.CreateAsync(new SecretCreateRequest(name, provider, SecretMaterialType.OpaqueString));
+        var version = await store.AddVersionAsync(descriptor.SecretId, new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: material));
+        await store.ActivateVersionAsync(descriptor.SecretId, version);
+        return descriptor.SecretId.Value.ToString("D");
+    }
+
     /// <summary>Every row an operation can change, the secret store's rows included, as one comparable text.</summary>
     internal static async Task<string> SnapshotAsync(AuditSqlScratch scratch)
     {

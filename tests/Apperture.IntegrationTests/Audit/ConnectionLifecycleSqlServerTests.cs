@@ -308,6 +308,200 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
         (await AuditRowsAsync(scratch, seeded.ConnectionId)).Should().HaveCount(rowsBefore.Count, "neither the second retirement nor the unchanged update recorded anything");
     }
 
+    // ---- Secret reference ownership: a reference proves nothing but the secret it names ----
+
+    private sealed record Victim(string ConnectionId, string SecretRef);
+
+    private static void RevealsNothing(Exception ex, params string[] sentinels)
+    {
+        ex.Should().BeOfType<InvalidOperationException>();
+        foreach (var sentinel in sentinels)
+            ex.ToString().Should().NotContain(sentinel);
+    }
+
+    private static async Task<Exception> RefusalOf(Func<Task> operation)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+
+        throw new Xunit.Sdk.XunitException("the operation was expected to be refused");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Another_connections_secret_can_be_neither_attached_nor_rotated_through_any_request_shape(bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var victim = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+        var attacker = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+        var victimRef = victim.SecretRef!;
+        var attackerId = new ConnectionId(attacker.ConnectionId);
+        var before = await SnapshotAsync(scratch);
+        var auditRowsBefore = (await AuditRowsAsync(scratch)).Count;
+        (await ResolveAsync(scratch, victimRef)).Should().Be(OldSecret, "precondition");
+
+        var shapes = new (string Name, Func<ConnectionManagementService, Task> Run)[]
+        {
+            ("create naming it", s => s.CreateConnectionAsync(new CreateConnectionRequest(
+                Sql, "Stolen", new Dictionary<string, string> { ["Host"] = HostSentinel }, new Dictionary<string, string> { ["Password"] = victimRef })).AsTask()),
+            ("create naming it with material", s => s.CreateConnectionAsync(new CreateConnectionRequest(
+                Sql, "Stolen", new Dictionary<string, string> { ["Host"] = HostSentinel }, new Dictionary<string, string> { ["Password"] = victimRef },
+                SecretValues: new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask()),
+            ("update replacing the reference", s => s.UpdateConnectionAsync(attackerId, new UpdateConnectionRequest(
+                null, null, new Dictionary<string, string> { ["Password"] = victimRef }, null)).AsTask()),
+            ("update replacing the reference and rotating it", s => s.UpdateConnectionAsync(attackerId, new UpdateConnectionRequest(
+                "Renamed too", null, new Dictionary<string, string> { ["Password"] = victimRef }, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask()),
+            ("update naming it in another spelling", s => s.UpdateConnectionAsync(attackerId, new UpdateConnectionRequest(
+                null, null, new Dictionary<string, string> { ["Password"] = victimRef.Replace("-", string.Empty).ToUpperInvariant() }, null)).AsTask()),
+        };
+
+        foreach (var (name, run) in shapes)
+        {
+            await using var db = scratch.NewDb();
+            var ex = await RefusalOf(() => run(Service(db, principal, NewUnit(db, principal))));
+            RevealsNothing(ex, victimRef, victimRef.Replace("-", string.Empty), NewSecret, victim.ConnectionId);
+            (await SnapshotAsync(scratch)).Should().Be(before, $"{name}: nothing was created, attached, versioned or activated");
+            (await AuditRowsAsync(scratch)).Should().HaveCount(auditRowsBefore, $"{name}: a refused request records nothing, a refused create included");
+        }
+
+        (await ResolveAsync(scratch, victimRef)).Should().Be(OldSecret, "the victim still resolves its own credential");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{victimRef}';")).Should().Be(1);
+        (await AuditRowsAsync(scratch, attacker.ConnectionId)).Should().BeEmpty();
+        (await AuditRowsAsync(scratch, victim.ConnectionId)).Should().BeEmpty();
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_row_that_already_names_another_connections_secret_cannot_rotate_it_but_can_still_be_edited_and_repaired(bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var victim = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+        var poisoned = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+        var victimRef = victim.SecretRef!;
+        var poisonedId = new ConnectionId(poisoned.ConnectionId);
+        await scratch.ExecuteAsync(
+            $"UPDATE Connections SET SecretRefsJson = N'{{\"Password\":\"{victimRef}\"}}' WHERE Id = N'{poisoned.ConnectionId}';");
+        var before = await SnapshotAsync(scratch);
+
+        // Rotation is refused whatever the row says, and the refusal changes nothing.
+        await using (var db = scratch.NewDb())
+        {
+            var ex = await RefusalOf(() => Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                poisonedId, new UpdateConnectionRequest(null, null, null, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask());
+            RevealsNothing(ex, victimRef, NewSecret);
+        }
+
+        (await SnapshotAsync(scratch)).Should().Be(before);
+        (await ResolveAsync(scratch, victimRef)).Should().Be(OldSecret);
+
+        // Config decides where the credential is sent, so a config change is refused while the row names a secret that is not its own.
+        await using (var db = scratch.NewDb())
+        {
+            var ex = await RefusalOf(() => Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                poisonedId, new UpdateConnectionRequest(null, new Dictionary<string, string> { ["Host"] = "attacker.example" }, null, null)).AsTask());
+            RevealsNothing(ex, victimRef);
+        }
+
+        (await SnapshotAsync(scratch)).Should().Be(before);
+
+        // A request that only edits metadata is not turned away by a legacy reference, and never touches the secret.
+        await using (var db = scratch.NewDb())
+        {
+            await Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                poisonedId, new UpdateConnectionRequest("Renamed legacy", null, null, null));
+        }
+
+        (await ResolveAsync(scratch, victimRef)).Should().Be(OldSecret);
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{victimRef}';")).Should().Be(1);
+
+        // Dropping the reference while supplying material gives the connection a secret of its own and leaves the victim alone.
+        await using (var db = scratch.NewDb())
+        {
+            await Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                poisonedId, new UpdateConnectionRequest(null, null, new Dictionary<string, string>(), new Dictionary<string, string> { ["Password"] = NewSecret }));
+        }
+
+        var repaired = (await ConnectionRefsAsync(scratch, poisoned.ConnectionId)).Single();
+        repaired.Should().NotBe(victimRef);
+        (await ResolveAsync(scratch, repaired)).Should().Be(NewSecret);
+        (await scratch.ScalarAsync<string>($"SELECT Name FROM SecretDescriptors WHERE Id = '{repaired}';")).Should().Be($"connection:{poisoned.ConnectionId}:Password");
+        (await scratch.ScalarAsync<string>($"SELECT Provider FROM SecretDescriptors WHERE Id = '{repaired}';")).Should().Be("platform-connection");
+        (await ResolveAsync(scratch, victimRef)).Should().Be(OldSecret, "the victim's credential was never touched");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{victimRef}';")).Should().Be(1);
+        (await AuditRowsAsync(scratch, poisoned.ConnectionId)).Select(r => (string)r["Action"]!).Should().Contain(AuditActionNames.ConnectionSecretStored);
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
+    [Theory]
+    [InlineData(false, "platform-setting", "connection:{0}:Password")]
+    [InlineData(false, "platform-connection", "connection:{0}:Database")]
+    [InlineData(true, "platform-connection", "connection:{0}:password")]
+    [InlineData(true, "platform-connection", "connection:{0}:Password:x")]
+    public async Task A_secret_with_the_wrong_provider_or_a_different_field_name_is_not_this_connections_secret(bool rcsi, string provider, string nameFormat)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var seeded = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+        var lookalike = await SeedSecretAsync(scratch, provider, string.Format(nameFormat, seeded.ConnectionId), OldSecret);
+        var before = await SnapshotAsync(scratch);
+
+        await using (var db = scratch.NewDb())
+        {
+            var ex = await RefusalOf(() => Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                new ConnectionId(seeded.ConnectionId),
+                new UpdateConnectionRequest(null, null, new Dictionary<string, string> { ["Password"] = lookalike }, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask());
+            RevealsNothing(ex, lookalike, NewSecret);
+        }
+
+        (await SnapshotAsync(scratch)).Should().Be(before);
+        (await ResolveAsync(scratch, lookalike)).Should().Be(OldSecret);
+        (await ResolveAsync(scratch, seeded.SecretRef!)).Should().Be(OldSecret);
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task First_time_provisioning_creates_a_secret_named_for_the_connection_and_its_field(bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var seeded = await SeedConnectionAsync(scratch, principal, withMaterial: false);
+
+        await using (var db = scratch.NewDb())
+        {
+            await Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                new ConnectionId(seeded.ConnectionId), new UpdateConnectionRequest(null, null, null, new Dictionary<string, string> { ["Password"] = NewSecret }));
+        }
+
+        var created = (await ConnectionRefsAsync(scratch, seeded.ConnectionId)).Single();
+        (await ResolveAsync(scratch, created)).Should().Be(NewSecret);
+        (await scratch.ScalarAsync<string>($"SELECT Name FROM SecretDescriptors WHERE Id = '{created}';")).Should().Be($"connection:{seeded.ConnectionId}:Password");
+        (await scratch.ScalarAsync<string>($"SELECT Provider FROM SecretDescriptors WHERE Id = '{created}';")).Should().Be("platform-connection");
+
+        // And the next rotation is an ordinary rotation of that secret: the reference now proves itself.
+        await using (var db = scratch.NewDb())
+        {
+            await Service(db, principal, NewUnit(db, principal)).UpdateConnectionAsync(
+                new ConnectionId(seeded.ConnectionId), new UpdateConnectionRequest(null, null, null, new Dictionary<string, string> { ["Password"] = OldSecret }));
+        }
+
+        (await ResolveAsync(scratch, created)).Should().Be(OldSecret);
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretVersions WHERE SecretId = '{created}';")).Should().Be(2);
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
     // ---- Waiting on the connection row (the lock a move and every connection writer take) ----
 
     [Theory]
@@ -459,7 +653,7 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
                     [AuditActionNames.ConnectionCreated],
                     (db, unit) => Service(db, principal, unit).CreateConnectionAsync(new CreateConnectionRequest(
                         Sql, name, new Dictionary<string, string> { ["Host"] = HostSentinel },
-                        new Dictionary<string, string> { ["Password"] = Guid.NewGuid().ToString("D") })).AsTask(),
+                        new Dictionary<string, string>())).AsTask(),
                     rows =>
                     {
                         Detail(rows.Single(), "fieldsStored").Should().Be("0");
@@ -522,12 +716,15 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
             case Op.RotateRef:
             {
                 var seeded = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+
+                // Pointing the field at another secret is allowed only when that secret is this connection's own.
+                var replacement = await SeedSecretAsync(scratch, "platform-connection", $"connection:{seeded.ConnectionId}:Password", NewSecret);
                 return new Arranged(
                     seeded.ConnectionId,
                     [AuditActionNames.ConnectionSecretRotated],
                     (db, unit) => Service(db, principal, unit).UpdateConnectionAsync(
                         new ConnectionId(seeded.ConnectionId),
-                        new UpdateConnectionRequest(null, null, new Dictionary<string, string> { ["Password"] = Guid.NewGuid().ToString("D") }, null)).AsTask(),
+                        new UpdateConnectionRequest(null, null, new Dictionary<string, string> { ["Password"] = replacement }, null)).AsTask(),
                     rows => Detail(rows.Single(), "fieldsRotated").Should().Be("1"));
             }
 
