@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Diagnostics;
@@ -31,6 +33,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
     private readonly INotificationInstanceStore _instanceStore;
     private readonly NotificationDispatchProcessor _dispatchProcessor;
     private readonly IEmailNotificationChannel _emailChannel;
+    private readonly IAuditEventWriter _auditEvents;
     private readonly TimeProvider _time;
     private readonly ILogger<NotificationPipelineTestService> _logger;
     private readonly string _managementHostBaseUrl;
@@ -49,6 +52,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
         INotificationInstanceStore instanceStore,
         NotificationDispatchProcessor dispatchProcessor,
         IEmailNotificationChannel emailChannel,
+        IAuditEventWriter auditEvents,
         TimeProvider time,
         IConfiguration configuration,
         ILogger<NotificationPipelineTestService> logger)
@@ -66,12 +70,23 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
         _instanceStore = instanceStore;
         _dispatchProcessor = dispatchProcessor;
         _emailChannel = emailChannel;
+        _auditEvents = auditEvents;
         _time = time;
         _logger = logger;
         var raw = configuration["ShellUi:ManagementHostUrl"];
         _managementHostBaseUrl = string.IsNullOrWhiteSpace(raw) ? "" : raw.Trim().TrimEnd('/');
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>A live send reaches the SMTP server from this request, after the authorization check and with no database transaction
+    /// open. What it did is recorded afterwards as one W3 <c>external_attempt</c> row, <c>notification.diagnostics.smtp_test_attempted</c>,
+    /// of the operator who asked: <c>accepted</c> (the server took the message, never delivery), <c>rejected</c> (the server refused
+    /// a recipient or the message), <c>failed</c> (another transport error after the attempt began) or <c>no_answer</c> (cancelled,
+    /// timed out or lost: the message may or may not have left, recorded as outcome unknown). A request that never reached the transport (no recipient, or email not configured)
+    /// is a separate <c>notification.diagnostics.test_refused</c> attempt row. The recipient, the subject, the body and the
+    /// transport's error text are never recorded.</para>
+    /// </remarks>
     public async ValueTask<NotificationSmtpTestResult> SendSmtpTestEmailAsync(
         NotificationSmtpTestRequest request,
         CancellationToken cancellationToken = default)
@@ -88,6 +103,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
 
         if (string.IsNullOrWhiteSpace(request.RecipientEmail))
         {
+            await RecordRefusedAsync("smtp", "invalid_input").ConfigureAwait(false);
             return new NotificationSmtpTestResult(
                 false,
                 "Recipient email is required.",
@@ -112,15 +128,45 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
                 ActionUrl: string.IsNullOrWhiteSpace(_managementHostBaseUrl) ? "/config/notifications/diagnostics" : $"{_managementHostBaseUrl}/config/notifications/diagnostics",
                 InstanceBaseUrl: string.IsNullOrWhiteSpace(_managementHostBaseUrl) ? null : _managementHostBaseUrl));
 
-        var sendResult = await _emailChannel
-            .SendAsync(
-                new EmailNotificationSendRequest(
-                    request.RecipientEmail.Trim(),
-                    "[Apperture] SMTP diagnostics test",
-                    composed.PlainTextBody,
-                    composed.HtmlBody),
-                cancellationToken)
-            .ConfigureAwait(false);
+        // The send is made here, outside any transaction, and recorded after the observation: acceptance is not delivery.
+        EmailNotificationSendResult sendResult;
+        try
+        {
+            sendResult = await _emailChannel
+                .SendAsync(
+                    new EmailNotificationSendRequest(
+                        request.RecipientEmail.Trim(),
+                        "[Apperture] SMTP diagnostics test",
+                        composed.PlainTextBody,
+                        composed.HtmlBody),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // A channel that threw gave no answer: the message may or may not have left (a cancellation included).
+            await _auditEvents.TryWriteAsync(
+                AuditEvents.NotificationSmtpTestAttempted("no_answer"),
+                AuditActor.CurrentPrincipal,
+                CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        if (sendResult.Observed == EmailSendDisposition.NotAttempted)
+        {
+            // Nothing was sent: the channel is not configured, or the address could not be used.
+            var configured = string.Equals(sendResult.FailureSummary, AttentionNotificationSuppressionReasons.SmtpNotConfigured, StringComparison.Ordinal)
+                || string.Equals(sendResult.FailureSummary, AttentionNotificationSuppressionReasons.SmtpFromNotConfigured, StringComparison.Ordinal)
+                || string.Equals(sendResult.FailureSummary, SmtpEmailNotificationChannel.CredentialUnavailable, StringComparison.Ordinal);
+            await RecordRefusedAsync("smtp", configured ? "not_configured" : "invalid_input").ConfigureAwait(false);
+        }
+        else
+        {
+            await _auditEvents.TryWriteAsync(
+                AuditEvents.NotificationSmtpTestAttempted(SendResultName(sendResult.Observed)),
+                AuditActor.CurrentPrincipal,
+                CancellationToken.None).ConfigureAwait(false);
+        }
 
         if (sendResult.Succeeded)
         {
@@ -146,6 +192,37 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
             now);
     }
 
+    /// <summary>
+    /// What a live pipeline test did, collected by the run and recorded once afterwards. A dry run changes nothing and records nothing.
+    /// </summary>
+    private sealed class PipelineAudit
+    {
+        public string? DefinitionId { get; set; }
+
+        /// <summary>The run reached the point of persisting its synthetic event (and so created state, whatever came of it).</summary>
+        public bool Persisted { get; set; }
+
+        public string? RefusedReason { get; set; }
+
+        public bool DispatchRequested { get; set; }
+
+        public int InstancesCreated { get; set; }
+
+        public int OutboxRowsCreated { get; set; }
+
+        public NotificationDispatchTally Tally { get; } = new();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>A live run (not a dry run) persists a platform event, notification instances and outbox rows and, when asked to dispatch
+    /// immediately, sends <b>only the outbox rows of the instance it created</b> (it used to claim the oldest pending rows of the whole
+    /// system, so an operator's test could send other people's notifications). The send is made by this request, outside any
+    /// transaction. One W3 row, <c>notification.diagnostics.pipeline_test_attempted</c>, of the operator who asked is written afterwards
+    /// with the counts the dispatcher itself observed for those rows: sends attempted, accepted (never delivery), rejected, failed and
+    /// unknown (cancelled before an answer). Its outcome is <c>requested</c> when no send was made. A run refused before it persisted
+    /// anything is a <c>notification.diagnostics.test_refused</c> row. Addresses, subjects, bodies and error text are never recorded.</para>
+    /// </remarks>
     public async ValueTask<PlatformNotificationPipelineTestResult> RunPlatformPipelineTestAsync(
         PlatformNotificationPipelineTestRequest request,
         CancellationToken cancellationToken = default)
@@ -153,17 +230,79 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
         await _authorization.RequirePlatformManageAsync(cancellationToken).ConfigureAwait(false);
         await _authorization.RequireIntegrationReadAsync(request.IntegrationId, cancellationToken).ConfigureAwait(false);
 
+        var audit = new PipelineAudit();
+        try
+        {
+            return await RunPlatformPipelineCoreAsync(request, audit, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!request.DryRun)
+                await RecordPipelineAsync(request, audit).ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask RecordPipelineAsync(PlatformNotificationPipelineTestRequest request, PipelineAudit audit)
+    {
+        if (audit.RefusedReason is not null)
+        {
+            await RecordRefusedAsync("pipeline", audit.RefusedReason).ConfigureAwait(false);
+            return;
+        }
+
+        if (!audit.Persisted || audit.DefinitionId is null)
+            return;
+
+        var tally = audit.Tally;
+        await _auditEvents.TryWriteAsync(
+            AuditEvents.NotificationPipelineTestAttempted(
+                audit.DefinitionId,
+                request.IntegrationId,
+                audit.DispatchRequested,
+                audit.InstancesCreated,
+                audit.OutboxRowsCreated,
+                tally.Attempted,
+                tally.Accepted,
+                tally.Rejected,
+                tally.Failed,
+                tally.Unknown,
+                resourceContextId: null),
+            AuditActor.CurrentPrincipal,
+            CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private ValueTask RecordRefusedAsync(string test, string reason) =>
+        new(_auditEvents.TryWriteAsync(
+            AuditEvents.NotificationDiagnosticsTestRefused(test, reason),
+            AuditActor.CurrentPrincipal,
+            CancellationToken.None));
+
+    private static string SendResultName(EmailSendDisposition observed) => observed switch
+    {
+        EmailSendDisposition.Accepted => "accepted",
+        EmailSendDisposition.Rejected => "rejected",
+        EmailSendDisposition.NoAnswer => "no_answer",
+        _ => "failed",
+    };
+
+    private async ValueTask<PlatformNotificationPipelineTestResult> RunPlatformPipelineCoreAsync(
+        PlatformNotificationPipelineTestRequest request,
+        PipelineAudit audit,
+        CancellationToken cancellationToken)
+    {
         var now = _time.GetUtcNow();
         var definitionId = string.IsNullOrWhiteSpace(request.DefinitionId)
             ? NotificationDefinitionIds.PlatformScheduleExpectedRunMissing
             : request.DefinitionId.Trim();
         var testIncidentId = $"diag_test_{Guid.NewGuid():N}";
         var stages = new List<NotificationPipelineTestStageResult>();
+        audit.DefinitionId = definitionId;
 
         var configStage = EvaluateConfigurationStage();
         stages.Add(configStage);
         if (configStage.Status == NotificationPipelineTestStageStatuses.Failed)
         {
+            audit.RefusedReason = "not_configured";
             return BuildResult(
                 request,
                 definitionId,
@@ -186,6 +325,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
             .ConfigureAwait(false);
         if (definition is null || !definition.IsEnabled)
         {
+            audit.RefusedReason = "no_definition";
             stages.Add(new NotificationPipelineTestStageResult(
                 NotificationPipelineTestStages.RuleEvaluation,
                 NotificationPipelineTestStageStatuses.Failed,
@@ -206,6 +346,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
 
         if (match.Status != NotificationMatchStatus.Matched)
         {
+            audit.RefusedReason = "no_definition";
             stages.Add(new NotificationPipelineTestStageResult(
                 NotificationPipelineTestStages.RuleEvaluation,
                 NotificationPipelineTestStageStatuses.Failed,
@@ -271,6 +412,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
         }
 
         PlatformEventEnvelope saved;
+        audit.Persisted = true;
         try
         {
             saved = await _platformEventEmitter
@@ -301,6 +443,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
             .ConfigureAwait(false);
 
         var instance = instances.OrderByDescending(i => i.CreatedAtUtc).FirstOrDefault();
+        await CountCreatedStateAsync(audit, request.IntegrationId, testIncidentId, cancellationToken).ConfigureAwait(false);
         if (instance is null)
         {
             stages.Add(new NotificationPipelineTestStageResult(
@@ -361,9 +504,10 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
 
         if (request.DispatchImmediately && outboxRows.Count > 0)
         {
+            audit.DispatchRequested = true;
             if (!_delivery.Value.Enabled)
             {
-                await _dispatchProcessor.ProcessBatchAsync(cancellationToken).ConfigureAwait(false);
+                await _dispatchProcessor.ProcessInstanceAsync(instance.Id, audit.Tally, cancellationToken).ConfigureAwait(false);
                 dispatchNote = "Dispatch ran in dry-run mode (Notifications:Delivery:Enabled=false) — outbox rows remain pending.";
                 stages.Add(new NotificationPipelineTestStageResult(
                     NotificationPipelineTestStages.SmtpDispatch,
@@ -372,7 +516,7 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
             }
             else
             {
-                await _dispatchProcessor.ProcessBatchAsync(cancellationToken).ConfigureAwait(false);
+                await _dispatchProcessor.ProcessInstanceAsync(instance.Id, audit.Tally, cancellationToken).ConfigureAwait(false);
                 outboxRows = await _instanceStore.ListOutboxForInstanceAsync(instance.Id, cancellationToken).ConfigureAwait(false);
                 sent = outboxRows.Count(r => r.Status == NotificationOutboxStatuses.Succeeded);
                 failed = outboxRows.Count(r => r.Status == NotificationOutboxStatuses.Failed);
@@ -418,6 +562,27 @@ public sealed class NotificationPipelineTestService : INotificationPipelineTestS
             pending,
             dispatchNote,
             now);
+    }
+
+    /// <summary>Counts the instances the run created for its synthetic incident, whichever definition matched, and their outbox rows.</summary>
+    private async ValueTask CountCreatedStateAsync(PipelineAudit audit, string integrationId, string incidentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await _instanceStore
+                .ListAsync(new NotificationInstanceListQuery(IntegrationId: integrationId, AttentionIncidentId: incidentId, Take: 50), cancellationToken)
+                .ConfigureAwait(false);
+            audit.InstancesCreated = created.Count;
+            var rows = 0;
+            foreach (var created1 in created)
+                rows += (await _instanceStore.ListOutboxForInstanceAsync(created1.Id, cancellationToken).ConfigureAwait(false)).Count;
+            audit.OutboxRowsCreated = rows;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Counting is for the audit row only; the run's own result does not depend on it.
+            _logger.LogWarning(ex, "Counting the state created by the diagnostics pipeline test failed.");
+        }
     }
 
     private NotificationPipelineTestStageResult EvaluateConfigurationStage()

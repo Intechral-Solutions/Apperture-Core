@@ -16,13 +16,13 @@ internal static class SmtpEmailTransport
         CancellationToken cancellationToken)
     {
         if (!options.Enabled)
-            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured);
+            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured, EmailSendDisposition.NotAttempted);
 
         if (string.IsNullOrWhiteSpace(options.SmtpHost))
-            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured);
+            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpNotConfigured, EmailSendDisposition.NotAttempted);
 
         if (string.IsNullOrWhiteSpace(options.FromAddress))
-            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpFromNotConfigured);
+            return new EmailNotificationSendResult(false, null, AttentionNotificationSuppressionReasons.SmtpFromNotConfigured, EmailSendDisposition.NotAttempted);
 
         try
         {
@@ -44,15 +44,55 @@ internal static class SmtpEmailTransport
                     : new NetworkCredential(options.SmtpUser, smtpPassword ?? string.Empty),
             };
             await client.SendMailAsync(message, cancellationToken).ConfigureAwait(false);
-            return new EmailNotificationSendResult(true, null, null);
+            return new EmailNotificationSendResult(true, null, null, EmailSendDisposition.Accepted);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "SMTP send failed for recipient {Recipient}.", request.Recipient);
             // SmtpClient often uses a generic outer message ("Failure sending mail.");
             // operators need the inner chain in diagnostics / outbox LastError.
-            return new EmailNotificationSendResult(false, null, FormatExceptionChain(ex));
+            return new EmailNotificationSendResult(false, null, FormatExceptionChain(ex), Classify(ex, cancellationToken));
         }
+    }
+
+    /// <summary>
+    /// What a failed send tells us about the attempt: a cancelled call has no answer (the message may have left), a server that refused a
+    /// recipient or the message was reachable and said no, and anything else is a transport error.
+    /// </summary>
+    internal static EmailSendDisposition Classify(Exception ex, CancellationToken cancellationToken)
+    {
+        // An address the platform could not even build is a failure before any call: nothing was sent.
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is FormatException)
+                return EmailSendDisposition.NotAttempted;
+        }
+
+        // A cancelled call, a timeout and a connection that broke after the session began have no answer: the message may have left.
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException or TimeoutException or System.IO.IOException
+                || current is System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.TimedOut or System.Net.Sockets.SocketError.ConnectionReset or System.Net.Sockets.SocketError.ConnectionAborted }
+                || (current is SmtpException timedOut && timedOut.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase)))
+            {
+                return EmailSendDisposition.NoAnswer;
+            }
+        }
+
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is SmtpFailedRecipientException or SmtpFailedRecipientsException)
+                return EmailSendDisposition.Rejected;
+            if (current is SmtpException smtp
+                && smtp.StatusCode is SmtpStatusCode.MailboxUnavailable or SmtpStatusCode.MailboxBusy or SmtpStatusCode.MailboxNameNotAllowed
+                    or SmtpStatusCode.UserNotLocalTryAlternatePath or SmtpStatusCode.UserNotLocalWillForward
+                    or SmtpStatusCode.ExceededStorageAllocation or SmtpStatusCode.TransactionFailed)
+            {
+                return EmailSendDisposition.Rejected;
+            }
+        }
+
+        return EmailSendDisposition.Failed;
     }
 
     internal static string FormatExceptionChain(Exception ex)

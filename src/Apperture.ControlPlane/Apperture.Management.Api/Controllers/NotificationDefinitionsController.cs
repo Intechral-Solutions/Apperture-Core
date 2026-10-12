@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Notifications;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
@@ -87,7 +88,7 @@ public sealed class NotificationDefinitionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -121,7 +122,7 @@ public sealed class NotificationDefinitionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -136,7 +137,7 @@ public sealed class NotificationDefinitionsController : ControllerBase
             return await _definitions.DeleteAsync(id, cancellationToken).ConfigureAwait(false) ? NoContent() : NotFound();
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
-        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException) { return Conflict(new { error = ex.Message }); }
     }
 
     [HttpPatch("{id}/enabled")]
@@ -205,7 +206,7 @@ public sealed class NotificationDefinitionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -234,7 +235,7 @@ public sealed class NotificationDefinitionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }

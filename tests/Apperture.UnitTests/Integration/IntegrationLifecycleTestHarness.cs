@@ -125,7 +125,7 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
                 _integrationRepository),
             principalContext,
             _integrationRepository,
-            Audit);
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         Subscriptions = new SqlNotificationSubscriptionStore(Db);
 

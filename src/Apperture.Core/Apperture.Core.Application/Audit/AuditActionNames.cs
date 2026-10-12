@@ -216,6 +216,38 @@ public static class AuditActionNames
     public const string ScheduleMovedIn = "schedule.ownership.moved_in";
     public const string ScheduleMoveRejected = "schedule.ownership.move_rejected";
 
+    // AUD-1.4 slice 6: notification definitions and their subscriptions. notification.definition.deleted was declared by AUD-1.0 as a
+    // legacy-bridge entry and is converted here. The definition (or subscription) is the target. A user opt-out targets the opt-out row.
+    public const string NotificationDefinitionCreated = "notification.definition.created";
+    public const string NotificationDefinitionUpdated = "notification.definition.updated";
+    public const string NotificationDefinitionEnabled = "notification.definition.enabled";
+    public const string NotificationDefinitionDisabled = "notification.definition.disabled";
+    public const string NotificationDefinitionDeleted = "notification.definition.deleted";
+    public const string NotificationSubscriptionAdded = "notification.subscription.added";
+    public const string NotificationSubscriptionRemoved = "notification.subscription.removed";
+    public const string NotificationSubscriptionUpdated = "notification.subscription.updated";
+    public const string NotificationSubscriptionUserOptOutSet = "notification.subscription.user_opt_out_set";
+    public const string NotificationSubscriptionUserOptOutRemoved = "notification.subscription.user_opt_out_removed";
+
+    // AUD-1.4 slice 6: managed contacts (the notification recipient directory). Contact addresses and display names belong to a third
+    // party and are never recorded; a contact is identified by its id.
+    public const string ManagedContactCreated = "managed_contact.created";
+    public const string ManagedContactUpdated = "managed_contact.updated";
+    public const string ManagedContactUserLinked = "managed_contact.user_linked";
+    public const string ManagedContactUserUnlinked = "managed_contact.user_unlinked";
+    public const string ManagedContactGroupImported = "managed_contact.group_imported";
+
+    // AUD-1.4 slice 6: notification diagnostics. A live SMTP test or pipeline test is an external attempt (W3): the row says what
+    // the platform observed, never that a message was delivered. A test that was refused before any external call is a separate
+    // attempt row.
+    public const string NotificationSmtpTestAttempted = "notification.diagnostics.smtp_test_attempted";
+    public const string NotificationPipelineTestAttempted = "notification.diagnostics.pipeline_test_attempted";
+    public const string NotificationDiagnosticsTestRefused = "notification.diagnostics.test_refused";
+
+    /// <summary>The primary actions a definition enable or disable request may be recorded under.</summary>
+    public static IReadOnlyList<string> NotificationDefinitionEnableActions { get; } =
+        [NotificationDefinitionEnabled, NotificationDefinitionDisabled];
+
     /// <summary>The primary actions a connection update may be recorded under, depending on whether it rotates a secret field.</summary>
     public static IReadOnlyList<string> ConnectionUpdateActions { get; } = [ConnectionUpdated, ConnectionSecretRotated];
 

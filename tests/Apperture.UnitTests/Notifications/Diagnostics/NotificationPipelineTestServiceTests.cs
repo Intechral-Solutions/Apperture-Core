@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Diagnostics;
@@ -11,6 +13,7 @@ using Apperture.Core.Domain.Notifications;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -207,7 +210,11 @@ public sealed class NotificationPipelineTestServiceTests
         INotificationRecipientResolver? recipients = null,
         IPlatformEventEmitter? emitter = null,
         INotificationInstanceStore? instances = null,
-        bool instancesEnabled = true)
+        bool instancesEnabled = true,
+        RecordingAuditEventWriter? events = null,
+        INotificationDeliveryOutboxStore? outbox = null,
+        bool deliveryEnabled = true,
+        bool emailEnabled = true)
     {
         var auth = new NotificationDefinitionAuthorization(
             new FixedPrincipalContext(new StubActor("user:admin", "Admin")),
@@ -216,10 +223,10 @@ public sealed class NotificationPipelineTestServiceTests
             new StubIntegrationRepo());
 
         var dispatch = new NotificationDispatchProcessor(
-            Mock.Of<INotificationDeliveryOutboxStore>(),
+            outbox ?? Mock.Of<INotificationDeliveryOutboxStore>(),
             instances ?? Mock.Of<INotificationInstanceStore>(),
             emailChannel ?? Mock.Of<IEmailNotificationChannel>(),
-            Options.Create(new NotificationDeliveryOptions { Enabled = true }),
+            Options.Create(new NotificationDeliveryOptions { Enabled = deliveryEnabled, MaxAttempts = 5, BatchSize = 10 }),
             TimeProvider.System,
             NullLogger<NotificationDispatchProcessor>.Instance);
 
@@ -228,10 +235,10 @@ public sealed class NotificationPipelineTestServiceTests
             Options.Create(new PlatformEventsOptions { Enabled = true }),
             Options.Create(new NotificationEvaluationOptions { Enabled = true }),
             Options.Create(new NotificationInstanceOptions { Enabled = instancesEnabled }),
-            Options.Create(new NotificationDeliveryOptions { Enabled = true }),
+            Options.Create(new NotificationDeliveryOptions { Enabled = deliveryEnabled }),
             Options.Create(new EmailNotificationOptions
             {
-                Enabled = true,
+                Enabled = emailEnabled,
                 SmtpHost = "smtp.example.com",
                 FromAddress = "noreply@example.com",
             }),
@@ -242,12 +249,382 @@ public sealed class NotificationPipelineTestServiceTests
             instances ?? Mock.Of<INotificationInstanceStore>(),
             dispatch,
             emailChannel ?? Mock.Of<IEmailNotificationChannel>(),
+            events ?? new RecordingAuditEventWriter(),
             TimeProvider.System,
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ShellUi:ManagementHostUrl"] = "http://localhost:9001",
             }).Build(),
             NullLogger<NotificationPipelineTestService>.Instance);
+    }
+
+    // ---- AUD-1.4 slice 6: the live sends are recorded as external attempts ----
+
+    private const string RecipientSentinel = "private.recipient@example.com";
+    private const string ErrorSentinel = "550 5.1.1 <private.recipient@example.com> user unknown at mx.internal.example";
+
+    private static Mock<IEmailNotificationChannel> ChannelReturning(EmailNotificationSendResult result)
+    {
+        var channel = new Mock<IEmailNotificationChannel>();
+        channel.Setup(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(result);
+        return channel;
+    }
+
+    private static string Everything(RecordingAuditEventWriter events) =>
+        JsonSerializer.Serialize(events.Written.Select(w => new { w.Event.Action, w.Event.Target, w.Event.OutcomeCode, w.Event.Fields }));
+
+    [Theory]
+    [InlineData(EmailSendDisposition.Accepted, "accepted", AuditOutcomeCodes.Succeeded)]
+    [InlineData(EmailSendDisposition.Rejected, "rejected", AuditOutcomeCodes.Failed)]
+    [InlineData(EmailSendDisposition.Failed, "failed", AuditOutcomeCodes.Failed)]
+    [InlineData(EmailSendDisposition.NoAnswer, "no_answer", AuditOutcomeCodes.Unknown)]
+    public async Task A_live_smtp_test_records_what_the_transport_reported_and_never_delivery(EmailSendDisposition disposition, string result, string outcome)
+    {
+        var events = new RecordingAuditEventWriter();
+        var channel = ChannelReturning(new EmailNotificationSendResult(disposition == EmailSendDisposition.Accepted, null, ErrorSentinel, disposition));
+        var sut = CreateSut(emailChannel: channel.Object, events: events);
+
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest(RecipientSentinel));
+
+        events.Actions.Should().Equal(AuditActionNames.NotificationSmtpTestAttempted);
+        var written = events.Written.Single();
+        written.Event.OutcomeCode.Should().Be(outcome);
+        written.Event.Fields["result"].Should().Be(result);
+        written.Event.Definition.Basis.Should().Be(AuditBases.ExternalAttempt);
+        written.BestEffort.Should().BeTrue("a failed write of the evidence never changes the response");
+        written.Actor.IsCurrentPrincipal.Should().BeTrue("the operator who asked, not a caller-supplied identity");
+        Everything(events).Should().NotContain(RecipientSentinel).And.NotContain("mx.internal.example").And.NotContain("user unknown");
+    }
+
+    [Fact]
+    public async Task A_channel_that_does_not_state_a_disposition_is_read_from_its_success_flag()
+    {
+        var events = new RecordingAuditEventWriter();
+        var sut = CreateSut(emailChannel: ChannelReturning(new EmailNotificationSendResult(true, "msg-1", null)).Object, events: events);
+
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com"));
+
+        events.Single(AuditActionNames.NotificationSmtpTestAttempted).Fields["result"].Should().Be("accepted");
+    }
+
+    [Fact]
+    public async Task A_smtp_test_that_never_reached_the_transport_is_a_refusal_not_an_attempt()
+    {
+        var events = new RecordingAuditEventWriter();
+        var notConfigured = ChannelReturning(new EmailNotificationSendResult(false, null, "smtp_not_configured", EmailSendDisposition.NotAttempted));
+        var sut = CreateSut(emailChannel: notConfigured.Object, events: events);
+
+        var configured = await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com"));
+        var blank = await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("  "));
+
+        configured.Succeeded.Should().BeFalse();
+        blank.Succeeded.Should().BeFalse();
+        events.Actions.Should().Equal(AuditActionNames.NotificationDiagnosticsTestRefused, AuditActionNames.NotificationDiagnosticsTestRefused);
+        events.Written[0].Event.Fields["reason"].Should().Be("not_configured");
+        events.Written[1].Event.Fields["reason"].Should().Be("invalid_input");
+        events.Written.Should().OnlyContain(w => w.Event.OutcomeCode == AuditOutcomeCodes.Rejected && w.Event.Fields["test"].Equals("smtp"));
+        notConfigured.Verify(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()), Times.Once, "the blank recipient never reaches the channel");
+    }
+
+    [Fact]
+    public async Task A_channel_that_throws_gave_no_answer_and_the_exception_still_propagates()
+    {
+        var events = new RecordingAuditEventWriter();
+        var channel = new Mock<IEmailNotificationChannel>();
+        channel.SetupSequence(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException())
+            .ThrowsAsync(new InvalidOperationException(ErrorSentinel));
+        var sut = CreateSut(emailChannel: channel.Object, events: events);
+
+        await FluentActions.Awaiting(() => sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com")).AsTask()).Should().ThrowAsync<OperationCanceledException>();
+        await FluentActions.Awaiting(() => sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com")).AsTask()).Should().ThrowAsync<InvalidOperationException>();
+
+        events.Written.Select(w => (w.Event.Fields["result"], w.Event.OutcomeCode)).Should().Equal(
+            ("no_answer", AuditOutcomeCodes.Unknown), ("no_answer", AuditOutcomeCodes.Unknown));
+        Everything(events).Should().NotContain("mx.internal.example");
+    }
+
+    [Fact]
+    public async Task A_failed_evidence_write_does_not_change_the_smtp_test_response()
+    {
+        var events = new RecordingAuditEventWriter { Fail = true };
+        var sut = CreateSut(emailChannel: ChannelReturning(new EmailNotificationSendResult(true, "m", null)).Object, events: events);
+
+        var result = await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com"));
+
+        result.Succeeded.Should().BeTrue();
+        events.Written.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_dry_run_records_nothing_even_when_it_is_refused()
+    {
+        var events = new RecordingAuditEventWriter();
+        var sut = CreateSut(instancesEnabled: false, events: events);
+
+        await sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: true));
+
+        events.Written.Should().BeEmpty("a dry run persists nothing and sends nothing");
+    }
+
+    [Fact]
+    public async Task A_live_run_refused_by_configuration_is_a_refusal_row()
+    {
+        var events = new RecordingAuditEventWriter();
+        var sut = CreateSut(instancesEnabled: false, events: events);
+
+        await sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false));
+
+        events.Actions.Should().Equal(AuditActionNames.NotificationDiagnosticsTestRefused);
+        events.Written.Single().Event.Fields["test"].Should().Be("pipeline");
+        events.Written.Single().Event.Fields["reason"].Should().Be("not_configured");
+    }
+
+    [Fact]
+    public async Task A_live_run_for_a_missing_definition_is_a_refusal_row()
+    {
+        var events = new RecordingAuditEventWriter();
+        var definitions = new Mock<INotificationDefinitionStore>();
+        definitions.Setup(d => d.GetAsync(It.IsAny<NotificationDefinitionId>(), It.IsAny<CancellationToken>())).ReturnsAsync((NotificationDefinition?)null);
+        var sut = CreateSut(definitions: definitions.Object, events: events);
+
+        await sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false));
+
+        events.Single(AuditActionNames.NotificationDiagnosticsTestRefused).Fields["reason"].Should().Be("no_definition");
+    }
+
+    private sealed record LiveRun(
+        NotificationPipelineTestService Sut,
+        RecordingAuditEventWriter Events,
+        Mock<INotificationDeliveryOutboxStore> Outbox,
+        Mock<IEmailNotificationChannel> Channel,
+        NotificationInstanceId InstanceId);
+
+    /// <summary>A live run that persisted one instance with <paramref name="rows"/> pending outbox rows, dispatched by the real processor.</summary>
+    private static LiveRun ArrangeLive(Func<int, EmailNotificationSendResult> sendFor, int rows = 2, bool deliveryEnabled = true, bool dispatchTrueRows = true)
+    {
+        var events = new RecordingAuditEventWriter();
+        var definition = ExpectedRunMissingNotificationDefinitionSeed.BuiltIn(DateTimeOffset.UtcNow);
+        var definitions = new Mock<INotificationDefinitionStore>();
+        definitions.Setup(d => d.GetAsync(It.IsAny<NotificationDefinitionId>(), It.IsAny<CancellationToken>())).ReturnsAsync(definition);
+        var evaluator = new Mock<INotificationRuleEvaluator>();
+        evaluator.Setup(e => e.EvaluateDefinitionAsync(definition, It.IsAny<NotificationRuleEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NotificationRuleEvaluationResult(definition.Id.Value, NotificationMatchStatus.Matched, NotificationKinds.Activation, NotificationKinds.Activation, null, []));
+        var recipients = new Mock<INotificationRecipientResolver>();
+        recipients.Setup(r => r.ResolvePreviewAsync(definition.Id.Value, "int_test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NotificationRecipientResolutionPreview([], [], []));
+        var emitter = new Mock<IPlatformEventEmitter>();
+        emitter.Setup(e => e.EmitAsync(It.IsAny<PlatformEventEmitRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PlatformEventEnvelope(
+                PlatformEventId.New(), PlatformEventTypes.ScheduleExpectedRunMissing, PlatformEventSources.PlatformReadiness, "1.0", "application/json", "{}",
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, PlatformEventSeverities.Warning, null, null, "int_test", null, null, null, null, null, null, null));
+
+        var instanceId = NotificationInstanceId.From("ninst_1");
+        var instance = new NotificationInstance(
+            instanceId, definition.Id.Value, NotificationKinds.Activation, NotificationInstanceStatuses.Pending, "evt-1", "diag-incident", "int_test",
+            null, null, null, "dedupe", "Subject", "Summary", "Body", null, null, null, null, "hash", "{}", null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var outboxRows = Enumerable.Range(0, rows).Select(i => new NotificationDeliveryOutbox(
+            NotificationDeliveryOutboxId.From($"nout_{i}"), instanceId, $"recipient{i}@example.com", null, null, null, "email",
+            NotificationOutboxStatuses.Pending, 0, null, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)).ToList();
+
+        var instanceStore = new Mock<INotificationInstanceStore>();
+        instanceStore.Setup(i => i.ListAsync(It.IsAny<NotificationInstanceListQuery>(), It.IsAny<CancellationToken>())).ReturnsAsync([instance]);
+        instanceStore.Setup(i => i.GetByIdAsync(instanceId, It.IsAny<CancellationToken>())).ReturnsAsync(instance);
+        instanceStore.Setup(i => i.ListOutboxForInstanceAsync(instanceId, It.IsAny<CancellationToken>())).ReturnsAsync(outboxRows);
+
+        var outbox = new Mock<INotificationDeliveryOutboxStore>();
+        outbox.Setup(o => o.ClaimPendingForInstanceAsync(instanceId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(outboxRows.Select(r => r with { Status = NotificationOutboxStatuses.Delivering }).ToList());
+        outbox.Setup(o => o.TryUpdateAfterAttemptAsync(It.IsAny<NotificationDeliveryOutboxUpdateCommand>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var channel = new Mock<IEmailNotificationChannel>();
+        var call = 0;
+        channel.Setup(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => sendFor(call++));
+
+        var sut = CreateSut(
+            definitions: definitions.Object, evaluator: evaluator.Object, recipients: recipients.Object, emitter: emitter.Object,
+            instances: instanceStore.Object, emailChannel: channel.Object, events: events, outbox: outbox.Object, deliveryEnabled: deliveryEnabled);
+        return new LiveRun(sut, events, outbox, channel, instanceId);
+    }
+
+    private static EmailNotificationSendResult Sent(EmailSendDisposition disposition) =>
+        new(disposition == EmailSendDisposition.Accepted, null, disposition == EmailSendDisposition.Accepted ? null : ErrorSentinel, disposition);
+
+    [Fact]
+    public async Task A_live_run_that_dispatches_sends_only_its_own_instances_rows_and_records_what_the_transport_reported()
+    {
+        var run = ArrangeLive(i => Sent(i == 0 ? EmailSendDisposition.Accepted : EmailSendDisposition.Rejected));
+
+        await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
+
+        run.Outbox.Verify(o => o.ClaimPendingAsync(It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Never,
+            "the test never claims the system's oldest pending rows");
+        run.Outbox.Verify(o => o.ClaimPendingForInstanceAsync(run.InstanceId, It.IsAny<int>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+        run.Events.Actions.Should().Equal(AuditActionNames.NotificationPipelineTestAttempted);
+        var evt = run.Events.Written.Single().Event;
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed, "one send was refused by the server");
+        evt.Fields["dispatchRequested"].Should().Be(true);
+        evt.Fields["instancesCreated"].Should().Be(1);
+        evt.Fields["outboxRowsCreated"].Should().Be(2);
+        evt.Fields["sendsAttempted"].Should().Be(2);
+        evt.Fields["sendsAccepted"].Should().Be(1);
+        evt.Fields["sendsRejected"].Should().Be(1);
+        evt.Fields["sendsFailed"].Should().Be(0);
+        evt.Fields["sendsUnknown"].Should().Be(0);
+        evt.Target.Type.Should().Be(AuditTargetTypes.NotificationDefinition);
+        run.Events.Written.Single().BestEffort.Should().BeTrue();
+        Everything(run.Events).Should().NotContain("example.com").And.NotContain("user unknown");
+    }
+
+    [Fact]
+    public async Task Every_accepted_send_is_a_succeeded_attempt_that_still_does_not_claim_delivery()
+    {
+        var run = ArrangeLive(_ => Sent(EmailSendDisposition.Accepted));
+
+        await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
+
+        var evt = run.Events.Single(AuditActionNames.NotificationPipelineTestAttempted);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        evt.Fields.Keys.Should().NotContain(k => k.Contains("deliver", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task A_send_cancelled_before_an_answer_makes_the_outcome_unknown()
+    {
+        var run = ArrangeLive(i => Sent(i == 0 ? EmailSendDisposition.Accepted : EmailSendDisposition.NoAnswer));
+
+        await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
+
+        var evt = run.Events.Single(AuditActionNames.NotificationPipelineTestAttempted);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Unknown);
+        evt.Fields["sendsUnknown"].Should().Be(1);
+        evt.Fields["sendsAccepted"].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_request_cancelled_during_the_dispatch_still_leaves_its_evidence_and_the_cancellation_propagates()
+    {
+        var run = ArrangeLive(i => i == 0 ? Sent(EmailSendDisposition.Accepted) : throw new OperationCanceledException());
+
+        var act = () => run.Sut.RunPlatformPipelineTestAsync(
+            new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true)).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var evt = run.Events.Single(AuditActionNames.NotificationPipelineTestAttempted);
+        evt.Fields["sendsAccepted"].Should().Be(1, "the send made before the cancellation is not lost");
+        evt.Fields["sendsUnknown"].Should().Be(1, "the send that was cancelled gave no answer");
+        evt.Fields["sendsAttempted"].Should().Be(2);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Unknown);
+    }
+
+    [Fact]
+    public async Task A_live_run_that_does_not_dispatch_records_what_it_persisted_and_claims_a_requested_outcome()
+    {
+        var run = ArrangeLive(_ => Sent(EmailSendDisposition.Accepted));
+
+        await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: false));
+
+        var evt = run.Events.Single(AuditActionNames.NotificationPipelineTestAttempted);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Requested);
+        evt.Fields["dispatchRequested"].Should().Be(false);
+        evt.Fields["outboxRowsCreated"].Should().Be(2);
+        evt.Fields["sendsAttempted"].Should().Be(0);
+        run.Channel.Verify(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task A_dispatch_with_delivery_switched_off_sends_nothing_and_is_not_an_attempt()
+    {
+        var run = ArrangeLive(_ => Sent(EmailSendDisposition.Accepted), deliveryEnabled: false);
+
+        await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
+
+        run.Channel.Verify(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        var evt = run.Events.Single(AuditActionNames.NotificationPipelineTestAttempted);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Requested);
+        evt.Fields["sendsAttempted"].Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_failed_evidence_write_does_not_change_the_pipeline_response()
+    {
+        var run = ArrangeLive(_ => Sent(EmailSendDisposition.Accepted));
+        run.Events.Fail = true;
+
+        var result = await run.Sut.RunPlatformPipelineTestAsync(new PlatformNotificationPipelineTestRequest("int_test", DryRun: false, DispatchImmediately: true));
+
+        result.PlatformEventId.Should().NotBeNull();
+        run.Events.Written.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(typeof(System.Net.Mail.SmtpFailedRecipientException), EmailSendDisposition.Rejected)]
+    [InlineData(typeof(System.Net.Sockets.SocketException), EmailSendDisposition.Failed)]
+    public void The_transport_tells_a_server_refusal_from_a_transport_error(Type exceptionType, EmailSendDisposition expected)
+    {
+        var ex = (Exception)Activator.CreateInstance(exceptionType, nonPublic: true)!;
+
+        SmtpEmailTransport.Classify(ex, CancellationToken.None).Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_call_with_no_answer_is_never_a_failure_because_the_message_may_have_left()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        SmtpEmailTransport.Classify(new OperationCanceledException(), cts.Token).Should().Be(EmailSendDisposition.NoAnswer);
+        SmtpEmailTransport.Classify(new OperationCanceledException(), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer, "a timeout the caller did not ask for has no answer either");
+        SmtpEmailTransport.Classify(new TimeoutException(), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer);
+        SmtpEmailTransport.Classify(new System.Net.Mail.SmtpException("Failure sending mail.", new System.IO.IOException("Unable to read data from the transport connection.")), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NoAnswer, "a connection lost after the session began");
+        SmtpEmailTransport.Classify(new System.Net.Mail.SmtpException("The operation has timed out."), CancellationToken.None).Should().Be(EmailSendDisposition.NoAnswer);
+        SmtpEmailTransport.Classify(new InvalidOperationException(), CancellationToken.None).Should().Be(EmailSendDisposition.Failed);
+    }
+
+    [Fact]
+    public void An_address_the_platform_could_not_build_is_not_an_attempt()
+    {
+        SmtpEmailTransport.Classify(new FormatException("The specified string is not in the form required for an e-mail address."), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NotAttempted);
+        SmtpEmailTransport.Classify(new InvalidOperationException("outer", new FormatException()), CancellationToken.None)
+            .Should().Be(EmailSendDisposition.NotAttempted);
+    }
+
+    [Fact]
+    public async Task A_smtp_test_whose_address_could_not_be_used_is_refused_as_invalid_input_and_one_whose_credential_failed_as_not_configured()
+    {
+        var events = new RecordingAuditEventWriter();
+        var channel = new Mock<IEmailNotificationChannel>();
+        channel.SetupSequence(c => c.SendAsync(It.IsAny<EmailNotificationSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EmailNotificationSendResult(false, null, "The specified string is not in the form required for an e-mail address.", EmailSendDisposition.NotAttempted))
+            .ReturnsAsync(new EmailNotificationSendResult(false, null, SmtpEmailNotificationChannel.CredentialUnavailable, EmailSendDisposition.NotAttempted));
+        var sut = CreateSut(emailChannel: channel.Object, events: events);
+
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("not an address"));
+        await sut.SendSmtpTestEmailAsync(new NotificationSmtpTestRequest("ops@example.com"));
+
+        events.Actions.Should().Equal(AuditActionNames.NotificationDiagnosticsTestRefused, AuditActionNames.NotificationDiagnosticsTestRefused);
+        events.Written.Select(w => w.Event.Fields["reason"]).Should().Equal("invalid_input", "not_configured");
+        Everything(events).Should().NotContain("not an address");
+    }
+
+    [Fact]
+    public async Task The_channel_does_not_send_and_says_so_when_the_credential_cannot_be_resolved()
+    {
+        var credentials = new Mock<IEmailSmtpCredentialResolver>();
+        credentials.Setup(c => c.ResolvePasswordAsync(It.IsAny<EmailNotificationOptions>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("secret store is down"));
+        var channel = new SmtpEmailNotificationChannel(
+            Options.Create(new EmailNotificationOptions { Enabled = true, SmtpHost = "smtp.example.com", FromAddress = "noreply@example.com" }),
+            credentials.Object,
+            NullLogger<SmtpEmailNotificationChannel>.Instance);
+
+        var result = await channel.SendAsync(new EmailNotificationSendRequest("ops@example.com", "s", "b"));
+
+        result.Observed.Should().Be(EmailSendDisposition.NotAttempted);
+        result.FailureSummary.Should().Be(SmtpEmailNotificationChannel.CredentialUnavailable);
     }
 
     private sealed class AllowAuth : IAuthorizationService

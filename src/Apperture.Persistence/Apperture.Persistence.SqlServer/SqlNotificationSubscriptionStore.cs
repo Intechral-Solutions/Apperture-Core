@@ -51,12 +51,69 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
         return row is null ? null : ToDomain(row);
     }
 
+    public async ValueTask<NotificationSubscription?> GetForUpdateAsync(
+        NotificationSubscriptionId id,
+        CancellationToken cancellationToken = default)
+    {
+        List<NotificationSubscriptionEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: a rerun after a confirmed rollback must not find a stale tracked row.
+            rows = await _db.NotificationSubscriptions
+                .FromSqlInterpolated($"SELECT * FROM [NotificationSubscriptions] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            rows = await _db.NotificationSubscriptions.AsNoTracking()
+                .Where(x => x.Id == id.Value)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var row = rows.SingleOrDefault();
+        return row is null ? null : ToDomain(row);
+    }
+
+    public async ValueTask<bool> ExistsAsync(
+        string notificationDefinitionId,
+        string? integrationId,
+        string recipientKind,
+        string recipientRef,
+        CancellationToken cancellationToken = default) =>
+        await _db.NotificationSubscriptions.AsNoTracking()
+            .AnyAsync(
+                x => x.NotificationDefinitionId == notificationDefinitionId
+                     && x.IntegrationId == integrationId
+                     && x.RecipientKind == recipientKind
+                     && x.RecipientRef == recipientRef,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    public async ValueTask<NotificationSubscriptionUserOverride?> FindUserOptOutAsync(
+        string userId,
+        string notificationDefinitionId,
+        string? operationalTeamId,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _db.NotificationSubscriptionUserOverrides.AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.UserId == userId
+                     && x.NotificationDefinitionId == notificationDefinitionId
+                     && x.OperationalTeamId == operationalTeamId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return row is null ? null : ToOverrideDomain(row);
+    }
+
     public async ValueTask<NotificationSubscription> AddAsync(
         NotificationSubscriptionCreateCommand command,
         CancellationToken cancellationToken = default,
         Func<CancellationToken, ValueTask>? reauthorize = null)
     {
-        var id = NotificationSubscriptionId.New();
+        var id = command.Id ?? NotificationSubscriptionId.New();
         var now = DateTimeOffset.UtcNow;
 
         NotificationSubscriptionEntity NewEntity() => new()
@@ -82,6 +139,17 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
             _db.NotificationSubscriptions.Add(plain);
             await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return ToDomain(plain);
+        }
+
+        // Inside an audited unit the unit owns the transaction and the execution strategy: take the lock, insert, and leave the
+        // commit to it.
+        if (_db.Database.IsRelational() && _db.Database.CurrentTransaction is not null)
+        {
+            await IntegrationRowLock.AcquireAsync(_db, command.IntegrationId, reauthorize, cancellationToken).ConfigureAwait(false);
+            var joined = NewEntity();
+            _db.NotificationSubscriptions.Add(joined);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToDomain(joined);
         }
 
         // One transaction: the integration row lock, then the insert, then the commit that releases the lock. The execution
@@ -193,7 +261,7 @@ public sealed class SqlNotificationSubscriptionStore : INotificationSubscription
 
         var entity = new NotificationSubscriptionUserOverrideEntity
         {
-            Id = $"noverride_{Guid.NewGuid():N}",
+            Id = command.OverrideId ?? $"noverride_{Guid.NewGuid():N}",
             UserId = command.UserId,
             NotificationDefinitionId = command.NotificationDefinitionId,
             OperationalTeamId = command.OperationalTeamId,

@@ -71,14 +71,52 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
         return row is null ? null : ToDomain(row);
     }
 
+    public async ValueTask<NotificationDefinition?> GetForUpdateAsync(
+        NotificationDefinitionId id,
+        CancellationToken cancellationToken = default)
+    {
+        List<NotificationDefinitionEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: a rerun after a confirmed rollback must not find a stale tracked row. The UPDLOCK hint
+            // lives in the SQL text, so the lock is taken and held to the end of the transaction whatever the tracking.
+            rows = await _db.NotificationDefinitions
+                .FromSqlInterpolated($"SELECT * FROM [NotificationDefinitions] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            rows = await _db.NotificationDefinitions.AsNoTracking()
+                .Where(x => x.Id == id.Value)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var row = rows.SingleOrDefault();
+        return row is null ? null : ToDomain(row);
+    }
+
     public async ValueTask<NotificationDefinition> CreateUserDefinitionAsync(
         NotificationDefinitionCreateCommand command,
         CancellationToken cancellationToken = default,
         Func<CancellationToken, ValueTask>? reauthorize = null)
     {
-        var id = NotificationDefinitionId.New();
+        var id = command.Id ?? NotificationDefinitionId.New();
         var now = DateTimeOffset.UtcNow;
         var primaryEventType = ExtractPrimaryEventType(command.RuleJson);
+
+        // Inside an audited unit the unit owns the transaction and the execution strategy: take the lock, insert, and leave the
+        // commit to it.
+        if (_db.Database.IsRelational() && _db.Database.CurrentTransaction is not null)
+        {
+            await IntegrationRowLock.AcquireAsync(_db, command.IntegrationId, reauthorize, cancellationToken).ConfigureAwait(false);
+            var joined = NewEntity(id, command, primaryEventType, now);
+            _db.NotificationDefinitions.Add(joined);
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return ToDomain(joined);
+        }
 
         // One transaction: the integration row lock, then the insert, then the commit that releases the lock. The execution
         // strategy owns the transaction, so a retry reruns the whole attempt, lock included.
@@ -91,27 +129,7 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
 
             await IntegrationRowLock.AcquireAsync(_db, command.IntegrationId, reauthorize, cancellationToken).ConfigureAwait(false);
 
-            var entity = new NotificationDefinitionEntity
-            {
-                Id = id.Value,
-                DisplayName = command.DisplayName,
-                Description = command.Description,
-                SourceKind = NotificationSourceKinds.PlatformEvent,
-                Origin = NotificationDefinitionOrigins.UserCreated,
-                Scope = NotificationDefinitionScopes.Integration,
-                Mutability = NotificationDefinitionMutabilities.FullyEditable,
-                IntegrationId = command.IntegrationId,
-                PrimaryEventType = primaryEventType,
-                IsEnabled = command.IsEnabled,
-                DefaultSeverity = command.DefaultSeverity,
-                RuleJson = command.RuleJson,
-                TemplateJson = command.TemplateJson,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now,
-                CreatedByActorId = command.CreatedByActorId,
-                UpdatedByActorId = command.CreatedByActorId,
-                ToastEnabledByDefault = command.ToastEnabledByDefault,
-            };
+            var entity = NewEntity(id, command, primaryEventType, now);
 
             _db.NotificationDefinitions.Add(entity);
             try
@@ -130,6 +148,33 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
             return ToDomain(entity);
         }).ConfigureAwait(false);
     }
+
+    private static NotificationDefinitionEntity NewEntity(
+        NotificationDefinitionId id,
+        NotificationDefinitionCreateCommand command,
+        string? primaryEventType,
+        DateTimeOffset now) =>
+        new()
+        {
+            Id = id.Value,
+            DisplayName = command.DisplayName,
+            Description = command.Description,
+            SourceKind = NotificationSourceKinds.PlatformEvent,
+            Origin = NotificationDefinitionOrigins.UserCreated,
+            Scope = NotificationDefinitionScopes.Integration,
+            Mutability = NotificationDefinitionMutabilities.FullyEditable,
+            IntegrationId = command.IntegrationId,
+            PrimaryEventType = primaryEventType,
+            IsEnabled = command.IsEnabled,
+            DefaultSeverity = command.DefaultSeverity,
+            RuleJson = command.RuleJson,
+            TemplateJson = command.TemplateJson,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+            CreatedByActorId = command.CreatedByActorId,
+            UpdatedByActorId = command.CreatedByActorId,
+            ToastEnabledByDefault = command.ToastEnabledByDefault,
+        };
 
     public async ValueTask<NotificationDefinition?> UpdateAsync(
         NotificationDefinitionId id,
@@ -194,13 +239,19 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
     }
 
     /// <inheritdoc />
-    public async ValueTask<bool> DeleteAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> DeleteAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default) =>
+        await DeleteWithCountsAsync(id, cancellationToken).ConfigureAwait(false) is not null;
+
+    /// <inheritdoc />
+    public async ValueTask<NotificationDefinitionDeleteResult?> DeleteWithCountsAsync(
+        NotificationDefinitionId id,
+        CancellationToken cancellationToken = default)
     {
         var entity = await _db.NotificationDefinitions
             .FirstOrDefaultAsync(x => x.Id == id.Value, cancellationToken)
             .ConfigureAwait(false);
         if (entity is null)
-            return false;
+            return null;
 
         if (entity.Origin is NotificationDefinitionOrigins.PlatformBuiltIn or NotificationDefinitionOrigins.ModuleBuiltIn)
             throw new InvalidOperationException("Built-in notification definitions cannot be deleted.");
@@ -225,7 +276,7 @@ public sealed class SqlNotificationDefinitionStore : INotificationDefinitionStor
 
         // Historical NotificationInstances are deliberately NOT touched.
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+        return new NotificationDefinitionDeleteResult(subscriptions.Count, overrides.Count, userPreferences.Count);
     }
 
     public async ValueTask<bool> ExistsDisplayNameAsync(

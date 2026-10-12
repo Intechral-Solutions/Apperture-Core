@@ -181,6 +181,36 @@ Every change below is one audited unit: the change, anything that moves with it,
 - A blocked move still answers with its preview and changes nothing. Its rejection row is written after the transaction as a best-effort attempt of the same principal.
 - Audit data excludes config values, secret values and references, connection strings, the verifier's summary and what a remote system returned. A secret is identified only by the connection and the connector's declared field name.
 
+## Notification, managed contact and diagnostics lifecycle
+
+Every change below is one audited unit: the change, anything that moves with it, and its audit rows commit together or not at all, and a commit whose acknowledgement is lost is verified from the committed row and reported as the success it was. A request that changes nothing records nothing. The diagnostic sends are the exception that proves the rule: they reach an external server, so they are recorded afterwards as best-effort attempts.
+
+| Operation | Route | Audit row |
+|---|---|---|
+| Create, update definition | `POST /api/notification-definitions`, `PUT /api/notification-definitions/{id}` | `notification.definition.created` (name, integration, enabled, severity, primary event type); `notification.definition.updated` naming the parts that changed (`displayName`, `description`, `rule`, `template`, `enabled`, `severity`, `toastDefault`), never their content |
+| Enable, disable definition | `PATCH /api/notification-definitions/{id}/enabled` | `notification.definition.enabled`, `notification.definition.disabled` |
+| Delete definition | `DELETE /api/notification-definitions/{id}` | `notification.definition.deleted`: the name snapshot and how many subscriptions, user opt-outs and per-user preferences went with it |
+| Add, remove, patch subscription | `POST /api/notification-definitions/{id}/subscriptions`, `DELETE .../subscriptions/{sid}`, `PATCH .../subscriptions/{sid}` | `notification.subscription.added` (recipient kind and id, delivery mode), `.removed`, `.updated` (`enabled`, `disabled` or `delivery_mode`); a subscription that creates its managed contact also records `managed_contact.created` in the same unit |
+| Set, remove user opt-out | `POST`, `DELETE /api/notification-definitions/{id}/user-opt-outs` | `notification.subscription.user_opt_out_set`, `.user_opt_out_removed` (the user and team by id) |
+| Create, update, enable managed contact | `POST /api/managed-contacts`, `PUT .../{id}`, `PUT .../{id}/enabled` | `managed_contact.created` (source, how it was created, whether it has an address), `managed_contact.updated` naming the changed fields |
+| Link, unlink managed contact | `PUT /api/managed-contacts/{id}/link-user`, `/unlink-user` | `managed_contact.user_linked`, `managed_contact.user_unlinked` (elevated; the user by id) |
+| Import directory users, groups | `POST /api/managed-contacts/import/entra-users`, `/import/entra-groups` | One unit per user or group: `managed_contact.created` (via `entra_import`) or `managed_contact.updated`; `managed_contact.group_imported` |
+| SMTP test | `POST /api/notification-diagnostics/smtp-test` | `notification.diagnostics.smtp_test_attempted` (basis `external_attempt`): `accepted`, `rejected`, `failed` or `no_answer`; or `notification.diagnostics.test_refused` when no call was made |
+| Platform pipeline test (live) | `POST /api/notification-diagnostics/platform-pipeline-test` with `dryRun: false` | `notification.diagnostics.pipeline_test_attempted`: what the run persisted and, when it dispatched, the counts of sends attempted, accepted, rejected, failed and unknown; or `test_refused` |
+
+**What changed for callers**
+
+- **A subscription and the managed contact it creates are one change.** `managedContactInput` with `createManagedContactIfMissing` used to commit the contact first, so any later refusal left a contact behind. Both now commit or roll back together.
+- **A subscription's `deliveryMode` is validated on add** (`immediate`, `muted`, `digestOnly` or `immediateAndDigest`, as `PATCH` already did), and a `recipientRef` must be an id: an email address typed there is refused (use `managedContactInput`), because the recipient is recorded by id.
+- **Duplicates and collisions are refusals, not server errors.** Subscribing a recipient who is already subscribed, and renaming a definition onto another definition's name, are `400` (they were an unmapped `500` from the unique index). A managed contact address is unique by an application check that every writer of an address now serializes under one lock, so two concurrent writers of the same address (a manual create, a subscription that creates the contact, a directory import) leave one contact.
+- **Writers re-check authorization once the rows they depend on are locked.** An ownership move that commits while a definition or subscription change waits is what the check reads. Subscriptions attach to a definition under the definition's row lock, so none can be added to a definition that is being deleted.
+- **A change that changes nothing records nothing and no longer moves the row's update time**: setting a definition, subscription or contact to the state it already has, an update with the stored values, linking a contact to the user it is already linked to, an opt-out that already exists.
+- **A directory import keeps its per-user results.** Each user is its own unit, so a failed user does not undo the others. A user whose outcome cannot be established is reported as `importFailed` with the operation id instead of as a success; a user whose contact already matches the directory records nothing (its sync time is still refreshed).
+- **A diagnostic live send is recorded as what was observed.** `accepted` means the SMTP server took the message, never that it was delivered. A call that was cancelled, timed out or lost after the session began is `no_answer` (outcome unknown): the message may or may not have left. An address or credential the platform could not use is a refusal, not an attempt. Evidence is written after the send and is best-effort: a failure to write it never changes the response.
+- **The immediate dispatch of a pipeline test sends only the outbox rows of the instance it created.** It used to claim the oldest pending rows of the whole system, so an operator's test could send other people's notifications and its response counted only its own.
+- **Definition deletes are audited in the same transaction**, with counts and the name snapshot. The earlier row was written after the commit and carried a free-text sentence.
+- Audit data excludes rule and template text, subscriber and contact addresses and names, directory object ids and principal names, the typed-in recipient of a diagnostic, subjects, bodies and the transport's error text. A recipient is identified by id only.
+
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.

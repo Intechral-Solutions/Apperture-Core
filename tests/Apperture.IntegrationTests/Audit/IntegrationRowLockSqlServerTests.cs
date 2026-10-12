@@ -589,7 +589,9 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
             null!,
             null!,
             new NotificationDefinitionAuthorization(principal, allow, allow, new SqlIntegrationRepository(db)),
-            principal);
+            principal,
+            new SqlIntegrationRepository(db),
+            NewUnit(db, principal));
     }
 
     private static AttentionRoutingManagementService Routing(AppertureDbContext db) =>

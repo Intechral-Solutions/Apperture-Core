@@ -1,5 +1,8 @@
+using System.Data;
 using Apperture.Core.Application.Services;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Apperture.Persistence.SqlServer;
 
@@ -18,6 +21,69 @@ public sealed class SqlManagedContactRepository : IManagedContactRepository
             .FirstOrDefaultAsync(x => x.Id == trimmed, cancellationToken)
             .ConfigureAwait(false);
         return row is null ? null : Map(row);
+    }
+
+    public async Task<ManagedContactRepositoryRow?> GetByIdForUpdateAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return null;
+        var trimmed = id.Trim();
+        List<ManagedContactEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: a rerun after a confirmed rollback must not find a stale tracked row.
+            rows = await _db.ManagedContacts
+                .FromSqlInterpolated($"SELECT * FROM [ManagedContacts] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {trimmed}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            rows = await _db.ManagedContacts.AsNoTracking()
+                .Where(x => x.Id == trimmed)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var row = rows.SingleOrDefault();
+        return row is null ? null : Map(row);
+    }
+
+    /// <summary>The one email-uniqueness lock name. Never parameterize or extend this.</summary>
+    public const string EmailLockResource = "apperture:managed-contact-email";
+
+    private static readonly TimeSpan EmailLockTimeout = TimeSpan.FromSeconds(15);
+
+    public async Task LockEmailNamespaceAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_db.Database.IsRelational())
+            return;
+
+        var transaction = _db.Database.CurrentTransaction
+            ?? throw new InvalidOperationException(
+                "The managed contact email lock must be taken inside an open transaction: a 'Transaction'-owned application lock taken outside one is released immediately and guarantees nothing.");
+
+        var connection = _db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandTimeout = Math.Max((int)EmailLockTimeout.TotalSeconds + 5, 30);
+        command.CommandText =
+            "EXEC @result = sp_getapplock @Resource = @resource, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = @lockTimeout;";
+        var result = new SqlParameter("@result", SqlDbType.Int) { Direction = ParameterDirection.Output };
+        command.Parameters.Add(result);
+        command.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = EmailLockResource });
+        command.Parameters.Add(new SqlParameter("@lockTimeout", SqlDbType.Int) { Value = (int)EmailLockTimeout.TotalMilliseconds });
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        // sp_getapplock: 0 = granted, 1 = granted after waiting, -1 = timeout, -2 = cancelled, -3 = deadlock victim.
+        var code = result.Value is int value ? value : -999;
+        if (code >= 0)
+            return;
+        throw new InvalidOperationException(
+            code is -1 or -2 or -3
+                ? "Another managed contact change is in progress. Wait a moment and try again."
+                : $"Failed to take the managed contact email lock (code {code}).");
     }
 
     public async Task<ManagedContactRepositoryRow?> FindByEmailAsync(string emailAddress, CancellationToken cancellationToken = default)
@@ -207,6 +273,28 @@ public sealed class SqlManagedContactRepository : IManagedContactRepository
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         var linkDto2 = MapLink(linkEntity);
         return new UpsertEntraManagedContactResult(contactId, Created: true, linkDto2);
+    }
+
+    public async Task TouchEntraLinkSyncAsync(string entraObjectId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+    {
+        var oid = entraObjectId.Trim();
+        var link = await _db.ManagedContactIdentityLinks
+            .FirstOrDefaultAsync(x => x.Provider == ManagedContactIdentityProviders.Entra && x.ExternalObjectId == oid, cancellationToken)
+            .ConfigureAwait(false);
+        if (link is null)
+            return;
+        link.LastSyncedAtUtc = nowUtc;
+        link.UpdatedAtUtc = nowUtc;
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Only this link was touched; leave nothing pending for the next save on this context.
+            _db.Entry(link).State = EntityState.Detached;
+            throw;
+        }
     }
 
     public async Task<ManagedContactIdentityLinkRepositoryRow?> FindIdentityLinkByEntraObjectIdAsync(
