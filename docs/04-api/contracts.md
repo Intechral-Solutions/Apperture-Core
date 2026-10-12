@@ -69,7 +69,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 - **Update** (`PATCH /api/schedules/{id}`): Body `UpdateScheduleRequestBody` with optional `Name`, `RecurrenceExpression`, `TimeZone`, `Enabled`. Target (kind, configuration) is immutable: if `TargetJobType` or `TargetJobConfiguration` is provided, returns **400** with `"Target cannot be changed after creation"`. On validation failure returns **400** with `{ "errors": ["..."] }`. On success returns **200** with updated `ScheduleDto` in body.
 - **Validation**: Cron via Cronos format; timezone via IANA IDs; target config must be valid JSON with required key for chosen `TargetJobType`.
 - **Delete** (`DELETE /api/schedules/{id}`): No body. Disabled schedules return **204** after removing the definition, assignments, and assignment state. Enabled schedules return **409** and are not removed. Missing ids return **404**. Historical `ScheduleRuns`, start-request idempotency keys, audit rows, and notification instances that cite the schedule id are retained. There is no tombstone and no undelete. `POST /api/schedules` still requires `IntegrationId`.
-- **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). There is no `schedule.delete` permission. Create, edit, enable, and disable are not audited. Successful delete appends `schedule.deleted`; an authorized attempt on an enabled schedule appends `schedule.delete_rejected`. Unknown ids and unauthorized callers write neither.
+- **Permissions**: All schedule endpoints require `schedule.manage` (ScheduleGovernanceService.CanManageAsync). There is no `schedule.delete` permission. Create (with its assignment), edit, enable, and disable are audited; see [Integration, binding and schedule lifecycle](#integration-binding-and-schedule-lifecycle). Successful delete appends `schedule.deleted`; an authorized attempt on an enabled schedule appends `schedule.delete_rejected`. Unknown ids and unauthorized callers write neither.
 
 ## Platform and integration settings API
 
@@ -125,6 +125,31 @@ A repeated `DELETE` is a new request, not a replay: there is no idempotency key,
 **Audit.** One `integration.deleted` row (Configuration category) with the integration's name, module and `settingsRemoved`, the number of overrides removed. No setting key, value, secret or reference is recorded. Each secret retired has its own `integration.settings.secret.retired` row (Secrets category, reason `integration_deleted`). No per-setting reset rows are written. A blocked or refused delete records nothing.
 
 **What changed from the earlier endpoint.** Before audit hardening the delete answered **400** for a missing integration and for every `InvalidOperationException`, reset each setting in a separate transaction, deleted the integration in another, and appended a text audit record afterwards, so a failure partway left a half-deleted integration and an audit failure could not be told from a refusal. Now a missing integration is **404**, only the typed dependents are **400**, the credential refusal is a new **409**, and the whole delete is one transaction with one audit row. The management client surfaces any non-success with its `error` text, so its behaviour is unchanged.
+
+## Integration, binding and schedule lifecycle
+
+Every change below is one audited unit: the change and its one audit row commit together or not at all, and a commit whose acknowledgement is lost is verified from the committed row and reported as the success it was. Request and response shapes, permissions and the success and refusal statuses of the existing routes are unchanged; this section states what is new.
+
+| Operation | Route | Audit row (Configuration, standard) |
+|---|---|---|
+| Create integration | `POST /api/integrations` | `integration.created`: name, module, whether settings were supplied (never their keys or values) |
+| Update integration | `PATCH /api/integrations/{id}` | `integration.updated`, or the transition's row when the state changes: `integration.activated`, `integration.deactivated`, `integration.retired` (both states, plus the names of any other fields changed) |
+| Activate, deactivate, retire | `POST /api/integrations/{id}/activate`, `/deactivate`, `/retire` | The transition's row |
+| Create binding | `POST /api/integrations/{id}/bindings` | `binding.created`: module, slot, integration, connection or capability |
+| Delete binding | `DELETE /api/integrations/{id}/bindings/{bindingId}`, `DELETE /api/modules/{m}/slots/{s}/binding` | `binding.deleted` |
+| Create schedule | `POST /api/schedules`, `POST /api/integrations/{id}/schedules` | `schedule.created`: name, integration, enabled, runtime plane and the number of assignments created |
+| Update schedule | `PATCH /api/schedules/{id}` | `schedule.updated` (names of the changed fields: name, recurrence, time zone), or `schedule.enabled` / `schedule.disabled` when the enabled flag changes |
+| Enable, disable schedule | `POST /api/schedules/{id}/enable`, `/disable` | `schedule.enabled`, `schedule.disabled` |
+
+**What changed for callers**
+
+- **A request that changes nothing records nothing and writes nothing.** Activating an active integration, renaming to the current name, sending the settings it already has, enabling an enabled schedule or disabling a disabled one all answer as before (200) and no longer move `UpdatedAt`, the lifecycle timestamps or the row version.
+- **A schedule is created with its assignment as one operation.** The create routes no longer commit the schedule and then assign it; a failure after the schedule can no longer leave one with no assignment.
+- **Concurrent updates of one integration are serialized**, and an update merges over the integration as it is when the update runs, so two updates of different fields both survive. `integration.update` is evaluated again against the locked integration, so an ownership move that commits while a request waits is what the decision reads.
+- **A schedule update applies only the fields a `PATCH` can change** (name, recurrence, time zone, enabled) over the schedule as it is when the update runs. Target, execution policy and ownership are not rewritten.
+- **Failures that are not refusals are no longer read as refusals.** The routes above map an `InvalidOperationException` to their existing 400 or 404 only when it is a genuine refusal; an audit invariant, a transaction or infrastructure failure, an unconfirmed commit (`500`, `code: outcome_unknown`, with the operation event id) or a committed operation whose result could not be read back (`500`, `code: committed_result_unavailable`) reaches the host's handler.
+- A binding that another request deleted first is still a quiet no-op (the HTTP routes answer 404 or 204 as before). There is no unique index on a binding slot: two creates for one slot are serialized by the integration row lock and the second is refused as "already bound".
+- Audit data excludes integration settings keys and values, schedule recurrence, time zone, target configuration and execution policy, and anything a connection holds. A binding records the connection's id, which is an entity id and not a secret reference.
 
 ## Recovery API (Epic 31)
 

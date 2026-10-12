@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slices 4 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is implemented on its branch and awaiting owner merge (§15). Slices 5 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`. Before PR #18 merged, the branch took `origin/master` (`0314419`, the licensing and third-party notice merges) in a normal merge, `539d907`, which changed no file under `src/` or `tests/` and left the 109-file AUD-1.4 change set unchanged (§14).
 
@@ -58,7 +58,7 @@ The product owner approved the four orientation recommendations. They are record
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Done.** Implemented and validated (§8); independently reviewed, ready after bounded remediation (§9); closed (§9.10) |
 | 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **CLOSED** (§14): work package 5 accepted by the owner, merged with PR #18 as `54ae117` (2026-10-11), post-merge CI passed. Work packages 1 and 2 (the schedule delete) were independently reviewed and accepted; work package 3 (the integration row lock, §10), 4a (the H1 mechanisms, §11) and 4b (the integration delete as one audited unit, §12) were independently reviewed together, READY TO ACCEPT (§13.1); work package 5 (§13) remediated the review's findings and wrote the contracts and this closing record |
-| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
+| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | **Implemented** (§15); independently reviewed; awaiting owner merge |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
 | 7 | Attention routing rules (D-2); module lifecycle (W1, with W3 for blocked attempts); the runtime shutdown request and its duplicate case | Not started |
@@ -1120,3 +1120,58 @@ AUD-1.4 as a whole is **not complete**. RC1 requirement 5 is met only after AUD-
 
 
 
+
+## 15. Slice 4: integration, binding and schedule lifecycle
+
+Date: 2026-10-12. Implemented on branch `aud-1.4-slice-4-lifecycle` in four work packages and a UI follow-up, from the orientation report and the owner and planner rulings that followed it. Nothing here claims AUD-1.4 complete: slices 5 to 8 have not started.
+
+### 15.1 Operations converted
+
+Every writer below is one audited unit (operation lock first; reads, mutations and staging inside; the ownership gate, where taken, after the operation lock and before any row). No-op requests declare themselves and record nothing. The actor is the unit's trusted principal.
+
+| Operation | Service method | Primary row (W1, Configuration, standard, basis change) | Locks inside the attempt, in order |
+|---|---|---|---|
+| Integration create | `IntegrationManagementService.CreateIntegrationAsync` | `integration.created` | gate, context resolve, insert |
+| Integration update, activate, deactivate, retire | `UpdateIntegrationAsync` and its three wrappers | `integration.updated`, or `integration.activated` / `deactivated` / `retired` when the state changes (alternate primary actions declared on the operation) | gate when the request names Active or Inactive, integration row, `integration.update` again on the locked row |
+| Binding create | `BindingService.CreateBindingAsync` | `binding.created` | gate, integration row, authorization, connection row |
+| Contextless capability binding | `CreateCapabilityBindingAsync` | `binding.created` (no integration or context) | none |
+| Binding delete | `DeleteBindingAsync` (both routes) | `binding.deleted` | integration row (when owned), binding row (new `GetByIdForUpdateAsync`); no gate |
+| Schedule create with its assignment | `SqlScheduleManagementService.CreateScheduleWithAssignmentAsync` (new; both create routes); `CreateScheduleAsync` stays for no-assignment callers | `schedule.created` (`assignmentsCreated`) | gate and integration row when attached |
+| Schedule update, enable, disable | `UpdateScheduleAsync`, `EnableAsync`, `DisableAsync` | `schedule.updated`, `schedule.enabled`, `schedule.disabled` | gate when the request may enable, schedule row |
+| Standalone assignment | `AssignToRuntimePlaneAsync` | `schedule.assigned` (twelfth action, added for this existing writer) | schedule row |
+
+Action fields name entities and changed field names only. Recorded: names (snapshots), module, slot, integration, connection or capability ids (entity ids, not secret references), enabled flag, runtime plane id, counts, state names, and for updates the names of the changed fields. Never recorded: integration settings keys or values, schedule recurrence, time zone, target configuration, execution policy reference, policy overrides, or anything a connection holds. Catalog entries, schemas and typed producers: `AuditActionNames`, `AuditActionCatalogEntries`, `AuditEvents.Integrations/Bindings/Schedules`. IntroducedIn is `AUD-1.4 slice 4`.
+
+### 15.2 Decisions and corrections
+
+| # | Decision |
+|---|---|
+| S4-1 | **`binding` joins the closed target vocabulary** (gate section 11.1 amended). **Correction to the orientation report:** the report said the vocabulary lived in code and documents only. It is also spelled out in the `AuditLogs` classification check constraint (`CK_AuditLogs_ClassificationSet`), so the amendment needs a migration. `Aud14_BindingTargetType` replaces the constraint with the AUD-1.1 text plus one named substitution (pinned by a test); every stored row still satisfies it, and `Down` restores the old constraint and fails while a `binding` row exists, since the table is append-only. This is the one schema change of the slice; no table, column or index changed, and no new unique index was added (none exists on bindings, assignments or schedules, so there is no named-index race to handle: concurrency is by the lock protocol). |
+| S4-2 | The gate decision comes from the request, not from the stored state, because the state is unknown before the row is locked and taking the gate after the row would invert the order every ownership writer uses. Integration update takes the gate when the request names Active or Inactive; schedule update takes it when the proposed flag is Enabled, and enable always does. |
+| S4-3 | A state change and other changes in one request record one row under the transition's action with the other changed field names. |
+| S4-4 | An integration update merges over the locked row (removes the stale-snapshot lost update). A schedule update applies only the fields a PATCH can change over the locked schedule; target, execution policy and ownership are never rewritten. Established PATCH semantics are otherwise unchanged. |
+| S4-5 | `AssignToRuntimePlaneAsync` is audited rather than left as a reachable unaudited writer; production reaches assignment only through the atomic create. `CreateCapabilityBindingAsync` has no route and no caller and is audited. |
+| S4-6 | Binding delete keeps its HTTP behavior: a missing binding is the same quiet return, and a binding another request deleted first is a no-op that records nothing. |
+| S4-7 | The attention-routing editor and Clear button follow `integration.update` (the server requirement from the earlier security fix) and no longer `schedule.manage`; viewing the effective routing is unchanged. |
+
+### 15.3 Concurrency and ambiguous commits
+
+- Integration row: all integration writers, binding create and delete, and attached-schedule create take it; the integration delete takes it first and counts its blockers under it, so a binding or attached schedule that commits first blocks the delete and one that loses waits and refuses (the Slice 3 evidence gap for these two writers is closed by deterministic tests in both orders).
+- Schedule row: update, enable, disable and assignment take the row a delete also takes; a change that waits for a delete finds the schedule gone (`ScheduleNotFoundException`) and records nothing.
+- Nothing is read before a schedule update, enable or disable unit opens, so a request that must wait for the gate waits there first.
+- Ambiguous commits use the existing verification: confirmed rollback reruns once; a lost acknowledgement is reconciled from the committed primary row (create and update read the entity back by the primary row's target; a delete is a success from the row alone); an unknown outcome or an operation lock not granted is `outcome_unknown`; a failed read-back after a verified commit is `committed_result_unavailable`. The routes exclude `AuditInvariantException` from their `InvalidOperationException` mapping.
+- The AUD-1.6 deadlock in the recorder's own verification count (section 7) is unchanged and not fixed here. The pair races in this slice are across different locks and one integration at a time; no new deadlock was observed.
+
+### 15.4 Intentional behavior changes
+
+| Change | Why |
+|---|---|
+| A request that changes nothing writes nothing: `UpdatedAt`, lifecycle timestamps and the row version no longer move | "A request that changes nothing records nothing" (section 5) |
+| Schedule create and its initial assignment commit together | A failure between them left a schedule that was never dispatched |
+| A schedule update no longer rewrites target or execution policy fields a direct caller of the service supplied | Those fields are immutable by the HTTP contract and were not audited |
+| Enabling an already enabled schedule in an archived context no longer refuses (it is a no-op) | Nothing becomes live |
+| The five integration routes and four schedule routes no longer turn an audit invariant into 400 or 404 | AUD-1.3 D19 |
+
+### 15.5 Tests
+
+New: `Slice4LifecycleAuditEventTests`, `IntegrationLifecycleAuditTests`, `BindingLifecycleAuditTests`, `ScheduleLifecycleAuditTests`, `BindingServiceSharesTheUnitContextTests` (unit); `IntegrationLifecycleAuditSqlServerTests`, `BindingLifecycleAuditSqlServerTests`, `ScheduleLifecycleAuditSqlServerTests` (SQL Server: M7 per operation, atomicity, the M6 matrix through the shared `AuditedOperationM6Runner`, concurrency); the integration-row-lock suite gains integration update, binding create and attached-schedule create against the integration delete in both orders on locking and snapshot-isolation catalogs; the UI source tests follow the new permission. The ownership concurrency fixture runs its set-up through a transaction-only unit so the gate races stay about ownership.
