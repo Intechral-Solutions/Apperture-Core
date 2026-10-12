@@ -85,6 +85,30 @@ public interface IScheduleManagementService
     ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Applies a partial update: only the fields the patch carries are applied, over the schedule as it is when the update runs,
+    /// and a field the patch leaves out keeps its stored value. Returns the schedule as committed (or as stored, when the patch
+    /// changes nothing). This is what the HTTP <c>PATCH</c> route calls.
+    /// </summary>
+    /// <exception cref="ScheduleNotFoundException">The schedule does not exist.</exception>
+    /// <remarks>
+    /// <para>The production service applies the patch to the schedule row it has locked (AUD-1.4 slice 4), so a field the patch
+    /// leaves out is never restored from an earlier read: a rename racing a disable leaves the schedule disabled.</para>
+    /// <para>The default reads, applies and calls <see cref="UpdateScheduleAsync"/> so in-memory test doubles keep working; it is
+    /// not atomic and is never what production runs.</para>
+    /// </remarks>
+    async ValueTask<ScheduleDefinition> PatchScheduleAsync(
+        ScheduleId scheduleId,
+        SchedulePatch patch,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await GetDefinitionAsync(scheduleId, cancellationToken).ConfigureAwait(false)
+            ?? throw new ScheduleNotFoundException(scheduleId);
+        var patched = patch.ApplyTo(current);
+        await UpdateScheduleAsync(patched, cancellationToken).ConfigureAwait(false);
+        return patched;
+    }
+
+    /// <summary>
     /// Assigns a schedule to a runtime plane. One audited unit (<c>schedule.assigned</c>); the HTTP routes assign through
     /// <see cref="CreateScheduleWithAssignmentAsync"/> instead.
     /// </summary>
@@ -127,6 +151,26 @@ public interface IScheduleManagementService
     /// Used to expose last attempted, last outcome, and blocked reason to operators.
     /// </summary>
     ValueTask<ScheduleWithExecutionState?> GetScheduleWithExecutionStateAsync(ScheduleId id, RuntimePlaneId planeId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A partial schedule update (<see cref="IScheduleManagementService.PatchScheduleAsync"/>). A null field means no change; a
+/// value replaces the stored one. Target, execution policy, integration and ownership are not patchable.
+/// </summary>
+public sealed record SchedulePatch(
+    string? Name = null,
+    string? RecurrenceExpression = null,
+    string? TimeZone = null,
+    bool? Enabled = null)
+{
+    /// <summary>The schedule with the fields this patch carries applied and every other field as <paramref name="current"/> has it.</summary>
+    public ScheduleDefinition ApplyTo(ScheduleDefinition current) => current with
+    {
+        Name = Name ?? current.Name,
+        RecurrenceExpression = RecurrenceExpression ?? current.RecurrenceExpression,
+        TimeZone = TimeZone ?? current.TimeZone,
+        Enabled = Enabled ?? current.Enabled,
+    };
 }
 
 /// <summary>

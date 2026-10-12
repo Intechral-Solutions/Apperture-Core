@@ -188,19 +188,19 @@ public sealed class SchedulesController : ControllerBase
         var validation = _scheduleValidation.ValidateUpdate(body.Name, body.RecurrenceExpression, body.TimeZone, body.Enabled);
         if (!validation.IsValid)
             return BadRequest(new { errors = validation.Errors });
-        var def = await _scheduleManagement.GetDefinitionAsync(new ScheduleId(id), cancellationToken);
-        if (def is null)
-            return NotFound();
-        var updated = def with
-        {
-            Name = body.Name ?? def.Name,
-            RecurrenceExpression = body.RecurrenceExpression ?? def.RecurrenceExpression,
-            TimeZone = body.TimeZone ?? def.TimeZone,
-            Enabled = body.Enabled ?? def.Enabled
-        };
+        // Only the fields the body carries are applied, over the schedule as the service locks it; nothing is read here first,
+        // so an omitted field can never be restored from an earlier read. The response is the schedule as committed.
+        ScheduleDefinition committed;
         try
         {
-            await _scheduleManagement.UpdateScheduleAsync(updated, cancellationToken);
+            committed = await _scheduleManagement.PatchScheduleAsync(
+                new ScheduleId(id),
+                new SchedulePatch(body.Name, body.RecurrenceExpression, body.TimeZone, body.Enabled),
+                cancellationToken);
+        }
+        catch (ScheduleNotFoundException)
+        {
+            return NotFound();
         }
         catch (ResourceContextArchivedException ex)
         {
@@ -210,7 +210,7 @@ public sealed class SchedulesController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
-        return Ok(ToDto(updated, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
+        return Ok(ToDto(committed, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
     [HttpPost("{id}/enable")]

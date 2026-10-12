@@ -120,6 +120,17 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
         Gate.AcquiredBeforeFirstOwnershipRead.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task PatchScheduleAsync_ExplicitEnable_AcquiresGateBeforeReactivationRead()
+    {
+        var context = await _setupResourceContexts.CreateApplicationContextAsync("CampusNexus");
+        var schedule = await CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        await _schedulesUnderTest.PatchScheduleAsync(schedule.Id, new SchedulePatch(Enabled: true));
+
+        Gate.AcquiredBeforeFirstOwnershipRead.Should().BeTrue();
+    }
+
     private Task<ScheduleDefinition> CreateStandaloneScheduleAsync(ResourceContextId contextId, bool enabled)
     {
         var definition = new ScheduleDefinition(

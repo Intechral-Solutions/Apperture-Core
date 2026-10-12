@@ -57,9 +57,14 @@ internal sealed class LockedRowHolder : IAsyncDisposable
     }
 
     /// <summary>
-    /// Waits until the server itself lists a request, blocked by this session, waiting for a lock on a row of
-    /// <paramref name="table"/>. Fails if the writer finishes first: a writer that did not wait did not take the lock.
+    /// Waits until the server itself lists <paramref name="minimumWaiters"/> requests waiting for a lock on the row of
+    /// <paramref name="table"/> that this session holds. Fails if the writer finishes first: a writer that did not wait did not
+    /// take the lock.
     /// </summary>
+    /// <remarks>
+    /// Waiters are matched to the exact key this session was granted, not by <c>blocking_session_id</c>: a request queued behind
+    /// another waiter on the same key may be reported as blocked by that waiter rather than by this session.
+    /// </remarks>
     public async Task WaitUntilBlockedAsync(AuditSqlScratch scratch, string table, Task writer, int minimumWaiters = 1)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -75,10 +80,15 @@ internal sealed class LockedRowHolder : IAsyncDisposable
                 $"""
                 SELECT COUNT(*)
                 FROM sys.dm_tran_locks AS l
-                INNER JOIN sys.dm_exec_requests AS r ON r.session_id = l.request_session_id
                 INNER JOIN sys.partitions AS p ON p.hobt_id = l.resource_associated_entity_id
                 WHERE l.request_status = N'WAIT' AND l.resource_database_id = DB_ID() AND l.resource_type = N'KEY'
-                  AND OBJECT_NAME(p.object_id) = N'{table}' AND r.blocking_session_id = {SessionId};
+                  AND OBJECT_NAME(p.object_id) = N'{table}' AND l.request_session_id <> {SessionId}
+                  AND EXISTS (
+                      SELECT 1 FROM sys.dm_tran_locks AS h
+                      WHERE h.request_session_id = {SessionId} AND h.request_status = N'GRANT' AND h.resource_type = N'KEY'
+                        AND h.resource_database_id = l.resource_database_id
+                        AND h.resource_associated_entity_id = l.resource_associated_entity_id
+                        AND h.resource_description = l.resource_description);
                 """);
             if (blocked >= minimumWaiters)
                 return;

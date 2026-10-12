@@ -43,6 +43,8 @@ public sealed class ScheduleLifecycleAuditSqlServerTests : IAsyncLifetime
         Disable,
         EnableByUpdate,
         Assign,
+        PatchRename,
+        PatchEnable,
     }
 
     public static IEnumerable<object[]> Ops() => Enum.GetValues<Op>().Select(op => new object[] { op });
@@ -156,6 +158,7 @@ public sealed class ScheduleLifecycleAuditSqlServerTests : IAsyncLifetime
     [InlineData(Op.Enable)]
     [InlineData(Op.Disable)]
     [InlineData(Op.Assign)]
+    [InlineData(Op.PatchRename)]
     public async Task A_change_that_waits_for_a_delete_in_progress_finds_the_schedule_gone_and_records_nothing(Op op)
     {
         var (_, principal) = await AdminAsync();
@@ -313,6 +316,10 @@ public sealed class ScheduleLifecycleAuditSqlServerTests : IAsyncLifetime
 
             case Op.EnableByUpdate:
                 return await ChangeAsync(principal, enabled: false, AuditActionNames.ScheduleEnabled, s => s with { Enabled = true }, row => Changed(row).Should().BeEmpty());
+            case Op.PatchRename:
+                return await PatchAsync(principal, enabled: true, AuditActionNames.ScheduleUpdated, new SchedulePatch(Name: "Renamed"), row => Changed(row).Should().Equal("name"));
+            case Op.PatchEnable:
+                return await PatchAsync(principal, enabled: false, AuditActionNames.ScheduleEnabled, new SchedulePatch(Enabled: true), row => Changed(row).Should().BeEmpty());
             default:
             {
                 var id = await SeedScheduleAsync(enabled: false);
@@ -342,6 +349,23 @@ public sealed class ScheduleLifecycleAuditSqlServerTests : IAsyncLifetime
                 var service = Service(db, principal, unit);
                 var current = (await service.GetDefinitionAsync(new ScheduleId(id)))!;
                 await service.UpdateScheduleAsync(change(current));
+            },
+            assert);
+    }
+
+    private async Task<Arranged> PatchAsync(
+        IPrincipalContext principal, bool enabled, string action, SchedulePatch patch, Action<Dictionary<string, object?>> assert)
+    {
+        var id = await SeedScheduleAsync(enabled);
+        return new Arranged(
+            action,
+            id,
+            async (db, unit) =>
+            {
+                var committed = await Service(db, principal, unit).PatchScheduleAsync(new ScheduleId(id), patch);
+                // Built from the attempt's write, or read back after a verified commit: either way the committed schedule.
+                committed.Should().BeEquivalentTo(patch.ApplyTo(committed));
+                committed.Id.Value.Should().Be(id);
             },
             assert);
     }

@@ -214,8 +214,8 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     /// the target, execution policy, integration and ownership are never rewritten by an update. Established PATCH semantics are
     /// otherwise unchanged. See <see cref="ChangeAsync"/>.</para>
     /// </remarks>
-    public ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default) =>
-        ChangeAsync(
+    public async ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default) =>
+        await ChangeAsync(
             definition.Id,
             AuditActionNames.ScheduleUpdated,
             // The proposed flag is the request's, so it decides the gate; the stored flag is unknown until the row is locked.
@@ -228,44 +228,71 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
                 Enabled = definition.Enabled,
             },
             "enabling this schedule",
-            cancellationToken);
+            readBack: false,
+            cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
-    public ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+    /// <remarks>
+    /// The same unit as <see cref="UpdateScheduleAsync"/>, with the patch applied to the schedule as locked, so a field the
+    /// patch leaves out keeps the locked row's value and is neither compared nor written. Only an explicit <c>Enabled = true</c>
+    /// can make the schedule live, so only that takes the ownership gate; the decision is the patch's, never a read made before
+    /// the unit. The result is the merged row the attempt wrote (or the locked row, for a no-op), and after a verified commit
+    /// whose acknowledgement was lost, the latest committed schedule read back without a lock (which may include a later
+    /// writer's change).
+    /// </remarks>
+    public async ValueTask<ScheduleDefinition> PatchScheduleAsync(
+        ScheduleId scheduleId,
+        SchedulePatch patch,
+        CancellationToken cancellationToken = default) =>
+        (await ChangeAsync(
+            scheduleId,
+            AuditActionNames.ScheduleUpdated,
+            takesGate: patch.Enabled == true,
+            patch.ApplyTo,
+            "enabling this schedule",
+            readBack: true,
+            cancellationToken).ConfigureAwait(false))!;
+
+    /// <inheritdoc />
+    public async ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
         // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing it owns may become live
         // again. Gated against a concurrent Archive (CTX-3B follow-on).
-        ChangeAsync(scheduleId, AuditActionNames.ScheduleEnabled, takesGate: true, fresh => fresh with { Enabled = true }, "enabling this schedule", cancellationToken);
+        await ChangeAsync(scheduleId, AuditActionNames.ScheduleEnabled, takesGate: true, fresh => fresh with { Enabled = true }, "enabling this schedule", readBack: false, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
-    public ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
-        ChangeAsync(scheduleId, AuditActionNames.ScheduleDisabled, takesGate: false, fresh => fresh with { Enabled = false }, "disabling this schedule", cancellationToken);
+    public async ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+        await ChangeAsync(scheduleId, AuditActionNames.ScheduleDisabled, takesGate: false, fresh => fresh with { Enabled = false }, "disabling this schedule", readBack: false, cancellationToken).ConfigureAwait(false);
 
     /// <summary>
-    /// One audited unit for an update, enable or disable (AUD-1.4 slice 4). Nothing is read before the unit, so a request that
-    /// must wait for the ownership gate waits there first, as it always did. Inside the attempt, in this order: the ownership
+    /// One audited unit for an update, patch, enable or disable (AUD-1.4 slice 4). Nothing is read before the unit, so a request
+    /// that must wait for the ownership gate waits there first, as it always did. Inside the attempt, in this order: the ownership
     /// gate when the change may enable the
     /// schedule (an enabled schedule is archive-blocking, and the stored flag is unknown until the row is locked, so the request
     /// decides), the schedule row, locked to the end of the transaction (the row a delete and a move also take), the change
     /// computed against it, the reactivation guard against its owning context, then the one primary row and the write.
     /// </summary>
     /// <remarks>
-    /// A request that changes nothing declares a no-op and records nothing. A request that changes the enabled flag is recorded
-    /// under <c>schedule.enabled</c> or <c>schedule.disabled</c>, with the names of any other fields it changed; otherwise under
-    /// <c>schedule.updated</c>. Names, never values: the recurrence and time zone have no field. The lifecycle timestamps are
-    /// computed by the same merge as before, in the same save.
+    /// <para>A request that changes nothing declares a no-op and records nothing. A request that changes the enabled flag is
+    /// recorded under <c>schedule.enabled</c> or <c>schedule.disabled</c>, with the names of any other fields it changed; otherwise
+    /// under <c>schedule.updated</c>. Names, never values: the recurrence and time zone have no field. The lifecycle timestamps are
+    /// computed by the same merge as before, in the same save.</para>
+    /// <para>Returns the definition as written (the locked row for a no-op). With <paramref name="readBack"/>, a verified commit
+    /// whose acknowledgement was lost returns the schedule read back from committed state; without it, null, as the callers
+    /// that return nothing never read it.</para>
     /// </remarks>
-    private async ValueTask ChangeAsync(
+    private async ValueTask<ScheduleDefinition?> ChangeAsync(
         ScheduleId scheduleId,
         string primaryAction,
         bool takesGate,
         Func<ScheduleDefinition, ScheduleDefinition> propose,
         string actionPhrase,
+        bool readBack,
         CancellationToken cancellationToken)
     {
         await RequireActorAsync(cancellationToken).ConfigureAwait(false);
         var unit = Unit;
 
-        await unit.ExecuteAsync(
+        return await unit.ExecuteAsync<ScheduleDefinition?>(
             new AuditedOperation(primaryAction, AuditActor.CurrentPrincipal, AuditActionNames.ScheduleUpdateActions),
             async (transaction, ct) =>
             {
@@ -288,7 +315,7 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
                 if (!enabledChanges && changed.Count == 0)
                 {
                     transaction.DeclareNoOp();
-                    return false;
+                    return fresh;
                 }
 
                 // Flipping Enabled false -> true makes anything newly live, so the owning context must be Active. It is the
@@ -307,10 +334,13 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
                     : AuditEvents.ScheduleUpdated(scheduleId.Value, merged.Name, merged.IntegrationId?.Value, changed, resourceContextId);
                 await transaction.StageAsync(auditEvent, ct).ConfigureAwait(false);
                 await _repo.UpdateDefinitionAsync(merged, ct).ConfigureAwait(false);
-                return true;
+                return merged;
             },
-            // A verified commit is the change having happened; the callers return nothing.
-            (_, _) => Task.FromResult(true),
+            // A verified commit is the change having happened. Only a caller that returns the schedule reads it back.
+            async (_, ct) => readBack
+                ? await _repo.GetDefinitionAsync(scheduleId, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} could not be read back.")
+                : null,
             cancellationToken).ConfigureAwait(false);
     }
 

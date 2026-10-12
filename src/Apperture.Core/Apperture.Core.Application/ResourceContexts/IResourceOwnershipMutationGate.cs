@@ -15,7 +15,8 @@ namespace Apperture.Core.Application.ResourceContexts;
 /// <c>IntegrationManagementService.UpdateIntegrationAsync</c>'s Retired-exit branch (Retired -&gt;
 /// {Active, Inactive}), <c>ConnectionManagementService.CreateConnectionAsync</c>,
 /// <c>SqlScheduleManagementService.EnableAsync</c>, and
-/// <c>SqlScheduleManagementService.UpdateScheduleAsync</c>'s enable branch. Ordinary resource creation
+/// <c>SqlScheduleManagementService.UpdateScheduleAsync</c>'s and <c>PatchScheduleAsync</c>'s enable branches (a patch only
+/// when it carries <c>Enabled = true</c>). Ordinary resource creation
 /// (Integration, Connection) is therefore now in scope too, not just moves, binding, and archive.
 /// </para>
 /// <para>
