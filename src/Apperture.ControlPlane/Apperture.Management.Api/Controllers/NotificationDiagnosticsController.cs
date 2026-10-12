@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Notifications.Diagnostics;
 using Apperture.Management.Client;
@@ -66,7 +67,7 @@ public sealed class NotificationDiagnosticsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(ex.Message);
         }

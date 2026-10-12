@@ -18,7 +18,7 @@ namespace Apperture.UnitTests.Notifications;
 /// <see cref="Apperture.UnitTests.ResourceContexts.ManagementServiceTestHarness"/>: a fixed actor, a
 /// configurable authorization double mirroring <see cref="NotificationDefinitionAuthorization"/>'s two
 /// gates (instance-level <c>notification_definition.manage</c> and Integration-scoped
-/// <c>integration.update</c>), and a recording <see cref="IAuditService"/>.
+/// <c>integration.update</c>), and a recording audited unit of work.
 /// </summary>
 public sealed class NotificationDefinitionTestHarness : IDisposable
 {
@@ -37,7 +37,6 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
 
         _store = new SqlNotificationDefinitionStore(_db);
         _integrations = new SqlIntegrationRepository(_db);
-        Audit = new RecordingAuditService();
 
         var authorization = new NotificationDefinitionAuthorization(
             new FixedPrincipalContext(new FixedActor()),
@@ -54,7 +53,7 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
             authorization,
             new FixedPrincipalContext(new FixedActor()),
             _integrations,
-            Audit);
+            AuditUnit);
     }
 
     public AppertureDbContext Db => _db;
@@ -64,7 +63,8 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
 
     public INotificationDefinitionService Definitions { get; }
 
-    public RecordingAuditService Audit { get; }
+    /// <summary>The recording audited unit the service runs its operations in; the transactional guarantees are proven against SQL Server.</summary>
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork AuditUnit { get; } = new();
 
     public async Task<DomainIntegration> CreateIntegrationAsync()
     {

@@ -22,7 +22,11 @@ public sealed record NotificationDefinitionCreateCommand(
     bool IsEnabled,
     string? DefaultSeverity,
     string? CreatedByActorId,
-    bool ToastEnabledByDefault = false);
+    bool ToastEnabledByDefault = false,
+    NotificationDefinitionId? Id = null);
+
+/// <summary>What deleting a definition removed with it: counts only.</summary>
+public sealed record NotificationDefinitionDeleteResult(int SubscriptionsRemoved, int UserOptOutsRemoved, int UserPreferencesRemoved);
 
 public sealed record NotificationDefinitionUpdateCommand(
     string? DisplayName,
@@ -45,6 +49,15 @@ public interface INotificationDefinitionStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the definition under an update lock held to the end of the caller's transaction (AUD-1.4 slice 6): a writer that
+    /// decides on the row, or on the subscriptions that refer to it, locks it first. Untracked, so a rerun reads afresh. Null when
+    /// no such definition exists.
+    /// </summary>
+    ValueTask<NotificationDefinition?> GetForUpdateAsync(
+        NotificationDefinitionId id,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates an integration-scoped user definition in one transaction that first takes the integration row lock and requires the
     /// integration to exist, and holds the lock to the commit (AUD-1.4): an integration delete that wins the lock makes this refuse,
     /// and a definition that commits first is visible to the delete's blocker count.
@@ -55,6 +68,10 @@ public interface INotificationDefinitionStore
     /// caller must pass the check it made before the call and must not leave it out to skip the revalidation. Null is
     /// legitimate only for a caller that made no integration-dependent decision. The definition service passes it.
     /// </param>
+    /// <remarks>
+    /// When the caller's own transaction is already open on the context (an audited unit), the store joins it: it neither begins
+    /// nor commits one, and the lock, the row and the audit rows commit or roll back together.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">The integration does not exist.</exception>
     ValueTask<NotificationDefinition> CreateUserDefinitionAsync(
         NotificationDefinitionCreateCommand command,
@@ -84,6 +101,12 @@ public interface INotificationDefinitionStore
     /// current-state removal.
     /// </remarks>
     ValueTask<bool> DeleteAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The delete of <see cref="DeleteAsync"/> that reports how much subordinate data went with the definition. Null when no such
+    /// definition exists. Meant to run inside the caller's transaction, after <see cref="GetForUpdateAsync"/>.
+    /// </summary>
+    ValueTask<NotificationDefinitionDeleteResult?> DeleteWithCountsAsync(NotificationDefinitionId id, CancellationToken cancellationToken = default);
 
     ValueTask<bool> ExistsDisplayNameAsync(
         string scope,

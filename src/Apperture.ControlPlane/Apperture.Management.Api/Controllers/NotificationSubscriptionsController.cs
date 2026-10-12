@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Domain.Notifications;
 using Apperture.Management.Client;
@@ -78,7 +79,7 @@ public sealed class NotificationSubscriptionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -127,7 +128,7 @@ public sealed class NotificationSubscriptionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -153,7 +154,7 @@ public sealed class NotificationSubscriptionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -179,7 +180,7 @@ public sealed class NotificationSubscriptionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -206,7 +207,7 @@ public sealed class NotificationSubscriptionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }

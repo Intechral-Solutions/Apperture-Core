@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Management.Client;
 using Microsoft.AspNetCore.Authorization;
@@ -69,7 +70,7 @@ public sealed class ManagedContactsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -96,7 +97,7 @@ public sealed class ManagedContactsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -147,7 +148,7 @@ public sealed class ManagedContactsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -172,7 +173,7 @@ public sealed class ManagedContactsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -195,7 +196,7 @@ public sealed class ManagedContactsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }

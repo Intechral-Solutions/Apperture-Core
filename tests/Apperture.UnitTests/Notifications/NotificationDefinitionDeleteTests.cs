@@ -102,18 +102,18 @@ public sealed class NotificationDefinitionDeleteTests
     }
 
     [Fact]
-    public async Task Deleting_a_definition_preserves_pre_existing_audit_rows_and_appends_one()
+    public async Task Deleting_a_definition_stages_one_deleted_row_that_counts_what_went_with_it()
     {
         using var h = new NotificationDefinitionTestHarness();
         var integration = await h.CreateIntegrationAsync();
         var definition = await h.CreateUserDefinitionAsync(integration.Id.Value);
-        var auditBefore = h.Audit.Records.ToList();
 
         await h.Definitions.DeleteAsync(definition.Id.Value);
 
-        h.Audit.Records.Take(auditBefore.Count).Should().BeEquivalentTo(auditBefore, "audit is append-only");
-        h.Audit.Records.Should().HaveCount(auditBefore.Count + 1);
-        h.Audit.Records.Last().Outcome.Should().Be("succeeded");
+        h.AuditUnit.Actions.Should().Equal(Apperture.Core.Application.Audit.AuditActionNames.NotificationDefinitionDeleted);
+        var evt = h.AuditUnit.Single(Apperture.Core.Application.Audit.AuditActionNames.NotificationDefinitionDeleted);
+        evt.OutcomeCode.Should().Be("succeeded");
+        evt.Target.Id.Should().Be(definition.Id.Value);
     }
 
     [Fact]

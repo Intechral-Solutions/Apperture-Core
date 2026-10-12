@@ -143,7 +143,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             notificationAuth,
             new AlwaysActor(),
             integrationRepository,
-            _auditService);
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         var runQueryService = new RunQueryService(
             Db,
