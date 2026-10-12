@@ -34,6 +34,7 @@ internal sealed class AuditRecording : IAuditedUnitOfWork, IAuditEventWriter
     {
         Actions.Clear();
         Events.Clear();
+        Unit.Operations.Clear();
     }
 
     public async Task<T> ExecuteAsync<T>(

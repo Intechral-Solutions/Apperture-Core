@@ -19,5 +19,7 @@ public static class AuditLogSchema
     public const int DeleteRefusedError = 51002;
 
     public const string ProducerCheckSql = Aud1_AuditFoundation.ProducerCheckSql;
-    public const string ClassificationSetCheckSql = Aud1_AuditFoundation.ClassificationSetCheckSql;
+
+    /// <summary>The current classification check: the AUD-1.1 text with <c>binding</c> accepted as a target type (AUD-1.4 slice 4).</summary>
+    public static readonly string ClassificationSetCheckSql = Aud14_BindingTargetType.ClassificationSetCheckSql;
 }

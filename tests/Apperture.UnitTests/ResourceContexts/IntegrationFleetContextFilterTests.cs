@@ -163,7 +163,8 @@ public sealed class IntegrationFleetContextFilterTests
                 integrationRepository,
                 resourceContexts,
                 db,
-                new SqlResourceOwnershipMutationGate(db));
+                new SqlResourceOwnershipMutationGate(db),
+                auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
             var slots = new Mock<IModuleSlotRegistry>();
             slots.Setup(x => x.GetSlotsForModule(It.IsAny<string>())).Returns(new List<ICapabilitySlot>());

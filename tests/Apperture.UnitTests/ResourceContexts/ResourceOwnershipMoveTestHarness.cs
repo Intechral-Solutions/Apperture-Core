@@ -73,7 +73,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             ResourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         var connectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -96,7 +97,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             new BindingEligibilityService(ConnectionRepository, connectorRegistry),
             IntegrationRepository,
             _db,
-            ownershipGate);
+            ownershipGate,
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
@@ -106,7 +108,8 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             IntegrationRepository,
             _db,
             ownershipGate,
-            new FixedPrincipalContext());
+            new FixedPrincipalContext(),
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         Service = new ResourceOwnershipMoveService(
             new FixedPrincipalContext(),

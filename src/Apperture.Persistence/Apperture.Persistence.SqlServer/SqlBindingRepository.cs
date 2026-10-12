@@ -34,6 +34,28 @@ public sealed class SqlBindingRepository : IBindingRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask<Binding?> GetByIdForUpdateAsync(BindingId id, CancellationToken cancellationToken = default)
+    {
+        List<BindingEntity> rows;
+        if (_db.Database.IsRelational())
+        {
+            // AsNoTracking is load-bearing: a rerun of an execution-strategy attempt must read afresh. The lock hint lives in
+            // the SQL text, so it is taken and held to the end of the transaction whatever the tracking behaviour.
+            rows = await _db.Bindings
+                .FromSqlInterpolated($"SELECT * FROM [Bindings] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {id.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            rows = await _db.Bindings.AsNoTracking().Where(e => e.Id == id.Value).ToListAsync(cancellationToken);
+        }
+
+        var entity = rows.SingleOrDefault();
+        return entity is null ? null : ToDomain(entity);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<IReadOnlyList<Binding>> GetByIntegrationIdAsync(IntegrationId integrationId, CancellationToken cancellationToken = default)
     {
         var entities = await _db.Bindings.AsNoTracking()

@@ -51,6 +51,86 @@ public static partial class AuditEvents
             Fields(("name", name), ("integrationId", integrationId), ("reason", reason)),
             ScheduleRelated(scheduleId, resourceContextId));
 
+    /// <summary>
+    /// A schedule was created, with the assignments created in the same transaction (the initial one, when the creator names a
+    /// runtime plane). The recurrence, time zone, target configuration and execution policy reference are never recorded.
+    /// </summary>
+    public static AuditEvent ScheduleCreated(
+        string scheduleId,
+        string name,
+        string? integrationId,
+        bool enabled,
+        string? runtimePlaneId,
+        int assignmentsCreated,
+        string? resourceContextId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(assignmentsCreated);
+        return AuditEvent.Create(
+            AuditActionCatalog.Default.Get(AuditActionNames.ScheduleCreated),
+            Target(AuditTargetTypes.Schedule, scheduleId),
+            AuditOutcomeCodes.Succeeded,
+            Fields(
+                ("name", name),
+                ("integrationId", integrationId),
+                ("enabled", enabled),
+                ("runtimePlaneId", BoundedId(runtimePlaneId)),
+                ("assignmentsCreated", assignmentsCreated)),
+            ScheduleRelated(scheduleId, resourceContextId));
+    }
+
+    /// <summary>
+    /// A schedule's name, recurrence or time zone changed without a change of the enabled flag. <paramref name="changed"/> names
+    /// the fields that differ (never their values) and is never empty.
+    /// </summary>
+    public static AuditEvent ScheduleUpdated(
+        string scheduleId,
+        string name,
+        string? integrationId,
+        IReadOnlyList<string> changed,
+        string? resourceContextId)
+    {
+        var fields = ValidatedChanges(changed, AuditDetailSchemas.ScheduleChangeFields, "schedule", requireAny: true);
+        return AuditEvent.Create(
+            AuditActionCatalog.Default.Get(AuditActionNames.ScheduleUpdated),
+            Target(AuditTargetTypes.Schedule, scheduleId),
+            AuditOutcomeCodes.Succeeded,
+            Fields(("name", name), ("integrationId", integrationId), ("changed", fields)),
+            ScheduleRelated(scheduleId, resourceContextId));
+    }
+
+    /// <summary>
+    /// A schedule was enabled or disabled. <paramref name="changed"/> names any other fields the same request changed (never
+    /// their values) and may be empty.
+    /// </summary>
+    public static AuditEvent ScheduleEnabledChanged(
+        bool enabled,
+        string scheduleId,
+        string name,
+        string? integrationId,
+        IReadOnlyList<string> changed,
+        string? resourceContextId)
+    {
+        var fields = ValidatedChanges(changed, AuditDetailSchemas.ScheduleChangeFields, "schedule", requireAny: false);
+        return AuditEvent.Create(
+            AuditActionCatalog.Default.Get(enabled ? AuditActionNames.ScheduleEnabled : AuditActionNames.ScheduleDisabled),
+            Target(AuditTargetTypes.Schedule, scheduleId),
+            AuditOutcomeCodes.Succeeded,
+            Fields(("name", name), ("integrationId", integrationId), ("changed", fields.Count == 0 ? null : fields)),
+            ScheduleRelated(scheduleId, resourceContextId));
+    }
+
+    /// <summary>
+    /// An existing schedule was assigned to a runtime plane on its own. Whether policy overrides were supplied is recorded,
+    /// never their content.
+    /// </summary>
+    public static AuditEvent ScheduleAssigned(string scheduleId, string runtimePlaneId, bool policyOverridesSet, string? resourceContextId) =>
+        AuditEvent.Create(
+            AuditActionCatalog.Default.Get(AuditActionNames.ScheduleAssigned),
+            Target(AuditTargetTypes.Schedule, scheduleId),
+            AuditOutcomeCodes.Succeeded,
+            Fields(("runtimePlaneId", BoundedId(runtimePlaneId)), ("policyOverridesSet", policyOverridesSet)),
+            ScheduleRelated(scheduleId, resourceContextId));
+
     private static AuditRelatedReferences ScheduleRelated(string scheduleId, string? resourceContextId) =>
         new(
             ScheduleId: BoundedId(scheduleId, AuditLogScheduleIdLength),

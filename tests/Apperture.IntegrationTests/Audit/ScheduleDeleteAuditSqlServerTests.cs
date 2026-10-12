@@ -321,32 +321,44 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
 
     private sealed record Graph(int Definitions, int Assignments, int States);
 
-    /// <summary>A schedule with one assignment and one cursor, through the production service and repository.</summary>
+    /// <summary>
+    /// A schedule with one assignment and one cursor, inserted directly: the delete suite asserts the audit rows of the delete
+    /// alone, so the set-up must not write rows of its own.
+    /// </summary>
     private async Task<Seeded> SeedAsync(IPrincipalContext principal, string name, bool enabled = false)
     {
+        _ = principal;
+        var scheduleId = "sch-" + Guid.NewGuid().ToString("N")[..12];
+        var assignmentId = Guid.NewGuid().ToString("N")[..24];
         await using var db = _db.NewDb();
-        var schedules = Schedules(db, principal);
-        var created = await schedules.CreateScheduleAsync(new ScheduleDefinition(
-            new ScheduleId("sch-" + Guid.NewGuid().ToString("N")[..12]),
-            name,
-            "0 0 * * *",
-            "UTC",
-            Enabled: false,
-            new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
-            ExecutionPolicyRef: null,
-            Version: 1));
-        if (enabled)
-            await schedules.EnableAsync(created.Id);
-
-        var assignment = await schedules.AssignToRuntimePlaneAsync(created.Id, new RuntimePlaneId("local"), null);
+        db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
+        {
+            Id = scheduleId,
+            ResourceContextId = ResourceContextIds.SharedValue,
+            Name = name,
+            RecurrenceExpression = "0 0 * * *",
+            TimeZone = "UTC",
+            Enabled = enabled,
+            TargetJobType = (int)ScheduledJobType.WorkflowExecution,
+            TargetJobConfigurationJson = "{}",
+            Version = 1,
+        });
+        db.ScheduleAssignments.Add(new ScheduleAssignmentEntity
+        {
+            Id = assignmentId,
+            ScheduleId = scheduleId,
+            RuntimePlaneId = "local",
+            DesiredVersion = 1,
+            AppliedVersion = 0,
+        });
         db.ScheduleStates.Add(new ScheduleStateEntity
         {
-            AssignmentId = assignment.Id.Value,
+            AssignmentId = assignmentId,
             LastOutcome = "Succeeded",
             LastAttemptedUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
         });
         await db.SaveChangesAsync();
-        return new Seeded(created.Id.Value, assignment.Id.Value);
+        return new Seeded(scheduleId, assignmentId);
     }
 
     private async Task<Graph> GraphAsync(Seeded seeded) =>

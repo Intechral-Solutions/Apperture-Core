@@ -157,6 +157,7 @@ public static class AuditTargetTypes
     public const string Integration = "integration";
     public const string Connection = "connection";
     public const string Schedule = "schedule";
+    public const string Binding = "binding";
     public const string PlatformSetting = "platform_setting";
     public const string IntegrationSetting = "integration_setting";
     public const string NotificationDefinition = "notification_definition";
@@ -173,7 +174,7 @@ public static class AuditTargetTypes
 
     public static IReadOnlySet<string> All { get; } = AuditActorKinds.Set(
         User, Role, IdentityLink, ExternalIdentity, EntraAccessRequest, EntraTenantRegistration, AuthPolicy,
-        ResourceContext, Integration, Connection, Schedule, PlatformSetting, IntegrationSetting, NotificationDefinition,
+        ResourceContext, Integration, Connection, Schedule, Binding, PlatformSetting, IntegrationSetting, NotificationDefinition,
         NotificationSubscription, ManagedContact, OperationalTeam, Module,
         WorkflowRun, OperationRun, OperationItem, RuntimeInstance,
         Secret, Instance);

@@ -61,7 +61,7 @@ public sealed class SchedulesControllerReactivationGuardTests
     {
         var scheduleManagement = new Mock<IScheduleManagementService>();
         scheduleManagement
-            .Setup(s => s.UpdateScheduleAsync(It.IsAny<ScheduleDefinition>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.PatchScheduleAsync(It.IsAny<ScheduleId>(), It.IsAny<SchedulePatch>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ResourceContextArchivedException(
                 new ResourceContextId("app-a"),
                 "Canvas",
@@ -79,7 +79,7 @@ public sealed class SchedulesControllerReactivationGuardTests
     {
         var scheduleManagement = new Mock<IScheduleManagementService>();
         scheduleManagement
-            .Setup(s => s.UpdateScheduleAsync(It.IsAny<ScheduleDefinition>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.PatchScheduleAsync(It.IsAny<ScheduleId>(), It.IsAny<SchedulePatch>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Something else went wrong."));
         var controller = NewController(scheduleManagement);
 

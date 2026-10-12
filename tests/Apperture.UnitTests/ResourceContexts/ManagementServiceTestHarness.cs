@@ -83,7 +83,8 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             integrationRepository,
             resourceContexts,
             _db,
-            ownershipGate);
+            ownershipGate,
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         // CTX-3B follow-on (Connection creation gating): wired over the same resourceContexts (and thus,
         // when recordingGate is set, the same RecordingResourceContextRepository) so

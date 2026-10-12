@@ -84,7 +84,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             IntegrationRepository,
             ResourceContexts,
             Db,
-            ownershipGate);
+            ownershipGate,
+            auditedUnitOfWork: AuditUnit);
 
         ConnectorRegistry = new PermissiveConnectorDefinitionRegistry();
         Connections = new ConnectionManagementService(
@@ -110,7 +111,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             Eligibility,
             IntegrationRepository,
             Db,
-            ownershipGate);
+            ownershipGate,
+            AuditUnit);
 
         Schedules = new SqlScheduleManagementService(
             ScheduleRepository,
@@ -120,7 +122,8 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             IntegrationRepository,
             Db,
             ownershipGate,
-            Mock.Of<IPrincipalContext>());
+            new AlwaysActor(),
+            AuditUnit);
 
         // Task 5 (CTX-3A Plan 4, §5.3): RunQueryService over the same DbContext, so
         // RunHistoricalSnapshotFilteringTests exercises the production server-side filter
@@ -151,6 +154,9 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
     public IConnectionManagementService Connections { get; }
     public IBindingEligibilityService Eligibility { get; }
     public IBindingService Bindings { get; }
+
+    /// <summary>The recording audited unit the integration, binding and schedule services of this harness share.</summary>
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork AuditUnit { get; } = new();
     public IScheduleManagementService Schedules { get; }
     public IRunQueryService RunQueryService { get; }
 

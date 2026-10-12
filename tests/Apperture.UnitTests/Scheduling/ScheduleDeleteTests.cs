@@ -36,6 +36,7 @@ public sealed class ScheduleDeleteTests
         var other = await h.CreateDisabledStandaloneAsync("Weekly", "0 1 * * 1");
         var assignment = await h.Schedules.AssignToRuntimePlaneAsync(schedule.Id, new RuntimePlaneId("local"), null);
         await h.Schedules.AssignToRuntimePlaneAsync(other.Id, new RuntimePlaneId("local"), null);
+        h.Audit.Clear();
         h.Db.ScheduleStates.Add(new ScheduleStateEntity
         {
             AssignmentId = assignment.Id.Value,
@@ -136,6 +137,7 @@ public sealed class ScheduleDeleteTests
         var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "15 3 * * *");
         await h.Schedules.EnableAsync(schedule.Id);
         var assignment = await h.Schedules.AssignToRuntimePlaneAsync(schedule.Id, new RuntimePlaneId("local"), null);
+        h.Audit.Clear();
 
         var act = async () => await h.Schedules.DeleteScheduleAsync(schedule.Id);
 
@@ -160,6 +162,7 @@ public sealed class ScheduleDeleteTests
         await using var h = new Harness();
         var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "15 3 * * *");
         await h.Schedules.EnableAsync(schedule.Id);
+        h.Audit.Clear();
         h.Audit.FailWrites = true;
 
         var act = async () => await h.Schedules.DeleteScheduleAsync(schedule.Id);
@@ -219,6 +222,7 @@ public sealed class ScheduleDeleteTests
         await using var h = new Harness();
         var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
         await h.Schedules.AssignToRuntimePlaneAsync(schedule.Id, new RuntimePlaneId("local"), null);
+        h.Audit.Clear();
         var flipping = new Harness.EnableOnAcquireGate(h.Db, schedule.Id.Value);
         var schedules = h.WithGate(flipping);
 
@@ -253,6 +257,7 @@ public sealed class ScheduleDeleteTests
         await using var h = new Harness();
         var schedule = await h.CreateDisabledStandaloneAsync("Nightly", "0 0 * * *");
         await h.Schedules.AssignToRuntimePlaneAsync(schedule.Id, new RuntimePlaneId("local"), null);
+        h.Audit.Clear();
         h.Audit.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Lost;
 
         await h.Schedules.DeleteScheduleAsync(schedule.Id);
@@ -328,6 +333,7 @@ public sealed class ScheduleDeleteTests
             ExecutionPolicyRef: null,
             Version: 1,
             integration.Id));
+        audit.Clear();
         integrations.Db.ScheduleRuns.Add(new ScheduleRunEntity
         {
             ScheduleId = schedule.Id.Value,
@@ -416,7 +422,8 @@ public sealed class ScheduleDeleteTests
                 new SqlIntegrationRepository(Db),
                 Db,
                 new SqlResourceOwnershipMutationGate(Db),
-                new FixedPrincipal(new FixedActor()));
+                new FixedPrincipal(new FixedActor()),
+                new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
             return await setup.CreateScheduleAsync(new ScheduleDefinition(
                 new ScheduleId($"s-{Guid.NewGuid():N}"),
                 name,

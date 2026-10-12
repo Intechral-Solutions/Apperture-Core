@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slices 4 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is implemented on its branch and awaiting owner merge (§15). Slices 5 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`. Before PR #18 merged, the branch took `origin/master` (`0314419`, the licensing and third-party notice merges) in a normal merge, `539d907`, which changed no file under `src/` or `tests/` and left the 109-file AUD-1.4 change set unchanged (§14).
 
@@ -58,7 +58,7 @@ The product owner approved the four orientation recommendations. They are record
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Done.** Implemented and validated (§8); independently reviewed, ready after bounded remediation (§9); closed (§9.10) |
 | 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **CLOSED** (§14): work package 5 accepted by the owner, merged with PR #18 as `54ae117` (2026-10-11), post-merge CI passed. Work packages 1 and 2 (the schedule delete) were independently reviewed and accepted; work package 3 (the integration row lock, §10), 4a (the H1 mechanisms, §11) and 4b (the integration delete as one audited unit, §12) were independently reviewed together, READY TO ACCEPT (§13.1); work package 5 (§13) remediated the review's findings and wrote the contracts and this closing record |
-| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | Not started |
+| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | **Implemented** (§15); independently reviewed; awaiting owner merge |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
 | 7 | Attention routing rules (D-2); module lifecycle (W1, with W3 for blocked attempts); the runtime shutdown request and its duplicate case | Not started |
@@ -1120,3 +1120,117 @@ AUD-1.4 as a whole is **not complete**. RC1 requirement 5 is met only after AUD-
 
 
 
+
+## 15. Slice 4: integration, binding and schedule lifecycle
+
+Date: 2026-10-12. Implemented on branch `aud-1.4-slice-4-lifecycle` in four work packages and a UI follow-up, from the orientation report and the owner and planner rulings that followed it. Nothing here claims AUD-1.4 complete: slices 5 to 8 have not started.
+
+### 15.1 Operations converted
+
+Every writer below is one audited unit (operation lock first; reads, mutations and staging inside; the ownership gate, where taken, after the operation lock and before any row). No-op requests declare themselves and record nothing. The actor is the unit's trusted principal.
+
+| Operation | Service method | Primary row (W1, Configuration, standard, basis change) | Locks inside the attempt, in order |
+|---|---|---|---|
+| Integration create | `IntegrationManagementService.CreateIntegrationAsync` | `integration.created` | gate, context resolve, insert |
+| Integration update, activate, deactivate, retire | `UpdateIntegrationAsync` and its three wrappers | `integration.updated`, or `integration.activated` / `deactivated` / `retired` when the state changes (alternate primary actions declared on the operation) | gate when the request names Active or Inactive, integration row, `integration.update` again on the locked row |
+| Binding create | `BindingService.CreateBindingAsync` | `binding.created` | gate, integration row, authorization, connection row |
+| Contextless capability binding | `CreateCapabilityBindingAsync` | `binding.created` (no integration or context) | none |
+| Binding delete | `DeleteBindingAsync` (both routes) | `binding.deleted` | integration row (when owned), binding row (new `GetByIdForUpdateAsync`); no gate |
+| Schedule create with its assignment | `SqlScheduleManagementService.CreateScheduleWithAssignmentAsync` (new; both create routes); `CreateScheduleAsync` stays for no-assignment callers | `schedule.created` (`assignmentsCreated`) | gate and integration row when attached |
+| Schedule update, patch, enable, disable | `UpdateScheduleAsync`, `PatchScheduleAsync` (new; the `PATCH` route, 15.6), `EnableAsync`, `DisableAsync` | `schedule.updated`, `schedule.enabled`, `schedule.disabled` | gate when the request may enable, schedule row |
+| Standalone assignment | `AssignToRuntimePlaneAsync` | `schedule.assigned` (twelfth action, added for this existing writer) | schedule row |
+
+Action fields name entities and changed field names only. Recorded: names (snapshots), module, slot, integration, connection or capability ids (entity ids, not secret references), enabled flag, runtime plane id, counts, state names, and for updates the names of the changed fields. Never recorded: integration settings keys or values, schedule recurrence, time zone, target configuration, execution policy reference, policy overrides, or anything a connection holds. Catalog entries, schemas and typed producers: `AuditActionNames`, `AuditActionCatalogEntries`, `AuditEvents.Integrations/Bindings/Schedules`. IntroducedIn is `AUD-1.4 slice 4`.
+
+### 15.2 Decisions and corrections
+
+| # | Decision |
+|---|---|
+| S4-1 | **`binding` joins the closed target vocabulary** (gate section 11.1 amended). **Correction to the orientation report:** the report said the vocabulary lived in code and documents only. It is also spelled out in the `AuditLogs` classification check constraint (`CK_AuditLogs_ClassificationSet`), so the amendment needs a migration. `Aud14_BindingTargetType` replaces the constraint with the AUD-1.1 text plus one named substitution (pinned by a test); every stored row still satisfies it, and `Down` restores the old constraint and fails while a `binding` row exists, since the table is append-only. This is the one schema change of the slice; no table, column or index changed, and no new unique index was added (none exists on bindings, assignments or schedules, so there is no named-index race to handle: concurrency is by the lock protocol). |
+| S4-2 | The gate decision comes from the request, not from the stored state, because the state is unknown before the row is locked and taking the gate after the row would invert the order every ownership writer uses. Integration update takes the gate when the request names Active or Inactive; a direct schedule update takes it when the proposed flag is Enabled, a schedule `PATCH` only when its body carries `Enabled: true`, and enable always does. |
+| S4-3 | A state change and other changes in one request record one row under the transition's action with the other changed field names. |
+| S4-4 | An integration update merges over the locked row from the request's own optional fields (removes the stale-snapshot lost update). A schedule update applies only the fields a PATCH can change over the locked schedule; target, execution policy and ownership are never rewritten. The `PATCH` route calls `PatchScheduleAsync`, which applies only the fields the body carries to the row it has locked, so an omitted field is never restored from an earlier read (finding M1, fixed on owner decision; see 15.6). `UpdateScheduleAsync` keeps its semantics for direct callers: the four values its definition carries are applied. |
+| S4-5 | `AssignToRuntimePlaneAsync` is audited rather than left as a reachable unaudited writer; production reaches assignment only through the atomic create. `CreateCapabilityBindingAsync` has no route and no caller and is audited. |
+| S4-6 | Binding delete keeps its HTTP behavior: a missing binding is the same quiet return, and a binding another request deleted first is a no-op that records nothing. |
+| S4-7 | The attention-routing editor and Clear button follow `integration.update` (the server requirement from the earlier security fix) and no longer `schedule.manage`; viewing the effective routing is unchanged. |
+
+### 15.3 Concurrency and ambiguous commits
+
+- Integration row: all integration writers, binding create and delete, and attached-schedule create take it; the integration delete takes it first and counts its blockers under it, so a binding or attached schedule that commits first blocks the delete and one that loses waits and refuses (the Slice 3 evidence gap for these two writers is closed by deterministic tests in both orders).
+- Schedule row: update, enable, disable and assignment take the row a delete also takes; a change that waits for a delete finds the schedule gone (`ScheduleNotFoundException`) and records nothing.
+- Nothing is read before a schedule update, patch, enable or disable unit opens, so a request that must wait for the gate waits there first. The `PATCH` route no longer reads the schedule before the call.
+- Ambiguous commits use the existing verification: confirmed rollback reruns once; a lost acknowledgement is reconciled from the committed primary row (create and update read the entity back by the primary row's target; a delete is a success from the row alone); an unknown outcome or an operation lock not granted is `outcome_unknown`; a failed read-back after a verified commit is `committed_result_unavailable`. The routes exclude `AuditInvariantException` from their `InvalidOperationException` mapping.
+- The AUD-1.6 deadlock in the recorder's own verification count (section 7) is unchanged and not fixed here. The pair races in this slice are across different locks and one integration at a time; no new deadlock was observed.
+
+### 15.4 Intentional behavior changes
+
+| Change | Why |
+|---|---|
+| A request that changes nothing writes nothing: `UpdatedAt`, lifecycle timestamps and the row version no longer move | "A request that changes nothing records nothing" (section 5) |
+| Schedule create and its initial assignment commit together | A failure between them left a schedule that was never dispatched |
+| A schedule update no longer rewrites target or execution policy fields a direct caller of the service supplied | Those fields are immutable by the HTTP contract and were not audited |
+| Enabling an already enabled schedule in an archived context no longer refuses (it is a no-op) | Nothing becomes live |
+| A schedule `PATCH` applies only the fields its body carries, over the locked row; an omitted field keeps the stored value instead of being reapplied from a read made before the call | Finding M1: a rename overlapping a disable re-enabled the schedule (15.6) |
+| The schedule `PATCH` response is the committed schedule, not the body merged over the earlier read | It could report a state that was never stored |
+| A schedule deleted while a `PATCH` waits answers 404 (was 400); a `PATCH` that does not carry `Enabled: true` no longer takes the ownership gate, even for an enabled schedule | The pre-read is gone, so not-found comes from the locked read; only an explicit enable can make anything live |
+| The two integration-schedule and integration-binding create routes, the five integration routes and the four schedule routes no longer turn an audit invariant into 400 or 404 | AUD-1.3 D19 |
+
+### 15.5 Tests
+
+New: `Slice4LifecycleAuditEventTests`, `IntegrationLifecycleAuditTests`, `BindingLifecycleAuditTests`, `ScheduleLifecycleAuditTests`, `BindingServiceSharesTheUnitContextTests` (unit); `IntegrationLifecycleAuditSqlServerTests`, `BindingLifecycleAuditSqlServerTests`, `ScheduleLifecycleAuditSqlServerTests` (SQL Server: M7 per operation, atomicity, the M6 matrix through the shared `AuditedOperationM6Runner`, concurrency); the integration-row-lock suite gains integration update, binding create and attached-schedule create against the integration delete in both orders on locking and snapshot-isolation catalogs; the UI source tests follow the new permission. The ownership concurrency fixture runs its set-up through a transaction-only unit so the gate races stay about ownership.
+### 15.6 Independent review, findings and limits
+
+One combined independent review (Opus 5.5, high) of the integrated slice found no critical or high finding, and one medium.
+
+| Finding | Disposition |
+|---|---|
+| M1 (medium): the schedule PATCH route reapplies all four patchable fields from a read made before the call, so an overlapping PATCH can re-enable a schedule an operator just disabled (or lose a concurrent rename), and the audit row then names that write. Not a regression: the old code overwrote the same way, now with a row | **Fixed** (owner decision after the handback: fix before merging, within slice 4). The `PATCH` route now calls `PatchScheduleAsync`, which applies only the fields the body carries to the locked row; see 15.7 |
+| L1: the ownership gate is taken more often (any integration update naming Active or Inactive, any PATCH of an enabled schedule), and it is one instance-wide lock with a 15 s timeout whose busy exception is not mapped by these routes | Accepted trade-off of S4-2 (correctness first). Narrowed for schedules by the M1 fix: a `PATCH` takes the gate only when its body carries `Enabled: true`. A refinement exists: lock the row without the gate and rerun with the gate only when the change really enables or reactivates |
+| L2: the contract omitted that enabling an enabled schedule in an archived context is now 200; the list of changed routes omitted two create routes | Fixed (contract and 15.4) |
+| L3: the two binding race tests did not force their interleaving | Fixed: both now hold the row with `LockedRowHolder`, wait on the server's lock view, then release |
+| L4: the ownership races run set-up through a transaction-only unit, so no race of the real audited unit against a move or archive is exercised | Accepted for this slice: the real unit is raced against the integration delete and the settings writers; the gate-first order is pinned by the delete races and the ownership fixture. A real-unit race against a move belongs with slice 5, which converts the mover |
+| I1: `CreateScheduleWithAssignmentAsync` is a default interface method (composes two calls) kept so test doubles compile; production overrides it | Noted; a future decorator must override it |
+| I2: the migration adds the constraint WITH CHECK, which scans `AuditLogs` under a schema lock | Noted: budget for it on large instances |
+
+The AUD-1.6 deadlock in the recorder's own verification count (section 7) is untouched and was not seen as a new defect.
+
+### 15.7 Remediation of M1: the schedule `PATCH` applies only what it carries
+
+Owner decision (2026-10-12, after the slice 4 handback): fix M1 before PR #23 merges, as one bounded commit on this branch, keeping the `PATCH` contract (four optional fields; omitted or null is no change; a value replaces).
+
+**Shape.** `IScheduleManagementService.PatchScheduleAsync(ScheduleId, SchedulePatch)` returns the committed `ScheduleDefinition`. `SchedulePatch` carries the four optional values and `ApplyTo(current)`. The production method runs the same `ChangeAsync` unit as update, enable and disable, with `patch.ApplyTo` as the proposal, so the patch is applied to the row read under `UPDLOCK, ROWLOCK` and a field the patch leaves out takes the locked row's value: it is neither compared nor written. `ChangeAsync` now returns the definition it wrote (the locked row for a no-op); after a verified commit whose acknowledgement was lost, the patch reads the latest committed schedule back without a lock, so a later writer's change may show (as with the integration and settings read-backs, §9.4; a failed read-back is `committed_result_unavailable`), while update, enable and disable keep returning nothing and read nothing back. The interface default (read, apply, `UpdateScheduleAsync`) exists so test doubles compile; it is not atomic and production overrides it, as with `CreateScheduleWithAssignmentAsync` (I1).
+
+**Order and gate.** Unchanged order: the operation lock, then the ownership gate, then the schedule row. The gate is decided from the patch alone, before any read: only `Enabled: true` takes it, since a patch without that value keeps the locked row's flag and cannot make anything live. The reactivation guard runs, as before, only when the locked row is disabled and the proposal is enabled, against the locked row's owning context.
+
+**Evidence and no-ops.** Changed field names are computed against the locked row, so a value another request committed while the patch waited is not reported as changed, and a patch that matches the locked row declares a no-op and records nothing. Action selection, the lifecycle merge and the M6 behavior are those of `ChangeAsync`, unchanged.
+
+**Route.** `SchedulesController.Update` reads nothing before the call, maps `ScheduleNotFoundException` to 404 (before its `InvalidOperationException` mapping, which still excludes audit invariants), keeps 409 for an archived owning context, and answers with the committed schedule.
+
+**The management UI.** The schedule edit form (`ScheduleDetail.razor`) loaded all four values when it opened and always sent them back, so a rename saved after another operator's disable carried `Enabled: true` and the server, rightly, treated it as an explicit enable: the M1 race survived for UI users. The form now sends only the fields the operator changed against the schedule it loaded and `null` for the rest. No contract change; the client request type already allowed nulls.
+
+**Direct callers.** `UpdateScheduleAsync` is unchanged: a direct caller's definition still supplies all four values (pinned by `A_direct_update_still_applies_the_enabled_flag_its_definition_carries`).
+
+**Tests.**
+
+| Suite | What it proves |
+|---|---|
+| `SchedulePatchSqlServerTests` (new, SQL Server, 20: 10 cases on a locking READ COMMITTED catalog and on a READ_COMMITTED_SNAPSHOT catalog) | A rename, and a recurrence and time-zone change, each shown by the server's lock view to be waiting on the schedule row while another session disables it and commits, leave the schedule disabled, return the committed schedule and record only their own fields; a rename and the production disable queued on the row keep both, whichever the server grants first (the outcome is the same for both orders; which order ran is not controlled); an explicit enable waiting while a rename commits enables, keeps that rename and records no changed field; an explicit enable under an archived context is refused and changes nothing, while the same rename without it is allowed; an enable and a disable queued on the row leave the flag of whichever audit row is last; two patches of different fields queued on the row keep both; two patches of the same field leave the value of the last audit row; a patch whose value was committed while it waited is a no-op with no row; the recorded changed fields are only those that differ from the locked row |
+| `ScheduleLifecycleAuditSqlServerTests` (extended) | `PatchRename` and `PatchEnable` join the M7 and M6 matrix (audit insert failure, lost acknowledgement verified and read back, confirmed rollback rerun, unknown outcome committed and not committed); a rename waiting for a delete finds the schedule gone and records nothing |
+| `SchedulePatchTests` (new, unit, 17) | The semantics above in the in-memory harness, the gate taken only for `Enabled: true` whatever the stored flag, no-op and empty patches, the lost-acknowledgement read-back, the typed not-found, the direct `UpdateScheduleAsync` caller, `ApplyTo` |
+| `SchedulesControllerPatchTests` (new, unit, 4) | The body becomes a patch with omitted fields left out and nothing read first; the response is the committed schedule; not found is 404; an audit invariant is not mapped to a refusal |
+| `SchedulePatchUiSourceTests` (new, UI source, 1) | The edit form sends `null` for each field the operator did not change, the enabled flag included |
+| `ScheduleGateOrderingTests`, `SchedulesControllerReactivationGuardTests` (changed) | An enabling patch takes the gate before the reactivation read; the 409 and 400 mappings now go through `PatchScheduleAsync` |
+
+`LockedRowHolder.WaitUntilBlockedAsync` now counts requests waiting on the exact key the holder was granted rather than requests whose `blocking_session_id` is the holder: a second request queued on the same key is reported as blocked by the first waiter, so the old query never saw two waiters (no earlier test asked for two). The binding and schedule suites that use it pass with the change.
+
+**Validation run.** Focused unit tests (the new suites and every existing schedule controller, service, gate, guard and audit suite): 111 of 111. UI source tests touching the schedule pages: 69 of 69, and the UI client builds. SQL Server: `SchedulePatchSqlServerTests` (20), `ScheduleLifecycleAuditSqlServerTests` and `BindingLifecycleAuditSqlServerTests`, all passing on the final service code (the first run passed everything except the 8 two-waiter cases, which failed on the `LockedRowHolder` count described above and passed, with the binding and delete-wait cases, 55 of 55, once it was corrected; the later review fixes changed only comments and the UI). The suites fail rather than skip without SQL Server. No mutation run was made for this remediation: the race cases are built so the competing change commits after the patch is already waiting, which is the interleaving the old route got wrong, but their failure under the old route was not demonstrated.
+
+**Review.** A short targeted review (Opus 5.5, high) of this remediation only (lock order, gate, concurrent enable and disable, audit evidence, API compatibility, test strength): **approve with nits**, no critical or high finding.
+
+| Finding | Disposition |
+|---|---|
+| R1 (medium, not a regression): the management UI's edit form always sent all four loaded values, so the M1 race remained for UI users | Fixed: the form sends only changed fields (above), pinned by `SchedulePatchUiSourceTests` |
+| R2 (low): the ownership gate and reactivation guard documentation still named `UpdateScheduleAsync` as the `PATCH` path | Fixed: both name `PatchScheduleAsync` and its `Enabled = true` condition |
+| R3 (nit): the lost-acknowledgement read-back is unlocked and may show a later writer's change | Accepted, as for the other read-backs; the remarks and this record say so |
+
+The reviewer found lock order, the gate decision (no patch without `Enabled: true` can make a schedule live, and dropping the gate for such a patch does not weaken archive, since it changes neither the flag nor ownership and takes only the row lock), the guard, audit evidence and the status mapping sound, and the `LockedRowHolder` change correct for its existing callers. One reviewer note does not hold: a missing schedule with an invalid body answered 400 before this change too, because validation already ran before the removed read.

@@ -480,7 +480,16 @@
         _validationErrors = null;
         try
         {
-            var request = new UpdateScheduleRequest(_editName.Trim(), _editRecurrence.Trim(), string.IsNullOrWhiteSpace(_editTimeZone) ? "UTC" : _editTimeZone.Trim(), _editEnabled);
+            // Send only what the operator changed in this form. An omitted field keeps the server's current value, so a change
+            // another operator made while the form was open (a disable, for instance) is not overwritten with the loaded value.
+            var name = _editName.Trim();
+            var recurrence = _editRecurrence.Trim();
+            var timeZone = string.IsNullOrWhiteSpace(_editTimeZone) ? "UTC" : _editTimeZone.Trim();
+            var request = new UpdateScheduleRequest(
+                name == _detail.Name ? null : name,
+                recurrence == _detail.RecurrenceExpression ? null : recurrence,
+                timeZone == _detail.TimeZone ? null : timeZone,
+                _editEnabled == _detail.Enabled ? null : _editEnabled);
             await Client.UpdateScheduleAsync(ScheduleId, request);
             _editing = false;
             await LoadAsync();

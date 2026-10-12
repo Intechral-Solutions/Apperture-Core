@@ -13,8 +13,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// SQL-backed schedule management. Epic 28, Epic 36. Epic 66: lifecycle evidence on write paths. The hard-delete is one
-/// audited unit (AUD-1.4): the removal and its audit row commit together or not at all.
+/// SQL-backed schedule management. Epic 28, Epic 36. Epic 66: lifecycle evidence on write paths. Every mutation is one audited
+/// unit (AUD-1.4): create with its assignment, update, enable, disable, assign and the hard-delete each commit with their one
+/// audit row or not at all.
 /// </summary>
 public sealed class SqlScheduleManagementService : IScheduleManagementService
 {
@@ -54,7 +55,7 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
     }
 
     private IAuditedUnitOfWork Unit =>
-        _auditedUnitOfWork ?? throw new AuditInvariantException("Schedule deletion requires the audited unit of work.");
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Schedule changes require the audited unit of work.");
 
     public async ValueTask<ScheduleDefinition?> GetDefinitionAsync(ScheduleId id, CancellationToken cancellationToken = default) =>
         await _repo.GetDefinitionAsync(id, cancellationToken);
@@ -68,51 +69,101 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         await _repo.ListDefinitionsAsync(resourceContextId, cancellationToken);
 
     /// <inheritdoc />
-    public async ValueTask<ScheduleDefinition> CreateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default)
+    public ValueTask<ScheduleDefinition> CreateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default) =>
+        CreateAsync(definition, runtimePlaneId: null, policyOverrides: null, cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<ScheduleDefinition> CreateScheduleWithAssignmentAsync(
+        ScheduleDefinition definition,
+        RuntimePlaneId runtimePlaneId,
+        string? policyOverrides,
+        CancellationToken cancellationToken = default) =>
+        CreateAsync(definition, runtimePlaneId, policyOverrides, cancellationToken);
+
+    /// <summary>
+    /// One audited unit (AUD-1.4 slice 4): the definition, its initial assignment when a runtime plane is named, and the one
+    /// <c>schedule.created</c> row commit together or not at all, so a failure between the two can no longer leave a schedule
+    /// with no assignment that is never dispatched. The schedule id comes from the caller, so a rerun after a confirmed rollback
+    /// creates the same schedule and a verified commit after a lost acknowledgement is reconstructed from it.
+    /// </summary>
+    private async ValueTask<ScheduleDefinition> CreateAsync(
+        ScheduleDefinition definition,
+        RuntimePlaneId? runtimePlaneId,
+        string? policyOverrides,
+        CancellationToken cancellationToken)
     {
-        if (definition.IntegrationId is null)
-        {
-            // Standalone: inherits from nothing, so it asserts no cross-context relationship with respect
-            // to the BINDING invariant, and this path is unchanged and ungated with respect to that
-            // invariant. This is not a blanket proof that no gate is ever needed here: a concurrent
-            // standalone-schedule-creation-into-context-T race against archiving T is a real, pre-existing
-            // gap in the ARCHIVE invariant ("Application owns nothing live"), since an Enabled: true
-            // standalone schedule created into T does count toward what blocks T's archive. That race is
-            // out of scope for this plan; leaving it unfixed here is a known gap for a future plan, not an
-            // oversight.
-            var owningContextId = await ResolveOwningResourceContextAsync(definition, integration: null, cancellationToken).ConfigureAwait(false);
-            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(null, definition with { ResourceContextId = owningContextId }, _timeProvider.GetUtcNow());
-            await _repo.AddDefinitionAsync(merged, cancellationToken);
-            return merged;
-        }
+        await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ScheduleCreated, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                ResourceContextId owningContextId;
+                if (definition.IntegrationId is null)
+                {
+                    // Standalone: inherits from nothing, so it asserts no cross-context relationship with respect to the BINDING
+                    // invariant, and this path is unchanged and ungated with respect to that invariant. This is not a blanket
+                    // proof that no gate is ever needed here: a concurrent standalone-schedule-creation-into-context-T race
+                    // against archiving T is a real, pre-existing gap in the ARCHIVE invariant ("Application owns nothing
+                    // live"), since an Enabled: true standalone schedule created into T does count toward what blocks T's
+                    // archive. That race is out of scope here; leaving it unfixed is a known gap, not an oversight.
+                    owningContextId = await ResolveOwningResourceContextAsync(definition, integration: null, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    // Attach path: the new Schedule inherits the Integration's ownership, so this IS an ownership-sensitive
+                    // mutation. Gate first, then read the Integration under a row lock, so a concurrent Integration move cannot
+                    // commit a new ResourceContextId between the read and the insert, and an Integration delete that counts its
+                    // blockers either sees this schedule or finds the integration locked behind it.
+                    await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
+                    var integration = await _integrationRepository.GetByIdForUpdateAsync(definition.IntegrationId, ct).ConfigureAwait(false)
+                        ?? throw new InvalidOperationException($"Integration {definition.IntegrationId.Value} not found.");
+                    owningContextId = await ResolveOwningResourceContextAsync(definition, integration, ct).ConfigureAwait(false);
+                }
 
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
+                var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(
+                    null, definition with { ResourceContextId = owningContextId }, _timeProvider.GetUtcNow());
+                await transaction.StageAsync(
+                    AuditEvents.ScheduleCreated(
+                        merged.Id.Value,
+                        merged.Name,
+                        merged.IntegrationId?.Value,
+                        merged.Enabled,
+                        runtimePlaneId?.Value,
+                        runtimePlaneId is null ? 0 : 1,
+                        owningContextId.Value),
+                    ct).ConfigureAwait(false);
+                await _repo.AddDefinitionAsync(merged, ct).ConfigureAwait(false);
+                if (runtimePlaneId is not null)
+                {
+                    await _repo.AddAssignmentAsync(
+                        new ScheduleAssignment(
+                            new ScheduleAssignmentId(Guid.NewGuid().ToString("N")[..24]),
+                            merged.Id,
+                            runtimePlaneId,
+                            policyOverrides,
+                            DesiredVersion: 1,
+                            AppliedVersion: 0),
+                        ct).ConfigureAwait(false);
+                }
 
-            // Attach path: the new Schedule inherits the Integration's ownership, so this IS an
-            // ownership-sensitive mutation. Gate first, then read the Integration under a row lock, so a
-            // concurrent Integration move cannot commit a new ResourceContextId between the read and the
-            // insert (which would persist a schedule already inconsistent with its own Integration).
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            var integration = await _integrationRepository.GetByIdForUpdateAsync(definition.IntegrationId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Integration {definition.IntegrationId.Value} not found.");
-
-            var owningContextId = await ResolveOwningResourceContextAsync(definition, integration, cancellationToken).ConfigureAwait(false);
-            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(null, definition with { ResourceContextId = owningContextId }, _timeProvider.GetUtcNow());
-            await _repo.AddDefinitionAsync(merged, cancellationToken).ConfigureAwait(false);
-
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return merged;
-        }).ConfigureAwait(false);
+                return merged;
+            },
+            async (committed, ct) => await _repo.GetDefinitionAsync(definition.Id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Schedule {definition.Id.Value} could not be read back."),
+            cancellationToken).ConfigureAwait(false);
     }
+
+    private async ValueTask RequireActorAsync(CancellationToken cancellationToken)
+    {
+        // Authorization for schedules is instance-scoped schedule.manage, enforced by the controller before the service runs. A
+        // missing actor still fails here, before any read or audit, so a direct caller cannot change anything anonymously. The
+        // row's actor is the unit's, resolved from the same principal; nothing a caller supplies is recorded.
+        if (await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false) is null)
+            throw new UnauthorizedAccessException("No authenticated actor.");
+    }
+
 
     /// <summary>
     /// Authoritative Schedule ownership rule. See <see cref="IScheduleManagementService.CreateScheduleAsync"/>.
@@ -157,142 +208,174 @@ public sealed class SqlScheduleManagementService : IScheduleManagementService
         return resolved.Id;
     }
 
-    public async ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default)
-    {
-        var previous = await _repo.GetDefinitionAsync(definition.Id, cancellationToken)
-            ?? throw new InvalidOperationException($"Schedule {definition.Id.Value} not found.");
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>Only the fields a PATCH can change are applied (name, recurrence, time zone, enabled), over the schedule as locked;
+    /// the target, execution policy, integration and ownership are never rewritten by an update. Established PATCH semantics are
+    /// otherwise unchanged. See <see cref="ChangeAsync"/>.</para>
+    /// </remarks>
+    public async ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default) =>
+        await ChangeAsync(
+            definition.Id,
+            AuditActionNames.ScheduleUpdated,
+            // The proposed flag is the request's, so it decides the gate; the stored flag is unknown until the row is locked.
+            takesGate: definition.Enabled,
+            fresh => fresh with
+            {
+                Name = definition.Name,
+                RecurrenceExpression = definition.RecurrenceExpression,
+                TimeZone = definition.TimeZone,
+                Enabled = definition.Enabled,
+            },
+            "enabling this schedule",
+            readBack: false,
+            cancellationToken).ConfigureAwait(false);
 
-        // Reactivation guard (§6.5, D2), CTX-3A finding C2: PATCH /schedules/{id} reaches this method
-        // directly and previously bypassed EnableAsync's guard entirely, letting an archived
-        // Application's schedule be re-enabled through an ordinary field update. Flipping
-        // Enabled false -> true here is the exact same reactivation EnableAsync guards, so it gets the
-        // same guard. Any other field update (rename, cron change, disabling, staying disabled, or
-        // staying enabled) remains allowed regardless of the owning context's archived state, since
-        // none of those make anything newly live, so it stays on the ordinary ungated write path below.
-        //
-        // `definition` is caller-supplied and its ResourceContextId is a freely-settable `init`
-        // property (see ResourceMoveDtoImmutabilityTests), so it must never be trusted for the guard
-        // check or the persistence merge -- ApplyGatedScheduleTransitionAsync re-reads the schedule
-        // fresh, inside the gate, and uses THAT for both (CTX-3B review findings C1/I3).
-        if (!previous.Enabled && definition.Enabled)
-        {
-            await ApplyGatedScheduleTransitionAsync(definition.Id, _ => definition, "enabling this schedule", cancellationToken).ConfigureAwait(false);
-            return;
-        }
+    /// <inheritdoc />
+    /// <remarks>
+    /// The same unit as <see cref="UpdateScheduleAsync"/>, with the patch applied to the schedule as locked, so a field the
+    /// patch leaves out keeps the locked row's value and is neither compared nor written. Only an explicit <c>Enabled = true</c>
+    /// can make the schedule live, so only that takes the ownership gate; the decision is the patch's, never a read made before
+    /// the unit. The result is the merged row the attempt wrote (or the locked row, for a no-op), and after a verified commit
+    /// whose acknowledgement was lost, the latest committed schedule read back without a lock (which may include a later
+    /// writer's change).
+    /// </remarks>
+    public async ValueTask<ScheduleDefinition> PatchScheduleAsync(
+        ScheduleId scheduleId,
+        SchedulePatch patch,
+        CancellationToken cancellationToken = default) =>
+        (await ChangeAsync(
+            scheduleId,
+            AuditActionNames.ScheduleUpdated,
+            takesGate: patch.Enabled == true,
+            patch.ApplyTo,
+            "enabling this schedule",
+            readBack: true,
+            cancellationToken).ConfigureAwait(false))!;
 
-        var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(
-            previous,
-            definition,
-            _timeProvider.GetUtcNow());
-        await _repo.UpdateDefinitionAsync(merged, cancellationToken);
-    }
+    /// <inheritdoc />
+    public async ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+        // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing it owns may become live
+        // again. Gated against a concurrent Archive (CTX-3B follow-on).
+        await ChangeAsync(scheduleId, AuditActionNames.ScheduleEnabled, takesGate: true, fresh => fresh with { Enabled = true }, "enabling this schedule", readBack: false, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default) =>
+        await ChangeAsync(scheduleId, AuditActionNames.ScheduleDisabled, takesGate: false, fresh => fresh with { Enabled = false }, "disabling this schedule", readBack: false, cancellationToken).ConfigureAwait(false);
 
     /// <summary>
-    /// Applies a Schedule field update whose transition can make the owning ResourceContext newly
-    /// archive-blocking (Disabled -&gt; Enabled), gated against a concurrent Archive
-    /// (CTX-3B follow-on to Plan 2 Task 5). Callers that don't hit this transition should call
-    /// <c>_repo.UpdateDefinitionAsync</c> directly and skip this method entirely -- it exists only for
-    /// the reactivation-guarded path.
+    /// One audited unit for an update, patch, enable or disable (AUD-1.4 slice 4). Nothing is read before the unit, so a request
+    /// that must wait for the ownership gate waits there first, as it always did. Inside the attempt, in this order: the ownership
+    /// gate when the change may enable the
+    /// schedule (an enabled schedule is archive-blocking, and the stored flag is unknown until the row is locked, so the request
+    /// decides), the schedule row, locked to the end of the transaction (the row a delete and a move also take), the change
+    /// computed against it, the reactivation guard against its owning context, then the one primary row and the write.
     /// </summary>
-    /// <param name="scheduleId">The schedule to transition. Re-read fresh inside the gate -- see below.</param>
-    /// <param name="applyChange">
-    /// Produces the proposed <see cref="ScheduleDefinition"/> from the freshly re-read definition (e.g.
-    /// <c>fresh =&gt; fresh with { Enabled = true }</c> for <see cref="EnableAsync"/>, or <c>_ =&gt;
-    /// definition</c> for <see cref="UpdateScheduleAsync"/>, which already has the caller's whole
-    /// proposed record). Receives the fresh read, never a pre-gate snapshot.
-    /// </param>
-    private async ValueTask ApplyGatedScheduleTransitionAsync(
+    /// <remarks>
+    /// <para>A request that changes nothing declares a no-op and records nothing. A request that changes the enabled flag is
+    /// recorded under <c>schedule.enabled</c> or <c>schedule.disabled</c>, with the names of any other fields it changed; otherwise
+    /// under <c>schedule.updated</c>. Names, never values: the recurrence and time zone have no field. The lifecycle timestamps are
+    /// computed by the same merge as before, in the same save.</para>
+    /// <para>Returns the definition as written (the locked row for a no-op). With <paramref name="readBack"/>, a verified commit
+    /// whose acknowledgement was lost returns the schedule read back from committed state; without it, null, as the callers
+    /// that return nothing never read it.</para>
+    /// </remarks>
+    private async ValueTask<ScheduleDefinition?> ChangeAsync(
         ScheduleId scheduleId,
-        Func<ScheduleDefinition, ScheduleDefinition> applyChange,
+        string primaryAction,
+        bool takesGate,
+        Func<ScheduleDefinition, ScheduleDefinition> propose,
         string actionPhrase,
+        bool readBack,
         CancellationToken cancellationToken)
     {
-        var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
+        await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
 
-            // Gate first: enabling a Schedule is an archive-blocking transition, so it must not interleave
-            // with a concurrent Archive evaluating the owning context's ownership summary.
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            // Re-read fresh, inside the gate (CTX-3B review findings C1/I3): a pre-gate snapshot, or a
-            // caller-supplied ScheduleDefinition's ResourceContextId (a freely-settable `init` property
-            // that a hostile or careless caller could tamper with -- see
-            // ResourceMoveDtoImmutabilityTests), must never drive the guard check. And the schedule can
-            // genuinely have moved between a pre-gate read and gate acquisition (e.g. a concurrent
-            // ResourceOwnershipMoveService.MoveScheduleAsync), so only a read taken AFTER the gate is
-            // trustworthy. Both the guard below and the persistence merge use this fresh definition.
-            var fresh = await _repo.GetDefinitionAsync(scheduleId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
-
-            if (fresh.ResourceContextId is { } owningContextId)
+        return await unit.ExecuteAsync<ScheduleDefinition?>(
+            new AuditedOperation(primaryAction, AuditActor.CurrentPrincipal, AuditActionNames.ScheduleUpdateActions),
+            async (transaction, ct) =>
             {
-                await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
-                    owningContextId, _resourceContexts, actionPhrase, cancellationToken).ConfigureAwait(false);
-            }
+                if (takesGate)
+                    await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
 
-            var proposed = applyChange(fresh);
-            var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(fresh, proposed, _timeProvider.GetUtcNow());
-            await _repo.UpdateDefinitionAsync(merged, cancellationToken).ConfigureAwait(false);
+                var fresh = await _repo.GetByIdForUpdateAsync(scheduleId, ct).ConfigureAwait(false)
+                    ?? throw new ScheduleNotFoundException(scheduleId);
 
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+                var proposed = propose(fresh);
+                var changed = new List<string>();
+                if (!string.Equals(fresh.Name, proposed.Name, StringComparison.Ordinal))
+                    changed.Add("name");
+                if (!string.Equals(fresh.RecurrenceExpression, proposed.RecurrenceExpression, StringComparison.Ordinal))
+                    changed.Add("recurrence");
+                if (!string.Equals(fresh.TimeZone, proposed.TimeZone, StringComparison.Ordinal))
+                    changed.Add("timeZone");
+                var enabledChanges = fresh.Enabled != proposed.Enabled;
+
+                if (!enabledChanges && changed.Count == 0)
+                {
+                    transaction.DeclareNoOp();
+                    return fresh;
+                }
+
+                // Flipping Enabled false -> true makes anything newly live, so the owning context must be Active. It is the
+                // freshly locked schedule's context, never one the caller supplied.
+                if (!fresh.Enabled && proposed.Enabled && fresh.ResourceContextId is { } owningContextId)
+                {
+                    await ResourceContextReactivationGuard.EnsureOwningContextIsActiveAsync(
+                        owningContextId, _resourceContexts, actionPhrase, ct).ConfigureAwait(false);
+                }
+
+                var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(fresh, proposed, _timeProvider.GetUtcNow());
+                var resourceContextId = fresh.ResourceContextId?.Value;
+                var auditEvent = enabledChanges
+                    ? AuditEvents.ScheduleEnabledChanged(
+                        proposed.Enabled, scheduleId.Value, merged.Name, merged.IntegrationId?.Value, changed, resourceContextId)
+                    : AuditEvents.ScheduleUpdated(scheduleId.Value, merged.Name, merged.IntegrationId?.Value, changed, resourceContextId);
+                await transaction.StageAsync(auditEvent, ct).ConfigureAwait(false);
+                await _repo.UpdateDefinitionAsync(merged, ct).ConfigureAwait(false);
+                return merged;
+            },
+            // A verified commit is the change having happened. Only a caller that returns the schedule reads it back.
+            async (_, ct) => readBack
+                ? await _repo.GetDefinitionAsync(scheduleId, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} could not be read back.")
+                : null,
+            cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// One audited unit (AUD-1.4 slice 4): the assignment and its <c>schedule.assigned</c> row commit together. The schedule row
+    /// is locked first, the lock a delete also takes, so an assignment is never inserted for a schedule a delete has decided to
+    /// remove. Reachable only by a direct caller of the service: the HTTP routes assign through
+    /// <see cref="CreateScheduleWithAssignmentAsync"/>.
+    /// </remarks>
     public async ValueTask<ScheduleAssignment> AssignToRuntimePlaneAsync(ScheduleId scheduleId, RuntimePlaneId runtimePlaneId, string? policyOverrides, CancellationToken cancellationToken = default)
     {
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
+        await RequireActorAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
+        var id = new ScheduleAssignmentId(Guid.NewGuid().ToString("N")[..24]);
 
-            // Same definition row lock delete holds. An assignment insert blocks until that transaction
-            // commits, then fails if the definition is gone, so a delete cannot leave a new assignment behind.
-            _ = await _repo.GetByIdForUpdateAsync(scheduleId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ScheduleAssigned, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var schedule = await _repo.GetByIdForUpdateAsync(scheduleId, ct).ConfigureAwait(false)
+                    ?? throw new ScheduleNotFoundException(scheduleId);
 
-            var id = Guid.NewGuid().ToString("N")[..24];
-            var assignment = new ScheduleAssignment(
-                new ScheduleAssignmentId(id),
-                scheduleId,
-                runtimePlaneId,
-                policyOverrides,
-                DesiredVersion: 1,
-                AppliedVersion: 0);
-            await _repo.AddAssignmentAsync(assignment, cancellationToken).ConfigureAwait(false);
-
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return assignment;
-        }).ConfigureAwait(false);
+                var assignment = new ScheduleAssignment(id, scheduleId, runtimePlaneId, policyOverrides, DesiredVersion: 1, AppliedVersion: 0);
+                await transaction.StageAsync(
+                    AuditEvents.ScheduleAssigned(scheduleId.Value, runtimePlaneId.Value, policyOverrides is not null, schedule.ResourceContextId?.Value),
+                    ct).ConfigureAwait(false);
+                await _repo.AddAssignmentAsync(assignment, ct).ConfigureAwait(false);
+                return assignment;
+            },
+            async (committed, ct) => await _repo.GetAssignmentAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Assignment {id.Value} could not be read back."),
+            cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask EnableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
-    {
-        // Reactivation guard (§6.5, D2): while an Application ResourceContext is archived, nothing
-        // it owns may become live again. Gated against a concurrent Archive (CTX-3B follow-on to
-        // Plan 2 Task 5): the existence check, the authoritative context check, and the actual field
-        // change all happen inside the gated helper, against a definition re-read fresh after the gate
-        // is acquired (CTX-3B review findings C1/I3).
-        await ApplyGatedScheduleTransitionAsync(scheduleId, fresh => fresh with { Enabled = true }, "enabling this schedule", cancellationToken).ConfigureAwait(false);
-    }
-
-    public async ValueTask DisableAsync(ScheduleId scheduleId, CancellationToken cancellationToken = default)
-    {
-        var def = await _repo.GetDefinitionAsync(scheduleId, cancellationToken)
-            ?? throw new InvalidOperationException($"Schedule {scheduleId.Value} not found.");
-        var proposed = def with { Enabled = false };
-        var merged = ScheduleLifecycleEvidenceApplier.MergeForPersist(def, proposed, _timeProvider.GetUtcNow());
-        await _repo.UpdateDefinitionAsync(merged, cancellationToken);
-    }
 
     public async ValueTask<IReadOnlyList<ScheduleAssignment>> GetAssignmentsAsync(RuntimePlaneId runtimePlaneId, CancellationToken cancellationToken = default)
     {

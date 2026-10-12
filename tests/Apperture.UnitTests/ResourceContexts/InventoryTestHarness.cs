@@ -99,7 +99,8 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             integrationRepository,
             ResourceContexts,
             Db,
-            ownershipGate);
+            ownershipGate,
+            auditedUnitOfWork: new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         _connections = new ConnectionManagementService(
             new AlwaysActor(),
@@ -121,7 +122,8 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             integrationRepository,
             Db,
             ownershipGate,
-            new AlwaysActor());
+            new AlwaysActor(),
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
         _schedules = schedules;
 
         _auditService = new SqlAuditService(Db);

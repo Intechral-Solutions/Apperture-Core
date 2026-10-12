@@ -77,7 +77,8 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             integrationRepository,
             _db,
             new SqlResourceOwnershipMutationGate(_db),
-            new NullPrincipalContext());
+            new ActingPrincipalContext(),
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         var recordingResourceContextRepository = new RecordingResourceContextRepository(new SqlResourceContextRepository(_db), _tracker);
         var recordingResourceContexts = new ResourceContextService(recordingResourceContextRepository, TimeProvider.System);
@@ -91,7 +92,8 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
             integrationRepository,
             _db,
             Gate,
-            new NullPrincipalContext());
+            new ActingPrincipalContext(),
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
     }
 
     private ManagementServiceTestHarness.RecordingResourceOwnershipMutationGate Gate { get; }
@@ -114,6 +116,17 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
         var schedule = await CreateStandaloneScheduleAsync(context.Id, enabled: false);
 
         await _schedulesUnderTest.UpdateScheduleAsync(schedule with { Enabled = true });
+
+        Gate.AcquiredBeforeFirstOwnershipRead.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PatchScheduleAsync_ExplicitEnable_AcquiresGateBeforeReactivationRead()
+    {
+        var context = await _setupResourceContexts.CreateApplicationContextAsync("CampusNexus");
+        var schedule = await CreateStandaloneScheduleAsync(context.Id, enabled: false);
+
+        await _schedulesUnderTest.PatchScheduleAsync(schedule.Id, new SchedulePatch(Enabled: true));
 
         Gate.AcquiredBeforeFirstOwnershipRead.Should().BeTrue();
     }
@@ -142,10 +155,17 @@ public sealed class ScheduleGateOrderingTests : IAsyncDisposable
         public int ClaimLeaseMinutes => 5;
     }
 
-    private sealed class NullPrincipalContext : IPrincipalContext
+    private sealed class ActingPrincipalContext : IPrincipalContext
     {
         public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IActor?>(null);
+            ValueTask.FromResult<IActor?>(new ScheduleTestActor());
+    }
+
+    private sealed class ScheduleTestActor : IActor
+    {
+        public ActorId Id => new("schedule-test-actor");
+        public ActorKind Kind => ActorKind.Human;
+        public string? DisplayName => "Schedule Test Actor";
     }
 
     private sealed class NullAuditService : IAuditService
