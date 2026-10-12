@@ -852,4 +852,135 @@ internal static class AuditDetailSchemas
         IdField("runtimePlaneId"),
         FlagField("policyOverridesSet"),
     ]);
+
+    // ---- Connections (AUD-1.4 slice 5) ----
+    // The connection is the event's target and its owning resource context the related reference, so neither is repeated. Names are
+    // snapshots; the connector is an id. A change is described by the names of the fields that differ, never their values: config
+    // values, secret values and secret references have no field. Field names of a connector are declared by the connector (for
+    // example "BaseUrl" or "Password"), are bounded, and are never a value.
+
+    private static AuditFieldDefinition FieldKeysField(string name, bool required) =>
+        new(name, AuditFieldKind.IdList, required, MaxItems: 64);
+
+    internal static readonly AuditDetailSchema ConnectionCreated = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+        CountField("fieldsStored"),
+    ]);
+
+    internal static readonly AuditDetailSchema ConnectionUpdated = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+        FlagField("nameChanged", required: false),
+        FieldKeysField("configChanged", required: false),
+        FieldKeysField("rotated", required: false),
+    ]);
+
+    /// <summary>
+    /// A Secrets-category event, so ids, closed values, flags and counts only (see the catalog rule for recorder secret events): the
+    /// names of the fields stay on the connection's <c>connection.secret.stored</c> rows and on <c>connection.updated</c>, and this
+    /// row counts them.
+    /// </summary>
+    internal static readonly AuditDetailSchema ConnectionSecretRotated = new(
+    [
+        IdField("connectorId"),
+        FlagField("nameChanged", required: false),
+        CountField("configFieldsChanged", required: false),
+        CountField("fieldsRotated"),
+    ]);
+
+    internal static readonly AuditDetailSchema ConnectionRetired = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+    ]);
+
+    /// <summary>
+    /// What the verifier answered, and nothing the platform did not observe. The status is absent when the verifier produced no
+    /// answer (it threw). The verifier's own summary is remote-derived text and is never recorded.
+    /// </summary>
+    internal static readonly AuditDetailSchema ConnectionVerified = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+        EnumField("verificationStatus", false, "success", "failed", "unavailable"),
+    ]);
+
+    internal static readonly string[] BrowseOperations = ["schemas", "tables", "columns"];
+
+    internal static readonly AuditDetailSchema ConnectionStructureBrowsed = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+        EnumField("tool", true, "sql-structure"),
+        EnumField("operation", true, BrowseOperations),
+        EnumField("result", true, "succeeded", "remote_denied", "remote_unavailable", "secrets_unavailable", "failed"),
+        CountField("resultCount", required: false),
+        FlagField("truncated", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ConnectionStructureBrowseFailed = new(
+    [
+        NameField("name"),
+        IdField("connectorId"),
+        EnumField("tool", true, "sql-structure"),
+        EnumField("operation", true, BrowseOperations),
+        EnumField("reason", true, "failed", "cancelled"),
+    ]);
+
+    internal static readonly AuditDetailSchema ConnectionSecretStored = new(
+    [
+        IdField("fieldKey"),
+        EnumField("change", true, "created", "replaced"),
+    ]);
+
+    // ---- Resource contexts (AUD-1.4 slice 5) ----
+    // The context is the event's target and its own related reference. The name is a snapshot; the slug is an id.
+
+    internal static readonly AuditDetailSchema ResourceContextCreated = new(
+    [
+        NameField("name"),
+        IdField("slug"),
+    ]);
+
+    /// <summary>The context fields an update can change (named, never valued).</summary>
+    internal static readonly string[] ResourceContextChangeFields = ["name", "slug", "description"];
+
+    internal static readonly AuditDetailSchema ResourceContextUpdated = new(
+    [
+        NameField("name"),
+        new AuditFieldDefinition("changed", AuditFieldKind.IdList, Required: true, MaxItems: 3),
+    ]);
+
+    internal static readonly AuditDetailSchema ResourceContextStateChanged = new(
+    [
+        NameField("name"),
+    ]);
+
+    // ---- Ownership moves (AUD-1.4 slice 5) ----
+    // The moved resource is the target. The source context is the related reference of moved_out and of a rejection, the target
+    // context that of moved_in; both ids are also fields so either row is complete on its own. An integration move also moves its
+    // attached schedules: they are counted exactly and listed up to a bound, so the row can never outgrow the details limit.
+
+    /// <summary>The most attached schedule ids one move row lists; the count is always exact.</summary>
+    internal const int MaxMovedScheduleIds = 500;
+
+    internal static readonly AuditDetailSchema OwnershipMoved = new(
+    [
+        NameField("name"),
+        IdField("sourceContextId"),
+        IdField("targetContextId"),
+        CountField("schedulesMoved", required: false),
+        new AuditFieldDefinition("scheduleIds", AuditFieldKind.IdList, Required: false, MaxItems: MaxMovedScheduleIds),
+    ]);
+
+    internal static readonly AuditDetailSchema OwnershipMoveRejected = new(
+    [
+        NameField("name"),
+        IdField("sourceContextId"),
+        IdField("targetContextId"),
+        new AuditFieldDefinition("blockers", AuditFieldKind.IdList, Required: true, MaxItems: 16),
+    ]);
 }
