@@ -118,7 +118,8 @@ public sealed class IntegrationsControllerDeleteTests
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
             Mock.Of<IResourceContextService>(),
-            Mock.Of<IResourceOwnershipMoveService>());
+            Mock.Of<IResourceOwnershipMoveService>(),
+            UnusedIntegrationAuthorization.Create());
 
         return await controller.Delete("int-1", CancellationToken.None);
     }

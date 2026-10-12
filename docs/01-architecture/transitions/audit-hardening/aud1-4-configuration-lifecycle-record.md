@@ -267,7 +267,7 @@ Recorded at orientation; not changed by this package.
 
 | Finding | Owner |
 |---|---|
-| The integration-level attention-routing write routes (`PUT` and `DELETE /api/integrations/{id}/attention-routing`) are authorized by integration read only; the routing service checks nothing itself | Security defect. **Provisionally assigned to AUD-1.4 slice 7** (which converts `AttentionRoutingManagementService`), pending security triage (slice 3 closeout, 2026-10-11). Triage may route it to IAM-10 or an earlier owner-directed fix instead. Slice 7 will attribute these writes; attributing them does not fix their authorization, and nothing has changed in the routes' authorization |
+| The integration-level attention-routing write routes (`PUT` and `DELETE /api/integrations/{id}/attention-routing`) are authorized by integration read only; the routing service checks nothing itself | Security defect. **Provisionally assigned to AUD-1.4 slice 7** (which converts `AttentionRoutingManagementService`), pending security triage (slice 3 closeout, 2026-10-11). Triage may route it to IAM-10 or an earlier owner-directed fix instead. Slice 7 will attribute these writes; attributing them does not fix their authorization, and nothing has changed in the routes' authorization. **Authorization remediated separately (owner direction, 2026-10-11, branch `fix/integration-attention-routing-authorization`):** both routes now require `integration.update` on the integration in addition to the read check, evaluated before the write and again under the integration row lock; the clear (`ClearIntegrationRoutingAsync`) now takes that row lock like the upsert. The routes still write no audit row, which stays with slice 7. |
 | A worker with no configured runtime id applies the oldest queued shutdown request of any runtime | Runtime package, unowned |
 | The worker's `applied` shutdown transition has no audit row (gate §11.6 cites it only as an example of `confirmed_result`) | Unassigned; for the AUD-1.6 writer inventory |
 | A diagnostic pipeline test that dispatches immediately processes the whole pending outbox batch | Existing defect, unowned |
@@ -1113,7 +1113,7 @@ Both runs report the same totals: **7,332 tests passed, 0 failed, 67 skipped**. 
 ### 14.5 Findings carried out of slice 3
 
 - **`AuditLogs.OperationEventId` verification-count deadlock (§7):** assigned to proposed AUD-1.6. The design gate's AUD-1.6 entry is not amended here, so AUD-1.6 planning has to take it up from this record.
-- **Attention-routing write routes authorized by integration read only (§7):** provisionally assigned to slice 7, pending security triage. Triage may move it to IAM-10 or to an earlier owner-directed fix. The routes' authorization is unchanged.
+- **Attention-routing write routes authorized by integration read only (§7):** provisionally assigned to slice 7, pending security triage. Triage may move it to IAM-10 or to an earlier owner-directed fix. *Update 2026-10-11: triaged, and the authorization defect fixed ahead of slice 7 as a separate change (§7); only the audit attribution stays with slice 7.*
 - The other §7 findings keep their owners. The accepted limitations in §13.6 are carried forward unchanged.
 
 AUD-1.4 as a whole is **not complete**. RC1 requirement 5 is met only after AUD-1.6 has merged and passed acceptance (design gate §14), and nothing here changes that.

@@ -62,6 +62,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         DefinitionCreate,
         SubscriptionAdd,
         RoutingUpsert,
+        RoutingClear,
     }
 
     public static IEnumerable<object[]> Cases() =>
@@ -69,9 +70,23 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         from rcsi in new[] { false, true }
         select new object[] { kind, rcsi };
 
+    /// <summary>
+    /// The writers that can race an integration delete in the generic delete-race cases. The routing clear is left out: it needs an
+    /// override to clear, and that override is itself a blocker of the delete, so its two orders have their own cases.
+    /// </summary>
+    public static IEnumerable<object[]> DeleteRaceCases() =>
+        from kind in Enum.GetValues<WriterKind>()
+        where kind != WriterKind.RoutingClear
+        from rcsi in new[] { false, true }
+        select new object[] { kind, rcsi };
+
     /// <summary>The writers whose own caller supplies a check to run under the lock (a platform-scoped subscription has none).</summary>
     public static IEnumerable<object[]> RecheckingCases() =>
-        from kind in new[] { WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.SettingReset, WriterKind.DefinitionCreate, WriterKind.RoutingUpsert }
+        from kind in new[]
+        {
+            WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.SettingReset, WriterKind.DefinitionCreate, WriterKind.RoutingUpsert,
+            WriterKind.RoutingClear,
+        }
         from rcsi in new[] { false, true }
         select new object[] { kind, rcsi };
 
@@ -285,6 +300,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
+            WriterKind.RoutingClear,
         };
 
         for (var round = 0; round < 6; round++)
@@ -355,6 +371,8 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
             await Writer(WriterKind.SecretReplace, scratch, integrationId, principal, definitionId, null)();
         if (kind == WriterKind.SettingReset)
             await Writer(WriterKind.SettingSet, scratch, integrationId, principal, definitionId, null)();
+        if (kind == WriterKind.RoutingClear)
+            await Writer(WriterKind.RoutingUpsert, scratch, integrationId, principal, definitionId, null)();
 
         return new Arranged(integrationId, Writer(kind, scratch, integrationId, principal, definitionId, reauthorize));
     }
@@ -415,6 +433,10 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                     await Routing(db).UpsertIntegrationRoutingAsync(
                         new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: true), reauthorize: recheck);
                     break;
+                case WriterKind.RoutingClear:
+                    await Routing(db).ClearIntegrationRoutingAsync(
+                        new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, reauthorize: recheck);
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(kind));
             }
@@ -451,6 +473,9 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                 break;
             case WriterKind.RoutingUpsert:
                 after.Routings.Should().Be(before.Routings + 1);
+                break;
+            case WriterKind.RoutingClear:
+                after.Routings.Should().Be(before.Routings - 1, "the override that existed before the writer waited was removed");
                 break;
         }
     }

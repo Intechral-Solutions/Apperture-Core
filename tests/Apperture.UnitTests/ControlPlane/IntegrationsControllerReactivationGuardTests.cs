@@ -32,7 +32,8 @@ public sealed class IntegrationsControllerReactivationGuardTests
         Mock.Of<IPrincipalContext>(),
         TimeProvider.System,
         Mock.Of<IResourceContextService>(),
-        Mock.Of<IResourceOwnershipMoveService>());
+        Mock.Of<IResourceOwnershipMoveService>(),
+        UnusedIntegrationAuthorization.Create());
 
     private static ResourceContextArchivedException ArchivedException() => new(
         new ResourceContextId("app-a"),
