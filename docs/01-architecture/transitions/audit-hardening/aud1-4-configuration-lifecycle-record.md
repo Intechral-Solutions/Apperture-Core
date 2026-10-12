@@ -1427,3 +1427,78 @@ Carried forward from slice 5, unresolved and not marked resolved here: the audit
 ## 17. Slice 6: notification definitions, subscriptions, managed contacts and diagnostic live sends
 
 Date: 2026-10-12. Branch `aud-1.4-slice-6-notifications`, from `origin/master` at `ce7d516`. Authorized by the owner after the slice 5 merge. Nothing here claims AUD-1.4 complete: slices 7 and 8 have not started.
+
+### 17.1 Writer inventory (source-backed, before any change)
+
+Three read-only inventories (definitions and subscriptions, managed contacts, diagnostic sends) were made with `git grep` over `src`, `tests` and `docs`. **No writer of these tables exists outside the services below**: no seeder, import, clone, bulk path or startup sync writes a notification definition, subscription, opt-out, preference or managed contact (built-in definitions are inserted by migrations only; `HistoricalActorNormalization` rewrites actor ids at start as IAM maintenance). Controllers call services only.
+
+| Family | Writer (before) | Authorization | Transaction and locking (before) | Audited (before) |
+|---|---|---|---|---|
+| Definition | `NotificationDefinitionService.CreateAsync` | `notification.definition.manage` and `integration.update`, before the store | Store transaction with the integration row lock; the name check was outside it | No |
+| Definition | `UpdateAsync`, `SetEnabledAsync` | as above | None: a tracked read and a write, last writer wins | No |
+| Definition | `DeleteAsync` (cascade: subscriptions, user opt-outs, per-user preferences) | as above | One `SaveChanges`; no lock | After the commit, through the legacy bridge, with a free-text sentence |
+| Subscription | `NotificationSubscriptionService.AddRecipientAsync` (optionally creating a managed contact first) | definition manage | Own transaction only when it names an integration; the contact was committed before it | No |
+| Subscription | `RemoveAsync`, `PatchAsync`, `SetUserOptOutAsync`, `RemoveUserOptOutAsync` | definition manage | None | No |
+| Managed contact | `ManagedContactManagementService`: `CreateCustomAsync`, `UpdateCustomAsync`, `SetEnabledAsync`, `LinkToUserAsync`, `UnlinkUserAsync` | `managed_contact.manage` (and `user.read` to link) | None; address uniqueness a check-then-insert with no index | No |
+| Managed contact | `ImportEntraUsersAsync`, `ImportEntraGroupsAsync`; `ManagedContactRecipientProvisioner` (the contact a subscription creates) | `managed_contact.import`; manage on the creating branch | None; each user saved on its own | No |
+| Diagnostics | `NotificationPipelineTestService.SendSmtpTestEmailAsync`, `RunPlatformPipelineTestAsync` (live) | `notification.definition.manage` (and integration read) | No transaction across the send; the immediate dispatch claimed the oldest pending rows of the whole system | No |
+
+Already converted and not touched: the account's own notification preferences (`account.notification.*`, AUD-1.2), which also write subscription rows. Out of scope by the owner's ruling: attention routing and the attention contact groups, which are operational teams with external-email members (slice 7 and LST-1.4); module lifecycle; the dispatch and evaluation hosted services (a delivery pipeline, not a configuration change).
+
+### 17.2 Decisions
+
+| # | Decision |
+|---|---|
+| S6-1 | **Lock order for every definition and subscription writer: the integration row, then the definition row, then the email lock, then the rows written.** The integration row is the one an ownership move, an integration delete and every earlier integration writer take, so authorization (which depends on the integration's governed identity) is run again once it is held. The definition row is taken by the definition's own writers and by every admin subscription writer, so a subscription cannot attach to a definition that is being deleted and a delete counts what it removes. A platform- or module-scoped definition takes no integration lock for its own sake (its authorization is instance-wide); a subscription that names an integration still locks it. |
+| S6-2 | **Managed contact address uniqueness stays an application rule, made reliable by one application lock** (`apperture:managed-contact-email`, owned by the transaction) that every writer of an address takes before it checks. No index or migration is added: existing data was not inspected for duplicates, and a unique index is a recommended follow-up. A directory import still never merges into an unlinked contact. |
+| S6-3 | **A contact created for a subscription is part of the subscription's unit.** `ManagedContactRecipientProvisioner.ResolveOrCreateAsync` runs inside it, under the email lock, and stages `managed_contact.created` (via `subscription`) beside the subscription row. The permission is still checked only on the creating branch. |
+| S6-4 | **Imports are one unit per user or group**, so a batch keeps its partial results. A user whose outcome cannot be established is reported as `importFailed` with the operation id, not as a success and not by failing the whole request. A user whose contact already matches the directory declares a no-op; its sync time is refreshed afterwards, outside the unit, as before. |
+| S6-5 | **Nothing of the person is recorded**: a contact row has an id, the source, how it was created, whether it has an address and the enabled flag; an update names the changed fields. This follows gate section 12.3 (an address is recorded only where a schema names an operational field, and a third party's address is not one). The definition's name is recorded as a snapshot, as every other configuration name is; its rule and template (free text with subjects, bodies and links) never. |
+| S6-6 | **A group import is recorded as `managed_contact.group_imported`, targeting the imported group's directory row.** The target vocabulary is closed and the group table is metadata only, so no new target type was added; the owner may prefer a dedicated one. |
+| S6-7 | **A diagnostic send is recorded once, afterwards, as a best-effort `external_attempt`.** The row says what the transport reported: `accepted` (the server took the message; never delivery), `rejected`, `failed`, or `cancelled` (outcome unknown). A request that never reached the transport (no recipient, email not configured) is a separate `test_refused` attempt row. A dry run records nothing. No database transaction is open across the send. The transport result carries a disposition so that a cancelled call can be told from a refusal; a channel that does not state one is read from its success flag. |
+| S6-8 | **The immediate dispatch of a pipeline test sends only the rows of the instance it created** (a bounded fix of the defect recorded in section 7: it claimed the oldest pending rows of the whole system, so the operator's row would have attributed other people's sends to a test). The counts in the audit row are the dispatcher's own tally for those rows. |
+| S6-9 | **A change that changes nothing declares a no-op** (the stored values, the current enabled state, the subscription already at that mode, the user already linked, an opt-out that already exists): nothing is recorded and the row's update time does not move. |
+
+### 17.3 Work packages
+
+| WP | Scope | State |
+|---|---|---|
+| WP1 | Audit contracts: 17 new catalog actions, the converted `notification.definition.deleted`, schemas, typed producers, catalog pins | Done |
+| WP2 | Definition create, update, enable, disable, delete as units; the store joins the unit; controller refusals exclude an audit invariant | Done |
+| WP3 | Subscription add, remove, patch and user opt-out set and remove as units | Done |
+| WP4 | Managed contact create, update, enable, link, unlink, user and group import, and the subscription provisioner as units; the email lock | Done |
+| WP5 | Diagnostic SMTP and pipeline tests as external attempts; the transport disposition; the scoped dispatch | Done |
+| WP6 | Real SQL Server validation; independent review; closure | See 17.7 to 17.9 |
+
+### 17.4 Behavior changes
+
+| Change | Why |
+|---|---|
+| Adding a recipient who is already subscribed, and renaming a definition onto another definition's name, are `400` refusals | They were an unmapped `500` from the unique index; both are checked under the locks that serialize the writers |
+| A subscription and the managed contact it creates commit or roll back together | The contact used to be committed first and orphaned by any later failure |
+| A change that changes nothing no longer moves `UpdatedAtUtc` and records nothing | S6-9 |
+| A subscription cannot be added to a definition that is being deleted | S6-1; before, it left an orphan row that blocked the integration delete and could not be removed through the API |
+| Update, enable and delete of a definition, and every subscription writer, re-check authorization against the locked integration | An ownership move that commits while the request waits is what the check reads |
+| The definition delete is audited in the same transaction with the cascade counts, and the legacy free-text sentence is gone | W1 |
+| The immediate dispatch of a pipeline test sends only its own instance's rows | S6-8 |
+| A failed or unknown directory import item is that item's result, with the operation id when the outcome is unknown | S6-4 |
+
+### 17.5 Definitions and subscriptions
+
+**Definition create** takes the integration row (requiring it to exist), re-checks the management permission against it, checks the name (every writer of an integration's definition names takes that row, so the check cannot race), inserts the row and stages `notification.definition.created` in the integration's owning context. The identity is minted before the unit, so a lost acknowledgement is reconstructed from the row. **Update and enable** add the definition row lock, validate the documents against the row as locked, compute the change against it and stage `updated` (naming `displayName`, `description`, `rule`, `template`, `enabled`, `severity`, `toastDefault`) or `enabled` and `disabled`. A built-in definition keeps its immutable rule and template and its mutable flags. **Delete** takes the same locks, refuses built-ins, removes the cascade and stages `deleted` with `subscriptionsRemoved`, `userOptOutsRemoved` and `userPreferencesRemoved`; a definition deleted meanwhile changes nothing, and a verified commit after a lost acknowledgement reports success.
+
+**Subscriptions** take the definition's integration, the subscription's own integration when it differs, and the definition row, then the contact (add), then the subscription or opt-out row. A removed subscription keeps its id on its row. A `PATCH` carrying both an enabled flag and a delivery mode still applies only the enabled flag. The account's own opt-in and toast writers do not take the definition lock (they are the AUD-1.2 units); see 17.10.
+
+### 17.6 Managed contacts and diagnostics
+
+**Contacts.** Create, update, enable, link and unlink are units under the email lock and the contact row lock; link refuses an unknown user and unlink of an unlinked contact is a no-op. A re-import compares the contact and its directory link before and after the upsert and names what differed (`displayName`, `email`, `entraSync`); a manual disable survives a sync as before. **Diagnostics.** See S6-7 and S6-8. `notification.diagnostics.pipeline_test_attempted` records what the run persisted (instances and outbox rows created, for every definition the synthetic event matched) and, when it dispatched, how many sends were attempted and how each ended; its outcome is `requested` when no send was made, `unknown` when any send had no answer, `failed` when any was refused or failed, and `succeeded` only when every send made was accepted. A request cancelled during the dispatch still leaves its evidence (the tally is kept as the sends happen, and the row is written with no caller token).
+
+### 17.7 Validation evidence
+
+**Unit** (EF InMemory with a recording unit, M7 at service level): `Slice6AuditEventTests` (the contracts), `NotificationDefinitionLifecycleAuditTests` (15), `NotificationSubscriptionLifecycleAuditTests` (18), `ManagedContactLifecycleAuditTests` (22, replacing the earlier mock-based import tests), `NotificationPipelineTestServiceTests` (the diagnostics, including a cancelled dispatch and a failed evidence write not changing the response), `NotificationServicesShareTheUnitContextTests` (the unit, every store and repository hold the request's one context), `Aud14Slice6ConvertedWritersTests` (no bridge use, no controller maps an audit invariant to a refusal), and the catalog pins.
+
+**Real SQL Server** (`NotificationDefinitionSqlServerTests`, `NotificationSubscriptionSqlServerTests`, `ManagedContactSqlServerTests`, `NotificationDiagnosticsSqlServerTests`; locking READ COMMITTED and READ_COMMITTED_SNAPSHOT shared catalogs for M7, races and no-ops; a catalog of its own per M6 case; they fail, never skip, without SQL Server): M7 for every action; M6 (audit insert failure leaves nothing, a lost acknowledgement is verified without rerunning, a confirmed rollback reruns once, an unknown outcome is wholly committed or wholly absent, an operation lock that is not granted changes nothing) for a create, an update and a delete of a definition, an addition, an addition that creates a contact, a removal and an opt-out of subscriptions, and a create, an update, a link, a user import and a group import of contacts, with bespoke M6 cases for the import because its failures are per-item results; the delete verified with its target now missing; no-ops and refusals changing nothing, not even the update time; deterministic races with the writers queued behind the same lock in both orders (two renames to one name; an update against a delete; a subscription against a definition delete, leaving no orphan; two subscriptions creating the same contact in different integrations; two creates of one address; a directory import against a manual create; an ownership move committing while a definition update waits, the row naming the owner the unit locked); the real claim sending only an instance's own rows while older rows of another instance wait, and two dispatchers racing for the same rows sending each at most once; the evidence rows as the real writer stores them and a failed write reported false. The existing integration-delete race suite (which drives the converted subscription writer) and the account suites pass unchanged.
+
+### 17.8 Carried forward, not marked resolved
+
+The audit verification-count deadlock (AUD-1.6); the inventory and disposition of legacy connections with foreign secret references and the platform-setting secret ownership and reference exposure (pre-RC1 security validation); attention routing, module lifecycle and the runtime shutdown request (slice 7); attention contact groups and operational team membership (LST-1.4); previously accepted runtime and infrastructure findings under their owners.
