@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Notifications;
+using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
@@ -54,6 +55,23 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
             new FixedPrincipalContext(new FixedActor()),
             _integrations,
             AuditUnit);
+
+        Contacts = new SqlManagedContactRepository(_db);
+        SubscriptionStore = new SqlNotificationSubscriptionStore(_db);
+        Subscriptions = new NotificationSubscriptionService(
+            SubscriptionStore,
+            _store,
+            null!,
+            new ManagedContactRecipientProvisioner(
+                new NotificationRecipientAddressParser(),
+                Contacts,
+                new FixedPrincipalContext(new FixedActor()),
+                new ConfigurableAuthorizationService(denyInstanceManage),
+                TimeProvider.System),
+            authorization,
+            new FixedPrincipalContext(new FixedActor()),
+            _integrations,
+            AuditUnit);
     }
 
     public AppertureDbContext Db => _db;
@@ -62,6 +80,14 @@ public sealed class NotificationDefinitionTestHarness : IDisposable
     public int IntegrationUpdateChecks { get; private set; }
 
     public INotificationDefinitionService Definitions { get; }
+
+    /// <summary>The administrator subscription service over the same context, authorization and recording unit.</summary>
+    public INotificationSubscriptionService Subscriptions { get; }
+
+    /// <summary>The managed contact repository the subscription service creates contacts in.</summary>
+    public SqlManagedContactRepository Contacts { get; }
+
+    public SqlNotificationSubscriptionStore SubscriptionStore { get; }
 
     /// <summary>The recording audited unit the service runs its operations in; the transactional guarantees are proven against SQL Server.</summary>
     internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork AuditUnit { get; } = new();

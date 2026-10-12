@@ -19,6 +19,19 @@ public sealed class SqlManagedContactGroupRepository : IManagedContactGroupRepos
             x.Id, x.DisplayName, x.Source, x.EntraGroupObjectId, x.CreatedAtUtc, x.UpdatedAtUtc)).ToList();
     }
 
+    public async Task<ManagedContactGroupRepositoryRow?> FindByEntraGroupObjectIdAsync(
+        string entraGroupObjectId,
+        CancellationToken cancellationToken = default)
+    {
+        var oid = entraGroupObjectId.Trim();
+        var x = await _db.ManagedContactGroups.AsNoTracking()
+            .FirstOrDefaultAsync(g => g.EntraGroupObjectId == oid, cancellationToken)
+            .ConfigureAwait(false);
+        return x is null
+            ? null
+            : new ManagedContactGroupRepositoryRow(x.Id, x.DisplayName, x.Source, x.EntraGroupObjectId, x.CreatedAtUtc, x.UpdatedAtUtc);
+    }
+
     public async Task<ManagedContactGroupRepositoryRow> UpsertEntraGroupAsync(
         string entraGroupObjectId,
         string displayName,

@@ -10,13 +10,15 @@ public sealed record NotificationSubscriptionCreateCommand(
     string DeliveryMode,
     string Origin,
     bool IsEnabled,
-    string? CreatedByActorId);
+    string? CreatedByActorId,
+    NotificationSubscriptionId? Id = null);
 
 public sealed record NotificationSubscriptionUserOverrideCommand(
     string UserId,
     string NotificationDefinitionId,
     string? OperationalTeamId,
-    string? CreatedByActorId);
+    string? CreatedByActorId,
+    string? OverrideId = null);
 
 public interface INotificationSubscriptionStore
 {
@@ -34,6 +36,29 @@ public interface INotificationSubscriptionStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the subscription under an update lock held to the end of the caller's transaction (AUD-1.4 slice 6). Untracked, so a
+    /// rerun reads afresh. Null when no such subscription exists.
+    /// </summary>
+    ValueTask<NotificationSubscription?> GetForUpdateAsync(
+        NotificationSubscriptionId id,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>True when a subscription of this definition, integration (null: none), recipient kind and reference already exists.</summary>
+    ValueTask<bool> ExistsAsync(
+        string notificationDefinitionId,
+        string? integrationId,
+        string recipientKind,
+        string recipientRef,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The user opt-out of this user, definition and team (null: the global one), or null.</summary>
+    ValueTask<NotificationSubscriptionUserOverride?> FindUserOptOutAsync(
+        string userId,
+        string notificationDefinitionId,
+        string? operationalTeamId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a subscription. When the command carries an integration id, the row is inserted in one transaction that first takes the
     /// integration row lock and requires the integration to exist, and holds the lock to the commit (AUD-1.4), as for
     /// <see cref="INotificationDefinitionStore.CreateUserDefinitionAsync"/>. A command without an integration id takes no lock and
@@ -47,6 +72,10 @@ public interface INotificationSubscriptionStore
     /// merely narrows to an integration. Ignored when there is no integration id. A new integration-sensitive caller must not rely
     /// on null.
     /// </param>
+    /// <remarks>
+    /// When the caller's own transaction is already open on the context (an audited unit), the store joins it: it neither begins
+    /// nor commits one, and the lock, the row and the audit rows commit or roll back together.
+    /// </remarks>
     /// <exception cref="InvalidOperationException">The command names an integration that does not exist.</exception>
     ValueTask<NotificationSubscription> AddAsync(
         NotificationSubscriptionCreateCommand command,

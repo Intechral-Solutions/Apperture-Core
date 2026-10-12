@@ -4,6 +4,21 @@ public interface IManagedContactRepository
 {
     Task<ManagedContactRepositoryRow?> GetByIdAsync(string id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads the contact under an update lock held to the end of the caller's transaction (AUD-1.4 slice 6). Untracked, so a rerun
+    /// reads afresh. Null when no such contact exists.
+    /// </summary>
+    Task<ManagedContactRepositoryRow?> GetByIdForUpdateAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes the lock every writer of a contact's email address holds while it checks that no other contact has the address and
+    /// writes it (an application lock owned by the caller's transaction), so the check cannot race another writer. Email
+    /// uniqueness is an application rule, not an index. Must be called inside an open transaction; first among a contact writer's
+    /// locks, after any integration or definition row it holds.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The lock was not granted in time.</exception>
+    Task LockEmailNamespaceAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Case-insensitive email match among contacts that have a non-empty email.</summary>
     Task<ManagedContactRepositoryRow?> FindByEmailAsync(string emailAddress, CancellationToken cancellationToken = default);
 
