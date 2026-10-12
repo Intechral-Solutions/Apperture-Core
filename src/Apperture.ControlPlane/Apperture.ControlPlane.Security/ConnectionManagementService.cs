@@ -309,7 +309,12 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
                 ApplyCampusNexusAuthModeDefault(def, nextConfig);
                 var nameChanged = request.Name is not null && !string.Equals(request.Name, fresh.Name, StringComparison.Ordinal);
-                var configChanged = ChangedKeys(fresh.Config, nextConfig);
+
+                // The connector's defaults are applied to the stored config too before comparing: a legacy row that never stored
+                // the default must not make a request that changes nothing look like a change to it.
+                var baselineConfig = new Dictionary<string, string>(fresh.Config, StringComparer.Ordinal);
+                ApplyCampusNexusAuthModeDefault(def, baselineConfig);
+                var configChanged = ChangedKeys(baselineConfig, nextConfig);
                 var refsChanged = ChangedKeys(fresh.SecretRefs, workingSecretRefs);
                 if (!nameChanged && configChanged.Count == 0 && refsChanged.Count == 0 && materialFields.Count == 0)
                 {
@@ -472,7 +477,9 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                     ? null
                     : verification.Status == ConnectionVerificationStatus.NeverTested ? ConnectionVerificationStatus.Unavailable : verification.Status;
                 await transaction.StageAsync(
-                    AuditEvents.ConnectionVerified(id.Value, fresh.Name, fresh.ConnectorDefinitionId.Value, status, fresh.ResourceContextId.Value),
+                    AuditEvents.ConnectionVerified(
+                        id.Value, fresh.Name, fresh.ConnectorDefinitionId.Value, status, fresh.ResourceContextId.Value,
+                        noAnswerBecauseCancelled: failure?.SourceException is OperationCanceledException),
                     ct).ConfigureAwait(false);
                 if (verification is null)
                     return fresh;

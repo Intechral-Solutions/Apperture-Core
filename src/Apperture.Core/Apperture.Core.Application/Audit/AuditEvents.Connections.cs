@@ -30,8 +30,9 @@ public static partial class AuditEvents
     /// A connection's name, config or secret fields changed. The row is <c>connection.secret_rotated</c> when any secret field
     /// changed (its material rotated or its reference added, removed or pointed elsewhere) and <c>connection.updated</c> otherwise.
     /// Only <c>connection.updated</c> lists field keys (the connector's declared names, never values); the Secrets-category rotation
-    /// row counts them, and the keys of stored material are on the unit's <c>connection.secret.stored</c> rows. An update that
-    /// changes nothing is not recorded.
+    /// row counts them, and the keys of material that was stored are on the unit's <c>connection.secret.stored</c> rows. A rotation
+    /// that also changed config, and a change that only pointed a field at another reference, therefore record counts alone for
+    /// those fields. An update that changes nothing is not recorded.
     /// </summary>
     public static AuditEvent ConnectionChanged(
         string connectionId,
@@ -84,18 +85,21 @@ public static partial class AuditEvents
     /// A connection's stored material was used against its remote system to verify it (basis <c>external_attempt</c>). The row
     /// states what the verifier answered: <c>succeeded</c> only for a success, <c>failed</c> for a failure answer or when the
     /// verifier produced no answer because it threw (<paramref name="status"/> null), and <c>unknown</c> when it answered that
-    /// verification was unavailable. Nothing about the remote system beyond that status is recorded.
+    /// verification was unavailable or when the caller cancelled the probe before it answered
+    /// (<paramref name="noAnswerBecauseCancelled"/>: the platform observed no answer at all). Nothing about the remote system
+    /// beyond that status is recorded.
     /// </summary>
     public static AuditEvent ConnectionVerified(
         string connectionId,
         string name,
         string connectorId,
         ConnectionVerificationStatus? status,
-        string? resourceContextId)
+        string? resourceContextId,
+        bool noAnswerBecauseCancelled = false)
     {
         var (outcome, statusName) = status switch
         {
-            null => (AuditOutcomeCodes.Failed, null),
+            null => (noAnswerBecauseCancelled ? AuditOutcomeCodes.Unknown : AuditOutcomeCodes.Failed, null),
             ConnectionVerificationStatus.Success => (AuditOutcomeCodes.Succeeded, "success"),
             ConnectionVerificationStatus.Failed => (AuditOutcomeCodes.Failed, "failed"),
             ConnectionVerificationStatus.Unavailable => (AuditOutcomeCodes.Unknown, "unavailable"),

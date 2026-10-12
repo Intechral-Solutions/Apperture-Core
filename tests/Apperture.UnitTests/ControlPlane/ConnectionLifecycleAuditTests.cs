@@ -541,7 +541,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         var act = async () => await _sut.VerifyConnectionAsync(created.Id, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _unit.Staged.Should().ContainSingle().Which.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
+        _unit.Staged.Should().ContainSingle().Which.OutcomeCode.Should().Be(AuditOutcomeCodes.Unknown, "a cancelled probe produced no answer, so the platform observed neither success nor failure");
     }
 
     [Fact]

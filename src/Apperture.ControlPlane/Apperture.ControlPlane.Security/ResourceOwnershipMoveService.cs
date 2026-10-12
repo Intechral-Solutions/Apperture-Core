@@ -361,12 +361,14 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         var effects = new List<ResourceMoveEffect>();
         if (targetType == AuditTargetTypes.Integration)
         {
+            // The count is exact; the listed ids are bounded (the first 500).
             var moved = committed.GetStringList("scheduleIds");
-            if (moved.Count > 0)
+            var movedCount = committed.GetCount("schedulesMoved") ?? moved.Count;
+            if (movedCount > 0)
             {
                 effects.Add(new ResourceMoveEffect(
                     ResourceMoveEffectCodes.SchedulesMoveWithIntegration,
-                    $"{moved.Count} schedule(s) move with this integration.",
+                    $"{movedCount} schedule(s) move with this integration.",
                     ResourceMoveResourceTypes.Schedule, moved));
             }
         }

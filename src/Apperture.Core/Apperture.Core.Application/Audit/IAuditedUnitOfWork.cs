@@ -93,6 +93,17 @@ public sealed record AuditCommittedOperation(
             : null;
     }
 
+    /// <summary>A whole-number field of the primary row's <c>json/1</c> details, or null.</summary>
+    public int? GetCount(string name)
+    {
+        if (string.IsNullOrEmpty(Details))
+            return null;
+        using var document = JsonDocument.Parse(Details);
+        return document.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count)
+            ? count
+            : null;
+    }
+
     /// <summary>The strings of a list field of the primary row's <c>json/1</c> details, or an empty list.</summary>
     public IReadOnlyList<string> GetStringList(string name)
     {

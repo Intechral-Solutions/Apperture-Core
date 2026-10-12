@@ -1279,7 +1279,7 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 | WP3 | Connection verify and structure browse | **Done** (16.5) |
 | WP4 | Resource context create, update, archive and unarchive | **Done** (16.6) |
 | WP5 | Ownership moves (integration, connection, schedule) | **Done** (16.7) |
-| WP6 | Real-unit concurrency coverage, validation, independent review, closure | **In progress** (16.8) |
+| WP6 | Real-unit concurrency coverage, validation, independent review, closure | **Done** (16.8 to 16.10) |
 
 ### 16.4 Intentional behavior changes
 
@@ -1308,7 +1308,7 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 
 **Retire.** Row lock, `connection.delete` again on the locked row, state change, `connection.retired`. Secrets and bindings are untouched, as before.
 
-**Verify.** The probe is authorized by an early `connection.read` check and runs first, outside any transaction. One unit then records it: it locks the row, writes only the verification columns over the row as locked, and stages `connection.verified`, which states what the verifier answered (`succeeded` for a success, `failed` for a failure answer or a verifier that threw, `unknown` for an unavailable answer) and never the summary. The unit runs with no caller token, so a request cancelled during the probe leaves its evidence, and the verifier's own exception is rethrown unchanged. No second authorization is made inside the unit (the probe is done and cannot be undone). If the unit cannot commit, the attempt is unrecorded and the caller is told.
+**Verify.** The probe is authorized by an early `connection.read` check and runs first, outside any transaction. One unit then records it: it locks the row, writes only the verification columns over the row as locked, and stages `connection.verified`, which states what the verifier answered (`succeeded` for a success, `failed` for a failure answer or a verifier that threw, `unknown` for an unavailable answer or for a probe the caller cancelled before it answered, because nothing was observed) and never the summary. The unit runs with no caller token, so a request cancelled during the probe leaves its evidence, and the verifier's own exception is rethrown unchanged. No second authorization is made inside the unit (the probe is done and cannot be undone). If the unit cannot commit, the attempt is unrecorded and the caller is told.
 
 **Browse.** The success row (a result was delivered, including a remote refusal) is written with the required-event writer before the result is returned: a failed write withholds the data. A request that threw or was cancelled is a best-effort `connection.structure_browse_failed` row of the same principal; a failure to write it never replaces the original exception.
 
@@ -1368,3 +1368,25 @@ Slice 4 left one gap (finding L4): the ownership race suite runs its set-up thro
 28 cases (7 races x 2 orders x 2 isolation modes). The carried-forward integration delete races stay with their own suites (slice 3); the secret races (queued rotations, rotation with retirement, a rotation across a move, a change made during a probe) are in `ConnectionLifecycleSqlServerTests` and `ConnectionVerifyBrowseSqlServerTests` (16.5).
 
 **What these do not prove.** They prove the order the gate and the row locks impose, and that the units' decisions read what the previous writer committed. They do not prove behaviour when the gate times out (15 s) under sustained load, and they do not search for interleavings beyond the queue positions chosen. No mutation run was made: the tests assert on the server's wait list before the gate is released, so a writer that stopped taking the gate fails them by not waiting.
+
+### 16.9 Independent review (one combined review)
+
+One independent review of the whole slice (the six commits' diff, the record and the contracts) returned **ready after bounded fixes** and no blocking finding. Dispositions:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The verify, ownership-move and test-connect routes still turned an audit invariant failure into a 404 (the controllers' `InvalidOperationException` catch) | **Fixed.** The four remaining catches exclude `AuditInvariantException`, as create, update and retire already did; it now reaches the 500 handler instead of being reported as "not found" |
+| 2 | A request supplying `SecretValues` for a field whose working reference is any GUID adds a version to that secret without checking it belongs to the connection | **Pre-existing, not changed here; owner decision (16.10).** |
+| 3 | A connector whose default is applied to the incoming config (an empty `AuthMode`) made a request that changes nothing compare as a change against a legacy row that never stored the default | **Fixed.** The stored config gets the same defaults before the comparison, so such a request is still a declared no-op |
+| 4 | The comment on the connection producers implied the keys of every rotated field were on the unit's rows | **Fixed (wording).** The keys of material that was stored are on `connection.secret.stored`; a reference change and the fields of a rotation that also changed config are counted on `connection.secret_rotated`, as the catalog rule for the Secrets category requires |
+| 5 | A probe cancelled by the caller was recorded as a failed verification although no answer was observed | **Fixed.** It is `unknown` with no status; a verifier that threw is still `failed` |
+| 6 | After a lost acknowledgement a rebuilt integration move counted the (capped) listed ids instead of the exact `schedulesMoved` | **Fixed.** `AuditCommittedOperation.GetCount` reads the exact count; the ids stay the first 500 |
+
+### 16.10 Residual risks and limits
+
+- **Secret reference confused deputy (pre-existing, found by the review; owner decision).** In `ConnectionSecretMaterialProvisioner`, a connection update that supplies `SecretValues` for a secret field adds a version to whatever secret GUID the field's working reference names, and an update may set that reference to any GUID (`ValidateIncomingSecretRef` checks only that it parses). A caller with `connection.update` on one connection could therefore (a) overwrite a secret that another connection or setting uses by setting the reference to its id and supplying new material, or (b) point a field at another secret so the connection resolves it. This existed before this slice and the slice does not make it worse: the audit rows now record that material was stored (counts and field keys, never the reference). Recommended, as a separate bounded change because it alters accepted input (an authorization-policy decision): refuse a reference that is neither already referenced by this connection nor named `connection:{id}:*`.
+- **No mutation run.** The race tests assert on the server's wait list before the gate is released, so a writer that stops taking the gate fails them by not waiting; a mutation tool was not run over the slice.
+- **Authorization inside the unit proves the row, not the policy.** The decisions re-evaluated against the locked row (update, retire, moves) are proven to read what the previous writer committed; the policy engine itself is the existing one and was not re-tested.
+- **A connection has no owning-context field in its audit identity beyond the related context.** The related context on each connection row is the context at the time of the operation; the move pair records both ends.
+- **Scratch catalogs.** The SQL suites create per-case catalogs (the append-only audit table cannot be cleaned up). A run killed part-way leaves catalogs behind on the development server; they are inert and can be dropped by name.
+- **Carried to the audit-resilience slice, not touched here:** the `AuditLogs.OperationEventId` verification-count deadlock.

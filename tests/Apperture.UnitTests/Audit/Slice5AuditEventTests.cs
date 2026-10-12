@@ -194,6 +194,10 @@ public sealed class Slice5AuditEventTests
         threw.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
         threw.Fields.Should().NotContainKey("verificationStatus");
 
+        var cancelled = AuditEvents.ConnectionVerified("con-1", "Reporting", "platform.sql", null, null, noAnswerBecauseCancelled: true);
+        cancelled.OutcomeCode.Should().Be(AuditOutcomeCodes.Unknown);
+        cancelled.Fields.Should().NotContainKey("verificationStatus");
+
         var neverRan = () => AuditEvents.ConnectionVerified("con-1", "Reporting", "platform.sql", ConnectionVerificationStatus.NeverTested, null);
         neverRan.Should().Throw<ArgumentException>();
     }
