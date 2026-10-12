@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is implemented on its branch and awaiting owner merge (§15). Slices 5 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is done and merged to `master` (PR #23, merge commit `b38f1fd`, 2026-10-12, post-merge CI succeeded); it is CLOSED (§15.8). Slice 5 is in progress on its branch (§16). Slices 6 to 8 have not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`. Before PR #18 merged, the branch took `origin/master` (`0314419`, the licensing and third-party notice merges) in a normal merge, `539d907`, which changed no file under `src/` or `tests/` and left the 109-file AUD-1.4 change set unchanged (§14).
 
@@ -58,8 +58,8 @@ The product owner approved the four orientation recommendations. They are record
 | 1 | Secret-store transaction participation (D-3); the Secrets-category catalog and producer convention (D-1); the Entra registration flows adopting both | **Done.** Implemented, validated, independently reviewed; bounded remediation applied (§4.10) |
 | 2 | Platform and integration settings: one unit per set, clear and reset; the live-secret-first defect; an in-transaction reset that integration delete can call | **Done.** Implemented and validated (§8); independently reviewed, ready after bounded remediation (§9); closed (§9.10) |
 | 3 | Schedule delete and integration delete as W1 with verification (M6 each, including lost acknowledgement with a missing target); D-4 | **CLOSED** (§14): work package 5 accepted by the owner, merged with PR #18 as `54ae117` (2026-10-11), post-merge CI passed. Work packages 1 and 2 (the schedule delete) were independently reviewed and accepted; work package 3 (the integration row lock, §10), 4a (the H1 mechanisms, §11) and 4b (the integration delete as one audited unit, §12) were independently reviewed together, READY TO ACCEPT (§13.1); work package 5 (§13) remediated the review's findings and wrote the contracts and this closing record |
-| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | **Implemented** (§15); independently reviewed; awaiting owner merge |
-| 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | Not started |
+| 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | **CLOSED** (§15.8): implemented, independently reviewed, the schedule `PATCH` finding fixed (§15.7); merged with PR #23 as `b38f1fd` (2026-10-12), post-merge CI passed |
+| 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | **In progress** (§16) |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | Not started |
 | 7 | Attention routing rules (D-2); module lifecycle (W1, with W3 for blocked attempts); the runtime shutdown request and its duplicate case | Not started |
 | 8 | Closure: the converted-writer scan test, catalog pins, `docs/04-api/contracts.md`, integrated validation and independent review | Not started |
@@ -1234,3 +1234,49 @@ Owner decision (2026-10-12, after the slice 4 handback): fix M1 before PR #23 me
 | R3 (nit): the lost-acknowledgement read-back is unlocked and may show a later writer's change | Accepted, as for the other read-backs; the remarks and this record say so |
 
 The reviewer found lock order, the gate decision (no patch without `Enabled: true` can make a schedule live, and dropping the gate for such a patch does not weaken archive, since it changes neither the flag nor ownership and takes only the row lock), the guard, audit evidence and the status mapping sound, and the `LockedRowHolder` change correct for its existing callers. One reviewer note does not hold: a missing schedule with an invalid body answered 400 before this change too, because validation already ran before the removed read.
+
+### 15.8 Closure
+
+Slice 4 was accepted by the owner and merged to `master` with PR #23 as `b38f1fd787f8eb464e3713e289002b4ade7fde5e` (2026-10-12; the branch head was `7e1ca14`, the schedule `PATCH` remediation of §15.7). The CI run on the pull request head and the post-merge CI run on `master` both succeeded. Slice 4 is closed. Its carried-forward items go to slice 5: the real-unit race of the audited unit against an ownership move or an Application archive (finding L4, §15.6) and the connection writers' integration-row-lock limit (§12.8).
+
+## 16. Slice 5: connections, resource contexts and ownership moves
+
+Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/master` at `b38f1fd`. Authorized by the owner after the slice 4 merge. Nothing here claims AUD-1.4 complete: slices 6 to 8 have not started.
+
+### 16.1 Orientation findings (source-backed, before any change)
+
+| Area | State on `master` |
+|---|---|
+| Connection writers | No writer uses an audited unit. `ConnectionManagementService` appends legacy audit text after its saves; create alone has a hand-rolled gated transaction. The six `connection.*` catalog entries are legacy-shaped (no detail schema, no typed producer, names kept in `ConnectionAuditActionNames`) |
+| Create | Operator-supplied secret values are stored and activated **before** any transaction (`ConnectionSecretMaterialProvisioner.ProvisionForCreateAsync`), so a failed or rolled-back create orphans live secrets |
+| Update and rotation | There is no rotate route: rotation is `SecretValues` (or a changed secret reference) on `PATCH`. `ApplySecretValuesForUpdateAsync` runs first, outside any transaction, adding and **activating** a version on the secret id the connection already names, so bound integrations resolve the new credential before validation or the row save (**the live-secret-first defect**). A failure afterwards leaves the new version active and appends a best-effort `failed` row. The row save writes the whole row from an unlocked read (no gate, no row lock, no version check) |
+| Retire | Whole-row write from an unlocked read, then a legacy row after the save; retiring a retired connection writes another row |
+| Verify | Reads the connection, calls the connector's verifier (a remote probe), writes the whole row with the three verification columns from the stale snapshot, then appends a legacy row. A concurrent edit during the probe is overwritten |
+| Structure browse | Authorizes (read **and** browse) after an unlocked load, calls the remote browser, then appends the legacy row with `CancellationToken.None`; a failed append withholds the result (the intended "no audit, no data"). Failed and cancelled attempts are best-effort rows |
+| Resource contexts | Create, update and unarchive have no transaction, gate or lock; each commits and then appends a legacy row. Update is up to three independent committed saves with one row in a `finally`, so a partial update is durable and audited. Archive is already one gated transaction, with a legacy row. No context row lock exists. `UX_ResourceContexts_Slug` loses a create race as an unmapped 500 |
+| Ownership moves | Three hand-rolled gated transactions (gate, locked row, validation, narrow `SetResourceContextIdAsync`), legacy `moved_out` and `moved_in` rows and, on a rejection, a legacy `move_rejected` row committed in the same transaction. Integration and connection moves authorize on the locked row (deliberately); the schedule move authorizes before the read (no existence oracle) |
+| Controllers | Every mutation maps a bare `InvalidOperationException` to 400, 404 or 409, so an `AuditInvariantException` would be misreported; archive does not map `ResourceOwnershipBusyException` |
+| Tests | The real unit has never been raced against a move or archive: `ResourceOwnershipMoveConcurrencySqlServerTests` runs its set-up through a transaction-only unit that stages nothing (finding L4) |
+
+### 16.2 Decisions
+
+| # | Decision |
+|---|---|
+| S5-1 | **Connection rotation joins the unit.** The secret store already joins the transaction open on its context (§4.1). Create and update now provision and rotate secrets **inside** the connection's unit, after the row lock and validation inputs are read, so the credential becomes live only if the unit commits. No compensating workflow is added. |
+| S5-2 | **Update, rotate and retire lock the connection row without the ownership gate.** None of them can make a connection live or change ownership (retire only removes an archive blocker), so there is nothing the gate protects; a move holds the gate and then the same row lock, so an update waits behind a move and re-authorizes against the new owner. Authorization is evaluated on the locked row's governed identity. |
+| S5-3 | **Connection verify is one external call and one unit.** The probe runs first, outside any transaction (a transaction never makes an external effect atomic, gate §11.6). One unit then locks the row, writes **only** the three verification columns (never a whole row) and stages `connection.verified` (basis `external_attempt`), which states only what the verifier answered. A verifier that throws is staged as a failed attempt and rethrown. |
+| S5-4 | **Structure browse is W2.** The success row is written with the required-event writer before the result is delivered (a failure withholds the data); failed and cancelled attempts are best-effort rows of the same principal, as before. |
+| S5-5 | **A rejected ownership move is recorded after its unit.** A unit cannot stage a refusal. The move declares itself a no-op, returns the preview, and a W3 `*.ownership.move_rejected` row of the same principal follows (the schedule delete's precedent, §10.2). The gate allows this ("may stay in its transaction", §13.1). |
+| S5-6 | **A context update is one unit.** It was up to three committed saves with a row in a `finally`; it is now all or nothing, with one `resource_context.updated` row naming the fields actually changed. This is a correctness consequence of the atomic unit, called out in 16.4. |
+| S5-7 | **A context row lock is added** (`GetByIdForUpdateAsync`), taken after the ownership gate by archive and alone (no gate) by update and unarchive. Neither can create a cycle: the gated paths only read the context row and update takes no gate. |
+
+### 16.3 Work packages
+
+| # | Package | Status |
+|---|---|---|
+| WP1 | Audit contracts: typed actions, producers and schemas for the connection, context and move families | Planned |
+| WP2 | Connection create, update (rotation) and retire as audited units | Planned |
+| WP3 | Connection verify and structure browse | Planned |
+| WP4 | Resource context create, update, archive and unarchive | Planned |
+| WP5 | Ownership moves (integration, connection, schedule) | Planned |
+| WP6 | Real-unit concurrency coverage, validation, independent review, closure | Planned |
