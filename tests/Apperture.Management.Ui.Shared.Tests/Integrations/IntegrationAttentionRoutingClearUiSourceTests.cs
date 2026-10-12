@@ -13,7 +13,7 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
 {
     private const string Folder = "Pages/Integrations";
     private const string TargetFile = "IntegrationScheduleDiagnostics.razor";
-    private const string CanManageSchedulesGuard = "@if (_capabilities?.CanManageSchedules == true)";
+    private const string EditorGuard = "@if (_capabilities?.CanUpdateIntegrations == true)";
 
     [Fact]
     public void Clear_button_exists_in_attention_routing_section_and_opens_the_confirm_dialog()
@@ -28,7 +28,7 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
     }
 
     [Fact]
-    public void Clear_button_is_gated_by_the_exact_same_CanManageSchedules_condition_as_Save()
+    public void Clear_button_is_gated_by_the_exact_same_integration_update_condition_as_Save()
     {
         var content = ReadRazor(Folder, TargetFile);
 
@@ -38,22 +38,52 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
         var clearIndex = content.IndexOf("id=\"integration-attention-routing-clear-trigger\"", StringComparison.Ordinal);
         clearIndex.Should().BeGreaterThanOrEqualTo(0, "expected to find the Clear override button");
 
-        // Both buttons must be inside the same enclosing CanManageSchedules guard -- not merely
+        // Both buttons must be inside the same enclosing integration.update guard -- not merely
         // each gated by *some* condition somewhere earlier in the file. Find the nearest preceding
         // guard for each button and assert they resolve to the identical guard occurrence.
-        var saveGuardIndex = content.LastIndexOf(CanManageSchedulesGuard, saveIndex, StringComparison.Ordinal);
-        saveGuardIndex.Should().BeGreaterThanOrEqualTo(0, "the Save button must be gated behind CanManageSchedules");
+        var saveGuardIndex = content.LastIndexOf(EditorGuard, saveIndex, StringComparison.Ordinal);
+        saveGuardIndex.Should().BeGreaterThanOrEqualTo(0, "the Save button must be gated behind CanUpdateIntegrations");
 
-        var clearGuardIndex = content.LastIndexOf(CanManageSchedulesGuard, clearIndex, StringComparison.Ordinal);
-        clearGuardIndex.Should().BeGreaterThanOrEqualTo(0, "the Clear button must be gated behind CanManageSchedules");
+        var clearGuardIndex = content.LastIndexOf(EditorGuard, clearIndex, StringComparison.Ordinal);
+        clearGuardIndex.Should().BeGreaterThanOrEqualTo(0, "the Clear button must be gated behind CanUpdateIntegrations");
 
         clearGuardIndex.Should().Be(saveGuardIndex,
-            "Clear must share the exact same CanManageSchedules guard as Save, not a new/different authorization boundary");
+            "Clear must share the exact same CanUpdateIntegrations guard as Save, not a new/different authorization boundary");
 
-        // There is exactly one CanManageSchedules guard in this file, so both buttons resolving to
+        // There is exactly one CanUpdateIntegrations guard in this file, so both buttons resolving to
         // it (rather than -1, or to two different occurrences) confirms they share one boundary.
-        content.Split("_capabilities?.CanManageSchedules == true").Length.Should().Be(2,
-            "expected exactly one CanManageSchedules guard in this file");
+        content.Split("_capabilities?.CanUpdateIntegrations == true").Length.Should().Be(2,
+            "expected exactly one CanUpdateIntegrations guard in this file");
+    }
+
+    [Fact]
+    public void The_override_editor_and_clear_button_follow_integration_update_and_not_schedule_manage()
+    {
+        var content = ReadRazor(Folder, TargetFile);
+
+        // The server requires integration.update to change or clear an integration's routing. A schedule manager without it
+        // would be offered an editor that can only answer 403; a user with integration.update but without schedule.manage
+        // could change routing through the API but not see the editor.
+        content.Should().NotContain("CanManageSchedules", "no part of this page is offered on schedule.manage any more");
+        var guardIndex = content.IndexOf(EditorGuard, StringComparison.Ordinal);
+        guardIndex.Should().BeGreaterThanOrEqualTo(0);
+        foreach (var control in new[] { "@onclick=\"SaveRoutingAsync\"", "id=\"integration-attention-routing-clear-trigger\"", "bind=\"_routingPrimaryGroupId\"" })
+            content.IndexOf(control, StringComparison.Ordinal).Should().BeGreaterThan(guardIndex, $"{control} is inside the integration.update guard");
+    }
+
+    [Fact]
+    public void Viewing_the_effective_routing_does_not_depend_on_the_edit_permission()
+    {
+        var content = ReadRazor(Folder, TargetFile);
+        var guardIndex = content.IndexOf(EditorGuard, StringComparison.Ordinal);
+
+        // Everything that only shows routing is rendered before, and outside, the editor's guard.
+        foreach (var display in new[] { "Escalation recipients (effective)", "Has route / enabled", "Escalation after / reminder interval" })
+            content.IndexOf(display, StringComparison.Ordinal).Should().BeInRange(0, guardIndex, $"'{display}' is shown to everyone who can open the page");
+
+        // A failed capability lookup leaves the diagnostics readable and simply hides the editor.
+        content.Should().Contain("_capabilities = null;");
+        content.Should().Contain("UI can still render read-only diagnostics even if capabilities call fails.");
     }
 
     [Fact]
@@ -178,7 +208,7 @@ public sealed class IntegrationAttentionRoutingClearUiSourceTests
     /// <c>&lt;div class="flex flex-wrap gap-2 items-center"&gt;...&lt;/div&gt;</c>) so assertions
     /// about that button's own markup can't false-positive against unrelated markup elsewhere in
     /// this large page -- the same "find the nearest preceding boundary from the button's index"
-    /// scoping technique used above for the CanManageSchedules guard check.
+    /// scoping technique used above for the CanUpdateIntegrations guard check.
     /// </summary>
     private static string ExtractClearButtonBlock(string content)
     {
