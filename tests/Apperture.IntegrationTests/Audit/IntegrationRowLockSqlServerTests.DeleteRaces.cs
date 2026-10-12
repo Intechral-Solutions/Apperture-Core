@@ -31,7 +31,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
     // ---- Order 1: the writer holds the lock first; the delete waits, then decides on what the writer committed ----
 
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(DeleteRaceCases))]
     public async Task When_the_writer_wins_the_lock_the_delete_waits_and_decides_on_what_the_writer_committed(WriterKind kind, bool rcsi)
     {
         var scratch = Scratch(rcsi);
@@ -73,7 +73,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
     // ---- Order 2: the delete holds the lock first; the writer waits, then refuses, and leaves nothing behind ----
 
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(DeleteRaceCases))]
     public async Task When_the_delete_wins_the_lock_the_writer_waits_then_refuses_and_leaves_no_orphan_or_side_effect(WriterKind kind, bool rcsi)
     {
         var scratch = Scratch(rcsi);
@@ -115,7 +115,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
     // ---- Order 2, refused: a delete that holds the lock and refuses lets the writer proceed normally ----
 
     [Theory]
-    [MemberData(nameof(Cases))]
+    [MemberData(nameof(DeleteRaceCases))]
     public async Task When_the_delete_wins_the_lock_and_is_refused_the_writer_then_completes_normally(WriterKind kind, bool rcsi)
     {
         var scratch = Scratch(rcsi);
@@ -139,6 +139,88 @@ public sealed partial class IntegrationRowLockSqlServerTests
         (await IntegrationExistsAsync(scratch, integrationId)).Should().BeTrue();
         AssertCompleted(kind, before, await StateAsync(scratch, integrationId));
         (await DeleteRowsAsync(scratch, integrationId)).Should().Be(0);
+    }
+
+    // ---- The routing clear and the delete: the override the clear removes is itself a blocker of the delete ----
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_the_clear_wins_the_lock_the_delete_waits_and_then_finds_no_blocker(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var integrationId = await NewIntegrationAsync(scratch);
+        var (_, principal) = await AdminAsync(scratch);
+        var definitionId = await NewPlatformDefinitionAsync(scratch);
+        await Writer(WriterKind.RoutingUpsert, scratch, integrationId, principal, definitionId, null)();
+
+        var clearPause = new PauseAfterIntegrationLock();
+        var clear = Task.Run(Writer(WriterKind.RoutingClear, scratch, integrationId, principal, definitionId, reauthorize: null, interceptor: clearPause));
+        await clearPause.Reached.WaitAsync(TimeSpan.FromSeconds(30));
+        var delete = Task.Run(() => DeleteIntegrationAsync(scratch, integrationId, principal));
+        await WaitUntilAnyRequestWaitsOnIntegrationsAsync(scratch, delete);
+
+        clearPause.Release();
+        await clear;
+
+        (await Capture(delete)).Should().BeNull("the override was cleared before the delete held the row, so nothing blocks it");
+        (await IntegrationExistsAsync(scratch, integrationId)).Should().BeFalse();
+        (await StateAsync(scratch, integrationId)).Routings.Should().Be(0);
+        (await DeleteRowsAsync(scratch, integrationId)).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_the_delete_wins_the_lock_and_the_override_blocks_it_the_clear_then_removes_the_override(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var integrationId = await NewIntegrationAsync(scratch);
+        var (_, principal) = await AdminAsync(scratch);
+        var definitionId = await NewPlatformDefinitionAsync(scratch);
+        await Writer(WriterKind.RoutingUpsert, scratch, integrationId, principal, definitionId, null)();
+
+        var deletePause = new PauseAfterIntegrationLock();
+        var delete = Task.Run(() => DeleteIntegrationAsync(scratch, integrationId, principal, deletePause));
+        await deletePause.Reached.WaitAsync(TimeSpan.FromSeconds(30));
+        var clear = Task.Run(Writer(WriterKind.RoutingClear, scratch, integrationId, principal, definitionId, reauthorize: null));
+        await WaitUntilAnyRequestWaitsOnIntegrationsAsync(scratch, clear);
+
+        deletePause.Release();
+        (await Capture(delete)).Should().BeOfType<IntegrationDeleteBlockedException>().Which.Blocker
+            .Should().Be(IntegrationDeleteBlocker.AttentionRoutings, "the override still existed when the delete counted");
+        await clear;
+
+        (await IntegrationExistsAsync(scratch, integrationId)).Should().BeTrue();
+        (await StateAsync(scratch, integrationId)).Routings.Should().Be(0, "the clear that waited then removed the override");
+        (await DeleteRowsAsync(scratch, integrationId)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_the_delete_wins_the_lock_and_commits_a_clear_with_nothing_to_clear_refuses_and_changes_nothing(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var integrationId = await NewIntegrationAsync(scratch);
+        var (_, principal) = await AdminAsync(scratch);
+        var definitionId = await NewPlatformDefinitionAsync(scratch);
+
+        var deletePause = new PauseAfterIntegrationLock();
+        var delete = Task.Run(() => DeleteIntegrationAsync(scratch, integrationId, principal, deletePause));
+        await deletePause.Reached.WaitAsync(TimeSpan.FromSeconds(30));
+        var clear = Task.Run(Writer(WriterKind.RoutingClear, scratch, integrationId, principal, definitionId, reauthorize: null));
+        await WaitUntilAnyRequestWaitsOnIntegrationsAsync(scratch, clear);
+
+        deletePause.Release();
+        await delete;
+
+        var refused = await Capture(clear);
+        refused.Should().NotBeNull("the integration is gone by the time the clear holds its row");
+        refused!.GetType().Should().Be(typeof(InvalidOperationException));
+        refused!.Message.Should().Contain(integrationId);
+        (await StateAsync(scratch, integrationId)).Routings.Should().Be(0);
+        (await DeleteRowsAsync(scratch, integrationId)).Should().Be(1);
     }
 
     // ---- Two deletes: the one that waits loses, and is told so ----
@@ -232,7 +314,11 @@ public sealed partial class IntegrationRowLockSqlServerTests
     public async Task Writers_and_a_delete_racing_for_one_integration_end_consistent_with_no_deadlock_victim(bool rcsi)
     {
         var scratch = Scratch(rcsi);
-        var kinds = new[] { WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert };
+        var kinds = new[]
+        {
+            WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
+            WriterKind.RoutingClear,
+        };
 
         for (var round = 0; round < 6; round++)
         {

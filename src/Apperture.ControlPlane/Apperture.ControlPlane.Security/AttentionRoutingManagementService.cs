@@ -122,29 +122,64 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
     /// default. Returns false when no override existed.
     /// </summary>
     /// <remarks>
-    /// CTX-3B Plan 6a: Integration hard-delete blocks on attention-routing overrides, and before this
+    /// <para>CTX-3B Plan 6a: Integration hard-delete blocks on attention-routing overrides, and before this
     /// operation existed there was no way for an operator to clear that blocker. The service previously
-    /// exposed upsert only.
+    /// exposed upsert only.</para>
+    /// <para>The removal takes the same integration row lock as <see cref="UpsertIntegrationRoutingAsync"/>, in one transaction
+    /// owned by the execution strategy, so the caller's re-run authorization sees the integration as it is until the commit
+    /// (an ownership move holds the same row). Taking the lock adds no lock-order edge: it is the first statement, and nothing
+    /// else is held.</para>
     /// </remarks>
     public async ValueTask<bool> ClearIntegrationRoutingAsync(
         IntegrationId integrationId,
         string conditionKey,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, ValueTask>? reauthorize = null)
     {
-        if (await _integrations.GetByIdAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
-            throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
 
-        var row = await _db.IntegrationAttentionRoutings
-            .FirstOrDefaultAsync(
-                x => x.IntegrationId == integrationId.Value && x.ConditionKey == conditionKey,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (row is null)
-            return false;
+            IntegrationAttentionRoutingEntity? row = null;
+            try
+            {
+                // Untracked and locking: the integration is fixed until the commit.
+                if (await _integrations.GetByIdForUpdateAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
+                    throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
 
-        _db.IntegrationAttentionRoutings.Remove(row);
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+                // The caller's check, run again now that the row cannot move.
+                if (reauthorize is not null)
+                    await reauthorize(cancellationToken).ConfigureAwait(false);
+
+                row = await _db.IntegrationAttentionRoutings
+                    .FirstOrDefaultAsync(
+                        x => x.IntegrationId == integrationId.Value && x.ConditionKey == conditionKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                var removed = false;
+                if (row is not null)
+                {
+                    _db.IntegrationAttentionRoutings.Remove(row);
+                    await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    removed = true;
+                }
+
+                if (tx is not null)
+                    await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return removed;
+            }
+            catch
+            {
+                // Only the row this attempt loaded: a rerun reads it again, and nothing else tracked on the context is touched.
+                if (row is not null)
+                    _db.Entry(row).State = EntityState.Detached;
+                throw;
+            }
+        }).ConfigureAwait(false);
     }
 
     private static void ApplyCommand(IntegrationAttentionRoutingEntity row, AttentionRoutingUpsertCommand command)

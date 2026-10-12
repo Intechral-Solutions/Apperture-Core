@@ -81,7 +81,8 @@ public sealed class IntegrationFleetContextFilterTests
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
             resourceContexts.Object,
-            Mock.Of<IResourceOwnershipMoveService>());
+            Mock.Of<IResourceOwnershipMoveService>(),
+            UnusedIntegrationAuthorization.Create());
 
         var result = await controller.Fleet(
             contextId: "does-not-exist",

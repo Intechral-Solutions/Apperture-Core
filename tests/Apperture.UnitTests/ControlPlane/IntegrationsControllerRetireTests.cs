@@ -26,7 +26,8 @@ public sealed class IntegrationsControllerRetireTests
         Mock.Of<IPrincipalContext>(),
         TimeProvider.System,
         Mock.Of<IResourceContextService>(),
-        Mock.Of<IResourceOwnershipMoveService>());
+        Mock.Of<IResourceOwnershipMoveService>(),
+        UnusedIntegrationAuthorization.Create());
 
     [Fact]
     public async Task Retire_WhenPlainInvalidOperationException_Returns404()

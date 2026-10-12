@@ -375,7 +375,8 @@ public sealed class ResourceContextApiCompatibilityTests
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
             resourceContexts.Object,
-            Mock.Of<IResourceOwnershipMoveService>());
+            Mock.Of<IResourceOwnershipMoveService>(),
+            UnusedIntegrationAuthorization.Create());
 
     private static (
         Mock<IConnectionManagementService> Service,

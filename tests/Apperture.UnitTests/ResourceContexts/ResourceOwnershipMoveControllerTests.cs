@@ -94,7 +94,8 @@ public sealed class ResourceOwnershipMoveControllerTests
             Mock.Of<IPrincipalContext>(),
             TimeProvider.System,
             Mock.Of<IResourceContextService>(),
-            moveService);
+            moveService,
+            UnusedIntegrationAuthorization.Create());
 
     private sealed class StubMoveService : IResourceOwnershipMoveService
     {

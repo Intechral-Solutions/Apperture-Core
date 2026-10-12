@@ -164,6 +164,84 @@ public sealed class IntegrationAttentionRoutingClearTests
         (await h.Db.IntegrationAttentionRoutings.CountAsync()).Should().Be(0);
     }
 
+    // ---- the clear under the integration row lock (attention-routing authorization remediation) ----
+
+    [Fact]
+    public async Task Clearing_runs_the_callers_authorization_once_the_integration_is_locked_and_a_refusal_removes_nothing()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        await h.Routing.UpsertIntegrationRoutingAsync(integration.Id, AttentionConditionKeys.ExpectedRunMissing, h.SampleCommand());
+        var reauthorized = 0;
+
+        var act = () => h.Routing.ClearIntegrationRoutingAsync(
+            integration.Id,
+            AttentionConditionKeys.ExpectedRunMissing,
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                throw new UnauthorizedAccessException("moved");
+            }).AsTask();
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        reauthorized.Should().Be(1);
+        (await h.Db.IntegrationAttentionRoutings.AsNoTracking().CountAsync(r => r.IntegrationId == integration.Id.Value))
+            .Should().Be(1, "a refused clear removes nothing");
+    }
+
+    [Fact]
+    public async Task Clearing_with_no_override_still_runs_the_callers_authorization_and_stays_a_no_op()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        var reauthorized = 0;
+
+        var cleared = await h.Routing.ClearIntegrationRoutingAsync(
+            integration.Id,
+            AttentionConditionKeys.ExpectedRunMissing,
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                return ValueTask.CompletedTask;
+            });
+
+        cleared.Should().BeFalse();
+        reauthorized.Should().Be(1, "who may clear is decided even when there is nothing to clear");
+    }
+
+    [Fact]
+    public async Task Clearing_with_a_passing_authorization_removes_the_override_as_before()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var integration = await h.CreateIntegrationAsync();
+        await h.Routing.UpsertIntegrationRoutingAsync(integration.Id, AttentionConditionKeys.ExpectedRunMissing, h.SampleCommand());
+
+        var cleared = await h.Routing.ClearIntegrationRoutingAsync(
+            integration.Id, AttentionConditionKeys.ExpectedRunMissing, reauthorize: _ => ValueTask.CompletedTask);
+
+        cleared.Should().BeTrue();
+        (await h.Db.IntegrationAttentionRoutings.CountAsync(r => r.IntegrationId == integration.Id.Value)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Clearing_for_an_unknown_integration_does_not_run_the_callers_authorization()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        var reauthorized = 0;
+
+        var act = () => h.Routing.ClearIntegrationRoutingAsync(
+            new IntegrationId("int_does_not_exist"),
+            AttentionConditionKeys.ExpectedRunMissing,
+            reauthorize: _ =>
+            {
+                reauthorized++;
+                return ValueTask.CompletedTask;
+            }).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        reauthorized.Should().Be(0, "there is no integration to authorize against");
+    }
+
     [Fact]
     public async Task Clearing_for_an_unknown_integration_throws_like_upsert_does()
     {

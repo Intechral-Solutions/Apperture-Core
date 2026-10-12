@@ -32,6 +32,7 @@ public sealed class IntegrationsController : ControllerBase
     private readonly TimeProvider _timeProvider;
     private readonly IResourceContextService _resourceContexts;
     private readonly IResourceOwnershipMoveService _moveService;
+    private readonly IntegrationSettingsAuthorization _integrationAuthorization;
 
     public IntegrationsController(
         IIntegrationManagementService integrationService,
@@ -43,7 +44,8 @@ public sealed class IntegrationsController : ControllerBase
         IPrincipalContext principalContext,
         TimeProvider timeProvider,
         IResourceContextService resourceContexts,
-        IResourceOwnershipMoveService moveService)
+        IResourceOwnershipMoveService moveService,
+        IntegrationSettingsAuthorization integrationAuthorization)
     {
         _integrationService = integrationService;
         _readinessService = readinessService;
@@ -55,6 +57,7 @@ public sealed class IntegrationsController : ControllerBase
         _timeProvider = timeProvider;
         _resourceContexts = resourceContexts;
         _moveService = moveService;
+        _integrationAuthorization = integrationAuthorization;
     }
 
     /// <summary>
@@ -314,6 +317,9 @@ public sealed class IntegrationsController : ControllerBase
             if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
                 return NotFound();
 
+            // Changing an integration's routing is a change to the integration: reading it is not enough (integration.update).
+            await _integrationAuthorization.RequireIntegrationManageAsync(id, cancellationToken).ConfigureAwait(false);
+
             var key = string.IsNullOrWhiteSpace(conditionKey)
                 ? AttentionConditionKeys.ExpectedRunMissing
                 : conditionKey.Trim();
@@ -332,13 +338,9 @@ public sealed class IntegrationsController : ControllerBase
                             body.PrimaryOperationalTeamId,
                             body.EscalationOperationalTeamId),
                         cancellationToken,
-                        // The read check made above, run again under the integration row lock (an ownership move that committed
-                        // in between is seen by it).
-                        async ct =>
-                        {
-                            if (await _integrationService.GetIntegrationAsync(intId, ct).ConfigureAwait(false) is null)
-                                throw new InvalidOperationException($"Integration {id} was not found.");
-                        })
+                        // The checks made above, run again under the integration row lock (an ownership move that committed
+                        // in between is seen by them).
+                        ct => ReauthorizeRoutingWriteAsync(intId, ct))
                     .ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
@@ -355,6 +357,23 @@ public sealed class IntegrationsController : ControllerBase
         {
             return Forbid();
         }
+        catch (KeyNotFoundException)
+        {
+            // Removed between the checks above and the authorization lookup.
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// The authorization of an integration-level routing write, evaluated against the integration as it is when the caller
+    /// invokes it: it must still be readable and the caller must hold <c>integration.update</c> on it. Run once before the
+    /// write and again by the routing service under the integration row lock.
+    /// </summary>
+    private async ValueTask ReauthorizeRoutingWriteAsync(IntegrationId integrationId, CancellationToken cancellationToken)
+    {
+        if (await _integrationService.GetIntegrationAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
+            throw new InvalidOperationException($"Integration {integrationId.Value} was not found.");
+        await _integrationAuthorization.RequireIntegrationManageAsync(integrationId.Value, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -370,13 +389,16 @@ public sealed class IntegrationsController : ControllerBase
             if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
                 return NotFound();
 
+            // Clearing an integration's routing is a change to the integration: reading it is not enough (integration.update).
+            await _integrationAuthorization.RequireIntegrationManageAsync(id, cancellationToken).ConfigureAwait(false);
+
             var key = string.IsNullOrWhiteSpace(conditionKey)
                 ? AttentionConditionKeys.ExpectedRunMissing
                 : conditionKey.Trim();
             try
             {
                 await _attentionRoutingManagement
-                    .ClearIntegrationRoutingAsync(intId, key, cancellationToken)
+                    .ClearIntegrationRoutingAsync(intId, key, cancellationToken, ct => ReauthorizeRoutingWriteAsync(intId, ct))
                     .ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
@@ -389,6 +411,11 @@ public sealed class IntegrationsController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (KeyNotFoundException)
+        {
+            // Removed between the checks above and the authorization lookup.
+            return NotFound();
         }
     }
 
