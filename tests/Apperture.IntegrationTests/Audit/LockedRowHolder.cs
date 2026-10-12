@@ -60,7 +60,7 @@ internal sealed class LockedRowHolder : IAsyncDisposable
     /// Waits until the server itself lists a request, blocked by this session, waiting for a lock on a row of
     /// <paramref name="table"/>. Fails if the writer finishes first: a writer that did not wait did not take the lock.
     /// </summary>
-    public async Task WaitUntilBlockedAsync(AuditSqlScratch scratch, string table, Task writer)
+    public async Task WaitUntilBlockedAsync(AuditSqlScratch scratch, string table, Task writer, int minimumWaiters = 1)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (DateTime.UtcNow < deadline)
@@ -80,7 +80,7 @@ internal sealed class LockedRowHolder : IAsyncDisposable
                 WHERE l.request_status = N'WAIT' AND l.resource_database_id = DB_ID() AND l.resource_type = N'KEY'
                   AND OBJECT_NAME(p.object_id) = N'{table}' AND r.blocking_session_id = {SessionId};
                 """);
-            if (blocked > 0)
+            if (blocked >= minimumWaiters)
                 return;
             await Task.Delay(25);
         }

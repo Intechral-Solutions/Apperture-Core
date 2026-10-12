@@ -108,7 +108,7 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_second_create_for_the_same_slot_is_refused_after_waiting_for_the_first_and_records_nothing()
+    public async Task Two_creates_for_one_slot_that_both_wait_for_the_integration_row_are_serialized_and_the_second_is_refused()
     {
         var (_, principal) = await AdminAsync();
         var integrationId = await SeedIntegrationAsync();
@@ -128,12 +128,41 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
             }
         }
 
-        var results = await Task.WhenAll(Attempt(), Attempt());
+        // Both creates are started while another session holds the integration row. The first takes the ownership gate and is
+        // shown by the server to be waiting on the row; the second queues behind it on the gate.
+        await using var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId);
+        var first = Task.Run(Attempt);
+        var second = Task.Run(Attempt);
+        await holder.WaitUntilBlockedAsync(_db, "Integrations", Task.WhenAny(first, second));
+        await holder.CommitAsync();
+        var results = await Task.WhenAll(first, second);
 
         results.Count(r => r is null).Should().Be(1, "there is no unique index on a slot: the integration row lock serializes the two");
         results.Single(r => r is not null).Should().BeOfType<InvalidOperationException>().Which.Message.Should().Contain("already bound");
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(1);
-        (await AuditRowsAsync()).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.BindingCreated);
+        (await AuditRowsAsync()).Should().ContainSingle(r => (string)r["Action"] == AuditActionNames.BindingCreated);
+    }
+
+    [Fact]
+    public async Task A_delete_that_waits_for_the_binding_row_finds_it_gone_and_is_a_quiet_no_op_that_records_nothing()
+    {
+        var (_, principal) = await AdminAsync();
+        var integrationId = await SeedIntegrationAsync();
+        var bindingId = await SeedBindingAsync(integrationId);
+
+        // Another session has decided to remove the binding and holds its row. The delete passes its early read, takes the
+        // integration row, and is shown by the server to be waiting for the binding row.
+        await using var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Bindings", bindingId);
+        await using var db = _db.NewDb();
+        var delete = Task.Run(() => Service(db, principal, NewUnit(db, principal)).DeleteBindingAsync(new BindingId(bindingId)).AsTask());
+        await holder.WaitUntilBlockedAsync(_db, "Bindings", delete);
+
+        await holder.ExecuteAsync("DELETE FROM Bindings WHERE Id = @id;", ("@id", bindingId));
+        await holder.CommitAsync();
+
+        await delete;
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(0);
+        (await AuditRowsAsync()).Should().BeEmpty("the delete under the lock found nothing to delete, so it declared a no-op");
     }
 
     [Fact]
