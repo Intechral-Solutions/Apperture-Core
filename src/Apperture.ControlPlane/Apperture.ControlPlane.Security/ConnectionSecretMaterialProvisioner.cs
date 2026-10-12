@@ -55,9 +55,47 @@ public sealed class ConnectionSecretMaterialProvisioner
     }
 
     /// <summary>
-    /// Adds a new active version to an existing secret when the connection already references a GUID; otherwise creates a new secret. Mutates <paramref name="workingSecretRefs"/>.
+    /// The ownership rule for a secret reference. A reference names a secret this connection may use or rotate only if the store
+    /// holds that secret under provider <c>platform-connection</c> with exactly the name
+    /// <c>connection:{connectionId}:{fieldKey}</c>. A well-formed GUID is not proof: the reference is checked against the
+    /// secret's own stored descriptor, never against what the connection row says. A missing secret, another provider and another
+    /// owner or field are all refused with the same message, which does not repeat the reference or say which case it was.
     /// </summary>
-    public async ValueTask ApplySecretValuesForUpdateAsync(
+    /// <exception cref="InvalidOperationException">The reference does not name a secret owned by this connection field.</exception>
+    public async ValueTask EnsureReferenceOwnedAsync(
+        ConnectionId connectionId, string fieldKey, string reference, CancellationToken cancellationToken = default)
+    {
+        if (Guid.TryParse(reference, out var guid))
+        {
+            var descriptor = await _secretStore.GetAsync(new SecretId(guid), cancellationToken).ConfigureAwait(false);
+            if (descriptor is not null
+                && string.Equals(descriptor.Provider, SecretProvider, StringComparison.Ordinal)
+                && string.Equals(descriptor.Name, BuildSecretName(connectionId, fieldKey), StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Secret reference for '{fieldKey}' does not name a secret owned by this connection field. Use SecretValues to store new secret material.");
+    }
+
+    /// <summary>Applies <see cref="EnsureReferenceOwnedAsync"/> to each reference, in field order.</summary>
+    public async ValueTask EnsureReferencesOwnedAsync(
+        ConnectionId connectionId, IEnumerable<KeyValuePair<string, string>> references, CancellationToken cancellationToken = default)
+    {
+        foreach (var kv in references.OrderBy(k => k.Key, StringComparer.Ordinal))
+            await EnsureReferenceOwnedAsync(connectionId, kv.Key, kv.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adds a new active version to the secret the field already names, which must be owned by this connection field (see
+    /// <see cref="EnsureReferenceOwnedAsync"/>; a reference that fails the rule is refused before anything is stored, whatever the
+    /// stored row says); otherwise creates a new secret. Mutates <paramref name="workingSecretRefs"/>.
+    /// Returns, per field that received material, whether it replaced the secret the field already named. Meant to run inside the
+    /// caller's audited unit: the store joins its transaction, so the new version is live only if the unit commits.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<ConnectionSecretWrite>> ApplySecretValuesForUpdateAsync(
         ConnectionId connectionId,
         ConnectorDefinition definition,
         IReadOnlyDictionary<string, string> secretValues,
@@ -65,6 +103,19 @@ public sealed class ConnectionSecretMaterialProvisioner
         CancellationToken cancellationToken = default)
     {
         ThrowIfInvalidSecretKeys(definition, secretValues);
+
+        // Every reference that would receive a version is proved owned before the first version is stored.
+        foreach (var kv in secretValues.OrderBy(k => k.Key, StringComparer.Ordinal))
+        {
+            if (!string.IsNullOrWhiteSpace(kv.Value)
+                && workingSecretRefs.TryGetValue(kv.Key, out var toRotate)
+                && Guid.TryParse(toRotate, out _))
+            {
+                await EnsureReferenceOwnedAsync(connectionId, kv.Key, toRotate, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var writes = new List<ConnectionSecretWrite>();
         foreach (var kv in secretValues)
         {
             if (string.IsNullOrWhiteSpace(kv.Value))
@@ -79,6 +130,7 @@ public sealed class ConnectionSecretMaterialProvisioner
                 var version = await _secretStore.AddVersionAsync(secretId, material, cancellationToken).ConfigureAwait(false);
                 await _secretStore.ActivateVersionAsync(secretId, version, cancellationToken).ConfigureAwait(false);
                 workingSecretRefs[kv.Key] = existingRef;
+                writes.Add(new ConnectionSecretWrite(kv.Key, Replaced: true));
             }
             else
             {
@@ -93,8 +145,11 @@ public sealed class ConnectionSecretMaterialProvisioner
                 var version = await _secretStore.AddVersionAsync(descriptor.SecretId, material, cancellationToken).ConfigureAwait(false);
                 await _secretStore.ActivateVersionAsync(descriptor.SecretId, version, cancellationToken).ConfigureAwait(false);
                 workingSecretRefs[kv.Key] = descriptor.SecretId.Value.ToString("D");
+                writes.Add(new ConnectionSecretWrite(kv.Key, Replaced: false));
             }
         }
+
+        return writes;
     }
 
     private static string BuildSecretName(ConnectionId connectionId, string fieldKey) =>
@@ -177,3 +232,6 @@ public sealed class ConnectionSecretMaterialProvisioner
         }
     }
 }
+
+/// <summary>One secret field of a connection that received material: <paramref name="Replaced"/> when it became a new active version of the secret the field already named, otherwise it was stored as a new secret.</summary>
+public sealed record ConnectionSecretWrite(string FieldKey, bool Replaced);

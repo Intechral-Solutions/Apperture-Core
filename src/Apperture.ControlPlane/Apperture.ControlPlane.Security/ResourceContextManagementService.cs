@@ -1,6 +1,6 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Persistence.SqlServer;
@@ -10,40 +10,38 @@ using Microsoft.EntityFrameworkCore;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Authorize-then-delegate wrapper around <see cref="IResourceContextService"/> (CTX-3A §9.1),
-/// following the same pattern as <see cref="IntegrationManagementService.CreateIntegrationAsync"/>
-/// (authorize via <see cref="IAuthorizationEvaluationService"/>, then delegate) combined with
-/// <see cref="PlatformSettingsService"/>'s audit-append shape.
+/// Authorize-then-delegate wrapper around <see cref="IResourceContextService"/> (CTX-3A §9.1), following the same pattern as
+/// <see cref="IntegrationManagementService.CreateIntegrationAsync"/> (authorize via <see cref="IAuthorizationEvaluationService"/>,
+/// then delegate). Every mutation is one audited unit (AUD-1.4 slice 5): create, update, archive and unarchive each commit with
+/// their one audit row or not at all.
 /// </summary>
 public sealed class ResourceContextManagementService : IResourceContextManagementService
 {
-    private const string AuditOutcome = "resource-context-management";
-
     private readonly IResourceContextService _resourceContexts;
     private readonly IResourceContextRepository _resourceContextRepository;
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
-    private readonly IAuditService _audit;
-    private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public ResourceContextManagementService(
         IResourceContextService resourceContexts,
         IResourceContextRepository resourceContextRepository,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
-        IAuditService audit,
-        AppertureDbContext db,
-        IResourceOwnershipMutationGate ownershipGate)
+        IResourceOwnershipMutationGate ownershipGate,
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _resourceContexts = resourceContexts;
         _resourceContextRepository = resourceContextRepository;
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
-        _audit = audit;
-        _db = db;
         _ownershipGate = ownershipGate;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Application changes require the audited unit of work.");
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<ResourceContext>> ListAsync(bool includeArchived, CancellationToken cancellationToken = default) =>
@@ -62,80 +60,108 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
         _resourceContextRepository.GetOwnershipSummariesAsync(cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5): the context and <c>resource_context.created</c> commit together or not
+    /// at all. The service chooses the identity, so a verified commit after a lost acknowledgement is reconstructed from the
+    /// primary row's target, and a confirmed rollback reruns with a fresh identity (nothing of the first was committed). The slug
+    /// uniqueness read-then-insert can still lose a race on <c>UX_ResourceContexts_Slug</c>; that is now the same refusal as a
+    /// slug already in use (it used to be an unmapped 500).</para>
+    /// </remarks>
     public async ValueTask<ResourceContext> CreateAsync(string name, string? slug, string? description, CancellationToken cancellationToken = default)
     {
-        var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
-        var created = await _resourceContexts.CreateApplicationContextAsync(name, slug, description, cancellationToken).ConfigureAwait(false);
-        await AppendAuditAsync("resource_context.created", actor.Id, created.Id, $"Created Application '{created.Name}' ({created.Slug}).", cancellationToken).ConfigureAwait(false);
-        return created;
+        await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
+
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ResourceContextCreated, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                ResourceContext created;
+                try
+                {
+                    created = await _resourceContexts.CreateApplicationContextAsync(name, slug, description, ct).ConfigureAwait(false);
+                }
+                catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, "UX_ResourceContexts_Slug"))
+                {
+                    // A concurrent request committed the same slug between the availability check and the insert.
+                    throw new InvalidOperationException("ResourceContext slug is already in use.", ex);
+                }
+
+                await transaction.StageAsync(AuditEvents.ResourceContextCreated(created.Id.Value, created.Name, created.Slug), ct).ConfigureAwait(false);
+                return created;
+            },
+            async (committed, ct) => await _resourceContexts.GetAsync(new ResourceContextId(committed.TargetId!), ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The created ResourceContext could not be read back."),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para>
-    /// Each delegate call below (<see cref="IResourceContextService.RenameAsync"/>,
-    /// <see cref="IResourceContextService.ChangeSlugAsync"/>,
-    /// <see cref="IResourceContextService.UpdateDescriptionAsync"/>) commits independently -- so if, say,
-    /// the rename succeeds and the slug change then throws (reserved/taken/unnormalizable), the rename is
-    /// already durable by the time the exception propagates. The <c>finally</c> block below still appends
-    /// an audit record for whatever actually changed before the exception escapes, so a partially-applied
-    /// update is never silently unaudited.
-    /// </para>
-    /// <para>
-    /// The pre-call guards above compare the caller's raw input to the current in-memory field, purely to
-    /// decide whether it is worth calling the delegate at all -- they cannot be trusted to prove a change
-    /// actually happened, because the delegates normalize/trim their input before comparing against the
-    /// stored value (e.g. <see cref="IResourceContextService.ChangeSlugAsync"/> normalizes "My Slug" to
-    /// "my-slug" and, finding that equal to the stored slug, returns the existing entity with NO save at
-    /// all). So each branch below additionally captures the specific field's value immediately before the
-    /// delegate call and compares it to that same field on the delegate's result, adding to
-    /// <c>changedFields</c> only when the field actually differs afterward -- the same before/after
-    /// pattern <see cref="ArchiveAsync"/> and <see cref="UnarchiveAsync"/> already use.
-    /// </para>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5). The context row is locked to the end of the transaction (no ownership
+    /// gate: a rename, a re-slug or a new description neither makes anything live nor moves anything), so two updates of one
+    /// context serialize and the second merges over the first. The three changes the request may carry are applied inside the
+    /// unit, so they now commit together or not at all: an update whose slug change is refused (reserved, taken, unusable) no
+    /// longer leaves its rename committed. This is the one deliberate behaviour change of the conversion (AUD-1.4 record §16.4).</para>
+    /// <para>The delegates normalize and trim their input before comparing it to the stored value (a re-slug of "My Slug" to the
+    /// stored "my-slug" saves nothing), so each field counts as changed only when it differs before and after the delegate ran.
+    /// A request that changes nothing declares a no-op and records nothing.</para>
     /// </remarks>
     public async ValueTask<ResourceContext> UpdateAsync(ResourceContextId id, string? name, string? slug, string? description, CancellationToken cancellationToken = default)
     {
-        var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
 
-        var current = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found.");
-
-        var changedFields = new List<string>();
-        try
-        {
-            if (name is not null && !string.Equals(name, current.Name, StringComparison.Ordinal))
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ResourceContextUpdated, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
             {
-                var beforeName = current.Name;
-                current = await _resourceContexts.RenameAsync(id, name, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(current.Name, beforeName, StringComparison.Ordinal))
-                    changedFields.Add("name");
-            }
+                var current = await _resourceContextRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found.");
 
-            if (slug is not null && !string.Equals(slug, current.Slug, StringComparison.Ordinal))
-            {
-                var beforeSlug = current.Slug;
-                current = await _resourceContexts.ChangeSlugAsync(id, slug, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(current.Slug, beforeSlug, StringComparison.Ordinal))
-                    changedFields.Add("slug");
-            }
+                var changedFields = new List<string>();
+                try
+                {
+                    if (name is not null && !string.Equals(name, current.Name, StringComparison.Ordinal))
+                    {
+                        var beforeName = current.Name;
+                        current = await _resourceContexts.RenameAsync(id, name, ct).ConfigureAwait(false);
+                        if (!string.Equals(current.Name, beforeName, StringComparison.Ordinal))
+                            changedFields.Add("name");
+                    }
 
-            if (description is not null && !string.Equals(description, current.Description, StringComparison.Ordinal))
-            {
-                var beforeDescription = current.Description;
-                current = await _resourceContexts.UpdateDescriptionAsync(id, description, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(current.Description, beforeDescription, StringComparison.Ordinal))
-                    changedFields.Add("description");
-            }
+                    if (slug is not null && !string.Equals(slug, current.Slug, StringComparison.Ordinal))
+                    {
+                        var beforeSlug = current.Slug;
+                        current = await _resourceContexts.ChangeSlugAsync(id, slug, ct).ConfigureAwait(false);
+                        if (!string.Equals(current.Slug, beforeSlug, StringComparison.Ordinal))
+                            changedFields.Add("slug");
+                    }
 
-            return current;
-        }
-        finally
-        {
-            if (changedFields.Count > 0)
-            {
-                await AppendAuditAsync("resource_context.updated", actor.Id, id, $"Changed fields: {string.Join(", ", changedFields)}.", cancellationToken).ConfigureAwait(false);
-            }
-        }
+                    if (description is not null && !string.Equals(description, current.Description, StringComparison.Ordinal))
+                    {
+                        var beforeDescription = current.Description;
+                        current = await _resourceContexts.UpdateDescriptionAsync(id, description, ct).ConfigureAwait(false);
+                        if (!string.Equals(current.Description, beforeDescription, StringComparison.Ordinal))
+                            changedFields.Add("description");
+                    }
+                }
+                catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, "UX_ResourceContexts_Slug"))
+                {
+                    throw new InvalidOperationException("ResourceContext slug is already in use.", ex);
+                }
+
+                if (changedFields.Count == 0)
+                {
+                    transaction.DeclareNoOp();
+                    return current;
+                }
+
+                await transaction.StageAsync(AuditEvents.ResourceContextUpdated(id.Value, current.Name, changedFields), ct).ConfigureAwait(false);
+                return current;
+            },
+            async (committed, ct) => await _resourceContexts.GetAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found."),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -151,65 +177,77 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
 
     /// <inheritdoc />
     /// <remarks>
-    /// <see cref="IResourceContextService.ArchiveAsync"/> is a no-op (no state change, no save) when the
-    /// context is already archived, so the pre-call state is captured and compared to the delegate's
-    /// result: an audit record is appended only when the context actually transitioned out of Active.
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5). Inside the attempt, in this order: the ownership gate, the context row
+    /// (locked to the end of the transaction), then the "nothing live" evaluation and the state change. The archive rule is a
+    /// statement about ownership, so evaluating it is an ownership-sensitive read and archiving an ownership-sensitive mutation:
+    /// without the gate a concurrent move into this context, or a new integration, connection or enabled schedule, could add live
+    /// ownership between the summary read and the state change, producing an archived Application that owns a live resource.
+    /// Archiving an archived context changes nothing and records nothing.</para>
     /// </remarks>
     public async ValueTask<ResourceContext> ArchiveAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
-        var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
-
-            // The archive rule is a statement about ownership ("nothing live"), so evaluating it is an
-            // ownership-sensitive read and archiving is an ownership-sensitive mutation. Without the gate,
-            // a concurrent move into this context can add live ownership between the summary read and the
-            // state change, producing an archived Application that owns a live Integration.
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
-            var archived = await _resourceContexts.ArchiveAsync(id, cancellationToken).ConfigureAwait(false);
-
-            await FireHookAsync("archive:validated", cancellationToken).ConfigureAwait(false);
-
-            if (before is not null && before.IsActive)
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ResourceContextArchived, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
             {
-                await AppendAuditAsync("resource_context.archived", actor.Id, id, $"Archived '{archived.Name}'.", cancellationToken).ConfigureAwait(false);
-            }
+                await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
 
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return archived;
-        }).ConfigureAwait(false);
+                var before = await _resourceContextRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false);
+                var archived = await _resourceContexts.ArchiveAsync(id, ct).ConfigureAwait(false);
+
+                await FireHookAsync("archive:validated", ct).ConfigureAwait(false);
+
+                if (before is null || !before.IsActive)
+                {
+                    transaction.DeclareNoOp();
+                    return archived;
+                }
+
+                await transaction.StageAsync(AuditEvents.ResourceContextArchived(id.Value, archived.Name), ct).ConfigureAwait(false);
+                return archived;
+            },
+            async (committed, ct) => await _resourceContexts.GetAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found."),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// <see cref="IResourceContextService.UnarchiveAsync"/> is a no-op (no state change, no save) when the
-    /// context is already Active -- including the reserved Shared context, which is never archived -- so
-    /// the pre-call state is captured and compared to the delegate's result: an audit record is appended
-    /// only when the context actually transitioned out of Archived.
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5). The context row is locked to the end of the transaction; no ownership
+    /// gate (it was never taken, and an unarchive creates no ownership: a creation into the context still takes the gate and
+    /// reads the state it finds). Unarchiving an active context, including the reserved Shared context which is never archived,
+    /// changes nothing and records nothing.</para>
     /// </remarks>
     public async ValueTask<ResourceContext> UnarchiveAsync(ResourceContextId id, CancellationToken cancellationToken = default)
     {
-        var actor = await RequireManageAsync(cancellationToken).ConfigureAwait(false);
-        var before = await _resourceContexts.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        var unarchived = await _resourceContexts.UnarchiveAsync(id, cancellationToken).ConfigureAwait(false);
-        if (before is not null && !before.IsActive)
-        {
-            await AppendAuditAsync("resource_context.unarchived", actor.Id, id, $"Unarchived '{unarchived.Name}'.", cancellationToken).ConfigureAwait(false);
-        }
-        return unarchived;
+        await RequireManageAsync(cancellationToken).ConfigureAwait(false);
+        var unit = Unit;
+
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ResourceContextUnarchived, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var before = await _resourceContextRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false);
+                var unarchived = await _resourceContexts.UnarchiveAsync(id, ct).ConfigureAwait(false);
+
+                if (before is null || before.IsActive)
+                {
+                    transaction.DeclareNoOp();
+                    return unarchived;
+                }
+
+                await transaction.StageAsync(AuditEvents.ResourceContextUnarchived(id.Value, unarchived.Name), ct).ConfigureAwait(false);
+                return unarchived;
+            },
+            async (committed, ct) => await _resourceContexts.GetAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"ResourceContext '{id.Value}' not found."),
+            cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<IActor> RequireManageAsync(CancellationToken cancellationToken)
+    private async ValueTask RequireManageAsync(CancellationToken cancellationToken)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         if (actor is null)
@@ -223,22 +261,5 @@ public sealed class ResourceContextManagementService : IResourceContextManagemen
             cancellationToken).ConfigureAwait(false);
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to manage applications.");
-
-        return actor;
-    }
-
-    private async ValueTask AppendAuditAsync(string action, ActorId actorId, ResourceContextId resourceContextId, string details, CancellationToken cancellationToken)
-    {
-        var record = new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actorId,
-            action,
-            new ResourceDescriptor(ResourceTypeConstants.ResourceContext, ScopeKeyConstants.Instance),
-            AuditOutcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(null),
-            details,
-            ResourceContextId: resourceContextId.Value);
-        await _audit.AppendAsync(record, cancellationToken).ConfigureAwait(false);
     }
 }

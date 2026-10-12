@@ -21,18 +21,16 @@ namespace Apperture.UnitTests.ResourceContexts;
 /// following the exact shape of <see cref="ResourceContextOwnershipTestHarness"/> (Plan 1), but
 /// additionally wiring a fake/stub <see cref="IAuthorizationEvaluationService"/> (grant/deny by
 /// permission), a fake <see cref="IPrincipalContext"/> (one fixed actor), and a fake
-/// <see cref="IAuditService"/> whose <c>AppendAsync</c> records into an in-memory list exposed as
-/// <see cref="AuditRecords"/>.
+/// recording audited unit (<see cref="AuditUnit"/>) that keeps the rows each operation stages.
 /// </summary>
 public sealed class ManagementServiceTestHarness : IAsyncDisposable
 {
     private readonly AppertureDbContext _db;
     private readonly IIntegrationManagementService _integrations;
     private readonly IConnectionManagementService _connections;
-    private readonly RecordingAuditService _auditService;
     private int _nextSequence;
 
-    private ManagementServiceTestHarness(string? grantedAction, string? grantedResourceType, bool recordingGate = false)
+    private ManagementServiceTestHarness(string? grantedAction, string? grantedResourceType, bool recordingGate = false, bool withoutAuditedUnit = false)
     {
         _db = new AppertureDbContext(
             new DbContextOptionsBuilder<AppertureDbContext>()
@@ -75,8 +73,6 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
         // service's own authorization/audit wrapper, not Integration authorization. IntegrationManagementService
         // is itself a gate consumer as of the CTX-3B follow-on, so it shares the same ownershipGate (and,
         // via resourceContextRepository, the same GateOrderTracker) as Service below.
-        _auditService = new RecordingAuditService();
-
         _integrations = new IntegrationManagementService(
             new FixedPrincipalContext(new FixedActor()),
             new AlwaysAllowAuthorizationEvaluationService(),
@@ -102,7 +98,7 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             resourceContexts,
             _db,
             ownershipGate,
-            Mock.Of<IAuditService>());
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         // The actor is always authenticated; only the permission grant varies. This exercises the
         // "authenticated but not authorized" branch specifically (rather than short-circuiting on a
@@ -113,9 +109,8 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             resourceContextRepository,
             new FixedPrincipalContext(new FixedActor()),
             new PermissionMatchingAuthorizationEvaluationService(grantedAction, grantedResourceType),
-            _auditService,
-            _db,
-            ownershipGate);
+            ownershipGate,
+            withoutAuditedUnit ? null : AuditUnit);
     }
 
     public IResourceContextManagementService Service { get; }
@@ -124,7 +119,8 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
 
     public IIntegrationManagementService Integrations => _integrations;
 
-    public IReadOnlyList<AuditRecord> AuditRecords => _auditService.Records;
+    /// <summary>The recording unit the context management service runs in: the rows each operation staged, no-ops and the rest.</summary>
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork AuditUnit { get; } = new();
 
     /// <summary>
     /// The recording ownership-gate spy, non-null only when constructed via <see cref="WithRecordingGate"/>.
@@ -139,7 +135,8 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
     /// The management service under test only ever checks <c>resource_context.manage</c> on
     /// <c>ResourceContext</c>, so passing anything else here would not actually grant it access.
     /// </summary>
-    public static ManagementServiceTestHarness WithPermission(string action, string resourceType) => new(action, resourceType);
+    public static ManagementServiceTestHarness WithPermission(string action, string resourceType, bool withoutAuditedUnit = false) =>
+        new(action, resourceType, withoutAuditedUnit: withoutAuditedUnit);
 
     /// <summary>
     /// Harness granted <c>resource_context.manage</c> and wired with a recording ownership-gate spy
@@ -234,28 +231,6 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
         }
     }
 
-    /// <summary>Records every appended <see cref="AuditRecord"/> into an in-memory list. Query/count/get-by-id are unused by this suite.</summary>
-    private sealed class RecordingAuditService : IAuditService
-    {
-        private readonly List<AuditRecord> _records = new();
-        public IReadOnlyList<AuditRecord> Records => _records;
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            _records.Add(record);
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ManagementServiceTestHarness.");
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ManagementServiceTestHarness.");
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("Not exercised by ManagementServiceTestHarness.");
-    }
-
     /// <summary>
     /// Shared ordering log for <see cref="RecordingResourceOwnershipMutationGate"/> and
     /// <see cref="RecordingResourceContextRepository"/>: single-threaded (xUnit runs this harness's tests
@@ -269,6 +244,10 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
         public void RecordGateAcquired() => _events.Add("gate");
 
         public void RecordOwnershipRead() => _events.Add("read");
+
+        public int GateAcquisitions => _events.Count(e => e == "gate");
+
+        public void Reset() => _events.Clear();
 
         public bool AcquiredBeforeFirstOwnershipRead
         {
@@ -302,6 +281,12 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
 
         /// <summary>True once <see cref="AcquireAsync"/> has run, and only if it ran strictly before the first ownership-sensitive repository read recorded by <see cref="RecordingResourceContextRepository"/>.</summary>
         public bool AcquiredBeforeFirstOwnershipRead => _tracker.AcquiredBeforeFirstOwnershipRead;
+
+        /// <summary>How many times the gate was acquired since construction or the last <see cref="Reset"/>.</summary>
+        public int Acquisitions => _tracker.GateAcquisitions;
+
+        /// <summary>Forgets what was recorded so far, so a later operation can be observed on its own.</summary>
+        public void Reset() => _tracker.Reset();
     }
 
     /// <summary>
@@ -326,6 +311,12 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
         {
             _tracker.RecordOwnershipRead();
             return _inner.GetByIdAsync(id, cancellationToken);
+        }
+
+        public ValueTask<ResourceContext?> GetByIdForUpdateAsync(ResourceContextId id, CancellationToken cancellationToken = default)
+        {
+            _tracker.RecordOwnershipRead();
+            return _inner.GetByIdForUpdateAsync(id, cancellationToken);
         }
 
         public ValueTask<ResourceContext?> GetBySlugAsync(string normalizedSlug, CancellationToken cancellationToken = default) =>

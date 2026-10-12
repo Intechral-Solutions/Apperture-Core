@@ -1,7 +1,7 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Application.ResourceContexts;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Shared.Kernel;
@@ -14,17 +14,17 @@ namespace Apperture.ControlPlane.Security;
 /// connection resolver or secret resolver, so it cannot create a remote client, resolve a secret or touch the network.
 /// Running a tool is the only thing here that reaches a remote system, and only after BOTH grants are held on the Connection
 /// and only for an Active Connection with a provider, on an operator-invoked request. Each such request is audited once,
-/// and the audit record is written BEFORE the result is returned: no audit, no data.
+/// and the audit record is written BEFORE the result is returned: no audit, no data (a required security event, write class W2,
+/// committed on its own before the result is delivered; AUD-1.4 slice 5). A request that ended in an exception or a cancellation
+/// has no result to withhold: it is recorded best-effort as a separate attempt.
 /// </summary>
 public sealed class ConnectionToolAccess : IConnectionToolAccess
 {
-    private const string SqlStructureTool = "sql-structure";
-
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IConnectionRepository _connectionRepository;
     private readonly IReadOnlyList<IConnectionToolProvider> _providers;
-    private readonly IAuditService _audit;
+    private readonly IAuditEventWriter _auditEvents;
     private readonly ConnectionToolRequestLimiter _limiter;
 
     public ConnectionToolAccess(
@@ -32,14 +32,14 @@ public sealed class ConnectionToolAccess : IConnectionToolAccess
         IAuthorizationEvaluationService authorizationEvaluation,
         IConnectionRepository connectionRepository,
         IEnumerable<IConnectionToolProvider> providers,
-        IAuditService audit,
+        IAuditEventWriter auditEvents,
         ConnectionToolRequestLimiter limiter)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _connectionRepository = connectionRepository;
         _providers = providers.ToList();
-        _audit = audit;
+        _auditEvents = auditEvents;
         _limiter = limiter;
     }
 
@@ -118,23 +118,30 @@ public sealed class ConnectionToolAccess : IConnectionToolAccess
         catch (OperationCanceledException)
         {
             // The remote request was started and abandoned by the caller: still an attempt worth recording.
-            await TryAppendAsync(actor, connection, operation, "cancelled", "Cancelled", resultCount: null, truncated: null).ConfigureAwait(false);
+            await TryRecordFailureAsync(connection, operation, cancelled: true).ConfigureAwait(false);
             throw;
         }
         catch (Exception)
         {
-            await TryAppendAsync(actor, connection, operation, "failed", "Failed", resultCount: null, truncated: null).ConfigureAwait(false);
+            await TryRecordFailureAsync(connection, operation, cancelled: false).ConfigureAwait(false);
             throw;
         }
 
         // Not best-effort: if the record cannot be written the caller does not get the data (the exception propagates and
-        // the result is dropped). Written with no caller token so a request cancelled at the last moment is still recorded.
-        await AppendAsync(
-            actor, connection, operation,
-            result.Outcome == ConnectionToolOutcome.Succeeded ? "succeeded" : "failed",
-            result.Outcome.ToString(),
-            result.Outcome == ConnectionToolOutcome.Succeeded ? result.Items.Count : null,
-            result.Outcome == ConnectionToolOutcome.Succeeded ? result.Truncated : null).ConfigureAwait(false);
+        // the result is dropped). Written with no caller token so a request cancelled at the last moment is still recorded. The
+        // row records the operation and how it ended, with counts; never the names or content the remote system returned.
+        await _auditEvents.WriteAsync(
+            AuditEvents.ConnectionStructureBrowsed(
+                connection.Id.Value,
+                connection.Name,
+                connection.ConnectorDefinitionId.Value,
+                operation,
+                result.Outcome,
+                result.Outcome == ConnectionToolOutcome.Succeeded ? result.Items.Count : null,
+                result.Outcome == ConnectionToolOutcome.Succeeded ? result.Truncated : null,
+                connection.ResourceContextId.Value),
+            AuditActor.CurrentPrincipal,
+            CancellationToken.None).ConfigureAwait(false);
         return result;
     }
 
@@ -171,30 +178,19 @@ public sealed class ConnectionToolAccess : IConnectionToolAccess
             .OfType<T>()
             .FirstOrDefault();
 
-    private ValueTask AppendAsync(
-        IActor actor, Connection connection, string operation, string auditOutcome, string toolOutcome, int? resultCount, bool? truncated) =>
-        _audit.AppendAsync(new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actor.Id,
-            ConnectionAuditActionNames.StructureBrowsed,
-            // Resource stays null: SqlAuditService would string-append it into Details (corrupting the JSON) and never
-            // persists it. Connection identity lives in the structured Details.
-            Resource: null,
-            Outcome: auditOutcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(Guid.NewGuid().ToString("N")),
-            System.Text.Json.JsonSerializer.Serialize(new ConnectionToolAuditDetails(
-                ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ConnectorDefinitionId.Value,
-                SqlStructureTool, operation, toolOutcome, resultCount, truncated)),
-            ResourceContextId: connection.ResourceContextId.Value), CancellationToken.None);
-
-    /// <summary>Failure paths only: the request is already failing, and a broken audit sink must not replace the real error.</summary>
-    private async ValueTask TryAppendAsync(
-        IActor actor, Connection connection, string operation, string auditOutcome, string toolOutcome, int? resultCount, bool? truncated)
+    /// <summary>
+    /// Failure paths only: the request is already failing, and a broken audit sink must not replace the real error. A best-effort
+    /// attempt row of the same principal (write class W3); a failure to write it is logged by the writer and changes nothing.
+    /// </summary>
+    private async ValueTask TryRecordFailureAsync(Connection connection, string operation, bool cancelled)
     {
         try
         {
-            await AppendAsync(actor, connection, operation, auditOutcome, toolOutcome, resultCount, truncated).ConfigureAwait(false);
+            await _auditEvents.TryWriteAsync(
+                AuditEvents.ConnectionStructureBrowseFailed(
+                    connection.Id.Value, connection.Name, connection.ConnectorDefinitionId.Value, operation, cancelled, connection.ResourceContextId.Value),
+                AuditActor.CurrentPrincipal,
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception)
         {

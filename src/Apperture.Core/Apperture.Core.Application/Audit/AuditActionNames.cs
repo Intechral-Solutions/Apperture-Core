@@ -184,6 +184,41 @@ public static class AuditActionNames
     public const string ScheduleDisabled = "schedule.disabled";
     public const string ScheduleAssigned = "schedule.assigned";
 
+    // AUD-1.4 slice 5: connections. All six were declared by AUD-1.0 as legacy-bridge entries and are converted here; the secret
+    // action is new and is the Secrets-category row of the unit that stores a connection's secret material. A request that rotates
+    // any secret field is recorded as connection.secret_rotated, otherwise as connection.updated. A browse that ended in an
+    // exception or a cancellation is a separate attempt action, since the browse itself is a required event delivered with its result.
+    public const string ConnectionCreated = "connection.created";
+    public const string ConnectionUpdated = "connection.updated";
+    public const string ConnectionSecretRotated = "connection.secret_rotated";
+    public const string ConnectionRetired = "connection.retired";
+    public const string ConnectionVerified = "connection.verified";
+    public const string ConnectionStructureBrowsed = "connection.structure_browsed";
+    public const string ConnectionStructureBrowseFailed = "connection.structure_browse_failed";
+    public const string ConnectionSecretStored = "connection.secret.stored";
+
+    // AUD-1.4 slice 5: resource contexts. Declared by AUD-1.0 as legacy-bridge entries, converted here.
+    public const string ResourceContextCreated = "resource_context.created";
+    public const string ResourceContextUpdated = "resource_context.updated";
+    public const string ResourceContextArchived = "resource_context.archived";
+    public const string ResourceContextUnarchived = "resource_context.unarchived";
+
+    // AUD-1.4 slice 5: ownership moves. Declared by AUD-1.0 as legacy-bridge entries, converted here. The moved_out row identifies
+    // the operation (the source context is its related reference); moved_in is its secondary row (the target is its related
+    // reference); a rejected move is a separate attempt row of the same principal.
+    public const string IntegrationMovedOut = "integration.ownership.moved_out";
+    public const string IntegrationMovedIn = "integration.ownership.moved_in";
+    public const string IntegrationMoveRejected = "integration.ownership.move_rejected";
+    public const string ConnectionMovedOut = "connection.ownership.moved_out";
+    public const string ConnectionMovedIn = "connection.ownership.moved_in";
+    public const string ConnectionMoveRejected = "connection.ownership.move_rejected";
+    public const string ScheduleMovedOut = "schedule.ownership.moved_out";
+    public const string ScheduleMovedIn = "schedule.ownership.moved_in";
+    public const string ScheduleMoveRejected = "schedule.ownership.move_rejected";
+
+    /// <summary>The primary actions a connection update may be recorded under, depending on whether it rotates a secret field.</summary>
+    public static IReadOnlyList<string> ConnectionUpdateActions { get; } = [ConnectionUpdated, ConnectionSecretRotated];
+
     /// <summary>The primary actions an integration update may be recorded under, depending on the state transition it makes.</summary>
     public static IReadOnlyList<string> IntegrationUpdateActions { get; } =
         [IntegrationUpdated, IntegrationActivated, IntegrationDeactivated, IntegrationRetired];

@@ -143,11 +143,14 @@ public sealed class ResourceOwnershipTests
         var app = await h.ResourceContexts.CreateApplicationContextAsync("Application A");
         var existingSecretRef = Guid.NewGuid().ToString();
 
-        var created = await h.Connections.CreateConnectionAsync(
-            NewConnectionRequest(app.Id) with { SecretRefs = new Dictionary<string, string> { ["Token"] = existingSecretRef } });
+        // A reference cannot be supplied on create (the identity is minted by the service), so the connection holds one the way
+        // a stored credential does: written on the row. Owning it in a context must neither read nor change that secret.
+        var created = await h.Connections.CreateConnectionAsync(NewConnectionRequest(app.Id));
+        await h.ConnectionRepository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Token"] = existingSecretRef } });
+        var reread = await h.Connections.GetConnectionAsync(created.Id);
 
         created.ResourceContextId.Value.Should().Be(app.Id.Value);
-        created.SecretRefs.Should().ContainKey("Token").WhoseValue.Should().Be(existingSecretRef);
+        reread!.SecretRefs.Should().ContainKey("Token").WhoseValue.Should().Be(existingSecretRef);
         h.SecretStore.VerifyNoOtherCalls();
     }
 

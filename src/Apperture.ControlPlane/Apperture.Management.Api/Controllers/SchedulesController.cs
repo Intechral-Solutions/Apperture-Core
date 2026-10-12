@@ -320,7 +320,7 @@ public sealed class SchedulesController : ControllerBase
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (ResourceOwnershipBusyException ex) { return ResourceMoveHttpMapper.MapBusy(ex); }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException) { return NotFound(new { error = ex.Message }); }
     }
 
     private async Task<string?> TryGetWorkerRuntimeStatusAsync(CancellationToken cancellationToken)

@@ -675,7 +675,7 @@ public sealed class IntegrationsController : ControllerBase
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (ResourceOwnershipBusyException ex) { return ResourceMoveHttpMapper.MapBusy(ex); }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException) { return NotFound(new { error = ex.Message }); }
     }
 
     /// <summary>

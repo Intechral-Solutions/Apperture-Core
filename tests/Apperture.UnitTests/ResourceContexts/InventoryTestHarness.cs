@@ -112,7 +112,7 @@ public sealed class InventoryTestHarness : IAsyncDisposable
             ResourceContexts,
             Db,
             ownershipGate,
-            Mock.Of<IAuditService>());
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         var schedules = new SqlScheduleManagementService(
             scheduleRepository,

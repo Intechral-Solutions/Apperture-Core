@@ -76,6 +76,10 @@ public sealed class AuditDetailSchemaTests
             typeof(ExecutionLaunchChannel),
             // AUD-1.4 slice 4: an integration's lifecycle state (a closed enum), recorded as its lower-case name.
             typeof(Apperture.Core.Domain.Integration.IntegrationState),
+            // AUD-1.4 slice 5: what a connection verifier answered and how a remote structure request ended (closed enums,
+            // recorded as fixed lower-case names; the verifier's summary text and the remote system's content are never taken).
+            typeof(Apperture.Core.Domain.Connector.ConnectionVerificationStatus),
+            typeof(Apperture.Core.Application.ConnectionTools.ConnectionToolOutcome),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),
@@ -192,9 +196,9 @@ public sealed class AuditDetailSchemaTests
     [Fact]
     public void An_event_cannot_be_built_for_an_action_still_on_the_append_bridge()
     {
-        // Connection lifecycle stays on the bridge until AUD-1.4 converts it.
+        // Notification definitions stay on the bridge until AUD-1.4 slice 6 converts them.
         var act = () => AuditEvent.Create(
-            AuditActionCatalog.Default.Get("connection.created"), null, AuditOutcomeCodes.Succeeded, Values());
+            AuditActionCatalog.Default.Get("notification.definition.deleted"), null, AuditOutcomeCodes.Succeeded, Values());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*append bridge*");
     }

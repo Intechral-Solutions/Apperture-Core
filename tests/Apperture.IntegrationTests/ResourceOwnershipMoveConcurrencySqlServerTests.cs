@@ -851,7 +851,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 resourceContexts,
                 db,
                 gate,
-                new NullAuditService());
+                new TransactionOnlyUnit(db));
 
             var bindings = new BindingService(
                 principal,
@@ -880,9 +880,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 resourceContextRepository,
                 principal,
                 authzAllow,
-                new SqlAuditService(db),
-                db,
-                gate);
+                gate,
+                new TransactionOnlyUnit(db));
 
             var moveService = new ResourceOwnershipMoveService(
                 principal,
@@ -892,9 +891,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 scheduleRepository,
                 bindingRepository,
                 resourceContexts,
-                db,
                 gate,
-                new SqlAuditService(db));
+                new TransactionOnlyUnit(db));
 
             return new Env
             {

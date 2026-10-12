@@ -88,7 +88,7 @@ public sealed class ManagementHostConnectionToolsHttpTests
     {
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        return await db.AuditLogs.CountAsync(a => a.Action == "connection.structure_browsed" && a.Details!.Contains(connectionId));
+        return await db.AuditLogs.CountAsync(a => a.Action == "connection.structure_browsed" && a.TargetType == "connection" && a.TargetId == connectionId);
     }
 
     private static string Password(string connectionString) => new SqlConnectionStringBuilder(connectionString).Password;
@@ -244,14 +244,14 @@ public sealed class ManagementHostConnectionToolsHttpTests
         (await StructureAuditCountAsync(id)).Should().Be(3);
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        var records = await db.AuditLogs.Where(a => a.Action == "connection.structure_browsed" && a.Details!.Contains(id)).ToListAsync();
+        var records = await db.AuditLogs.Where(a => a.Action == "connection.structure_browsed" && a.TargetType == "connection" && a.TargetId == id).ToListAsync();
         records.Select(r => JsonDocument.Parse(r.Details!).RootElement.GetProperty("operation").GetString())
             .Should().BeEquivalentTo("schemas", "tables", "columns");
         records.Should().OnlyContain(r => r.Outcome == "succeeded" && r.ResourceContextId == "shared");
         foreach (var record in records)
         {
             record.Details.Should().NotContain(firstTable).And.NotContain("\"dbo\"").And.NotContain(password);
-            JsonDocument.Parse(record.Details!).RootElement.GetProperty("toolOutcome").GetString().Should().Be("Succeeded");
+            JsonDocument.Parse(record.Details!).RootElement.GetProperty("result").GetString().Should().Be("succeeded");
         }
     }
 
@@ -312,9 +312,9 @@ public sealed class ManagementHostConnectionToolsHttpTests
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var record = await scope.ServiceProvider.GetRequiredService<AppertureDbContext>().AuditLogs
-            .SingleAsync(a => a.Action == "connection.structure_browsed" && a.Details!.Contains(id));
+            .SingleAsync(a => a.Action == "connection.structure_browsed" && a.TargetType == "connection" && a.TargetId == id);
         record.Outcome.Should().Be("failed");
-        record.Details.Should().Contain("RemoteDenied").And.NotContainEquivalentOf("Login failed");
+        record.Details.Should().Contain("remote_denied").And.NotContainEquivalentOf("Login failed");
     }
 
     [Fact]

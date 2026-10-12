@@ -77,6 +77,13 @@ public sealed partial class AuditActionCatalogTests
         "schedule.assigned",
     ];
 
+    /// <summary>Actions AUD-1.4 slice 5 adds (connection secret rows and the failed-browse attempt); the rest of the slice converts declared actions.</summary>
+    private static readonly string[] Aud14Slice5Additions =
+    [
+        "connection.structure_browse_failed",
+        "connection.secret.stored",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -87,8 +94,10 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice4Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 4").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice4Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice5Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 5").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice5Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length,
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length,
             "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
