@@ -319,7 +319,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate, WriterKind.ScheduleCreate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -389,13 +389,14 @@ public sealed partial class IntegrationRowLockSqlServerTests
     // ---- wiring for the delete ----
 
     private static bool AddsABlocker(WriterKind kind) =>
-        kind is WriterKind.DefinitionCreate or WriterKind.SubscriptionAdd or WriterKind.RoutingUpsert or WriterKind.BindingCreate;
+        kind is WriterKind.DefinitionCreate or WriterKind.SubscriptionAdd or WriterKind.RoutingUpsert or WriterKind.BindingCreate or WriterKind.ScheduleCreate;
 
     private static IntegrationDeleteBlocker BlockerOf(WriterKind kind) => kind switch
     {
         WriterKind.DefinitionCreate => IntegrationDeleteBlocker.NotificationDefinitions,
         WriterKind.SubscriptionAdd => IntegrationDeleteBlocker.NotificationSubscriptions,
         WriterKind.BindingCreate => IntegrationDeleteBlocker.Bindings,
+        WriterKind.ScheduleCreate => IntegrationDeleteBlocker.Schedules,
         _ => IntegrationDeleteBlocker.AttentionRoutings,
     };
 

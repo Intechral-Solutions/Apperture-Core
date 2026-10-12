@@ -872,7 +872,8 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 integrationRepository,
                 db,
                 gate,
-                principal);
+                principal,
+                new TransactionOnlyUnit(db));
 
             var resourceContextManagement = new ResourceContextManagementService(
                 resourceContexts,

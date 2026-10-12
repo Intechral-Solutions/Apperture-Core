@@ -58,12 +58,35 @@ public interface IScheduleManagementService
     ValueTask<ScheduleDefinition> CreateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates a schedule definition.
+    /// Creates a schedule definition (see <see cref="CreateScheduleAsync"/>) and its initial assignment to a runtime plane as one
+    /// operation: both commit with the one <c>schedule.created</c> audit row, or neither does.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is what the HTTP create routes call. The production service implements it as one audited unit (AUD-1.4 slice 4),
+    /// so a failure after the definition can no longer leave a schedule with no assignment.</para>
+    /// <para>The default composes <see cref="CreateScheduleAsync"/> and <see cref="AssignToRuntimePlaneAsync"/> so in-memory test
+    /// doubles keep working; it is not atomic and is never what production runs.</para>
+    /// </remarks>
+    async ValueTask<ScheduleDefinition> CreateScheduleWithAssignmentAsync(
+        ScheduleDefinition definition,
+        RuntimePlaneId runtimePlaneId,
+        string? policyOverrides,
+        CancellationToken cancellationToken = default)
+    {
+        var created = await CreateScheduleAsync(definition, cancellationToken).ConfigureAwait(false);
+        await AssignToRuntimePlaneAsync(created.Id, runtimePlaneId, policyOverrides, cancellationToken).ConfigureAwait(false);
+        return created;
+    }
+
+    /// <summary>
+    /// Updates a schedule definition. Only the name, recurrence, time zone and enabled flag are applied, over the schedule as it
+    /// is when the update runs; a request that changes nothing changes and records nothing.
     /// </summary>
     ValueTask UpdateScheduleAsync(ScheduleDefinition definition, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Assigns a schedule to a runtime plane.
+    /// Assigns a schedule to a runtime plane. One audited unit (<c>schedule.assigned</c>); the HTTP routes assign through
+    /// <see cref="CreateScheduleWithAssignmentAsync"/> instead.
     /// </summary>
     ValueTask<ScheduleAssignment> AssignToRuntimePlaneAsync(ScheduleId scheduleId, RuntimePlaneId runtimePlaneId, string? policyOverrides, CancellationToken cancellationToken = default);
 

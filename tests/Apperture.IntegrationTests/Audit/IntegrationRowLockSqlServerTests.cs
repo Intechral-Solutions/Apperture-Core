@@ -4,11 +4,14 @@ using Apperture.Core.Application.Notifications;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.ResourceContexts;
+using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
+using Apperture.Core.Domain.Environment;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Notifications;
+using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Security.Secrets.Models;
@@ -66,6 +69,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         RoutingClear,
         IntegrationUpdate,
         BindingCreate,
+        ScheduleCreate,
     }
 
     public static IEnumerable<object[]> Cases() =>
@@ -303,7 +307,7 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
         var kinds = new[]
         {
             WriterKind.SettingSet, WriterKind.SecretReplace, WriterKind.DefinitionCreate, WriterKind.SubscriptionAdd, WriterKind.RoutingUpsert,
-            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate,
+            WriterKind.RoutingClear, WriterKind.IntegrationUpdate, WriterKind.BindingCreate, WriterKind.ScheduleCreate,
         };
 
         for (var round = 0; round < 6; round++)
@@ -462,6 +466,32 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                         .CreateBindingAsync(
                             "Sample.Mod", "slot-" + Guid.NewGuid().ToString("N")[..6], "Contract.Type", new ConnectionId(SharedConnectionId), new IntegrationId(integrationId));
                     break;
+                case WriterKind.ScheduleCreate:
+                    // The audited schedule create with its initial assignment: operation lock, ownership gate, then the integration row.
+                    await new SqlScheduleManagementService(
+                            new SqlScheduleRepository(db),
+                            new RaceClaimOptions(),
+                            TimeProvider.System,
+                            new ResourceContextService(new SqlResourceContextRepository(db), TimeProvider.System),
+                            new SqlIntegrationRepository(db),
+                            db,
+                            new SqlResourceOwnershipMutationGate(db),
+                            principal,
+                            NewUnit(db, principal))
+                        .CreateScheduleWithAssignmentAsync(
+                            new ScheduleDefinition(
+                                new ScheduleId("sch-w3-" + Guid.NewGuid().ToString("N")[..10]),
+                                "Race schedule",
+                                "0 0 * * *",
+                                "UTC",
+                                Enabled: false,
+                                new ScheduledTarget(ScheduledJobType.WorkflowExecution, "{}"),
+                                ExecutionPolicyRef: null,
+                                Version: 1,
+                                new IntegrationId(integrationId)),
+                            new RuntimePlaneId("local"),
+                            null);
+                    break;
                 case WriterKind.IntegrationUpdate:
                     // The audited update: its own operation lock, then the integration row (a rename takes no ownership gate).
                     await new IntegrationManagementService(
@@ -517,6 +547,10 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                 break;
             case WriterKind.IntegrationUpdate:
                 after.AuditLogs.Should().Be(before.AuditLogs + 1, "the one integration.updated row");
+                break;
+            case WriterKind.ScheduleCreate:
+                after.Schedules.Should().Be(before.Schedules + 1);
+                after.AuditLogs.Should().Be(before.AuditLogs + 1, "the one schedule.created row, which covers the assignment");
                 break;
             case WriterKind.BindingCreate:
                 after.Bindings.Should().Be(before.Bindings + 1);
@@ -577,6 +611,11 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
               INSERT INTO Connections (Id, ConnectorDefinitionId, Name, ConfigJson, SecretRefsJson, ResourceContextId, State, LastVerificationStatus)
               VALUES (N'{SharedConnectionId}', N'test.connector', N'Shared Connection', N'{EmptyJson}', N'{EmptyJson}', N'shared', 0, 0);
             """);
+
+    private sealed class RaceClaimOptions : ISchedulerClaimOptions
+    {
+        public int ClaimLeaseMinutes => 5;
+    }
 
     /// <summary>Every stored connection is eligible: these races are about locks, not about connector contracts.</summary>
     private sealed class EveryConnectionEligible(AppertureDbContext db) : IBindingEligibilityService

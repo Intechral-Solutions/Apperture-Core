@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
 using Apperture.Core.Application.Services;
@@ -120,9 +121,9 @@ public sealed class IntegrationSchedulesController : ControllerBase
                     : new ResourceContextId(body.ResourceContextId)
             };
 
-            var created = await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+            // The definition and its initial assignment are one operation: neither exists without the other.
             var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
-            await _scheduleManagement.AssignToRuntimePlaneAsync(created.Id, planeId, null, cancellationToken);
+            var created = await _scheduleManagement.CreateScheduleWithAssignmentAsync(definition, planeId, null, cancellationToken);
 
             return CreatedAtAction(nameof(List), new { integrationId }, ToDto(created, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
         }
@@ -130,7 +131,7 @@ public sealed class IntegrationSchedulesController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }

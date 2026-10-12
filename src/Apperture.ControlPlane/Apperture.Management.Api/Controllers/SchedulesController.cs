@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.RuntimeHealth;
 using Apperture.Core.Application.Scheduling;
@@ -157,20 +158,20 @@ public sealed class SchedulesController : ControllerBase
                 : new ResourceContextId(body.ResourceContextId)
         };
 
+        var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
         ScheduleDefinition created;
         try
         {
             // The management service owns the authoritative ownership rule (inherit from the
             // Integration; reject a mismatch). The controller only forwards the caller's request.
-            created = await _scheduleManagement.CreateScheduleAsync(definition, cancellationToken);
+            // The definition and its initial assignment are one operation: neither exists without the other.
+            created = await _scheduleManagement.CreateScheduleWithAssignmentAsync(definition, planeId, null, cancellationToken);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { errors = new[] { ex.Message } });
         }
 
-        var planeId = new RuntimePlaneId(body.RuntimePlaneId ?? "local");
-        await _scheduleManagement.AssignToRuntimePlaneAsync(created.Id, planeId, null, cancellationToken);
         return CreatedAtAction(nameof(Get), new { id }, ToDto(created, DateTimeOffset.UtcNow, workerRuntimeStatus: null));
     }
 
@@ -205,7 +206,7 @@ public sealed class SchedulesController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -229,7 +230,7 @@ public sealed class SchedulesController : ControllerBase
         {
             return Conflict(new { error = ex.Message });
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound();
         }
@@ -247,7 +248,7 @@ public sealed class SchedulesController : ControllerBase
             await _scheduleManagement.DisableAsync(new ScheduleId(id), cancellationToken);
             return Ok();
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound();
         }
