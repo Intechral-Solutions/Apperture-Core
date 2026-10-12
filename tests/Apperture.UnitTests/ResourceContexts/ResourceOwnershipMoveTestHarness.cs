@@ -87,7 +87,7 @@ public sealed class ResourceOwnershipMoveTestHarness : IAsyncDisposable
             ResourceContexts,
             _db,
             ownershipGate,
-            Mock.Of<IAuditService>());
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         Bindings = new BindingService(
             new FixedPrincipalContext(),

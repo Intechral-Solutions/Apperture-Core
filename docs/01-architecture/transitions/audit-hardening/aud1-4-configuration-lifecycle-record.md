@@ -1274,9 +1274,39 @@ Date: 2026-10-12. Branch `aud-1.4-slice-5-connections-contexts`, from `origin/ma
 
 | # | Package | Status |
 |---|---|---|
-| WP1 | Audit contracts: typed actions, producers and schemas for the connection, context and move families | Planned |
-| WP2 | Connection create, update (rotation) and retire as audited units | Planned |
-| WP3 | Connection verify and structure browse | Planned |
+| WP1 | Audit contracts: typed actions, producers and schemas for the connection, context and move families | **Done** (16.5) |
+| WP2 | Connection create, update (rotation) and retire as audited units | **Done** (16.5) |
+| WP3 | Connection verify and structure browse | **Done** (16.5) |
 | WP4 | Resource context create, update, archive and unarchive | Planned |
 | WP5 | Ownership moves (integration, connection, schedule) | Planned |
 | WP6 | Real-unit concurrency coverage, validation, independent review, closure | Planned |
+
+### 16.4 Intentional behavior changes
+
+| Change | Why |
+|---|---|
+| A connection create, update, rotation and retire is one audited unit; the secret material the request supplies is stored inside it | The live-secret-first defect and the secrets orphaned by a failed create (16.5) |
+| Retiring a retired connection, and an update that changes nothing, answer as before (204, 200) but write nothing and record nothing | "A request that changes nothing records nothing" (section 5). A second retirement used to write another row |
+| A connection `PATCH` that supplies `SecretValues` no longer leaves a "failed" `connection.secret_rotated` row when it then fails | The rotation is rolled back with the request, so there is no failed rotation to record; the refusal is the response |
+| A connection update locks the row and merges over it, instead of writing the whole row from a read made earlier | The whole-row overwrite lost a concurrent edit, retirement or verification (the lesson of finding M1) |
+| Verification writes only the three verification columns, over the row as locked after the probe | A rename, rotation or retirement made while the remote host was being probed was overwritten, and a retired connection could be written back as Active |
+| A structure browse that threw or was cancelled is the new attempt action `connection.structure_browse_failed` (W3); a browse that returned a result, a remote refusal included, is `connection.structure_browsed` (W2) | A required event cannot be withheld from a result that was never delivered |
+| `connection.secret_rotated` records counts of the fields it changed; the keys are on `connection.updated` and on the per-field `connection.secret.stored` rows | The catalog rule that a Secrets-category event carries ids, closed values, flags and counts only |
+
+### 16.5 Connections (work packages 1 to 3)
+
+**Contracts (WP1).** The six declared `connection.*` actions gain schemas and typed producers (`AuditEvents.Connections`); `connection.secret.stored` (Secrets, elevated, secondary row) and `connection.structure_browse_failed` (W3, basis `external_attempt`) are new. Nothing can carry a config value, a secret value or reference, a connection string, the verifier's summary or what the remote system returned. The legacy `ConnectionAuditActionNames` and detail records are deleted: nothing writes them, and old rows are classified from their own JSON by the catalog's legacy target rule.
+
+**Create.** Gate, owning context, the operator-supplied secret material (the store joins the unit's transaction), the material check, then `connection.created` and one `connection.secret.stored` row per stored field, then the row. The identity is chosen before the unit. A refusal, a failed save or a failed audit insert rolls the secrets back with the connection (before: stored and live before any transaction, orphaned by any failure after).
+
+**Update and rotation.** An early read and `connection.update` check answer a missing or forbidden request; inside the unit the row is locked and `connection.update` is evaluated again against it, so an ownership move that committed while the request waited is what the decision reads. The change is computed against the locked row; a request that changes nothing is a declared no-op. The material is added and activated through the store inside the unit, after the request is known to change something. The primary row is `connection.secret_rotated` when any secret field changed (material rotated, or a reference added, removed or pointed elsewhere) and `connection.updated` otherwise. No ownership gate (S5-2). The credential a connection resolves therefore changes only if the unit commits: the previous credential stays live after a refusal, a failed row save, a failed audit insert, a failed material check and an unknown outcome that was not committed.
+
+**Retire.** Row lock, `connection.delete` again on the locked row, state change, `connection.retired`. Secrets and bindings are untouched, as before.
+
+**Verify.** The probe is authorized by an early `connection.read` check and runs first, outside any transaction. One unit then records it: it locks the row, writes only the verification columns over the row as locked, and stages `connection.verified`, which states what the verifier answered (`succeeded` for a success, `failed` for a failure answer or a verifier that threw, `unknown` for an unavailable answer) and never the summary. The unit runs with no caller token, so a request cancelled during the probe leaves its evidence, and the verifier's own exception is rethrown unchanged. No second authorization is made inside the unit (the probe is done and cannot be undone). If the unit cannot commit, the attempt is unrecorded and the caller is told.
+
+**Browse.** The success row (a result was delivered, including a remote refusal) is written with the required-event writer before the result is returned: a failed write withholds the data. A request that threw or was cancelled is a best-effort `connection.structure_browse_failed` row of the same principal; a failure to write it never replaces the original exception.
+
+**Not changed.** Retire still does not disable the connection's secrets, and an update that points a field at another secret leaves the old one in the store (no secret is retired by a connection change). A request that supplies `SecretValues` for a field already naming a GUID adds a version to that secret without checking that the secret belongs to this connection (secret ownership is by name convention only); recorded as a risk (16.10).
+
+**Tests.** `Slice5AuditEventTests` (unit: catalog classes, schemas, every producer, bounds), `ConnectionLifecycleAuditTests` (unit: staged rows per operation, no-ops, authorization on the locked row, ambiguous commits, verification order and statuses), `ConnectionServiceSharesTheUnitContextTests` (the unit, repository, secret store and gate hold one scoped context), `ConnectionToolAccessTests` and `ConnectionToolInvocationTests` (browse over a recording event writer); SQL Server: `ConnectionLifecycleSqlServerTests` (66: M7 for six operations on both isolation modes; the M6 matrix; every way a rotation can fail, each proving the previous credential still resolves and nothing of the new one exists; queued rotations, rotation with retirement, rename with config change, rotation across a move) and `ConnectionVerifyBrowseSqlServerTests` (37: the committed record, the probe outside any transaction, a rename, config change, rotation or retirement made during the probe kept, the record waiting for the row, the M6 matrix, the browse's required row withholding the result when it cannot be written, attempt rows, a broken attempt writer not masking the exception). Seeding writes no audit row (the audit table is append-only); each case that needs an empty audit table takes a catalog of its own.

@@ -1,8 +1,9 @@
 using System.Linq;
+using System.Runtime.ExceptionServices;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.ResourceContexts;
@@ -26,7 +27,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     private readonly IResourceContextService _resourceContexts;
     private readonly AppertureDbContext _db;
     private readonly IResourceOwnershipMutationGate _ownershipGate;
-    private readonly IAuditService _audit;
+    private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
 
     public ConnectionManagementService(
         IPrincipalContext principalContext,
@@ -38,7 +39,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         IResourceContextService resourceContexts,
         AppertureDbContext db,
         IResourceOwnershipMutationGate ownershipGate,
-        IAuditService audit)
+        IAuditedUnitOfWork? auditedUnitOfWork = null)
     {
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
@@ -49,8 +50,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         _resourceContexts = resourceContexts;
         _db = db;
         _ownershipGate = ownershipGate;
-        _audit = audit;
+        _auditedUnitOfWork = auditedUnitOfWork;
     }
+
+    private IAuditedUnitOfWork Unit =>
+        _auditedUnitOfWork ?? throw new AuditInvariantException("Connection changes require the audited unit of work.");
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<Connection>> ListConnectionsAsync(CancellationToken cancellationToken = default) =>
@@ -127,12 +131,23 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5). Everything that changes state happens inside it, in this order: the
+    /// ownership gate (a new Active connection is an archive-blocking resource entering a context), the owning context (a supplied
+    /// context must exist and be Active; none means the reserved Shared context), the operator-supplied secret material, the
+    /// connection material check, then <c>connection.created</c> with one <c>connection.secret.stored</c> row per stored field, and
+    /// the connection. The secret store joins the unit's transaction, so a refusal, a failed save or a failed audit insert rolls the
+    /// stored secrets back with the connection: no secret is left behind, and none is live unless the unit commits.</para>
+    /// <para>The identity is chosen before the unit, so a rerun after a confirmed rollback creates the same connection and a
+    /// verified commit after a lost acknowledgement is reconstructed from the committed row by that id.</para>
+    /// </remarks>
     public async ValueTask<Connection> CreateConnectionAsync(CreateConnectionRequest request, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
+        var unit = Unit;
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
@@ -154,323 +169,329 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         if (request.SecretValues is { Count: > 0 })
             normalizedSecretValues = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
 
-        var mergedSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var kv in normalizedSecretRefs)
-        {
             ValidateIncomingSecretRef(def, kv.Key, kv.Value);
-            mergedSecretRefs[kv.Key] = kv.Value;
-        }
-
-        if (normalizedSecretValues is { Count: > 0 })
-        {
-            // Advisory, non-authoritative pre-check (CTX-3B review finding I2). ProvisionForCreateAsync
-            // writes secret material to an external store and cannot participate in the SQL
-            // transaction below, so without this check an archived/nonexistent target context would
-            // let this write happen and then throw once the REAL check below runs -- orphaning that
-            // secret material, since the Connection row it would belong to is never created. This call
-            // is purely to avoid that common-case wasted external write on the failure path; it is NOT
-            // the correctness mechanism (it runs outside the ownership gate and can theoretically race
-            // a concurrent Archive). The authoritative, race-safe check is the
-            // ResolveForNewOwnershipAsync call inside the gated transaction further below, which alone
-            // is what prevents the create-vs-archive race.
-            await _resourceContexts.ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken).ConfigureAwait(false);
-
-            var provisioned = await _secretProvisioner
-                .ProvisionForCreateAsync(id, def, normalizedSecretValues, cancellationToken)
-                .ConfigureAwait(false);
-            foreach (var kv in provisioned)
-                mergedSecretRefs[kv.Key] = kv.Value;
-        }
-
         ApplyCampusNexusAuthModeDefault(def, normalizedConfig);
-        ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, normalizedConfig, mergedSecretRefs);
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
-        {
-            _db.ChangeTracker.Clear();
-            await using var tx = _db.Database.IsRelational()
-                ? await _db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-                : null;
-
-            // Gate first: a new Active Connection is an archive-blocking resource entering a context, so
-            // this must not interleave with a concurrent Archive evaluating that same context's ownership
-            // summary (CTX-3B follow-on: closes the create-vs-archive race Plan 2's own final review flagged).
-            await _ownershipGate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-
-            // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so
-            // existing create clients stay compatible. A supplied context must exist and be Active.
-            // Ownership never affects secret provisioning above: secret refs are opaque and stay put.
-            var owningContext = await _resourceContexts
-                .ResolveForNewOwnershipAsync(request.ResourceContextId, cancellationToken)
-                .ConfigureAwait(false);
-
-            var connection = new Connection(
-                id,
-                request.ConnectorDefinitionId,
-                request.Name,
-                normalizedConfig,
-                mergedSecretRefs,
-                request.ScopeKey,
-                request.OwnerId,
-                ConnectionState.Active)
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ConnectionCreated, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
             {
-                ResourceContextId = owningContext.Id
-            };
+                // Gate first: a new Active Connection is an archive-blocking resource entering a context, so this must not
+                // interleave with a concurrent Archive evaluating that same context's ownership summary (CTX-3B follow-on).
+                await _ownershipGate.AcquireAsync(ct).ConfigureAwait(false);
 
-            await _connectionRepository.AddAsync(connection, cancellationToken).ConfigureAwait(false);
+                // Ownership defaults to the reserved Shared ResourceContext when the caller supplies none, so existing create
+                // clients stay compatible. A supplied context must exist and be Active.
+                var owningContext = await _resourceContexts
+                    .ResolveForNewOwnershipAsync(request.ResourceContextId, ct)
+                    .ConfigureAwait(false);
 
-            // Inside the transaction: the Connection and its creation record commit (or roll back) together.
-            await AppendAuditAsync(
-                actor, ConnectionAuditActionNames.Created, "succeeded", connection,
-                new ConnectionAuditDetails(
-                    ResourceMoveResourceTypes.Connection, connection.Id.Value, connection.Name, connection.ConnectorDefinitionId.Value),
-                cancellationToken).ConfigureAwait(false);
+                // Rebuilt on every attempt: a rerun after a confirmed rollback starts from the request again.
+                var mergedSecretRefs = new Dictionary<string, string>(normalizedSecretRefs, StringComparer.Ordinal);
+                var storedFields = new List<string>();
+                if (normalizedSecretValues is { Count: > 0 })
+                {
+                    // The store joins this unit's transaction, so the secrets exist and are live only if the unit commits.
+                    var provisioned = await _secretProvisioner
+                        .ProvisionForCreateAsync(id, def, normalizedSecretValues, ct)
+                        .ConfigureAwait(false);
+                    foreach (var kv in provisioned.OrderBy(k => k.Key, StringComparer.Ordinal))
+                    {
+                        mergedSecretRefs[kv.Key] = kv.Value;
+                        storedFields.Add(kv.Key);
+                    }
+                }
 
-            if (tx is not null)
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return connection;
-        }).ConfigureAwait(false);
+                ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, normalizedConfig, mergedSecretRefs);
+
+                var connection = new Connection(
+                    id,
+                    request.ConnectorDefinitionId,
+                    request.Name,
+                    new Dictionary<string, string>(normalizedConfig, StringComparer.Ordinal),
+                    mergedSecretRefs,
+                    request.ScopeKey,
+                    request.OwnerId,
+                    ConnectionState.Active)
+                {
+                    ResourceContextId = owningContext.Id
+                };
+
+                await transaction.StageAsync(
+                    AuditEvents.ConnectionCreated(id.Value, connection.Name, connection.ConnectorDefinitionId.Value, storedFields.Count, owningContext.Id.Value),
+                    ct).ConfigureAwait(false);
+                foreach (var field in storedFields)
+                {
+                    await transaction.StageAsync(
+                        AuditEvents.ConnectionSecretStored(id.Value, field, replaced: false, owningContext.Id.Value),
+                        ct).ConfigureAwait(false);
+                }
+
+                await _connectionRepository.AddAsync(connection, ct).ConfigureAwait(false);
+                return connection;
+            },
+            async (committed, ct) => await _connectionRepository.GetByIdAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Connection {id.Value} could not be read back."),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5), and the fix of the live-secret-first defect. An early read and
+    /// <c>connection.update</c> check answer a missing or forbidden request before a unit opens; they decide nothing. Inside the
+    /// attempt, in this order: the connection row, locked to the end of the transaction (the row an ownership move and a retire
+    /// also take), and <c>connection.update</c> authorized again against it as locked, so a move that committed while this request
+    /// waited is what the decision reads; the change computed against the locked row; the operator-supplied secret material, added
+    /// and activated through the store inside this transaction; the material check; the primary row and one
+    /// <c>connection.secret.stored</c> row per field whose material was stored; then the row. The credential a connection resolves
+    /// therefore changes only if the unit commits: a refusal, a failed save, a failed audit insert or an unknown outcome that was
+    /// not committed leaves the previous credential live, with nothing to compensate.</para>
+    /// <para>No ownership gate: an update can neither make a connection live nor move it, and a move takes the gate and then
+    /// this row, so an update waits behind a move and re-authorizes against the new owner. The merge is made over the locked row,
+    /// so two concurrent updates of different fields both survive. A request that changes nothing declares a no-op and records
+    /// nothing. The row is <c>connection.secret_rotated</c> when any secret field changed (material rotated, or a reference added,
+    /// removed or pointed elsewhere), otherwise <c>connection.updated</c>.</para>
+    /// </remarks>
     public async ValueTask<Connection> UpdateConnectionAsync(ConnectionId id, UpdateConnectionRequest request, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var existing = await _connectionRepository.GetByIdAsync(id, cancellationToken)
+        var unit = Unit;
+        var early = await _connectionRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+        await AuthorizeAsync(actor, early, ActionConstants.ConnectionUpdate, "Not authorized to update this connection.", cancellationToken).ConfigureAwait(false);
 
-        var identity = existing.GetIdentity();
-        var allowed = await _authorizationEvaluation.EvaluateAsync(
-            new AuthorizationEvaluationContext(
-                actor,
-                new PermissionDescriptor(ActionConstants.ConnectionUpdate, GovernedResourceDescriptor.FromIdentity(identity)),
-                GovernedResourceDescriptor.FromIdentity(identity),
-                identity),
-            cancellationToken);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Not authorized to update this connection.");
+        var def = _connectorRegistry.Get(early.ConnectorDefinitionId)
+            ?? throw new InvalidOperationException($"Connector definition {early.ConnectorDefinitionId.Value} not found.");
 
-        var def = _connectorRegistry.Get(existing.ConnectorDefinitionId)
-            ?? throw new InvalidOperationException($"Connector definition {existing.ConnectorDefinitionId.Value} not found.");
-
-        var nextConfigDict = request.Config is null
-            ? new Dictionary<string, string>(existing.Config, StringComparer.Ordinal)
+        // Request-only preparation: nothing here depends on the stored connection.
+        Dictionary<string, string>? requestedConfig = request.Config is null
+            ? null
             : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
+        Dictionary<string, string>? requestedSecretRefs = request.SecretRefs is null
+            ? null
+            : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretRefs, def);
+        if (requestedSecretRefs is not null)
+        {
+            foreach (var kv in requestedSecretRefs)
+                ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+        }
 
-        var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
-        var secretRefsSource = request.SecretRefs ?? existing.SecretRefs;
-        foreach (var kv in ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(secretRefsSource, def))
-            workingSecretRefs[kv.Key] = kv.Value;
-        foreach (var kv in workingSecretRefs)
-            ValidateIncomingSecretRef(def, kv.Key, kv.Value);
-
-        var rotatedSecretFields = new SortedSet<string>(StringComparer.Ordinal);
         IReadOnlyDictionary<string, string>? secretValuesToApply = null;
         if (request.SecretValues is { Count: > 0 })
-        {
             secretValuesToApply = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
-            // Mirrors the provisioner, which skips blank values: only fields that actually receive material count.
-            foreach (var kv in secretValuesToApply.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)))
-                rotatedSecretFields.Add(kv.Key);
-        }
 
-        // Secret material is written to the store BEFORE the row is validated and saved, and the store cannot join
-        // the row's transaction. So once material may have been written, a later failure must still leave a record
-        // that the rotation was attempted (outcome "failed"), rather than a silent change to a credential.
-        var secretMaterialMayHaveChanged = rotatedSecretFields.Count > 0;
-
-        Connection updated;
-        try
-        {
-            if (secretValuesToApply is not null)
+        return await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ConnectionUpdated, AuditActor.CurrentPrincipal, AuditActionNames.ConnectionUpdateActions),
+            async (transaction, ct) =>
             {
-                await _secretProvisioner
-                    .ApplySecretValuesForUpdateAsync(existing.Id, def, secretValuesToApply, workingSecretRefs, cancellationToken)
-                    .ConfigureAwait(false);
-            }
+                var fresh = await _connectionRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+                await AuthorizeAsync(actor, fresh, ActionConstants.ConnectionUpdate, "Not authorized to update this connection.", ct).ConfigureAwait(false);
 
-            ApplyCampusNexusAuthModeDefault(def, nextConfigDict);
-            ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfigDict, workingSecretRefs);
+                var nextConfig = requestedConfig is null
+                    ? new Dictionary<string, string>(fresh.Config, StringComparer.Ordinal)
+                    : new Dictionary<string, string>(requestedConfig, StringComparer.Ordinal);
+                var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var kv in ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(requestedSecretRefs ?? fresh.SecretRefs, def))
+                    workingSecretRefs[kv.Key] = kv.Value;
+                foreach (var kv in workingSecretRefs)
+                    ValidateIncomingSecretRef(def, kv.Key, kv.Value);
 
-            updated = existing with
-            {
-                Name = request.Name ?? existing.Name,
-                Config = nextConfigDict,
-                SecretRefs = workingSecretRefs
-            };
+                // Mirrors the provisioner, which skips blank values: only fields that actually receive material count.
+                var materialFields = secretValuesToApply is null
+                    ? new List<string>()
+                    : secretValuesToApply.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key)
+                        .OrderBy(k => k, StringComparer.Ordinal).ToList();
 
-            // A field also counts as rotated when its secret reference was added, removed or now points somewhere new
-            // (key names only).
-            foreach (var key in existing.SecretRefs.Keys.Union(workingSecretRefs.Keys, StringComparer.Ordinal))
-            {
-                existing.SecretRefs.TryGetValue(key, out var previousRef);
-                workingSecretRefs.TryGetValue(key, out var nextRef);
-                if (!string.Equals(previousRef, nextRef, StringComparison.Ordinal))
-                    rotatedSecretFields.Add(key);
-            }
+                ApplyCampusNexusAuthModeDefault(def, nextConfig);
+                var nameChanged = request.Name is not null && !string.Equals(request.Name, fresh.Name, StringComparison.Ordinal);
+                var configChanged = ChangedKeys(fresh.Config, nextConfig);
+                var refsChanged = ChangedKeys(fresh.SecretRefs, workingSecretRefs);
+                if (!nameChanged && configChanged.Count == 0 && refsChanged.Count == 0 && materialFields.Count == 0)
+                {
+                    transaction.DeclareNoOp();
+                    return fresh;
+                }
 
-            await _connectionRepository.UpdateAsync(updated, cancellationToken);
-        }
-        catch when (secretMaterialMayHaveChanged)
-        {
-            await TryAppendAuditAsync(
-                actor, ConnectionAuditActionNames.SecretRotated, "failed", existing,
-                new ConnectionAuditDetails(
-                    ResourceMoveResourceTypes.Connection, existing.Id.Value, existing.Name, existing.ConnectorDefinitionId.Value,
-                    SecretFieldsRotated: rotatedSecretFields.ToList())).ConfigureAwait(false);
-            throw;
-        }
+                // The material goes to the store inside this transaction, after the row is locked and the request is known to
+                // change something. It becomes the connection's live credential only if the unit commits.
+                IReadOnlyList<ConnectionSecretWrite> writes = [];
+                if (secretValuesToApply is not null && materialFields.Count > 0)
+                {
+                    writes = await _secretProvisioner
+                        .ApplySecretValuesForUpdateAsync(fresh.Id, def, secretValuesToApply, workingSecretRefs, ct)
+                        .ConfigureAwait(false);
+                }
 
-        // Exactly one record per update. When any secret field changed it is the secret-rotation record; the
-        // details still say whether the name or other fields changed too. Appended after the update has been
-        // persisted, matching the other management services' post-commit audit.
-        await AppendAuditAsync(
-            actor,
-            rotatedSecretFields.Count > 0 ? ConnectionAuditActionNames.SecretRotated : ConnectionAuditActionNames.Updated,
-            "succeeded",
-            updated,
-            new ConnectionAuditDetails(
-                ResourceMoveResourceTypes.Connection, updated.Id.Value, updated.Name, updated.ConnectorDefinitionId.Value,
-                NameChanged: !string.Equals(existing.Name, updated.Name, StringComparison.Ordinal),
-                ConfigFieldsChanged: ChangedKeys(existing.Config, updated.Config),
-                SecretFieldsRotated: rotatedSecretFields.ToList()),
+                ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfig, workingSecretRefs);
+
+                // A field also counts as rotated when its secret reference was added, removed or now points somewhere new
+                // (key names only).
+                var rotated = new SortedSet<string>(materialFields, StringComparer.Ordinal);
+                foreach (var key in ChangedKeys(fresh.SecretRefs, workingSecretRefs))
+                    rotated.Add(key);
+
+                var updated = fresh with
+                {
+                    Name = request.Name ?? fresh.Name,
+                    Config = nextConfig,
+                    SecretRefs = workingSecretRefs
+                };
+
+                var contextId = fresh.ResourceContextId.Value;
+                await transaction.StageAsync(
+                    AuditEvents.ConnectionChanged(
+                        id.Value, updated.Name, updated.ConnectorDefinitionId.Value, nameChanged, configChanged, rotated.ToList(), contextId),
+                    ct).ConfigureAwait(false);
+                foreach (var write in writes.OrderBy(w => w.FieldKey, StringComparer.Ordinal))
+                {
+                    await transaction.StageAsync(
+                        AuditEvents.ConnectionSecretStored(id.Value, write.FieldKey, write.Replaced, contextId),
+                        ct).ConfigureAwait(false);
+                }
+
+                await _connectionRepository.UpdateAsync(updated, ct).ConfigureAwait(false);
+                return updated;
+            },
+            async (committed, ct) => await _connectionRepository.GetByIdAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Connection {id.Value} not found."),
             cancellationToken).ConfigureAwait(false);
-        return updated;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One audited unit</b> (AUD-1.4 slice 5). Inside the attempt: the connection row, locked, <c>connection.delete</c>
+    /// authorized again against it as locked, then the state change and <c>connection.retired</c>. Retiring a retired connection
+    /// changes nothing and records nothing. No ownership gate: retiring only removes an archive blocker and moves nothing, and
+    /// waiting behind a move on the row is enough. Retiring does not touch the connection's secrets or its bindings.</para>
+    /// </remarks>
     public async ValueTask RetireConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
-        var existing = await _connectionRepository.GetByIdAsync(id, cancellationToken)
+        var unit = Unit;
+        var early = await _connectionRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+        await AuthorizeAsync(actor, early, ActionConstants.ConnectionDelete, "Not authorized to retire this connection.", cancellationToken).ConfigureAwait(false);
 
-        var identity = existing.GetIdentity();
-        var allowed = await _authorizationEvaluation.EvaluateAsync(
-            new AuthorizationEvaluationContext(
-                actor,
-                new PermissionDescriptor(ActionConstants.ConnectionDelete, GovernedResourceDescriptor.FromIdentity(identity)),
-                GovernedResourceDescriptor.FromIdentity(identity),
-                identity),
-            cancellationToken);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Not authorized to retire this connection.");
+        await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ConnectionRetired, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var fresh = await _connectionRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+                await AuthorizeAsync(actor, fresh, ActionConstants.ConnectionDelete, "Not authorized to retire this connection.", ct).ConfigureAwait(false);
 
-        var retired = existing with { State = ConnectionState.Retired };
-        await _connectionRepository.UpdateAsync(retired, cancellationToken);
+                if (fresh.State == ConnectionState.Retired)
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
 
-        await AppendAuditAsync(
-            actor, ConnectionAuditActionNames.Retired, "succeeded", retired,
-            new ConnectionAuditDetails(
-                ResourceMoveResourceTypes.Connection, retired.Id.Value, retired.Name, retired.ConnectorDefinitionId.Value),
+                var retired = fresh with { State = ConnectionState.Retired };
+                await transaction.StageAsync(
+                    AuditEvents.ConnectionRetired(id.Value, retired.Name, retired.ConnectorDefinitionId.Value, fresh.ResourceContextId.Value),
+                    ct).ConfigureAwait(false);
+                await _connectionRepository.UpdateAsync(retired, ct).ConfigureAwait(false);
+                return true;
+            },
+            // A verified commit is the retirement having happened; the caller returns nothing.
+            (_, _) => Task.FromResult(true),
             cancellationToken).ConfigureAwait(false);
     }
 
+    private async ValueTask AuthorizeAsync(IActor actor, Connection connection, string action, string refusal, CancellationToken cancellationToken)
+    {
+        var identity = connection.GetIdentity();
+        var allowed = await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(
+                actor,
+                new PermissionDescriptor(action, GovernedResourceDescriptor.FromIdentity(identity)),
+                GovernedResourceDescriptor.FromIdentity(identity),
+                identity),
+            cancellationToken).ConfigureAwait(false);
+        if (!allowed)
+            throw new UnauthorizedAccessException(refusal);
+    }
+
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>One external attempt and one audited unit</b> (AUD-1.4 slice 5; design gate §11.6, §13.3). Test-connect is
+    /// available to anyone who can read the connection; it only updates verification metadata. An early read and
+    /// <c>connection.read</c> check authorize the probe. The probe itself runs first, outside any transaction: a transaction never
+    /// makes an external effect atomic, and the stored material is used against the remote host whatever happens next.</para>
+    /// <para>One unit then records what happened. It locks the connection row, writes <b>only</b> the three verification columns
+    /// over the row as locked (so an edit, rotation or retirement made while the probe ran is kept, not overwritten with the
+    /// snapshot the probe started from), and stages <c>connection.verified</c> (basis <c>external_attempt</c>). The row states
+    /// what the verifier answered and nothing more: <c>succeeded</c> only for a success, <c>failed</c> for a failure answer or a
+    /// verifier that threw (no status), <c>unknown</c> when it answered that verification was unavailable. The verifier's summary
+    /// is remote-derived text and stays on the connection row; it is never recorded in the audit trail. A verifier that threw is
+    /// recorded and then its exception is rethrown unchanged.</para>
+    /// <para>The unit runs with no caller token: the attempt happened, so a request cancelled during the probe still leaves its
+    /// evidence. No second authorization is made inside the unit: the probe was authorized before it ran and cannot be undone, so
+    /// what it did is recorded, and the unit changes only verification metadata. If the unit itself cannot commit, the attempt is
+    /// unrecorded and the caller is told so.</para>
+    /// </remarks>
     public async ValueTask<Connection> VerifyConnectionAsync(ConnectionId id, CancellationToken cancellationToken = default)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         if (actor is null)
             throw new UnauthorizedAccessException("No authenticated actor.");
 
+        var unit = Unit;
         var existing = await _connectionRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
+        await AuthorizeAsync(actor, existing, ActionConstants.ConnectionRead, "Not authorized to verify this connection.", cancellationToken).ConfigureAwait(false);
 
-        var identity = existing.GetIdentity();
-        // Diagnostic test-connect is available to anyone who can read the connection; it only updates verification metadata.
-        var allowed = await _authorizationEvaluation.EvaluateAsync(
-            new AuthorizationEvaluationContext(
-                actor,
-                new PermissionDescriptor(ActionConstants.ConnectionRead, GovernedResourceDescriptor.FromIdentity(identity)),
-                GovernedResourceDescriptor.FromIdentity(identity),
-                identity),
-            cancellationToken);
-        if (!allowed)
-            throw new UnauthorizedAccessException("Not authorized to verify this connection.");
-
-        ConnectionVerificationResult verification;
+        ConnectionVerificationResult? verification = null;
+        ExceptionDispatchInfo? failure = null;
         try
         {
             verification = await _connectionVerification.VerifyAsync(existing, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // The attempt used stored secrets against a remote host even though it produced no result. Record that it
-            // happened; the exception itself (which may echo remote text) is not recorded.
-            await TryAppendAuditAsync(
-                actor, ConnectionAuditActionNames.Verified, "failed", existing,
-                new ConnectionAuditDetails(
-                    ResourceMoveResourceTypes.Connection, existing.Id.Value, existing.Name, existing.ConnectorDefinitionId.Value)).ConfigureAwait(false);
-            throw;
+            failure = ExceptionDispatchInfo.Capture(ex);
         }
 
-        var updated = existing with
-        {
-            LastVerificationStatus = verification.Status,
-            LastVerificationAtUtc = verification.VerifiedAtUtc,
-            LastVerificationSummary = verification.Summary
-        };
-        await _connectionRepository.UpdateAsync(updated, cancellationToken);
+        var recorded = await unit.ExecuteAsync(
+            new AuditedOperation(AuditActionNames.ConnectionVerified, AuditActor.CurrentPrincipal),
+            async (transaction, ct) =>
+            {
+                var fresh = await _connectionRepository.GetByIdForUpdateAsync(id, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
 
-        // An outbound operation that used stored secrets. Only the status is recorded: the verifier's summary is
-        // remote-derived text and stays on the Connection row, never in the audit trail.
-        await AppendAuditAsync(
-            actor,
-            ConnectionAuditActionNames.Verified,
-            verification.Status == ConnectionVerificationStatus.Success ? "succeeded" : "failed",
-            updated,
-            new ConnectionAuditDetails(
-                ResourceMoveResourceTypes.Connection, updated.Id.Value, updated.Name, updated.ConnectorDefinitionId.Value,
-                VerificationStatus: verification.Status.ToString()),
-            cancellationToken).ConfigureAwait(false);
-        return updated;
-    }
+                // A verifier is meant to answer success, failure or unavailable; a "never tested" answer is no answer.
+                ConnectionVerificationStatus? status = verification is null
+                    ? null
+                    : verification.Status == ConnectionVerificationStatus.NeverTested ? ConnectionVerificationStatus.Unavailable : verification.Status;
+                await transaction.StageAsync(
+                    AuditEvents.ConnectionVerified(id.Value, fresh.Name, fresh.ConnectorDefinitionId.Value, status, fresh.ResourceContextId.Value),
+                    ct).ConfigureAwait(false);
+                if (verification is null)
+                    return fresh;
 
-    /// <summary>
-    /// Appends one Connection lifecycle audit record. <c>Resource</c> is deliberately <c>null</c>: SqlAuditService appends a
-    /// non-null Resource to Details as plain text (corrupting JSON) and never persists it, so Connection identity lives in
-    /// the structured Details instead. The owning ResourceContext comes from the Connection the caller already loaded.
-    /// </summary>
-    private ValueTask AppendAuditAsync(
-        IActor actor,
-        string action,
-        string outcome,
-        Connection connection,
-        ConnectionAuditDetails details,
-        CancellationToken cancellationToken) =>
-        _audit.AppendAsync(new AuditRecord(
-            new AuditRecordId(Guid.NewGuid().ToString("N")),
-            actor.Id,
-            action,
-            Resource: null,
-            Outcome: outcome,
-            DateTimeOffset.UtcNow,
-            new CorrelationId(Guid.NewGuid().ToString("N")),
-            System.Text.Json.JsonSerializer.Serialize(details),
-            ResourceContextId: connection.ResourceContextId.Value), cancellationToken);
+                var updated = fresh with
+                {
+                    LastVerificationStatus = verification.Status,
+                    LastVerificationAtUtc = verification.VerifiedAtUtc,
+                    LastVerificationSummary = verification.Summary
+                };
+                await _connectionRepository.UpdateAsync(updated, ct).ConfigureAwait(false);
+                return updated;
+            },
+            async (committed, ct) => await _connectionRepository.GetByIdAsync(id, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Connection {id.Value} not found."),
+            CancellationToken.None).ConfigureAwait(false);
 
-    /// <summary>
-    /// Best-effort append for a failure path that is about to rethrow: a broken audit sink must not replace the
-    /// original exception the caller needs to see. Uses no caller token, so a cancelled request still leaves its record.
-    /// </summary>
-    private async ValueTask TryAppendAuditAsync(
-        IActor actor, string action, string outcome, Connection connection, ConnectionAuditDetails details)
-    {
-        try
-        {
-            await AppendAuditAsync(actor, action, outcome, connection, details, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // Deliberately swallowed: see summary.
-        }
+        failure?.Throw();
+        return recorded;
     }
 
     /// <summary>Keys whose value was added, removed or changed. Values are never returned.</summary>

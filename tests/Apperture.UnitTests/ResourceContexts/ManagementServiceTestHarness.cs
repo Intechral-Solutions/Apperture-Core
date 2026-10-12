@@ -102,7 +102,7 @@ public sealed class ManagementServiceTestHarness : IAsyncDisposable
             resourceContexts,
             _db,
             ownershipGate,
-            Mock.Of<IAuditService>());
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
 
         // The actor is always authenticated; only the permission grant varies. This exercises the
         // "authenticated but not authorized" branch specifically (rather than short-circuiting on a

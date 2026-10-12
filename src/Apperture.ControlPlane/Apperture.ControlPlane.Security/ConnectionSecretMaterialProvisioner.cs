@@ -56,8 +56,10 @@ public sealed class ConnectionSecretMaterialProvisioner
 
     /// <summary>
     /// Adds a new active version to an existing secret when the connection already references a GUID; otherwise creates a new secret. Mutates <paramref name="workingSecretRefs"/>.
+    /// Returns, per field that received material, whether it replaced the secret the field already named. Meant to run inside the
+    /// caller's audited unit: the store joins its transaction, so the new version is live only if the unit commits.
     /// </summary>
-    public async ValueTask ApplySecretValuesForUpdateAsync(
+    public async ValueTask<IReadOnlyList<ConnectionSecretWrite>> ApplySecretValuesForUpdateAsync(
         ConnectionId connectionId,
         ConnectorDefinition definition,
         IReadOnlyDictionary<string, string> secretValues,
@@ -65,6 +67,7 @@ public sealed class ConnectionSecretMaterialProvisioner
         CancellationToken cancellationToken = default)
     {
         ThrowIfInvalidSecretKeys(definition, secretValues);
+        var writes = new List<ConnectionSecretWrite>();
         foreach (var kv in secretValues)
         {
             if (string.IsNullOrWhiteSpace(kv.Value))
@@ -79,6 +82,7 @@ public sealed class ConnectionSecretMaterialProvisioner
                 var version = await _secretStore.AddVersionAsync(secretId, material, cancellationToken).ConfigureAwait(false);
                 await _secretStore.ActivateVersionAsync(secretId, version, cancellationToken).ConfigureAwait(false);
                 workingSecretRefs[kv.Key] = existingRef;
+                writes.Add(new ConnectionSecretWrite(kv.Key, Replaced: true));
             }
             else
             {
@@ -93,8 +97,11 @@ public sealed class ConnectionSecretMaterialProvisioner
                 var version = await _secretStore.AddVersionAsync(descriptor.SecretId, material, cancellationToken).ConfigureAwait(false);
                 await _secretStore.ActivateVersionAsync(descriptor.SecretId, version, cancellationToken).ConfigureAwait(false);
                 workingSecretRefs[kv.Key] = descriptor.SecretId.Value.ToString("D");
+                writes.Add(new ConnectionSecretWrite(kv.Key, Replaced: false));
             }
         }
+
+        return writes;
     }
 
     private static string BuildSecretName(ConnectionId connectionId, string fieldKey) =>
@@ -177,3 +184,6 @@ public sealed class ConnectionSecretMaterialProvisioner
         }
     }
 }
+
+/// <summary>One secret field of a connection that received material: <paramref name="Replaced"/> when it became a new active version of the secret the field already named, otherwise it was stored as a new secret.</summary>
+public sealed record ConnectionSecretWrite(string FieldKey, bool Replaced);

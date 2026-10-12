@@ -1,12 +1,13 @@
 using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Governance;
 using Apperture.Management.Api.Controllers;
 using Apperture.Shared.Kernel;
+using AuditEvent = Apperture.Core.Application.Audit.AuditEvent;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -16,8 +17,9 @@ namespace Apperture.UnitTests.ControlPlane;
 
 /// <summary>
 /// The invocation path of the SQL structure browser through its single authorized entry point: both grants first, the
-/// Connection loaded from the store, exactly one audit record per remote request (counts only, never content), and the
-/// result withheld if the record cannot be written.
+/// Connection loaded from the store, exactly one audit row per remote request (counts only, never content), and the
+/// result withheld if the required row cannot be written. A request that threw or was cancelled has no result to withhold and is
+/// recorded as a separate best-effort attempt.
 /// </summary>
 public sealed class ConnectionToolInvocationTests
 {
@@ -31,22 +33,36 @@ public sealed class ConnectionToolInvocationTests
             ResourceContextId = new Apperture.Core.Domain.ResourceContexts.ResourceContextId("app-a")
         };
 
-    private sealed class AuditSink : IAuditService
+    /// <summary>
+    /// The recorder's single-row writer: <see cref="WriteAsync"/> carries the required event (W2), <see cref="TryWriteAsync"/> the
+    /// best-effort attempts (W3). Each remembers the actor it was asked to record.
+    /// </summary>
+    private sealed class AuditSink : IAuditEventWriter
     {
-        public List<AuditRecord> Records { get; } = [];
-        public bool ThrowOnAppend { get; set; }
+        public List<AuditEvent> Required { get; } = [];
+        public List<AuditEvent> Attempts { get; } = [];
+        public List<AuditActor> Actors { get; } = [];
+        public bool ThrowOnWrite { get; set; }
 
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
+        public IReadOnlyList<AuditEvent> All => [.. Required, .. Attempts];
+
+        public Task WriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default)
         {
-            if (ThrowOnAppend)
+            if (ThrowOnWrite)
                 throw new InvalidOperationException("Simulated audit sink failure.");
-            Records.Add(record);
-            return ValueTask.CompletedTask;
+            Required.Add(auditEvent);
+            Actors.Add(actor);
+            return Task.CompletedTask;
         }
 
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> TryWriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default)
+        {
+            if (ThrowOnWrite)
+                throw new InvalidOperationException("Simulated audit sink failure.");
+            Attempts.Add(auditEvent);
+            Actors.Add(actor);
+            return Task.FromResult(true);
+        }
     }
 
     /// <summary>A browser returning canned structure whose CONTENT is recognisable, so a leak into audit is detectable.</summary>
@@ -110,10 +126,10 @@ public sealed class ConnectionToolInvocationTests
         return new Rig { Sut = new ConnectionToolAccess(principal.Object, auth.Object, repository.Object, providers, sink, limiter ?? new ConnectionToolRequestLimiter()), Repository = repository };
     }
 
-    private static JsonElement Details(AuditRecord record) => JsonDocument.Parse(record.Details!).RootElement;
+    private static string Text(AuditEvent e) => JsonSerializer.Serialize(e.Fields);
 
     [Fact]
-    public async Task SF10_one_remote_request_appends_exactly_one_audit_record_with_counts_and_no_content()
+    public async Task SF10_one_remote_request_writes_exactly_one_required_row_with_counts_and_no_content()
     {
         var sink = new AuditSink();
         var rig = NewRig(ConnectionFor(Sql), ReadAndBrowse, [new CannedBrowser(Sql)], sink);
@@ -121,22 +137,24 @@ public sealed class ConnectionToolInvocationTests
         var result = await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
 
         result!.Items.Should().HaveCount(2);
-        var record = sink.Records.Should().ContainSingle().Subject;
-        record.Action.Should().Be(ConnectionAuditActionNames.StructureBrowsed);
-        record.Outcome.Should().Be("succeeded");
-        record.ActorId.Value.Should().Be("user:operator");
-        record.Resource.Should().BeNull("a non-null Resource would corrupt Details in the SQL audit store");
-        record.ResourceContextId.Should().Be("app-a", "the owning context is the loaded Connection's, never inferred");
-        var details = Details(record);
-        details.GetProperty("resourceType").GetString().Should().Be("Connection");
-        details.GetProperty("resourceId").GetString().Should().Be("conn-1");
-        details.GetProperty("operation").GetString().Should().Be("schemas");
-        details.GetProperty("tool").GetString().Should().Be("sql-structure");
-        details.GetProperty("toolOutcome").GetString().Should().Be("Succeeded");
-        details.GetProperty("resultCount").GetInt32().Should().Be(2);
-        details.GetProperty("truncated").GetBoolean().Should().BeFalse();
-        record.Details.Should().NotContain("hr_secret_schema").And.NotContain("dbo\"");
-        record.CorrelationId.Value.Should().NotBeNullOrEmpty();
+        sink.Attempts.Should().BeEmpty();
+        var evt = sink.Required.Should().ContainSingle().Subject;
+        evt.Action.Should().Be(AuditActionNames.ConnectionStructureBrowsed);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Succeeded);
+        evt.Target.Should().Be(new AuditTarget(AuditTargetTypes.Connection, "conn-1"));
+        sink.Actors.Should().ContainSingle().Which.IsCurrentPrincipal.Should().BeTrue("the recorder resolves the actor from the authenticated context");
+        evt.Related.ResourceContextId.Should().Be("app-a", "the owning context is the loaded Connection's, never inferred");
+        evt.Fields.Should().BeEquivalentTo(new Dictionary<string, object?>
+        {
+            ["name"] = "Warehouse",
+            ["connectorId"] = Sql.Value,
+            ["tool"] = "sql-structure",
+            ["operation"] = "schemas",
+            ["result"] = "succeeded",
+            ["resultCount"] = 2,
+            ["truncated"] = false,
+        });
+        Text(evt).Should().NotContain("hr_secret_schema").And.NotContain("dbo\"");
     }
 
     [Fact]
@@ -148,14 +166,14 @@ public sealed class ConnectionToolInvocationTests
         await rig.Sut.ListSqlTablesAsync(new ConnectionId("conn-1"), "payroll");
         await rig.Sut.ListSqlColumnsAsync(new ConnectionId("conn-1"), "payroll", "salaries");
 
-        sink.Records.Select(r => Details(r).GetProperty("operation").GetString()).Should().Equal("tables", "columns");
-        foreach (var record in sink.Records)
-            record.Details.Should().NotContain("payroll").And.NotContain("salaries").And.NotContain("ssn").And.NotContain("\"char\"");
-        Details(sink.Records[0]).GetProperty("truncated").GetBoolean().Should().BeTrue();
+        sink.Required.Select(r => r.Fields["operation"]).Should().Equal("tables", "columns");
+        foreach (var evt in sink.Required)
+            Text(evt).Should().NotContain("payroll").And.NotContain("salaries").And.NotContain("ssn").And.NotContain("\"char\"");
+        sink.Required[0].Fields["truncated"].Should().Be(true);
     }
 
     [Fact]
-    public async Task SF10_a_remote_denial_is_audited_as_failed_with_the_outcome_and_no_remote_text()
+    public async Task SF10_a_remote_denial_is_a_delivered_answer_recorded_as_failed_with_the_outcome_and_no_remote_text()
     {
         var sink = new AuditSink();
         var browser = new CannedBrowser(Sql)
@@ -167,25 +185,27 @@ public sealed class ConnectionToolInvocationTests
         var result = await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
 
         result!.Outcome.Should().Be(ConnectionToolOutcome.RemoteDenied);
-        var record = sink.Records.Should().ContainSingle().Subject;
-        record.Outcome.Should().Be("failed");
-        Details(record).GetProperty("toolOutcome").GetString().Should().Be("RemoteDenied");
-        record.Details.Should().NotContain("refused");
+        var evt = sink.Required.Should().ContainSingle().Subject;
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
+        evt.Fields["result"].Should().Be("remote_denied");
+        evt.Fields.Should().NotContainKey("resultCount");
+        Text(evt).Should().NotContain("refused");
     }
 
     [Fact]
     public async Task No_audit_no_data_when_the_audit_record_cannot_be_written()
     {
-        var sink = new AuditSink { ThrowOnAppend = true };
+        var sink = new AuditSink { ThrowOnWrite = true };
         var rig = NewRig(ConnectionFor(Sql), ReadAndBrowse, [new CannedBrowser(Sql)], sink);
 
         var act = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
 
         await act.Should().ThrowAsync<InvalidOperationException>("the result is dropped, not returned unaudited");
+        sink.Required.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task A_provider_failure_is_audited_once_and_the_original_exception_is_preserved()
+    public async Task A_provider_failure_is_recorded_once_as_an_attempt_and_the_original_exception_is_preserved()
     {
         var sink = new AuditSink();
         var browser = new CannedBrowser(Sql) { Throw = new TimeoutException("db.example timed out") };
@@ -194,8 +214,12 @@ public sealed class ConnectionToolInvocationTests
         var act = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
 
         await act.Should().ThrowAsync<TimeoutException>();
-        sink.Records.Should().ContainSingle().Which.Outcome.Should().Be("failed");
-        sink.Records[0].Details.Should().NotContain("db.example");
+        sink.Required.Should().BeEmpty("no result was delivered, so there is no required event to withhold");
+        var evt = sink.Attempts.Should().ContainSingle().Subject;
+        evt.Action.Should().Be(AuditActionNames.ConnectionStructureBrowseFailed);
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
+        evt.Fields["reason"].Should().Be("failed");
+        Text(evt).Should().NotContain("db.example");
     }
 
     [Fact]
@@ -207,13 +231,14 @@ public sealed class ConnectionToolInvocationTests
         var act = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        sink.Records.Should().ContainSingle().Which.Outcome.Should().Be("cancelled");
+        sink.Attempts.Should().ContainSingle().Which.Fields["reason"].Should().Be("cancelled");
+        sink.Required.Should().BeEmpty();
     }
 
     [Fact]
     public async Task A_broken_audit_sink_on_a_failure_path_does_not_replace_the_original_exception()
     {
-        var sink = new AuditSink { ThrowOnAppend = true };
+        var sink = new AuditSink { ThrowOnWrite = true };
         var rig = NewRig(ConnectionFor(Sql), ReadAndBrowse, [new CannedBrowser(Sql) { Throw = new TimeoutException("slow") }], sink);
 
         var act = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
@@ -234,7 +259,7 @@ public sealed class ConnectionToolInvocationTests
 
         (await act.Should().ThrowAsync<ConnectionToolRequestException>()).Which.Message.Should().Be("The schema name is required.");
         browser.Calls.Should().BeEmpty("the provider is never reached");
-        sink.Records.Should().BeEmpty();
+        sink.All.Should().BeEmpty();
     }
 
     [Fact]
@@ -251,7 +276,7 @@ public sealed class ConnectionToolInvocationTests
         ex.Message.Should().Be("The table name is at most 128 characters.");
         ex.Message.Should().NotContain(huge);
         browser.Calls.Should().BeEmpty();
-        sink.Records.Should().BeEmpty();
+        sink.All.Should().BeEmpty();
     }
 
     [Fact]
@@ -265,7 +290,7 @@ public sealed class ConnectionToolInvocationTests
     }
 
     [Fact]
-    public async Task M2_an_argument_exception_raised_by_a_provider_is_an_audited_failure_and_is_never_echoed_by_the_controller()
+    public async Task M2_an_argument_exception_raised_by_a_provider_is_a_recorded_failed_attempt_and_is_never_echoed_by_the_controller()
     {
         var sink = new AuditSink();
         var browser = new CannedBrowser(Sql) { Throw = new ArgumentException("remote said: db.example refused Password=hunter2") };
@@ -276,8 +301,9 @@ public sealed class ConnectionToolInvocationTests
         var viaController = async () => await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None);
 
         await direct.Should().ThrowAsync<ArgumentException>();
-        sink.Records.Should().ContainSingle().Which.Outcome.Should().Be("failed");
-        sink.Records[0].Details.Should().NotContain("hunter2").And.NotContain("db.example");
+        var evt = sink.Attempts.Should().ContainSingle().Subject;
+        evt.OutcomeCode.Should().Be(AuditOutcomeCodes.Failed);
+        Text(evt).Should().NotContain("hunter2").And.NotContain("db.example");
         // Not a ConnectionToolRequestException, so the controller does not turn it into a 400 that echoes its text.
         var thrown = await viaController.Should().ThrowAsync<ArgumentException>();
         thrown.Which.Should().NotBeOfType<ConnectionToolRequestException>();
@@ -321,12 +347,12 @@ public sealed class ConnectionToolInvocationTests
 
         await third.Should().ThrowAsync<ConnectionToolBusyException>();
         browser.Started.Should().Be(2, "the refused request never reached the provider");
-        sink.Records.Should().BeEmpty("nothing has completed yet, and the refused request is not a remote operation");
+        sink.All.Should().BeEmpty("nothing has completed yet, and the refused request is not a remote operation");
 
         gate.SetResult();
         await Task.WhenAll(first, second);
         limiter.Running("conn-1").Should().Be(0);
-        sink.Records.Should().HaveCount(2);
+        sink.Required.Should().HaveCount(2);
         (await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"))).Should().NotBeNull("a released slot admits the next request");
     }
 
@@ -396,7 +422,7 @@ public sealed class ConnectionToolInvocationTests
         await rig.Sut.Invoking(s => s.ListSqlColumnsAsync(new ConnectionId("conn-1"), "dbo", "t").AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
 
         browser.Calls.Should().BeEmpty();
-        sink.Records.Should().BeEmpty();
+        sink.All.Should().BeEmpty();
     }
 
     [Fact]
@@ -409,7 +435,7 @@ public sealed class ConnectionToolInvocationTests
         await retired.Sut.Invoking(s => s.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask()).Should().ThrowAsync<ConnectionToolNotAvailableException>();
         await noProvider.Sut.Invoking(s => s.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask()).Should().ThrowAsync<ConnectionToolNotAvailableException>();
 
-        sink.Records.Should().BeEmpty();
+        sink.All.Should().BeEmpty();
     }
 
     [Fact]
@@ -468,7 +494,7 @@ public sealed class ConnectionToolInvocationTests
         (await withoutBrowse.SqlColumns("conn-1", new SqlColumnsRequestDto("dbo", "t"), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
         (await unknown.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
         (await noTool.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None)).Result.Should().BeOfType<NotFoundResult>();
-        sink.Records.Should().BeEmpty();
+        sink.All.Should().BeEmpty();
     }
 
     [Fact]

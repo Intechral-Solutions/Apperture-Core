@@ -1,3 +1,4 @@
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.ResourceContexts;
 using Apperture.Core.Application.Services;
@@ -121,7 +122,7 @@ public sealed class ConnectionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -144,7 +145,7 @@ public sealed class ConnectionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }
@@ -165,7 +166,7 @@ public sealed class ConnectionsController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }

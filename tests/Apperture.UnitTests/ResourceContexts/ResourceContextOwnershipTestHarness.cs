@@ -100,7 +100,7 @@ public sealed class ResourceContextOwnershipTestHarness : IAsyncDisposable
             ResourceContexts,
             Db,
             ownershipGate,
-            Mock.Of<IAuditService>());
+            AuditUnit);
 
         Eligibility = new BindingEligibilityService(ConnectionRepository, ConnectorRegistry);
         Bindings = new BindingService(

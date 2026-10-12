@@ -851,7 +851,7 @@ public sealed class ResourceOwnershipMoveConcurrencySqlServerTests
                 resourceContexts,
                 db,
                 gate,
-                new NullAuditService());
+                new TransactionOnlyUnit(db));
 
             var bindings = new BindingService(
                 principal,
