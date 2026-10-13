@@ -344,7 +344,7 @@ public sealed class IntegrationsController : ControllerBase
                         ct => ReauthorizeRoutingWriteAsync(intId, ct))
                     .ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
             {
                 return NotFound(new { error = ex.Message });
             }
@@ -402,7 +402,7 @@ public sealed class IntegrationsController : ControllerBase
                     .ClearIntegrationRoutingAsync(intId, key, cancellationToken, ct => ReauthorizeRoutingWriteAsync(intId, ct))
                     .ConfigureAwait(false);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
             {
                 return NotFound(new { error = ex.Message });
             }

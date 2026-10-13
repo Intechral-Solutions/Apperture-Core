@@ -132,7 +132,8 @@ internal sealed class IntegrationLifecycleTestHarness : IDisposable
         Routing = new AttentionRoutingManagementService(
             Db,
             _integrationRepository,
-            new SqlAttentionRecipientResolver(Db, new OperationalTeamRecipientExpander(Db)));
+            new SqlAttentionRecipientResolver(Db, new OperationalTeamRecipientExpander(Db)),
+            new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork());
     }
 
     public AppertureDbContext Db { get; }

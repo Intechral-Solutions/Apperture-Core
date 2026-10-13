@@ -33,6 +33,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
     private readonly string _databaseName = Guid.NewGuid().ToString("N");
     private readonly AppertureDbContext _db;
     private readonly SqlIntegrationRepository _integrations;
+    private readonly Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork _audit = new();
 
     public IntegrationAttentionRoutingAuthorizationTests()
     {
@@ -121,6 +122,10 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
         var cleared = await controller.DeleteAttentionRouting(integration.Id.Value, null, CancellationToken.None);
         cleared.Should().BeOfType<NoContentResult>();
         (await RowsAsync(integration)).Should().BeEmpty();
+        _audit.Actions.Should().Equal(
+            Apperture.Core.Application.Audit.AuditActionNames.AttentionRoutingOverrideCreated,
+            Apperture.Core.Application.Audit.AuditActionNames.AttentionRoutingOverrideUpdated,
+            Apperture.Core.Application.Audit.AuditActionNames.AttentionRoutingOverrideCleared);
     }
 
     [Fact]
@@ -181,6 +186,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
         result.Result.Should().BeOfType<ForbidResult>("the check under the lock reads the integration as it now is");
         policy.UpdateChecks.Should().Be(2);
         (await RowsAsync(integration)).Should().BeEmpty();
+        _audit.Actions.Should().BeEmpty("a write refused under the lock records nothing");
     }
 
     [Fact]
@@ -197,6 +203,10 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
         result.Should().BeOfType<ForbidResult>();
         policy.UpdateChecks.Should().Be(2);
         (await RowsAsync(integration)).Should().ContainSingle("the move happened before the lock; the refused clear removed nothing");
+        _audit.Actions.Should().ContainSingle()
+            .Which.Should().Be(
+                Apperture.Core.Application.Audit.AuditActionNames.AttentionRoutingOverrideCreated,
+                "only the seed was recorded; the refused clear recorded nothing");
     }
 
     [Fact]
@@ -299,7 +309,8 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
             Mock.Of<IIntegrationConfigurationRegistry>(),
             Mock.Of<IIntegrationScheduleDiagnosticsService>(),
             Mock.Of<IAttentionIncidentTracker>(),
-            new AttentionRoutingManagementService(_db, _integrations, new SqlAttentionRecipientResolver(_db, new OperationalTeamRecipientExpander(_db))),
+            new AttentionRoutingManagementService(
+                _db, _integrations, new SqlAttentionRecipientResolver(_db, new OperationalTeamRecipientExpander(_db)), _audit),
             principal,
             TimeProvider.System,
             Mock.Of<IResourceContextService>(),
@@ -326,7 +337,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
     }
 
     private async Task SeedOverrideAsync(DomainIntegration integration, bool enabled) =>
-        await new AttentionRoutingManagementService(_db, _integrations, null!).UpsertIntegrationRoutingAsync(
+        await new AttentionRoutingManagementService(_db, _integrations, null!, _audit).UpsertIntegrationRoutingAsync(
             integration.Id,
             AttentionConditionKeys.ExpectedRunMissing,
             new AttentionRoutingUpsertCommand(enabled, true, false, false, TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(10), null, null));

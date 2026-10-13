@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.Services;
 using Apperture.Management.Client;
@@ -67,7 +68,7 @@ public sealed class AttentionRoutingDefaultsController : ControllerBase
                     cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return NotFound(new { error = ex.Message });
         }
