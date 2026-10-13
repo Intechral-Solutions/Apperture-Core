@@ -374,8 +374,10 @@ public sealed class ModuleLifecycleSqlServerTests : IClassFixture<AuditIsolation
             Detail(install, "implicitInstall").Should().Be("true");
             Detail(install, "previousState").Should().Be("discovered");
             Detail(install, "state").Should().Be("installed_enabled");
-            DetailNames(primary).Should().NotContain("implicitInstall");
+            Detail(primary, "implicitInstall").Should().Be("true", "the enable that installed the module carries the flag beside the install row");
         }
+        else
+            DetailNames(primary).Should().NotContain("implicitInstall");
 
         _output.WriteLine(scratch.ExecutionMarker);
     }

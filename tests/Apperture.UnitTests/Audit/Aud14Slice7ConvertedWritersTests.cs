@@ -160,6 +160,71 @@ public sealed class Aud14Slice7ConvertedWritersTests
         bad.Value.Should().BeOfType<Apperture.Management.Api.Controllers.ModuleLifecycleActionResultDto>().Which.Blockers.Should().ContainSingle(b => b.Message == "Module 'sample' is not discovered.");
     }
 
+    [Theory]
+    [InlineData("InstallModule")]
+    [InlineData("EnableModule")]
+    [InlineData("DisableModule")]
+    [InlineData("UninstallModule")]
+    public async Task The_module_lifecycle_endpoints_answer_a_busy_lifecycle_lock_with_a_retryable_conflict(string endpoint)
+    {
+        var busy = new ModuleLifecycleBusyException();
+        var listing = new Mock<IModuleWorkflowListingService>();
+        listing.Setup(l => l.InstallModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Throws(busy);
+        listing.Setup(l => l.EnableModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Throws(busy);
+        listing.Setup(l => l.DisableModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Throws(busy);
+        listing.Setup(l => l.UninstallModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Throws(busy);
+        var controller = new ModulesController(listing.Object);
+
+        var result = endpoint switch
+        {
+            "InstallModule" => await controller.InstallModule("sample", CancellationToken.None),
+            "EnableModule" => await controller.EnableModule("sample", CancellationToken.None),
+            "DisableModule" => await controller.DisableModule("sample", CancellationToken.None),
+            _ => await controller.UninstallModule("sample", CancellationToken.None),
+        };
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        conflict.Value.Should().BeEquivalentTo(new { error = "Another module change is in progress. Wait a moment and try again.", code = "module_lifecycle_busy" });
+    }
+
+    [Fact]
+    public void A_busy_lifecycle_lock_is_not_an_invalid_operation_so_no_refusal_mapping_can_catch_it()
+    {
+        var busy = new ModuleLifecycleBusyException();
+
+        busy.Should().NotBeAssignableTo<InvalidOperationException>();
+        busy.Code.Should().Be(ModuleLifecycleBusyException.BusyCode).And.Be("module_lifecycle_busy");
+        busy.Message.Should().Be("Another module change is in progress. Wait a moment and try again.");
+    }
+
+    /// <summary>
+    /// The lock result is decided by <c>SqlModuleRegistryService.LockOutcome</c>; the lock itself is not taken on the in-memory
+    /// provider, and a test cannot shorten its bounded wait without a production knob. A timeout, a cancelled wait and a deadlock
+    /// victim are busy; a granted lock is no failure; any other result is a precondition breach.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void A_granted_lifecycle_lock_is_no_failure(int code) =>
+        Apperture.Persistence.SqlServer.SqlModuleRegistryService.LockOutcome(code).Should().BeNull();
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-2)]
+    [InlineData(-3)]
+    public void A_lifecycle_lock_that_timed_out_was_cancelled_or_lost_a_deadlock_is_busy(int code) =>
+        Apperture.Persistence.SqlServer.SqlModuleRegistryService.LockOutcome(code).Should().BeOfType<ModuleLifecycleBusyException>();
+
+    [Theory]
+    [InlineData(-4)]
+    [InlineData(-999)]
+    public void An_unexpected_lifecycle_lock_result_is_an_audit_invariant_failure_not_a_refusal(int code)
+    {
+        var failure = Apperture.Persistence.SqlServer.SqlModuleRegistryService.LockOutcome(code);
+
+        failure.Should().BeOfType<AuditInvariantException>().Which.Message.Should().Contain($"code {code}");
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -295,7 +295,7 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
                 await transaction.StageAsync(
                     AuditEvents.ModuleEnabled(
                         descriptor.ModuleId, descriptor.Version, null, ModuleLifecycleState.Discovered, ModuleLifecycleState.InstalledEnabled,
-                        ModuleLifecycleEffect.PartialUntilRestart),
+                        ModuleLifecycleEffect.PartialUntilRestart, implicitInstall: true),
                     cancellationToken).ConfigureAwait(false);
                 return new LifecycleAttempt(enabled);
             }
@@ -520,7 +520,7 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
             return;
 
         var transaction = _dbContext.Database.CurrentTransaction
-            ?? throw new InvalidOperationException(
+            ?? throw new AuditInvariantException(
                 "The module lifecycle lock must be taken inside an open transaction: a 'Transaction'-owned application lock taken outside one is released immediately and guarantees nothing.");
 
         var connection = _dbContext.Database.GetDbConnection();
@@ -535,15 +535,26 @@ public sealed class SqlModuleRegistryService : IModuleRegistryService
         command.Parameters.Add(new SqlParameter("@lockTimeout", SqlDbType.Int) { Value = (int)LifecycleLockTimeout.TotalMilliseconds });
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
-        // sp_getapplock: 0 = granted, 1 = granted after waiting, -1 = timeout, -2 = cancelled, -3 = deadlock victim.
-        var code = result.Value is int value ? value : -999;
-        if (code >= 0)
-            return;
-        throw new InvalidOperationException(
-            code is -1 or -2 or -3
-                ? "Another module change is in progress. Wait a moment and try again."
-                : $"Failed to take the module lifecycle lock (code {code}).");
+        var code = result.Value is int value ? value : UnreadLockResult;
+        if (LockOutcome(code) is { } failure)
+            throw failure;
     }
+
+    /// <summary>The marker for a lock call that returned no readable result code.</summary>
+    private const int UnreadLockResult = -999;
+
+    /// <summary>
+    /// Maps an <c>sp_getapplock</c> result to the failure it means, or null when the lock was granted. 0 = granted, 1 = granted
+    /// after waiting; -1 = timeout, -2 = cancelled and -3 = deadlock victim mean another change holds the lock, which is
+    /// transient and retryable (<see cref="ModuleLifecycleBusyException"/>, nothing decided, nothing recorded). Any other code is
+    /// a precondition breach (a parameter or call error), a programming error that surfaces as an internal error.
+    /// </summary>
+    internal static Exception? LockOutcome(int code) => code switch
+    {
+        >= 0 => null,
+        -1 or -2 or -3 => new ModuleLifecycleBusyException(),
+        _ => new AuditInvariantException($"Failed to take the module lifecycle lock (code {code})."),
+    };
 
     private ModuleInstallationStateEntity NewInstallation(ModuleDescriptor descriptor, bool enabled)
     {

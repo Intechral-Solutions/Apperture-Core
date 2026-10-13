@@ -16,6 +16,7 @@ using Apperture.Shared.Kernel;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 
 namespace Apperture.UnitTests.Governance;
@@ -172,9 +173,9 @@ public sealed class RuntimeControlShutdownTests
 
     private sealed class ServiceHarness
     {
-        public ServiceHarness(bool declareCapability = true, bool seedIdentity = true, bool stubSeesRuntime = true)
+        public ServiceHarness(bool declareCapability = true, bool seedIdentity = true, bool stubSeesRuntime = true, SaveChangesInterceptor? interceptor = null, string? store = null)
         {
-            Db = NewDb();
+            Db = NewDb(interceptor, store);
             Unit = new RecordingAuditedUnitOfWork();
             var scopes = declareCapability
                 ? new[] { RuntimeCapabilityCatalog.ControlShutdown }
@@ -438,12 +439,74 @@ public sealed class RuntimeControlShutdownTests
                 cancellationToken);
     }
 
-    private static AppertureDbContext NewDb()
+    private static AppertureDbContext NewDb(SaveChangesInterceptor? interceptor = null, string? store = null)
     {
-        var opts = new DbContextOptionsBuilder<AppertureDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-            .Options;
-        return new AppertureDbContext(opts);
+        var builder = new DbContextOptionsBuilder<AppertureDbContext>()
+            .UseInMemoryDatabase(store ?? Guid.NewGuid().ToString("N"));
+        if (interceptor is not null)
+            builder.AddInterceptors(interceptor);
+        return new AppertureDbContext(builder.Options);
+    }
+
+    /// <summary>
+    /// A save that loses the one-queued-request race: it throws the unique-key violation of the named index, as SQL Server does when
+    /// a writer that bypassed the identity lock queued a request first. <paramref name="winner"/> runs first and can leave that
+    /// writer's state behind (a queued request, or none when the worker has since applied it).
+    /// </summary>
+    private sealed class LostRaceInterceptor(Func<Task> winner) : SaveChangesInterceptor
+    {
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await winner().ConfigureAwait(false);
+            throw new DbUpdateException("An error occurred while saving the entity changes.", SqlUniqueViolations.On("IX_RuntimeControlRequests_RuntimeId_ControlKind"));
+        }
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ALostRaceWhoseWinnerWasAlreadyApplied_DeclaresANoOpAndReturnsNull()
+    {
+        var h = new ServiceHarness(interceptor: new LostRaceInterceptor(() => Task.CompletedTask));
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        result.Should().BeNull("no queued request is left to report: the caller's rejection, not a fault");
+        h.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        h.Unit.Staged.Should().BeEmpty();
+        (await h.Db.RuntimeControlRequests.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ALostRaceReportsTheQueuedWinner_AndRecordsNothing()
+    {
+        var winnerId = 0L;
+        var store = Guid.NewGuid().ToString("N");
+        var interceptor = new LostRaceInterceptor(async () =>
+        {
+            // The writer that bypassed the lock: its own context, the same store.
+            await using var other = new AppertureDbContext(
+                new DbContextOptionsBuilder<AppertureDbContext>().UseInMemoryDatabase(store).Options);
+            var queued = new RuntimeControlRequestEntity
+            {
+                RuntimeId = RuntimeId,
+                ControlKind = RuntimeControlKindNames.Shutdown,
+                Status = RuntimeControlStatusNames.Queued,
+                RequestedAt = DateTimeOffset.UtcNow,
+                RequestedBy = "usr_winner",
+            };
+            other.RuntimeControlRequests.Add(queued);
+            await other.SaveChangesAsync();
+            winnerId = queued.Id;
+        });
+        var h = new ServiceHarness(interceptor: interceptor, store: store);
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(winnerId);
+        result.RequestedBy.Should().Be("usr_winner");
+        h.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        h.Unit.Staged.Should().BeEmpty();
     }
 
     private sealed class EvaluateCallCountHolder
@@ -548,5 +611,43 @@ public sealed class RuntimeControlShutdownTests
 
         public ValueTask<EnrollmentResult> RequestCredentialRolloverAsync(RuntimeCredentialRolloverRequest request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new EnrollmentResult(request.RuntimeId, false, "not implemented"));
+    }
+}
+
+/// <summary>
+/// A SQL Server unique-key violation (2601) on a named index, built the way the provider reports one, for tests that cannot reach
+/// a database. The driver offers no public constructor, so the exception is assembled through its internal factory.
+/// </summary>
+internal static class SqlUniqueViolations
+{
+    public static Exception On(string indexName)
+    {
+        const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+        var message = $"Cannot insert duplicate key row in object 'dbo.Sample' with unique index '{indexName}'. The duplicate key value is (1).";
+
+        var errorCtor = typeof(Microsoft.Data.SqlClient.SqlError).GetConstructors(all).OrderByDescending(c => c.GetParameters().Length).First();
+        var error = errorCtor.Invoke(errorCtor.GetParameters().Select(p => ArgumentFor(p, number: 2601, message)).ToArray());
+
+        var collection = (Microsoft.Data.SqlClient.SqlErrorCollection)Activator.CreateInstance(typeof(Microsoft.Data.SqlClient.SqlErrorCollection), nonPublic: true)!;
+        typeof(Microsoft.Data.SqlClient.SqlErrorCollection).GetMethod("Add", all)!.Invoke(collection, [error]);
+
+        var factory = typeof(Microsoft.Data.SqlClient.SqlException).GetMethods(all)
+            .Where(m => m.Name == "CreateException" && m.IsStatic && m.GetParameters()[0].ParameterType == typeof(Microsoft.Data.SqlClient.SqlErrorCollection))
+            .OrderBy(m => m.GetParameters().Length)
+            .First();
+        var args = factory.GetParameters().Select((p, i) => i == 0 ? collection : ArgumentFor(p, number: 0, message)).ToArray();
+        return (Exception)factory.Invoke(null, args)!;
+    }
+
+    private static object? ArgumentFor(ParameterInfo parameter, int number, string message)
+    {
+        var type = parameter.ParameterType;
+        if (type == typeof(int))
+            return parameter.Name!.Contains("number", StringComparison.OrdinalIgnoreCase) || parameter.Name.Contains("infoNumber", StringComparison.OrdinalIgnoreCase) ? number : 1;
+        if (type == typeof(string))
+            return parameter.Name!.Contains("message", StringComparison.OrdinalIgnoreCase) ? message : "7.0.0";
+        if (type == typeof(Guid))
+            return Guid.Empty;
+        return type.IsValueType ? Activator.CreateInstance(type) : null;
     }
 }

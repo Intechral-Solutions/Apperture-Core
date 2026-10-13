@@ -50,9 +50,9 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>One audited unit</b>, primary <c>attention_routing.default.updated</c>. Inside the attempt: the instance routing row for
-    /// the condition (locked to the commit, so two writers of the default queue and each compares against the row as the other left
-    /// it), the operational teams the command names, then the comparison. The command is normalized as it is stored (a blank team id
+    /// <para><b>One audited unit</b>, primary <c>attention_routing.default.updated</c>. Inside the attempt: the operational teams the
+    /// command names, the instance routing row for the condition (locked to the commit, so two writers of the default queue and
+    /// each compares against the row as the other left it), then the comparison. The command is normalized as it is stored (a blank team id
     /// is none, an id is trimmed), so setting what the row already holds is a no-op: nothing is written and nothing is recorded.
     /// Otherwise the row is updated and the event names the fields that changed. A condition with no default row is refused as
     /// before.</para>
@@ -67,11 +67,13 @@ public sealed class AttentionRoutingManagementService : IAttentionRoutingManagem
             new AuditedOperation(AuditActionNames.AttentionRoutingDefaultUpdated, AuditActor.CurrentPrincipal),
             async (transaction, ct) =>
             {
-                var row = await LockInstanceRowAsync(conditionKey, ct).ConfigureAwait(false)
-                    ?? throw new InvalidOperationException($"Instance attention routing for condition '{conditionKey}' was not found.");
-
+                // The teams are checked first, as before the conversion: a request that names an unknown team and an unknown
+                // condition is told about the team.
                 await ValidateTeamIdsAsync(command.PrimaryOperationalTeamId, command.EscalationOperationalTeamId, ct)
                     .ConfigureAwait(false);
+
+                var row = await LockInstanceRowAsync(conditionKey, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"Instance attention routing for condition '{conditionKey}' was not found.");
 
                 var changed = ChangedFields(RoutingValues.Of(row), RoutingValues.Of(command));
                 if (changed.Count == 0)

@@ -36,10 +36,14 @@ public static partial class AuditEvents
         string moduleId, string version, ModuleLifecycleState previousState, ModuleLifecycleState state, ModuleLifecycleEffect effect, bool implicitInstall = false) =>
         ModuleChanged(AuditActionNames.ModuleInstalled, moduleId, version, null, previousState, state, effect, implicitInstall);
 
-    /// <summary>A module's installation was enabled. <paramref name="previousVersion"/> is set when the enable also moved the installation to the discovered version.</summary>
+    /// <summary>
+    /// A module's installation was enabled. <paramref name="previousVersion"/> is set when the enable also moved the installation to
+    /// the discovered version. <paramref name="implicitInstall"/> marks an enable that installed the module in the same transition
+    /// (the primary row carries the flag beside its secondary install row).
+    /// </summary>
     public static AuditEvent ModuleEnabled(
-        string moduleId, string version, string? previousVersion, ModuleLifecycleState previousState, ModuleLifecycleState state, ModuleLifecycleEffect effect) =>
-        ModuleChanged(AuditActionNames.ModuleEnabled, moduleId, version, previousVersion, previousState, state, effect, implicitInstall: false);
+        string moduleId, string version, string? previousVersion, ModuleLifecycleState previousState, ModuleLifecycleState state, ModuleLifecycleEffect effect, bool implicitInstall = false) =>
+        ModuleChanged(AuditActionNames.ModuleEnabled, moduleId, version, previousVersion, previousState, state, effect, implicitInstall);
 
     /// <summary>A module's installation was disabled.</summary>
     public static AuditEvent ModuleDisabled(

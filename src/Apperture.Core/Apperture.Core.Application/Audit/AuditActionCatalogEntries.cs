@@ -2536,7 +2536,7 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
-            Writer = "SqlModuleRegistryService.cs:88",
+            Writer = "SqlModuleRegistryService.cs:840",
         },
         new()
         {

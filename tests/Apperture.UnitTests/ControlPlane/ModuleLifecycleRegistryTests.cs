@@ -320,6 +320,7 @@ public sealed class ModuleLifecycleRegistryTests
         var enable = Fields(rig.Recording.Single(AuditActionNames.ModuleEnabled));
         enable.Should().Contain("previousState", "discovered").And.Contain("state", "installed_enabled").And.Contain("restartEffect", "partial_until_restart");
         enable.Should().NotContainKey("previousVersion");
+        enable.Should().Contain("implicitInstall", true, "the primary enable row carries the flag beside the install row");
     }
 
     /// <summary>

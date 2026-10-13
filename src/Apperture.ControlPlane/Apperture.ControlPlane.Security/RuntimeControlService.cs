@@ -116,10 +116,11 @@ public sealed class RuntimeControlService : IRuntimeControlService
             // and record nothing: nothing of ours committed.
             SqlUniqueViolation.Detach(_db, request);
             transaction.DeclareNoOp();
-            var winner = await FindQueuedAsync(runtimeId, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException(
-                    $"Concurrent shutdown request for runtime {runtimeId} did not resolve to a queued row.");
-            return Map(winner);
+            var winner = await FindQueuedAsync(runtimeId, cancellationToken).ConfigureAwait(false);
+
+            // The winner may have been applied between its commit and this read: no queued request is left to report, and nothing
+            // of ours was written. That is the same answer as a request nothing can honour (the caller's rejection), not a fault.
+            return winner is null ? null : Map(winner);
         }
 
         await transaction.StageAsync(

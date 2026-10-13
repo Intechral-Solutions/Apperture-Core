@@ -280,6 +280,13 @@ public sealed class Slice7AuditEventTests
 
         AuditEvents.ModuleInstalled("sample-module", "1.2.0", ModuleLifecycleState.Discovered, ModuleLifecycleState.InstalledDisabled, ModuleLifecycleEffect.Immediate)
             .Fields.Should().NotContainKey("implicitInstall");
+
+        var implicitEnable = AuditEvents.ModuleEnabled(
+            "sample-module", "1.2.0", null, ModuleLifecycleState.Discovered, ModuleLifecycleState.InstalledEnabled, ModuleLifecycleEffect.PartialUntilRestart, implicitInstall: true);
+        implicitEnable.Fields["implicitInstall"].Should().Be(true);
+
+        AuditEvents.ModuleEnabled("sample-module", "1.2.0", null, ModuleLifecycleState.InstalledDisabled, ModuleLifecycleState.InstalledEnabled, ModuleLifecycleEffect.PartialUntilRestart)
+            .Fields.Should().NotContainKey("implicitInstall");
     }
 
     [Fact]

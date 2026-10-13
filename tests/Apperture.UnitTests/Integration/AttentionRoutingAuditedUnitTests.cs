@@ -112,6 +112,19 @@ public sealed class AttentionRoutingAuditedUnitTests
     }
 
     [Fact]
+    public async Task A_request_with_an_unknown_condition_and_an_unknown_team_is_told_about_the_team()
+    {
+        using var h = new AttentionRoutingTestHarness();
+        await SeedDefaultAsync(h);
+
+        var act = () => h.Routing.UpsertInstanceDefaultRoutingAsync("no_such_condition", Default() with { PrimaryOperationalTeamId = "team-gone" }).AsTask();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*team-gone*"))
+            .Which.Message.Should().NotContain("no_such_condition", "the team check runs first, as before the conversion");
+        h.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_default_for_a_condition_the_platform_does_not_define_is_recorded_as_other()
     {
         using var h = new AttentionRoutingTestHarness();
