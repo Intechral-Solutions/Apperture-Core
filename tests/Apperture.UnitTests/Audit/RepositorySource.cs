@@ -399,6 +399,89 @@ internal static class CSharpSource
     }
 
     /// <summary>
+    /// The string literals of comment-stripped code, as spans (start inclusive, end exclusive) over <paramref name="code"/>. Regular,
+    /// verbatim, interpolated and raw literals are one span each. Used to read SQL text and to skip literals while counting braces.
+    /// </summary>
+    public static IReadOnlyList<(int Start, int End)> StringSpans(string code)
+    {
+        var spans = new List<(int Start, int End)>();
+        var n = code.Length;
+        var i = 0;
+        while (i < n)
+        {
+            var c = code[i];
+            if (c == '\'')
+            {
+                var j = i + 1;
+                while (j < n && code[j] != '\'')
+                {
+                    if (code[j] == '\\')
+                        j++;
+                    j++;
+                }
+
+                i = Math.Min(j + 1, n);
+                continue;
+            }
+
+            if (c is '"' or '@' or '$')
+            {
+                var j = i;
+                var verbatim = false;
+                var interpolated = false;
+                while (j < n && code[j] is '@' or '$')
+                {
+                    if (code[j] == '@')
+                        verbatim = true;
+                    else
+                        interpolated = true;
+                    j++;
+                }
+
+                if (j < n && code[j] == '"')
+                {
+                    var stop = SkipString(code, j, verbatim, interpolated);
+                    spans.Add((i, stop));
+                    i = stop;
+                    continue;
+                }
+            }
+
+            i++;
+        }
+
+        return spans;
+    }
+
+    /// <summary>The index just past the <c>}</c> that closes the <c>{</c> at <paramref name="open"/>, ignoring braces inside literals.</summary>
+    public static int MatchingBrace(string code, int open, IReadOnlyList<(int Start, int End)> spans)
+    {
+        var depth = 0;
+        var span = 0;
+        for (var i = open; i < code.Length; i++)
+        {
+            while (span < spans.Count && spans[span].End <= i)
+                span++;
+            if (span < spans.Count && spans[span].Start <= i)
+            {
+                i = spans[span].End - 1;
+                continue;
+            }
+
+            if (code[i] == '{')
+                depth++;
+            else if (code[i] == '}' && --depth == 0)
+                return i + 1;
+        }
+
+        return code.Length;
+    }
+
+    /// <summary>The index where the statement containing <paramref name="index"/> starts: just past the previous <c>;</c>, <c>{</c> or <c>}</c>.</summary>
+    public static int StatementStart(string code, int index) =>
+        index == 0 ? 0 : Math.Max(code.LastIndexOf(';', index - 1), Math.Max(code.LastIndexOf('{', index - 1), code.LastIndexOf('}', index - 1))) + 1;
+
+    /// <summary>
     /// The statement that contains <paramref name="index"/>: from the previous <c>;</c>, <c>{</c> or <c>}</c> to the next <c>;</c>.
     /// Approximate by design; the guards use it only to collect the identifiers a call names.
     /// </summary>

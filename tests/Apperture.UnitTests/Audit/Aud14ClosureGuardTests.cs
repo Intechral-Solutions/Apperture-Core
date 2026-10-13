@@ -1,10 +1,8 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Apperture.UnitTests.Audit;
@@ -19,8 +17,9 @@ namespace Apperture.UnitTests.Audit;
 /// rot into a rubber stamp. They prove that the known surface is enumerated and reviewed (gate section 21, M1 and M3 for AUD-1.4);
 /// they do not prove correct transaction placement, and the runtime enforcement of the bridge (M2 to M5) belongs to AUD-1.6.</para>
 ///
-/// <para>Coverage matrix. The converted writers of each family are pinned by the tests below and by their own slice's suites,
-/// which this file does not repeat (G6). The matrix is the way to find them:</para>
+/// <para>Coverage map (not an executable guard). The converted writers of each family are pinned by their own slice's suites, which
+/// this file does not repeat. The table below is a navigable map of those existing pins, kept here so a reviewer can find the test
+/// that covers a family; nothing in it is checked, and a name in it can drift without any test failing:</para>
 /// <list type="table">
 /// <item><term>Identity, governance, Entra registration, account services</term><description>AUD-1.2: <c>Aud12ConvertedWritersTests</c>, <c>AuditActorCallSiteTests</c>; SQL: <c>IdentityGovernanceAuditSqlServerTests</c>, <c>EntraGovernanceAuditSqlServerTests</c>, <c>AccountServicesAuditSqlServerTests</c></description></item>
 /// <item><term>Run and operator actions</term><description>AUD-1.3: <c>Aud13ConvertedWritersTests</c>; SQL: <c>OperatorActionAuditSqlServerTests</c></description></item>
@@ -32,7 +31,7 @@ namespace Apperture.UnitTests.Audit;
 /// <item><term>Notification definitions, subscriptions, managed contacts, diagnostic sends (slice 6)</term><description><c>Slice6AuditEventTests</c>, <c>Aud14Slice6ConvertedWritersTests</c>, <c>NotificationServicesShareTheUnitContextTests</c>; SQL: <c>NotificationDefinitionSqlServerTests</c>, <c>NotificationSubscriptionSqlServerTests</c>, <c>ManagedContactSqlServerTests</c>, <c>NotificationDiagnosticsSqlServerTests</c></description></item>
 /// <item><term>Attention routing, module lifecycle, runtime shutdown request (slice 7)</term><description><c>Slice7AuditEventTests</c>, <c>Aud14Slice7ConvertedWritersTests</c>, <c>AttentionRoutingServiceSharesTheUnitContextTests</c>, <c>ModuleRegistryServiceSharesTheUnitContextTests</c>, <c>RuntimeControlServiceSharesTheUnitContextTests</c>; SQL: <c>AttentionRoutingSqlServerTests</c>, <c>ModuleLifecycleSqlServerTests</c>, <c>RuntimeShutdownRequestSqlServerTests</c></description></item>
 /// <item><term>The catalog itself</term><description><c>AuditActionCatalogTests</c> (M1 completeness and the pinned lists), <c>AuditDetailSchemaTests</c>, <c>AuditRowClassifierTests</c></description></item>
-/// <item><term>This file</term><description>G1 catalog consistency and the retired set; G2 typed producers; G3 retired actions have no writer; G4 the legacy bridge; G5 persistence writers of the in-scope tables</description></item>
+/// <item><term>This file</term><description>The executable guards: G1 catalog consistency and the retired set; G2 typed producers; G3 retired actions have no writer; G4 the legacy bridge (every action an appender writes is a literal or constant, or the file is declared dynamic); G5 persistence writers of the in-scope tables (set-level idioms and the file-level rule), each with self-tests that feed the scanners synthetic files</description></item>
 /// </list>
 /// </summary>
 public sealed class Aud14ClosureGuardTests
@@ -457,28 +456,23 @@ public sealed class Aud14ClosureGuardTests
             var file = RepositorySource.Find(entry.File);
             file.Should().NotBeNull($"{entry.File} exists");
 
-            var local = RepositorySource.LocalConstants(file!);
-            var resolved = new HashSet<string>(StringComparer.Ordinal);
-            var statements = 0;
-            foreach (var statement in AppendStatements(file!, entry.Helpers ?? []))
-            {
-                statements++;
-                foreach (var value in ActionValuesIn(statement, local))
-                    resolved.Add(value);
-            }
+            var analysis = AnalyzeAppends(file!, entry.Helpers ?? []);
+            var resolved = analysis.Resolved;
 
-            statements.Should().BeGreaterThan(0, $"{entry.File} is listed as an appending file but contains no append");
+            analysis.Statements.Should().BeGreaterThan(0, $"{entry.File} is listed as an appending file but contains no append");
 
             resolved.Where(v => !entry.Actions!.Contains(v, StringComparer.Ordinal)).Should().BeEmpty(
                 $"{entry.File} appends an action that is not listed for it. A W1 or W2 action is recorded through the audited unit of work; a W3 or W4 action is added to the entry with its reason");
             if (!entry.Dynamic)
             {
+                analysis.Unresolved.Should().BeEmpty(
+                    $"{entry.File} appends through an action that is not a literal or a constant (a local variable, a parameter, a computed value). Name the action at the call, or mark the entry Dynamic and list every action it can append");
                 entry.Actions!.Where(a => !resolved.Contains(a)).Should().BeEmpty(
                     $"{entry.File} no longer appends an action listed for it; remove it from the entry");
             }
             else
             {
-                resolved.Should().BeEmpty($"{entry.File} builds its action at run time, so none can be resolved from the source; if one can, drop Dynamic and list it");
+                analysis.Unresolved.Should().NotBeEmpty($"{entry.File} is marked Dynamic but every action it appends resolves from the source; drop Dynamic and list them");
             }
 
             foreach (var action in entry.Actions!)
@@ -505,18 +499,97 @@ public sealed class Aud14ClosureGuardTests
             entry.Actions.Should().OnlyHaveUniqueItems(entry.File);
     }
 
-    /// <summary>The statements of a file that append: an <c>AppendAsync</c> call, a new <c>AuditRecord</c>, or a call of a local append helper.</summary>
-    private static IEnumerable<string> AppendStatements(SourceFile file, string[] helpers)
+    /// <summary>What <see cref="AnalyzeAppends"/> found in one appending file.</summary>
+    /// <param name="Statements">Appends, record constructions and helper calls found (zero means the file does not append).</param>
+    /// <param name="Resolved">The actions that are literals or constants at a place that builds a record or calls a helper.</param>
+    /// <param name="Unresolved">Record constructions and helper calls whose action is not a literal or a constant.</param>
+    private sealed record AppendAnalysis(int Statements, HashSet<string> Resolved, List<string> Unresolved);
+
+    private static readonly string[] NotDeclarationWords = ["await", "return", "new", "yield", "in", "is", "and", "or", "not", "throw", "else", "case", "when"];
+
+    /// <summary>
+    /// Reads how a file appends to the legacy bridge. Every <c>new AuditRecord(</c> and every call of a declared append helper must
+    /// name its action as a literal or a constant; one that passes a local variable, a parameter or a computed value is
+    /// <i>unresolved</i>. A record built inside a declared helper takes its action from the helper's parameter, so the helper's call
+    /// sites are checked instead of the construction. An <c>AppendAsync</c> call that appends a record built elsewhere in the file
+    /// adds no check of its own: that construction is checked where it happens.
+    /// </summary>
+    private static AppendAnalysis AnalyzeAppends(SourceFile file, string[] helpers)
     {
         var code = file.Code;
-        var starts = new List<int>();
-        starts.AddRange(AppendCall.Matches(code).Select(m => m.Index));
-        starts.AddRange(NewAuditRecord.Matches(code).Select(m => m.Index));
-        foreach (var helper in helpers)
-            starts.AddRange(Regex.Matches(code, $@"\b{Regex.Escape(helper)}\s*\(").Select(m => m.Index));
+        var local = RepositorySource.LocalConstants(file);
+        var spans = CSharpSource.StringSpans(code);
+        var resolved = new HashSet<string>(StringComparer.Ordinal);
+        var unresolved = new List<string>();
+        var statements = AppendCall.Matches(code).Count;
 
-        foreach (var index in starts.Distinct().OrderBy(i => i))
-            yield return CSharpSource.StatementAround(code, index);
+        // The bodies of the declared helpers: a construction inside one is parameterised by the helper's caller.
+        var helperBodies = new List<(int Start, int End)>();
+        var helperCalls = new List<int>();
+        foreach (var helper in helpers)
+        {
+            foreach (Match m in Regex.Matches(code, $@"\b{Regex.Escape(helper)}\s*\("))
+            {
+                if (!IsDeclaration(code, m.Index))
+                {
+                    helperCalls.Add(m.Index);
+                    continue;
+                }
+
+                var open = code.IndexOf('{', m.Index);
+                var semicolon = code.IndexOf(';', m.Index);
+                var end = open >= 0 && (semicolon < 0 || open < semicolon)
+                    ? CSharpSource.MatchingBrace(code, open, spans)
+                    : semicolon < 0 ? code.Length : semicolon;
+                helperBodies.Add((m.Index, end));
+            }
+        }
+
+        void Check(int index, string kind)
+        {
+            statements++;
+            var statement = CSharpSource.StatementAround(code, index);
+            var values = ActionValuesIn(statement, local).ToList();
+            if (values.Count == 0)
+                unresolved.Add($"{kind}: {Regex.Replace(statement.Trim(), @"\s+", " ")[..Math.Min(statement.Trim().Length, 100)]}");
+            foreach (var value in values)
+                resolved.Add(value);
+        }
+
+        foreach (Match m in NewAuditRecord.Matches(code))
+        {
+            if (helperBodies.Any(b => m.Index >= b.Start && m.Index < b.End))
+            {
+                statements++;
+                continue;
+            }
+
+            Check(m.Index, "new AuditRecord");
+        }
+
+        foreach (var index in helperCalls)
+            Check(index, "helper call");
+
+        return new AppendAnalysis(statements, resolved, unresolved);
+    }
+
+    /// <summary>True when the identifier at <paramref name="index"/> is preceded by a type (a method declaration) rather than by an operator or <c>await</c>.</summary>
+    private static bool IsDeclaration(string code, int index)
+    {
+        var i = index - 1;
+        while (i >= 0 && char.IsWhiteSpace(code[i]))
+            i--;
+        if (i < 0)
+            return false;
+        if (code[i] is '>' or ']')
+            return !(code[i] == '>' && i > 0 && code[i - 1] == '=');
+        if (!(char.IsLetterOrDigit(code[i]) || code[i] == '_'))
+            return false;
+
+        var end = i + 1;
+        while (i >= 0 && (char.IsLetterOrDigit(code[i]) || code[i] == '_'))
+            i--;
+        return !NotDeclarationWords.Contains(code[(i + 1)..end], StringComparer.Ordinal);
     }
 
     // =====================================================================================================================
@@ -572,7 +645,7 @@ public sealed class Aud14ClosureGuardTests
             "ConnectionManagementService units (connection.created, .updated, .retired, .verified) and ResourceOwnershipMoveService (the narrow context change of an ownership move) (slice 5)."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlEntraInstanceRegistrationRepository.cs",
             ["EntraInstanceRegistrations"],
-            "ConfigEntraTenantsController units (entra.tenant_registration.*, AUD-1.2 with the secret events of slice 1). EXCLUDED, unaudited: UpdateOpenIdValidationOutcomeAsync and UpdateDirectoryDiscoveryOutcomeAsync record probe results on the registration row outside any unit (AUD-1.2 family; recorded as a finding for AUD-1.6's writer inventory)."),
+            "ConfigEntraTenantsController units (entra.tenant_registration.*, AUD-1.2 with the secret events of slice 1). EXCLUDED, unaudited (finding F2): UpdateOpenIdValidationOutcomeAsync and UpdateDirectoryDiscoveryOutcomeAsync record probe-result columns on the registration row outside any unit (AUD-1.2 family; recorded for AUD-1.6's writer inventory)."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlIntegrationRepository.cs",
             ["Integrations"],
             "IntegrationManagementService units (integration.created, .updated, .activated, .deactivated, .retired) and ResourceOwnershipMoveService (slices 3 to 5)."),
@@ -614,38 +687,37 @@ public sealed class Aud14ClosureGuardTests
             "EXCLUDED by decision: IAM-9 start-time maintenance that rewrites stored actor ids to user ids (raw SQL over a fixed column list). Not a configuration change."),
     ];
 
-    private static readonly Regex WriteVerb = new(
-        @"\.\s*(Add|AddAsync|AddRange|AddRangeAsync|Remove|RemoveRange|Update|UpdateRange|Attach|AttachRange|ExecuteUpdate|ExecuteUpdateAsync|ExecuteDelete|ExecuteDeleteAsync)\s*\(",
-        RegexOptions.CultureInvariant);
+    private static readonly Lazy<WriterScanModel> ScanModel = new(() => WriterScanModel.From(typeof(AppertureDbContext), InScopeSets));
 
-    private static readonly Regex Materializer = new(
-        @"\.\s*(FirstOrDefaultAsync|SingleOrDefaultAsync|FirstAsync|SingleAsync|FindAsync|ToListAsync|ToArrayAsync|AsAsyncEnumerable|FromSql\w*)\s*\(",
-        RegexOptions.CultureInvariant);
+    private static readonly Lazy<Dictionary<string, FileScan>> ProductionScan =
+        new(() => PersistenceWriterScanner.ScanAll(RepositorySource.Production, ScanModel.Value));
 
-    private static readonly Regex Aggregate = new(
-        @"\.\s*(CountAsync|AnyAsync|LongCountAsync|SumAsync|MaxAsync|MinAsync|AllAsync|Select)\s*\(",
-        RegexOptions.CultureInvariant);
-
-    private static readonly Regex PersistSignal = new(@"SaveChanges(Async)?\s*\(|ExecuteUpdate|ExecuteDelete|ExecuteSql", RegexOptions.CultureInvariant);
-    private static readonly Regex RawExecution = new(@"CreateCommand\s*\(|ExecuteNonQuery|ExecuteSql", RegexOptions.CultureInvariant);
-
-    private static readonly Regex RawWrite = new(
-        @"(INSERT\s+INTO|UPDATE|DELETE\s+FROM|MERGE(\s+INTO)?)\s+\[?(dbo\]?\.\[?)?(?<table>\w+)\]?",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    /// <summary>
+    /// Production files that name an in-scope entity type and carry a persist signal but write none of the in-scope sets, each with
+    /// the reason. The file-level rule (G5, second rule) asks for a review of every such file; these are the reviewed non-writers.
+    /// An entry is removed when the file stops matching, and an entry for a file that writes an in-scope set belongs in
+    /// <see cref="Writers"/> instead.
+    /// </summary>
+    private static readonly Dictionary<string, string> EntityReferencingNonWriters = new(StringComparer.Ordinal)
+    {
+    };
 
     [Fact]
     public void G5_the_in_scope_sets_are_real_entity_sets_of_the_context()
     {
-        var sets = DbSetsOf(typeof(AppertureDbContext));
+        var sets = WriterScanModel.DbSetsOf(typeof(AppertureDbContext));
 
         InScopeSets.Where(s => !sets.ContainsKey(s)).Should().BeEmpty("every in-scope name is a DbSet of AppertureDbContext (a typo would make the scan vacuous)");
         InScopeSets.Should().OnlyHaveUniqueItems();
+        ScanModel.Value.SetToEntity.Should().HaveCount(InScopeSets.Length, "every in-scope set has an entity type the file-level rule can look for");
     }
 
     [Fact]
     public void G5_only_reviewed_files_write_the_in_scope_tables()
     {
-        var found = ScanWriters();
+        var found = ProductionScan.Value
+            .Where(f => f.Value.Sets.Count > 0)
+            .ToDictionary(f => f.Key, f => f.Value.Sets, StringComparer.Ordinal);
 
         var problems = new List<string>();
         foreach (var (file, sets) in found.OrderBy(f => f.Key, StringComparer.Ordinal))
@@ -672,6 +744,42 @@ public sealed class Aud14ClosureGuardTests
     }
 
     [Fact]
+    public void G5_every_file_that_names_an_in_scope_entity_and_persists_is_reviewed()
+    {
+        // The second rule. It does not resolve which set is written, so it also covers the idioms the first rule cannot follow
+        // (a context-level verb on an entity handed in by name only, a generic repository, a state assignment on a held entry).
+        var flagged = ProductionScan.Value.Where(f => f.Value.NamesEntityAndPersists).ToDictionary(f => f.Key, f => f.Value, StringComparer.Ordinal);
+        flagged.Should().NotBeEmpty("the data access classes of the in-scope sets name their entity types and persist");
+
+        var writerFiles = Writers.Select(w => w.File).ToHashSet(StringComparer.Ordinal);
+        var problems = new List<string>();
+        foreach (var (file, scan) in flagged.OrderBy(f => f.Key, StringComparer.Ordinal))
+        {
+            if (writerFiles.Contains(file))
+                continue;
+
+            if (EntityReferencingNonWriters.ContainsKey(file))
+            {
+                scan.Sets.Should().BeEmpty($"{file} is listed as a non-writer but the set scan found it writing {string.Join(", ", scan.Sets)}; move it to Writers");
+                continue;
+            }
+
+            problems.Add(
+                $"UNREVIEWED {file} names {string.Join(", ", scan.NamedEntities)} and carries {string.Join(", ", scan.PersistSignals)}. "
+                + "If it writes an in-scope table, route the write through an audited unit and add it to Writers; if it only reads those entities, list it in EntityReferencingNonWriters with the reason.");
+        }
+
+        foreach (var file in EntityReferencingNonWriters.Keys.Where(f => !flagged.ContainsKey(f)))
+            problems.Add($"STALE NON-WRITER {file} no longer names an in-scope entity and persists; remove it from EntityReferencingNonWriters.");
+        foreach (var file in EntityReferencingNonWriters.Keys.Where(writerFiles.Contains))
+            problems.Add($"{file} is both a writer and a non-writer; keep it in Writers only.");
+        foreach (var (file, reason) in EntityReferencingNonWriters)
+            RepositorySource.Find(file).Should().NotBeNull($"{file} exists (reason: {reason})");
+
+        problems.Should().BeEmpty();
+    }
+
+    [Fact]
     public void G5_every_writer_names_its_audited_path_or_its_exclusion()
     {
         Writers.Select(w => w.File).Should().OnlyHaveUniqueItems();
@@ -683,64 +791,244 @@ public sealed class Aud14ClosureGuardTests
             writer.Sets.Except(InScopeSets).Should().BeEmpty($"{writer.File} lists sets that are in scope");
             writer.Path.Should().NotBeNullOrWhiteSpace($"{writer.File} states the audited path that owns the write, or why it is excluded");
         }
+
+        EntityReferencingNonWriters.Values.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r));
     }
 
-    /// <summary>
-    /// File, then the in-scope sets it writes. A write is: a set followed in the same statement by Add, Remove, Update, Attach,
-    /// ExecuteUpdate or ExecuteDelete; a tracked read of a set (no AsNoTracking, no aggregate or projection) in a file that persists
-    /// changes; raw SQL that writes a set's table; or a raw-command file that names the table as a string. Only files that mention a
-    /// DbContext are read.
-    /// </summary>
-    private static Dictionary<string, SortedSet<string>> ScanWriters()
+    // ---- self-tests: the scanning functions are fed synthetic files and must report each idiom ----
+
+    private static SourceFile Synthetic(string code, string path = "Apperture.Persistence/Synthetic/SyntheticWriter.cs") => new(path, code);
+
+    private const string ContextField = "private readonly AppertureDbContext _db; ";
+
+    private static string Class(string body) => $"public sealed class SyntheticWriter {{ {ContextField}{body} }}";
+
+    /// <summary>(name, code, expected in-scope sets, comma separated; empty means the scanner must report no write).</summary>
+    private static readonly (string Name, string Code, string Sets)[] WriterIdioms =
+    [
+        // (a) context-level verbs: the write verb is not in the tail after a set.
+        ("a: _db.Add of a new entity", Class("""void M() { _db.Add(new BindingEntity { Id = "b" }); _db.SaveChanges(); }"""), "Bindings"),
+        ("a: _db.AddAsync", Class("""async Task M() { await _db.AddAsync(new ConnectionEntity()); await _db.SaveChangesAsync(); }"""), "Connections"),
+        ("a: _db.AddRange", Class("""void M() { _db.AddRange(new List<ResourceContextEntity>()); _db.SaveChanges(); }"""), "ResourceContexts"),
+        ("a: _db.Update of an entity parameter", Class("""void M(IntegrationEntity entity) { _db.Update(entity); _db.SaveChanges(); }"""), "Integrations"),
+        ("a: _db.UpdateRange", Class("""void M(List<ScheduleDefinitionEntity> rows) { _db.UpdateRange(rows); _db.SaveChanges(); }"""), "ScheduleDefinitions"),
+        ("a: _db.Remove", Class("""void M(NotificationDefinitionEntity row) { _db.Remove(row); _db.SaveChanges(); }"""), "NotificationDefinitions"),
+        ("a: _db.RemoveRange", Class("""void M(List<ManagedContactEntity> rows) { _db.RemoveRange(rows); _db.SaveChanges(); }"""), "ManagedContacts"),
+        ("a: _db.Attach", Class("""void M(SecretVersionEntity row) { _db.Attach(row); _db.SaveChanges(); }"""), "SecretVersions"),
+        ("a: Entry state Modified", Class("""void M(ModuleInstallationStateEntity row) { _db.Entry(row).State = EntityState.Modified; _db.SaveChanges(); }"""), "ModuleInstallationStates"),
+        ("a: Entry state Added", Class("""void M(RuntimeControlRequestEntity row) { _db.Entry(row).State = EntityState.Added; _db.SaveChanges(); }"""), "RuntimeControlRequests"),
+        ("a: Entry state Deleted", Class("""void M(EntraInstanceRegistrationEntity row) { _db.Entry(row).State = EntityState.Deleted; _db.SaveChanges(); }"""), "EntraInstanceRegistrations"),
+        ("a: Entry on a held entry", Class("""void M(ManagedContactGroupEntity row) { var entry = _db.Entry(row); entry.State = EntityState.Modified; _db.SaveChanges(); }"""), "ManagedContactGroups"),
+        ("a: Entry property IsModified", Class("""void M(NotificationUserPreferenceEntity row) { _db.Entry(row).Property(x => x.IsEnabled).IsModified = true; _db.SaveChanges(); }"""), "NotificationUserPreferences"),
+        ("a: a context declared with another name", "public sealed class S { async Task M(IDbContextFactory<AppertureDbContext> f, PlatformSettingValueEntity e) { await using var scratch = await f.CreateDbContextAsync(); scratch.Update(e); await scratch.SaveChangesAsync(); } }", "PlatformSettingValues"),
+
+        // (b) an untracked read followed by a context-level update.
+        ("b: AsNoTracking read then _db.Update", Class("""
+            async Task M(string id) { var e = await _db.Integrations.AsNoTracking().FirstAsync(i => i.Id == id); e.Name = "x"; _db.Update(e); await _db.SaveChangesAsync(); }
+            """), "Integrations"),
+        ("b: AsNoTracking read then Entry state", Class("""
+            async Task M(string id) { var e = await _db.Bindings.AsNoTracking().FirstAsync(i => i.Id == id); _db.Entry(e).State = EntityState.Modified; await _db.SaveChangesAsync(); }
+            """), "Bindings"),
+
+        // (c) a set or queryable kept in a local and written later.
+        ("c: set kept in a local, then Add", Class("""
+            void M() { var set = _db.PlatformSettingValues; set.Add(new PlatformSettingValueEntity()); _db.SaveChanges(); }
+            """), "PlatformSettingValues"),
+        ("c: set kept in a typed local, then Remove", Class("""
+            void M(BindingEntity e) { DbSet<BindingEntity> bindings = _db.Bindings; bindings.Remove(e); _db.SaveChanges(); }
+            """), "Bindings"),
+        ("c: set kept in a field, then RemoveRange", "public sealed class S { private readonly DbSet<ConnectionEntity> _connections; public S(AppertureDbContext db) { _connections = db.Connections; } void M(List<ConnectionEntity> rows) { _connections.RemoveRange(rows); } }", "Connections"),
+        ("c: queryable kept in a local, then ExecuteDelete", Class("""
+            async Task M(string id) { var q = _db.Connections.Where(c => c.Id == id); await q.ExecuteDeleteAsync(); }
+            """), "Connections"),
+        ("c: queryable kept in a local, then a tracked read", Class("""
+            async Task M() { var q = _db.SecretDescriptors; var rows = await q.ToListAsync(); rows[0].Name = "x"; await _db.SaveChangesAsync(); }
+            """), "SecretDescriptors"),
+        ("c: Set<T>() kept in a local, then Update", Class("""
+            void M(ScheduleAssignmentEntity e) { var set = _db.Set<ScheduleAssignmentEntity>(); set.Update(e); _db.SaveChanges(); }
+            """), "ScheduleAssignments"),
+
+        // (d) a projection is not an aggregate; only a terminal aggregate operator is exempt.
+        ("d: tracked read through Select(identity)", Class("""
+            async Task M() { var rows = await _db.NotificationSubscriptions.Select(s => s).ToListAsync(); rows[0].IsEnabled = false; await _db.SaveChangesAsync(); }
+            """), "NotificationSubscriptions"),
+        ("d: tracked read through a navigation Select", Class("""
+            async Task M() { var rows = await _db.ManagedContactIdentityLinks.Select(l => l.Contact).ToListAsync(); await _db.SaveChangesAsync(); }
+            """), "ManagedContactIdentityLinks"),
+
+        ("d: tracked read through a new shape that carries the row entity", Class("""
+            async Task M() { var rows = await _db.Bindings.Select(b => new { b, b.Id }).ToListAsync(); rows[0].b.State = 1; await _db.SaveChangesAsync(); }
+            """), "Bindings"),
+
+        // (e) raw ADO.NET: no DbContext in the file, an alias, other statement forms.
+        ("e: raw command with an alias (no DbContext in the file)", """
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = "UPDATE i SET i.DisplayName = @n FROM Integrations i WHERE i.Id = @id"; cmd.ExecuteNonQuery(); } }
+            """, "Integrations"),
+        ("e: raw bracketed schema-qualified delete", """
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = "DELETE FROM [dbo].[Bindings] WHERE Id = @id"; cmd.ExecuteNonQuery(); } }
+            """, "Bindings"),
+        ("e: raw lower case update", """
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = "update integrations set Name = 'x'"; cmd.ExecuteNonQuery(); } }
+            """, "Integrations"),
+        ("e: raw insert with dbo prefix", """
+            public sealed class RawWriter { void M(IDbCommand cmd) { cmd.CommandText = "INSERT INTO dbo.ScheduleAssignments (Id) VALUES (1)"; cmd.ExecuteNonQuery(); } }
+            """, "ScheduleAssignments"),
+        ("e: raw merge", """
+            public sealed class RawWriter { void M(IDbCommand cmd) { cmd.CommandText = "MERGE INTO Connections AS t USING src ON t.Id = src.Id WHEN MATCHED THEN UPDATE SET Name = src.Name;"; cmd.ExecuteNonQuery(); } }
+            """, "Connections"),
+        ("e: raw verbatim multi-line delete with an alias and a join", """"
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = @"DELETE b
+            FROM dbo.Bindings AS b
+            JOIN Integrations i ON i.Id = b.IntegrationId
+            WHERE i.State = 3"; cmd.ExecuteNonQuery(); } }
+            """", "Bindings"),
+        ("e: ExecuteSqlRaw in an EF file", Class("""async Task M() { await _db.Database.ExecuteSqlRawAsync("DELETE FROM Integrations WHERE State = 3"); }"""), "Integrations"),
+        ("e: a literal that is just the table name in a raw-command file", """
+            public sealed class RawWriter { void M(SqlCommand cmd, string key) { Run(cmd, "Integrations", key); cmd.ExecuteNonQuery(); } }
+            """, "Integrations"),
+
+        // What the scanner deliberately ignores.
+        ("ignored: raw read of an in-scope table", """
+            public sealed class RawReader { void M(SqlCommand cmd) { cmd.CommandText = "SELECT COUNT(*) FROM Integrations"; cmd.ExecuteScalar(); } }
+            """, ""),
+        ("ignored: raw write of a table that is not in scope", """
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = "UPDATE ScheduleRuns SET State = 2 WHERE Id = @id"; cmd.ExecuteNonQuery(); } }
+            """, ""),
+        ("ignored: raw write of another table that only joins an in-scope table", """
+            public sealed class RawWriter { void M(SqlCommand cmd) { cmd.CommandText = "UPDATE r SET r.State = 2 FROM ScheduleRuns r JOIN Integrations i ON i.Id = r.IntegrationId"; cmd.ExecuteNonQuery(); } }
+            """, ""),
+        ("ignored: English text that starts with a write word", """
+            public sealed class Messages { SqlCommand _unused; string M() => "Update the Integrations page"; }
+            """, ""),
+        ("ignored: untracked read with other writes elsewhere", Class("""
+            async Task M() { var rows = await _db.Integrations.AsNoTracking().ToListAsync(); _db.Add(new UserEntity()); await _db.SaveChangesAsync(); }
+            """), ""),
+        ("ignored: terminal aggregates in a persisting file", Class("""
+            async Task M() { var n = await _db.Integrations.CountAsync(); var any = await _db.Bindings.AnyAsync(); await _db.SaveChangesAsync(); }
+            """), ""),
+        ("ignored: a grouped projection into a new shape", Class("""
+            async Task M() { var counts = await _db.Integrations.GroupBy(e => e.State).Select(g => new { g.Key, Count = g.Count() }).ToListAsync(); await _db.SaveChangesAsync(); }
+            """), ""),
+        ("ignored: Entry state Detached", Class("""void M(IntegrationEntity row) { _db.Entry(row).State = EntityState.Detached; }"""), ""),
+        ("ignored: a list that is added to", Class("""void M(IntegrationEntity row) { var list = new List<IntegrationEntity>(); list.Add(row); }"""), ""),
+        ("ignored: a write only named in a comment", Class("""
+            // _db.Integrations.Add(entity); and "UPDATE Integrations SET x = 1" are only comments here
+            void M() { }
+            """), ""),
+        ("ignored: a migration", Class("""void M() { _db.Integrations.Add(new IntegrationEntity()); }"""), ""),
+
+        // Residual limit, pinned so it stays visible: a table name built at run time is not seen.
+        ("limit: a built table name is not resolved", """
+            public sealed class RawWriter { void M(SqlCommand cmd, string table) { cmd.CommandText = "UPDATE " + table + " SET Name = 'x'"; cmd.ExecuteNonQuery(); } }
+            """, ""),
+    ];
+
+    public static IEnumerable<object[]> WriterIdiomCases() => WriterIdioms.Select(c => new object[] { c.Name, c.Code, c.Sets });
+
+    [Theory]
+    [MemberData(nameof(WriterIdiomCases))]
+    public void G5_self_test_the_scanner_reports_each_write_idiom(string name, string code, string sets)
     {
-        var sets = DbSetsOf(typeof(AppertureDbContext));
-        var alternation = string.Join("|", InScopeSets);
-        var entities = string.Join("|", InScopeSets.Where(sets.ContainsKey).Select(s => Regex.Escape(sets[s])));
-        var setAccess = new Regex($@"\.\s*(?<set>{alternation})\b|\bSet<(?<entity>{entities})>\s*\(\s*\)", RegexOptions.CultureInvariant);
-        var entityToSet = InScopeSets.Where(sets.ContainsKey).ToDictionary(s => sets[s], s => s, StringComparer.Ordinal);
+        var path = name.StartsWith("ignored: a migration", StringComparison.Ordinal) ? "Apperture.Persistence/Migrations/Synthetic.cs" : "Apperture.Persistence/Synthetic/SyntheticWriter.cs";
 
-        var result = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
-        foreach (var file in RepositorySource.Production)
+        var scan = PersistenceWriterScanner.Scan(Synthetic(code, path), ScanModel.Value);
+
+        scan.Sets.Should().BeEquivalentTo(sets.Split(',', StringSplitOptions.RemoveEmptyEntries), $"{name}; found by: {string.Join("; ", scan.Idioms)}");
+    }
+
+    /// <summary>(name, code, expected NamesEntityAndPersists).</summary>
+    private static readonly (string Name, string Code, bool Flagged)[] FileLevelCases =
+    [
+        ("an entity handed to a generic helper, saved through a unit", "public sealed class S { void M(IntegrationEntity e) { Mutate(e); _unit.SaveChanges(); } }", true),
+        ("an entity named and ExecuteSql used", "public sealed class S { Task M(BindingEntity e) => Run(\"x\"); void N(DbContext c) { c.Database.ExecuteSqlRaw(Sql); } }", true),
+        ("an entity named and a context-level verb on another receiver name", "public sealed class S { private readonly AppertureDbContext _db; void M(ConnectionEntity e) { _db.Update(Map(e)); } }", true),
+        ("an entity named with no persist signal", "public sealed class S { ConnectionEntity M(ConnectionEntity e) => e; }", false),
+        ("a persist signal with no in-scope entity named", "public sealed class S { void M(UserEntity e) { _db.Add(e); _db.SaveChanges(); } }", false),
+        ("an entity only in a comment", "public sealed class S { /* IntegrationEntity */ void M() { _db.SaveChanges(); } }", false),
+    ];
+
+    public static IEnumerable<object[]> FileLevelCaseData() => FileLevelCases.Select(c => new object[] { c.Name, c.Code, c.Flagged });
+
+    [Theory]
+    [MemberData(nameof(FileLevelCaseData))]
+    public void G5_self_test_the_file_level_rule_flags_a_file_that_names_an_in_scope_entity_and_persists(string name, string code, bool flagged)
+    {
+        var scan = PersistenceWriterScanner.Scan(Synthetic(code), ScanModel.Value);
+
+        scan.NamesEntityAndPersists.Should().Be(flagged, name);
+    }
+
+    [Fact]
+    public void G5_self_test_the_scanner_does_not_read_migrations_the_audit_catalog_or_test_support()
+    {
+        const string code = "public sealed class S { void M(IntegrationEntity e, AppertureDbContext _db) { _db.Update(e); _db.SaveChanges(); } }";
+
+        foreach (var path in new[]
+                 {
+                     "Apperture.Persistence/Migrations/20260101_X.cs",
+                     "Apperture.Core/Apperture.Core.Application/Audit/AuditEvents.X.cs",
+                     "Apperture.ModuleSdk/Apperture.ModuleSdk.Testing/Harness.cs",
+                 })
         {
-            if (!file.Text.Contains("DbContext", StringComparison.Ordinal))
-                continue;
-
-            var code = file.Code;
-            var persists = PersistSignal.IsMatch(code);
-            var written = new SortedSet<string>(StringComparer.Ordinal);
-
-            foreach (Match match in setAccess.Matches(code))
-            {
-                var set = match.Groups["set"].Success ? match.Groups["set"].Value : entityToSet[match.Groups["entity"].Value];
-                var tail = CSharpSource.TailStatement(code, match.Index);
-                if (WriteVerb.IsMatch(tail))
-                    written.Add(set);
-                else if (persists && !tail.Contains("AsNoTracking", StringComparison.Ordinal) && Materializer.IsMatch(tail) && !Aggregate.IsMatch(tail))
-                    written.Add(set);
-            }
-
-            foreach (Match match in RawWrite.Matches(code))
-            {
-                var table = match.Groups["table"].Value;
-                if (InScopeSets.Contains(table, StringComparer.Ordinal))
-                    written.Add(table);
-            }
-
-            if (RawExecution.IsMatch(code))
-            {
-                foreach (var set in InScopeSets.Where(s => code.Contains($"\"{s}\"", StringComparison.Ordinal)))
-                    written.Add(set);
-            }
-
-            if (written.Count > 0)
-                result[file.RelativePath] = written;
+            PersistenceWriterScanner.Scan(Synthetic(code, path), ScanModel.Value).NamesEntityAndPersists.Should().BeFalse(path);
         }
 
-        return result;
+        PersistenceWriterScanner.Scan(Synthetic(code), ScanModel.Value).NamesEntityAndPersists.Should().BeTrue("the same text in a production path is flagged");
     }
 
-    private static Dictionary<string, string> DbSetsOf(Type context) =>
-        context.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.PropertyType.IsGenericType && p.PropertyType.GetGenericTypeDefinition() == typeof(DbSet<>))
-            .ToDictionary(p => p.Name, p => p.PropertyType.GetGenericArguments()[0].Name, StringComparer.Ordinal);
+    // ---- G4 self-tests: an action that is not a literal or a constant is unresolved ----
+
+    [Fact]
+    public void G4_self_test_a_literal_or_constant_action_is_resolved()
+    {
+        var file = Synthetic("""
+            public sealed class Appender { async Task M() { await _audit.AppendAsync(new AuditRecord(new AuditRecordId(Guid.NewGuid().ToString("N")), "scheduler.schedule.failed", actor), ct); } }
+            """);
+
+        var analysis = AnalyzeAppends(file, []);
+
+        analysis.Statements.Should().BeGreaterThan(0);
+        analysis.Resolved.Should().BeEquivalentTo("scheduler.schedule.failed");
+        analysis.Unresolved.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void G4_self_test_an_action_passed_through_a_local_variable_is_unresolved()
+    {
+        var inline = Synthetic("""
+            public sealed class Appender { async Task M(bool failed) { var action = failed ? "scheduler.schedule.failed" : "scheduler.schedule.dispatched"; await _audit.AppendAsync(new AuditRecord(new AuditRecordId("x"), action, actor), ct); } }
+            """);
+        var viaRecord = Synthetic("""
+            public sealed class Appender { async Task M(string action) { var record = new AuditRecord(new AuditRecordId("x"), action, actor); await _audit.AppendAsync(record, ct); } }
+            """);
+
+        AnalyzeAppends(inline, []).Unresolved.Should().ContainSingle().Which.Should().Contain("new AuditRecord");
+        AnalyzeAppends(viaRecord, []).Unresolved.Should().ContainSingle();
+        AnalyzeAppends(inline, []).Resolved.Should().BeEmpty("the literals sit in a separate statement, so the local-variable append resolves none and must be declared Dynamic with its action list");
+    }
+
+    [Fact]
+    public void G4_self_test_a_helper_declaration_is_not_a_call_and_its_calls_are_checked()
+    {
+        const string helper = """
+            public sealed class Appender
+            {
+                private async Task AppendX(string action, ActorId actor, CancellationToken ct)
+                {
+                    var record = new AuditRecord(new AuditRecordId("x"), action, actor);
+                    await _audit.AppendAsync(record, ct);
+                }
+
+                async Task A(CancellationToken ct) { await AppendX("auth.local.login.failed", actor, ct); }
+            }
+            """;
+
+        var ok = AnalyzeAppends(Synthetic(helper), ["AppendX"]);
+        ok.Resolved.Should().BeEquivalentTo("auth.local.login.failed");
+        ok.Unresolved.Should().BeEmpty("the construction inside the helper takes its action from the helper's parameter; the call site names it");
+
+        var viaLocal = Synthetic(helper.Replace("await AppendX(\"auth.local.login.failed\", actor, ct);", "var chosen = Pick(); await AppendX(chosen, actor, ct);"));
+        AnalyzeAppends(viaLocal, ["AppendX"]).Unresolved.Should().ContainSingle().Which.Should().Contain("helper call");
+    }
+
 }
