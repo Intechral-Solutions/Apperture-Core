@@ -206,6 +206,65 @@ public sealed class OwnershipMoveSqlServerTests : IClassFixture<AuditIsolationCa
         _output.WriteLine(scratch.ExecutionMarker);
     }
 
+    public enum ScheduleBlock
+    {
+        AttachedToIntegration,
+        ArchivedTarget,
+    }
+
+    public static IEnumerable<object[]> ScheduleBlocks() =>
+        from block in Enum.GetValues<ScheduleBlock>()
+        from rcsi in new[] { false, true }
+        select new object[] { block, rcsi };
+
+    [Theory]
+    [MemberData(nameof(ScheduleBlocks))]
+    public async Task A_blocked_schedule_move_changes_nothing_and_is_recorded_after_the_unit_as_a_rejection_at_the_source(ScheduleBlock block, bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (admin, principal) = await AdminAsync(scratch);
+        var source = await SeedContextAsync(scratch, "Blocked schedule source");
+        var target = await SeedContextAsync(
+            scratch, "Blocked schedule target", block == ScheduleBlock.ArchivedTarget ? ResourceContextStates.Archived : ResourceContextStates.Active);
+        var integration = block == ScheduleBlock.AttachedToIntegration ? await SeedIntegrationAsync(scratch, source) : null;
+        var schedule = await SeedScheduleAsync(scratch, source, integration);
+        var expectedBlocker = block == ScheduleBlock.AttachedToIntegration
+            ? ResourceMoveBlockerCodes.ScheduleAttachedToIntegration
+            : ResourceMoveBlockerCodes.TargetArchived;
+        var before = await SnapshotAsync(scratch);
+
+        ResourceMovePreview preview;
+        await using (var db = scratch.NewDb())
+            preview = await MoveService(scratch, db, principal, NewUnit(db, principal)).MoveScheduleAsync(new ScheduleId(schedule), new ResourceContextId(target));
+
+        preview.CanMove.Should().BeFalse();
+        preview.Blockers.Select(b => b.Code).Should().Equal(expectedBlocker);
+        (await SnapshotAsync(scratch)).Should().Be(before, "a blocked move mutates nothing");
+        (await scratch.ScalarAsync<string>($"SELECT ResourceContextId FROM ScheduleDefinitions WHERE Id = N'{schedule}';")).Should().Be(source);
+
+        // Exactly the one rejection row for this schedule: no moved_out or moved_in, and no row of any kind at the target.
+        var row = (await AuditRowsAsync(scratch, schedule)).Should().ContainSingle().Subject;
+        row["Action"].Should().Be(AuditActionNames.ScheduleMoveRejected);
+        row["Actor"].Should().Be(admin);
+        row["Category"].Should().Be(AuditCategories.Governance);
+        row["Severity"].Should().Be(AuditSeverities.Standard);
+        row["Basis"].Should().Be(AuditBases.Attempt);
+        row["Outcome"].Should().Be(AuditOutcomeCodes.Rejected);
+        row["Visibility"].Should().Be("default");
+        row["TargetType"].Should().Be(AuditTargetTypes.Schedule);
+        row["TargetId"].Should().Be(schedule);
+        row["ResourceContextId"].Should().Be(source, "a rejection is the source's event; the target never heard about it");
+        Detail(row, "name").Should().Be("Moving schedule");
+        Detail(row, "sourceContextId").Should().Be(source);
+        Detail(row, "targetContextId").Should().Be(target);
+        using var details = JsonDocument.Parse((string)row["Details"]!);
+        details.RootElement.GetProperty("blockers").EnumerateArray().Select(e => e.GetString()).Should().Equal(expectedBlocker);
+        (await scratch.RowsAsync($"SELECT * FROM AuditLogs WHERE ResourceContextId = N'{target}';")).Should().BeEmpty();
+        (await scratch.RowsAsync($"SELECT * FROM AuditLogs WHERE Action IN (N'{AuditActionNames.ScheduleMovedOut}', N'{AuditActionNames.ScheduleMovedIn}') AND TargetId = N'{schedule}';"))
+            .Should().BeEmpty();
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
