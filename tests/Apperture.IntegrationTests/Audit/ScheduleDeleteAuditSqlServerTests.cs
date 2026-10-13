@@ -33,6 +33,19 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
 
     public async Task InitializeAsync() => _db = await AuditSqlScratch.CreateAsync("Apperture_Aud14Sched_");
 
+    /// <summary>
+    /// The M7 and race cases run on both isolation modes. They start on the locking catalog every case gets and, for
+    /// READ_COMMITTED_SNAPSHOT, replace it with one of that mode (the audit table is append-only, so a case takes a catalog of its own).
+    /// The M6 fault cases below run on the locking catalog only: they prove the unit's verification, not the row locks.
+    /// </summary>
+    private async Task UseIsolationAsync(bool rcsi)
+    {
+        if (!rcsi)
+            return;
+        await _db.DisposeAsync();
+        _db = await AuditIsolation.CreateAsync("Apperture_Aud14Sched", rcsi: true);
+    }
+
     public async Task DisposeAsync()
     {
         _output.WriteLine(_db.ExecutionMarker);
@@ -41,9 +54,12 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
 
     // ---- The committed delete ----
 
-    [Fact]
-    public async Task A_delete_removes_the_graph_and_commits_exactly_one_primary_row_attributed_to_the_administrator()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_delete_removes_the_graph_and_commits_exactly_one_primary_row_attributed_to_the_administrator(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
         var seeded = await SeedAsync(principal, "Nightly");
         await using (var db = _db.NewDb())
@@ -83,9 +99,12 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
         ((string)row["Details"]!).Should().NotContain("0 0 * * *", "the recurrence is never recorded");
     }
 
-    [Fact]
-    public async Task The_primary_row_carries_the_operation_event_id_that_verification_correlates_on()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task The_primary_row_carries_the_operation_event_id_that_verification_correlates_on(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         var seeded = await SeedAsync(principal, "Nightly");
         var operationId = Guid.NewGuid().ToString("N");
@@ -102,9 +121,12 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
 
     // ---- Refusals ----
 
-    [Fact]
-    public async Task An_enabled_schedule_is_refused_with_one_rejection_row_and_nothing_is_removed()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_enabled_schedule_is_refused_with_one_rejection_row_and_nothing_is_removed(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
         var seeded = await SeedAsync(principal, "Nightly", enabled: true);
 
@@ -125,9 +147,12 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
         Detail(row, "name").Should().Be("Nightly");
     }
 
-    [Fact]
-    public async Task A_rejection_row_that_cannot_be_written_does_not_change_the_refusal()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_rejection_row_that_cannot_be_written_does_not_change_the_refusal(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         var seeded = await SeedAsync(principal, "Nightly", enabled: true);
         var failWriter = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
@@ -142,9 +167,12 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
         (await GraphAsync(seeded)).Should().Be(new Graph(1, 1, 1));
     }
 
-    [Fact]
-    public async Task A_missing_schedule_is_a_typed_not_found_that_records_nothing()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_missing_schedule_is_a_typed_not_found_that_records_nothing(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
 
         var act = () => DeleteAsync(principal, "sch-missing");
@@ -263,9 +291,18 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
         (await AuditRowsAsync()).Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Two_independent_deletes_of_the_same_schedule_commit_one_row_and_the_loser_is_a_genuine_not_found()
+    /// <summary>
+    /// Two deletes of one schedule, deterministically: another session holds the ownership gate (the lock every delete takes right
+    /// after its operation lock), the first delete starts and is seen waiting for it on the server, the second starts and is seen
+    /// waiting behind it, and only then is the gate released. The lock manager grants exclusive requests in arrival order, so the
+    /// first removes the graph with its one row and the second then finds nothing: a genuine not-found, never a second row.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Two_deletes_of_the_same_schedule_queue_on_the_gate_and_the_one_behind_is_a_genuine_not_found(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         var seeded = await SeedAsync(principal, "Nightly");
 
@@ -283,10 +320,22 @@ public sealed class ScheduleDeleteAuditSqlServerTests : IAsyncLifetime
             }
         }
 
-        var results = await Task.WhenAll(Attempt(), Attempt());
+        Task<Exception?> first;
+        Task<Exception?> second;
+        await using (var gate = await OwnershipGateRace.HoldAsync(_db))
+        {
+            first = Task.Run(Attempt);
+            await OwnershipGateRace.WaitForWaitersAsync(_db, 1, first);
+            second = Task.Run(Attempt);
+            await OwnershipGateRace.WaitForWaitersAsync(_db, 2, first, second);
+            (await GraphAsync(seeded)).Should().Be(new Graph(1, 1, 1), "neither delete has run yet");
+            await gate.ReleaseAsync();
+        }
 
-        results.Count(r => r is null).Should().Be(1);
-        results.Single(r => r is not null).Should().BeOfType<ScheduleNotFoundException>("it waited for the winner, then found nothing");
+        var results = await Task.WhenAll(first, second);
+
+        results[0].Should().BeNull("the delete that arrived first holds the gate first and removes the graph");
+        results[1].Should().BeOfType<ScheduleNotFoundException>("it waited for the winner, then found nothing");
         (await GraphAsync(seeded)).Should().Be(new Graph(0, 0, 0));
         (await AuditRowsAsync()).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.ScheduleDeleted, "exactly one primary row");
     }

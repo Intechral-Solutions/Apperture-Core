@@ -12,6 +12,7 @@ public static class GovernanceAuditActionNames
     public const string RoleMetadataUpdated = "governance.role.metadata.updated";
     public const string RoleDeleted = "governance.role.deleted";
     public const string RoleMutationRejected = "governance.role.mutation_rejected";
+    /// <summary>Historical only: nothing writes this action any more. Rows already written keep it (catalog entry marked retired).</summary>
     public const string BreakGlassAdminOperation = "governance.break_glass.admin_operation";
     public const string UserUsernameChanged = Apperture.Core.Application.Audit.AuditActionNames.UsernameChanged;
 

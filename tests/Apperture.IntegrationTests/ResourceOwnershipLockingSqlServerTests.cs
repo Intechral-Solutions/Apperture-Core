@@ -19,9 +19,7 @@ public sealed class ResourceOwnershipLockingSqlServerTests
     [Fact]
     public async Task GetByIdForUpdateAsync_blocks_a_concurrent_locked_reader_until_commit()
     {
-        await using var fixture = await SqlServerScratchDatabase.CreateAsync("Apperture_LockProbe_");
-        if (fixture is null)
-            return; // soft-skip
+        await using var fixture = await SqlServerScratchDatabase.CreateRequiredAsync("Apperture_LockProbe_");
 
         await using (var seedDb = fixture.NewDb())
         {
@@ -73,9 +71,7 @@ public sealed class ResourceOwnershipLockingSqlServerTests
     [Fact]
     public async Task SetResourceContextIdAsync_writes_only_the_ownership_column()
     {
-        await using var fixture = await SqlServerScratchDatabase.CreateAsync("Apperture_NarrowWrite_");
-        if (fixture is null)
-            return; // soft-skip
+        await using var fixture = await SqlServerScratchDatabase.CreateRequiredAsync("Apperture_NarrowWrite_");
 
         await using var db = fixture.NewDb();
         // The reserved "shared" ResourceContext row is seeded by the Ctx1_ResourceContextFoundation

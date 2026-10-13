@@ -66,6 +66,20 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
         return scratch;
     }
 
+    /// <summary>
+    /// Like <see cref="CreateAsync"/>, but never soft-skips: without a reachable SQL Server it throws with configuration guidance
+    /// (<see cref="SqlServerTestConfiguration.RequireConnectionString"/>, as <c>AuditSqlScratch</c> does), so a test that proves
+    /// behavior of the server cannot pass without having run against one.
+    /// </summary>
+    public static async Task<SqlServerScratchDatabase> CreateRequiredAsync(string catalogPrefix)
+    {
+        // Throws with configuration guidance when no SQL Server is reachable.
+        _ = SqlServerTestConfiguration.RequireConnectionString();
+        var scratch = await CreateAsync(catalogPrefix);
+        return scratch ?? throw new InvalidOperationException(
+            "The SQL Server test catalog could not be created or migrated. " + SqlServerTestConfiguration.DescribeActiveConfiguration());
+    }
+
     /// <summary>Opens a fresh <see cref="AppertureDbContext"/> against this scratch catalog.</summary>
     public AppertureDbContext NewDb()
     {

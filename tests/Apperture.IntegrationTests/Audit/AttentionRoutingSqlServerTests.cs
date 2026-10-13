@@ -644,6 +644,117 @@ public sealed class AttentionRoutingSqlServerTests : IClassFixture<AuditIsolatio
         _output.WriteLine(scratch.ExecutionMarker);
     }
 
+    // ---- the unique index (IntegrationId, ConditionKey): a writer that bypassed the integration row lock ----
+
+    private const string OverrideIndexName = "IX_IntegrationAttentionRoutings_IntegrationId_ConditionKey";
+
+    /// <summary>
+    /// A session that bypassed the integration row lock inserts the integration's override for the condition and holds it
+    /// uncommitted. The service then writes the same override, and the unique index is the only thing between them. The route the
+    /// service takes depends on the isolation mode, and the result that matters is the same on both: no partial state and no audit
+    /// row for anything that did not commit.
+    /// <list type="bullet">
+    /// <item>Locking READ COMMITTED: the service's read of the override waits on the uncommitted row and, once it commits, finds it.
+    /// No insert is attempted. The service takes the update path against that committed row, so it succeeds, changes the row's
+    /// values to its own and records <c>attention_routing.override.updated</c>.</item>
+    /// <item>READ_COMMITTED_SNAPSHOT: the read does not see the uncommitted row, so the service goes down the create path and its
+    /// insert blocks on the unique index. When the other row commits the insert fails on exactly that index. The service has no
+    /// handler for this violation (it is only reachable by a writer that bypassed the lock), so the database error propagates out
+    /// of the unit as a failed save and nothing of the request commits: the other writer's row is intact and there is no audit
+    /// row. This pins that behavior; it is not a guarantee of a friendlier error.</item>
+    /// </list>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task An_override_inserted_by_a_writer_that_bypassed_the_integration_lock_is_decided_against_or_loses_on_the_unique_index(bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var integrationId = await SeedIntegrationAsync(scratch);
+        var lastAudit = await LastAuditIdAsync(scratch);
+        var rawId = "attnrt_raw_" + Guid.NewGuid().ToString("N");
+
+        await using var third = await LockedRowHolder.BeginAsync(scratch.ConnectionString);
+        await third.ExecuteAsync(
+            $"""
+            INSERT INTO IntegrationAttentionRoutings
+              (Id, IntegrationId, ConditionKey, IsEnabled, SendResolvedNotification, SuppressRemindersWhenAcknowledged,
+               SuppressEscalationWhenAcknowledged, EscalationAfterTicks, ReminderIntervalTicks, PrimaryOperationalTeamId, EscalationOperationalTeamId)
+            VALUES
+              (N'{rawId}', N'{integrationId}', N'{Key}', 0, 1, 0, 0, {TimeSpan.FromMinutes(30).Ticks}, {TimeSpan.FromMinutes(10).Ticks}, NULL, NULL);
+            """);
+
+        var failures = new FailedSaveNumbers();
+        var request = RunAsync(async () =>
+        {
+            await using var db = scratch.NewDb(failures);
+            await Routing(db, NewUnit(db, principal)).UpsertIntegrationRoutingAsync(new IntegrationId(integrationId), Key, Command());
+            return true;
+        });
+        // The service is shown by the server to be waiting on the other session's uncommitted row, so it did not run past it.
+        await third.WaitUntilBlockedAsync(scratch, "IntegrationAttentionRoutings", request);
+        // READPAST: a plain read would itself wait on the uncommitted row on a locking catalog.
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM IntegrationAttentionRoutings WITH (READPAST) WHERE IntegrationId = N'{integrationId}';"))
+            .Should().Be(0, "the other writer's row is not committed yet, so no committed row is visible");
+        await third.CommitAsync();
+        var outcome = await request;
+
+        var overrides = await OverrideRowsAsync(scratch, integrationId);
+        var rows = await AuditRowsAfterAsync(scratch, lastAudit);
+        var row = overrides.Should().ContainSingle("there is one override per condition on either path").Subject;
+        row["Id"].Should().Be(rawId, "the other writer's row is the only row, and the service created none beside it");
+        if (rcsi)
+        {
+            failures.Numbers.Should().Contain(2601, "the read did not see the uncommitted row, so the insert lost on the unique index");
+            outcome.Error.Should().NotBeNull("the service reports the failure; it does not hand back the other writer's row as its own success");
+            ExceptionChain(outcome.Error!).OfType<Microsoft.Data.SqlClient.SqlException>().Should().ContainSingle(e => e.Number == 2601)
+                .Which.Message.Should().Contain(OverrideIndexName, "the violation is on exactly that index");
+            row["IsEnabled"].Should().Be(false, "the other writer's row is intact");
+            rows.Should().BeEmpty("nothing of the losing request committed");
+        }
+        else
+        {
+            outcome.Error.Should().BeNull("the read waited for the row, found it committed and took the update path");
+            failures.Numbers.Should().BeEmpty("no insert was attempted");
+            row["IsEnabled"].Should().Be(true, "the service updated the row it found to its own values");
+            var updated = rows.Should().ContainSingle("the update is one audited operation").Subject;
+            updated["Action"].Should().Be(AuditActionNames.AttentionRoutingOverrideUpdated);
+            updated["TargetId"].Should().Be(integrationId);
+            DetailList(updated, "changedFields").Should().Equal("enabled");
+        }
+
+        _output.WriteLine(scratch.ExecutionMarker);
+    }
+
+    private static IEnumerable<Exception> ExceptionChain(Exception exception)
+    {
+        for (Exception? e = exception; e is not null; e = e.InnerException)
+            yield return e;
+    }
+
+    /// <summary>Records the SQL Server error numbers of the saves that failed, to show which path a race took.</summary>
+    private sealed class FailedSaveNumbers : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    {
+        public List<int> Numbers { get; } = [];
+
+        public override Task SaveChangesFailedAsync(
+            Microsoft.EntityFrameworkCore.Diagnostics.DbContextErrorEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            for (var inner = eventData.Exception; inner is not null; inner = inner.InnerException)
+            {
+                if (inner is Microsoft.Data.SqlClient.SqlException sql)
+                {
+                    lock (Numbers)
+                        Numbers.Add(sql.Number);
+                    break;
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     // ---- M6 ----
 
     private async Task<(AuditedOperationM6Runner Runner, IPrincipalContext Principal)> RunnerAsync(AuditSqlScratch scratch, Op op)

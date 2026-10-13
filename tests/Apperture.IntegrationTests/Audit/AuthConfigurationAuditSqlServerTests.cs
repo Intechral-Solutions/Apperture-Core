@@ -429,6 +429,132 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationClientSecretRetired).Should().Be(1);
     }
 
+    [Fact]
+    public async Task An_update_whose_commit_rolled_back_reruns_once_and_stores_one_secret_and_retires_the_replaced_one_once()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(new RolledBackCommit(), attempts))
+            (await Tenants(db, principal, store: SecretStore(db)).Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None))
+                .Result.Should().BeOfType<OkObjectResult>();
+
+        attempts.Started.Should().Be(2, "one attempt rolled back and the rerun committed");
+        var second = await SecretRefAsync(id);
+        second.Should().NotBe(first);
+        (await ResolveAsync(second)).Should().Be("second-secret");
+        (await SecretStateAsync(first)).Should().Be(SecretState.Disabled);
+        (await SecretStateAsync(second)).Should().Be(SecretState.Active);
+        (await RegistrationSecretsAsync(id)).Should().HaveCount(2, "the rolled-back attempt's secret never existed");
+        var rows = await RowsAsync(id);
+        rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationUpdated).Should().Be(1);
+        rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationClientSecretStored).Should().Be(2, "one from the arranged create, one from the rerun");
+        rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationClientSecretRetired).Should().Be(1);
+        AssertNoSecretMaterial(rows, "first-secret", "second-secret", first, second);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", "second-secret", first, second);
+    }
+
+    [Fact]
+    public async Task An_update_whose_operation_lock_cannot_be_taken_is_unknown_and_stores_and_retires_no_secret()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, first) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+        var rowsBefore = (await RowsAsync(id)).Count;
+        var evidenceBefore = await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;");
+        var operationId = Guid.NewGuid().ToString("N");
+
+        await using (await HeldLock.TakeAsync(_db.ConnectionString, "apperture.audit-op." + operationId))
+        await using (var db = _db.NewDb())
+        {
+            var act = () => Tenants(db, principal, store: SecretStore(db), unit: NewUnit(db, principal, eventIds: new FixedEventIds(operationId)))
+                .Patch(id, UpdateBody(item, allowMembers: false, clientSecret: "second-secret"), CancellationToken.None);
+
+            (await act.Should().ThrowAsync<AuditOutcomeUnknownException>()).Which.OperationEventId.Should().Be(operationId);
+        }
+
+        await AssertLiveCredentialUnchangedAsync(id, first);
+        (await RowsAsync(id)).Should().HaveCount(rowsBefore, "no audit row was written");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(evidenceBefore, "the store recorded nothing");
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", "second-secret", first);
+    }
+
+    [Fact]
+    public async Task A_registration_delete_whose_commit_acknowledgement_is_lost_is_verified_as_success_with_one_row_and_the_secret_retired()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, secretRef) = await ArrangeDisabledWithSecretAsync(principal);
+
+        var lost = new LostCommitAcknowledgement();
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(lost, attempts))
+            (await Tenants(db, principal, store: SecretStore(db)).Delete(id, CancellationToken.None)).Should().BeOfType<NoContentResult>(
+                "the commit was verified, so the delete succeeded although the registration is now gone");
+
+        lost.Commits.Should().Be(1);
+        attempts.Started.Should().Be(1, "a verified commit is not run again");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be(0);
+        (await SecretStateAsync(secretRef)).Should().Be(SecretState.Disabled);
+        var rows = await RowsAsync(id);
+        var deleted = rows.Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationDeleted).Which;
+        var retired = rows.Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationClientSecretRetired).Which;
+        retired["OperationEventId"].Should().Be(deleted["EventId"]);
+        Field(retired, "reason").Should().Be("registration_deleted");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(1);
+        AssertNoSecretMaterial(rows, "first-secret", secretRef);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync("first-secret", secretRef);
+    }
+
+    [Fact]
+    public async Task A_registration_delete_whose_commit_rolled_back_reruns_once_and_retires_the_secret_once()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, secretRef) = await ArrangeDisabledWithSecretAsync(principal);
+
+        var attempts = new AttemptCounter();
+        await using (var db = _db.NewDb(new RolledBackCommit(), attempts))
+            (await Tenants(db, principal, store: SecretStore(db)).Delete(id, CancellationToken.None)).Should().BeOfType<NoContentResult>();
+
+        attempts.Started.Should().Be(2, "one attempt rolled back and the rerun committed");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be(0);
+        (await SecretStateAsync(secretRef)).Should().Be(SecretState.Disabled);
+        var rows = await RowsAsync(id);
+        rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationDeleted).Should().Be(1);
+        rows.Count(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationClientSecretRetired).Should().Be(1);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(1, "the rolled-back attempt's disable left no evidence");
+    }
+
+    [Fact]
+    public async Task A_registration_delete_whose_operation_lock_cannot_be_taken_is_unknown_and_deletes_and_retires_nothing()
+    {
+        var (admin, _) = await AddUserAsync("admin");
+        var principal = new Principal(admin);
+        var (id, secretRef) = await ArrangeDisabledWithSecretAsync(principal);
+        var rowsBefore = (await RowsAsync(id)).Count;
+        var evidenceBefore = await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;");
+        var operationId = Guid.NewGuid().ToString("N");
+
+        await using (await HeldLock.TakeAsync(_db.ConnectionString, "apperture.audit-op." + operationId))
+        await using (var db = _db.NewDb())
+        {
+            var act = () => Tenants(db, principal, store: SecretStore(db), unit: NewUnit(db, principal, eventIds: new FixedEventIds(operationId)))
+                .Delete(id, CancellationToken.None);
+
+            (await act.Should().ThrowAsync<AuditOutcomeUnknownException>()).Which.OperationEventId.Should().Be(operationId);
+        }
+
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be(1);
+        (await SecretStateAsync(secretRef)).Should().Be(SecretState.Active, "the retirement did not happen");
+        (await RowsAsync(id)).Should().HaveCount(rowsBefore);
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(evidenceBefore);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -500,6 +626,16 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
         Reason(delete).Should().Be("delete/sign_in_lockout");
         delete["Actor"].Should().Be(admin);
         (await RowsAsync(activeId)).Should().NotContain(r => (string)r["Action"]! == AuditActionNames.TenantRegistrationDeleted);
+    }
+
+    /// <summary>A registration with a stored secret (<c>first-secret</c>) that is disabled, so the delete guard allows deleting it.</summary>
+    private async Task<(string Id, string SecretRef)> ArrangeDisabledWithSecretAsync(IPrincipalContext principal)
+    {
+        var (id, secretRef) = await ArrangeActiveWithSecretAsync(principal);
+        var item = await GetAsync(id, principal);
+        await using (var db = _db.NewDb())
+            (await Tenants(db, principal).Patch(id, UpdateBody(item, allowMembers: false, enabled: false), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
+        return (id, secretRef);
     }
 
     /// <summary>An active registration whose client secret (<c>first-secret</c>) is in the SQL secret store.</summary>

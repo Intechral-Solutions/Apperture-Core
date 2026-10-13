@@ -406,6 +406,40 @@ public sealed partial class AuditActionCatalogTests
         EmergencyAccessAuditActionNames.Canonicalized.Should().Be(AuditActionNames.RecoveryAccessCanonicalized);
     }
 
+    [Fact]
+    public void A_retired_entry_must_state_why_and_declares_neither_a_schema_nor_routine_outcomes()
+    {
+        // AUD-1.4 slice 8 (S8-2): a retired action keeps its entry so old rows classify, but nothing produces it any more.
+        static AuditActionDefinition Valid(Func<AuditActionDefinition, AuditActionDefinition>? change = null)
+        {
+            var baseline = new AuditActionDefinition
+            {
+                Action = "harness.closure.retired",
+                Category = AuditCategories.Operations,
+                Severity = AuditSeverities.Standard,
+                Basis = AuditBases.Request,
+                WriteClass = AuditWriteClass.RequiredMutation,
+                IntroducedIn = "harness",
+                IntroducedAfterEpic37Migration = false,
+            };
+            return change is null ? baseline : change(baseline);
+        }
+
+        var ok = Valid(d => d with { Retired = true, RetiredReason = "The writer was removed." });
+        new Action(() => _ = new AuditActionCatalog([ok])).Should().NotThrow();
+
+        new Action(() => _ = new AuditActionCatalog([Valid(d => d with { Retired = true })]))
+            .Should().Throw<ArgumentException>().WithMessage("*states why it is retired*");
+        new Action(() => _ = new AuditActionCatalog([Valid(d => d with { Retired = true, RetiredReason = "  " })]))
+            .Should().Throw<ArgumentException>().WithMessage("*states why it is retired*");
+        new Action(() => _ = new AuditActionCatalog([Valid(d => d with { RetiredReason = "Not retired, but explained." })]))
+            .Should().Throw<ArgumentException>().WithMessage("*belongs only to a retired action*");
+        new Action(() => _ = new AuditActionCatalog([Valid(d => d with { Retired = true, RetiredReason = "x", RoutineOutcomes = new HashSet<string> { AuditOutcomeCodes.Succeeded } })]))
+            .Should().Throw<ArgumentException>().WithMessage("*no routine outcomes*");
+        new Action(() => _ = new AuditActionCatalog([Valid(d => d with { Retired = true, RetiredReason = "x", Details = Catalog.Get(AuditActionNames.ScheduleDeleted).Details })]))
+            .Should().Throw<ArgumentException>().WithMessage("*no detail schema*");
+    }
+
     private static IEnumerable<(string Code, string Certainty)> Defect(string action) =>
         Catalog.Get(action).Defects.Select(d => (d.Code, d.Certainty));
 

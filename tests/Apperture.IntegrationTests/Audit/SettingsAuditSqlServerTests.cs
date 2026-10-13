@@ -43,17 +43,33 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     public SettingsAuditSqlServerTests(ITestOutputHelper output) => _output = output;
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync() => _db = await CreateCatalogAsync(rcsi: false);
+
+    /// <summary>
+    /// The M7 cases run on both isolation modes. They start on the locking catalog every case gets and, for READ_COMMITTED_SNAPSHOT,
+    /// replace it with one of that mode (the audit table is append-only, so a case takes a catalog of its own). The M6 fault cases
+    /// run on the locking catalog only: they prove the unit's verification, not the row locks.
+    /// </summary>
+    private async Task UseIsolationAsync(bool rcsi)
     {
-        _db = await AuditSqlScratch.CreateAsync("Apperture_Aud14Settings_");
+        if (!rcsi)
+            return;
+        await _db.DisposeAsync();
+        _db = await CreateCatalogAsync(rcsi: true);
+    }
+
+    private static async Task<AuditSqlScratch> CreateCatalogAsync(bool rcsi)
+    {
+        var scratch = await AuditIsolation.CreateAsync("Apperture_Aud14Settings", rcsi);
 
         // Every integration setting change takes the integration row lock and requires the row (AUD-1.4 slice 3), so the
         // integration these tests change settings of is a real one, owned by the Shared context.
-        await _db.ExecuteAsync(
+        await scratch.ExecuteAsync(
             $"""
             INSERT INTO Integrations (Id, DisplayName, ModuleId, ScopeKey, ResourceContextId, State, CreatedAt, UpdatedAt)
             VALUES (N'{IntegrationId}', N'Settings Test Integration', N'Sample.Mod', N'instance', N'shared', 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
             """);
+        return scratch;
     }
 
     public async Task DisposeAsync()
@@ -64,9 +80,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     // ---- Platform: ordinary settings ----
 
-    [Fact]
-    public async Task A_platform_ordinary_setting_is_set_changed_left_unchanged_and_reset_each_with_its_row()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_platform_ordinary_setting_is_set_changed_left_unchanged_and_reset_each_with_its_row(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
 
         await SetPlatformAsync(principal, PlatformTextKey, "smtp.one.test", null);
@@ -101,9 +120,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(0);
     }
 
-    [Fact]
-    public async Task The_sender_address_is_recorded_and_the_smtp_username_is_audited_by_name_only()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task The_sender_address_is_recorded_and_the_smtp_username_is_audited_by_name_only(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         const string fromAddress = "notifications@example.test";
         const string smtpUser = "smtp-user@example.test";
@@ -131,9 +153,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
             column.Should().NotContain(smtpUser);
     }
 
-    [Fact]
-    public async Task A_malformed_ordinary_override_can_still_be_reset_and_the_reset_is_audited_without_its_previous_value()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_malformed_ordinary_override_can_still_be_reset_and_the_reset_is_audited_without_its_previous_value(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
         await InsertPlatformOverrideAsync(PlatformSettingKeys.NotificationsDeliveryBatchSize, "\"not-an-integer\"");
 
@@ -148,9 +173,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     // ---- Platform: sensitive settings ----
 
-    [Fact]
-    public async Task A_platform_sensitive_setting_is_replaced_cleared_and_reset_with_its_secret_stored_and_retired_in_the_same_unit()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_platform_sensitive_setting_is_replaced_cleared_and_reset_with_its_secret_stored_and_retired_in_the_same_unit(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
 
         // Replace for the first time: a new secret.
@@ -470,9 +498,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
     // ---- Integration settings ----
 
-    [Fact]
-    public async Task An_integration_ordinary_setting_is_set_and_reset_with_rows_that_target_the_integration_setting()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_integration_ordinary_setting_is_set_and_reset_with_rows_that_target_the_integration_setting(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (admin, principal) = await AdminAsync();
 
         await SetIntegrationAsync(principal, IntegrationTextKey, "one", null);
@@ -496,9 +527,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         Detail(rows[1], "previousValue").Should().Be("one");
     }
 
-    [Fact]
-    public async Task An_integration_sensitive_setting_is_replaced_cleared_and_reset_with_its_secret_rows_in_the_same_unit()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_integration_sensitive_setting_is_replaced_cleared_and_reset_with_its_secret_rows_in_the_same_unit(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
 
         await ReplaceIntegrationSecretAsync(principal, Sentinel, null);
@@ -664,6 +698,287 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
 
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM PlatformSettingValues WHERE ScopeId = N'{IntegrationId}';")).Should().Be(1);
         (await SnapshotAsync(secretRef)).Should().Be(before);
+    }
+
+    // ---- M6 across the setting operations (AUD-1.4 record section 6) ----
+    //
+    // The replace of a platform secret is proven above by its own cases. These run the five M6 obligations (audit insert failure,
+    // lost acknowledgement, confirmed rollback, unknown outcome, operation lock not granted) through the shared runner for the
+    // other operations: an ordinary set and reset, a sensitive clear and reset, and the integration counterparts. Each case takes
+    // the empty catalog this class instance owns (the audit table is append-only), seeds without writing an audit row, and asserts
+    // on the setting row, the secret and its evidence, and the audit rows.
+
+    public enum SettingOp
+    {
+        PlatformSet,
+        PlatformReset,
+        PlatformSecretClear,
+        PlatformSecretReset,
+        IntegrationSet,
+        IntegrationReset,
+        IntegrationSecretClear,
+        IntegrationSecretReplace,
+    }
+
+    public static IEnumerable<object[]> SettingOps() => Enum.GetValues<SettingOp>().Select(op => new object[] { op });
+
+    public static IEnumerable<object[]> SettingOutcomeCases() =>
+        from op in Enum.GetValues<SettingOp>()
+        from committed in new[] { true, false }
+        select new object[] { op, committed };
+
+    private const string M6PlatformValue = "smtp.m6.test";
+    private const string M6IntegrationValue = "m6-integration-value";
+
+    private async Task<AuditedOperationM6Runner> SettingRunnerAsync(SettingOp op, IPrincipalContext principal)
+    {
+        var isSecretKeyOp = op is SettingOp.PlatformSecretClear or SettingOp.PlatformSecretReset or SettingOp.IntegrationSecretClear;
+        if (isSecretKeyOp)
+        {
+            var platform = op is SettingOp.PlatformSecretClear or SettingOp.PlatformSecretReset;
+            var key = platform ? PlatformSecretKey : IntegrationSecretKey;
+            var secretRef = await SeedSecretAsync(key);
+            await InsertOverrideRowAsync(
+                platform ? PlatformSettingScopeConstants.InstanceKind : PlatformSettingScopeConstants.IntegrationKind,
+                platform ? PlatformSettingScopeConstants.InstanceId : IntegrationId,
+                key,
+                JsonSerializer.Serialize(secretRef));
+        }
+        else if (op == SettingOp.PlatformReset)
+        {
+            await InsertOverrideRowAsync(
+                PlatformSettingScopeConstants.InstanceKind, PlatformSettingScopeConstants.InstanceId, PlatformTextKey, JsonSerializer.Serialize("smtp.seed.test"));
+        }
+        else if (op == SettingOp.IntegrationReset)
+        {
+            await InsertOverrideRowAsync(PlatformSettingScopeConstants.IntegrationKind, IntegrationId, IntegrationTextKey, JsonSerializer.Serialize("seed"));
+        }
+
+        var (action, run) = op switch
+        {
+            SettingOp.PlatformSet => (
+                AuditActionNames.PlatformSettingSet,
+                (Func<AppertureDbContext, IAuditedUnitOfWork, Task>)((db, unit) => Platform(db, principal, unit).SetAsync(
+                    PlatformTextKey, new PlatformSettingUpdatePayload { ScalarValue = M6PlatformValue }, null))),
+            SettingOp.PlatformReset => (
+                AuditActionNames.PlatformSettingReset,
+                (db, unit) => Platform(db, principal, unit).ResetAsync(PlatformTextKey)),
+            SettingOp.PlatformSecretClear => (
+                AuditActionNames.PlatformSettingSet,
+                (db, unit) => Platform(db, principal, unit).SetAsync(
+                    PlatformSecretKey, new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear }, null)),
+            SettingOp.PlatformSecretReset => (
+                AuditActionNames.PlatformSettingReset,
+                (db, unit) => Platform(db, principal, unit).ResetAsync(PlatformSecretKey)),
+            SettingOp.IntegrationSet => (
+                AuditActionNames.IntegrationSettingSet,
+                (db, unit) => Integration(db, principal, unit).SetAsync(
+                    IntegrationId, IntegrationTextKey, new PlatformSettingUpdatePayload { ScalarValue = M6IntegrationValue }, null)),
+            SettingOp.IntegrationReset => (
+                AuditActionNames.IntegrationSettingReset,
+                (db, unit) => Integration(db, principal, unit).ResetAsync(IntegrationId, IntegrationTextKey)),
+            SettingOp.IntegrationSecretClear => (
+                AuditActionNames.IntegrationSettingSet,
+                (db, unit) => Integration(db, principal, unit).SetAsync(
+                    IntegrationId, IntegrationSecretKey, new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear }, null)),
+            _ => (
+                AuditActionNames.IntegrationSettingSet,
+                (db, unit) => Integration(db, principal, unit).SetAsync(
+                    IntegrationId,
+                    IntegrationSecretKey,
+                    new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Replace, SecretValue = "replacement-" + Sentinel },
+                    null)),
+        };
+
+        return new AuditedOperationM6Runner(_db, M6SnapshotAsync, action, run, Sentinel);
+    }
+
+    [Theory]
+    [MemberData(nameof(SettingOps))]
+    public async Task An_audit_insert_failure_in_a_setting_change_leaves_nothing(SettingOp op)
+    {
+        var (_, principal) = await AdminAsync();
+        var runner = await SettingRunnerAsync(op, principal);
+
+        await runner.AuditFailureLeavesNothingAsync(principal);
+
+        await AssertSeedIntactAsync(op);
+        await AssertNoSecretMaterialInEvidenceAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(SettingOps))]
+    public async Task A_lost_acknowledgement_of_a_setting_change_is_verified_and_not_run_again(SettingOp op)
+    {
+        var (_, principal) = await AdminAsync();
+        var runner = await SettingRunnerAsync(op, principal);
+
+        await runner.LostAcknowledgementIsVerifiedAndReconciledAsync(principal);
+
+        await AssertCommittedOnceAsync(op);
+        await AssertNoSecretMaterialInEvidenceAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(SettingOps))]
+    public async Task A_confirmed_rollback_of_a_setting_change_reruns_it_once(SettingOp op)
+    {
+        var (_, principal) = await AdminAsync();
+        var runner = await SettingRunnerAsync(op, principal);
+
+        await runner.ConfirmedRollbackRerunsOnceAsync(principal);
+
+        await AssertCommittedOnceAsync(op);
+        await AssertNoSecretMaterialInEvidenceAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(SettingOutcomeCases))]
+    public async Task An_unknown_outcome_of_a_setting_change_is_wholly_committed_or_wholly_absent(SettingOp op, bool committed)
+    {
+        var (_, principal) = await AdminAsync();
+        var runner = await SettingRunnerAsync(op, principal);
+
+        await runner.UnknownOutcomeIsWhollyCommittedOrWhollyAbsentAsync(principal, committed);
+
+        if (committed)
+            await AssertCommittedOnceAsync(op);
+        else
+            await AssertSeedIntactAsync(op);
+        await AssertNoSecretMaterialInEvidenceAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(SettingOps))]
+    public async Task A_setting_change_whose_operation_lock_cannot_be_taken_is_unknown_and_changes_nothing(SettingOp op)
+    {
+        var (_, principal) = await AdminAsync();
+        var runner = await SettingRunnerAsync(op, principal);
+
+        await runner.OperationLockNotGrantedIsUnknownAndChangesNothingAsync(principal);
+
+        await AssertSeedIntactAsync(op);
+        await AssertNoSecretMaterialInEvidenceAsync();
+    }
+
+    /// <summary>Every row the setting operations can change, so a commit differs and a rolled-back or failed attempt does not.</summary>
+    private async Task<string> M6SnapshotAsync()
+    {
+        var values = (await _db.RowsAsync("SELECT Id, ValueJson, RowVersion FROM PlatformSettingValues ORDER BY Id;"))
+            .Select(r => $"{r["Id"]}={r["ValueJson"]}@{Convert.ToBase64String((byte[])r["RowVersion"]!)}");
+        var secrets = (await _db.RowsAsync("SELECT Id, State, ActiveVersion FROM SecretDescriptors ORDER BY Id;"))
+            .Select(r => $"{r["Id"]}/{r["State"]}/{r["ActiveVersion"]}");
+        return string.Join("|", values)
+            + "#" + string.Join("|", secrets)
+            + "#" + await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")
+            + "#" + await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")
+            + "#" + await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs;");
+    }
+
+    private async Task<string> SeedSecretAsync(string settingKey)
+    {
+        await using var db = _db.NewDb();
+        var store = SecretStore(db);
+        var descriptor = await store.CreateAsync(
+            new SecretCreateRequest(
+                PlatformSettingSecretMaterialProvisioner.BuildSecretName(settingKey),
+                PlatformSettingSecretMaterialProvisioner.SecretProvider,
+                SecretMaterialType.OpaqueString));
+        var version = await store.AddVersionAsync(descriptor.SecretId, new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: Sentinel));
+        await store.ActivateVersionAsync(descriptor.SecretId, version);
+        return descriptor.SecretId.Value.ToString("D");
+    }
+
+    private Task InsertOverrideRowAsync(string scopeKind, string scopeId, string key, string valueJson) =>
+        _db.ExecuteAsync(
+            $"""
+            INSERT INTO PlatformSettingValues (Id, [Key], ScopeKind, ScopeId, ValueJson, CreatedUtc, UpdatedUtc)
+            VALUES (N'{scopeKind}:{scopeId}:{key}', N'{key}', N'{scopeKind}', N'{scopeId}', N'{valueJson}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+            """);
+
+    private static bool IsSecretOperation(SettingOp op) =>
+        op is SettingOp.PlatformSecretClear or SettingOp.PlatformSecretReset or SettingOp.IntegrationSecretClear;
+
+    /// <summary>The seeded state is untouched: the setting row is still there, the secret is still live, nothing else was stored.</summary>
+    private async Task AssertSeedIntactAsync(SettingOp op)
+    {
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs;")).Should().Be(0, "an attempt that did not commit recorded nothing");
+        switch (op)
+        {
+            case SettingOp.PlatformSet:
+            case SettingOp.IntegrationSet:
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(0);
+                break;
+            case SettingOp.IntegrationSecretReplace:
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(0);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(0, "the replacement's secret was stored in the unit that did not commit");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")).Should().Be(0);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(0);
+                break;
+            default:
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(1, "the override is still there");
+                if (IsSecretOperation(op))
+                {
+                    (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Active, "the secret was not retired");
+                    (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(0);
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>The operation took effect exactly once: its setting row, its secret and the store's evidence, and its audit rows.</summary>
+    private async Task AssertCommittedOnceAsync(SettingOp op)
+    {
+        var rows = await AuditRowsAsync();
+        var overrides = await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;");
+        switch (op)
+        {
+            case SettingOp.PlatformSet:
+                (await _db.ScalarAsync<string>($"SELECT ValueJson FROM PlatformSettingValues WHERE [Key] = N'{PlatformTextKey}';")).Should().Be(JsonSerializer.Serialize(M6PlatformValue));
+                rows.Should().ContainSingle();
+                Detail(rows[0], "newValue").Should().Be(M6PlatformValue);
+                break;
+            case SettingOp.IntegrationSet:
+                (await _db.ScalarAsync<string>($"SELECT ValueJson FROM PlatformSettingValues WHERE [Key] = N'{IntegrationTextKey}';")).Should().Be(JsonSerializer.Serialize(M6IntegrationValue));
+                rows.Should().ContainSingle();
+                Detail(rows[0], "newValue").Should().Be(M6IntegrationValue);
+                break;
+            case SettingOp.PlatformReset:
+            case SettingOp.IntegrationReset:
+                overrides.Should().Be(0, "the override is gone");
+                rows.Should().ContainSingle();
+                Detail(rows[0], "previousValue").Should().NotBeNull("the reset names the value it removed");
+                break;
+            case SettingOp.IntegrationSecretReplace:
+                overrides.Should().Be(1);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(1);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")).Should().Be(1, "exactly one version, never one per attempt");
+                (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Active);
+                rows.Select(r => (string)r["Action"]!).Should().Equal(AuditActionNames.IntegrationSettingSet, AuditActionNames.IntegrationSettingSecretStored);
+                rows[1]["OperationEventId"].Should().Be(rows[0]["EventId"], "the secret row is a secondary row of the same unit");
+                break;
+            default:
+                overrides.Should().Be(0, "the override is gone");
+                (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Disabled);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(1, "the secret was retired once");
+                var retired = op == SettingOp.IntegrationSecretClear
+                    ? AuditActionNames.IntegrationSettingSecretRetired
+                    : AuditActionNames.PlatformSettingSecretRetired;
+                rows.Count(r => (string)r["Action"]! == retired).Should().Be(1);
+                rows.Should().HaveCount(2, "one primary row and one secondary row");
+                rows[1]["OperationEventId"].Should().Be(rows[0]["EventId"], "the secret row is a secondary row of the same unit");
+                break;
+        }
+    }
+
+    /// <summary>Neither the secret value nor any secret id (either GUID form) is in an audit column or the store's evidence.</summary>
+    private async Task AssertNoSecretMaterialInEvidenceAsync()
+    {
+        var ids = (await _db.RowsAsync("SELECT Id FROM SecretDescriptors;")).Select(r => ((Guid)r["Id"]!).ToString("D")).ToList();
+        var material = new[] { Sentinel, "replacement-" + Sentinel }.Concat(ids).ToArray();
+        AssertNoSecretMaterial(await AuditRowsAsync(), material);
+        await AssertStoreEvidenceHoldsNoSecretMaterialAsync(material);
     }
 
     // ---- service wiring ----
