@@ -19,7 +19,7 @@ public static class GovernanceAuditActionNames
     public const string RuntimeEnrollmentInvitationCreated = "governance.runtime.enrollment.invitation.created";
 
     // Runtime external control (operator control surface)
-    public const string RuntimeShutdownRequestCreated = "governance.runtime.shutdown.request.created";
+    public const string RuntimeShutdownRequestCreated = Apperture.Core.Application.Audit.AuditActionNames.RuntimeShutdownRequestCreated;
 
     /// <summary>Epic 34: audit when audit.read is denied due to permission.</summary>
     public const string AuditReadDenied = "audit.read.denied";

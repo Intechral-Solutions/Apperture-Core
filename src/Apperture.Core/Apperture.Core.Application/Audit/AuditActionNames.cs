@@ -244,6 +244,32 @@ public static class AuditActionNames
     public const string NotificationPipelineTestAttempted = "notification.diagnostics.pipeline_test_attempted";
     public const string NotificationDiagnosticsTestRefused = "notification.diagnostics.test_refused";
 
+    // AUD-1.4 slice 7: the runtime shutdown request was declared by an earlier epic as a legacy-bridge entry and is converted here.
+    // Its row is the request: a duplicate request records nothing.
+    public const string RuntimeShutdownRequestCreated = "governance.runtime.shutdown.request.created";
+
+    // AUD-1.4 slice 7: attention routing. The instance default targets the instance; an override targets its integration. An
+    // override upsert is recorded as created or updated depending on the row it finds under the lock.
+    public const string AttentionRoutingDefaultUpdated = "attention_routing.default.updated";
+    public const string AttentionRoutingOverrideCreated = "attention_routing.override.created";
+    public const string AttentionRoutingOverrideUpdated = "attention_routing.override.updated";
+    public const string AttentionRoutingOverrideCleared = "attention_routing.override.cleared";
+
+    // AUD-1.4 slice 7: module lifecycle. The four changed-state actions were declared by earlier epics as legacy-bridge entries and
+    // are converted here; the blocked attempts are new W3 rows naming blocker codes only. Discovery stays a legacy telemetry row.
+    public const string ModuleInstalled = "module.lifecycle.install";
+    public const string ModuleEnabled = "module.lifecycle.enable";
+    public const string ModuleDisabled = "module.lifecycle.disable";
+    public const string ModuleUninstalled = "module.lifecycle.uninstall";
+    public const string ModuleInstallBlocked = "module.lifecycle.install_blocked";
+    public const string ModuleEnableBlocked = "module.lifecycle.enable_blocked";
+    public const string ModuleDisableBlocked = "module.lifecycle.disable_blocked";
+    public const string ModuleUninstallBlocked = "module.lifecycle.uninstall_blocked";
+
+    /// <summary>The primary actions an override upsert may be recorded under, depending on whether the override already existed.</summary>
+    public static IReadOnlyList<string> AttentionRoutingOverrideUpsertActions { get; } =
+        [AttentionRoutingOverrideCreated, AttentionRoutingOverrideUpdated];
+
     /// <summary>The primary actions a definition enable or disable request may be recorded under.</summary>
     public static IReadOnlyList<string> NotificationDefinitionEnableActions { get; } =
         [NotificationDefinitionEnabled, NotificationDefinitionDisabled];

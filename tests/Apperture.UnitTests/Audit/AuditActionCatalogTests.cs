@@ -106,6 +106,19 @@ public sealed partial class AuditActionCatalogTests
         "notification.diagnostics.test_refused",
     ];
 
+    /// <summary>Actions AUD-1.4 slice 7 adds (attention routing and the blocked module lifecycle attempts); the module lifecycle changes and the runtime shutdown request convert declared actions.</summary>
+    private static readonly string[] Aud14Slice7Additions =
+    [
+        "attention_routing.default.updated",
+        "attention_routing.override.created",
+        "attention_routing.override.updated",
+        "attention_routing.override.cleared",
+        "module.lifecycle.install_blocked",
+        "module.lifecycle.enable_blocked",
+        "module.lifecycle.disable_blocked",
+        "module.lifecycle.uninstall_blocked",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -120,8 +133,10 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 5").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice5Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice6Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 6").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice6Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice7Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 7").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice7Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length,
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length,
             "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
