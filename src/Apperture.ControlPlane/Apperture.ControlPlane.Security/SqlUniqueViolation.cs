@@ -19,6 +19,9 @@ internal static class SqlUniqueViolation
     /// <summary>The one queued external control request of a kind a run can have.</summary>
     public const string QueuedExternalControl = "IX_WorkflowExternalControlRequests_RunId_ControlKind";
 
+    /// <summary>The one queued control request of a kind a runtime can have.</summary>
+    public const string QueuedRuntimeControl = "IX_RuntimeControlRequests_RuntimeId_ControlKind";
+
     public static bool IsOn(DbUpdateException ex, string indexName) => SqlUniqueKeyViolation.IsOnIndex(ex, indexName);
 
     /// <summary>Stops tracking rows whose save failed, leaving the rest of the context's pending changes alone.</summary>

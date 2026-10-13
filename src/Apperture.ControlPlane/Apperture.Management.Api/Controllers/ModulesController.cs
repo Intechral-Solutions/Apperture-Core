@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
@@ -97,7 +98,12 @@ public sealed class ModulesController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (ModuleLifecycleBusyException ex)
+        {
+            // Another module change holds the lifecycle lock: transient, nothing was decided or recorded.
+            return Conflict(new { error = ex.Message, code = ex.Code });
+        }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new ModuleLifecycleActionResultDto(false, "", "unknown", "Discovered", ModuleLifecycleEffect.Immediate.ToString(), [new("invalid_operation", ex.Message)]));
         }

@@ -1116,4 +1116,85 @@ internal static class AuditDetailSchemas
         IdField("targetContextId"),
         new AuditFieldDefinition("blockers", AuditFieldKind.IdList, Required: true, MaxItems: 16),
     ]);
+
+    // ---- Runtime shutdown request (AUD-1.4 slice 7) ----
+    // The runtime instance is the target (by scope key). The request is identified by its persisted id; the requester is the
+    // row's actor and has no field.
+
+    internal static readonly AuditDetailSchema RuntimeShutdownRequestCreated = new(
+    [
+        IdField("runtimeId"),
+        IdField("requestId"),
+        EnumField("controlKind", true, "shutdown"),
+    ]);
+
+    // ---- Attention routing (AUD-1.4 slice 7) ----
+    // The instance default targets the instance; an override targets its integration (name as a snapshot, owning context as the
+    // related reference). A condition key is recorded as a closed enum: overrides accept keys nothing validates, so any key other
+    // than the one the platform defines is recorded as "other" and a caller's text can never reach a field. A change is described
+    // by the names of the fields that differ. Team ids, durations, flag values, recipients and addresses have no field.
+
+    /// <summary>The routing fields an update can change (named, never valued).</summary>
+    internal static readonly string[] AttentionRoutingChangeFields =
+    [
+        "enabled",
+        "sendResolvedNotification",
+        "suppressRemindersWhenAcknowledged",
+        "suppressEscalationWhenAcknowledged",
+        "escalationAfter",
+        "reminderInterval",
+        "primaryTeam",
+        "escalationTeam",
+    ];
+
+    private static AuditFieldDefinition AttentionConditionKeyField() =>
+        EnumField("conditionKey", true, "expected_run_missing", "other");
+
+    internal static readonly AuditDetailSchema AttentionRoutingDefaultUpdated = new(
+    [
+        AttentionConditionKeyField(),
+        FieldKeysField("changedFields", required: true),
+    ]);
+
+    internal static readonly AuditDetailSchema AttentionRoutingOverrideCreated = new(
+    [
+        NameField("name"),
+        AttentionConditionKeyField(),
+    ]);
+
+    internal static readonly AuditDetailSchema AttentionRoutingOverrideUpdated = new(
+    [
+        NameField("name"),
+        AttentionConditionKeyField(),
+        FieldKeysField("changedFields", required: true),
+    ]);
+
+    internal static readonly AuditDetailSchema AttentionRoutingOverrideCleared = new(
+    [
+        NameField("name"),
+        AttentionConditionKeyField(),
+    ]);
+
+    // ---- Module lifecycle (AUD-1.4 slice 7) ----
+    // The module is the target and the related module reference. A row records the persisted installation state before and
+    // after and the restart effect the transition reports; it never claims a module is active in any runtime process. A blocked
+    // attempt names the blocker codes only, never their messages.
+
+    private static readonly string[] ModuleStates = ["discovered", "installed_disabled", "installed_enabled"];
+
+    internal static readonly AuditDetailSchema ModuleLifecycleChanged = new(
+    [
+        IdField("version"),
+        IdField("previousVersion", required: false),
+        EnumField("previousState", true, ModuleStates),
+        EnumField("state", true, ModuleStates),
+        EnumField("restartEffect", true, "immediate", "partial_until_restart", "requires_restart"),
+        FlagField("implicitInstall", required: false),
+    ]);
+
+    internal static readonly AuditDetailSchema ModuleLifecycleBlocked = new(
+    [
+        EnumField("state", true, ModuleStates),
+        new AuditFieldDefinition("blockers", AuditFieldKind.IdList, Required: true, MaxItems: 16),
+    ]);
 }

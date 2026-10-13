@@ -274,10 +274,14 @@ public sealed class AttentionRoutingTestHarness : IDisposable
 
         var integrations = new SqlIntegrationRepository(Db);
         var resolver = new SqlAttentionRecipientResolver(Db, new OperationalTeamRecipientExpander(Db));
-        Routing = new AttentionRoutingManagementService(Db, integrations, resolver);
+        Audit = new Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork();
+        Routing = new AttentionRoutingManagementService(Db, integrations, resolver, Audit);
     }
 
     public AppertureDbContext Db { get; }
+
+    /// <summary>The audited unit the routing service runs in: keeps what each operation staged.</summary>
+    internal Apperture.UnitTests.Audit.RecordingAuditedUnitOfWork Audit { get; }
 
     public IAttentionRoutingManagementService Routing { get; }
 

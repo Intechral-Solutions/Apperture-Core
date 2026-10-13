@@ -471,7 +471,8 @@ public sealed partial class IntegrationRowLockSqlServerTests
                    OR TargetId = N'{integrationId}'
                    AND Action IN (N'{AuditActionNames.IntegrationCreated}', N'{AuditActionNames.IntegrationUpdated}',
                                   N'{AuditActionNames.IntegrationActivated}', N'{AuditActionNames.IntegrationDeactivated}',
-                                  N'{AuditActionNames.IntegrationRetired}')
+                                  N'{AuditActionNames.IntegrationRetired}', N'{AuditActionNames.AttentionRoutingOverrideCreated}',
+                                  N'{AuditActionNames.AttentionRoutingOverrideUpdated}', N'{AuditActionNames.AttentionRoutingOverrideCleared}')
                    OR Action IN (N'{AuditActionNames.BindingCreated}', N'{AuditActionNames.ScheduleCreated}')
                    AND JSON_VALUE(Details, N'$.integrationId') = N'{integrationId}')
               AND OperationEventId <> (SELECT OperationEventId FROM AuditLogs d WHERE d.Action = N'{AuditActionNames.IntegrationDeleted}' AND d.TargetId = N'{integrationId}')

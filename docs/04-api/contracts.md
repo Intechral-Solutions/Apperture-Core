@@ -287,5 +287,5 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
     - `runtime.enroll.invitation.create` gates operator creation of enrollment invitations (`POST /api/enroll/invitation`).
     - `runtime.control.shutdown.request` gates request of runtime shutdown (`POST /api/runtime-instances/{runtimeId}/controls/shutdown/request`).
   - Privileged operator control (`POST /api/enroll/invitation`) writes durable audit records on successful authorization and invitation creation.
-  - Runtime shutdown request creation (`runtime.shutdown.request`) writes durable audit records on successful authorization and capability checks.
+  - Runtime shutdown request creation records `governance.runtime.shutdown.request.created` (a required mutation with basis `request` and outcome `requested`) in the same transaction as the queued request, after the authorization and capability checks. The row names the runtime, the request id and the control kind, and its actor is the requesting principal. A duplicate request returns the request already queued and records nothing.
   - Runtime enrollment (`POST /api/enroll`) remains token-authenticated with `AllowAnonymous`, and validates token-scoped environment mapping before registering runtime identity.

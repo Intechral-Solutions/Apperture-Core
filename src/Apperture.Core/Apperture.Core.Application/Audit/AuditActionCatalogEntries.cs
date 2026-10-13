@@ -1470,10 +1470,11 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.RuntimeInstance,
             Basis = AuditBases.Request,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.RuntimeShutdownRequestCreated,
             IntroducedIn = "de115806",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
-            Writer = "RuntimeControlService.cs:104",
+            Writer = "RuntimeControlService.cs",
         },
         new()
         {
@@ -2535,7 +2536,7 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
-            Writer = "SqlModuleRegistryService.cs:88",
+            Writer = "SqlModuleRegistryService.cs:840",
         },
         new()
         {
@@ -2545,11 +2546,12 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Module,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ModuleLifecycleChanged,
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
             OutcomeMap = Map(("blocked", AuditOutcomeCodes.Blocked)),
-            Writer = "SqlModuleRegistryService.cs:100",
+            Writer = "SqlModuleRegistryService.cs",
         },
         new()
         {
@@ -2559,11 +2561,12 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Module,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ModuleLifecycleChanged,
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
             OutcomeMap = Map(("blocked", AuditOutcomeCodes.Blocked)),
-            Writer = "SqlModuleRegistryService.cs:135",
+            Writer = "SqlModuleRegistryService.cs",
         },
         new()
         {
@@ -2573,11 +2576,12 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Module,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ModuleLifecycleChanged,
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
             OutcomeMap = Map(("blocked", AuditOutcomeCodes.Blocked)),
-            Writer = "SqlModuleRegistryService.cs:156",
+            Writer = "SqlModuleRegistryService.cs",
         },
         new()
         {
@@ -2587,11 +2591,12 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.Module,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.ModuleLifecycleChanged,
             IntroducedIn = "ae19bb45",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
             OutcomeMap = Map(("blocked", AuditOutcomeCodes.Blocked)),
-            Writer = "SqlModuleRegistryService.cs:183",
+            Writer = "SqlModuleRegistryService.cs",
         },
         new()
         {
@@ -2813,6 +2818,110 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "AUD-1.4 slice 6",
             IntroducedAfterEpic37Migration = true,
             Writer = "NotificationPipelineTestService.cs",
+        },
+        new()
+        {
+            Action = "attention_routing.default.updated",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Instance,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AttentionRoutingDefaultUpdated,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "AttentionRoutingManagementService.cs",
+        },
+        new()
+        {
+            Action = "attention_routing.override.created",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Integration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AttentionRoutingOverrideCreated,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "AttentionRoutingManagementService.cs",
+        },
+        new()
+        {
+            Action = "attention_routing.override.updated",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Integration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AttentionRoutingOverrideUpdated,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "AttentionRoutingManagementService.cs",
+        },
+        new()
+        {
+            Action = "attention_routing.override.cleared",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Integration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AttentionRoutingOverrideCleared,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "AttentionRoutingManagementService.cs",
+        },
+        new()
+        {
+            Action = "module.lifecycle.install_blocked",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Module,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ModuleLifecycleBlocked,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SqlModuleRegistryService.cs",
+        },
+        new()
+        {
+            Action = "module.lifecycle.enable_blocked",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Module,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ModuleLifecycleBlocked,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SqlModuleRegistryService.cs",
+        },
+        new()
+        {
+            Action = "module.lifecycle.disable_blocked",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Module,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ModuleLifecycleBlocked,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SqlModuleRegistryService.cs",
+        },
+        new()
+        {
+            Action = "module.lifecycle.uninstall_blocked",
+            Category = AuditCategories.Configuration,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Module,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ModuleLifecycleBlocked,
+            IntroducedIn = "AUD-1.4 slice 7",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SqlModuleRegistryService.cs",
         },
         new()
         {

@@ -24,9 +24,11 @@ public interface IAttentionRoutingManagementService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates or updates an Integration's attention-routing override for one condition. The write runs in one transaction that
-    /// first takes the integration row lock and requires the integration to exist, so an integration delete that wins the lock
-    /// makes this refuse, and an override that commits first is visible to the delete's blocker check (AUD-1.4).
+    /// Creates or updates an Integration's attention-routing override for one condition. The write is one audited unit: its
+    /// transaction first takes the integration row lock and requires the integration to exist, so an integration delete that wins
+    /// the lock makes this refuse, and an override that commits first is visible to the delete's blocker check. The change and
+    /// its audit row (created or updated, naming the fields that changed) commit together. A command that changes nothing about
+    /// an existing override writes and records nothing.
     /// </summary>
     /// <param name="reauthorize">
     /// The caller's own authorization check, run again once the lock is held, so a decision taken before an ownership move
@@ -43,6 +45,11 @@ public interface IAttentionRoutingManagementService
         CancellationToken cancellationToken = default,
         Func<CancellationToken, ValueTask>? reauthorize = null);
 
+    /// <summary>
+    /// Updates the instance-wide default routing for one condition, as one audited unit with the row locked. A command that
+    /// changes nothing writes and records nothing.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The condition has no default routing, or a named operational team does not exist.</exception>
     ValueTask UpsertInstanceDefaultRoutingAsync(
         string conditionKey,
         AttentionRoutingUpsertCommand command,
@@ -56,7 +63,8 @@ public interface IAttentionRoutingManagementService
     /// CTX-3B Plan 6a: Integration hard-delete blocks on attention-routing overrides, and before this
     /// operation existed there was no way for an operator to clear that blocker. The service previously
     /// exposed upsert only.
-    /// <para>The removal runs in one transaction that first takes the integration row lock, like
+    /// <para>The removal is one audited unit (the removal and its audit row commit together; a missing override records nothing).
+    /// Its transaction first takes the integration row lock, like
     /// <see cref="UpsertIntegrationRoutingAsync"/>, so an integration delete that wins the lock makes it refuse and an ownership
     /// move cannot commit between the caller's authorization and the removal. A missing override is still a no-op that returns
     /// false.</para>

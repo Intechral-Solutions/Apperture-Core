@@ -80,6 +80,11 @@ public sealed class AuditDetailSchemaTests
             // recorded as fixed lower-case names; the verifier's summary text and the remote system's content are never taken).
             typeof(Apperture.Core.Domain.Connector.ConnectionVerificationStatus),
             typeof(Apperture.Core.Application.ConnectionTools.ConnectionToolOutcome),
+            // AUD-1.4 slice 7: a module's persisted lifecycle state and restart effect (closed enums, recorded as fixed snake_case
+            // names) and a runtime control request's persisted numeric id (recorded as its decimal text).
+            typeof(Apperture.ModuleSdk.Abstractions.ModuleLifecycleState),
+            typeof(Apperture.Core.Application.Services.ModuleLifecycleEffect),
+            typeof(long),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),
@@ -196,9 +201,9 @@ public sealed class AuditDetailSchemaTests
     [Fact]
     public void An_event_cannot_be_built_for_an_action_still_on_the_append_bridge()
     {
-        // Module lifecycle stays on the bridge until AUD-1.4 slice 7 converts it.
+        // Module discovery stays on the bridge (a telemetry row, AUD-1.5); the module lifecycle changes were converted by AUD-1.4 slice 7.
         var act = () => AuditEvent.Create(
-            AuditActionCatalog.Default.Get("module.lifecycle.install"), null, AuditOutcomeCodes.Succeeded, Values());
+            AuditActionCatalog.Default.Get("module.lifecycle.discover"), null, AuditOutcomeCodes.Succeeded, Values());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*append bridge*");
     }

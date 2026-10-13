@@ -247,9 +247,9 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
 
         // Insert, then update: one row, the second command's values.
         await using (var db = scratch.NewDb())
-            await Routing(db).UpsertIntegrationRoutingAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: true));
+            await Routing(db, principal).UpsertIntegrationRoutingAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: true));
         await using (var db = scratch.NewDb())
-            await Routing(db).UpsertIntegrationRoutingAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: false));
+            await Routing(db, principal).UpsertIntegrationRoutingAsync(new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: false));
         (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM IntegrationAttentionRoutings WHERE IntegrationId = N'{integrationId}';")).Should().Be(1);
         (await scratch.ScalarAsync<bool>($"SELECT IsEnabled FROM IntegrationAttentionRoutings WHERE IntegrationId = N'{integrationId}';")).Should().BeFalse();
 
@@ -443,11 +443,11 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
                         new NotificationSubscriptionAddRequest(integrationId, NotificationRecipientKinds.Principal, "user-" + Guid.NewGuid().ToString("N")[..6], null, false));
                     break;
                 case WriterKind.RoutingUpsert:
-                    await Routing(db).UpsertIntegrationRoutingAsync(
+                    await Routing(db, principal).UpsertIntegrationRoutingAsync(
                         new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, RoutingCommand(enabled: true), reauthorize: recheck);
                     break;
                 case WriterKind.RoutingClear:
-                    await Routing(db).ClearIntegrationRoutingAsync(
+                    await Routing(db, principal).ClearIntegrationRoutingAsync(
                         new IntegrationId(integrationId), AttentionConditionKeys.ExpectedRunMissing, reauthorize: recheck);
                     break;
                 case WriterKind.BindingCreate:
@@ -594,8 +594,8 @@ public sealed partial class IntegrationRowLockSqlServerTests : IClassFixture<Int
             NewUnit(db, principal));
     }
 
-    private static AttentionRoutingManagementService Routing(AppertureDbContext db) =>
-        new(db, new SqlIntegrationRepository(db), null!);
+    private static AttentionRoutingManagementService Routing(AppertureDbContext db, Principal principal) =>
+        new(db, new SqlIntegrationRepository(db), null!, NewUnit(db, principal));
 
     private static AttentionRoutingUpsertCommand RoutingCommand(bool enabled) =>
         new(enabled, true, true, true, TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(10), null, null);
