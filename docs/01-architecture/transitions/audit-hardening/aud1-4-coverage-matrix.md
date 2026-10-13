@@ -187,7 +187,8 @@ Severity is the closure-risk reading: MED = an acceptance obligation in the reco
 | G4 | MED/LOW | **Closed** | `AuthConfigurationAuditSqlServerTests`: confirmed rollback reruns once, lock not granted, and the registration delete's lost acknowledgement, rollback and lock cases |
 | G5 | LOW | Accepted | The secret store has no operation of its own; it joins its owner's unit, whose lock-not-granted case is proven for connections, Entra registrations and settings |
 | G6 | MED | **Closed** | `OwnershipMoveSqlServerTests.A_blocked_schedule_move_changes_nothing_and_is_recorded_after_the_unit_as_a_rejection_at_the_source`, two blockers, both isolation modes |
-| G7 | LOW | Accepted | The M6 matrices run a representative subset of operations per family (by design, stated in each suite); the operations that differ in kind are covered |
+| G7 | LOW | Accepted, except one delete | The M6 matrices run a representative subset of operations per family (by design, stated in each suite); the operations that differ in kind are covered. The subset had omitted a delete, the removal of a user opt-out; the closure review required it (M-1) and it is now in the matrix (next row) |
+| M-1 (closure review) | MED | **Closed** | `NotificationSubscriptionSqlServerTests`: `OptOutRemove` joins the M6 operations (audit insert failure, lost acknowledgement, confirmed rollback, unknown outcome committed and absent, lock not granted) and has its own test: `A_lost_acknowledgement_of_an_opt_out_removal_reports_success_with_the_row_gone_and_one_audit_row` |
 | G8 | LOW/MED | Accepted | The M6 mechanics (fault injection, verification under the operation lock) run on locking READ COMMITTED, and the integration delete suite also on READ_COMMITTED_SNAPSHOT; the verification read is a locking read by contract (gate section 13.5), so it does not depend on the isolation mode |
 | G9 | LOW | **Closed** | The three non-deterministic races are deterministic (held row or gate, both writers observed waiting on the server's lock view, then release; both orders where the writers differ): integration concurrent updates, schedule delete pair, binding delete pair; the binding two-creates race too |
 | G10 | LOW/MED | **Closed as scoped** | The schedule delete suite's M7 and race cases, the binding two-creates race and delete pair, and the settings M7 cases now run on both isolation modes; the M6 matrices stay on locking READ COMMITTED (G8) |
@@ -242,6 +243,8 @@ Limit of the non-vacuity evidence. The deterministic race tests fail with "the w
 | Routing ownership-move SQL case | ATT | proves order with a stand-in re-check, not `ReauthorizeRoutingWriteAsync` (record 18.8); real callback only in unit tests |
 
 ## 7. Counts
+
+The counts are those of the matrix when it was drawn. At closure: SQL M7 evidence is 77 of 77 (the schedule move rejection was added); the lock-not-granted cell is present for settings, Entra registrations and the integration delete (the secret store is accepted, G5); the Entra confirmed-rollback cell and the integration delete's committed unknown-outcome branch are present; the routing unique-index cell is present, with a finding (record 19.7, F5); and the user opt-out removal has its M6 cells. Section 6.0 is the authoritative state.
 
 | Measure | Count |
 |---|---|
