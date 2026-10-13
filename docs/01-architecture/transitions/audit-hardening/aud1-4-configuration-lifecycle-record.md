@@ -1673,3 +1673,45 @@ Date: 2026-10-13. Branch `aud-1.4-slice-8-closure`, from `origin/master` at `198
 |---|---|
 | S8-1 | **The guards are identifier-based and allow-list based, never line- or format-based.** A guard reads source files in the repository, resolves the audit action constants a file references, and compares them with the catalog. An allow-list names files and states why each is allowed; a new file or a new action class fails the test until a reviewer extends the list with a reason. |
 | S8-2 | **Retired actions are marked in the catalog, not removed.** An action that no production code writes any more, but whose historical rows must keep their classification (gate section 15), is declared with `Retired = true` and a reason. It keeps its entry, its outcome map and its legacy target rule, so old rows read exactly as before. It gets no schema and no producer. A test pins the exact retired set, requires every W1 or W2 entry without a schema to be in it, and requires that no production file writes a retired action. |
+| S8-3 | **A retired entry may carry no routine outcomes.** A retired action's rows are finite history, and routine marking is a present-day noise decision about something no longer written. The catalog constructor refuses a retired entry that has a schema or routine outcomes, or has no reason, and an active entry that carries a reason. `RetiredReason` and `Writer` hold commit hashes and package labels, as `IntroducedIn` and `Writer` already do; they are catalog metadata read only by the catalog, never operator-facing content. |
+| S8-4 | **Writers outside the AUD-1.4 families are recorded, not invented around.** The inventory found operator and Entra writes that the gate's families do not list (19.2, findings F1 and F2). Converting one needs a new catalog action, and a target, category and write-class ruling that existing precedent does not settle, so slice 8 records them for an owner ruling instead of adding an action to make a count pass. |
+
+### 19.2 Writer inventory (source-backed)
+
+The scan started from the persistence write, not from the services: every file that holds an `AppertureDbContext` (99) was searched for `DbSet` writes, `Entry(...).State`, `ExecuteUpdate` and `ExecuteDelete`, raw SQL and the lock reads; every mutating controller action (139), the one minimal-API `POST /signout`, the 27 hosted and background services, the Management, UI, Worker, Scheduler and CLI hosts, the bootstrap and CLI libraries, `scripts/**` and `deploy/**` were traced to the persistence call. The in-scope tables are 22 entity sets owned by the families of section 1 (settings, the secret store, integrations, schedules and assignments, bindings, connections, resource contexts, the notification tables, managed contacts, the two routing tables, `ModuleInstallationStates`, `RuntimeControlRequests` and the secret-owning `EntraInstanceRegistrations`).
+
+**Result.** 19 production files write those sets. 17 run inside an audited unit of an AUD-1.4 (or AUD-1.2) family action: every settings, secret, integration, binding, schedule, connection, context, ownership, notification, contact, routing, module and shutdown writer of slices 1 to 7, and the repositories they call. Two are decided exclusions: the worker's shutdown *applier* (runtime state; its `applied` transition has no audit row, section 7, unassigned) and `HistoricalActorNormalization` (IAM-9 maintenance). No converted-family service accepts `IAuditService`; exactly 14 production files reference it, and the only remaining appenders are W3 (sign-in failures, audit-read denials) and W4 telemetry (dispatch, definition unavailable, startup composition, module discovery), none with a detail schema. Migrations and their seeds, the startup permission and role repairs, operational teams (LST-1.4), the delivery pipeline, run and instance state and module business data are out of scope by decision.
+
+**Gaps found.** No in-scope omission whose fix follows an existing pattern was found, and no production writer was changed by this slice. Four findings outside the family list are recorded for an owner (section 19.7): the unaudited attention-incident acknowledgement (F1), the unaudited Entra probe-result columns (F2), dead write APIs with no caller (F3) and the bootstrap CLI's no-op audit writer (F4).
+
+### 19.3 Retired catalog entries
+
+Four W1 or W2 catalog entries had no schema and no writer. History shows when each writer was removed, by a converted package that replaced it:
+
+| Action | Writer removed by | Reason |
+|---|---|---|
+| `governance.break_glass.admin_operation` (W2) | `732742c5`, 2026-10-06 (AUD-1.2, D3) | The pre-mutation marker row went; the unit's rows carry `viaRecoveryAccess` |
+| `execution.operation_item.bulk_retry.requested` (W1) | `fa26897d`, 2026-10-07 (AUD-1.3, D16) | The batch request row went; each committed item records its own row naming the batch |
+| `execution.operation_item.bulk_retry.completed` (W1) | `fa26897d` (D16) | The summary row changed no state and went with the request row |
+| `recovery.blocked_work.retry_dispatched` (W1) | `4ede7a08`, 2026-10-07 (AUD-1.3, D8) | The second best-effort row went; the request row carries the new run id |
+
+They stay in the catalog, marked `Retired` with a reason (S8-2, S8-3), and keep their outcome maps and every other classification field, so old rows read exactly as before; the constants stay as historical names. The audit contract needed no ruling: the gate's catalog covers every name written, and its section 15 requires old rows to keep their classification.
+
+### 19.4 Executable guards
+
+`Aud14ClosureGuardTests` (21 tests) and its source reader `RepositorySource` are identifier- and allow-list based (S8-1). A guard reads `src/**` once, resolves the audit action constants a file uses and compares them with the catalog; it never depends on line numbers or formatting, and each allow-list entry carries its reason.
+
+| Guard | Proves |
+|---|---|
+| G1 | The retired set is exactly the four names; every active W1 or W2 entry has a schema; every W1 or W2 entry without one is retired; a retired entry has a reason, no schema and no routine outcomes; no event can be built for a retired action; a historical row of each still classifies |
+| G2 | Every active action with a schema is named by a typed producer in `AuditEvent.cs` or `AuditEvents.*.cs` |
+| G3 | No production `.cs`, `.razor` or `.cshtml` file names a retired action's string or any constant carrying its value, outside the four definition sites |
+| G4 | Only the 14 reviewed files reference `IAuditService` or build an `AuditRecord`; for each appender the resolved actions equal the listed ones and all are W3 or W4 without a schema |
+| G5 | The 19 reviewed files, and only they, write the 22 in-scope sets (re-derived from source on every run); a new writer file, a new set in a listed file or a stale entry fails with a message that says what to do |
+| G6 | The coverage matrix (19.6): each family is mapped, in the test file's header, to its existing per-slice pins and SQL suites, which are not duplicated |
+
+The guards were checked to fail when they should, by temporary mutations that were reverted: an `IAuditService` field and a `new AuditRecord` in a new file, a `DbSet.Add` plus `SaveChanges` in a new file, a retired string and constant in a new file, a W1 action in an appended list, a removed producer reference, and an extra set written by an existing repository.
+
+### 19.5 Catalog, schema and API contract reconciliation
+
+The active catalog was checked against the producers (G2), the write classes (G1, G4) and the schemas (the existing detail-schema tests): every active W1 and W2 action has a schema and a typed producer, no converted mutation reaches the append bridge, and the legacy entries that remain are W3 or W4. `docs/04-api/contracts.md` gained the slice 7 section: the audit rows of the three families, the response table (200 with `succeeded: false` for a refused module transition, 409 `module_lifecycle_busy`, the idempotent 202 for a repeated or concurrent shutdown request, `outcome_unknown` and `committed_result_unavailable`), what changed for callers, the route rows for module lifecycle and the instance default routing, and the corrected recovery note for the module enable path. Slices 0 to 6 already had their sections.
