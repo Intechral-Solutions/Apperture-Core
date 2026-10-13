@@ -96,7 +96,8 @@ public sealed class SqlRuntimeIdentityService : IRuntimeIdentityService
         return new EnrollmentResult(request.RuntimeId, true, "Runtime credential rollover completed.");
     }
 
-    private static IReadOnlyList<string> DeserializeScopes(string json)
+    /// <summary>The capability scopes a runtime identity row declares (a JSON array of strings).</summary>
+    internal static IReadOnlyList<string> DeserializeScopes(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return Array.Empty<string>();

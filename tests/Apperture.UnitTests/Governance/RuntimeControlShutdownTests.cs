@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Text.Json;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Runtime;
@@ -7,6 +9,7 @@ using Apperture.Core.Domain.Workflow;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Security.Trust;
 using Apperture.Management.Api.Controllers;
+using Apperture.UnitTests.Audit;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
@@ -163,74 +166,276 @@ public sealed class RuntimeControlShutdownTests
         status.Should().Be(RuntimeControlStatusNames.Queued);
     }
 
-    [Fact]
-    public async Task Service_RequestShutdownAsync_PersistsQueuedRequest_AndAppendsAudit()
+    // ---- The request as an audited unit (AUD-1.4 slice 7) ----
+
+    private const string RuntimeId = "rt-1";
+
+    private sealed class ServiceHarness
     {
-        var db = NewDb();
-        var runtimeIdentity = new StubRuntimeIdentityServiceForService(runtimeIdentity: new RuntimeIdentity(
-            "rt-1",
-            "Runtime 1",
-            "PublicKey",
-            "pk",
-            null,
-            [RuntimeCapabilityCatalog.ControlShutdown],
-            DateTimeOffset.UtcNow));
+        public ServiceHarness(bool declareCapability = true, bool seedIdentity = true, bool stubSeesRuntime = true)
+        {
+            Db = NewDb();
+            Unit = new RecordingAuditedUnitOfWork();
+            var scopes = declareCapability
+                ? new[] { RuntimeCapabilityCatalog.ControlShutdown }
+                : new[] { RuntimeCapabilityCatalog.InspectionCapabilities };
+            if (seedIdentity)
+            {
+                Db.RuntimeIdentities.Add(new RuntimeIdentityEntity
+                {
+                    Id = RuntimeId,
+                    DisplayName = "Runtime 1",
+                    CredentialType = "PublicKey",
+                    PublicKeyOrThumbprint = "pk",
+                    DeclaredScopesJson = JsonSerializer.Serialize(scopes),
+                    RegisteredAt = DateTimeOffset.UtcNow,
+                });
+                Db.SaveChanges();
+            }
 
-        var actor = new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false);
-        var principalContext = new StubPrincipalContextForService(actor);
-        var environment = new StubEnvironmentContext("local");
-        var audit = new StubAuditService();
+            // The identity service the pre-unit check uses; it can disagree with the row (a runtime removed or changed since).
+            Identity = stubSeesRuntime
+                ? new StubRuntimeIdentityServiceForService(new RuntimeIdentity(RuntimeId, "Runtime 1", "PublicKey", "pk", null, [RuntimeCapabilityCatalog.ControlShutdown], DateTimeOffset.UtcNow))
+                : new StubRuntimeIdentityServiceForService(runtimeIdentity: null);
+            Service = new RuntimeControlService(Db, Identity, new StubEnvironmentContext("local"), Unit);
+        }
 
-        var service = new RuntimeControlService(
-            db: db,
-            runtimeIdentity: runtimeIdentity,
-            principalContext: principalContext,
-            environment: environment,
-            audit: audit);
-
-        var result = await service.RequestShutdownAsync("rt-1", CancellationToken.None);
-
-        result.Should().NotBeNull();
-        result!.Status.Should().Be(RuntimeControlStatusNames.Queued);
-
-        var row = await db.RuntimeControlRequests.FirstAsync();
-        row.RuntimeId.Should().Be("rt-1");
-        row.ControlKind.Should().Be(RuntimeControlKindNames.Shutdown);
-        row.Status.Should().Be(RuntimeControlStatusNames.Queued);
-        row.RequestedBy.Should().Be("u1");
-
-        audit.AppendCalls.Should().Be(1);
-        audit.LastRecord!.Action.Should().Be(GovernanceAuditActionNames.RuntimeShutdownRequestCreated);
-        audit.LastRecord!.Resource!.ResourceType.Should().Be(ResourceTypeConstants.RuntimeInstance);
+        public AppertureDbContext Db { get; }
+        public RecordingAuditedUnitOfWork Unit { get; }
+        public StubRuntimeIdentityServiceForService Identity { get; }
+        public RuntimeControlService Service { get; }
     }
 
     [Fact]
-    public async Task Service_RequestShutdownAsync_IsIdempotent_ForQueuedRequests()
+    public async Task Service_RequestShutdownAsync_PersistsQueuedRequest_AndStagesExactlyOnePrimaryRow()
+    {
+        var h = new ServiceHarness();
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.Status.Should().Be(RuntimeControlStatusNames.Queued);
+        var row = await h.Db.RuntimeControlRequests.SingleAsync();
+        row.RuntimeId.Should().Be(RuntimeId);
+        row.ControlKind.Should().Be(RuntimeControlKindNames.Shutdown);
+        row.Status.Should().Be(RuntimeControlStatusNames.Queued);
+        result.Id.Should().Be(row.Id);
+
+        var operation = h.Unit.Operations.Should().ContainSingle().Subject;
+        operation.Operation.PrimaryAction.Should().Be(AuditActionNames.RuntimeShutdownRequestCreated);
+        operation.Operation.Actor.IsCurrentPrincipal.Should().BeTrue("the actor is the authenticated principal, never a caller-supplied value");
+        operation.NoOp.Should().BeFalse();
+
+        var staged = h.Unit.Staged.Should().ContainSingle().Subject;
+        staged.Action.Should().Be(AuditActionNames.RuntimeShutdownRequestCreated);
+        staged.OutcomeCode.Should().Be(AuditOutcomeCodes.Requested);
+        staged.Target.Should().Be(new AuditTarget(AuditTargetTypes.RuntimeInstance, ScopeKeyConstants.RuntimeInstance("local", RuntimeId)));
+        staged.Fields.Keys.Should().BeEquivalentTo("runtimeId", "requestId", "controlKind");
+        staged.Fields["runtimeId"].Should().Be(RuntimeId);
+        staged.Fields["requestId"].Should().Be(row.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        staged.Fields["controlKind"].Should().Be("shutdown");
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_RecordsTheUnitsActorAsRequestedBy()
+    {
+        var h = new ServiceHarness();
+        h.Unit.CurrentPrincipalActor = AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_requester"));
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        var recorded = h.Unit.CurrentPrincipalActor.RecordedValue;
+        recorded.Should().Be("usr_requester");
+        result!.RequestedBy.Should().Be(recorded);
+        (await h.Db.RuntimeControlRequests.SingleAsync()).RequestedBy.Should().Be(recorded);
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ADuplicateReturnsTheQueuedRequestUnchanged_DeclaresANoOpAndStagesNothing()
+    {
+        var h = new ServiceHarness();
+        h.Unit.CurrentPrincipalActor = AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_first"));
+        var first = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        h.Unit.CurrentPrincipalActor = AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_second"));
+        var second = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        second.Should().NotBeNull();
+        second!.Id.Should().Be(first!.Id);
+        second.RequestedBy.Should().Be("usr_first", "an existing request is never re-attributed");
+        h.Unit.Operations.Should().HaveCount(2);
+        h.Unit.Operations[1].NoOp.Should().BeTrue();
+        h.Unit.Operations[1].Staged.Should().BeEmpty();
+        h.Unit.Staged.Should().ContainSingle("a duplicate request records nothing");
+        (await h.Db.RuntimeControlRequests.ToListAsync()).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_AnAppliedRequestDoesNotBlockANewOne()
+    {
+        var h = new ServiceHarness();
+        var first = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+        var row = await h.Db.RuntimeControlRequests.SingleAsync();
+        row.Status = RuntimeControlStatusNames.Applied;
+        await h.Db.SaveChangesAsync();
+        h.Db.ChangeTracker.Clear();
+
+        var again = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        again!.Id.Should().NotBe(first!.Id);
+        h.Unit.Staged.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_UnknownRuntime_ReturnsNull_AndStagesNothing()
+    {
+        var h = new ServiceHarness(seedIdentity: false, stubSeesRuntime: false);
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        result.Should().BeNull();
+        h.Unit.Operations.Should().BeEmpty("a runtime that does not exist is decided before the unit opens");
+        (await h.Db.RuntimeControlRequests.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_RuntimeWithoutTheCapability_ReturnsNull_AndStagesNothing()
+    {
+        var h = new ServiceHarness(declareCapability: false);
+        var withoutCapability = new RuntimeControlService(
+            h.Db,
+            new StubRuntimeIdentityServiceForService(new RuntimeIdentity(RuntimeId, "Runtime 1", "PublicKey", "pk", null, [RuntimeCapabilityCatalog.InspectionCapabilities], DateTimeOffset.UtcNow)),
+            new StubEnvironmentContext("local"),
+            h.Unit);
+
+        (await withoutCapability.RequestShutdownAsync(RuntimeId, CancellationToken.None)).Should().BeNull();
+        h.Unit.Operations.Should().BeEmpty();
+
+        // The identity service claimed the capability, but the row read under the lock does not declare it.
+        (await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None)).Should().BeNull();
+        h.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        h.Unit.Staged.Should().BeEmpty();
+        (await h.Db.RuntimeControlRequests.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ARuntimeRemovedAfterTheEarlyCheck_IsANoOpAndReturnsNull()
+    {
+        var h = new ServiceHarness(seedIdentity: false);
+
+        (await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None)).Should().BeNull();
+
+        h.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        h.Unit.Staged.Should().BeEmpty();
+        (await h.Db.RuntimeControlRequests.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ALostAcknowledgementReturnsTheRealRequestWithItsOriginalActor()
+    {
+        var h = new ServiceHarness();
+        h.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Lost;
+        h.Unit.CurrentPrincipalActor = AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_requester"));
+
+        var result = await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        var row = await h.Db.RuntimeControlRequests.SingleAsync();
+        result.Should().BeEquivalentTo(new RuntimeControlRequestResult(
+            row.Id, RuntimeId, RuntimeControlKindNames.Shutdown, RuntimeControlStatusNames.Queued, row.RequestedAt, "usr_requester", null, null, null));
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_AnUnknownOutcomePropagates()
+    {
+        var h = new ServiceHarness();
+        h.Unit.Acknowledgement = RecordingAuditedUnitOfWork.CommitAcknowledgement.Unknown;
+
+        var act = async () => await h.Service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        await act.Should().ThrowAsync<AuditOutcomeUnknownException>();
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_ReconstructReadsTheRequestByTheIdTheRowRecords()
     {
         var db = NewDb();
-        var runtimeIdentity = new StubRuntimeIdentityServiceForService(runtimeIdentity: new RuntimeIdentity(
-            "rt-1",
-            "Runtime 1",
-            "PublicKey",
-            "pk",
-            null,
-            [RuntimeCapabilityCatalog.ControlShutdown],
-            DateTimeOffset.UtcNow));
+        db.RuntimeControlRequests.Add(new RuntimeControlRequestEntity
+        {
+            RuntimeId = RuntimeId,
+            ControlKind = RuntimeControlKindNames.Shutdown,
+            Status = RuntimeControlStatusNames.Applied,
+            RequestedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            RequestedBy = "usr_original",
+            AppliedAt = DateTimeOffset.UtcNow,
+            AppliedBy = "worker-1",
+        });
+        await db.SaveChangesAsync();
+        var id = (await db.RuntimeControlRequests.SingleAsync()).Id;
+        var unit = new ReconstructOnlyUnit(committedDetails: $"{{\"runtimeId\":\"{RuntimeId}\",\"requestId\":\"{id}\",\"controlKind\":\"shutdown\"}}");
+        var service = new RuntimeControlService(
+            db,
+            new StubRuntimeIdentityServiceForService(new RuntimeIdentity(RuntimeId, "Runtime 1", "PublicKey", "pk", null, [RuntimeCapabilityCatalog.ControlShutdown], DateTimeOffset.UtcNow)),
+            new StubEnvironmentContext("local"),
+            unit);
 
-        var actor = new HumanActor(new ActorId("u1"), "u1", isBreakGlassSession: false);
-        var principalContext = new StubPrincipalContextForService(actor);
-        var environment = new StubEnvironmentContext("local");
-        var audit = new StubAuditService();
+        var result = await service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
 
-        var service = new RuntimeControlService(db, runtimeIdentity, principalContext, environment, audit);
+        result!.Id.Should().Be(id);
+        result.RequestedBy.Should().Be("usr_original", "the original actor, not the reconstructing caller");
+        result.Status.Should().Be(RuntimeControlStatusNames.Applied, "a request the worker has since applied is still the request that was made");
+    }
 
-        var first = await service.RequestShutdownAsync("rt-1", CancellationToken.None);
-        var second = await service.RequestShutdownAsync("rt-1", CancellationToken.None);
+    [Theory]
+    [InlineData(null)]
+    [InlineData("{\"runtimeId\":\"rt-1\"}")]
+    [InlineData("{\"requestId\":\"not-a-number\"}")]
+    [InlineData("{\"requestId\":\"999999\"}")]
+    public async Task Service_RequestShutdownAsync_ReconstructThatCannotReadTheRequestThrows(string? details)
+    {
+        var db = NewDb();
+        var unit = new ReconstructOnlyUnit(details);
+        var service = new RuntimeControlService(
+            db,
+            new StubRuntimeIdentityServiceForService(new RuntimeIdentity(RuntimeId, "Runtime 1", "PublicKey", "pk", null, [RuntimeCapabilityCatalog.ControlShutdown], DateTimeOffset.UtcNow)),
+            new StubEnvironmentContext("local"),
+            unit);
 
-        first.Should().NotBeNull();
-        second.Should().NotBeNull();
-        audit.AppendCalls.Should().Be(1);
-        (await db.RuntimeControlRequests.ToListAsync()).Count.Should().Be(1);
+        var act = async () => await service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>("the unit reports a committed change whose result is unavailable");
+    }
+
+    [Fact]
+    public async Task Service_RequestShutdownAsync_WithoutTheAuditedUnit_RefusesWithAnInvariantFailure()
+    {
+        var db = NewDb();
+        var service = new RuntimeControlService(
+            db,
+            new StubRuntimeIdentityServiceForService(new RuntimeIdentity(RuntimeId, "Runtime 1", "PublicKey", "pk", null, [RuntimeCapabilityCatalog.ControlShutdown], DateTimeOffset.UtcNow)),
+            new StubEnvironmentContext("local"));
+
+        var act = async () => await service.RequestShutdownAsync(RuntimeId, CancellationToken.None);
+
+        await act.Should().ThrowAsync<AuditInvariantException>();
+        (await db.RuntimeControlRequests.ToListAsync()).Should().BeEmpty();
+    }
+
+    /// <summary>A unit that runs only the reconstruction, with a primary row whose details are given: a commit whose acknowledgement was lost.</summary>
+    private sealed class ReconstructOnlyUnit(string? committedDetails) : IAuditedUnitOfWork
+    {
+        public Task<T> ExecuteAsync<T>(
+            AuditedOperation operation,
+            Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
+            Func<AuditCommittedOperation, CancellationToken, Task<T>> reconstruct,
+            CancellationToken cancellationToken = default) =>
+            reconstruct(
+                new AuditCommittedOperation(
+                    "event-1",
+                    operation.PrimaryAction,
+                    AuditTargetTypes.RuntimeInstance,
+                    ScopeKeyConstants.RuntimeInstance("local", RuntimeId),
+                    committedDetails),
+                cancellationToken);
     }
 
     private static AppertureDbContext NewDb()
@@ -327,14 +532,6 @@ public sealed class RuntimeControlShutdownTests
             ValueTask.FromResult<IReadOnlyList<RuntimeControlRequestResult>>(Array.Empty<RuntimeControlRequestResult>());
     }
 
-    private sealed class StubPrincipalContextForService : IPrincipalContext
-    {
-        private readonly IActor _actor;
-        public StubPrincipalContextForService(IActor actor) => _actor = actor;
-        public ValueTask<IActor?> GetCurrentActorAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IActor?>(_actor);
-    }
-
     private sealed class StubRuntimeIdentityServiceForService : IRuntimeIdentityService
     {
         private readonly RuntimeIdentity? _runtimeIdentity;
@@ -352,27 +549,4 @@ public sealed class RuntimeControlShutdownTests
         public ValueTask<EnrollmentResult> RequestCredentialRolloverAsync(RuntimeCredentialRolloverRequest request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new EnrollmentResult(request.RuntimeId, false, "not implemented"));
     }
-
-    private sealed class StubAuditService : IAuditService
-    {
-        public int AppendCalls { get; private set; }
-        public AuditRecord? LastRecord { get; private set; }
-
-        public ValueTask AppendAsync(AuditRecord record, CancellationToken cancellationToken = default)
-        {
-            AppendCalls++;
-            LastRecord = record;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<AuditPage> QueryAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new AuditPage(Array.Empty<AuditRecord>(), null));
-
-        public ValueTask<int> CountAsync(AuditQuery query, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(0);
-
-        public ValueTask<AuditRecord?> GetByIdAsync(string id, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<AuditRecord?>(null);
-    }
 }
-
