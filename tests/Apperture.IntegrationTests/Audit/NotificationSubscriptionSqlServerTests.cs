@@ -50,8 +50,11 @@ public sealed class NotificationSubscriptionSqlServerTests : IClassFixture<Audit
         from rcsi in new[] { false, true }
         select new object[] { op, rcsi };
 
-    /// <summary>The M6 matrix runs on the operations that differ in kind: an addition, one that also creates a contact, a removal and an opt-out.</summary>
-    private static readonly Op[] M6Ops = [Op.Add, Op.AddWithNewContact, Op.Remove, Op.OptOutSet];
+    /// <summary>
+    /// The M6 matrix runs on the operations that differ in kind: an addition, one that also creates a contact, a removal, an opt-out
+    /// and the removal of an opt-out (a hard delete of an override row whose lost acknowledgement is reconstructed as a success).
+    /// </summary>
+    private static readonly Op[] M6Ops = [Op.Add, Op.AddWithNewContact, Op.Remove, Op.OptOutSet, Op.OptOutRemove];
 
     public static IEnumerable<object[]> Ops() => M6Ops.Select(op => new object[] { op });
 
@@ -149,7 +152,12 @@ public sealed class NotificationSubscriptionSqlServerTests : IClassFixture<Audit
                 await SeedOptOutAsync(scratch, definitionId, "user-out", "team-1");
                 return new Arranged(
                     definitionId, AuditActionNames.NotificationSubscriptionUserOptOutRemoved, [AuditActionNames.NotificationSubscriptionUserOptOutRemoved],
-                    (db, unit) => Subscriptions(db, principal, unit).RemoveUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-out", "team-1")).AsTask(),
+                    async (db, unit) =>
+                    {
+                        // The service reports the removal, including when the commit acknowledgement was lost and the unit reconstructed it.
+                        (await Subscriptions(db, principal, unit).RemoveUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-out", "team-1")))
+                            .Should().BeTrue("the opt-out existed and its removal committed");
+                    },
                     row => Detail(row, "userId").Should().Be("user-out"));
         }
     }
@@ -233,6 +241,29 @@ public sealed class NotificationSubscriptionSqlServerTests : IClassFixture<Audit
         await using var scratch = await NewScratchAsync(rcsi: false);
         var (_, principal) = await AdminAsync(scratch);
         await (await RunnerAsync(scratch, op, principal)).ConfirmedRollbackRerunsOnceAsync(principal);
+    }
+
+    [Fact]
+    public async Task A_lost_acknowledgement_of_an_opt_out_removal_reports_success_with_the_row_gone_and_one_audit_row()
+    {
+        await using var scratch = await NewScratchAsync(rcsi: false);
+        var (_, principal) = await AdminAsync(scratch);
+        var integrationId = await SeedIntegrationAsync(scratch);
+        var definitionId = await SeedDefinitionAsync(scratch, integrationId);
+        var optOutId = await SeedOptOutAsync(scratch, definitionId, "user-out", "team-1");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM NotificationSubscriptionUserOverrides WHERE Id = N'{optOutId}';")).Should().Be(1, "the target exists before the removal");
+
+        bool? reported = null;
+        var runner = new AuditedOperationM6Runner(
+            scratch, () => SnapshotAsync(scratch), AuditActionNames.NotificationSubscriptionUserOptOutRemoved,
+            async (db, unit) => reported = await Subscriptions(db, principal, unit).RemoveUserOptOutAsync(definitionId, new NotificationUserOptOutRequest("user-out", "team-1")),
+            PersonSentinel);
+        await runner.LostAcknowledgementIsVerifiedAndReconciledAsync(principal);
+
+        reported.Should().BeTrue("a verified commit reports the removal as a success, not as a missing target");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM NotificationSubscriptionUserOverrides WHERE Id = N'{optOutId}';")).Should().Be(0, "the target is now missing");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM AuditLogs WHERE Action = N'{AuditActionNames.NotificationSubscriptionUserOptOutRemoved}';"))
+            .Should().Be(1, "exactly one removal row, written once");
     }
 
     [Theory]
