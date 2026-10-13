@@ -319,6 +319,61 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests
 
     [Theory]
     [MemberData(nameof(Isolation))]
+    public async Task An_unconfirmed_commit_that_did_commit_is_outcome_unknown_and_the_delete_is_wholly_committed(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var integration = await NewRealIntegrationAsync(scratch);
+        var secret = await CreateSecretAsync(scratch, SettingSecretName(CredentialKey));
+        await InsertOverrideAsync(scratch, integration, CredentialKey, JsonSerializer.Serialize(secret.ToString("D")));
+        var lost = new LostCommitAcknowledgement();
+        var verification = new UnreachableVerification();
+
+        // The commit reached the server; the acknowledgement was lost and the outcome cannot be read back.
+        var act = () => DeleteAsync(scratch, integration, new Registry().Credential(CredentialKey), interceptors: [lost], verification: verification);
+
+        await act.Should().ThrowAsync<AuditOutcomeUnknownException>("verification could not establish the outcome, so nothing reports it as done");
+        lost.Commits.Should().Be(1);
+        verification.Calls.Should().Be(1);
+        // Wholly committed, never partly: the integration and its overrides are gone, the one primary row and the one retirement
+        // row exist, and the secret is disabled exactly once.
+        (await IntegrationExistsAsync(scratch, integration)).Should().BeFalse();
+        (await OverrideCountAsync(scratch, integration)).Should().Be(0);
+        (await RowsAsync(scratch, integration, AuditActionNames.IntegrationDeleted)).Should().ContainSingle();
+        (await RowsAsync(scratch, integration, AuditActionNames.IntegrationSettingSecretRetired)).Should().ContainSingle();
+        (await SecretStateAsync(scratch, secret)).Should().Be(SecretState.Disabled);
+        (await StoreEventsAsync(scratch, secret)).Count(e => e == "Disable").Should().Be(1);
+        await AssertNoSecretMaterialAsync(scratch, secret);
+    }
+
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task An_operation_lock_that_cannot_be_taken_is_outcome_unknown_and_deletes_nothing(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var integration = await NewRealIntegrationAsync(scratch);
+        var secret = await CreateSecretAsync(scratch, SettingSecretName(CredentialKey));
+        await InsertOverrideAsync(scratch, integration, CredentialKey, JsonSerializer.Serialize(secret.ToString("D")));
+        var before = await StateAsync(scratch, integration, secret);
+        var operationId = Guid.NewGuid().ToString("N");
+
+        // Another session holds this operation's lock, so the unit cannot take it within its wait.
+        await using (await HeldLock.TakeAsync(scratch.ConnectionString, "apperture.audit-op." + operationId))
+        {
+            var act = () => DeleteAsync(
+                scratch, integration, new Registry().Credential(CredentialKey), eventIds: new FixedEventIds(operationId));
+
+            (await act.Should().ThrowAsync<AuditOutcomeUnknownException>()).Which.OperationEventId.Should().Be(operationId);
+        }
+
+        (await StateAsync(scratch, integration, secret)).Should().Be(before, "no override removed, no secret retired, no evidence, no audit row");
+        (await IntegrationExistsAsync(scratch, integration)).Should().BeTrue();
+        (await SecretStateAsync(scratch, secret)).Should().Be(SecretState.Active);
+        (await RowsAsync(scratch, integration, AuditActionNames.IntegrationDeleted)).Should().BeEmpty();
+        (await RowsAsync(scratch, integration, AuditActionNames.IntegrationSettingSecretRetired)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(Isolation))]
     public async Task An_integration_another_request_deleted_is_not_found_and_never_a_success(bool rcsi)
     {
         var scratch = Scratch(rcsi);
@@ -397,7 +452,8 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests
         string? admin = null,
         IInterceptor[]? interceptors = null,
         IAuditVerificationConnectionFactory? verification = null,
-        DeleteAuthorization? authorization = null)
+        DeleteAuthorization? authorization = null,
+        IAuditEventIdSource? eventIds = null)
     {
         admin ??= (await AdminAsync(scratch)).UserId;
         var principal = new Principal(admin);
@@ -412,7 +468,7 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests
             new SqlResourceOwnershipMutationGate(db),
             new IntegrationSettingSecretClassifier(new IntegrationSettingSecretInventory(db), store, registry),
             new IntegrationSettingSecretRetirement(store),
-            NewUnit(db, principal, verification: verification));
+            NewUnit(db, principal, eventIds: eventIds, verification: verification));
         await service.DeleteIntegrationAsync(new IntegrationId(integration));
     }
 
