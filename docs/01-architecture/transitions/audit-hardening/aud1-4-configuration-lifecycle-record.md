@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 
-Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is done and merged to `master` (PR #23, merge commit `b38f1fd`, 2026-10-12, post-merge CI succeeded); it is CLOSED (§15.8). Slice 5 is done and merged to `master` (PR #24, merge commit `ce7d516`, 2026-10-12); it is CLOSED (§16.11). Slice 6 is done and merged to `master` (PR #25, merge commit `30e760e`, 2026-10-12, post-merge CI succeeded); it is CLOSED (§17.11). Slice 7 is in progress on its branch (§18). Slice 8 has not started.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
+Status: **In progress. Slices 0 to 3 are done and merged to `master` (PR #18, merge commit `54ae117`, 2026-10-11); slice 3 is CLOSED (§14). Slice 4 is done and merged to `master` (PR #23, merge commit `b38f1fd`, 2026-10-12, post-merge CI succeeded); it is CLOSED (§15.8). Slice 5 is done and merged to `master` (PR #24, merge commit `ce7d516`, 2026-10-12); it is CLOSED (§16.11). Slice 6 is done and merged to `master` (PR #25, merge commit `30e760e`, 2026-10-12, post-merge CI succeeded); it is CLOSED (§17.11). Slice 7 is done and merged to `master` (PR #26, merge commit `19890fe`, 2026-10-13, post-merge CI succeeded); it is CLOSED (§18.10). Slice 8 (closure) is in progress on its branch (§19); until its pull request merges the epic is not closed.** Slice 0 (this record and the gate clarifications) and slice 1 (secret-store transaction participation) were implemented, validated (§4.7), independently reviewed, and corrected for the review's bounded findings (§4.10). Slice 2 (platform and integration settings, §8) was independently reviewed and corrected for the review's findings (§9), and closed (§9.10). Slice 3 (§10 to §13: the schedule delete, the integration row locks, the H1 mechanisms, the audited integration delete, and the remediation and closing record of work package 5) was accepted by the owner together with work package 5 and merged with PR #18, and its post-merge CI passed (§14). Work packages 1 and 2 were independently reviewed and accepted; work packages 3, 4a and 4b were independently reviewed together with the verdict READY TO ACCEPT (§13.1). This record grows with each slice; nothing below marks a later slice complete.
 
 Base: `origin/master` at `cbe0bdb` (merge of PR #17, AUD-1.3). Post-merge CI run 37694556687 succeeded on that commit. The merge tree equals the reviewed AUD-1.3 head `cd964b6`. Before PR #18 merged, the branch took `origin/master` (`0314419`, the licensing and third-party notice merges) in a normal merge, `539d907`, which changed no file under `src/` or `tests/` and left the 109-file AUD-1.4 change set unchanged (§14).
 
@@ -61,8 +61,8 @@ The product owner approved the four orientation recommendations. They are record
 | 4 | Integration create, update, activate, deactivate, retire; bindings create and delete; schedule create (with its assignment), update, enable, disable | **CLOSED** (§15.8): implemented, independently reviewed, the schedule `PATCH` finding fixed (§15.7); merged with PR #23 as `b38f1fd` (2026-10-12), post-merge CI passed |
 | 5 | Connections create, update, rotate, retire, verify (`external_attempt`), browse (W2); the connection rotation live-secret defect; resource contexts create, update, archive, unarchive; ownership moves gain verification | **CLOSED** (§16.11): implemented, independently reviewed, secret-reference ownership enforced (§16.10) |
 | 6 | Notification definitions (create, update, enable, delete), subscriptions, managed contacts, diagnostics live sends (W3 `external_attempt`) | **CLOSED** (§17.11): implemented, independently reviewed, bounded fixes applied; merged with PR #25 as `30e760e` (2026-10-12), post-merge CI passed |
-| 7 | Attention routing rules (D-2); module lifecycle (W1, with W3 for blocked attempts); the runtime shutdown request and its duplicate case | **In progress** (§18) |
-| 8 | Closure: the converted-writer scan test, catalog pins, `docs/04-api/contracts.md`, integrated validation and independent review | Not started |
+| 7 | Attention routing rules (D-2); module lifecycle (W1, with W3 for blocked attempts); the runtime shutdown request and its duplicate case | **CLOSED** (§18.10): implemented, independently reviewed, bounded fixes applied; merged with PR #26 as `19890fe` (2026-10-13), post-merge CI passed |
+| 8 | Closure: the converted-writer scan test, catalog pins, `docs/04-api/contracts.md`, integrated validation and independent review | **In progress** (§19) |
 
 ## 4. Slice 1: secret-store transaction participation
 
@@ -1650,4 +1650,26 @@ The fixes are one commit (`c780707`). Evidence after it: the full `Apperture.Uni
 
 ### 18.9 State
 
-Implemented, independently reviewed, bounded fixes applied. Awaiting the owner's acceptance through the slice 7 pull request. Slice 8 (closure) has not started.
+Implemented, independently reviewed, bounded fixes applied. Awaiting the owner's acceptance through the slice 7 pull request (superseded by 18.10).
+
+### 18.10 Closure
+
+Slice 7 was accepted by the owner and merged to `master` with PR #26 as `19890fe5ea9b03f894b3f318d20f55bc4d781667` (2026-10-13; the branch head was `d09edab`). The pull request's first CI run failed in `build-and-test` on one test outside the slice (`UsersListUiTests.Clearing_the_search_returns_to_the_unfiltered_list`, which clicks Clear without waiting for the re-render; the slice changed no UI file, and every unit and SQL Server test passed in that attempt); the rerun of the failed job passed in full. The post-merge CI run on `master` (`38362418594`) succeeded. The carried items of 18.8 stay open under their owners; none is marked resolved here. The slice 7 contract text for `docs/04-api/contracts.md` was not part of PR #26; slice 8 supplies it (§19).
+
+## 19. Slice 8: closure
+
+Date: 2026-10-13. Branch `aud-1.4-slice-8-closure`, from `origin/master` at `19890fe` (the slice 7 merge). Authorized by the owner after the slice 7 merge. This section records the closure work; until its pull request merges, AUD-1.4 is recorded as ready for closure, not closed.
+
+### 19.1 Work packages and decisions
+
+| WP | Scope | State |
+|---|---|---|
+| WP1 | The comprehensive writer inventory; the consolidated executable guards; the retired catalog entries; correction of any genuine in-scope omission | Pending |
+| WP2 | `docs/04-api/contracts.md` reconciled with slices 0 to 7 (the slice 7 families) | Pending |
+| WP3 | The coverage matrix and one integrated validation pass | Pending |
+| WP4 | One independent closure review of slices 0 to 8, bounded remediation, this record, the pull request | Pending |
+
+| # | Decision |
+|---|---|
+| S8-1 | **The guards are identifier-based and allow-list based, never line- or format-based.** A guard reads source files in the repository, resolves the audit action constants a file references, and compares them with the catalog. An allow-list names files and states why each is allowed; a new file or a new action class fails the test until a reviewer extends the list with a reason. |
+| S8-2 | **Retired actions are marked in the catalog, not removed.** An action that no production code writes any more, but whose historical rows must keep their classification (gate section 15), is declared with `Retired = true` and a reason. It keeps its entry, its outcome map and its legacy target rule, so old rows read exactly as before. It gets no schema and no producer. A test pins the exact retired set, requires every W1 or W2 entry without a schema to be in it, and requires that no production file writes a retired action. |
