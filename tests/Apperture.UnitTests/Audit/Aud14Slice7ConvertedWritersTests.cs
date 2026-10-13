@@ -24,7 +24,10 @@ public sealed class Aud14Slice7ConvertedWritersTests
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/RuntimeControlService.cs",
         "Apperture.ControlPlane/Apperture.Management.Api/Controllers/AttentionRoutingDefaultsController.cs",
         "Apperture.ControlPlane/Apperture.Management.Api/Controllers/RuntimeControlsController.cs",
+        "Apperture.ControlPlane/Apperture.Management.Api/Controllers/ModulesController.cs",
     ];
+
+    private const string ModuleRegistryFile = "Apperture.Persistence/Apperture.Persistence.SqlServer/SqlModuleRegistryService.cs";
 
     private const string IntegrationsControllerFile = "Apperture.ControlPlane/Apperture.Management.Api/Controllers/IntegrationsController.cs";
 
@@ -103,6 +106,58 @@ public sealed class Aud14Slice7ConvertedWritersTests
             new UpsertAttentionRoutingRequest(true, true, true, true, null, null, null, null), "x", CancellationToken.None);
 
         result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    /// <summary>
+    /// The module registry keeps the append bridge for one thing: the discovery telemetry row (a later slice owns it). The four
+    /// lifecycle transitions and everything they call record through the audited unit of work and the event writer only.
+    /// </summary>
+    [Fact]
+    public void The_module_lifecycle_transitions_never_use_the_append_bridge_and_discovery_is_the_one_exception()
+    {
+        var text = File.ReadAllText(Path.Combine(RepoRoot(), "src", ModuleRegistryFile));
+        var start = text.IndexOf("public async ValueTask<ModuleLifecycleTransitionResult> InstallModuleAsync", StringComparison.Ordinal);
+        var end = text.IndexOf("private async ValueTask<IReadOnlyList<ModuleDescriptor>> DiscoverDescriptorsAsync", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(0);
+        end.Should().BeGreaterThan(start);
+        var transitions = text[start..end];
+
+        transitions.Should().NotContain("_auditService");
+        transitions.Should().NotContain("new AuditRecord(");
+        transitions.Should().NotContain("AppendDiscoveryAuditAsync");
+        transitions.Should().Contain("unit.ExecuteAsync").And.Contain("TryWriteAsync");
+
+        System.Text.RegularExpressions.Regex.Matches(text, @"_auditService\.AppendAsync").Should().ContainSingle("only discovery appends");
+        System.Text.RegularExpressions.Regex.Matches(text, @"new AuditRecord\(").Should().ContainSingle("only discovery appends");
+        var discover = text[text.IndexOf("DiscoverModulesAsync(", StringComparison.Ordinal)..start];
+        discover.Should().Contain("AppendDiscoveryAuditAsync");
+    }
+
+    [Fact]
+    public async Task The_module_lifecycle_endpoints_let_an_audit_invariant_failure_reach_the_server_error_handler()
+    {
+        var listing = new Mock<IModuleWorkflowListingService>();
+        listing.Setup(l => l.EnableModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Throws(new AuditInvariantException("Module lifecycle changes require the audited unit of work."));
+        var controller = new ModulesController(listing.Object);
+
+        var act = async () => await controller.EnableModule("sample", CancellationToken.None);
+
+        await act.Should().ThrowAsync<AuditInvariantException>("an invariant failure is a 500, not a 400");
+    }
+
+    [Fact]
+    public async Task The_module_lifecycle_endpoints_still_map_a_genuine_refusal_to_a_bad_request()
+    {
+        var listing = new Mock<IModuleWorkflowListingService>();
+        listing.Setup(l => l.InstallModuleAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Throws(new InvalidOperationException("Module 'sample' is not discovered."));
+        var controller = new ModulesController(listing.Object);
+
+        var result = await controller.InstallModule("sample", CancellationToken.None);
+
+        var bad = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        bad.Value.Should().BeOfType<Apperture.Management.Api.Controllers.ModuleLifecycleActionResultDto>().Which.Blockers.Should().ContainSingle(b => b.Message == "Module 'sample' is not discovered.");
     }
 
     private static string RepoRoot()

@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.RuntimePlane.Abstractions;
@@ -97,7 +98,7 @@ public sealed class ModulesController : ControllerBase
         {
             return Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             return BadRequest(new ModuleLifecycleActionResultDto(false, "", "unknown", "Discovered", ModuleLifecycleEffect.Immediate.ToString(), [new("invalid_operation", ex.Message)]));
         }
