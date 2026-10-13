@@ -3,6 +3,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
+using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Persistence.SqlServer;
@@ -48,17 +49,38 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
         from committed in new[] { true, false }
         select new object[] { op, committed };
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync() => _db = await CreateCatalogAsync(rcsi: false);
+
+    /// <summary>
+    /// The cases that prove lock behaviour run on both isolation modes. They start on the locking catalog every case gets and, for
+    /// READ_COMMITTED_SNAPSHOT, replace it with one of that mode (the audit table is append-only, so a case takes a catalog of its own).
+    /// </summary>
+    private async Task UseIsolationAsync(bool rcsi)
     {
-        _db = await AuditSqlScratch.CreateAsync("Apperture_Aud14Binding_");
-        await _db.ExecuteAsync(
+        if (!rcsi)
+            return;
+        await _db.DisposeAsync();
+        _db = await CreateCatalogAsync(rcsi: true);
+    }
+
+    private static async Task<AuditSqlScratch> CreateCatalogAsync(bool rcsi)
+    {
+        var scratch = await AuditIsolation.CreateAsync("Apperture_Aud14Binding", rcsi);
+        await scratch.ExecuteAsync(
             $"""
             INSERT INTO Connections (Id, ConnectorDefinitionId, Name, ConfigJson, SecretRefsJson, ResourceContextId, State, LastVerificationStatus)
             VALUES (N'{LifecycleConnectionId}', N'test.connector', N'Lifecycle Connection', N'{EmptyJson}', N'{EmptyJson}', N'shared', 0, 0);
             """);
+        await scratch.ExecuteAsync(
+            $"""
+            INSERT INTO ResourceContexts (Id, Name, Slug, Kind, State, IsReserved, CreatedAtUtc, UpdatedAtUtc)
+            VALUES (N'{OtherContext}', N'Binding B', N'{OtherContext}', N'{ResourceContextKinds.Application}', N'{ResourceContextStates.Active}', 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
+            """);
+        return scratch;
     }
 
     private const string EmptyJson = "{}";
+    private const string OtherContext = "app-binding-b";
 
     public async Task DisposeAsync()
     {
@@ -107,9 +129,12 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
         }
     }
 
-    [Fact]
-    public async Task Two_creates_for_one_slot_that_both_wait_for_the_integration_row_are_serialized_and_the_second_is_refused()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Two_creates_for_one_slot_that_both_wait_are_serialized_in_arrival_order_and_the_second_is_refused(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         var integrationId = await SeedIntegrationAsync();
 
@@ -128,17 +153,26 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
             }
         }
 
-        // Both creates are started while another session holds the integration row. The first takes the ownership gate and is
-        // shown by the server to be waiting on the row; the second queues behind it on the gate.
-        await using var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId);
-        var first = Task.Run(Attempt);
-        var second = Task.Run(Attempt);
-        await holder.WaitUntilBlockedAsync(_db, "Integrations", Task.WhenAny(first, second));
-        await holder.CommitAsync();
+        // Another session holds the integration row. The first create takes the ownership gate and is shown by the server to be
+        // waiting on the row; only then does the second start, and it is shown to be waiting behind it for the gate. Releasing the
+        // row lets them through in arrival order, whatever the scheduler would otherwise have done.
+        Task<Exception?> first;
+        Task<Exception?> second;
+        await using (var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId))
+        {
+            first = Task.Run(Attempt);
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", first);
+            second = Task.Run(Attempt);
+            await OwnershipGateRace.WaitForWaitersAsync(_db, 1, second);
+            (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(0, "neither create has written anything yet");
+            await holder.CommitAsync();
+        }
+
         var results = await Task.WhenAll(first, second);
 
-        results.Count(r => r is null).Should().Be(1, "there is no unique index on a slot: the integration row lock serializes the two");
-        results.Single(r => r is not null).Should().BeOfType<InvalidOperationException>().Which.Message.Should().Contain("already bound");
+        results[0].Should().BeNull("the create that arrived first holds the gate and the row, so it wins");
+        results[1].Should().BeOfType<InvalidOperationException>("there is no unique index on a slot: the row lock serialized the two, and the second found the first's binding")
+            .Which.Message.Should().Contain("already bound");
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(1);
         (await AuditRowsAsync()).Should().ContainSingle(r => (string)r["Action"] == AuditActionNames.BindingCreated);
     }
@@ -165,9 +199,18 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
         (await AuditRowsAsync()).Should().BeEmpty("the delete under the lock found nothing to delete, so it declared a no-op");
     }
 
-    [Fact]
-    public async Task Two_concurrent_deletes_of_one_binding_remove_it_once_with_one_row_and_neither_fails()
+    /// <summary>
+    /// Two deletes of one binding, deterministically: a third session holds the owning integration row (the first lock a delete
+    /// takes), the first delete is seen waiting for it on the server, the second delete starts and is seen waiting behind it, and
+    /// only then is the row released. The first removes the binding with its one row; the second takes the row next, finds the
+    /// binding gone and is the quiet no-op.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Two_concurrent_deletes_of_one_binding_queue_on_the_integration_row_and_remove_it_once_with_one_row(bool rcsi)
     {
+        await UseIsolationAsync(rcsi);
         var (_, principal) = await AdminAsync();
         var integrationId = await SeedIntegrationAsync();
         var bindingId = await SeedBindingAsync(integrationId);
@@ -178,10 +221,98 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
             await Service(db, principal, NewUnit(db, principal)).DeleteBindingAsync(new BindingId(bindingId));
         }
 
-        await Task.WhenAll(Delete(), Delete());
+        Task first;
+        Task second;
+        await using (var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId))
+        {
+            first = Task.Run(Delete);
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", first);
+            second = Task.Run(Delete);
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", second, minimumWaiters: 2);
+            (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(1, "neither delete has run yet");
+            await holder.CommitAsync();
+        }
+
+        await Task.WhenAll(first, second);
 
         (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(0);
         (await AuditRowsAsync()).Should().ContainSingle(r => (string)r["Action"]! == AuditActionNames.BindingDeleted, "exactly one primary row");
+    }
+
+    // ---- Authorization is decided again under the lock ----
+
+    /// <summary>
+    /// The create's one check of the integration (<c>integration.update</c>) runs after the integration row is locked. An
+    /// ownership move that commits while the create waits for that row is therefore what it is authorized against: a principal who
+    /// may manage bindings in the context the integration was in, but not in the one it moved to, is refused with nothing written.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_create_is_authorized_against_the_owner_the_integration_has_once_the_lock_is_held(bool rcsi)
+    {
+        await UseIsolationAsync(rcsi);
+        var (_, principal) = await AdminAsync();
+        var integrationId = await SeedIntegrationAsync();
+        var authorization = new ContextAwareAuthorization(_db, deniedContext: OtherContext);
+
+        Task<Binding> create;
+        await using (var mover = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId))
+        await using (var db = _db.NewDb())
+        {
+            create = Task.Run(() => Service(db, principal, NewUnit(db, principal), authorization)
+                .CreateBindingAsync(ModuleId, SlotName, "Contract.Type", new ConnectionId(LifecycleConnectionId), new IntegrationId(integrationId)).AsTask());
+            await mover.WaitUntilBlockedAsync(_db, "Integrations", create);
+            authorization.ContextsSeen.Should().BeEmpty("the create has not been authorized against anything before it holds the row");
+
+            // The mover's change, committed while the create waits.
+            await mover.ExecuteAsync("UPDATE [Integrations] SET [ResourceContextId] = @to WHERE [Id] = @id;", ("@to", OtherContext), ("@id", integrationId));
+            await mover.CommitAsync();
+
+            var thrown = await Assert.ThrowsAnyAsync<Exception>(() => create);
+            thrown.Should().BeOfType<UnauthorizedAccessException>("the caller may manage bindings in Shared but not in the context the integration moved to");
+        }
+
+        authorization.ContextsSeen.Should().Equal(
+            new[] { OtherContext }, "the one check read the integration as the mover left it, not as it was before the wait");
+        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Bindings;")).Should().Be(0);
+        (await AuditRowsAsync()).Should().BeEmpty();
+        (await _db.ScalarAsync<string>($"SELECT ResourceContextId FROM Integrations WHERE Id = N'{integrationId}';")).Should().Be(OtherContext, "the move itself committed");
+    }
+
+    /// <summary>
+    /// The delete checks <c>binding.revoke</c> once on the binding it read first and again on the binding it read under the
+    /// locks. A principal whose right is withdrawn while the delete waits is refused by the second check, and the binding stays.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_delete_whose_right_is_withdrawn_while_it_waits_is_refused_by_the_check_under_the_lock_and_removes_nothing(bool rcsi)
+    {
+        await UseIsolationAsync(rcsi);
+        var (_, principal) = await AdminAsync();
+        var integrationId = await SeedIntegrationAsync();
+        var bindingId = await SeedBindingAsync(integrationId);
+        var authorization = new RevocableAuthorization();
+
+        Task delete;
+        await using (var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", integrationId))
+        await using (var db = _db.NewDb())
+        {
+            delete = Task.Run(() => Service(db, principal, NewUnit(db, principal), authorization).DeleteBindingAsync(new BindingId(bindingId)).AsTask());
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", delete);
+            authorization.RevokeChecks.Should().Be(1, "the first check, before the unit, was made while the right still held");
+
+            authorization.Revoked = true;
+            await holder.CommitAsync();
+
+            var thrown = await Assert.ThrowsAnyAsync<Exception>(() => delete);
+            thrown.Should().BeOfType<UnauthorizedAccessException>("the check under the lock found the right withdrawn");
+        }
+
+        authorization.RevokeChecks.Should().Be(2, "once before the unit and once against the locked binding");
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM Bindings WHERE Id = N'{bindingId}';")).Should().Be(1);
+        (await AuditRowsAsync()).Should().BeEmpty();
     }
 
     [Fact]
@@ -240,10 +371,11 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
 
     // ---- wiring ----
 
-    private BindingService Service(AppertureDbContext db, IPrincipalContext principal, IAuditedUnitOfWork unit) =>
+    private BindingService Service(
+        AppertureDbContext db, IPrincipalContext principal, IAuditedUnitOfWork unit, IAuthorizationService? authorization = null) =>
         new(
             principal,
-            new AllowAllResource(),
+            authorization ?? new AllowAllResource(),
             new SqlBindingRepository(db),
             new SqlConnectionRepository(db),
             new EveryConnectionEligible(db),
@@ -366,6 +498,50 @@ public sealed class BindingLifecycleAuditSqlServerTests : IAsyncLifetime
             ResourceDescriptor? resource,
             IGovernedResourceIdentity? resourceIdentity = null,
             CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
+    }
+
+    /// <summary>Allows everything except <c>integration.update</c> on an integration owned by the denied context, read at each check.</summary>
+    private sealed class ContextAwareAuthorization(AuditSqlScratch scratch, string deniedContext) : IAuthorizationService
+    {
+        public List<string> ContextsSeen { get; } = [];
+
+        public async ValueTask<bool> EvaluateAsync(
+            IActor actor,
+            PermissionDescriptor permission,
+            ResourceDescriptor? resource,
+            IGovernedResourceIdentity? resourceIdentity = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!string.Equals(permission.Action, ActionConstants.IntegrationUpdate, StringComparison.Ordinal))
+                return true;
+            var owner = await scratch.ScalarAsync<string>(
+                $"SELECT ResourceContextId FROM Integrations WITH (NOLOCK) WHERE Id = N'{resourceIdentity!.ResourceId}';");
+            ContextsSeen.Add(owner);
+            return !string.Equals(owner, deniedContext, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>Allows everything; denies <c>binding.revoke</c> once <see cref="Revoked"/> is set, and counts those checks.</summary>
+    private sealed class RevocableAuthorization : IAuthorizationService
+    {
+        private int _revokeChecks;
+
+        public volatile bool Revoked;
+
+        public int RevokeChecks => Volatile.Read(ref _revokeChecks);
+
+        public ValueTask<bool> EvaluateAsync(
+            IActor actor,
+            PermissionDescriptor permission,
+            ResourceDescriptor? resource,
+            IGovernedResourceIdentity? resourceIdentity = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!string.Equals(permission.Action, ActionConstants.BindingRevoke, StringComparison.Ordinal))
+                return ValueTask.FromResult(true);
+            Interlocked.Increment(ref _revokeChecks);
+            return ValueTask.FromResult(!Revoked);
+        }
     }
 
     /// <summary>Every stored connection is eligible: these tests are about atomicity, not about connector contracts.</summary>

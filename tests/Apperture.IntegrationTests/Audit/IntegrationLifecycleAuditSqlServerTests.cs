@@ -199,11 +199,21 @@ public sealed class IntegrationLifecycleAuditSqlServerTests : IAsyncLifetime
         (await AuditRowsAsync()).Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Concurrent_updates_of_different_fields_are_serialized_and_both_survive()
+    /// <summary>
+    /// Two updates of different fields of one integration, deterministically: a third session holds the integration row, writer A
+    /// starts and is seen waiting for it on the server, writer B starts and is seen waiting behind it, and only then is the row
+    /// released. The row lock queue is first-in first-out, so the first-queued update commits first and the second one is decided
+    /// against the row the first one left, not against a snapshot read before the wait.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Concurrent_updates_of_different_fields_queue_on_the_row_and_both_survive(bool renameFirst)
     {
         var (_, principal) = await AdminAsync();
         var id = await SeedIntegrationAsync(IntegrationState.Active);
+        var rename = new UpdateIntegrationRequest(DisplayName: "Renamed");
+        var settings = new UpdateIntegrationRequest(Settings: new Dictionary<string, string> { ["a"] = "1" });
 
         async Task Update(UpdateIntegrationRequest request)
         {
@@ -211,14 +221,29 @@ public sealed class IntegrationLifecycleAuditSqlServerTests : IAsyncLifetime
             await Service(db, principal, NewUnit(db, principal)).UpdateIntegrationAsync(new IntegrationId(id), request);
         }
 
-        await Task.WhenAll(
-            Update(new UpdateIntegrationRequest(DisplayName: "Renamed")),
-            Update(new UpdateIntegrationRequest(Settings: new Dictionary<string, string> { ["a"] = "1" })));
+        Task first;
+        Task second;
+        await using (var holder = await LockedRowHolder.TakeAsync(_db.ConnectionString, "Integrations", id))
+        {
+            first = Task.Run(() => Update(renameFirst ? rename : settings));
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", first);
+            second = Task.Run(() => Update(renameFirst ? settings : rename));
+            await holder.WaitUntilBlockedAsync(_db, "Integrations", second, minimumWaiters: 2);
+
+            // Both are queued on the held row and neither has written: nothing changed yet.
+            (await AuditRowsAsync()).Should().BeEmpty();
+            await holder.CommitAsync();
+        }
+
+        await Task.WhenAll(first, second);
 
         var row = (await _db.RowsAsync($"SELECT DisplayName, SettingsJson FROM Integrations WHERE Id = N'{id}';")).Single();
         row["DisplayName"].Should().Be("Renamed", "the other update merged over the locked row, not over its stale snapshot");
         ((string)row["SettingsJson"]!).Should().Contain("\"a\"");
-        (await AuditRowsAsync()).Should().HaveCount(2).And.OnlyContain(r => (string)r["Action"]! == AuditActionNames.IntegrationUpdated);
+        var rows = await AuditRowsAsync();
+        rows.Should().HaveCount(2).And.OnlyContain(r => (string)r["Action"]! == AuditActionNames.IntegrationUpdated);
+        Changed(rows[0]).Should().Equal(renameFirst ? ["displayName"] : ["settings"], "the first-queued update committed first");
+        Changed(rows[1]).Should().Equal(renameFirst ? ["settings"] : ["displayName"]);
     }
 
     // ---- wiring ----
