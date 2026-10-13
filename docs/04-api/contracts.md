@@ -10,6 +10,7 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 |--------|------|-------------|
 | GET | `/modules` | List installed modules |
 | GET | `/modules/{id}/workflows` | List workflows for a module |
+| POST | `/api/modules/{id}/install`, `/enable`, `/disable`, `/uninstall` | Change a module's persisted lifecycle state (requires `module.configure`). Each change is one audited unit; a refused transition answers **200** with `succeeded: false` and its blockers; **409** `module_lifecycle_busy` when another change is in progress. See [Attention routing, module lifecycle and runtime shutdown request lifecycle](#attention-routing-module-lifecycle-and-runtime-shutdown-request-lifecycle). |
 | GET | `/operations` | List operation definitions visible to caller |
 | GET | `/operations/{operationDefinitionId}` | Get one operation definition by stable id |
 | POST | `/operations/{operationDefinitionId}/start` | Start an operation |
@@ -44,11 +45,12 @@ The Management API (control plane) exposes REST endpoints for module registry, w
 | PUT | `/api/integrations/{integrationId}/settings/{key}` | As the platform route, for an integration-scoped setting. |
 | DELETE | `/api/integrations/{integrationId}/settings/{key}` | As the platform reset, for an integration-scoped setting. |
 | PUT | `/api/integrations/{id}/attention-routing` | Create or change the integration's attention-routing override for a condition (query: `conditionKey`, default `expected_run_missing`). Requires `integration.update` on the integration, in addition to being able to read it; the permission is evaluated before the write and again once the integration row is locked, so an ownership move in between is seen. Success **200** with the effective routing; unauthorized **403** with nothing stored; missing integration or unknown team **404**. |
+| GET, PUT | `/api/attention-routing/defaults` | Read, or change, the instance-wide attention-routing default for a condition (query: `conditionKey`, default `expected_run_missing`). Requires schedule management. `PUT` is one audited unit and records nothing when it changes nothing; **403** when not permitted; **404** for a missing default or an unknown team. |
 | DELETE | `/api/integrations/{id}/attention-routing` | Clear the integration's override for a condition, reverting to the instance default. Same permission and re-check as the `PUT`. Success **204**, including when there was no override; unauthorized **403** with the override untouched; missing integration **404**. |
 | GET | `/api/environments` | Inspect the current environment (authorization gated) |
 | GET | `/api/runtime-instances` | Inspect governed runtime capabilities (validated capability ids + kind) list (authorization gated) |
 | GET | `/api/runtime-instances/{runtimeId}/capabilities` | Inspect governed runtime capabilities for one runtime (capabilityId + kind) (authorization gated) |
-| POST | `/api/runtime-instances/{runtimeId}/controls/shutdown/request` | Request runtime shutdown (governance gated + auditable) |
+| POST | `/api/runtime-instances/{runtimeId}/controls/shutdown/request` | Request runtime shutdown (governance gated + auditable). **202** with the queued request (a runtime has at most one: a repeated or concurrent request receives it unchanged); **401**, **403**, **404**; **409** when the runtime does not declare the shutdown capability or the request is rejected. See [Attention routing, module lifecycle and runtime shutdown request lifecycle](#attention-routing-module-lifecycle-and-runtime-shutdown-request-lifecycle). |
 | GET | `/api/runtime-instances/{runtimeId}/controls/shutdown/requests` | List persisted runtime shutdown requests (permission-gated by `runtime.read`) |
 | POST | `/api/enroll/invitation` | Operator-issued runtime enrollment invitation (governance gated + auditable) |
 | POST | `/api/enroll` | Runtime enrollment using enrollment token (anonymous; token-scoped) |
@@ -211,6 +213,50 @@ Every change below is one audited unit: the change, anything that moves with it,
 - **Definition deletes are audited in the same transaction**, with counts and the name snapshot. The earlier row was written after the commit and carried a free-text sentence.
 - Audit data excludes rule and template text, subscriber and contact addresses and names, directory object ids and principal names, the typed-in recipient of a diagnostic, subjects, bodies and the transport's error text. A recipient is identified by id only.
 
+## Attention routing, module lifecycle and runtime shutdown request lifecycle
+
+Every change below is one audited unit: the change and its audit row (or rows) commit together or not at all, and a commit whose acknowledgement is lost is verified from the committed row and reported as the success it was. A request that changes nothing records nothing and does not move the row's update time. Authorization and request validation answer a refused request before the unit opens; the checks the decision depends on run again once the rows they depend on are locked.
+
+| Operation | Route | Audit row |
+|---|---|---|
+| Update the instance default routing | `PUT /api/attention-routing/defaults` (query: `conditionKey`, default `expected_run_missing`) | `attention_routing.default.updated` (Configuration, standard; target the instance): the condition key and the names of the settings that changed |
+| Create, change an integration's override | `PUT /api/integrations/{id}/attention-routing` | `attention_routing.override.created`, `attention_routing.override.updated` (target the integration, its name as a snapshot, its owning context): the condition key and, for an update, the names of the settings that changed |
+| Clear an integration's override | `DELETE /api/integrations/{id}/attention-routing` | `attention_routing.override.cleared` |
+| Install, enable, disable, uninstall a module | `POST /api/modules/{id}/install`, `/enable`, `/disable`, `/uninstall` | `module.lifecycle.install`, `.enable`, `.disable`, `.uninstall` (Configuration, standard; target the module): the persisted version, the persisted state before and after, and the restart effect the transition reports. Enabling a module that is not installed also records `module.lifecycle.install` in the same unit; both rows carry `implicitInstall` |
+| A refused module transition | the same routes | `module.lifecycle.install_blocked`, `.enable_blocked`, `.disable_blocked`, `.uninstall_blocked` (outcome `blocked`, basis `attempt`): the persisted state and the blocker codes, written after the transaction as a best-effort attempt |
+| Request a runtime shutdown | `POST /api/runtime-instances/{runtimeId}/controls/shutdown/request` | `governance.runtime.shutdown.request.created` (basis `request`, outcome `requested`; target the runtime instance): the runtime id, the request id and the control kind |
+
+Permissions are unchanged: the instance default needs schedule management, an integration override needs `integration.update` on the integration (see the routes above), module lifecycle needs `module.configure`, and the shutdown request needs `runtime.control.shutdown.request` on the runtime plus the runtime's declared shutdown capability.
+
+**Responses**
+
+| Case | Status | Notes |
+|---|---|---|
+| Module transition applied, or already in the requested state | **200** `{ succeeded: true, moduleId, action, state, effect, blockers: [] }` | Already satisfied (installing an installed module, enabling an enabled module at the discovered version, disabling a disabled one) answers as before and records nothing. |
+| Module transition refused by a blocker or because the module is not installed | **200** `{ succeeded: false, …, blockers: [{ code, message }] }` | Nothing changed. The blocker codes are recorded as an attempt; the messages are not. Disabling or uninstalling a module that is not installed is the blocker `not_installed`. |
+| Module not discovered by this host | **400** `{ succeeded: false, …, blockers: [{ code: "invalid_operation", message }] }` | Nothing changed and nothing is recorded. |
+| Another module change is in progress | **409** `{ error, code: "module_lifecycle_busy" }` | Module transitions are serialized, because whether one module can be enabled depends on which others are enabled. A request waits up to 15 seconds for the change in progress, then answers 409 with nothing changed or recorded. The client may retry. |
+| Not permitted | **403** | Nothing changed. |
+| Shutdown request queued, or already queued | **202** `{ requestId, runtimeId, controlKind, status }` | A runtime has at most one queued shutdown request. A second request, including a concurrent one, receives the request already queued (its id and status). The stored request keeps its original requester and time, and no second audit row is written. |
+| Shutdown request, no authenticated actor / not permitted / unknown runtime | **401** / **403** / **404** | Nothing stored. |
+| Shutdown request, runtime does not declare the capability / request rejected | **409** `{ error: "RuntimeMissingShutdownControlCapability" }` / `{ error: "RuntimeShutdownRequestRejected" }` | Nothing stored. |
+| Routing: missing integration, missing instance default or unknown team | **404** `{ error }` | Nothing changed. |
+| Commit could be neither confirmed nor ruled out | **500** `code: outcome_unknown`, `operationEventId` | The change and its audit rows are together committed or together absent. The client reloads before trying again. |
+| Commit confirmed, response could not be read back | **500** `code: committed_result_unavailable`, `operationEventId` | The change is applied. The client reloads and does not repeat the request. |
+| Programming error of the audited write | **500** | Never a 400, 404 or 409. |
+
+**What changed for callers**
+
+- **A blocked module enable changes nothing.** It used to persist `Enabled = true` on an installed, disabled module, or the implicit installation of a module that was not installed, under a row that said it was blocked.
+- **Enabling a module that is not installed is one atomic step.** The installation, its enablement and both audit rows commit together; a blocked or failed enable leaves no installation behind. The response is the one the endpoint always gave.
+- **A refused module transition is recorded as an attempt, not as the change.** The row names blocker codes only; blocker messages stay in the response.
+- **The restart effect is what the transition reports, not a claim about a running process.** An install is immediate, an enable or disable is partial until restart, and an uninstall requires a restart. A row records the persisted state and that effect; it never says that a runtime process has or has not picked the module up.
+- **A shutdown request is attributed to the authenticated principal that created it.** The queued request's `RequestedBy` and the audit row's actor are the same value, and neither can be supplied by the caller. A request that finds a queued request, or loses a race to create one, records nothing; before this change every call recorded a success under its own name.
+- **Concurrent shutdown requests for one runtime queue on the runtime's identity row.** Exactly one queued request and one audit row result, and each caller receives that request.
+- **Attention routing is written under row locks.** An integration's override is written under the integration row (so an integration delete, an ownership move and a routing write are serialized, and the authorization is read again once the row is held); the instance default is written under its own row. Setting a value to what it already is changes nothing and records nothing; clearing an override that does not exist is still **204**.
+- **Failures that are not refusals are no longer reported as refusals.** An audit invariant, a transaction or an infrastructure failure on these routes is a 500, not a 400, 404 or 409.
+- Audit data excludes team ids, durations and flag values, recipients and addresses, blocker messages and any condition key outside the closed set (`expected_run_missing`, or `other`). A module is identified by its id, and a runtime by its scope key.
+
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.
@@ -219,7 +265,7 @@ Operator recovery and remediation workflows extend Epic 30 diagnostics with elig
 - **Operation blocked work (inspection-only, intentional limitation)**: For `DefinitionKind=operation`, `RetryEligibleNow` is always false; `RetryEligibleReason` is "Operation retry not yet supported." Retry returns **400** with `inspectionOnly: true`, `definitionKind: "operation"`, and a message directing operators to inspect via GET blocked-work. No operation retry path exists in this epic.
 - **Retry guard**: Before invoking retry, the API re-checks eligibility. If ineligible, returns 409 without calling dispatch; audits `recovery.blocked_work.retry_refused`.
 - **Schedule remediation**: `RemediationAvailable` = (enabled && TargetModuleExecutable). Run-cycle triggers **global** scheduler re-evaluation; processes schedules due at cycle time. No per-schedule "force fire" in V1. **Epic 36 (corrective):** schedule detail and runtime health expose claim fields **only for an active in-progress** `ScheduleRuns` row (`Outcome = InProgress`); they do not describe historical “who claimed” after completion. Guarantee: lease-based coordination and at-most-once normal-path dispatch per fire—not universal exactly-once. Coordination audit: `scheduler.claim.recovered` only for stale-claim takeover; new claims are not audited (see Epic 36 ADR).
-- **Module remediation**: `PrerequisiteHint` guides operators (e.g. "Enable module to allow new starts"); links to existing `POST /modules/{id}/enable`.
+- **Module remediation**: `PrerequisiteHint` guides operators (e.g. "Enable module to allow new starts"); links to the existing `POST /api/modules/{id}/enable`.
 - **Audit actions**: `recovery.blocked_work.retry_requested` (one row, committed with the retry's new run and naming it; it replaces the earlier pair of `retry_requested` before the work and `retry_dispatched` after it, and `retry_dispatched` is no longer written), `recovery.blocked_work.retry_refused`, `recovery.retry.denied`, `recovery.run_cycle.denied` and `recovery.schedules.run_cycle_requested` (succeeded, or failed when the cycle threw). Each row names the authenticated caller, or not signed in; none is recorded as `system`. See the [AUD-1.3 record](../01-architecture/transitions/audit-hardening/aud1-3-operator-action-record.md).
 - **Run actions and their audit**: starting a run (the direct start endpoints and procedure launch), cancel, retry, park, resume and single-item retry each commit their durable request with one audit row in one transaction, and the request row records the requester (`RequestedBy`). A request that changes nothing (a replayed idempotency key, an existing cancel or control request, a duplicate that lost a race to a concurrent request) records nothing. Starts are recorded with parameter names only, never values; on the direct start endpoints the names are the caller's own keys, recorded as operator-supplied identifiers.
 - **Failed-item acknowledge and reopen** (`POST /api/runs/{id}/operation-groups/{groupId}/items/acknowledge`, `.../reopen-attention`): every acknowledgement (or reopening) a request makes and one audit row on the run, listing the items it changed, commit together. Skipped items are reported per item as before; a request that changes no item records nothing. A reopen applies only to an acknowledgement that is still active, so a concurrent second reopen reports `NotAcknowledged` and never overwrites who reopened it.
