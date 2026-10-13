@@ -74,6 +74,18 @@ public sealed record AuditActionDefinition
 
     /// <summary>Where the action is written today, for the handback and the pinned inventory (not runtime-visible).</summary>
     public string? Writer { get; init; }
+
+    /// <summary>
+    /// True when no production code writes this action any more but rows it wrote earlier must keep their classification (gate
+    /// §15). A retired action keeps its entry, outcome map, defects and legacy target rule exactly as they were, so old rows read
+    /// as before. It declares no detail schema, has no typed producer and no routine outcomes: a retired action's rows are
+    /// finite history, and a routine marking would be a present-day noise decision about an action that is no longer written.
+    /// Retiring an action is a reviewed change; a catalog test pins the exact retired set.
+    /// </summary>
+    public bool Retired { get; init; }
+
+    /// <summary>Why and when the action stopped being written, as one factual sentence. Required when <see cref="Retired"/> is true; not runtime-visible.</summary>
+    public string? RetiredReason { get; init; }
 }
 
 /// <summary>
@@ -148,5 +160,9 @@ public sealed class AuditActionCatalog
             d.Defects.All(x => AuditAttributionIssues.All.Contains(x.Code) && AuditIssueCertainties.All.Contains(x.Certainty)),
             "defects use the declared codes and certainties");
         Require(d.Details is null || d.WriteClass != AuditWriteClass.ListedException, "listed exceptions have no recorder producer");
+        Require(d.Retired || string.IsNullOrWhiteSpace(d.RetiredReason), "a retirement reason belongs only to a retired action");
+        Require(!d.Retired || !string.IsNullOrWhiteSpace(d.RetiredReason), "a retired action states why it is retired");
+        Require(!d.Retired || d.Details is null, "a retired action has no detail schema because nothing produces it");
+        Require(!d.Retired || d.RoutineOutcomes.Count == 0, "a retired action has no routine outcomes");
     }
 }

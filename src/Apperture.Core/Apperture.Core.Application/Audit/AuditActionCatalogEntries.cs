@@ -301,7 +301,9 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "dada531a",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,
-            Writer = "UserManagementService.cs:136",
+            Retired = true,
+            RetiredReason = "The pre-mutation marker row for a break-glass session's user-administration call was removed when user administration moved to the audited unit of work (732742c5, AUD-1.2 D3); the unit's rows carry the Recovery Access marker instead.",
+            Writer = "None: no active writer (retired, see RetiredReason). Rows already written keep this action.",
         },
         new()
         {
@@ -2110,7 +2112,9 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "9c133457",
             IntroducedAfterEpic37Migration = true,
             OutcomeMap = Map(("success", AuditOutcomeCodes.Requested)),
-            Writer = "BulkOperationItemRetryService.cs:158",
+            Retired = true,
+            RetiredReason = "The batch request row, written before any work, was removed when bulk item retry became orchestration over the audited single-item retry units (fa26897d, AUD-1.3 D16); each committed item now records its own row naming the batch.",
+            Writer = "None: no active writer (retired, see RetiredReason). Rows already written keep this action.",
         },
         new()
         {
@@ -2123,7 +2127,9 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "9c133457",
             IntroducedAfterEpic37Migration = true,
             OutcomeMap = Map(("success", AuditOutcomeCodes.Unknown), ("failure", AuditOutcomeCodes.Failed)),
-            Writer = "BulkOperationItemRetryService.cs:318",
+            Retired = true,
+            RetiredReason = "The best-effort batch summary row changed no state and was removed with the batch request row when bulk item retry became orchestration over the audited single-item retry units (fa26897d, AUD-1.3 D16).",
+            Writer = "None: no active writer (retired, see RetiredReason). Rows already written keep this action.",
         },
         new()
         {
@@ -2398,7 +2404,9 @@ internal static class AuditActionCatalogEntries
             EraInvariant = true,
             OutcomeMap = Map(("dispatched", AuditOutcomeCodes.Requested)),
             Defects = [new AuditAttributionDefect(AuditAttributionIssues.InitiatorNotRecorded, AuditIssueCertainties.Definite, WhenActorEquals: "system")],
-            Writer = "RecoveryController.cs:156",
+            Retired = true,
+            RetiredReason = "The second, best-effort row written after a blocked-work retry was removed when the retry's request row began to commit in the unit that creates the new run and to name that run (4ede7a08, AUD-1.3 D8).",
+            Writer = "None: no active writer (retired, see RetiredReason). Rows already written keep this action.",
         },
         new()
         {
