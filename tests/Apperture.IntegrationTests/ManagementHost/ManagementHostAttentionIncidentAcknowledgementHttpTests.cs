@@ -61,10 +61,13 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
         var (integrationId, incidentId) = await SeedIncidentAsync();
         var before = await IncidentTextAsync(incidentId);
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
+        (await client.GetAsync($"/api/integrations/{integrationId}")).StatusCode
+            .Should().Be(HttpStatusCode.OK, "the principal can read this integration, so the refusal below is the missing update permission");
 
         var response = await client.PostAsJsonAsync(Route(integrationId, incidentId), new { note = NoteSentinel });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(NoteSentinel);
         (await IncidentTextAsync(incidentId)).Should().Be(before, "a refused acknowledgement changes no column");
         (await AuditRowCountAsync(incidentId)).Should().Be(0);
     }
@@ -80,6 +83,7 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
         var response = await client.PostAsJsonAsync(Route(integrationId, incidentId), new { note = NoteSentinel });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain(NoteSentinel);
         (await IncidentTextAsync(incidentId)).Should().Be(before);
         (await AuditRowCountAsync(incidentId)).Should().Be(0);
     }
@@ -139,7 +143,9 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
         var response = await client.PostAsJsonAsync(Route(integrationId, incidentId), new { note = NoteSentinel });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var text = await response.Content.ReadAsStringAsync();
+        text.Should().NotContain(NoteSentinel, "a response never echoes the note");
+        using var body = JsonDocument.Parse(text);
         body.RootElement.GetProperty("code").GetString().Should().Be("attention_incident_not_active");
         (await IncidentTextAsync(incidentId)).Should().Be(before);
         (await AuditRowCountAsync(incidentId)).Should().Be(0);
@@ -170,8 +176,10 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
         var (blankIntegrationId, blank) = await SeedIncidentAsync();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
 
-        var refused = await client.PostAsJsonAsync(Route(integrationId, tooLong), new { note = new string('n', NoteMaxLength + 1) });
+        var longNote = "http-note-sentinel-do-not-record" + new string('n', NoteMaxLength);
+        var refused = await client.PostAsJsonAsync(Route(integrationId, tooLong), new { note = longNote });
         refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync()).Should().NotContain(NoteSentinel, "a response never echoes the note");
         (await AuditRowCountAsync(tooLong)).Should().Be(0);
 
         var accepted = await client.PostAsJsonAsync(Route(blankIntegrationId, blank), new { note = "   " });

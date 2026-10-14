@@ -268,7 +268,8 @@ public sealed class AttentionIncidentAcknowledgementAuthorizationTests : IDispos
             .ToList();
         writers.Should().BeEquivalentTo(
             ["Apperture.ControlPlane/Apperture.ControlPlane.Security/AttentionIncidentAcknowledgementService.cs"],
-            "only the acknowledgement service writes who acknowledged an incident");
+            "only the acknowledgement service writes who acknowledged an incident (the one other writer, the start-time actor-id normalization "
+            + "in HistoricalActorNormalization, rewrites stored actor ids to user ids through dynamic SQL and is a documented exclusion in the closure guard)");
     }
 
     [Fact]
