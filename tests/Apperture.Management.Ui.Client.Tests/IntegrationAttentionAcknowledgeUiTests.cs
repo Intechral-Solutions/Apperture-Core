@@ -73,7 +73,9 @@ public sealed class IntegrationAttentionAcknowledgeUiTests : BunitContext
 
         AcknowledgeButtons(cut).Single().Click();
 
-        _client.Verify(c => c.AcknowledgeIntegrationAttentionIncidentAsync(IntegrationId, ActiveId, null, It.IsAny<CancellationToken>()), Times.Once);
+        // The click is dispatched on the renderer, so wait for the request rather than assuming it has already been made.
+        cut.WaitForAssertion(() => _client.Verify(
+            c => c.AcknowledgeIntegrationAttentionIncidentAsync(IntegrationId, ActiveId, null, It.IsAny<CancellationToken>()), Times.Once));
         cut.WaitForAssertion(() => _client.Verify(
             c => c.GetIntegrationScheduleDiagnosticsAsync(IntegrationId, It.IsAny<CancellationToken>()), Times.Exactly(2)));
         cut.FindAll("#integration-attention-ack-notice").Should().BeEmpty();
