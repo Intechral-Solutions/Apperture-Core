@@ -27,8 +27,11 @@ namespace Apperture.ControlPlane.Security;
 /// and ignores writers in flight, so under either a reference written by a transaction that commits after the scan is not seen.
 /// The caller's integration row lock serializes against the integration's own settings, notification and routing writers
 /// (slice 3, work package 3) and not against connection or Entra registration writers, which take no such lock. A connection
-/// create or update accepts operator-supplied references, so a connection can be made to name a secret between the scan and the
-/// commit. The approved policy accepts that limit; it is not eliminated here.</para>
+/// create or update no longer accepts an operator-supplied reference (a field is given a value, never a reference, and a
+/// reference is accepted only when it names a secret that field owns), so a connection cannot be made to name one of these
+/// settings' secrets through the API between the scan and the commit; a row written outside the API, before that rule, can
+/// still hold such a reference, which is why the scan reads the connection table at all. The approved policy accepts that
+/// limit; it is not eliminated here.</para>
 /// </remarks>
 public sealed class IntegrationSettingSecretInventory
 {
