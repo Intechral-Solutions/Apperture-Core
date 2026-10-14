@@ -117,7 +117,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 }
 
                 if (def.IsSensitive
-                    && await _secretProvisioner.TryDisableOwnedSecretAsync(key, previousRef, ct).ConfigureAwait(false))
+                    && await _secretProvisioner.TryDisableOwnedSecretAsync(SettingSecretOwnership.ForPlatformSetting(key), previousRef, ct).ConfigureAwait(false))
                 {
                     await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(key, "reset"), ct).ConfigureAwait(false);
                 }
@@ -174,7 +174,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
 
                 // The secret store joins this transaction: the new version is live only once the change commits.
                 var (secretRef, createdNew) = await _secretProvisioner
-                    .ReplaceAsync(def.Key, payload.SecretValue, existingRef, ct)
+                    .ReplaceAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), payload.SecretValue, existingRef, ct)
                     .ConfigureAwait(false);
 
                 await _repository.UpsertAsync(
@@ -233,7 +233,7 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
                 if (!await _repository.DeleteAsync(def.Key, ct).ConfigureAwait(false))
                     throw new DbUpdateConcurrencyException("Platform setting was modified by another request.");
 
-                if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
+                if (await _secretProvisioner.TryDisableOwnedSecretAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), previousRef, ct).ConfigureAwait(false))
                     await transaction.StageAsync(AuditEvents.PlatformSettingSecretRetired(def.Key, "cleared"), ct).ConfigureAwait(false);
                 return true;
             },

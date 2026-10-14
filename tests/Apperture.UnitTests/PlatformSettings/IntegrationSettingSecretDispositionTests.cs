@@ -98,7 +98,7 @@ public sealed class IntegrationSettingSecretDispositionTests
             plan.IntegrationId,
             plan.Overrides,
             plan.Dispositions,
-            [plan.Retirements[0], new PlannedSecretRetirement(Key, secret)],
+            [plan.Retirements[0], new PlannedSecretRetirement(Key, secret, SettingSecretOwnership.LegacyIntegrationSetting(Key))],
             refusal: null);
         var unit = new RecordingAuditedUnitOfWork();
         h.Store.OnDisable = () => unit.Operations.Single().Staged.Select(e => e.Action)
@@ -248,8 +248,8 @@ public sealed class IntegrationSettingSecretDispositionTests
             var id = Guid.NewGuid();
             Store.Descriptors[id] = new SecretDescriptor(
                 new SecretId(id),
-                PlatformSettingSecretMaterialProvisioner.BuildSecretName(settingKey),
-                PlatformSettingSecretMaterialProvisioner.SecretProvider,
+                SettingSecretOwnership.LegacyIntegrationSetting(settingKey).Name,
+                SettingSecretOwnership.PlatformProvider,
                 SecretMaterialType.OpaqueString,
                 "v1",
                 SecretState.Active,

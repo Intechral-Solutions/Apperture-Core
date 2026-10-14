@@ -718,6 +718,15 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
         IntegrationReset,
         IntegrationSecretClear,
         IntegrationSecretReplace,
+
+        /// <summary>SEC-2.3: a replace over a reference to another integration's secret: a new owned secret, the row repointed, the other secret untouched.</summary>
+        IntegrationSecretRepoint,
+
+        /// <summary>SEC-2.3: re-entering the value of a row that names a legacy secret only it holds: a new owned secret, the row repointed, the legacy one retired.</summary>
+        IntegrationLegacyReplace,
+
+        /// <summary>SEC-2.3: clearing a row that names a legacy secret only it holds: the row removed, the legacy secret retired.</summary>
+        IntegrationLegacyClear,
     }
 
     public static IEnumerable<object[]> SettingOps() => Enum.GetValues<SettingOp>().Select(op => new object[] { op });
@@ -733,16 +742,27 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
     private async Task<AuditedOperationM6Runner> SettingRunnerAsync(SettingOp op, IPrincipalContext principal)
     {
         var isSecretKeyOp = op is SettingOp.PlatformSecretClear or SettingOp.PlatformSecretReset or SettingOp.IntegrationSecretClear;
+        string? seededRowVersion = null;
         if (isSecretKeyOp)
         {
             var platform = op is SettingOp.PlatformSecretClear or SettingOp.PlatformSecretReset;
             var key = platform ? PlatformSecretKey : IntegrationSecretKey;
-            var secretRef = await SeedSecretAsync(key);
+            var secretRef = await SeedSecretAsync(
+                platform ? SettingSecretOwnership.ForPlatformSetting(key) : SettingSecretOwnership.ForIntegrationSetting(IntegrationId, key));
             await InsertOverrideRowAsync(
                 platform ? PlatformSettingScopeConstants.InstanceKind : PlatformSettingScopeConstants.IntegrationKind,
                 platform ? PlatformSettingScopeConstants.InstanceId : IntegrationId,
                 key,
                 JsonSerializer.Serialize(secretRef));
+        }
+        else if (op is SettingOp.IntegrationSecretRepoint or SettingOp.IntegrationLegacyReplace or SettingOp.IntegrationLegacyClear)
+        {
+            var secretRef = await SeedSecretAsync(
+                op == SettingOp.IntegrationSecretRepoint
+                    ? SettingSecretOwnership.ForIntegrationSetting("int-someone-else", IntegrationSecretKey)
+                    : SettingSecretOwnership.LegacyIntegrationSetting(IntegrationSecretKey));
+            await InsertOverrideRowAsync(PlatformSettingScopeConstants.IntegrationKind, IntegrationId, IntegrationSecretKey, JsonSerializer.Serialize(secretRef));
+            seededRowVersion = await IntegrationRowVersionAsync(IntegrationSecretKey);
         }
         else if (op == SettingOp.PlatformReset)
         {
@@ -781,6 +801,17 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
                 AuditActionNames.IntegrationSettingSet,
                 (db, unit) => Integration(db, principal, unit).SetAsync(
                     IntegrationId, IntegrationSecretKey, new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear }, null)),
+            SettingOp.IntegrationSecretRepoint or SettingOp.IntegrationLegacyReplace => (
+                AuditActionNames.IntegrationSettingSet,
+                (db, unit) => Integration(db, principal, unit).SetAsync(
+                    IntegrationId,
+                    IntegrationSecretKey,
+                    new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Replace, SecretValue = "replacement-" + Sentinel },
+                    seededRowVersion)),
+            SettingOp.IntegrationLegacyClear => (
+                AuditActionNames.IntegrationSettingSet,
+                (db, unit) => Integration(db, principal, unit).SetAsync(
+                    IntegrationId, IntegrationSecretKey, new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear }, seededRowVersion)),
             _ => (
                 AuditActionNames.IntegrationSettingSet,
                 (db, unit) => Integration(db, principal, unit).SetAsync(
@@ -875,15 +906,12 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
             + "#" + await _db.ScalarAsync<int>("SELECT COUNT(*) FROM AuditLogs;");
     }
 
-    private async Task<string> SeedSecretAsync(string settingKey)
+    /// <summary>A usable secret stored under <paramref name="owner"/>: the owner the setting defines, or any other shape a test needs.</summary>
+    private async Task<string> SeedSecretAsync(SecretOwner owner)
     {
         await using var db = _db.NewDb();
         var store = SecretStore(db);
-        var descriptor = await store.CreateAsync(
-            new SecretCreateRequest(
-                PlatformSettingSecretMaterialProvisioner.BuildSecretName(settingKey),
-                PlatformSettingSecretMaterialProvisioner.SecretProvider,
-                SecretMaterialType.OpaqueString));
+        var descriptor = await store.CreateAsync(new SecretCreateRequest(owner.Name, owner.Provider, SecretMaterialType.OpaqueString));
         var version = await store.AddVersionAsync(descriptor.SecretId, new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: Sentinel));
         await store.ActivateVersionAsync(descriptor.SecretId, version);
         return descriptor.SecretId.Value.ToString("D");
@@ -914,6 +942,15 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
                 (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(0, "the replacement's secret was stored in the unit that did not commit");
                 (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")).Should().Be(0);
                 (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits;")).Should().Be(0);
+                break;
+            case SettingOp.IntegrationSecretRepoint:
+            case SettingOp.IntegrationLegacyReplace:
+            case SettingOp.IntegrationLegacyClear:
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(1, "the row still names the seeded secret");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(1, "no replacement secret was stored in the unit that did not commit");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")).Should().Be(1, "no version was added to the seeded secret");
+                (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Active, "the seeded secret was not retired");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(0);
                 break;
             default:
                 (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM PlatformSettingValues;")).Should().Be(1, "the override is still there");
@@ -958,6 +995,42 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
                 rows.Select(r => (string)r["Action"]!).Should().Equal(AuditActionNames.IntegrationSettingSet, AuditActionNames.IntegrationSettingSecretStored);
                 rows[1]["OperationEventId"].Should().Be(rows[0]["EventId"], "the secret row is a secondary row of the same unit");
                 break;
+            case SettingOp.IntegrationSecretRepoint:
+            {
+                overrides.Should().Be(1);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(2, "the seeded secret and the new owned one");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretVersions;")).Should().Be(2, "one version each, none added to the seeded secret and none per attempt");
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors WHERE State = 1;")).Should().Be(2, "both are active: nothing was retired");
+                (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM SecretDescriptors WHERE Name = N'{SettingSecretOwnership.ForIntegrationSetting(IntegrationId, IntegrationSecretKey).Name}';")).Should().Be(1);
+                rows.Select(r => (string)r["Action"]!).Should().Equal(AuditActionNames.IntegrationSettingSet, AuditActionNames.IntegrationSettingSecretStored);
+                Detail(rows[1], "change").Should().Be("created");
+                rows[1]["OperationEventId"].Should().Be(rows[0]["EventId"], "the secret row is a secondary row of the same unit");
+                break;
+            }
+
+            case SettingOp.IntegrationLegacyReplace:
+            {
+                overrides.Should().Be(1);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretDescriptors;")).Should().Be(2, "the legacy secret and the new owned one");
+                (await _db.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Name = N'{SettingSecretOwnership.LegacyIntegrationSetting(IntegrationSecretKey).Name}';")).Should().Be((int)SecretState.Disabled);
+                (await _db.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Name = N'{SettingSecretOwnership.ForIntegrationSetting(IntegrationId, IntegrationSecretKey).Name}';")).Should().Be((int)SecretState.Active);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(1, "the legacy secret was retired once");
+                rows.Select(r => (string)r["Action"]!).Should().Equal(
+                    AuditActionNames.IntegrationSettingSet, AuditActionNames.IntegrationSettingSecretStored, AuditActionNames.IntegrationSettingSecretRetired);
+                Detail(rows[2], "reason").Should().Be("replaced");
+                rows.Skip(1).Select(r => r["OperationEventId"]).Should().OnlyContain(id => Equals(id, rows[0]["EventId"]));
+                break;
+            }
+
+            case SettingOp.IntegrationLegacyClear:
+                overrides.Should().Be(0, "the override is gone");
+                (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Disabled);
+                (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM SecretAudits WHERE EventType = N'Disable';")).Should().Be(1, "the legacy secret was retired once");
+                rows.Select(r => (string)r["Action"]!).Should().Equal(AuditActionNames.IntegrationSettingSet, AuditActionNames.IntegrationSettingSecretRetired);
+                Detail(rows[1], "reason").Should().Be("cleared");
+                rows[1]["OperationEventId"].Should().Be(rows[0]["EventId"]);
+                break;
+
             default:
                 overrides.Should().Be(0, "the override is gone");
                 (await _db.ScalarAsync<int>("SELECT State FROM SecretDescriptors;")).Should().Be((int)SecretState.Disabled);
@@ -1012,7 +1085,9 @@ public sealed class SettingsAuditSqlServerTests : IAsyncLifetime
             Coordinator(db, principal),
             new PlatformSettingSecretMaterialProvisioner(SecretStore(db)),
             new SqlIntegrationRepository(db),
-            unit ?? NewUnit(db, principal));
+            unit ?? NewUnit(db, principal),
+            // As the host composes it: a legacy reference is retired only on H1's evidence.
+            new IntegrationSettingSecretClassifier(new IntegrationSettingSecretInventory(db), SecretStore(db), registry));
     }
 
     private static PlatformSettingOptionProviderCoordinator Coordinator(AppertureDbContext db, IPrincipalContext principal)

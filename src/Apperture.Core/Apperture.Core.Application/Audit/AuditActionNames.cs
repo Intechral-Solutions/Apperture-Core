@@ -200,6 +200,10 @@ public static class AuditActionNames
     // SEC-2.2: a connection's material was refused because a secret field's reference does not name a secret that field owns.
     public const string ConnectionSecretResolutionRefused = "connection.secret.resolution_refused";
 
+    // SEC-2.3: a setting's secret was refused because its row's reference does not name a secret that setting owns.
+    public const string IntegrationSettingSecretResolutionRefused = "integration.settings.secret.resolution_refused";
+    public const string PlatformSettingSecretResolutionRefused = "platform.settings.secret.resolution_refused";
+
     // AUD-1.4 slice 5: resource contexts. Declared by AUD-1.0 as legacy-bridge entries, converted here.
     public const string ResourceContextCreated = "resource_context.created";
     public const string ResourceContextUpdated = "resource_context.updated";

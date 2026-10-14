@@ -743,7 +743,7 @@ internal static class AuditDetailSchemas
     [
         IdField("integrationId"),
         IdField("key"),
-        EnumField("reason", true, "cleared", "reset", "integration_deleted"),
+        EnumField("reason", true, "cleared", "reset", "integration_deleted", "replaced"),
     ]);
 
     // ---- Integration hard-delete (AUD-1.4 slice 3, work package 4a) ----
@@ -1075,6 +1075,19 @@ internal static class AuditDetailSchemas
     [
         IdField("fieldKey"),
         EnumField("path", true, "run", "verify", "browse", "settings_options"),
+    ]);
+
+    // SEC-2.3: a refusal to resolve a setting's secret. It names the kind of operation that asked (the setting is the event's
+    // target) and nothing that would say why: not the reference, not the secret that was found, not its owner, not which
+    // condition failed.
+    internal static readonly AuditDetailSchema IntegrationSettingSecretResolutionRefused = new(
+    [
+        EnumField("path", true, "run", "management"),
+    ]);
+
+    internal static readonly AuditDetailSchema PlatformSettingSecretResolutionRefused = new(
+    [
+        EnumField("path", true, "run", "management"),
     ]);
 
     // ---- Resource contexts (AUD-1.4 slice 5) ----

@@ -1626,6 +1626,36 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            // A setting's secret was refused (W3): the reference in the setting's row does not name a secret that setting owns, or
+            // names nothing usable. One row per top-level resolution operation. Never routine: each row is a setting the legacy
+            // inventory should have found. The row says which setting and which kind of operation, never the reference, the
+            // secret found or its owner.
+            Action = "integration.settings.secret.resolution_refused",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.IntegrationSetting,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.IntegrationSettingSecretResolutionRefused,
+            IntroducedIn = "SEC-2.3",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SettingSecretResolver.cs",
+        },
+        new()
+        {
+            Action = "platform.settings.secret.resolution_refused",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.PlatformSetting,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.PlatformSettingSecretResolutionRefused,
+            IntroducedIn = "SEC-2.3",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "SettingSecretResolver.cs",
+        },
+        new()
+        {
             Action = "integration.deleted",
             Category = AuditCategories.Configuration,
             Severity = AuditSeverities.Standard,

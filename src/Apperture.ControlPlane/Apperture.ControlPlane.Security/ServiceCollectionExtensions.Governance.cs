@@ -102,6 +102,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAccountActionTokenRepository, SqlAccountActionTokenRepository>();
         services.AddScoped<IAccountActionTokenService, AccountActionTokenService>();
         services.AddSingleton<AccountSecurityLinkBuilder>();
+        services.AddSettingSecretResolution();
         services.TryAddScoped<IEmailSmtpCredentialResolver, EmailSmtpCredentialResolver>();
         services.AddScoped<IAccountSecurityMailSender, AccountSecurityMailSender>();
         services.AddScoped<IAccountContactService, AccountContactService>();

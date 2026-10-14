@@ -1,8 +1,6 @@
 using Apperture.Core.Application.Execution;
 using Apperture.Core.Application.PlatformSettings;
 using Apperture.Core.Application.Services;
-using Apperture.Core.Security.Secrets.Abstractions;
-using Apperture.Core.Security.Secrets.Models;
 using Apperture.ModuleSdk.Integration.Configuration;
 
 namespace Apperture.RuntimePlane.Engine.Integration;
@@ -12,16 +10,16 @@ public sealed class IntegrationSettingsAccessor : IIntegrationSettingsAccessor
 {
     private readonly IIntegrationExecutionScopeAccessor _scope;
     private readonly IIntegrationSettingsResolver _settingsResolver;
-    private readonly ISecretResolver _secretResolver;
+    private readonly ISettingSecretResolver _settingSecrets;
 
     public IntegrationSettingsAccessor(
         IIntegrationExecutionScopeAccessor scope,
         IIntegrationSettingsResolver settingsResolver,
-        ISecretResolver secretResolver)
+        ISettingSecretResolver settingSecrets)
     {
         _scope = scope;
         _settingsResolver = settingsResolver;
-        _secretResolver = secretResolver;
+        _settingSecrets = settingSecrets;
     }
 
     /// <inheritdoc />
@@ -77,15 +75,13 @@ public sealed class IntegrationSettingsAccessor : IIntegrationSettingsAccessor
         if (!resolved.IsSecretConfigured || resolved.CurrentValue is not string secretRef || string.IsNullOrWhiteSpace(secretRef))
             throw IntegrationConfigurationException.MissingSecret(key);
 
-        if (!Guid.TryParse(secretRef.Trim(), out _))
-            throw IntegrationConfigurationException.InvalidSecretReference(key);
-
         try
         {
-            var material = await _secretResolver
-                .ResolveAsync(new SecretRef(secretRef.Trim()), cancellationToken)
+            // The row's reference is not proof of anything: the boundary resolves it only if the secret's own descriptor says this
+            // integration's setting owns it. Text that is not a reference at all is refused there too, with the same evidence row.
+            var plaintext = await _settingSecrets
+                .ResolveIntegrationSettingAsync(RequireIntegrationId(), key, secretRef, SettingSecretResolutionPath.Run, cancellationToken)
                 .ConfigureAwait(false);
-            var plaintext = material.Material.OpaqueString;
             if (string.IsNullOrWhiteSpace(plaintext))
                 throw IntegrationConfigurationException.InvalidSecretReference(key);
             return plaintext;
@@ -93,6 +89,11 @@ public sealed class IntegrationSettingsAccessor : IIntegrationSettingsAccessor
         catch (IntegrationConfigurationException)
         {
             throw;
+        }
+        catch (SettingSecretUnavailableException)
+        {
+            // Another holder's secret, a missing or disabled one, or unreadable text: to the module the secret is not configured.
+            throw IntegrationConfigurationException.MissingSecret(key);
         }
         catch (Exception)
         {

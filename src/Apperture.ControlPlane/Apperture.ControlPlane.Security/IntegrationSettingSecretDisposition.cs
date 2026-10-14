@@ -1,3 +1,5 @@
+using Apperture.Core.Security.Secrets.Models;
+
 namespace Apperture.ControlPlane.Security;
 
 // AUD-1.4 slice 3, work package 4a. The result types of the integration-delete settings inventory and the settings-secret
@@ -141,11 +143,15 @@ public sealed class IntegrationOverrideDisposition
 /// <summary>One secret the delete must retire, and the override that owned it.</summary>
 public sealed class PlannedSecretRetirement
 {
-    internal PlannedSecretRetirement(string settingKey, Guid secretId)
+    internal PlannedSecretRetirement(string settingKey, Guid secretId, SecretOwner owner)
     {
         SettingKey = settingKey;
         SecretId = secretId;
+        Owner = owner;
     }
+
+    /// <summary>The provider and name the classifier proved the secret has (the integration's own owner, or the legacy shape for the key). The retirement checks the descriptor against it again before it disables anything.</summary>
+    internal SecretOwner Owner { get; }
 
     /// <summary>The setting key of the override that referenced the secret; its retirement row is recorded under this setting.</summary>
     public string SettingKey { get; }

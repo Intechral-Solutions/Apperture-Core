@@ -66,7 +66,7 @@ public sealed class IntegrationSettingSecretInventory
     /// every location above except that integration's own overrides, which the delete removes. A candidate nothing refers to has
     /// no entry. References held more than once are returned once per holder.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<SurvivingSecretReference>>> FindSurvivingReferencesAsync(
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<SurvivingSecretReference>>> FindSurvivingReferencesAsync(
         string deletingIntegrationId,
         IReadOnlyCollection<Guid> candidates,
         CancellationToken cancellationToken = default)
@@ -74,6 +74,31 @@ public sealed class IntegrationSettingSecretInventory
         ArgumentException.ThrowIfNullOrWhiteSpace(deletingIntegrationId);
         ArgumentNullException.ThrowIfNull(candidates);
 
+        // Every setting row outside the deleting integration, in every scope. The negation of ListOverridesAsync's predicate.
+        return ScanAsync(
+            v => !(v.ScopeKind == PlatformSettingScopeConstants.IntegrationKind && v.ScopeId == deletingIntegrationId),
+            candidates,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Every reference to each of <paramref name="candidates"/> in the known locations, as the caller's transaction sees them. Used
+    /// after a setting row has released a reference (cleared, reset or repointed in that same transaction), so the row no longer
+    /// counts and every other holder, including the same integration's other overrides, does.
+    /// </summary>
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<SurvivingSecretReference>>> FindReferencesAsync(
+        IReadOnlyCollection<Guid> candidates,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        return ScanAsync(_ => true, candidates, cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<SurvivingSecretReference>>> ScanAsync(
+        System.Linq.Expressions.Expression<Func<PlatformSettingValueEntity, bool>> includeSettingRow,
+        IReadOnlyCollection<Guid> candidates,
+        CancellationToken cancellationToken)
+    {
         var found = new Dictionary<Guid, List<SurvivingSecretReference>>();
         if (candidates.Count == 0)
             return new Dictionary<Guid, IReadOnlyList<SurvivingSecretReference>>();
@@ -93,10 +118,9 @@ public sealed class IntegrationSettingSecretInventory
             }
         }
 
-        // Every setting row outside the deleting integration, in every scope. The negation of ListOverridesAsync's predicate.
         var settings = await _db.PlatformSettingValues
             .AsNoTracking()
-            .Where(v => !(v.ScopeKind == PlatformSettingScopeConstants.IntegrationKind && v.ScopeId == deletingIntegrationId))
+            .Where(includeSettingRow)
             .Select(v => new { v.Id, v.ScopeKind, v.ValueJson })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

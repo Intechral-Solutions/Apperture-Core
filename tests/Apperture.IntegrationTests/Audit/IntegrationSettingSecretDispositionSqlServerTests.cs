@@ -623,7 +623,7 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests : 
 
     private static string NewIntegrationId() => "int-h1-" + NewSuffix();
 
-    private static string SettingSecretName(string key) => PlatformSettingSecretMaterialProvisioner.BuildSecretName(key);
+    private static string SettingSecretName(string key) => SettingSecretOwnership.LegacyIntegrationSetting(key).Name;
 
     private static SqlSecretStore SecretStore(AppertureDbContext db) =>
         new(db, new PassThroughProtector(), new DefaultSecretAuditActorProvider());
@@ -687,7 +687,7 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests : 
         return (id, new Principal(id));
     }
 
-    private static async Task<Guid> CreateSecretAsync(AuditSqlScratch scratch, string name, string provider = PlatformSettingSecretMaterialProvisioner.SecretProvider)
+    private static async Task<Guid> CreateSecretAsync(AuditSqlScratch scratch, string name, string provider = SettingSecretOwnership.PlatformProvider)
     {
         await using var db = scratch.NewDb();
         var store = SecretStore(db);

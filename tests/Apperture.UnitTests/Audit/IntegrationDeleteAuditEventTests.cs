@@ -137,7 +137,8 @@ public sealed class IntegrationDeleteAuditEventTests
         });
 
         var existing = AuditActionCatalog.Default.Get(AuditActionNames.IntegrationSettingSecretRetired).Details!.Fields.Single(f => f.Name == "reason");
-        existing.EnumValues.Should().BeEquivalentTo("cleared", "reset", "integration_deleted");
+        // "replaced" is SEC-2.3: a setting's reference was released by re-entering its value, and the legacy secret it named was retired.
+        existing.EnumValues.Should().BeEquivalentTo("cleared", "reset", "integration_deleted", "replaced");
     }
 
     [Fact]

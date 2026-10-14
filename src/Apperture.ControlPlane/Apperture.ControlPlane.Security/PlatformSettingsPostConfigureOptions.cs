@@ -36,8 +36,14 @@ public sealed class EmailNotificationOptionsPlatformSettingsPostConfigure : IPos
             _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailFromAddress, value => options.FromAddress = value);
         PlatformSettingsOptionsOverlay.ApplyString(
             _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailFromDisplayName, value => options.FromDisplayName = value);
-        PlatformSettingsOptionsOverlay.ApplyString(
-            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpPasswordRef, value => options.SmtpPasswordRef = value);
+        // The reference is applied with where it came from: only the one stored in the setting's row is subject to the ownership rule.
+        PlatformSettingsOptionsOverlay.ApplySecretReference(
+            _scopeFactory, _logger, PlatformSettingKeys.NotificationsEmailSmtpPasswordRef,
+            (value, fromRow) =>
+            {
+                options.SmtpPasswordRef = value;
+                options.SmtpPasswordRefSource = fromRow ? SmtpPasswordRefSource.SettingRow : SmtpPasswordRefSource.Configuration;
+            });
     }
 }
 

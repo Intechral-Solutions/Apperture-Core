@@ -11,12 +11,15 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 /// <remarks>
 /// <para><b>What counts as evidence.</b> The override row alone proves nothing: a setting that holds a reference does not own the
-/// secret it names. The evidence is the secret store's own record of what the secret is. The settings lifecycle provisions a secret
-/// with the provider <see cref="PlatformSettingSecretMaterialProvisioner.SecretProvider"/> and the name
-/// <c>platform-setting:{key}</c>. The store records no owner id, so that provider and name are the only provenance there is, and
-/// they say which <i>setting key</i> a secret was made for, not which integration owns it. Ownership by this integration is
-/// therefore established by three facts together: the secret is settings-provisioned; its name matches the key of the one override
-/// that refers to it; and no reference outside this integration refers to it.</para>
+/// secret it names. The evidence is the secret store's own record of what the secret is. Since SEC-2.3 the settings lifecycle
+/// provisions an integration setting's secret with the provider <see cref="SettingSecretOwnership.IntegrationProvider"/> and the
+/// name <c>integration-setting:{integrationId}:{key}</c>, which says which integration and which setting it belongs to. Before that
+/// it used the provider <see cref="SettingSecretOwnership.PlatformProvider"/> and the name <c>platform-setting:{key}</c> (the
+/// legacy shape), which says which <i>setting key</i> a secret was made for and not which integration owns it. A secret under
+/// either shape is credible evidence. Ownership by this integration is established by three facts together: the secret is
+/// settings-provisioned; its name is the owner name (new shape) or the legacy name for the key of the one override that refers to
+/// it; and no reference outside this integration refers to it. A secret that names another integration is never this
+/// integration's: it is retained when that integration's override still holds it, and otherwise ambiguous.</para>
 /// <para><b>Definitions are a hint, never a gate.</b> An override is classified whether or not a definition for its key exists or is
 /// integration-scoped. A definition that declares the setting sensitive only raises the bar: an unreadable value on it is ambiguous.
 /// Without a definition, or with an ordinary one, any GUID the value holds is still looked up in the store and a settings-provisioned
@@ -34,8 +37,6 @@ namespace Apperture.ControlPlane.Security;
 /// </remarks>
 public sealed class IntegrationSettingSecretClassifier
 {
-    private static readonly string NamePrefix = PlatformSettingSecretMaterialProvisioner.BuildSecretName(string.Empty);
-
     private readonly IntegrationSettingSecretInventory _inventory;
     private readonly ISecretStore _secretStore;
     private readonly IIntegrationSettingDefinitionRegistry _registry;
@@ -107,7 +108,7 @@ public sealed class IntegrationSettingSecretClassifier
                 var descriptor = descriptors[guid];
                 if (descriptor is null)
                     item.Outcomes.Add(Outcome.NoSecret(IntegrationSecretNoSecretReason.ReferenceDoesNotResolve));
-                else if (!string.Equals(descriptor.Provider, PlatformSettingSecretMaterialProvisioner.SecretProvider, StringComparison.Ordinal))
+                else if (!IsSettingsProvider(descriptor.Provider))
                     item.Outcomes.Add(Outcome.NoSecret(IntegrationSecretNoSecretReason.NotSettingsProvisioned));
                 else if (descriptor.State is SecretState.Disabled or SecretState.Revoked)
                     item.Outcomes.Add(Outcome.NoSecret(IntegrationSecretNoSecretReason.AlreadyUnusable));
@@ -137,16 +138,17 @@ public sealed class IntegrationSettingSecretClassifier
             }
             else
             {
-                var name = descriptors[guid]!.Name;
-                if (holders.Count == 1 && string.Equals(name, PlatformSettingSecretMaterialProvisioner.BuildSecretName(holders[0].Key), StringComparison.Ordinal))
+                var descriptor = descriptors[guid]!;
+                var owner = holders.Count == 1 ? OwnerOf(descriptor, integrationId, holders[0].Key) : null;
+                if (owner is not null)
                 {
                     outcome = Outcome.Retire();
-                    retirements.Add(new PlannedSecretRetirement(holders[0].Key, guid));
+                    retirements.Add(new PlannedSecretRetirement(holders[0].Key, guid, owner));
                 }
                 else
                 {
                     outcome = Outcome.Ambiguous(
-                        name.StartsWith(NamePrefix, StringComparison.Ordinal)
+                        SettingSecretOwnership.HasSettingSecretNameShape(descriptor.Name)
                             ? IntegrationSecretAmbiguityReason.SettingKeyMismatch
                             : IntegrationSecretAmbiguityReason.OwnershipNotEstablished);
                 }
@@ -171,6 +173,62 @@ public sealed class IntegrationSettingSecretClassifier
             dispositions,
             retirements.OrderBy(r => r.SettingKey, StringComparer.Ordinal).ToList(),
             refusal);
+    }
+
+    /// <summary>
+    /// After a setting row of an integration has released <paramref name="releasedReference"/> (cleared, reset or repointed in the
+    /// caller's transaction, so the row no longer counts), says which secret, if any, may now be retired as a <i>legacy</i> secret.
+    /// A secret the setting owns under its own name is retired by the provisioner on exact ownership and is not this method's
+    /// concern. A legacy secret (provider <c>platform-setting</c>, name <c>platform-setting:{key}</c>) cannot say which
+    /// integration made it, so it is retired only on H1's evidence: it is usable, it is named for this very setting, and nothing
+    /// else, in any scope, refers to it (settings of every scope, connections and Entra registrations). Anything else, whether
+    /// another holder's secret, another key's, a dangling or unreadable reference, is left alone, and this never refuses.
+    /// Read-only: it changes and stages nothing.
+    /// </summary>
+    /// <returns>The legacy secret's id, or null when nothing may be retired.</returns>
+    public async Task<Guid?> FindLegacySecretToRetireAsync(
+        string key, string? releasedReference, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (!SecretReferenceReader.TryReadGuid(releasedReference, out var guid))
+            return null;
+
+        var descriptor = await _secretStore.GetAsync(new SecretId(guid), cancellationToken).ConfigureAwait(false);
+        if (descriptor is null
+            || descriptor.State is SecretState.Disabled or SecretState.Revoked
+            || !SettingSecretOwnership.LegacyIntegrationSetting(key).Matches(descriptor.Provider, descriptor.Name))
+        {
+            return null;
+        }
+
+        var holders = await _inventory.FindReferencesAsync([guid], cancellationToken).ConfigureAwait(false);
+        return holders.TryGetValue(guid, out var references) && references.Count > 0 ? null : guid;
+    }
+
+    private static bool IsSettingsProvider(string provider) =>
+        string.Equals(provider, SettingSecretOwnership.PlatformProvider, StringComparison.Ordinal)
+        || string.Equals(provider, SettingSecretOwnership.IntegrationProvider, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The owner shape the descriptor proves for setting <paramref name="key"/> of <paramref name="integrationId"/>: the
+    /// integration's own owner, or the legacy shape for that key; null when it proves neither.
+    /// </summary>
+    private static SecretOwner? OwnerOf(SecretDescriptor descriptor, string integrationId, string key)
+    {
+        var legacy = SettingSecretOwnership.LegacyIntegrationSetting(key);
+        if (legacy.Matches(descriptor.Provider, descriptor.Name))
+            return legacy;
+
+        try
+        {
+            var own = SettingSecretOwnership.ForIntegrationSetting(integrationId, key);
+            return own.Matches(descriptor.Provider, descriptor.Name) ? own : null;
+        }
+        catch (ArgumentException)
+        {
+            // A name that cannot fit the store cannot name a stored secret.
+            return null;
+        }
     }
 
     private static IntegrationOverrideDisposition Combine(Item item)

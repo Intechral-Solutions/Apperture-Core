@@ -32,6 +32,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
     private readonly IIntegrationRepository _integrations;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IntegrationSettingSecretClassifier? _legacyDisposition;
 
     public IntegrationSettingsService(
         IIntegrationSettingDefinitionRegistry registry,
@@ -40,7 +41,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         PlatformSettingSecretMaterialProvisioner secretProvisioner,
         IIntegrationRepository integrations,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IntegrationSettingSecretClassifier? legacyDisposition = null)
     {
         _registry = registry;
         _repository = repository;
@@ -49,6 +51,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         _secretProvisioner = secretProvisioner;
         _integrations = integrations;
         _auditedUnitOfWork = auditedUnitOfWork;
+        _legacyDisposition = legacyDisposition;
     }
 
     private IAuditedUnitOfWork Unit =>
@@ -176,15 +179,47 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
         }
 
-        if (def.IsSensitive
-            && await _secretProvisioner.TryDisableOwnedSecretAsync(key, previousRef, ct).ConfigureAwait(false))
-        {
-            await transaction.StageAsync(
-                AuditEvents.IntegrationSettingSecretRetired(integrationId, key, "reset", resourceContextId),
-                ct).ConfigureAwait(false);
-        }
+        if (def.IsSensitive)
+            await RetireReleasedSecretAsync(transaction, integrationId, key, previousRef, "reset", resourceContextId, ct).ConfigureAwait(false);
 
         return true;
+    }
+
+    /// <summary>
+    /// Retires the secret a setting row has just released (cleared, reset, or repointed at a new secret), in the caller's transaction,
+    /// and stages the Secrets row only when one was retired. Only a secret proven to belong to the right holder is ever disabled:
+    /// the secret this very setting owns (exact provider and name), or a <i>legacy</i> secret (the instance shape for this key,
+    /// which cannot say which integration made it) on H1's evidence that nothing else, in any scope, still refers to it. Every
+    /// other secret, whoever's it is, is left exactly as it was. Without a classifier a legacy secret is simply retained.
+    /// </summary>
+    private async Task RetireReleasedSecretAsync(
+        IAuditedTransaction transaction,
+        string integrationId,
+        string key,
+        string? releasedRef,
+        string reason,
+        string? resourceContextId,
+        CancellationToken ct)
+    {
+        var retired = await _secretProvisioner
+            .TryDisableOwnedSecretAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, key), releasedRef, ct)
+            .ConfigureAwait(false);
+
+        if (!retired
+            && _legacyDisposition is not null
+            && await _legacyDisposition.FindLegacySecretToRetireAsync(key, releasedRef, ct).ConfigureAwait(false) is { } legacy)
+        {
+            retired = await _secretProvisioner
+                .TryDisableOwnedSecretAsync(SettingSecretOwnership.LegacyIntegrationSetting(key), legacy.ToString("D"), ct)
+                .ConfigureAwait(false);
+        }
+
+        if (retired)
+        {
+            await transaction.StageAsync(
+                AuditEvents.IntegrationSettingSecretRetired(integrationId, key, reason, resourceContextId),
+                ct).ConfigureAwait(false);
+        }
     }
 
     private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
@@ -238,7 +273,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
 
                 // The secret store joins this transaction: the new version is live only once the change commits.
                 var (secretRef, createdNew) = await _secretProvisioner
-                    .ReplaceAsync(def.Key, payload.SecretValue, existingRef, ct)
+                    .ReplaceAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, def.Key), payload.SecretValue, existingRef, ct)
                     .ConfigureAwait(false);
 
                 await _repository.UpsertAsync(
@@ -265,6 +300,11 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 await transaction.StageAsync(
                     AuditEvents.IntegrationSettingSecretStored(integrationId, def.Key, createdNew ? "created" : "replaced", resourceContextId),
                     ct).ConfigureAwait(false);
+
+                // The row now names a new secret. A reference it named before that was not this setting's own (a legacy secret, say)
+                // is released: it is retired only on H1's evidence, and every other secret is left untouched.
+                if (createdNew && !string.IsNullOrWhiteSpace(existingRef))
+                    await RetireReleasedSecretAsync(transaction, integrationId, def.Key, existingRef, "replaced", resourceContextId, ct).ConfigureAwait(false);
                 return true;
             },
             ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),
@@ -311,13 +351,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                     throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
                 }
 
-                if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
-                {
-                    await transaction.StageAsync(
-                        AuditEvents.IntegrationSettingSecretRetired(integrationId, def.Key, "cleared", resourceContextId),
-                        ct).ConfigureAwait(false);
-                }
-
+                await RetireReleasedSecretAsync(transaction, integrationId, def.Key, previousRef, "cleared", resourceContextId, ct).ConfigureAwait(false);
                 return true;
             },
             ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),

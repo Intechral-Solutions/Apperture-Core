@@ -488,7 +488,7 @@ public sealed partial class IntegrationRowLockSqlServerTests
         return scratch.ScalarAsync<int>(
             $"""
             SELECT COUNT(*) FROM SecretDescriptors s
-            WHERE s.Name = N'{PlatformSettingSecretMaterialProvisioner.BuildSecretName(SecretKey)}'
+            WHERE s.Name = N'{SettingSecretOwnership.LegacyIntegrationSetting(SecretKey).Name}'
               AND s.State IN (0, 1)
               AND NOT EXISTS (SELECT 1 FROM PlatformSettingValues v WHERE v.ValueJson LIKE N'%' + CONVERT(NVARCHAR(36), s.Id) + N'%');
             """);

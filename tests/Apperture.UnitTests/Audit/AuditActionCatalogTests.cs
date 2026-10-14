@@ -131,6 +131,13 @@ public sealed partial class AuditActionCatalogTests
         "connection.secret.resolution_refused",
     ];
 
+    /// <summary>The actions SEC-2.3 adds: the W3 refusals of an integration setting's and an instance setting's secret that its setting does not own.</summary>
+    private static readonly string[] Sec23Additions =
+    [
+        "integration.settings.secret.resolution_refused",
+        "platform.settings.secret.resolution_refused",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -151,9 +158,11 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.1").Select(d => d.Action).Should().BeEquivalentTo(Sec21Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec22Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.2").Select(d => d.Action).Should().BeEquivalentTo(Sec22Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec23Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.3").Select(d => d.Action).Should().BeEquivalentTo(Sec23Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4, SEC-2.1 and SEC-2.2 add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length + Sec23Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 and SEC-2.1 to SEC-2.3 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 
@@ -173,9 +182,10 @@ public sealed partial class AuditActionCatalogTests
         secretEvents.Select(d => d.Action).Should().Contain(Aud14Additions);
         foreach (var definition in secretEvents)
         {
-            // A change to a secret is a required mutation; the one refusal (SEC-2.2) is an attempt, written after the refusal is decided.
+            // A change to a secret is a required mutation; the refusals (SEC-2.2, SEC-2.3) are attempts, written after the refusal is decided.
             definition.WriteClass.Should().Be(
-                Sec22Additions.Contains(definition.Action) ? AuditWriteClass.Attempt : AuditWriteClass.RequiredMutation, definition.Action);
+                Sec22Additions.Contains(definition.Action) || Sec23Additions.Contains(definition.Action) ? AuditWriteClass.Attempt : AuditWriteClass.RequiredMutation,
+                definition.Action);
             definition.Severity.Should().Be(AuditSeverities.Elevated, $"{definition.Action}: a change to, or refusal about, a secret is elevated (§11.3)");
             definition.TargetType.Should().NotBeNull(definition.Action).And.NotBe(AuditTargetTypes.Secret);
 

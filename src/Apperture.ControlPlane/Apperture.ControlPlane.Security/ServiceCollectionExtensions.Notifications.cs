@@ -5,6 +5,7 @@ using Apperture.Core.Application.Notifications.Delivery;
 using Apperture.Core.Application.Notifications.Instances;
 using Apperture.Core.Application.Notifications.Subscriptions;
 using Apperture.Core.Application.PlatformEvents;
+using Apperture.Core.Application.PlatformSettings;
 using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,7 @@ public static class NotificationsServiceCollectionExtensions
         }
 
         services.AddScoped<INotificationLiveRenderContextResolver, NotificationLiveRenderContextResolver>();
+        services.AddSettingSecretResolution();
         services.AddScoped<IEmailSmtpCredentialResolver, EmailSmtpCredentialResolver>();
         services.AddSingleton<INotificationTemplateVariableCatalog, NotificationTemplateVariableCatalog>();
         services.AddSingleton<IRedactionPolicy, NoOpRedactionPolicy>();
