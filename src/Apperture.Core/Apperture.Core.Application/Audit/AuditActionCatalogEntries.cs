@@ -2881,6 +2881,19 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            Action = "attention_incident.acknowledged",
+            Category = AuditCategories.Operations,
+            Severity = AuditSeverities.Standard,
+            TargetType = AuditTargetTypes.Integration,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AttentionIncidentAcknowledged,
+            IntroducedIn = "SEC-2.1",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "AttentionIncidentAcknowledgementService.cs",
+        },
+        new()
+        {
             Action = "module.lifecycle.install_blocked",
             Category = AuditCategories.Configuration,
             Severity = AuditSeverities.Standard,

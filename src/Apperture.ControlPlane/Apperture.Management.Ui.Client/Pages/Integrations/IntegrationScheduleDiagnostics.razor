@@ -205,6 +205,14 @@
 
             <div class="ui-detail-block">
                 <div class="text-sm font-semibold text-heading mb-2">Expected-run-missing incident history</div>
+                @if (!string.IsNullOrEmpty(_ackNotice))
+                {
+                    <div id="integration-attention-ack-notice"
+                         role="alert"
+                         class="mb-2 rounded border border-message-warning bg-message-warning px-3 py-2 text-xs">
+                        @_ackNotice
+                    </div>
+                }
                 @if (_diagnostics.RecentAttentionIncidents is { Count: > 0 })
                 {
                     <div class="ui-data-table overflow-x-auto">
@@ -256,7 +264,9 @@
                                             }
                                         </td>
                                         <td class="px-3 py-2">
-                                            @if (string.Equals(i.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                                            @* Acknowledging changes how the integration alerts, so the server requires integration.update (not only
+                                               integration.read). The action is offered on that permission; the history stays visible to everyone. *@
+                                            @if (string.Equals(i.Status, "Active", StringComparison.OrdinalIgnoreCase) && CanAcknowledgeIncidents)
                                             {
                                                 <button type="button"
                                                         class="ui-toolbar-btn text-xs disabled:opacity-50"
@@ -423,6 +433,13 @@
     private OperatorCapabilitiesDto? _capabilities;
     private bool _loading = true;
     private bool _ackBusy;
+
+    /// <summary>
+    /// A refused acknowledgement that leaves the page usable (the incident resolved first, or the permission is missing): shown
+    /// beside the incident history so the refreshed history stays visible. <see cref="_error"/> replaces the whole page.
+    /// </summary>
+    private string? _ackNotice;
+
     private string? _error;
     private IReadOnlyList<OperationalTeamSummaryDto> _contactGroups = Array.Empty<OperationalTeamSummaryDto>();
     private string _routingPrimaryGroupId = "";
@@ -468,6 +485,7 @@
     {
         _loading = true;
         _error = null;
+        _ackNotice = null;
         _diagnostics = null;
 
         try
@@ -576,12 +594,19 @@
         await LoadAsync();
     }
 
+    /// <summary>
+    /// The server requires <c>integration.update</c> to acknowledge an incident. A failed capability lookup leaves the diagnostics
+    /// readable and hides the action.
+    /// </summary>
+    private bool CanAcknowledgeIncidents => _capabilities?.CanUpdateIntegrations is true;
+
     private async Task AcknowledgeIncidentAsync(string incidentId)
     {
-        if (_ackBusy || string.IsNullOrWhiteSpace(IntegrationId))
+        if (_ackBusy || string.IsNullOrWhiteSpace(IntegrationId) || !CanAcknowledgeIncidents)
             return;
         _ackBusy = true;
         _error = null;
+        _ackNotice = null;
         try
         {
             var ok = await Client.AcknowledgeIntegrationAttentionIncidentAsync(IntegrationId, incidentId, note: null);
@@ -589,6 +614,16 @@
                 _error = "Incident not found or could not be acknowledged.";
             else
                 await LoadAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            // The incident resolved before this acknowledgement reached the server. Show the history as it is now, with the reason.
+            await LoadAsync();
+            _ackNotice = "This incident has already resolved, so it can no longer be acknowledged.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _ackNotice = "You do not have permission to acknowledge incidents on this integration.";
         }
         catch (HttpRequestException ex)
         {

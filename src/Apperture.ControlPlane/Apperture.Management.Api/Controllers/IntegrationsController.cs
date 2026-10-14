@@ -27,10 +27,9 @@ public sealed class IntegrationsController : ControllerBase
     private readonly IIntegrationReadinessService _readinessService;
     private readonly IIntegrationConfigurationRegistry _configurationRegistry;
     private readonly IIntegrationScheduleDiagnosticsService _scheduleDiagnostics;
-    private readonly IAttentionIncidentTracker _attentionIncidentTracker;
+    private readonly IAttentionIncidentAcknowledgementService _attentionAcknowledgement;
     private readonly IAttentionRoutingManagementService _attentionRoutingManagement;
     private readonly IPrincipalContext _principalContext;
-    private readonly TimeProvider _timeProvider;
     private readonly IResourceContextService _resourceContexts;
     private readonly IResourceOwnershipMoveService _moveService;
     private readonly IntegrationSettingsAuthorization _integrationAuthorization;
@@ -40,10 +39,9 @@ public sealed class IntegrationsController : ControllerBase
         IIntegrationReadinessService readinessService,
         IIntegrationConfigurationRegistry configurationRegistry,
         IIntegrationScheduleDiagnosticsService scheduleDiagnostics,
-        IAttentionIncidentTracker attentionIncidentTracker,
+        IAttentionIncidentAcknowledgementService attentionAcknowledgement,
         IAttentionRoutingManagementService attentionRoutingManagement,
         IPrincipalContext principalContext,
-        TimeProvider timeProvider,
         IResourceContextService resourceContexts,
         IResourceOwnershipMoveService moveService,
         IntegrationSettingsAuthorization integrationAuthorization)
@@ -52,10 +50,9 @@ public sealed class IntegrationsController : ControllerBase
         _readinessService = readinessService;
         _configurationRegistry = configurationRegistry;
         _scheduleDiagnostics = scheduleDiagnostics;
-        _attentionIncidentTracker = attentionIncidentTracker;
+        _attentionAcknowledgement = attentionAcknowledgement;
         _attentionRoutingManagement = attentionRoutingManagement;
         _principalContext = principalContext;
-        _timeProvider = timeProvider;
         _resourceContexts = resourceContexts;
         _moveService = moveService;
         _integrationAuthorization = integrationAuthorization;
@@ -421,8 +418,16 @@ public sealed class IntegrationsController : ControllerBase
     }
 
     /// <summary>
-    /// Epic 68: operator acknowledgement of a persisted attention incident (e.g. expected run missing).
+    /// Epic 68, SEC-2.1: operator acknowledgement of a persisted attention incident (e.g. expected run missing).
     /// </summary>
+    /// <remarks>
+    /// Acknowledging changes how the integration alerts (it can suppress reminders and escalation), so it needs
+    /// <c>integration.update</c>, not only <c>integration.read</c>. The check is made here and again by the service once the
+    /// integration row is locked. 204 on an acknowledgement and on a repeat (the first acknowledgement is kept); 403 without the
+    /// permission; 404 for an unknown integration or an incident that is not this integration's; 409
+    /// <c>attention_incident_not_active</c> for a resolved incident; 400 for a note over 1024 characters. The acknowledging user
+    /// is the authenticated user, never a value from the request.
+    /// </remarks>
     [HttpPost("{id}/attention-incidents/{incidentId}/acknowledge")]
     public async Task<IActionResult> AcknowledgeAttentionIncident(
         string id,
@@ -437,26 +442,52 @@ public sealed class IntegrationsController : ControllerBase
                 return Unauthorized();
 
             var intId = new IntegrationId(id);
-            var integration = await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false);
-            if (integration is null)
+            if (await _integrationService.GetIntegrationAsync(intId, cancellationToken).ConfigureAwait(false) is null)
                 return NotFound();
 
-            var ok = await _attentionIncidentTracker.AcknowledgeAsync(
-                    intId,
-                    incidentId,
-                    actor.Id.Value,
-                    body?.Note,
-                    _timeProvider.GetUtcNow(),
-                    cancellationToken)
+            // Acknowledging changes how the integration alerts: reading it is not enough (integration.update).
+            await _integrationAuthorization.RequireIntegrationManageAsync(id, cancellationToken).ConfigureAwait(false);
+
+            var outcome = await _attentionAcknowledgement
+                .AcknowledgeAsync(intId, incidentId, body?.Note, ct => ReauthorizeAcknowledgementAsync(intId, ct), cancellationToken)
                 .ConfigureAwait(false);
-            if (!ok)
-                return NotFound();
-            return NoContent();
+            return outcome switch
+            {
+                AttentionIncidentAcknowledgementOutcome.Acknowledged or AttentionIncidentAcknowledgementOutcome.AlreadyAcknowledged => NoContent(),
+                AttentionIncidentAcknowledgementOutcome.NotActive => Conflict(new
+                {
+                    error = "The attention incident is resolved and can no longer be acknowledged.",
+                    code = AttentionIncidentErrorCodes.NotActive,
+                }),
+                AttentionIncidentAcknowledgementOutcome.NoteTooLong => BadRequest(new
+                {
+                    error = $"The note is limited to {AttentionIncidentAcknowledgementBounds.NoteMaxLength} characters.",
+                    code = AttentionIncidentErrorCodes.NoteTooLong,
+                }),
+                _ => NotFound(),
+            };
         }
         catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
+        catch (KeyNotFoundException)
+        {
+            // Removed between the checks above and the authorization lookup.
+            return NotFound();
+        }
+    }
+
+    /// <summary>
+    /// The authorization of an acknowledgement, evaluated against the integration as it is when the service invokes it: it must
+    /// still be readable and the caller must hold <c>integration.update</c> on it. Run once before the unit and again by the
+    /// service under the integration row lock, so an ownership move that committed in between is seen.
+    /// </summary>
+    private async ValueTask ReauthorizeAcknowledgementAsync(IntegrationId integrationId, CancellationToken cancellationToken)
+    {
+        if (await _integrationService.GetIntegrationAsync(integrationId, cancellationToken).ConfigureAwait(false) is null)
+            throw new KeyNotFoundException($"Integration {integrationId.Value} was not found.");
+        await _integrationAuthorization.RequireIntegrationManageAsync(integrationId.Value, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

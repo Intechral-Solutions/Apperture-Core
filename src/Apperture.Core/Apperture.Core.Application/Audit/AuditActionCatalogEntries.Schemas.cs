@@ -1175,6 +1175,19 @@ internal static class AuditDetailSchemas
         AttentionConditionKeyField(),
     ]);
 
+    // ---- Attention incident acknowledgement (SEC-2.1) ----
+    // The row names the integration (its name as a snapshot), the incident and its condition, when the incident started and
+    // whether the operator gave a note. The note's text, the recipients and any notification content are never fields.
+
+    internal static readonly AuditDetailSchema AttentionIncidentAcknowledged = new(
+    [
+        NameField("name"),
+        IdField("incidentId"),
+        AttentionConditionKeyField(),
+        new AuditFieldDefinition("incidentStartedAt", AuditFieldKind.Timestamp, Required: true),
+        FlagField("noteProvided"),
+    ]);
+
     // ---- Module lifecycle (AUD-1.4 slice 7) ----
     // The module is the target and the related module reference. A row records the persisted installation state before and
     // after and the restart effect the transition reports; it never claims a module is active in any runtime process. A blocked

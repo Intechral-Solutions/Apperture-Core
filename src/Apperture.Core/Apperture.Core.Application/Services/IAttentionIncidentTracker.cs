@@ -37,11 +37,7 @@ public interface IAttentionIncidentTracker
         string incidentId,
         CancellationToken cancellationToken = default);
 
-    ValueTask<bool> AcknowledgeAsync(
-        IntegrationId integrationId,
-        string incidentId,
-        string acknowledgedBy,
-        string? note,
-        DateTimeOffset acknowledgedAtUtc,
-        CancellationToken cancellationToken = default);
+    // SEC-2.1: there is deliberately no acknowledgement here. Acknowledging an incident is an operator action, an audited unit of
+    // work with its own authorization (AttentionIncidentAcknowledgementService); this tracker opens, observes and resolves incidents
+    // and reads them, and never writes who acknowledged one.
 }

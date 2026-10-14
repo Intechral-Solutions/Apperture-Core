@@ -99,22 +99,35 @@ public sealed class SqlAttentionIncidentTrackerTests
     }
 
     [Fact]
-    public async Task Acknowledge_persists_fields_for_matching_integration()
+    public async Task Observation_and_resolution_leave_an_acknowledgement_made_in_between_untouched()
     {
-        await using var db = CreateDb();
+        var options = new DbContextOptionsBuilder<AppertureDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new AppertureDbContext(options);
         var sut = new SqlAttentionIncidentTracker(db);
         var t0 = DateTimeOffset.Parse("2025-01-10T12:00:00Z");
+        var ackAt = DateTimeOffset.Parse("2025-01-10T12:30:00Z");
         await sut.ObserveScheduleExpectationAsync(IntId, Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun), t0);
         var id = (await sut.ListRecentForIntegrationAsync(IntId, AttentionConditionKeys.ExpectedRunMissing, 1, CancellationToken.None))[0].Id;
+        // The acknowledgement is another writer's (AttentionIncidentAcknowledgementService); the tracker must not overwrite it.
+        await using (var other = new AppertureDbContext(options))
+        {
+            var row = await other.AttentionIncidents.SingleAsync(e => e.Id == id);
+            row.AcknowledgedAtUtc = ackAt;
+            row.AcknowledgedBy = "actor-1";
+            row.AcknowledgementNote = "seen";
+            await other.SaveChangesAsync();
+        }
 
-        var ackAt = DateTimeOffset.Parse("2025-01-10T14:00:00Z");
-        var ok = await sut.AcknowledgeAsync(IntId, id, "actor-1", "seen", ackAt, CancellationToken.None);
-        ok.Should().BeTrue();
+        await sut.ObserveScheduleExpectationAsync(IntId, Snapshot(ScheduleExpectationEvaluationStatus.MissingExpectedRun), t0.AddMinutes(45));
+        await sut.ObserveScheduleExpectationAsync(IntId, Snapshot(ScheduleExpectationEvaluationStatus.Satisfied), t0.AddHours(1));
 
-        var row = (await sut.ListRecentForIntegrationAsync(IntId, AttentionConditionKeys.ExpectedRunMissing, 1, CancellationToken.None))[0];
-        row.AcknowledgedAtUtc.Should().Be(ackAt);
-        row.AcknowledgedBy.Should().Be("actor-1");
-        row.AcknowledgementNote.Should().Be("seen");
+        var resolved = (await sut.ListRecentForIntegrationAsync(IntId, AttentionConditionKeys.ExpectedRunMissing, 1, CancellationToken.None))[0];
+        resolved.Status.Should().Be(AttentionIncidentStatuses.Resolved);
+        resolved.AcknowledgedAtUtc.Should().Be(ackAt);
+        resolved.AcknowledgedBy.Should().Be("actor-1");
+        resolved.AcknowledgementNote.Should().Be("seen");
     }
 
     [Fact]

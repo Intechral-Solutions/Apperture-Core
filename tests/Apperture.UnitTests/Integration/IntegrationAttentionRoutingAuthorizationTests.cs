@@ -308,11 +308,10 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
             Mock.Of<IIntegrationReadinessService>(),
             Mock.Of<IIntegrationConfigurationRegistry>(),
             Mock.Of<IIntegrationScheduleDiagnosticsService>(),
-            Mock.Of<IAttentionIncidentTracker>(),
+            Mock.Of<IAttentionIncidentAcknowledgementService>(),
             new AttentionRoutingManagementService(
                 _db, _integrations, new SqlAttentionRecipientResolver(_db, new OperationalTeamRecipientExpander(_db)), _audit),
             principal,
-            TimeProvider.System,
             Mock.Of<IResourceContextService>(),
             Mock.Of<IResourceOwnershipMoveService>(),
             new IntegrationSettingsAuthorization(principal, policy, _integrations));

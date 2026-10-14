@@ -349,6 +349,12 @@ public interface IManagementClient
         ReplaceOperationalTeamMembersRequest body,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Acknowledges an active attention incident. Needs <c>integration.update</c>. Returns false when the integration or the
+    /// incident is unknown (404). A repeat of an acknowledgement succeeds and changes nothing. Any other failure is an
+    /// <see cref="HttpRequestException"/> carrying the status code: 403 without the permission, 409 for an incident that is
+    /// resolved (<c>attention_incident_not_active</c>), 400 for a note over 1024 characters.
+    /// </summary>
     Task<bool> AcknowledgeIntegrationAttentionIncidentAsync(
         string integrationId,
         string incidentId,

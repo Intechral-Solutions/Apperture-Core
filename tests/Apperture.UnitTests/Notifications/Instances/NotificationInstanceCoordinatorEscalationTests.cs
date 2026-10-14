@@ -217,15 +217,6 @@ public sealed class NotificationInstanceCoordinatorEscalationTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AttentionIncidentProjection>>([]);
 
-        public ValueTask<bool> AcknowledgeAsync(
-            IntegrationId integrationId,
-            string incidentId,
-            string acknowledgedBy,
-            string? note,
-            DateTimeOffset acknowledgedAtUtc,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(true);
-
         public ValueTask<AttentionIncidentProjection?> GetIncidentAsync(
             IntegrationId integrationId,
             string incidentId,

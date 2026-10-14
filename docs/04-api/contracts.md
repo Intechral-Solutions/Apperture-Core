@@ -257,6 +257,32 @@ Permissions are unchanged: the instance default needs schedule management, an in
 - **Failures that are not refusals are no longer reported as refusals.** An audit invariant, an unconfirmed commit or a confirmed commit whose result could not be read back on these routes is a 500, not a 400, 404 or 409. Other infrastructure exceptions keep each route's existing mapping.
 - Audit data excludes team ids, durations and flag values, recipients and addresses, blocker messages and any condition key outside the closed set (`expected_run_missing`, or `other`). A module is identified by its id, and a runtime by its scope key.
 
+## Attention incident acknowledgement (SEC-2.1)
+
+`POST /api/integrations/{id}/attention-incidents/{incidentId}/acknowledge` with the optional body `{ "note": string | null }` acknowledges an active attention incident. Acknowledging changes how the integration alerts: on a route whose attention routing sets `SuppressRemindersWhenAcknowledged` or `SuppressEscalationWhenAcknowledged` it stops that incident's reminders and escalations. It is therefore a change to the integration, and the permission is **`integration.update`** on the integration (it used to be `integration.read`). The permission is checked before the unit opens and again inside it once the integration row is locked, so an ownership move that commits in between is what the decision reads.
+
+It is one audited unit: the three acknowledgement columns (`AcknowledgedAtUtc`, `AcknowledgedBy`, `AcknowledgementNote`) and one `attention_incident.acknowledged` audit row commit together or not at all, and a commit whose acknowledgement is lost is verified from the committed row and reported as the success it was. The acknowledger is the authenticated user the unit records, the same value the audit row carries as its actor; nothing in the request names who acknowledged.
+
+| Outcome | Status | Notes |
+|---|---|---|
+| Acknowledged | **204** | The incident was active and unacknowledged. One audit row is recorded. |
+| Already acknowledged | **204** | The incident is active and was already acknowledged, by anyone. Nothing is written or recorded, and the first acknowledger, time and note are kept. Of two concurrent acknowledgements one wins and the other is this case. |
+| Not permitted | **403** | Without `integration.read` or without `integration.update`, including after an ownership move to a context where the caller lacks it. Nothing changed and nothing is recorded. |
+| No authenticated actor | **401** | |
+| Unknown integration, unknown incident, or an incident of another integration | **404** | Nothing changed. |
+| The incident is resolved | **409** `{ error, code: "attention_incident_not_active" }` | Nothing changed, including when it was acknowledged while it was active. An acknowledgement that races the observation worker's resolution ends either acknowledged and then resolved, or as this 409; the acknowledgement is never lost. |
+| Note over 1024 characters (after trimming) | **400** `{ error, code: "attention_note_too_long" }` | Previously an unhandled 500. Nothing changed. A blank or whitespace-only note is stored as null. |
+| Commit could be neither confirmed nor ruled out | **500** `code: outcome_unknown`, `operationEventId` | The change and its audit row are together committed or together absent. The client reloads before trying again. |
+| Commit confirmed, response could not be read back | **500** `code: committed_result_unavailable`, `operationEventId` | The acknowledgement is applied. |
+
+**What changed for callers**
+
+- **A principal with only `integration.read` can no longer acknowledge.** The Management UI offers Acknowledge only to an operator whose capabilities include `CanUpdateIntegrations`; the incident history stays visible to everyone who can open the page.
+- **A repeat is not an overwrite.** It used to replace the acknowledger, time and note; it is now a 204 that changes nothing.
+- **A resolved incident cannot be acknowledged.** It used to be written.
+- **The audit row** (category `operations`, standard severity, basis `change`, target the integration, the integration's owning context as the related reference) names the integration (a name snapshot), the incident id, the condition key (`expected_run_missing`, or `other`), when the incident started, and `noteProvided`. The note's text, recipients and notification content are not fields and are never recorded in an audit row, a log line or an exception message.
+- The tracker that opens, observes and resolves incidents no longer has an acknowledgement write. A resolution writes only the columns it changes.
+
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.

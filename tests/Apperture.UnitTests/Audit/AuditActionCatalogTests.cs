@@ -119,6 +119,12 @@ public sealed partial class AuditActionCatalogTests
         "module.lifecycle.uninstall_blocked",
     ];
 
+    /// <summary>The action SEC-2.1 adds: an operator's acknowledgement of an attention incident.</summary>
+    private static readonly string[] Sec21Additions =
+    [
+        "attention_incident.acknowledged",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -135,9 +141,11 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 6").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice6Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Aud14Slice7Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 7").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice7Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec21Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.1").Select(d => d.Action).Should().BeEquivalentTo(Sec21Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 and SEC-2.1 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 

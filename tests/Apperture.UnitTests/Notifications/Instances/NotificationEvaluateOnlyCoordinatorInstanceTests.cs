@@ -126,14 +126,5 @@ public sealed class NotificationEvaluateOnlyCoordinatorInstanceTests
             string incidentId,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<AttentionIncidentProjection?>(null);
-
-        public ValueTask<bool> AcknowledgeAsync(
-            IntegrationId integrationId,
-            string incidentId,
-            string acknowledgedBy,
-            string? note,
-            DateTimeOffset acknowledgedAtUtc,
-            CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(true);
     }
 }
