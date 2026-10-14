@@ -74,10 +74,14 @@ public static class ConnectionWorkspacePresentation
         }
 
         // Secret fields the connector does not declare but the connection still holds (a legacy row), by key.
+        // A stored secret key that shares its name with a declared plain field or a config key still gets its own secret row: the
+        // plain row shows the config value, and without this one the secret could be neither seen nor removed.
         foreach (var key in connection.SecretFields.Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal))
         {
-            if (handled.Add(key))
-                rows.Add(Row(connection, key, key, null, isSecret: true) with { IsUndeclared = true });
+            if (rows.Any(r => r.IsSecret && string.Equals(r.Key, key, StringComparison.Ordinal)))
+                continue;
+            var label = handled.Add(key) ? key : $"{key} (stored secret)";
+            rows.Add(Row(connection, key, label, null, isSecret: true) with { IsUndeclared = true });
         }
 
         return rows;

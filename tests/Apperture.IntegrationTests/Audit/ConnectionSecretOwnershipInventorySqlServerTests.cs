@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Domain.Connector;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
@@ -142,6 +143,47 @@ public sealed class ConnectionSecretOwnershipInventorySqlServerTests
         await SetRawRefsAsync(scratch, spelled.ConnectionId, "{\"Password\":\"{" + spelled.Reference.ToUpperInvariant() + "}\"}");
         problems.Add(spelled);
 
+        // Every other spelling the platform's Guid.TryParse accepts resolves to the same secret, so a foreign one is still an incident
+        // (an older PATCH stored whatever string passed Guid.TryParse, exactly as sent) and must not be called unreadable.
+        foreach (var (spelling, make) in new (string, Func<string, string>)[]
+                 {
+                     ("32 digits", g => g.Replace("-", string.Empty)),
+                     ("parentheses", g => "(" + g + ")"),
+                     ("tab padded", g => "\\t" + g + "\\t"),
+                     ("newline padded", g => "\\r\\n" + g + "\\n"),
+                     ("space padded braces", g => "  {" + g.ToUpperInvariant() + "}  "),
+                 })
+        {
+            var s = await SeedConnectionAsync(scratch, Kind.OtherConnection, "foreign_owner");
+            await SetRawRefsAsync(scratch, s.ConnectionId, "{\"Password\":\"" + make(s.Reference) + "\"}");
+            problems.Add(s);
+            _ = spelling;
+        }
+
+        var otherProviderSpelled = await SeedConnectionAsync(scratch, Kind.OtherProvider, "foreign_provider");
+        await SetRawRefsAsync(scratch, otherProviderSpelled.ConnectionId, "{\"Password\":\"(" + otherProviderSpelled.Reference + ")\"}");
+        problems.Add(otherProviderSpelled);
+
+        // Text after a GUID is not a reference to the platform. SQL Server's own conversion would have ignored the text and found the secret.
+        foreach (var kind in new[] { Kind.Owned, Kind.OtherConnection })
+        {
+            var trailing = await SeedConnectionAsync(scratch, kind, "unreadable");
+            await SetRawRefsAsync(scratch, trailing.ConnectionId, "{\"Password\":\"" + trailing.Reference + "junk\"}");
+            problems.Add(trailing with { Reference = trailing.Reference + "junk" });
+        }
+
+        // The hexadecimal form is left to a person.
+        var hex = await SeedConnectionAsync(scratch, Kind.OtherConnection, "check_by_hand");
+        await SetRawRefsAsync(scratch, hex.ConnectionId, "{\"Password\":\"{0x0e984725,0xc51c,0x4bf4,{0x99,0x60,0xe1,0xc8,0x0e,0x27,0xab,0xa0}}\"}");
+        problems.Add(hex with { Reference = "{0x0e984725,0xc51c,0x4bf4,{0x99,0x60,0xe1,0xc8,0x0e,0x27,0xab,0xa0}}" });
+
+        // A descriptor name that differs from the owner's only by trailing spaces is another name to the platform's exact comparison.
+        var padded = NewConnectionId();
+        var paddedRef = await ConnectionSqlHarness.SeedSecretAsync(
+            scratch, ConnectionSecretOwnership.Provider, $"connection:{padded}:{Field}   ", ForeignMaterial);
+        await AddConnectionAsync(scratch, padded, new Dictionary<string, string> { [Field] = paddedRef });
+        problems.Add(new Seeded(padded, Field, "foreign_owner", paddedRef));
+
         // Several fields: only the poisoned one is listed.
         var mixedId = NewConnectionId();
         var own = await SeedReferenceAsync(scratch, mixedId, Kind.Owned, "Password");
@@ -165,6 +207,16 @@ public sealed class ConnectionSecretOwnershipInventorySqlServerTests
             var id = NewConnectionId();
             var reference = await SeedReferenceAsync(scratch, id, Kind.Owned, field);
             await AddConnectionAsync(scratch, id, new Dictionary<string, string> { [field] = reference });
+            clean.Add(id);
+        }
+
+        // Owned secrets written in the other spellings resolve at runtime, so they are clean.
+        foreach (var make in new Func<string, string>[] { g => g.Replace("-", string.Empty), g => "(" + g + ")", g => "\\t " + g + " \\r\\n", g => "{" + g.ToUpperInvariant() + "}" })
+        {
+            var id = NewConnectionId();
+            var reference = await SeedReferenceAsync(scratch, id, Kind.Owned, Field);
+            await AddConnectionAsync(scratch, id, new Dictionary<string, string> { [Field] = reference });
+            await SetRawRefsAsync(scratch, id, "{\"Password\":\"" + make(reference) + "\"}");
             clean.Add(id);
         }
 

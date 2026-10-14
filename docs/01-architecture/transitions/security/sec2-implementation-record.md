@@ -5,7 +5,7 @@
 | Date | 2026-10-13 |
 | Contract | [SEC-2.0 design gate](sec2-configuration-secret-and-operator-boundary-design-gate.md), approved 2026-10-13. The gate is binding; this record states what was built against it and the evidence. It changes no ruling. |
 | Baseline | `master` at `8f795f0` (PR #28, the SEC-2.0 merge) |
-| State | **SEC-2.1 implemented** on branch `sec-2.1-attention-acknowledgement`, with an independent review (§1.7). It closes F1 when the pull request merges and CI is green. **SEC-2.2, SEC-2.3 and SEC-2.4 have not started.** |
+| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented** on branch `sec-2.2-connection-secret-ownership` (base `8959b34`), with an independent review (§2.7). It closes U-3 and the code side of U-1 when its pull request merges and CI is green; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded (A2.7, open).** **SEC-2.3 and SEC-2.4 have not started.** |
 
 This record grows one section per package. Each package starts on the owner's instruction (gate §6.3).
 
@@ -132,3 +132,128 @@ Not verified by the reviewer, and not covered by a test: the 500 `outcome_unknow
 - After that fix the whole `Apperture.UnitTests.Audit` namespace (370 tests) passes locally.
 - **Second run** (`ee32ca2`, run 38519081730): `browser-security` passed; `build-and-test` failed on one of the new bUnit tests, `Acknowledging_sends_the_request_without_a_note_and_reloads_the_history`. It passed locally. The test verified the client call immediately after a click, but bUnit dispatches the click on the renderer, so on a slower runner the call had not been made yet. This was a timing assumption in the new test, not a product defect. The test now waits for the call, as the other tests of that class already did; the class passes six consecutive local runs.
 - Final CI result: see the pull request.
+
+---
+
+## 2. SEC-2.2: connection secret ownership and read model (U-1, U-3)
+
+### 2.1 What changed
+
+| Area | Change |
+|---|---|
+| Ownership rule | `ConnectionSecretOwnership` (`Core.Application/Connector`) is the one definition: provider `platform-connection`, name `connection:{connectionId}:{fieldKey}`. The provisioner's create and rotate paths and every resolution use it. |
+| Owned resolution | `SecretOwner` and `ISecretResolver.ResolveOwnedAsync`. `SqlSecretStore.TryGetOwnedPayloadAsync` reads the descriptor with the owner in the predicate, compares provider and name ordinally in C#, and only then reads the version row; the protector is reached only for an owned secret. `CompositeSecretResolver` forwards; `AzureKeyVaultSecretResolver` and the placeholder `DefaultSecretResolver` refuse (they cannot verify ownership). |
+| Boundary | `IConnectionMaterialResolver` (`ConnectionMaterialResolver` in `ConnectorResolution`) replaces `ResolvedConnectionMaterialBuilder` and the loops the Sftp and Campus Nexus verifiers copied. Worker slot resolution (`DefaultConnectionResolver`), the settings options, the three verifiers and structure browse all call it. |
+| Refusal | `ConnectionSecretUnavailableException` (an `InvalidOperationException`, so callers that mapped the earlier store miss keep mapping it), fixed message, field key only. `SqlSecretResolver` no longer echoes the reference. |
+| Evidence | New catalog action `connection.secret.resolution_refused` (W3, category `secrets`, elevated, basis `attempt`, target the connection; fields `fieldKey` and `path` ∈ `run`, `verify`, `browse`, `settings_options`). One row per boundary call. |
+| Worker Host | Now registers the audit recorder (`AddAppertureAuditRecorder`). Before, `IAuditEventWriter` was not registered there, so a boundary that writes its refusal row could not have been built in the worker. |
+| Read model | `secretRefs` removed from every connection response; `secretFields: [{ key, configured }]` replaces it (client DTO and server DTO). |
+| Write contract | `PATCH` with a `secretRefs` property is a 400. `UpdateConnectionRequest(Name, Config, SecretValues, ClearSecretFields)`. `clearSecretFields` clears any stored key. `secretValues` rotates an owned secret, or stores a new owned secret and repoints a field whose reference is not its own. |
+| UI | The connection page reads `secretFields`; an undeclared legacy secret field shows a Remove action (offered with `CanUpdateConnections` once the connector definition was read). |
+| Inventory | `scripts/sec2/Get-ConnectionSecretOwnershipInventory.sql`, read-only. |
+| Guards | `ConnectionSecretBoundaryGuardTests` (identifier-based, with a self-test), a composition test for both hosts, and a source guard that nothing in `SqlSecretStore` assigns a descriptor's name or provider. |
+
+### 2.2 Decisions taken inside the gate
+
+| # | Decision |
+|---|---|
+| D1 | **Descriptor first, then version, as two reads.** The owner is in the first query's predicate (a cheap narrowing) and compared again ordinally in C#, because the catalog's collation folds case (a test proves it does here, so the case-variant refusals are for the right reason). The second read is by `(SecretId, Version)`. That is sound because no operation of the store, and nothing else in `src/`, assigns a descriptor's name or provider after it is created (a guard test pins it, and a SQL test checks the stored owner after create, add-version, activate, disable and revoke). The gate's "joins the first read" (P-12) is met: the check costs no round trip, which a test asserts by comparing the number of statements with the unchecked path (K-2). |
+| D2 | **`ResolveOwnedAsync` is a required member**, not a default interface method, so every resolver declares what it does. Key Vault and the placeholder refuse; a future resolver cannot inherit a permissive default. |
+| D3 | **Every unavailable case is the same exception** at the resolver (`SecretUnavailableException`) and at the boundary (`ConnectionSecretUnavailableException`). Other failures (a protector error, a cancellation) are not refusals: they propagate and write no refusal row. |
+| D4 | **The path label follows the host.** `AddConnectorResolution(path)` registers what slot resolution means in that host: the Worker Host's default is `run`, the Management Host passes `settings_options` (its only slot consumer is the Campus Nexus campuses provider). Verify and browse are named by the verifiers and the browser. This avoids an ambient context. A future Management consumer of slot resolution would be labelled `settings_options` until it says otherwise. |
+| D5 | **Actor:** `run` is `AuditActor.Worker`; every other path is `AuditActor.CurrentPrincipal`. |
+| D6 | **The evidence write is bounded and cannot change the result.** `TryWriteAsync` with a 15-second budget; a `false`, an exception or a timeout is logged (the connection id, the field key, the path, and the exception type only) and the refusal stands. The refusal is decided before the write is attempted. |
+| D7 | **Fields are resolved in ordinal key order**, so a connection with several poisoned fields always names the same first field, and the call aborts there. |
+| D8 | **A blank reference or an empty key is a refusal**, not an `ArgumentException`. A key longer than the schema's id bound is recorded truncated; an empty key is recorded as `(blank)`. |
+| D9 | **A typed `InvalidConnectionRequestException`** (an `InvalidOperationException`) carries the new request-shape errors, and the controller answers 400 for it. The existing mapping of other `InvalidOperationException`s to 404 on `PATCH` is unchanged. |
+| D10 | **An update no longer normalizes or validates references it does not touch.** It used to throw on an undeclared stored key and on an unreadable stored reference, so a legacy row could not even be renamed. The config-change guard remains: while the request leaves a reference that is not the field's own, a config change is refused (config decides where the credential goes). A field the same request repairs or clears is excluded from that check. |
+| D11 | **`secretFields` lists the connector's declared secret fields first (configured `false` when nothing is stored), then every other stored key.** A host that does not register the connector lists the stored keys only. |
+| D12 | **Q-1 settled.** A failed step fails its run (`RunFailureCapture` records the exception message, which is now the fixed text). Nothing in the worker retries within the run, so each new attempt (a retry of the run, the next scheduled start) is one boundary call and writes one row. No throttle was added. |
+| D13 | **Q-2 settled as the gate says.** An undeclared legacy key is repaired by clearing it; the API has no way to repoint it. |
+| D14 | **K-13 settled.** The stale remark in `IntegrationSettingSecretInventory` is corrected. |
+| D15 | **The `secretRefs` property stays on the `PATCH` body type** only so that a request still sending it can be answered with the 400. It is never read. |
+
+### 2.3 Audit catalog entry
+
+| Field | Value |
+|---|---|
+| Action | `connection.secret.resolution_refused` |
+| Category, severity, basis | `secrets`, elevated, `attempt` |
+| Target | `connection`; the owning resource context is the related reference |
+| Write class | W3 (`Attempt`), outcome `rejected` |
+| Schema | `fieldKey` (id), `path` (enum: `run`, `verify`, `browse`, `settings_options`) |
+| Never recorded | The reference, the secret found, its owner, which condition failed |
+| Introduced in, writer | `SEC-2.2`, `ConnectionMaterialResolver.cs` |
+
+### 2.4 Acceptance matrix
+
+| # | Status | Evidence |
+|---|---|---|
+| A2.1 | Met | All six paths call `IConnectionMaterialResolver` (`ConnectionSecretResolutionPathsSqlServerTests` drives each for real). `ConnectionSecretBoundaryGuardTests` fails a production file outside `ConnectionMaterialResolver.cs` that reads `SecretRefs` (or the `SecretRefsJson` column) next to a secret resolver type, or builds a `SecretRef` beside `SecretRefs`, or lets a connector project name a resolver at all; its self-tests feed it the loop the verifiers used to copy and the other shapes. The boundary file itself is pinned to make no `.ResolveAsync(` call under any receiver name. |
+| A2.2 | Met | `A_poisoned_reference_is_refused_on_every_path_and_nothing_foreign_is_read_sent_or_changed`: 6 entry points × 11 classes (another connection's secret, another field's, another provider's, the name in another case, the provider in another case, dangling, unreadable, Key Vault style, blank, disabled owned, never-activated owned) × both isolation modes = 132 cases on real SQL Server. A recording protector shows nothing is unprotected, a command log shows a foreign secret's version table is never queried, a loopback listener shows nothing reaches the destination (a control case with an owned secret proves the listener counts), and the store snapshot is unchanged. |
+| A2.3 | Met | The exception, its `ToString()`, the audit row, the verifier summary, the browse message, the run failure summary and the logs hold no reference, secret id, owner or foreign name (assertions in the same matrix, `ConnectionMaterialResolverTests` and `ConnectionSecretOwnershipSqlServerTests`). `SqlSecretResolver`'s two messages no longer echo the reference (a test pins it). |
+| A2.4 | Met | One row per call at every entry point, including a connection with two poisoned fields (the first in ordinal order is named) and three attempts writing three rows; the right actor (the worker, with no principal context at all, or the operator) and `path`. With a writer that throws, one that reports failure, and the real writer pointed at a missing database: the refusal stands, nothing is sent, nothing is unprotected, and there is no row. |
+| A2.5 | Met | An owned connection reaches its destination on every path and writes no refusal row. `For_a_secret_the_connection_owns_the_owned_call_agrees_with_the_unchecked_one_in_every_lifecycle_state` (active, pinned to an unknown version, disabled, revoked, a new version never activated) and the rotation and pinned-version tests show the lifecycle is unchanged; the protector receives the key id stored on the version row; the store runs the same two statements (descriptor, then version) as the unchecked path, asserted by statement count (K-2). |
+| A2.6 | Met | `ConnectionSecretOwnershipInventorySqlServerTests`, both isolation modes: 28 seeded problem rows (every class; a retired connection; non-string and null values; an unreadable map; every GUID spelling `Guid.TryParse` accepts; padding; text after a GUID; the hexadecimal form; a name that differs only by trailing spaces) are returned exactly, with the right class. Owned secrets written in other spellings, a clean catalog and an empty one return nothing. It runs as a database user with SELECT on the three tables only, changes nothing, and is repeatable. |
+| A2.7 | **Not met; a rollout requirement** | No persistent installation database is named in the deployment records in this repository (`deploy/` and `docs/03-operations/` hold only the development and example connection strings), so none was enumerated and none is invented. The script was run read-only against the four persistent **test-fixture** databases on the local test SQL container (`Apperture_BootstrapHttpTests`, `Apperture_BrowserTests`, `Apperture_IntegrationTests`, `Apperture_ManagementGovernanceTests`) and returned no row for each; they are fixtures, not installations, and are not evidence for A2.7. **U-1 therefore stays an RC1 blocker (gate §8) until each persistent installation's database has been inventoried and each listed row's disposition recorded here.** |
+| A2.8 | Met | `ManagementHostConnectionSecretFieldsHttpTests` through the real Management host: list, detail, create (201), `PATCH` (rename and rotation) and test-connect carry no reference in any spelling, no `secretRefs` property and no secret value, and each carries `secretFields` with exactly `key` and `configured`. A declared field with nothing stored reads `configured: false`; an undeclared stored key is listed; a blank reference is `false`. No other API serializes a `Connection` (searched). |
+| A2.9 | Met | `PATCH` with `secretRefs` (non-empty, empty, with other fields) is a 400 naming both replacements and changes nothing. `secretValues` on a foreign field creates and repoints (unit, SQL, HTTP, and the M6 matrix with a new `RepairForeign` operation: audit failure, lost acknowledgement, confirmed rollback rerun, unknown outcome, lock not granted); the foreign secret's descriptor, versions, payloads and `SecretAudits` count are identical before and after, and a unit test records that only its descriptor is read. `clearSecretFields` clears declared and undeclared keys, is idempotent, and rejects unknown keys, blanks, a cleared-and-set field and a required field with a 400; both operations need `connection.update` (403 otherwise). |
+| A2.10 | Met | `ConnectionWorkspacePresentationTests`, `ConnectionWorkspaceRenderTests` and bUnit `ConnectionLegacySecretFieldUiTests`: Set and Not set from `secretFields`; an undeclared legacy field (and a stored secret that shares a key with a plain field) shown with a Remove action only for an operator who may update connections; the click sending exactly `ClearSecretFields` and reloading. `docs/04-api/contracts.md` carries the contract and the compatibility note. |
+
+### 2.5 Test evidence
+
+Counts are from this branch after the review remediation. Heavy suites were run one at a time (the machine is memory constrained). The SQL Server suites use throwaway catalogs created and dropped by the tests, and fail rather than skip without SQL Server.
+
+| Suite | Result |
+|---|---|
+| `Apperture.UnitTests` (the whole project) | 4660 passed |
+| `Apperture.Management.Ui.Shared.Tests` | 1496 passed |
+| `Apperture.Management.Ui.Client.Tests` | 523 passed |
+| `Apperture.ArchTests` | 38 passed |
+| SEC-2.2 SQL Server and host suites together (ownership, six paths, inventory, connection lifecycle and M6, verify and browse, ownership race, structure browser, Management host connection tests; 423 tests, both isolation modes where the suite runs on both) | 423 passed |
+
+**Test-first status.** The primitives (`SecretOwner`, the store check, the boundary) were written before their tests, so their evidence is mutation testing, as in §1.5, rather than red first. The update flow, the guard and the inventory were written against the finished contract.
+
+**Mutation evidence** (product code edited temporarily and restored; `git diff` verified):
+
+| Mutation | Caught by |
+|---|---|
+| The store ignores the owner (no predicate, no ordinal comparison) | 22 of 47 store-level tests and 60 of 132 path cases (every foreign class at every entry point, both modes) |
+| The provisioner treats every parseable reference as owned (the repair path) | **Not run.** The auto-mode classifier declined the temporary edit, and it was not routed around. That path rests on assertions that fail without the change: a unit test records every store call that names the foreign secret, and the SQL and host tests compare its descriptor, versions, payloads and audit count. |
+
+### 2.6 Deployment and other limitations
+
+| # | Item |
+|---|---|
+| L1 | **A2.7 is open** (see the matrix). The inventory is a pre-upgrade step for each persistent installation. Enforcement does not wait on it (gate §6.3), so a connection with a poisoned reference fails after upgrade until it is repaired with `secretValues` or `clearSecretFields`. |
+| L2 | **No persistent database was reset or modified.** The only databases created or dropped are the tests' uniquely named throwaway catalogs. The host HTTP tests write to `Apperture_ManagementGovernanceTests`, remove the connections and secrets they create, and leave only audit rows (append-only). The primary development database was not touched. |
+| L3 | **The inventory needs compatibility level 130** (`OPENJSON`, `ISJSON`) and recognizes `Guid.TryParse`'s forms by pattern. Only the hexadecimal form is reported as `check_by_hand`. |
+| L4 | **Settings and Entra secrets are not covered** (gate §1). `IntegrationSettingsAccessor`, the SMTP resolver and the Entra client secret still call the unchecked `ResolveAsync`; SEC-2.3 and K-3 own them. |
+| L5 | **The settings-options endpoint's status codes are unchanged** (gate §5.3): a refused connection there is the same unhandled `InvalidOperationException` a missing secret was, now with a fixed message. |
+| L6 | **`PATCH` with `"secretRefs": null` is accepted** as absent, because the body type cannot tell a null from a missing property. A non-null value, even `{}`, is refused. |
+| L7 | **An unknown or non-secret key in `secretValues` is still a 404** on `PATCH`, as before. The new request errors and the ownership refusal are 400. |
+| L8 | **The guard is identifier-based.** It cannot see a reference passed through a variable defined in another file, or a positional deconstruction of `Connection` that never names `SecretRefs`; the one-file allow-list, the ban on resolver types in the connector projects and the runtime tests are the compensating controls. Types that can reach material without being a resolver (`SqlSecretStore`, `ISecretProtector`) are not on its list, because legitimate code uses them. |
+
+### 2.7 Independent review
+
+An independent reviewer (a separate subagent run with the Opus model at high effort, as the assignment asked; given the approved gate and the code at `770f55c` and none of this record's conclusions) read the change against the gate and was asked for an explicit readiness verdict. It was read-only: it ran no build, test or database command.
+
+**Verdict: READY WITH CONDITIONS**, no critical or high finding. The conditions were F-1 (fix the inventory's GUID parsing), F-2 (commit this section) and keeping U-1 open until A2.7 is recorded. All three are addressed below. It checked the six paths across all of `src/`, ownership before the version read, descriptor immutability, the audit and fail-closed behaviour, disclosure through every output, the repair, the inventory, the API and UI, and the tests.
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| F-1 | The inventory parsed the reference with SQL Server's `TRY_CONVERT`, which does not accept what `Guid.TryParse` accepts. A historical foreign reference in the 32-digit, parenthesised, whitespace-padded or hexadecimal form would be listed `unreadable` ("clear it") instead of as an incident; and a GUID followed by text would be converted anyway. | Medium | **Fixed, and the premise checked rather than assumed.** A query on the test SQL Server confirmed the 32-digit, parenthesised, tab-padded and hexadecimal forms return NULL, and a GUID followed by text returns the GUID. The script now trims whitespace and recognizes the hyphenated, braced, parenthesised and 32-digit forms by explicit pattern; anything else is `unreadable`, the hexadecimal form is `check_by_hand`. The header claim was corrected. The test seeds each form (foreign and owned), padding, trailing text and the hex form. |
+| F-2 | This section was uncommitted at the reviewed commit. | Medium (process) | **Fixed.** Committed with the remediation. |
+| F-3 | A config change while a kept reference is not the field's own answered 404 (a plain `InvalidOperationException`), although it is now the documented repair route. | Low | **Fixed.** The ownership refusal is `InvalidConnectionRequestException`, so `PATCH` answers 400 (create already did); a host test and the contract row cover it. Unknown or non-secret `secretValues` keys remain 404 (L7). |
+| F-4 | The identifier guard missed a persistence helper reading `SecretRefsJson` next to a resolver, a boundary alias such as `var r = _secretResolver; r.ResolveAsync(...)`, positional deconstruction, and non-resolver material readers. | Low | **Partly fixed.** The `SecretRefsJson` case and any-receiver `ResolveAsync` are now guarded and self-tested. Deconstruction and non-resolver types are accepted and stated (L8). |
+| F-5 | The M6 matrix did not cover the new create-and-repoint path. | Low | **Fixed.** A `RepairForeign` operation joins the matrix: audit failure, lost acknowledgement, confirmed rollback rerun, unknown outcome, and lock not granted. |
+| F-6 | A stored secret whose key equals a declared plain field or a config key had no secret row, so the UI could not show or remove it. | Low | **Fixed.** It gets its own row (labelled "(stored secret)") with the Remove action; the `@key` of the rows is distinct. A presentation test pins it. |
+| F-7 | `"secretRefs": null` is accepted. | Informational | **Accepted** (L6). |
+| F-8 | The exact comparison in the inventory ignored trailing spaces. | Informational | **Fixed.** A `DATALENGTH` test is added; the test seeds a name differing by trailing spaces. |
+| F-9 | `A_good_field_before_a_poisoned_one…` asserted only that the call throws. | Informational | **Fixed.** It now asserts the owned field was asked first, the poisoned one second, and one row names the poisoned field. |
+
+Not verified by the reviewer: it could not run SQL Server (F-1's premise was verified afterwards, see above), run any suite, or confirm that any persistent installation holds poisoned rows (A2.7).
+
+### 2.8 CI
+
+Final CI result: see the pull request.

@@ -124,6 +124,11 @@ public sealed class ConnectionSecretOwnershipSqlServerTests : IClassFixture<Audi
         rig.Log.Commands.Should().HaveCount(2);
         rig.Log.Commands[0].Should().Contain("SecretDescriptors");
         rig.Log.Commands[1].Should().Contain("SecretVersions");
+
+        // Gate K-2: the owner predicate rides on the descriptor read that already came first, so the check costs no round trip.
+        await using var unchecked_ = NewResolution(scratch);
+        await unchecked_.Resolver.ResolveAsync(new SecretRef(reference));
+        unchecked_.Log.Commands.Should().HaveCount(rig.Log.Commands.Count, "the unchecked path also reads the descriptor and then the version");
     }
 
     [Theory]

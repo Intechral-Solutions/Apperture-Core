@@ -316,6 +316,25 @@ public sealed class ManagementHostConnectionSecretFieldsHttpTests : IAsyncLifeti
     }
 
     [Fact]
+    public async Task A_config_change_while_a_kept_field_names_a_foreign_secret_is_a_400_that_names_the_repair_and_no_reference()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(Operator);
+        var victim = await CreateConnectionAsync(client);
+        var victimReference = await ReferenceOfAsync(victim);
+        var poisoned = await CreateConnectionAsync(client);
+        await SetStoredRefsAsync(poisoned, "{\"Password\":\"" + victimReference + "\"}");
+        var before = await StoredRefsAsync(poisoned);
+
+        var response = await client.PatchAsJsonAsync($"/api/connections/{poisoned}", new { config = new { Server = "attacker.example", Database = "Target", UserId = "reader" } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var text = await response.Content.ReadAsStringAsync();
+        text.Should().Contain("secretValues").And.Contain("clearSecretFields").And.NotContain(victimReference).And.NotContain(victim);
+        (await StoredRefsAsync(poisoned)).Should().Be(before);
+    }
+
+    [Fact]
     public async Task An_undeclared_legacy_field_is_cleared_by_key_and_the_secret_it_named_is_left_alone()
     {
         AssertSqlAvailable();

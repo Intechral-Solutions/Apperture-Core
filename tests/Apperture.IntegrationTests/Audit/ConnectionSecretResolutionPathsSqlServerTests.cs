@@ -438,6 +438,29 @@ public sealed class ConnectionSecretResolutionPathsSqlServerTests : IClassFixtur
         (await RefusalRowsAsync(scratch, connectionId)).Should().HaveCount(3);
     }
 
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task The_worker_records_its_refusal_with_no_principal_context_at_all(bool rcsi)
+    {
+        // The Worker Host has no signed-in operator: its writer is built without a principal context, as its composition builds it.
+        var scratch = _catalogs.For(rcsi);
+        var (_, principal) = await AdminAsync(scratch);
+        var connectionId = NewConnectionId();
+        var reference = await SeedReferenceAsync(scratch, connectionId, Kind.OtherConnection, FieldFor(Entry.WorkerSlot));
+        using var destination = new Destination();
+        var arranged = await ArrangeAsync(scratch, Entry.WorkerSlot, connectionId, reference, destination.Port);
+        await using var rig = NewResolution(scratch);
+        var workerWriter = new SqlAuditEventWriter(scratch.Options(), TimeProvider.System, null, principals: null);
+
+        var outcome = await DriveAsync(scratch, Entry.WorkerSlot, arranged, rig, workerWriter, principal, destination, new CountingFactory());
+
+        AssertRefused(Entry.WorkerSlot, outcome);
+        var row = (await RefusalRowsAsync(scratch, connectionId)).Should().ContainSingle().Subject;
+        row["Actor"].Should().Be(AuditActor.Worker.RecordedValue);
+    }
+
+    public static IEnumerable<object[]> Isolation() => [[false], [true]];
+
     // ---- A2.4: evidence never gates the refusal ----
 
     public static IEnumerable<object[]> FailingWriters() =>

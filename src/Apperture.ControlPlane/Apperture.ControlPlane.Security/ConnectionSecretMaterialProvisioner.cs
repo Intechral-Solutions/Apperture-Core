@@ -55,7 +55,7 @@ public sealed class ConnectionSecretMaterialProvisioner
     /// secret's own stored descriptor, never against what the connection row says. A missing secret, another provider and another
     /// owner or field are all refused with the same message, which does not repeat the reference or say which case it was.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The reference does not name a secret owned by this connection field.</exception>
+    /// <exception cref="InvalidConnectionRequestException">The reference does not name a secret owned by this connection field.</exception>
     public async ValueTask EnsureReferenceOwnedAsync(
         ConnectionId connectionId, string fieldKey, string reference, CancellationToken cancellationToken = default)
     {
@@ -66,7 +66,8 @@ public sealed class ConnectionSecretMaterialProvisioner
                 return;
         }
 
-        throw new InvalidOperationException(
+        // A request the caller can fix (so a 400 on update as well as on create), not a missing connection.
+        throw new InvalidConnectionRequestException(
             $"Secret reference for '{fieldKey}' does not name a secret owned by this connection field. "
             + "Supply a new value with secretValues, or remove the stored reference with clearSecretFields.");
     }

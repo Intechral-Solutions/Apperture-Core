@@ -52,6 +52,11 @@ public sealed class ConnectionSecretBoundaryGuardTests
             if (readsReferences && NewSecretRef.IsMatch(file.Code))
                 violations.Add(new Violation(file.RelativePath, "builds a SecretRef in a file that reads Connection.SecretRefs, outside the boundary"));
 
+            // The same references read as the stored column text (a persistence helper that deserializes SecretRefsJson) next to a
+            // resolver is the same bypass by another name.
+            if (!readsReferences && resolverMentioned.Count > 0 && file.Mentions("SecretRefsJson"))
+                violations.Add(new Violation(file.RelativePath, $"reads the stored SecretRefsJson and holds {resolverMentioned[0]}: resolves stored connection references outside the boundary"));
+
             if (resolverMentioned.Count > 0 && NoResolverRoots.Any(root => file.RelativePath.StartsWith(root, StringComparison.Ordinal)))
                 violations.Add(new Violation(file.RelativePath, $"mentions {resolverMentioned[0]}; connector code resolves a connection only through IConnectionMaterialResolver"));
         }
@@ -79,7 +84,8 @@ public sealed class ConnectionSecretBoundaryGuardTests
         boundary.Should().NotBeNull("the allow-list names a file that exists");
         boundary!.Mentions("SecretRefs").Should().BeTrue("an entry that no longer does what it allows must be removed");
         boundary.Mentions("ResolveOwnedAsync").Should().BeTrue();
-        Regex.IsMatch(boundary.Code, @"_secretResolver\s*\.\s*ResolveAsync\b", RegexOptions.CultureInvariant)
+        // Whatever the receiver is called (a field, a local alias, a parameter): the boundary makes no call to a method named ResolveAsync.
+        Regex.IsMatch(boundary.Code, @"\.\s*ResolveAsync\s*\(", RegexOptions.CultureInvariant)
             .Should().BeFalse("the boundary never uses the unchecked call");
     }
 
@@ -139,6 +145,22 @@ public sealed class ConnectionSecretBoundaryGuardTests
 
             Scan([Source("Apperture.ControlPlane/X/C.cs", text)]).Should().NotBeEmpty($"{type} next to SecretRefs is a way to resolve a connection's references");
         }
+    }
+
+    [Fact]
+    public void Self_test_a_persistence_helper_that_resolves_the_stored_reference_column_is_caught()
+    {
+        const string text = """
+            public sealed class Helper(SqlSecretResolver resolver)
+            {
+                public async Task Go(ConnectionEntity e) =>
+                    await resolver.ResolveAsync(new Core.SecretRef(JsonSerializer.Deserialize<Dictionary<string, string>>(e.SecretRefsJson)!["Password"]));
+            }
+            """;
+
+        Scan([Source("Apperture.Persistence/Apperture.Persistence.SqlServer/Helper.cs", text)]).Should().Contain(v => v.Rule.Contains("SecretRefsJson"));
+        Scan([Source("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlConnectionRepository.cs", "public sealed class R { string S(ConnectionEntity e) => e.SecretRefsJson; }")])
+            .Should().BeEmpty("the repository reads the column and resolves nothing");
     }
 
     [Fact]

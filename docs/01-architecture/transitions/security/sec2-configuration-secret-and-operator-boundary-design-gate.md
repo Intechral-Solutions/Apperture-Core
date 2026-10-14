@@ -32,7 +32,7 @@ The approved packages after SEC-2.0, in implementation order (SR-16):
 | Package | Finding | Approved RC1 class | State |
 |---|---|---|---|
 | SEC-2.1 | F1 | **Release blocker** | Implemented and independently reviewed; closes on merge ([record](sec2-implementation-record.md) §1) |
-| SEC-2.2 | U-1 and U-3 | **Release blocker** (U-1); U-3 ships with it | Not started |
+| SEC-2.2 | U-1 and U-3 | **Release blocker** (U-1); U-3 ships with it | Implemented and independently reviewed; closes the code side on merge. **U-1 stays open until the persistent-installation inventories (A2.7) are recorded** ([record](sec2-implementation-record.md) §2) |
 | SEC-2.3 | U-2 | **Required for RC1** unless formally risk-accepted (SR-15) | Not started |
 | SEC-2.4 | F2 | Not independently blocking | Not started |
 
@@ -475,4 +475,4 @@ None blocks implementation. Each is settled inside the named package and recorde
 
 SEC-2.0 is **Approved / Ready for Implementation**. The gate changes no code, test, migration, contract or catalog entry, and no finding is resolved by it.
 
-SEC-2.1 is the first package in the approved order (SR-16). It was started on the owner's instruction after this gate merged, and is implemented and independently reviewed (see the [implementation record](sec2-implementation-record.md)). **SEC-2.2 to SEC-2.4 have not started.** Each starts on an explicit owner instruction.
+SEC-2.1 is the first package in the approved order (SR-16). It was started on the owner's instruction after this gate merged, and is implemented and independently reviewed (see the [implementation record](sec2-implementation-record.md)). SEC-2.2 was then started on the owner's instruction and is implemented and independently reviewed (same record, §2); its acceptance criterion A2.7 is a rollout requirement and remains open. **SEC-2.3 and SEC-2.4 have not started.** Each starts on an explicit owner instruction.

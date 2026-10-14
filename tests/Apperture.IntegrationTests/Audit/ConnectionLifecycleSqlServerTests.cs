@@ -54,6 +54,7 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
         Rename,
         RotateMaterial,
         RotateRef,
+        RepairForeign,
         Retire,
     }
 
@@ -155,6 +156,7 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
     [Theory]
     [InlineData(Op.CreateWithMaterial)]
     [InlineData(Op.RotateMaterial)]
+    [InlineData(Op.RepairForeign)]
     public async Task An_operation_lock_that_cannot_be_taken_is_unknown_and_changes_nothing(Op op)
     {
         await using var scratch = await NewScratchAsync(rcsi: false);
@@ -314,7 +316,7 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
 
     private static void RevealsNothing(Exception ex, params string[] sentinels)
     {
-        ex.Should().BeOfType<InvalidOperationException>();
+        ex.Should().BeAssignableTo<InvalidOperationException>();
         foreach (var sentinel in sentinels)
             ex.ToString().Should().NotContain(sentinel);
     }
@@ -697,6 +699,26 @@ public sealed class ConnectionLifecycleSqlServerTests : IClassFixture<AuditIsola
                     {
                         Detail(rows.Single(r => (string)r["Action"]! == AuditActionNames.ConnectionSecretRotated), "fieldsRotated").Should().Be("1");
                         Detail(rows.Single(r => (string)r["Action"]! == AuditActionNames.ConnectionSecretStored), "change").Should().Be("replaced");
+                    });
+            }
+
+            case Op.RepairForeign:
+            {
+                // The field names another connection's secret; a value creates a secret of its own and repoints the field, in the unit.
+                var victim = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+                var seeded = await SeedConnectionAsync(scratch, principal, withMaterial: true);
+                await scratch.ExecuteAsync(
+                    $"UPDATE Connections SET SecretRefsJson = N'{{\"Password\":\"{victim.SecretRef}\"}}' WHERE Id = N'{seeded.ConnectionId}';");
+                return new Arranged(
+                    seeded.ConnectionId,
+                    [AuditActionNames.ConnectionSecretRotated, AuditActionNames.ConnectionSecretStored],
+                    (db, unit) => Service(db, principal, unit).UpdateConnectionAsync(
+                        new ConnectionId(seeded.ConnectionId),
+                        new UpdateConnectionRequest(null, null, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask(),
+                    rows =>
+                    {
+                        Detail(rows.Single(r => (string)r["Action"]! == AuditActionNames.ConnectionSecretRotated), "fieldsRotated").Should().Be("1");
+                        Detail(rows.Single(r => (string)r["Action"]! == AuditActionNames.ConnectionSecretStored), "change").Should().Be("created");
                     });
             }
 

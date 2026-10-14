@@ -29,6 +29,9 @@ version).
   unreadable        The reference is blank, null, not text, not a secret id, or   Clear the field (PATCH
                     the whole reference map is not a JSON object (FieldKey is     clearSecretFields). If the whole
                     NULL for that case).                                          map is unreadable, repair the row.
+  check_by_hand     The reference is written in the hexadecimal GUID form         Decode it and look the secret up
+                    ({0x...,0x...,0x...,{0x...}}), which this script does not     by hand; treat it as foreign_owner
+                    decode. The product never wrote it.                           until shown otherwise.
   foreign_provider  The reference names a secret of another provider (a setting    INCIDENT. Clear or re-enter the
                     or an Entra secret).                                          field. If the connection was ever
                                                                                   tested, browsed or bound, rotate
@@ -49,9 +52,13 @@ Repairing a row does not need the reference. In the Management UI or API, give t
 store a secret the connection owns and repoint the field, or clear the field (clearSecretFields). Neither reads,
 rotates, disables or otherwise changes the secret the old reference named.
 
-Notes on fidelity: the secret id is read with the server's uniqueidentifier conversion, which accepts the usual
-hyphenated, braced and 32-digit forms. A reference only the platform's own parser would accept (a hexadecimal
-"X" form) is listed as unreadable here although it would be looked up there; none is written by the product.
+Notes on fidelity: the platform reads a reference with .NET's Guid.TryParse, which trims surrounding whitespace and
+accepts the hyphenated form, the same in braces or in parentheses, and 32 digits without hyphens. This script
+recognizes exactly those by explicit pattern (SQL Server's own conversion does not: it rejects the 32-digit and
+parenthesised forms and padding, and it ignores text after a GUID) and reports anything else as unreadable, so
+a reference the platform would have resolved is never mislabelled as clear-and-forget. Only the hexadecimal form is left
+to a person (check_by_hand). Whitespace trimming covers space, tab, carriage return and line feed.
+Name and provider are compared exactly, trailing spaces included.
 ================================================================================================================
 */
 SET NOCOUNT ON;
@@ -79,18 +86,50 @@ WITH [Maps] AS
     CROSS APPLY OPENJSON(CASE WHEN m.[IsObject] = 1 THEN m.[Json] ELSE N'{}' END) AS f
     WHERE m.[IsObject] = 1
 ),
+[Trimmed] AS
+(
+    -- The platform parses a reference with .NET's Guid.TryParse, which trims whitespace and accepts only the forms below.
+    -- SQL Server's own conversion does not match it (it rejects the 32-digit and parenthesised forms and whitespace padding,
+    -- and it silently ignores text after a GUID), so the text is checked against explicit patterns first.
+    SELECT
+        x.[ConnectionId], x.[ConnectionName], x.[ConnectionState], x.[FieldKey], x.[RefJsonType],
+        LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(x.[RefValue], NCHAR(9), N' '), NCHAR(10), N' '), NCHAR(13), N' '))) AS [T]
+    FROM [Fields] AS x
+),
+[Canonical] AS
+(
+    SELECT
+        t.[ConnectionId], t.[ConnectionName], t.[ConnectionState], t.[FieldKey], t.[RefJsonType],
+        CASE
+            WHEN t.[T] LIKE p.[Dashed]                                   THEN t.[T]                     -- D: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+            WHEN t.[T] LIKE N'{' + p.[Dashed] + N'}'                     THEN SUBSTRING(t.[T], 2, 36)   -- B: {D}
+            WHEN t.[T] LIKE N'(' + p.[Dashed] + N')'                     THEN SUBSTRING(t.[T], 2, 36)   -- P: (D)
+            WHEN LEN(t.[T]) = 32 AND t.[T] LIKE REPLICATE(p.[Hex], 32)   -- N: 32 digits
+                THEN STUFF(STUFF(STUFF(STUFF(t.[T], 21, 0, N'-'), 17, 0, N'-'), 13, 0, N'-'), 9, 0, N'-')
+        END AS [Canon],
+        CASE WHEN t.[T] LIKE N'{0x%' THEN 1 ELSE 0 END AS [IsHexForm]    -- X: {0x...,0x...,0x...,{0x...}}; not parsed here
+    FROM [Trimmed] AS t
+    CROSS APPLY
+    (
+        SELECT
+            N'[0-9A-Fa-f]' AS [Hex],
+            REPLICATE(N'[0-9A-Fa-f]', 8) + N'-' + REPLICATE(N'[0-9A-Fa-f]', 4) + N'-' + REPLICATE(N'[0-9A-Fa-f]', 4) + N'-'
+                + REPLICATE(N'[0-9A-Fa-f]', 4) + N'-' + REPLICATE(N'[0-9A-Fa-f]', 12) AS [Dashed]
+    ) AS p
+),
 [Resolved] AS
 (
     SELECT
-        x.[ConnectionId], x.[ConnectionName], x.[ConnectionState], x.[FieldKey], x.[RefJsonType],
+        c.[ConnectionId], c.[ConnectionName], c.[ConnectionState], c.[FieldKey], c.[RefJsonType], c.[IsHexForm],
         g.[SecretGuid],
+        N'connection:' + c.[ConnectionId] + N':' + c.[FieldKey] AS [ExpectedName],
         d.[Id]            AS [DescriptorId],
         d.[Provider]      AS [DescriptorProvider],
         d.[Name]          AS [DescriptorName],
         d.[State]         AS [DescriptorState],
         d.[ActiveVersion] AS [DescriptorActiveVersion]
-    FROM [Fields] AS x
-    CROSS APPLY (SELECT TRY_CONVERT(uniqueidentifier, NULLIF(LTRIM(RTRIM(x.[RefValue])), N'')) AS [SecretGuid]) AS g
+    FROM [Canonical] AS c
+    CROSS APPLY (SELECT TRY_CONVERT(uniqueidentifier, c.[Canon]) AS [SecretGuid]) AS g
     LEFT JOIN [dbo].[SecretDescriptors] AS d ON d.[Id] = g.[SecretGuid]
 ),
 [Classified] AS
@@ -99,12 +138,17 @@ WITH [Maps] AS
         r.[ConnectionId], r.[ConnectionName], r.[ConnectionState], r.[FieldKey],
         r.[DescriptorProvider], r.[DescriptorName],
         CASE
-            WHEN r.[RefJsonType] <> 1 OR r.[SecretGuid] IS NULL THEN N'unreadable'
+            WHEN r.[RefJsonType] <> 1 THEN N'unreadable'
+            WHEN r.[IsHexForm] = 1 THEN N'check_by_hand'
+            WHEN r.[SecretGuid] IS NULL THEN N'unreadable'
             WHEN r.[DescriptorId] IS NULL THEN N'dangling'
+            -- Exact comparison. BIN2 makes it case sensitive; the DATALENGTH test catches a difference in trailing spaces,
+            -- which the comparison operators otherwise ignore.
             WHEN r.[DescriptorProvider] COLLATE Latin1_General_100_BIN2 <> N'platform-connection' COLLATE Latin1_General_100_BIN2
+              OR DATALENGTH(r.[DescriptorProvider]) <> DATALENGTH(N'platform-connection')
                 THEN N'foreign_provider'
-            WHEN r.[DescriptorName] COLLATE Latin1_General_100_BIN2
-                 <> (N'connection:' + r.[ConnectionId] + N':' + r.[FieldKey]) COLLATE Latin1_General_100_BIN2
+            WHEN r.[DescriptorName] COLLATE Latin1_General_100_BIN2 <> r.[ExpectedName] COLLATE Latin1_General_100_BIN2
+              OR DATALENGTH(r.[DescriptorName]) <> DATALENGTH(r.[ExpectedName])
                 THEN N'foreign_owner'
             WHEN r.[DescriptorState] = 2 /* Disabled */
               OR NULLIF(r.[DescriptorActiveVersion], N'') IS NULL

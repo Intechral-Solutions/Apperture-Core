@@ -530,7 +530,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
 
     private static void MessageRevealsNothing(Exception ex)
     {
-        ex.Should().BeOfType<InvalidOperationException>();
+        ex.Should().BeOfType<InvalidConnectionRequestException>("a refusal the caller can fix is a 400, not a missing connection");
         ex.Message.Should().Contain("does not name a secret owned by this connection field");
         ex.Message.Should().NotContain(ForeignRef.ToString("D")).And.NotContain(ForeignRef.ToString("N")).And.NotContain(SecretValue)
             .And.NotContain("someone-else", "the message must not say whose secret it is");

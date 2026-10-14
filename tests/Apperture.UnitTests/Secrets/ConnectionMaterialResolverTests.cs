@@ -200,7 +200,10 @@ public sealed class ConnectionMaterialResolverTests
 
         var act = () => rig.Sut.ResolveAsync(ConnectionWith(("ApiKey", Foreign), ("Password", Other)), ConnectionResolutionPath.Run).AsTask();
 
-        await act.Should().ThrowAsync<ConnectionSecretUnavailableException>();
+        (await act.Should().ThrowAsync<ConnectionSecretUnavailableException>()).Which.FieldKey.Should().Be("Password");
+        rig.Secrets.Verify(s => s.ResolveOwnedAsync(It.IsAny<SecretRef>(), It.IsAny<SecretOwner>(), It.IsAny<CancellationToken>()), Times.Exactly(2),
+            "the owned field was asked first and the poisoned one second");
+        rig.Rows.Should().ContainSingle().Which.Fields["fieldKey"].Should().Be("Password");
     }
 
     // ---- the evidence ----

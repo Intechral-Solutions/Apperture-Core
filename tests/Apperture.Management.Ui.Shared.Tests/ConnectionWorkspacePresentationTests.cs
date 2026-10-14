@@ -86,6 +86,23 @@ public sealed class ConnectionWorkspacePresentationTests
     }
 
     [Fact]
+    public void A_stored_secret_that_shares_its_key_with_a_plain_field_still_gets_a_secret_row_that_can_be_removed()
+    {
+        // A legacy row: the connector declares Host as plain config, and the connection also stores a secret reference under "Host".
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(secretFields: [new ConnectionSecretFieldDto("Password", true), new ConnectionSecretFieldDto("Host", true)]),
+            Definition());
+
+        rows.Where(r => r.Key == "Host").Should().HaveCount(2);
+        rows.Single(r => r.Key == "Host" && !r.IsSecret).Value.Should().Be("db.example");
+        var secret = rows.Single(r => r.Key == "Host" && r.IsSecret);
+        secret.IsUndeclared.Should().BeTrue();
+        secret.IsSet.Should().BeTrue();
+        secret.Value.Should().BeNull();
+        secret.Label.Should().NotBe("Server", "it is told apart from the plain field");
+    }
+
+    [Fact]
     public void Stored_keys_the_connector_does_not_declare_are_kept_visible_by_their_key()
     {
         var rows = ConnectionWorkspacePresentation.ConfigurationRows(
