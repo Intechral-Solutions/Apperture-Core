@@ -128,15 +128,26 @@ public sealed class ConnectionsController : ControllerBase
         }
     }
 
+    /// <summary>The 400 for a PATCH that sends <c>secretRefs</c>. It names the two operations that replace it and nothing else.</summary>
+    internal const string SecretRefsNoLongerAccepted =
+        "secretRefs is no longer accepted. Send secretValues to store a new value for a secret field, "
+        + "or clearSecretFields to remove a stored reference.";
+
     /// <summary>
-    /// Updates connection metadata/config.
+    /// Updates connection metadata/config. A secret field is changed only by giving it a value (<c>secretValues</c>) or by
+    /// clearing it (<c>clearSecretFields</c>); a request that sends <c>secretRefs</c> is refused with a 400, with no deprecation
+    /// period, because a client can no longer learn a reference and the whole-map write was the only way to point a field at one.
     /// </summary>
     [HttpPatch("{id}")]
     public async Task<ActionResult<ConnectionDto>> Update(string id, [FromBody] UpdateConnectionRequestBody body, CancellationToken cancellationToken)
     {
+        // Whatever it holds, even an empty map: the property itself is the retired contract.
+        if (body.SecretRefs is not null)
+            return BadRequest(new { error = SecretRefsNoLongerAccepted });
+
         try
         {
-            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretRefs, body.SecretValues);
+            var request = new UpdateConnectionRequest(body.Name, body.Config, body.SecretValues, body.ClearSecretFields);
             var connection = await _connectionService.UpdateConnectionAsync(new ConnectionId(id), request, cancellationToken);
             var bindings = await _bindingRepository.GetByConnectionIdAsync(connection.Id, cancellationToken);
             return Ok(await ToDtoAsync(connection, bindings, cancellationToken));
@@ -144,6 +155,10 @@ public sealed class ConnectionsController : ControllerBase
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+        catch (InvalidConnectionRequestException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
@@ -259,7 +274,7 @@ public sealed class ConnectionsController : ControllerBase
             c.ConnectorDefinitionId.Value,
             c.Name,
             c.Config,
-            c.SecretRefs,
+            SecretFieldsOf(c),
             c.ScopeKey,
             c.OwnerId,
             c.State.ToString(),
@@ -272,6 +287,34 @@ public sealed class ConnectionsController : ControllerBase
             owning?.ToRef(),
             ConnectorDisplayName(c.ConnectorDefinitionId));
     }
+
+    /// <summary>
+    /// What the response says about secrets, and the only thing it says: for each secret field, its key and whether a non-blank
+    /// reference is stored. The declared secret fields come first, in the connector's own order, so a field with nothing stored
+    /// reads "not configured"; then every stored key the connector does not declare, so a legacy field stays visible and can be
+    /// cleared. The reference, whether it is the connection's own, and what it names are never part of the answer.
+    /// </summary>
+    private IReadOnlyList<ConnectionSecretFieldDto> SecretFieldsOf(Core.Domain.Connector.Connection c)
+    {
+        var fields = new List<ConnectionSecretFieldDto>();
+        var listed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var field in _connectorDefinitions.Get(c.ConnectorDefinitionId)?.ConnectionFields.Where(f => f.IsSecret) ?? [])
+        {
+            if (listed.Add(field.Key))
+                fields.Add(new ConnectionSecretFieldDto(field.Key, IsConfigured(c, field.Key)));
+        }
+
+        foreach (var key in c.SecretRefs.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            if (listed.Add(key))
+                fields.Add(new ConnectionSecretFieldDto(key, IsConfigured(c, key)));
+        }
+
+        return fields;
+    }
+
+    private static bool IsConfigured(Core.Domain.Connector.Connection c, string key) =>
+        c.SecretRefs.TryGetValue(key, out var reference) && !string.IsNullOrWhiteSpace(reference);
 
     /// <summary>
     /// The connector's human-readable name from the in-memory registry (no I/O). Null when this host does not
@@ -298,12 +341,15 @@ public sealed record ConnectionUsedInEntry(
     string? IntegrationDisplayName = null,
     string? IntegrationResourceContextId = null);
 
+/// <summary>One secret field of a connection: its key and whether a reference is stored. Nothing about the reference or what it names.</summary>
+public sealed record ConnectionSecretFieldDto(string Key, bool Configured);
+
 public sealed record ConnectionDto(
     string Id,
     string ConnectorDefinitionId,
     string Name,
     IReadOnlyDictionary<string, string> Config,
-    IReadOnlyDictionary<string, string> SecretRefs,
+    IReadOnlyList<ConnectionSecretFieldDto> SecretFields,
     string? ScopeKey,
     string? OwnerId,
     string State,
@@ -331,8 +377,15 @@ public sealed record CreateConnectionRequestBody(
     IReadOnlyDictionary<string, string>? SecretValues = null,
     string? ResourceContextId = null);
 
+/// <param name="SecretRefs">
+/// Retired. It is read only so that a request that still sends it (even an empty map) can be refused with a 400 that names the
+/// replacements; it is never applied.
+/// </param>
+/// <param name="SecretValues">New plaintext values for declared secret fields (a rotation, or a repair of a field that names no secret it owns).</param>
+/// <param name="ClearSecretFields">Keys of secret fields whose stored reference is removed, an undeclared legacy key included.</param>
 public sealed record UpdateConnectionRequestBody(
     string? Name,
     IReadOnlyDictionary<string, string>? Config,
     IReadOnlyDictionary<string, string>? SecretRefs,
-    IReadOnlyDictionary<string, string>? SecretValues = null);
+    IReadOnlyDictionary<string, string>? SecretValues = null,
+    IReadOnlyList<string>? ClearSecretFields = null);

@@ -303,6 +303,16 @@ public sealed class ConnectionMaterialResolverTests
     }
 
     [Fact]
+    public void A_run_that_fails_on_a_refusal_records_only_the_fixed_text_as_its_failure_summary()
+    {
+        // The worker stores an exception's message as the run's failure summary, which operators read.
+        var capture = Apperture.Persistence.SqlServer.RunFailureCapture.TryCapture(new ConnectionSecretUnavailableException("Password"));
+
+        capture.FailureSummary.Should().Be(ConnectionSecretUnavailableException.FixedMessage);
+        capture.FailureSummary.Should().NotContain("Password").And.NotContain(Foreign);
+    }
+
+    [Fact]
     public void The_typed_refusal_is_an_invalid_operation_so_existing_callers_that_mapped_a_secret_miss_keep_mapping_it()
     {
         new ConnectionSecretUnavailableException("k").Should().BeAssignableTo<InvalidOperationException>();

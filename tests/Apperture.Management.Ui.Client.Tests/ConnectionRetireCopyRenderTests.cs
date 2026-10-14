@@ -112,7 +112,7 @@ public sealed class ConnectionRetireCopyRenderTests
             "Apperture.Platform.Sql",
             ConnectionName,
             new Dictionary<string, string> { ["Host"] = "db.example" },
-            new Dictionary<string, string>(),
+            new List<ConnectionSecretFieldDto>(),
             null,
             null,
             state,

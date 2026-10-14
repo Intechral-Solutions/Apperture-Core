@@ -178,7 +178,7 @@ Every change below is one audited unit: the change, anything that moves with it,
 - **An Application `PATCH` is all or nothing.** It used to commit a rename before a refused re-slug and audit the rename; the refusal now leaves nothing changed. A create or re-slug that loses a race on the slug is the same **400** as a slug already in use (it was an unmapped **500**).
 - **Archiving while the ownership gate is busy is a retryable `409`** with `code: ownership_operation_busy`, like every other ownership route (it was a **500**).
 - **A browse that threw or was cancelled** is recorded as `connection.structure_browse_failed`; a remote refusal is a delivered answer and is recorded as `connection.structure_browsed`. A browse whose required row cannot be written returns no result.
-- **A secret reference must be the connection's own.** A reference is accepted only if the stored secret has provider `platform-connection` and the name `connection:{id}:{field}`; a parseable id is not proof. `POST /api/connections` therefore refuses any non-empty `secretRefs` with a 400 (supply `secretValues`), and a `PATCH` is refused if it sets a reference the connection does not own, rotates a stored reference that is not its own, or changes config while the connection holds one. The refusal is the same for a missing secret, another provider, another owner or another field, and never repeats the reference. Dropping the reference and supplying `secretValues` in one `PATCH` repairs such a connection with a secret of its own.
+- **A secret reference must be the connection's own.** A reference is accepted only if the stored secret has provider `platform-connection` and the name `connection:{id}:{field}`; a parseable id is not proof. `POST /api/connections` therefore refuses any non-empty `secretRefs` with a 400 (supply `secretValues`), and a `PATCH` that changes config is refused while the connection keeps a reference that is not its own. The refusal is the same for a missing secret, another provider, another owner or another field, and never repeats the reference. A `PATCH` can no longer send `secretRefs` at all, and a poisoned field is repaired with `secretValues` or `clearSecretFields`; see [Connection secret ownership and the secretFields read model (SEC-2.2)](#connection-secret-ownership-and-the-secretfields-read-model-sec-22).
 - **Routes no longer report an audit invariant violation as a refusal.** The connection, Application and move routes exclude `AuditInvariantException` from their `InvalidOperationException` mapping.
 - A blocked move still answers with its preview and changes nothing. Its rejection row is written after the transaction as a best-effort attempt of the same principal.
 - Audit data excludes config values, secret values and references, connection strings, the verifier's summary and what a remote system returned. A secret is identified only by the connection and the connector's declared field name.
@@ -282,6 +282,37 @@ It is one audited unit: the three acknowledgement columns (`AcknowledgedAtUtc`, 
 - **A resolved incident cannot be acknowledged.** It used to be written.
 - **The audit row** (category `operations`, standard severity, basis `change`, target the integration, the integration's owning context as the related reference) names the integration (a name snapshot), the incident id, the condition key (`expected_run_missing`, or `other`), when the incident started, and `noteProvided`. The note's text, recipients and notification content are not fields and are never recorded in an audit row, a log line or an exception message.
 - The tracker that opens, observes and resolves incidents no longer has an acknowledgement write. A resolution writes only the columns it changes.
+
+## Connection secret ownership and the secretFields read model (SEC-2.2)
+
+A connection row names each of its secrets by id, and an id says nothing about who owns the secret. Two changes follow. Every place that turns a connection into a secret now checks, on the secret's own stored descriptor, that the secret belongs to that connection field before the secret is read. And no response, and no request, carries a reference any more.
+
+**Ownership.** A connection field owns exactly the secret stored under provider `platform-connection` with the name `connection:{connectionId}:{fieldKey}`, compared exactly (case sensitive). Worker slot resolution, the integration settings options (Campus Nexus campuses), test-connect for the SQL, Sftp and Campus Nexus verifiers, and structure browse all resolve through one boundary that applies this rule before the version row or payload of any secret is read. A reference that is blank, unreadable, missing, disabled, or names another connection's, another field's or another provider's secret is refused identically: the step or probe fails with the fixed text it already used (`A secret this connection needs could not be resolved.` for a run; the existing masked message for test-connect and browse), and one `connection.secret.resolution_refused` audit row (category `secrets`, elevated, basis `attempt`) records the field key and the kind of operation (`run`, `verify`, `browse` or `settings_options`), attributed to the worker on a run and to the signed-in operator otherwise. The row never holds the reference, the secret found or its owner. One call to the boundary writes one row, whichever layers it passed through; a retry or a new request is a new operation and writes its own. If the row cannot be written, the refusal stands and the secret is still not delivered.
+
+**Read model (breaking).** `secretRefs` is removed from every connection response (list, detail, create `201`, `PATCH` and test-connect) and replaced by:
+
+```json
+"secretFields": [ { "key": "Password", "configured": true }, { "key": "OldApiKey", "configured": true } ]
+```
+
+The list holds the connector's declared secret fields, in the connector's own order, followed by every other key the connection still stores (a field the connector no longer declares), in key order. `configured` is true when a non-blank reference is stored. It says nothing about whether the secret is the field's own.
+
+**Write contract (breaking, no deprecation period).**
+
+| Request | Result |
+|---|---|
+| `PATCH` body with a `secretRefs` property, whatever it holds (even `{}`) | **400** `{ error }` naming `secretValues` and `clearSecretFields`. Nothing changed. |
+| `secretValues: { "<declared field>": "<value>" }` | The value becomes a new active version of the secret the field owns. If the field names nothing, or names a secret it does not own (another connection's, another provider's, a missing or unreadable reference), a new secret the connection owns is stored and the field is repointed to it in the same audited unit. The secret the field named before is never read, versioned, disabled, adopted or otherwise changed. |
+| `clearSecretFields: ["<key>", ...]` | Each key's stored reference is removed. Any stored key is accepted, a field the connector no longer declares included (matched by its own spelling first, then case-insensitively). Clearing a declared field that holds nothing is a no-op. The secret the reference named is untouched. |
+| A key that is neither a secret field of the connector nor a stored key; a declared non-secret field; a blank key; more than 64 keys; the same field cleared and given a value | **400** `{ error }`, naming the key and never a reference. |
+| Clearing a field the connector requires | **400** (`Required connection field '<key>' is missing`). |
+| `POST /api/connections` with a non-empty `secretRefs` | **400**, as before: a new connection owns no secret yet. |
+
+A `PATCH` that changes config is still refused while the connection keeps a reference that is not its own, because config decides where the credential is sent; the request that repairs or clears that field may change config. A request that only renames, or leaves config as stored, is not turned away by a legacy reference. An update that changes only secret fields is audited as `connection.secret_rotated` (a count of the fields changed) with one `connection.secret.stored` row per field that received a value (`replaced` for a rotation, `created` for a new or repointed secret); a clear alone is the `connection.secret_rotated` row without a `stored` row.
+
+**Compatibility note.** The known consumers of `secretRefs` are the Management client's `ConnectionDto` and `UpdateConnectionRequest` and the Management UI, which are updated together with this change: `ConnectionDto.SecretRefs` is now `SecretFields`, and `UpdateConnectionRequest(Name, Config, SecretValues, ClearSecretFields)` no longer has a `SecretRefs` member. An external script that read `secretRefs` or wrote it with `PATCH` must change. The management API is instance-local and publishes no OpenAPI document.
+
+**Persistent installations** run the read-only inventory (`scripts/sec2/Get-ConnectionSecretOwnershipInventory.sql`) before upgrading and clear or re-enter each listed field; see the SEC-2 implementation record.
 
 ## Recovery API (Epic 31)
 

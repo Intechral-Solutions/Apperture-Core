@@ -204,6 +204,17 @@
                                 {
                                     <StatusPill Label="@ConnectionWorkspacePresentation.SecretPresence(row.IsSet)"
                                                 Semantic="@(row.IsSet ? ManagementStatusSemantic.Success : ManagementStatusSemantic.Neutral)" />
+                                    @if (row.IsUndeclared && CanClearLegacySecrets)
+                                    {
+                                        <button type="button"
+                                                id="@("connection-secret-remove-" + row.Key)"
+                                                class="ui-toolbar-btn ml-2"
+                                                title="This connector no longer uses this secret field. Removing it deletes the stored reference only."
+                                                disabled="@_clearingSecretKey.Equals(row.Key, StringComparison.Ordinal)"
+                                                @onclick="() => ClearSecretFieldAsync(row.Key)">
+                                            Remove
+                                        </button>
+                                    }
                                 }
                                 else if (row.Value is not null)
                                 {
@@ -341,6 +352,13 @@
         Loaded && _capabilities?.CanUpdateConnections == true && _capabilities?.CanViewConnectorDefinitions == true && !IsRetired
         && ConnectionWorkspacePresentation.IsConnectorRegistered(_connection!);
     private bool CanMove => Loaded && _capabilities?.CanUpdateConnections == true && !IsRetired;
+
+    // Removing a stored secret field the connector no longer declares needs no definition to send, but it needs one to tell a
+    // legacy field from a declared one, so it is offered only when the definition was read.
+    private bool CanClearLegacySecrets =>
+        Loaded && _capabilities?.CanUpdateConnections == true && _connectorDefinition is not null && !IsRetired;
+
+    private string _clearingSecretKey = "";
     private bool CanRetire => Loaded && _capabilities?.CanRetireConnections == true && !IsRetired;
 
     private OperatorCapabilitiesDto? _capabilities;
@@ -536,6 +554,27 @@
         finally
         {
             _saveEditLoading = false;
+        }
+    }
+
+    // Public so a render test can drive the same handler the Remove button calls.
+    public async Task ClearSecretFieldAsync(string key)
+    {
+        if (_connection is null || !CanClearLegacySecrets) return;
+        _clearingSecretKey = key;
+        try
+        {
+            _connection = await Client.UpdateConnectionAsync(ConnectionId, new UpdateConnectionRequest(ClearSecretFields: [key]));
+            Toasts.Show(ToastSeverity.Success, "Secret field removed.");
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Show(ToastSeverity.Error, ex.Message);
+        }
+        finally
+        {
+            _clearingSecretKey = "";
         }
     }
 
