@@ -161,6 +161,19 @@ public static partial class AuditEvents
             ConnectionRelated(resourceContextId));
 
     /// <summary>
+    /// A connection's material was refused because a secret field's reference does not name a secret that field owns (attempt;
+    /// nothing was delivered). Only the field's key and the kind of operation are recorded: never the reference, the secret that
+    /// was found, who owns it, or which of the refusing conditions applied.
+    /// </summary>
+    public static AuditEvent ConnectionSecretResolutionRefused(string connectionId, string fieldKey, string path, string? resourceContextId) =>
+        AuditEvent.Create(
+            AuditActionCatalog.Default.Get(AuditActionNames.ConnectionSecretResolutionRefused),
+            Target(AuditTargetTypes.Connection, connectionId),
+            AuditOutcomeCodes.Rejected,
+            Fields(("fieldKey", fieldKey), ("path", path)),
+            ConnectionRelated(resourceContextId));
+
+    /// <summary>
     /// A secret field's material was stored for a connection in the same transaction as the connection change: <c>created</c> as a
     /// new secret, or <c>replaced</c> as a new active version of the secret the field already named. Only the field's declared
     /// key is recorded, never the material, the store id or a version.

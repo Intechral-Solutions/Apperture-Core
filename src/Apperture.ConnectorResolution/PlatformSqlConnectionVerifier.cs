@@ -2,7 +2,6 @@ using System.Data;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
-using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Data.SqlClient;
 
 namespace Apperture.ConnectorResolution;
@@ -12,14 +11,14 @@ namespace Apperture.ConnectorResolution;
 /// </summary>
 public sealed class PlatformSqlConnectionVerifier : IConnectionVerifier
 {
-    private readonly ISecretResolver _secretResolver;
+    private readonly IConnectionMaterialResolver _materialResolver;
     private readonly IConnectorClientFactory<IDbConnection> _factory;
 
     public PlatformSqlConnectionVerifier(
-        ISecretResolver secretResolver,
+        IConnectionMaterialResolver materialResolver,
         IConnectorClientFactory<IDbConnection> factory)
     {
-        _secretResolver = secretResolver;
+        _materialResolver = materialResolver;
         _factory = factory;
     }
 
@@ -35,8 +34,8 @@ public sealed class PlatformSqlConnectionVerifier : IConnectionVerifier
         ResolvedConnectionMaterial material;
         try
         {
-            material = await ResolvedConnectionMaterialBuilder
-                .BuildAsync(connection, _secretResolver, cancellationToken)
+            material = await _materialResolver
+                .ResolveAsync(connection, ConnectionResolutionPath.Verify, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

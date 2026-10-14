@@ -70,7 +70,7 @@ public sealed class ConnectionToolProviderRegistrationTests
     public void The_provider_constructor_takes_only_the_resolver_the_factory_and_options_and_availability_is_a_constant()
     {
         typeof(PlatformSqlStructureBrowser).GetConstructors().Single().GetParameters().Select(p => p.ParameterType)
-            .Should().BeEquivalentTo([typeof(ISecretResolver), typeof(IConnectorClientFactory<IDbConnection>), typeof(SqlStructureBrowserOptions)]);
+            .Should().BeEquivalentTo([typeof(IConnectionMaterialResolver), typeof(IConnectorClientFactory<IDbConnection>), typeof(SqlStructureBrowserOptions)]);
 
         typeof(PlatformSqlStructureBrowser).GetProperty(nameof(IConnectionToolProvider.Availability))!.GetGetMethod()!
             .GetMethodBody()!.GetILAsByteArray()!.Length.Should().BeLessThan(16, "a constant, not a computation or a probe");

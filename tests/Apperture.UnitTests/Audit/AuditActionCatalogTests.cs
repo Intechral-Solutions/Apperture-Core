@@ -125,6 +125,12 @@ public sealed partial class AuditActionCatalogTests
         "attention_incident.acknowledged",
     ];
 
+    /// <summary>The action SEC-2.2 adds: the W3 refusal of a connection secret that its field does not own.</summary>
+    private static readonly string[] Sec22Additions =
+    [
+        "connection.secret.resolution_refused",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -143,9 +149,11 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "AUD-1.4 slice 7").Select(d => d.Action).Should().BeEquivalentTo(Aud14Slice7Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec21Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.1").Select(d => d.Action).Should().BeEquivalentTo(Sec21Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec22Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.2").Select(d => d.Action).Should().BeEquivalentTo(Sec22Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 and SEC-2.1 add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4, SEC-2.1 and SEC-2.2 add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 
@@ -165,8 +173,10 @@ public sealed partial class AuditActionCatalogTests
         secretEvents.Select(d => d.Action).Should().Contain(Aud14Additions);
         foreach (var definition in secretEvents)
         {
-            definition.WriteClass.Should().Be(AuditWriteClass.RequiredMutation, definition.Action);
-            definition.Severity.Should().Be(AuditSeverities.Elevated, $"{definition.Action}: a change to a secret is elevated (§11.3)");
+            // A change to a secret is a required mutation; the one refusal (SEC-2.2) is an attempt, written after the refusal is decided.
+            definition.WriteClass.Should().Be(
+                Sec22Additions.Contains(definition.Action) ? AuditWriteClass.Attempt : AuditWriteClass.RequiredMutation, definition.Action);
+            definition.Severity.Should().Be(AuditSeverities.Elevated, $"{definition.Action}: a change to, or refusal about, a secret is elevated (§11.3)");
             definition.TargetType.Should().NotBeNull(definition.Action).And.NotBe(AuditTargetTypes.Secret);
 
             // No free text: an operator cannot type a value into a secret event, and an id names the owner, not the secret.

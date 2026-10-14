@@ -205,7 +205,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Warehouse renamed", new Dictionary<string, string> { ["Host"] = HostValue, ["Database"] = "Ops" }, null, null));
+            "Warehouse renamed", new Dictionary<string, string> { ["Host"] = HostValue, ["Database"] = "Ops" }, null));
 
         updated.Name.Should().Be("Warehouse renamed");
         _unit.Actions.Should().Equal(AuditActionNames.ConnectionUpdated);
@@ -224,7 +224,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         _unit.Actions.Should().Equal(AuditActionNames.ConnectionSecretRotated, AuditActionNames.ConnectionSecretStored);
         _unit.Single(AuditActionNames.ConnectionSecretRotated).Fields.Should().BeEquivalentTo(
@@ -247,7 +247,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _secretStore.Setup(s => s.AddVersionAsync(It.IsAny<SecretId>(), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>())).ReturnsAsync("v1");
 
         var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         updated.SecretRefs["Password"].Should().Be(minted.ToString("D"));
         _unit.Actions.Should().Equal(AuditActionNames.ConnectionSecretRotated, AuditActionNames.ConnectionSecretStored);
@@ -262,38 +262,51 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Renamed", null, null, new Dictionary<string, string> { ["Password"] = "   " }));
+            "Renamed", null, new Dictionary<string, string> { ["Password"] = "   " }));
 
         _unit.Actions.Should().Equal(AuditActionNames.ConnectionUpdated);
         _unit.Single(AuditActionNames.ConnectionUpdated).Fields.Should().NotContainKey("rotated");
     }
 
-    [Fact]
-    public async Task Pointing_a_field_at_a_different_secret_reference_is_a_rotation_without_recording_either_reference()
+    /// <summary>Makes the store mint one new secret (with one version) and returns its id, recording what it was asked to create.</summary>
+    private Guid StoreWillMint(List<SecretCreateRequest>? requests = null)
     {
-        var created = await CreateAsync();
-        _unit.Operations.Clear();
-        var otherRef = Guid.NewGuid().ToString("D");
-        StoreHas(Guid.Parse(otherRef), $"connection:{created.Id.Value}:Password");
-
-        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = otherRef }, null));
-
-        _unit.Actions.Should().Equal(AuditActionNames.ConnectionSecretRotated);
-        _unit.Single(AuditActionNames.ConnectionSecretRotated).Fields["fieldsRotated"].Should().Be(1);
-        Everything().Should().NotContain(otherRef).And.NotContain(SecretRefGuid);
+        var minted = Guid.NewGuid();
+        _secretStore.Setup(s => s.CreateAsync(It.IsAny<SecretCreateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SecretCreateRequest, CancellationToken>((r, _) => requests?.Add(r))
+            .ReturnsAsync(new SecretDescriptor(new SecretId(minted), "n", "p", SecretMaterialType.OpaqueString, "v1", SecretState.Active, DateTimeOffset.UtcNow));
+        _secretStore.Setup(s => s.AddVersionAsync(It.IsAny<SecretId>(), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>())).ReturnsAsync("v1");
+        return minted;
     }
 
     [Fact]
-    public async Task Detaching_a_secret_reference_is_recorded_as_a_secret_change()
+    public async Task Repointing_a_poisoned_field_to_a_new_secret_is_a_rotation_without_recording_either_reference()
+    {
+        var poisoned = await PoisonedAsync();
+        var minted = StoreWillMint();
+
+        await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+
+        _unit.Actions.Should().Equal(AuditActionNames.ConnectionSecretRotated, AuditActionNames.ConnectionSecretStored);
+        _unit.Single(AuditActionNames.ConnectionSecretRotated).Fields["fieldsRotated"].Should().Be(1);
+        Everything().Should().NotContain(Foreign).And.NotContain(minted.ToString("D")).And.NotContain(SecretValue);
+    }
+
+    [Fact]
+    public async Task Clearing_a_secret_field_is_recorded_as_a_secret_change_and_removes_only_the_reference()
     {
         var created = await CreateAsync();
         _unit.Operations.Clear();
 
-        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string>(), null));
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["Password"]));
 
         _unit.Actions.Should().Equal(AuditActionNames.ConnectionSecretRotated);
+        _unit.Single(AuditActionNames.ConnectionSecretRotated).Fields["fieldsRotated"].Should().Be(1);
+        updated.SecretRefs.Should().NotContainKey("Password");
+        (await StoredRefsAsync(created.Id)).Should().BeEmpty();
+        _secretStore.Invocations.Should().NotContain(i => i.Method.Name != nameof(ISecretStore.GetAsync), "the secret the reference named is not disabled, revoked or changed");
+        Everything().Should().NotContain(SecretRefGuid);
     }
 
     [Fact]
@@ -303,8 +316,8 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         var same = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Warehouse", new Dictionary<string, string> { ["Host"] = HostValue }, new Dictionary<string, string> { ["Password"] = SecretRefGuid }, null));
-        var empty = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(null, null, null, null));
+            "Warehouse", new Dictionary<string, string> { ["Host"] = HostValue }));
+        var empty = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(null, null, null));
 
         _unit.Actions.Should().BeEmpty();
         _unit.Operations.Should().HaveCount(2).And.OnlyContain(o => o.NoOp);
@@ -324,7 +337,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
             .ReturnsAsync(false); // the check against the locked row (for example after an ownership move)
 
         var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Renamed", null, null, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
+            "Renamed", null, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
         _unit.Actions.Should().BeEmpty();
@@ -342,7 +355,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         // Replacing the config with an empty one drops the required host: caught by the material check, after the material was
         // handed to the store. The store joins the unit's transaction, so nothing of it outlives the failed attempt.
         var act = async () => await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, new Dictionary<string, string>(), null,
+            null, new Dictionary<string, string>(),
             new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Host*");
@@ -357,7 +370,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _failSaves.Fail = true;
 
         var act = async () => await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Renamed", null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+            "Renamed", null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         await act.Should().ThrowAsync<InvalidOperationException>("the simulated save failure");
         _unit.Actions.Should().BeEmpty();
@@ -375,7 +388,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         var act = async () => await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, new Dictionary<string, string> { ["Unknown"] = "x" }, null, null));
+            null, new Dictionary<string, string> { ["Unknown"] = "x" }, null));
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         _unit.Actions.Should().BeEmpty();
@@ -410,7 +423,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
 
         await _repository.SetResourceContextIdAsync(created.Id, ResourceContextIds.Shared);
         _unit.Operations.Clear();
-        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("Renamed", null, null, null));
+        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("Renamed", null, null));
         await _sut.RetireConnectionAsync(created.Id);
 
         _unit.Staged.Should().HaveCount(2).And.OnlyContain(e => e.Related.ResourceContextId == ResourceContextIds.SharedValue);
@@ -424,7 +437,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _auth.Setup(a => a.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
 
         await FluentActions.Awaiting(() => _sut.RetireConnectionAsync(created.Id).AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
-        await FluentActions.Awaiting(() => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("x", null, null, null)).AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
+        await FluentActions.Awaiting(() => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("x", null, null)).AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
         await FluentActions.Awaiting(() => _sut.VerifyConnectionAsync(created.Id).AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
         await FluentActions.Awaiting(() => CreateAsync().AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
 
@@ -436,7 +449,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     {
         var missing = new ConnectionId("missing");
 
-        await FluentActions.Awaiting(() => _sut.UpdateConnectionAsync(missing, new UpdateConnectionRequest("x", null, null, null)).AsTask())
+        await FluentActions.Awaiting(() => _sut.UpdateConnectionAsync(missing, new UpdateConnectionRequest("x", null, null)).AsTask())
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
         await FluentActions.Awaiting(() => _sut.RetireConnectionAsync(missing).AsTask())
             .Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
@@ -450,7 +463,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         var created = await CreateAsync();
         var noUnit = NewService(null);
 
-        await FluentActions.Awaiting(() => noUnit.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("x", null, null, null)).AsTask())
+        await FluentActions.Awaiting(() => noUnit.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("x", null, null)).AsTask())
             .Should().ThrowAsync<AuditInvariantException>();
         await FluentActions.Awaiting(() => noUnit.RetireConnectionAsync(created.Id).AsTask()).Should().ThrowAsync<AuditInvariantException>();
         await FluentActions.Awaiting(() => noUnit.CreateConnectionAsync(new CreateConnectionRequest(
@@ -517,7 +530,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
 
     private static void MessageRevealsNothing(Exception ex)
     {
-        ex.Should().BeOfType<InvalidOperationException>();
+        ex.Should().BeOfType<InvalidConnectionRequestException>("a refusal the caller can fix is a 400, not a missing connection");
         ex.Message.Should().Contain("does not name a secret owned by this connection field");
         ex.Message.Should().NotContain(ForeignRef.ToString("D")).And.NotContain(ForeignRef.ToString("N")).And.NotContain(SecretValue)
             .And.NotContain("someone-else", "the message must not say whose secret it is");
@@ -563,115 +576,105 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task An_update_that_replaces_a_reference_with_another_connections_secret_is_refused_and_changes_nothing()
+    public void The_update_request_has_no_member_that_can_name_a_secret_reference()
     {
-        var created = await CreateAsync();
-        ForeignSecretExists();
-        _unit.Operations.Clear();
-
-        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            "Renamed too", null, new Dictionary<string, string> { ["Password"] = Foreign }, null)).AsTask();
-
-        MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
-        _unit.Actions.Should().BeEmpty();
-        (await StoredRefsAsync(created.Id)).Should().Equal(new Dictionary<string, string> { ["Password"] = SecretRefGuid });
-        (await _repository.GetByIdAsync(created.Id))!.Name.Should().Be("Warehouse");
-        NothingWasStored();
+        // A client can neither read a reference (responses say only whether a field is configured) nor write one: the only ways to
+        // change a secret field are a value for a declared field and clearing a stored key.
+        typeof(UpdateConnectionRequest).GetProperties().Select(p => p.Name)
+            .Should().BeEquivalentTo(nameof(UpdateConnectionRequest.Name), nameof(UpdateConnectionRequest.Config),
+                nameof(UpdateConnectionRequest.SecretValues), nameof(UpdateConnectionRequest.ClearSecretFields));
     }
 
     [Fact]
-    public async Task A_foreign_reference_cannot_be_combined_with_new_material_in_the_same_update()
+    public async Task A_value_for_a_field_whose_reference_belongs_to_another_connection_creates_a_new_owned_secret_and_leaves_the_other_one_alone()
     {
-        var created = await CreateAsync();
-        ForeignSecretExists();
-        _unit.Operations.Clear();
+        var poisoned = await PoisonedAsync();
+        var requests = new List<SecretCreateRequest>();
+        var minted = StoreWillMint(requests);
 
-        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = Foreign }, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
+        var updated = await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
-        MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
-        _unit.Actions.Should().BeEmpty();
-        (await StoredRefsAsync(created.Id)).Should().Equal(new Dictionary<string, string> { ["Password"] = SecretRefGuid });
-        NothingWasStored();
-    }
-
-    [Fact]
-    public async Task A_reference_changed_in_one_request_cannot_be_rotated_by_a_later_one()
-    {
-        var created = await CreateAsync();
-        ForeignSecretExists();
-        _unit.Operations.Clear();
-
-        await FluentActions.Awaiting(() => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = Foreign }, null)).AsTask()).Should().ThrowAsync<InvalidOperationException>();
-        var second = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
-
-        await second.Should().NotThrowAsync("the first request changed nothing, so the later one rotates the connection's own secret");
-        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(Guid.Parse(SecretRefGuid)), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Once);
+        updated.SecretRefs["Password"].Should().Be(minted.ToString("D"), "the field now names a secret created for this connection");
+        requests.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new SecretCreateRequest($"connection:{poisoned.Id.Value}:Password", "platform-connection", SecretMaterialType.OpaqueString));
         _secretStore.Verify(s => s.AddVersionAsync(new SecretId(ForeignRef), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
+        _secretStore.Verify(s => s.ActivateVersionAsync(new SecretId(ForeignRef), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _secretStore.Verify(s => s.DisableAsync(It.IsAny<SecretId>(), It.IsAny<CancellationToken>()), Times.Never);
+        _secretStore.Verify(s => s.RevokeVersionAsync(It.IsAny<SecretId>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unit.Single(AuditActionNames.ConnectionSecretStored).Fields["change"].Should().Be("created");
     }
 
     [Fact]
-    public async Task Rotating_a_reference_already_on_the_row_that_belongs_to_another_connection_is_refused_before_anything_is_stored()
+    public async Task Only_the_descriptor_of_the_foreign_secret_is_looked_at_never_its_versions_or_material()
     {
         var poisoned = await PoisonedAsync();
+        StoreWillMint();
 
-        var act = () => _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
+        await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
-        MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
-        _unit.Actions.Should().BeEmpty();
-        (await StoredRefsAsync(poisoned.Id)).Should().Equal(new Dictionary<string, string> { ["Password"] = Foreign }, "the row is left as it was");
-        NothingWasStored();
+        _secretStore.Invocations
+            .Where(i => i.Arguments.OfType<SecretId>().Any(id => id.Value == ForeignRef))
+            .Select(i => i.Method.Name)
+            .Should().OnlyContain(name => name == nameof(ISecretStore.GetAsync), "the repair learns that the secret is not the field's own and does nothing else with it");
     }
 
     [Fact]
-    public async Task Resubmitting_the_poisoned_reference_with_material_is_still_a_refused_rotation()
+    public async Task One_poisoned_field_among_several_is_repaired_while_the_connections_own_field_is_rotated_in_the_same_unit()
     {
-        var poisoned = await PoisonedAsync();
-
-        var act = () => _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = Foreign }, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
-
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*does not name a secret owned by this connection field*");
-        NothingWasStored();
-    }
-
-    [Fact]
-    public async Task One_unowned_reference_among_several_fields_refuses_the_request_before_any_field_is_stored()
-    {
-        // Password is the connection's own secret; Token's stored reference is foreign. The material for Password is listed first,
-        // so a check made field by field while storing would already have added a version to Password.
+        // Password is the connection's own secret; Token's stored reference is foreign.
         var created = await CreateAsync();
         ForeignSecretExists();
         var withBoth = created with { SecretRefs = new Dictionary<string, string> { ["Password"] = SecretRefGuid, ["Token"] = Foreign } };
         await _repository.UpdateAsync(withBoth);
         _unit.Operations.Clear();
+        var requests = new List<SecretCreateRequest>();
+        var minted = StoreWillMint(requests);
 
-        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue, ["Token"] = SecretValue })).AsTask();
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue, ["Token"] = SecretValue }));
 
-        MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
-        _unit.Actions.Should().BeEmpty();
-        NothingWasStored();
+        updated.SecretRefs["Password"].Should().Be(SecretRefGuid, "an owned field is rotated in place");
+        updated.SecretRefs["Token"].Should().Be(minted.ToString("D"));
+        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(Guid.Parse(SecretRefGuid)), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Once);
+        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(ForeignRef), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
+        requests.Should().ContainSingle().Which.Name.Should().Be($"connection:{created.Id.Value}:Token");
+        _unit.Actions.Should().Equal(
+            AuditActionNames.ConnectionSecretRotated, AuditActionNames.ConnectionSecretStored, AuditActionNames.ConnectionSecretStored);
+        _unit.Staged.Where(e => e.Action == AuditActionNames.ConnectionSecretStored).Select(e => (string)e.Fields["change"]!)
+            .Should().BeEquivalentTo("replaced", "created");
     }
 
     [Fact]
-    public async Task A_stored_reference_to_a_secret_that_does_not_exist_cannot_be_rotated_and_the_refusal_is_the_generic_one()
+    public async Task A_stored_reference_to_a_secret_that_does_not_exist_is_repaired_by_a_new_value_and_never_echoed()
     {
         var created = await CreateAsync();
         var dangling = Guid.NewGuid();
         await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = dangling.ToString("D") } });
         _unit.Operations.Clear();
+        var minted = StoreWillMint();
 
-        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue })).AsTask();
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
-        var ex = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
-        ex.Message.Should().Contain("does not name a secret owned by this connection field")
-            .And.NotContain(dangling.ToString("D"), "the store's own 'not found' message, which names the id, is never reached");
-        NothingWasStored();
+        updated.SecretRefs["Password"].Should().Be(minted.ToString("D"));
+        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(dangling), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
+        Everything().Should().NotContain(dangling.ToString("D"));
+    }
+
+    [Fact]
+    public async Task A_stored_reference_that_is_not_a_secret_id_is_repaired_by_a_new_value()
+    {
+        var created = await CreateAsync();
+        await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = "not-a-guid" } });
+        _unit.Operations.Clear();
+        var minted = StoreWillMint();
+
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+
+        updated.SecretRefs["Password"].Should().Be(minted.ToString("D"));
     }
 
     [Fact]
@@ -680,7 +683,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         var poisoned = await PoisonedAsync();
 
         var same = await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = "   " }));
+            null, null, new Dictionary<string, string> { ["Password"] = "   " }));
 
         same.SecretRefs["Password"].Should().Be(Foreign);
         _unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
@@ -694,7 +697,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         var poisoned = await PoisonedAsync();
 
         var act = () => _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            null, new Dictionary<string, string> { ["Host"] = "attacker.example" }, null, null)).AsTask();
+            null, new Dictionary<string, string> { ["Host"] = "attacker.example" }, null)).AsTask();
 
         MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
         (await _repository.GetByIdAsync(poisoned.Id))!.Config["Host"].Should().Be(HostValue);
@@ -708,7 +711,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, new Dictionary<string, string> { ["Host"] = "new-host.example" }, null, null));
+            null, new Dictionary<string, string> { ["Host"] = "new-host.example" }, null));
 
         updated.Config["Host"].Should().Be("new-host.example");
         updated.SecretRefs["Password"].Should().Be(SecretRefGuid);
@@ -720,8 +723,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     {
         var poisoned = await PoisonedAsync();
 
-        var updated = await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            "Renamed", null, new Dictionary<string, string> { ["Password"] = Foreign }, null));
+        var updated = await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest("Renamed"));
 
         updated.Name.Should().Be("Renamed");
         updated.SecretRefs["Password"].Should().Be(Foreign, "the reference is left exactly as stored; it is neither adopted nor repaired by a rename");
@@ -729,21 +731,18 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_poisoned_reference_can_be_dropped_in_the_same_request_that_supplies_the_connections_own_material()
+    public async Task A_poisoned_reference_is_repaired_by_a_value_in_the_same_request_with_no_reference_in_it()
     {
         var poisoned = await PoisonedAsync();
-        var minted = Guid.NewGuid();
-        SecretCreateRequest? requested = null;
-        _secretStore.Setup(s => s.CreateAsync(It.IsAny<SecretCreateRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<SecretCreateRequest, CancellationToken>((r, _) => requested = r)
-            .ReturnsAsync(new SecretDescriptor(new SecretId(minted), "n", "p", SecretMaterialType.OpaqueString, "v1", SecretState.Active, DateTimeOffset.UtcNow));
-        _secretStore.Setup(s => s.AddVersionAsync(It.IsAny<SecretId>(), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>())).ReturnsAsync("v1");
+        var requests = new List<SecretCreateRequest>();
+        var minted = StoreWillMint(requests);
 
         var updated = await _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string>(), new Dictionary<string, string> { ["Password"] = SecretValue }));
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         updated.SecretRefs["Password"].Should().Be(minted.ToString("D"), "the field now names a secret created for this connection");
-        requested.Should().BeEquivalentTo(new SecretCreateRequest($"connection:{poisoned.Id.Value}:Password", "platform-connection", SecretMaterialType.OpaqueString));
+        requests.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new SecretCreateRequest($"connection:{poisoned.Id.Value}:Password", "platform-connection", SecretMaterialType.OpaqueString));
         _secretStore.Verify(s => s.AddVersionAsync(new SecretId(ForeignRef), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
         _unit.Single(AuditActionNames.ConnectionSecretStored).Fields["change"].Should().Be("created");
     }
@@ -756,37 +755,182 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
     [InlineData("platform-connection", "connection:other-connection-id00:Password", "another connection's same-named field")]
     [InlineData("platform-setting", "connection:{0}:Password", "the right name under another provider")]
     [InlineData("entra", "connection:{0}:Password", "the right name under another provider")]
-    public async Task A_reference_is_refused_unless_provider_and_name_are_exactly_this_connections_field(string provider, string nameFormat, string why)
+    public async Task A_stored_reference_is_the_fields_own_only_if_provider_and_name_are_exactly_this_connections_field(string provider, string nameFormat, string why)
     {
         var created = await CreateAsync();
         var lookalike = Guid.NewGuid();
         StoreHas(lookalike, string.Format(nameFormat, created.Id.Value), provider);
+        await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = lookalike.ToString("D") } });
         _unit.Operations.Clear();
+        var minted = StoreWillMint();
 
-        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = lookalike.ToString("D") }, null)).AsTask();
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
-        await act.Should().ThrowAsync<InvalidOperationException>(why);
-        (await StoredRefsAsync(created.Id)).Should().Equal(new Dictionary<string, string> { ["Password"] = SecretRefGuid });
-        NothingWasStored();
+        updated.SecretRefs["Password"].Should().Be(minted.ToString("D"), why);
+        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(lookalike), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never, why);
     }
 
     [Theory]
     [InlineData("N")]
     [InlineData("B")]
     [InlineData("P")]
-    public async Task A_reference_is_proved_by_the_secret_it_names_not_by_how_its_id_is_written(string format)
+    public async Task A_stored_reference_is_proved_by_the_secret_it_names_not_by_how_its_id_is_written(string format)
     {
         var created = await CreateAsync();
         ForeignSecretExists();
+        await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = ForeignRef.ToString(format).ToUpperInvariant() } });
+        _unit.Operations.Clear();
+        var minted = StoreWillMint();
+
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+
+        updated.SecretRefs["Password"].Should().Be(minted.ToString("D"));
+        _secretStore.Verify(s => s.AddVersionAsync(new SecretId(ForeignRef), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // Clearing and the shape of the request -------------------------------------------------------------
+
+    [Fact]
+    public async Task An_undeclared_legacy_key_can_be_cleared_and_the_connection_stays_editable_until_then()
+    {
+        var created = await CreateAsync();
+        await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = SecretRefGuid, ["OldApiKey"] = Foreign } });
+        _unit.Operations.Clear();
+
+        var renamed = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest("Renamed"));
+        renamed.SecretRefs.Keys.Should().BeEquivalentTo("Password", "OldApiKey");
+
+        var cleared = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["OldApiKey"]));
+
+        cleared.SecretRefs.Keys.Should().BeEquivalentTo("Password");
+        _secretStore.Invocations.Should().NotContain(i => i.Arguments.OfType<SecretId>().Any(id => id.Value == ForeignRef), "the secret the legacy key named is never touched");
+        _unit.Staged.Select(e => e.Action).Should().Contain(AuditActionNames.ConnectionSecretRotated);
+    }
+
+    [Fact]
+    public async Task A_legacy_key_is_cleared_by_its_own_spelling_and_a_declared_field_by_any_casing()
+    {
+        var created = await CreateAsync();
+        await _repository.UpdateAsync(created with { SecretRefs = new Dictionary<string, string> { ["Password"] = SecretRefGuid, ["legacyKey"] = Foreign } });
+
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["LEGACYKEY", " password "]));
+
+        updated.SecretRefs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Clearing_a_field_that_holds_nothing_is_a_no_op_and_clearing_twice_is_the_same_request()
+    {
+        var created = await CreateAsync();
+        _unit.Operations.Clear();
+
+        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["Token"]));
+        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["Password"]));
+        await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["Password"]));
+
+        _unit.Operations.Select(o => o.NoOp).Should().Equal(true, false, true);
+    }
+
+    [Theory]
+    [InlineData("Host", "'Host' is not a secret field.")]
+    [InlineData("NoSuchField", "'NoSuchField' is not a secret field of this connection.")]
+    public async Task Clearing_something_that_is_not_a_secret_field_is_a_request_the_caller_can_fix(string key, string message)
+    {
+        var created = await CreateAsync();
+
+        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: [key])).AsTask();
+
+        (await act.Should().ThrowAsync<InvalidConnectionRequestException>()).Which.Message.Should().Be(message);
+        (await StoredRefsAsync(created.Id)).Should().ContainKey("Password");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task A_blank_key_to_clear_is_refused(string key)
+    {
+        var created = await CreateAsync();
+
+        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: [key])).AsTask();
+
+        await act.Should().ThrowAsync<InvalidConnectionRequestException>();
+    }
+
+    [Fact]
+    public async Task A_field_cannot_be_cleared_and_given_a_value_in_the_same_request()
+    {
+        var created = await CreateAsync();
         _unit.Operations.Clear();
 
         var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, new Dictionary<string, string> { ["Password"] = ForeignRef.ToString(format).ToUpperInvariant() }, null)).AsTask();
+            null, null, new Dictionary<string, string> { ["password"] = SecretValue }, ["Password"])).AsTask();
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        (await StoredRefsAsync(created.Id)).Should().Equal(new Dictionary<string, string> { ["Password"] = SecretRefGuid });
+        await act.Should().ThrowAsync<InvalidConnectionRequestException>().WithMessage("*cannot be cleared and given a value*");
+        _unit.Actions.Should().BeEmpty();
         NothingWasStored();
+    }
+
+    [Fact]
+    public async Task A_blank_value_does_not_conflict_with_clearing_the_same_field()
+    {
+        var created = await CreateAsync();
+
+        var updated = await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
+            null, null, new Dictionary<string, string> { ["Password"] = "  " }, ["Password"]));
+
+        updated.SecretRefs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Clearing_a_required_field_is_refused_and_changes_nothing()
+    {
+        var created = await CreateAsync();
+        _registry.Setup(r => r.Get(Sql)).Returns(new ConnectorDefinition(
+            Sql, "Platform SQL", null, new Dictionary<string, string> { ["Host"] = "string", ["Password"] = "string" })
+        {
+            ConnectionFields =
+            [
+                new ConnectionFieldDescriptor("Host", "Server", false),
+                new ConnectionFieldDescriptor("Password", "Password", true),
+            ],
+        });
+        _unit.Operations.Clear();
+
+        var act = () => _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(ClearSecretFields: ["Password"])).AsTask();
+
+        await act.Should().ThrowAsync<InvalidConnectionRequestException>().WithMessage("*Required connection field 'Password' is missing*");
+        (await StoredRefsAsync(created.Id)).Should().ContainKey("Password");
+        _unit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_config_change_is_still_refused_while_a_field_the_request_leaves_alone_names_a_foreign_secret()
+    {
+        var poisoned = await PoisonedAsync();
+
+        var act = () => _sut.UpdateConnectionAsync(poisoned.Id, new UpdateConnectionRequest(
+            null, new Dictionary<string, string> { ["Host"] = "attacker.example" }, null, ["Token"])).AsTask();
+
+        MessageRevealsNothing((await act.Should().ThrowAsync<InvalidOperationException>()).Which);
+        (await _repository.GetByIdAsync(poisoned.Id))!.Config["Host"].Should().Be(HostValue);
+    }
+
+    [Fact]
+    public async Task A_config_change_is_allowed_in_the_request_that_repairs_or_clears_the_poisoned_field()
+    {
+        var repaired = await PoisonedAsync();
+        StoreWillMint();
+        var viaValue = await _sut.UpdateConnectionAsync(repaired.Id, new UpdateConnectionRequest(
+            null, new Dictionary<string, string> { ["Host"] = "new-host.example" }, new Dictionary<string, string> { ["Password"] = SecretValue }));
+        viaValue.Config["Host"].Should().Be("new-host.example");
+
+        var cleared = await PoisonedAsync();
+        var viaClear = await _sut.UpdateConnectionAsync(cleared.Id, new UpdateConnectionRequest(
+            null, new Dictionary<string, string> { ["Host"] = "other-host.example" }, null, ["Password"]));
+        viaClear.Config["Host"].Should().Be("other-host.example");
+        viaClear.SecretRefs.Should().BeEmpty();
     }
 
     [Fact]
@@ -796,7 +940,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Operations.Clear();
 
         await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         _secretStore.Verify(s => s.AddVersionAsync(new SecretId(Guid.Parse(SecretRefGuid)), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Once);
         _secretStore.Verify(s => s.AddVersionAsync(It.Is<SecretId>(id => id.Value != Guid.Parse(SecretRefGuid)), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -816,7 +960,7 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _secretStore.Setup(s => s.AddVersionAsync(It.IsAny<SecretId>(), It.IsAny<SecretMaterial>(), It.IsAny<CancellationToken>())).ReturnsAsync("v1");
 
         await _sut.UpdateConnectionAsync(created.Id, new UpdateConnectionRequest(
-            null, null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
+            null, null, new Dictionary<string, string> { ["Password"] = SecretValue }));
 
         requests.Should().ContainSingle().Which.Should().BeEquivalentTo(
             new SecretCreateRequest($"connection:{created.Id.Value}:Password", "platform-connection", SecretMaterialType.OpaqueString));

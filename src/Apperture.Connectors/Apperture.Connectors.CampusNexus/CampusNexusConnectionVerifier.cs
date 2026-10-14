@@ -3,8 +3,6 @@ using Apperture.Connectors.CampusNexus.Models;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
-using Apperture.Core.Security.Secrets.Abstractions;
-using Apperture.Core.Security.Secrets.Models;
 
 namespace Apperture.Connectors.CampusNexus;
 
@@ -14,12 +12,12 @@ namespace Apperture.Connectors.CampusNexus;
 /// </summary>
 public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
 {
-    private readonly ISecretResolver _secretResolver;
+    private readonly IConnectionMaterialResolver _materialResolver;
     private readonly CampusNexusApiConnectorClientFactory _factory;
 
-    public CampusNexusConnectionVerifier(ISecretResolver secretResolver, CampusNexusApiConnectorClientFactory factory)
+    public CampusNexusConnectionVerifier(IConnectionMaterialResolver materialResolver, CampusNexusApiConnectorClientFactory factory)
     {
-        _secretResolver = secretResolver;
+        _materialResolver = materialResolver;
         _factory = factory;
     }
 
@@ -31,7 +29,7 @@ public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
         ResolvedConnectionMaterial material;
         try
         {
-            material = await BuildMaterialAsync(connection, _secretResolver, cancellationToken).ConfigureAwait(false);
+            material = await _materialResolver.ResolveAsync(connection, ConnectionResolutionPath.Verify, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -95,22 +93,5 @@ public sealed class CampusNexusConnectionVerifier : IConnectionVerifier
                 at,
                 $"Verification failed: {ex.Message}");
         }
-    }
-
-    private static async ValueTask<ResolvedConnectionMaterial> BuildMaterialAsync(
-        Connection connection,
-        ISecretResolver secretResolver,
-        CancellationToken cancellationToken)
-    {
-        var merged = new Dictionary<string, string>(connection.Config);
-        foreach (var kv in connection.SecretRefs)
-        {
-            var secretRef = new SecretRef(kv.Value);
-            var resolved = await secretResolver.ResolveAsync(secretRef, cancellationToken).ConfigureAwait(false);
-            var value = resolved.Material.OpaqueString ?? resolved.Material.Json ?? "";
-            merged[kv.Key] = value;
-        }
-
-        return new ResolvedConnectionMaterial(merged);
     }
 }

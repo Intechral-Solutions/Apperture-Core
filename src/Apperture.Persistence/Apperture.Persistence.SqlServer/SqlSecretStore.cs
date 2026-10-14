@@ -176,11 +176,31 @@ public sealed class SqlSecretStore : ISecretStore
         return new SecretAuditPage(records, hasMore ? items[^1].Timestamp.ToString("O") : null);
     }
 
-    internal async ValueTask<(byte[] Payload, string KeyId, string Version)?> TryGetPayloadAsync(SecretId secretId, string? version, CancellationToken cancellationToken = default)
+    internal ValueTask<(byte[] Payload, string KeyId, string Version)?> TryGetPayloadAsync(SecretId secretId, string? version, CancellationToken cancellationToken = default) =>
+        TryGetPayloadCoreAsync(secretId, owner: null, version, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="TryGetPayloadAsync"/>, for a holder that must own the secret. The descriptor is read first, and the owner's
+    /// provider and name are compared with it exactly (ordinal) before the version row or its protected payload is read: a
+    /// secret the owner does not own yields null having exposed nothing but its descriptor to this method. The owner's parts
+    /// are also in the query's predicate, which only narrows what is loaded; the ordinal comparison is what decides, because
+    /// the catalog's collation may fold case. Name and provider are set once, when the descriptor is created, and no operation of
+    /// the store changes them, so the owner verified here is the owner of the version read next.
+    /// </summary>
+    internal ValueTask<(byte[] Payload, string KeyId, string Version)?> TryGetOwnedPayloadAsync(
+        SecretId secretId, SecretOwner owner, string? version, CancellationToken cancellationToken = default) =>
+        TryGetPayloadCoreAsync(secretId, owner ?? throw new ArgumentNullException(nameof(owner)), version, cancellationToken);
+
+    private async ValueTask<(byte[] Payload, string KeyId, string Version)?> TryGetPayloadCoreAsync(
+        SecretId secretId, SecretOwner? owner, string? version, CancellationToken cancellationToken)
     {
-        var descriptor = await _db.SecretDescriptors.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == secretId.Value, cancellationToken).ConfigureAwait(false);
+        var descriptors = _db.SecretDescriptors.AsNoTracking().Where(x => x.Id == secretId.Value);
+        if (owner is not null)
+            descriptors = descriptors.Where(x => x.Provider == owner.Provider && x.Name == owner.Name);
+        var descriptor = await descriptors.FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (descriptor is null || descriptor.State == (int)SecretState.Disabled)
+            return null;
+        if (owner is not null && !owner.Matches(descriptor.Provider, descriptor.Name))
             return null;
         var v = version ?? descriptor.ActiveVersion;
         if (string.IsNullOrEmpty(v))

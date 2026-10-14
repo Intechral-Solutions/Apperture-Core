@@ -297,7 +297,7 @@ public sealed class OwnershipRealUnitRaceSqlServerTests : IClassFixture<AuditIso
         Task<Outcome<Connection>> rotate = null!;
         Task<Outcome<ResourceMovePreview>> StartMove() => StartAsync(scratch, principal, s => s.Move.MoveConnectionAsync(new ConnectionId(seeded.ConnectionId), new ResourceContextId(target)).AsTask());
         Task<Outcome<Connection>> StartRotate() => StartAsync(scratch, principal, s => s.Connections.UpdateConnectionAsync(
-            new ConnectionId(seeded.ConnectionId), new UpdateConnectionRequest(null, null, null, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask());
+            new ConnectionId(seeded.ConnectionId), new UpdateConnectionRequest(null, null, new Dictionary<string, string> { ["Password"] = NewSecret })).AsTask());
         if (moveFirst)
         {
             move = StartMove();

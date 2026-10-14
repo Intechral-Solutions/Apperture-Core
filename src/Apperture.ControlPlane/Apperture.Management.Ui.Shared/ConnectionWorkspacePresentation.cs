@@ -7,7 +7,9 @@ namespace Apperture.Management.Ui.Shared;
 /// <param name="Label">The connector-declared display name, or the key when the connector declares none.</param>
 /// <param name="Value">A non-secret value as stored. Always null for a secret field.</param>
 /// <param name="IsSet">Whether a value (or, for a secret, a stored secret) is present.</param>
-public sealed record ConnectionConfigurationRow(string Key, string Label, string? Description, bool IsSecret, string? Value, bool IsSet);
+/// <param name="IsUndeclared">A secret field the connection still holds although its connector no longer declares it (a legacy row). It can only be removed.</param>
+public sealed record ConnectionConfigurationRow(
+    string Key, string Label, string? Description, bool IsSecret, string? Value, bool IsSet, bool IsUndeclared = false);
 
 /// <summary>A point-in-time health statement about a Connection. It is a fact, never a gate on anything else.</summary>
 public sealed record ConnectionHealth(string Label, ManagementStatusSemantic Semantic, string Detail);
@@ -71,10 +73,15 @@ public static class ConnectionWorkspacePresentation
                 rows.Add(Row(connection, key, key, null, isSecret: false));
         }
 
-        foreach (var key in connection.SecretRefs.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        // Secret fields the connector does not declare but the connection still holds (a legacy row), by key.
+        // A stored secret key that shares its name with a declared plain field or a config key still gets its own secret row: the
+        // plain row shows the config value, and without this one the secret could be neither seen nor removed.
+        foreach (var key in connection.SecretFields.Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal))
         {
-            if (handled.Add(key))
-                rows.Add(Row(connection, key, key, null, isSecret: true));
+            if (rows.Any(r => r.IsSecret && string.Equals(r.Key, key, StringComparison.Ordinal)))
+                continue;
+            var label = handled.Add(key) ? key : $"{key} (stored secret)";
+            rows.Add(Row(connection, key, label, null, isSecret: true) with { IsUndeclared = true });
         }
 
         return rows;
@@ -84,8 +91,8 @@ public static class ConnectionWorkspacePresentation
     {
         if (isSecret)
         {
-            // Presence is the whole disclosure: the reference itself is never copied into the row.
-            var present = connection.SecretRefs.TryGetValue(key, out var reference) && !string.IsNullOrWhiteSpace(reference);
+            // "Configured" is the whole disclosure: the server never sends the reference, so there is none to copy into the row.
+            var present = connection.SecretFields.Any(f => f.Configured && string.Equals(f.Key, key, StringComparison.Ordinal));
             return new ConnectionConfigurationRow(key, label, description, IsSecret: true, Value: null, IsSet: present);
         }
 

@@ -1477,13 +1477,19 @@ public sealed record SqlTableDto(string Schema, string Name, bool IsView);
 
 public sealed record SqlColumnDto(string Name, string DataType, bool IsNullable, int Ordinal, int? MaxLength);
 
-/// <summary>Connection resource with Used In projection. Epic 48.</summary>
+/// <summary>One secret field of a connection: its key and whether a reference is stored. The reference itself is never returned.</summary>
+public sealed record ConnectionSecretFieldDto(string Key, bool Configured);
+
+/// <summary>
+/// Connection resource with Used In projection. Epic 48. <paramref name="SecretFields"/> lists the connector's declared secret
+/// fields and any other stored secret key, each with whether it is configured; it replaces the raw references the response used to carry.
+/// </summary>
 public sealed record ConnectionDto(
     string Id,
     string ConnectorDefinitionId,
     string Name,
     IReadOnlyDictionary<string, string> Config,
-    IReadOnlyDictionary<string, string> SecretRefs,
+    IReadOnlyList<ConnectionSecretFieldDto> SecretFields,
     string? ScopeKey,
     string? OwnerId,
     string State,
@@ -1507,12 +1513,16 @@ public sealed record CreateConnectionRequest(
     IReadOnlyDictionary<string, string>? SecretValues = null,
     string? ResourceContextId = null);
 
-/// <summary>Request to update a connection resource.</summary>
+/// <summary>
+/// Request to update a connection resource. A secret field changes only by giving it a value (<paramref name="SecretValues"/>, which
+/// also repairs a field that names no secret it owns) or by clearing it (<paramref name="ClearSecretFields"/>, an undeclared legacy
+/// key included). There is no way to send a secret reference.
+/// </summary>
 public sealed record UpdateConnectionRequest(
     string? Name = null,
     IReadOnlyDictionary<string, string>? Config = null,
-    IReadOnlyDictionary<string, string>? SecretRefs = null,
-    IReadOnlyDictionary<string, string>? SecretValues = null);
+    IReadOnlyDictionary<string, string>? SecretValues = null,
+    IReadOnlyList<string>? ClearSecretFields = null);
 
 public sealed record BlockedWorkRetryResult(
     bool Success,

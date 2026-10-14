@@ -35,8 +35,11 @@ public sealed class PlatformSqlStructureBrowserTests
         public required PlatformSqlStructureBrowser Sut { get; init; }
         public required RecordingDbConnection Db { get; init; }
         public required Mock<IConnectorClientFactory<IDbConnection>> Factory { get; init; }
-        public required Mock<ISecretResolver> Secrets { get; init; }
+        public required Mock<IConnectionMaterialResolver> Secrets { get; init; }
     }
+
+    private static readonly Func<Mock<IConnectionMaterialResolver>, Moq.Language.Flow.ISetup<IConnectionMaterialResolver, ValueTask<ResolvedConnectionMaterial>>> Resolves =
+        m => m.Setup(s => s.ResolveAsync(It.IsAny<Connection>(), It.IsAny<ConnectionResolutionPath>(), It.IsAny<CancellationToken>()));
 
     private static Rig NewRig(SqlStructureBrowserOptions? options = null, Action<RecordingDbConnection>? configure = null)
     {
@@ -44,9 +47,10 @@ public sealed class PlatformSqlStructureBrowserTests
         configure?.Invoke(db);
         var factory = new Mock<IConnectorClientFactory<IDbConnection>>();
         factory.Setup(f => f.Create(It.IsAny<Connection>(), It.IsAny<ResolvedConnectionMaterial>())).Returns(db);
-        var secrets = new Mock<ISecretResolver>();
-        secrets.Setup(s => s.ResolveAsync(It.IsAny<SecretRef>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ResolvedSecret(new SecretRef("x"), new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: "p@ss")));
+        var secrets = new Mock<IConnectionMaterialResolver>();
+        Resolves(secrets).Returns((Connection c, ConnectionResolutionPath _, CancellationToken _) =>
+            ValueTask.FromResult(new ResolvedConnectionMaterial(
+                c.Config.Concat(c.SecretRefs.Select(kv => new KeyValuePair<string, string>(kv.Key, "p@ss"))).ToDictionary(kv => kv.Key, kv => kv.Value))));
         return new Rig { Sut = new PlatformSqlStructureBrowser(secrets.Object, factory.Object, options), Db = db, Factory = factory, Secrets = secrets };
     }
 
@@ -159,7 +163,7 @@ public sealed class PlatformSqlStructureBrowserTests
         await tooLong.Should().ThrowAsync<ArgumentException>();
         await empty.Should().ThrowAsync<ArgumentException>();
         rig.Factory.Verify(f => f.Create(It.IsAny<Connection>(), It.IsAny<ResolvedConnectionMaterial>()), Times.Never);
-        rig.Secrets.Verify(s => s.ResolveAsync(It.IsAny<SecretRef>(), It.IsAny<CancellationToken>()), Times.Never);
+        rig.Secrets.Verify(s => s.ResolveAsync(It.IsAny<Connection>(), It.IsAny<ConnectionResolutionPath>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     // SF4 -------------------------------------------------------------------------------------------
@@ -394,7 +398,7 @@ public sealed class PlatformSqlStructureBrowserTests
     public async Task Unresolvable_secrets_are_a_fixed_safe_outcome_and_no_client_is_created()
     {
         var rig = NewRig();
-        rig.Secrets.Setup(s => s.ResolveAsync(It.IsAny<SecretRef>(), It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException(LeakyMessage));
+        Resolves(rig.Secrets).ThrowsAsync(new InvalidOperationException(LeakyMessage));
 
         var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(withSecret: true), CancellationToken.None);
 
@@ -542,7 +546,7 @@ public sealed class PlatformSqlStructureBrowserTests
     public async Task M1_a_secret_resolver_timeout_that_the_caller_did_not_ask_for_is_a_fixed_outcome_not_a_cancellation()
     {
         var rig = NewRig();
-        rig.Secrets.Setup(s => s.ResolveAsync(It.IsAny<SecretRef>(), It.IsAny<CancellationToken>())).ThrowsAsync(new TaskCanceledException("vault http timeout"));
+        Resolves(rig.Secrets).ThrowsAsync(new TaskCanceledException("vault http timeout"));
 
         var result = await rig.Sut.ListSchemasAsync(SqlConnectionRow(withSecret: true), CancellationToken.None);
 
@@ -556,12 +560,12 @@ public sealed class PlatformSqlStructureBrowserTests
     {
         using var cts = new CancellationTokenSource();
         var rig = NewRig();
-        rig.Secrets.Setup(s => s.ResolveAsync(It.IsAny<SecretRef>(), It.IsAny<CancellationToken>()))
-            .Returns((SecretRef _, CancellationToken ct) =>
+        Resolves(rig.Secrets)
+            .Returns((Connection _, ConnectionResolutionPath _, CancellationToken ct) =>
             {
                 cts.Cancel();
                 ct.ThrowIfCancellationRequested();
-                return ValueTask.FromResult<ResolvedSecret>(null!);
+                return ValueTask.FromResult<ResolvedConnectionMaterial>(null!);
             });
 
         var act = async () => await rig.Sut.ListSchemasAsync(SqlConnectionRow(withSecret: true), cts.Token);

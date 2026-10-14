@@ -256,6 +256,11 @@ public sealed class ConnectionManagementService : IConnectionManagementService
     /// so two concurrent updates of different fields both survive. A request that changes nothing declares a no-op and records
     /// nothing. The row is <c>connection.secret_rotated</c> when any secret field changed (material rotated, or a reference added,
     /// removed or pointed elsewhere), otherwise <c>connection.updated</c>.</para>
+    /// <para><b>Secret fields (SEC-2.2).</b> A request cannot name a reference. It can give a declared field a value
+    /// (<c>SecretValues</c>), which rotates the secret the field owns or, when the field names nothing it owns, stores a new
+    /// secret and repoints the field in this same unit; and it can remove any stored reference, an undeclared legacy key
+    /// included (<c>ClearSecretFields</c>). Neither reads, versions, disables or adopts the secret a removed or replaced reference
+    /// named, so a poisoned field is repaired without knowing the reference and without touching its target.</para>
     /// </remarks>
     public async ValueTask<Connection> UpdateConnectionAsync(ConnectionId id, UpdateConnectionRequest request, CancellationToken cancellationToken = default)
     {
@@ -275,18 +280,20 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         Dictionary<string, string>? requestedConfig = request.Config is null
             ? null
             : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.Config, def);
-        Dictionary<string, string>? requestedSecretRefs = request.SecretRefs is null
-            ? null
-            : ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretRefs, def);
-        if (requestedSecretRefs is not null)
-        {
-            foreach (var kv in requestedSecretRefs)
-                ValidateIncomingSecretRef(def, kv.Key, kv.Value);
-        }
 
         IReadOnlyDictionary<string, string>? secretValuesToApply = null;
         if (request.SecretValues is { Count: > 0 })
             secretValuesToApply = ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(request.SecretValues, def);
+
+        var clearRequested = NormalizeClearRequest(request.ClearSecretFields);
+        foreach (var requested in clearRequested)
+        {
+            if (secretValuesToApply is not null
+                && secretValuesToApply.Any(kv => !string.IsNullOrWhiteSpace(kv.Value) && string.Equals(kv.Key, requested, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidConnectionRequestException($"Secret field '{requested}' cannot be cleared and given a value in the same request.");
+            }
+        }
 
         return await unit.ExecuteAsync(
             new AuditedOperation(AuditActionNames.ConnectionUpdated, AuditActor.CurrentPrincipal, AuditActionNames.ConnectionUpdateActions),
@@ -299,11 +306,16 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                 var nextConfig = requestedConfig is null
                     ? new Dictionary<string, string>(fresh.Config, StringComparer.Ordinal)
                     : new Dictionary<string, string>(requestedConfig, StringComparer.Ordinal);
-                var workingSecretRefs = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (var kv in ConnectionSecretMaterialProvisioner.NormalizeToDeclaredFieldKeys(requestedSecretRefs ?? fresh.SecretRefs, def))
-                    workingSecretRefs[kv.Key] = kv.Value;
-                foreach (var kv in workingSecretRefs)
-                    ValidateIncomingSecretRef(def, kv.Key, kv.Value);
+
+                // The references as stored, every key included: a key the connector no longer declares is kept (and can be
+                // cleared) rather than refused or dropped. They are never normalized or validated here, because a stored
+                // reference of any shape is a legacy row that resolution refuses and the two field operations repair.
+                var workingSecretRefs = new Dictionary<string, string>(fresh.SecretRefs, StringComparer.Ordinal);
+                foreach (var requested in clearRequested)
+                {
+                    if (ResolveStoredSecretKey(def, workingSecretRefs.Keys, requested) is { } stored)
+                        workingSecretRefs.Remove(stored);
+                }
 
                 // Mirrors the provisioner, which skips blank values: only fields that actually receive material count.
                 var materialFields = secretValuesToApply is null
@@ -321,17 +333,18 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                 var configChanged = ChangedKeys(baselineConfig, nextConfig);
                 var refsChanged = ChangedKeys(fresh.SecretRefs, workingSecretRefs);
 
-                // A reference this request adds or points elsewhere must be owned by this connection field. So must every
-                // reference when the request changes config: config decides where the credential is sent (a host, a base
-                // URL), so a reference that is not this connection's own must not travel with a new destination. A request
-                // that only renames, or leaves config and references as stored, does not re-prove a legacy reference (such a
-                // row stays editable), but the reference can never be rotated: the provisioner proves ownership of every
-                // reference it adds a version to, whatever the row says. A poisoned reference is repaired by dropping it in
-                // the request that supplies the connection's own material.
-                await _secretProvisioner.EnsureReferencesOwnedAsync(
-                    fresh.Id,
-                    workingSecretRefs.Where(kv => configChanged.Count > 0 || refsChanged.Contains(kv.Key)),
-                    ct).ConfigureAwait(false);
+                // Config decides where a credential is sent (a host, a base URL), so when the request changes config every
+                // reference the connection keeps must be its own: one that is not must not travel with a new destination. A
+                // field this request gives a new value is about to be replaced, and a cleared one is gone, so neither is asked.
+                // A request that only renames, or leaves config as stored, does not re-prove a legacy reference (such a row
+                // stays editable and can be repaired by the two field operations); resolution refuses it either way.
+                if (configChanged.Count > 0)
+                {
+                    await _secretProvisioner.EnsureReferencesOwnedAsync(
+                        fresh.Id,
+                        workingSecretRefs.Where(kv => !materialFields.Contains(kv.Key, StringComparer.Ordinal)),
+                        ct).ConfigureAwait(false);
+                }
 
                 if (!nameChanged && configChanged.Count == 0 && refsChanged.Count == 0 && materialFields.Count == 0)
                 {
@@ -340,7 +353,8 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                 }
 
                 // The material goes to the store inside this transaction, after the row is locked and the request is known to
-                // change something. It becomes the connection's live credential only if the unit commits.
+                // change something. It becomes the connection's live credential only if the unit commits. A field whose
+                // reference is not its own gets a new secret and is repointed to it here, together with everything else.
                 IReadOnlyList<ConnectionSecretWrite> writes = [];
                 if (secretValuesToApply is not null && materialFields.Count > 0)
                 {
@@ -349,10 +363,10 @@ public sealed class ConnectionManagementService : IConnectionManagementService
                         .ConfigureAwait(false);
                 }
 
-                ConnectionSecretMaterialProvisioner.ValidateConnectionMaterial(def, nextConfig, workingSecretRefs);
+                ConnectionSecretMaterialProvisioner.ValidateUpdatedConnectionMaterial(def, nextConfig, workingSecretRefs);
 
                 // A field also counts as rotated when its secret reference was added, removed or now points somewhere new
-                // (key names only).
+                // (a count only; see AuditEvents.ConnectionChanged).
                 var rotated = new SortedSet<string>(materialFields, StringComparer.Ordinal);
                 foreach (var key in ChangedKeys(fresh.SecretRefs, workingSecretRefs))
                     rotated.Add(key);
@@ -534,6 +548,62 @@ public sealed class ConnectionManagementService : IConnectionManagementService
             return;
         if (!config.TryGetValue("AuthMode", out var mode) || string.IsNullOrWhiteSpace(mode))
             config["AuthMode"] = "ApiKey";
+    }
+
+    /// <summary>The most keys one request may clear. A connection has a handful of secret fields; the bound only stops an absurd request.</summary>
+    private const int MaxClearedFields = 64;
+
+    /// <summary>The longest key a request may name. Stored keys are bounded by the column, and a key is never echoed back longer than this.</summary>
+    private const int MaxFieldKeyLength = 256;
+
+    /// <summary>Trims and de-duplicates the keys to clear. A blank or oversized key is a request the caller can fix, so it is a 400.</summary>
+    private static List<string> NormalizeClearRequest(IReadOnlyList<string>? requested)
+    {
+        var keys = new List<string>();
+        if (requested is null)
+            return keys;
+        if (requested.Count > MaxClearedFields)
+            throw new InvalidConnectionRequestException($"At most {MaxClearedFields} secret fields can be cleared in one request.");
+        foreach (var raw in requested)
+        {
+            var key = raw?.Trim();
+            if (string.IsNullOrEmpty(key))
+                throw new InvalidConnectionRequestException("A secret field to clear needs a key.");
+            if (key.Length > MaxFieldKeyLength)
+                throw new InvalidConnectionRequestException($"A secret field key is at most {MaxFieldKeyLength} characters.");
+            if (!keys.Contains(key, StringComparer.Ordinal))
+                keys.Add(key);
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// The stored key a clear request names, or null when it names a declared secret field that holds no reference (clearing
+    /// nothing is not an error, so a retried request is the same request). The key is matched exactly first, so an undeclared
+    /// legacy key is cleared by its own spelling; then against the connector's declared secret fields, case-insensitively, as
+    /// every other field key is; then against a single stored key that differs only in case.
+    /// </summary>
+    /// <exception cref="InvalidConnectionRequestException">The key is neither a secret field of the connector nor a stored key.</exception>
+    private static string? ResolveStoredSecretKey(ConnectorDefinition def, IEnumerable<string> storedKeys, string requested)
+    {
+        var stored = storedKeys.ToList();
+        if (stored.Contains(requested, StringComparer.Ordinal))
+            return requested;
+
+        var declared = def.ConnectionFields.FirstOrDefault(f => string.Equals(f.Key, requested, StringComparison.OrdinalIgnoreCase));
+        if (declared is not null)
+        {
+            if (!declared.IsSecret)
+                throw new InvalidConnectionRequestException($"'{requested}' is not a secret field.");
+            return stored.Contains(declared.Key, StringComparer.Ordinal) ? declared.Key : null;
+        }
+
+        var sameIgnoringCase = stored.Where(k => string.Equals(k, requested, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (sameIgnoringCase.Count == 1)
+            return sameIgnoringCase[0];
+
+        throw new InvalidConnectionRequestException($"'{requested}' is not a secret field of this connection.");
     }
 
     private static void ValidateIncomingSecretRef(ConnectorDefinition def, string key, string value)

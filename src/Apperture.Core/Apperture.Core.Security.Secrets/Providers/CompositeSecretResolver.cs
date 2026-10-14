@@ -28,4 +28,15 @@ public sealed class CompositeSecretResolver : ISecretResolver
 
         return await resolver.ResolveAsync(secretRef, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    /// <remarks>A reference no registered resolver handles is refused with the same exception as a foreign one.</remarks>
+    public async ValueTask<ResolvedSecret> ResolveOwnedAsync(SecretRef secretRef, SecretOwner owner, CancellationToken cancellationToken = default)
+    {
+        var resolver = _registry.GetResolverFor(secretRef);
+        if (resolver is null)
+            throw new SecretUnavailableException();
+
+        return await resolver.ResolveOwnedAsync(secretRef, owner, cancellationToken).ConfigureAwait(false);
+    }
 }

@@ -38,7 +38,7 @@ public sealed class Epic48ConnectionsSurfaceTests
             "connector-sql",
             "My DB",
             new Dictionary<string, string>(),
-            new Dictionary<string, string>(),
+            new List<ConnectionSecretFieldDto>(),
             null,
             null,
             "Active",

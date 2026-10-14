@@ -33,11 +33,11 @@ public sealed class ConnectionWorkspaceRenderTests
         string contextId = "shared",
         string? summary = null,
         DateTimeOffset? verifiedAt = null,
-        IReadOnlyDictionary<string, string>? secretRefs = null) =>
+        IReadOnlyList<ConnectionSecretFieldDto>? secretFields = null) =>
         new(
             "conn-0001", connectorId, "Warehouse",
             new Dictionary<string, string> { ["Host"] = "db.example", ["Database"] = "Ops" },
-            secretRefs ?? new Dictionary<string, string> { ["Password"] = SecretGuid },
+            secretFields ?? [new ConnectionSecretFieldDto("Password", true)],
             null, null, state, supportsVerification, status, verifiedAt, summary, [],
             ResourceContextId: contextId,
             ConnectorDisplayName: connectorDisplayName);
@@ -145,7 +145,7 @@ public sealed class ConnectionWorkspaceRenderTests
     [Fact]
     public async Task An_absent_secret_reads_not_set_and_a_declared_field_with_no_value_reads_not_set()
     {
-        var page = await RenderAsync(Connection(secretRefs: new Dictionary<string, string>()), Definition());
+        var page = await RenderAsync(Connection(secretFields: []), Definition());
 
         page.Html.Should().Contain(">Not set<");
     }

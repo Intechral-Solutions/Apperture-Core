@@ -1,4 +1,5 @@
 using System.Linq;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Security.Secrets.Models;
@@ -10,8 +11,6 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 public sealed class ConnectionSecretMaterialProvisioner
 {
-    private const string SecretProvider = "platform-connection";
-
     private readonly ISecretStore _secretStore;
 
     public ConnectionSecretMaterialProvisioner(ISecretStore secretStore) =>
@@ -33,12 +32,7 @@ public sealed class ConnectionSecretMaterialProvisioner
             if (string.IsNullOrWhiteSpace(kv.Value))
                 continue;
 
-            var descriptor = await _secretStore.CreateAsync(
-                    new SecretCreateRequest(
-                        BuildSecretName(connectionId, kv.Key),
-                        SecretProvider,
-                        SecretMaterialType.OpaqueString),
-                    cancellationToken)
+            var descriptor = await _secretStore.CreateAsync(NewOwnedSecretRequest(connectionId, kv.Key), cancellationToken)
                 .ConfigureAwait(false);
 
             var version = await _secretStore.AddVersionAsync(
@@ -61,23 +55,35 @@ public sealed class ConnectionSecretMaterialProvisioner
     /// secret's own stored descriptor, never against what the connection row says. A missing secret, another provider and another
     /// owner or field are all refused with the same message, which does not repeat the reference or say which case it was.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The reference does not name a secret owned by this connection field.</exception>
+    /// <exception cref="InvalidConnectionRequestException">The reference does not name a secret owned by this connection field.</exception>
     public async ValueTask EnsureReferenceOwnedAsync(
         ConnectionId connectionId, string fieldKey, string reference, CancellationToken cancellationToken = default)
     {
         if (Guid.TryParse(reference, out var guid))
         {
             var descriptor = await _secretStore.GetAsync(new SecretId(guid), cancellationToken).ConfigureAwait(false);
-            if (descriptor is not null
-                && string.Equals(descriptor.Provider, SecretProvider, StringComparison.Ordinal)
-                && string.Equals(descriptor.Name, BuildSecretName(connectionId, fieldKey), StringComparison.Ordinal))
-            {
+            if (descriptor is not null && ConnectionSecretOwnership.For(connectionId, fieldKey).Matches(descriptor.Provider, descriptor.Name))
                 return;
-            }
         }
 
-        throw new InvalidOperationException(
-            $"Secret reference for '{fieldKey}' does not name a secret owned by this connection field. Use SecretValues to store new secret material.");
+        // A request the caller can fix (so a 400 on update as well as on create), not a missing connection.
+        throw new InvalidConnectionRequestException(
+            $"Secret reference for '{fieldKey}' does not name a secret owned by this connection field. "
+            + "Supply a new value with secretValues, or remove the stored reference with clearSecretFields.");
+    }
+
+    /// <summary>
+    /// Whether the field's stored reference names a secret this connection field owns. Only the secret's descriptor is read, never
+    /// its versions or material, and the answer is the same for a missing secret, another provider, another owner and another
+    /// field: no. This is the same rule <see cref="EnsureReferenceOwnedAsync"/> enforces and every resolution applies.
+    /// </summary>
+    public async ValueTask<bool> IsReferenceOwnedAsync(
+        ConnectionId connectionId, string fieldKey, string? reference, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || !Guid.TryParse(reference, out var guid))
+            return false;
+        var descriptor = await _secretStore.GetAsync(new SecretId(guid), cancellationToken).ConfigureAwait(false);
+        return descriptor is not null && ConnectionSecretOwnership.For(connectionId, fieldKey).Matches(descriptor.Provider, descriptor.Name);
     }
 
     /// <summary>Applies <see cref="EnsureReferenceOwnedAsync"/> to each reference, in field order.</summary>
@@ -89,11 +95,17 @@ public sealed class ConnectionSecretMaterialProvisioner
     }
 
     /// <summary>
-    /// Adds a new active version to the secret the field already names, which must be owned by this connection field (see
-    /// <see cref="EnsureReferenceOwnedAsync"/>; a reference that fails the rule is refused before anything is stored, whatever the
-    /// stored row says); otherwise creates a new secret. Mutates <paramref name="workingSecretRefs"/>.
-    /// Returns, per field that received material, whether it replaced the secret the field already named. Meant to run inside the
-    /// caller's audited unit: the store joins its transaction, so the new version is live only if the unit commits.
+    /// Stores each non-blank value for a declared secret field. When the field already names a secret this connection field
+    /// owns, the value becomes a new active version of it (a rotation). In every other case the field names nothing usable and the
+    /// value is stored as a new secret the connection owns, and <paramref name="workingSecretRefs"/> is repointed to it. "Every
+    /// other case" is a missing reference, another connection's secret, another provider's, another field's, a secret that does
+    /// not exist, or text that is not a reference at all.
+    /// <para>The secret the field named before is never read, adopted, versioned, disabled or otherwise changed: only its
+    /// descriptor is looked at, to learn that it is not the field's own. Without a reference to a foreign secret on the row, the
+    /// operator needs to know no reference to repair the field.</para>
+    /// Mutates <paramref name="workingSecretRefs"/>. Returns, per field that received material, whether it replaced the secret the
+    /// field already owned. Meant to run inside the caller's audited unit: the store joins its transaction, so the new secret and
+    /// the repointed reference are live together or not at all.
     /// </summary>
     public async ValueTask<IReadOnlyList<ConnectionSecretWrite>> ApplySecretValuesForUpdateAsync(
         ConnectionId connectionId,
@@ -104,42 +116,26 @@ public sealed class ConnectionSecretMaterialProvisioner
     {
         ThrowIfInvalidSecretKeys(definition, secretValues);
 
-        // Every reference that would receive a version is proved owned before the first version is stored.
-        foreach (var kv in secretValues.OrderBy(k => k.Key, StringComparer.Ordinal))
-        {
-            if (!string.IsNullOrWhiteSpace(kv.Value)
-                && workingSecretRefs.TryGetValue(kv.Key, out var toRotate)
-                && Guid.TryParse(toRotate, out _))
-            {
-                await EnsureReferenceOwnedAsync(connectionId, kv.Key, toRotate, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
         var writes = new List<ConnectionSecretWrite>();
-        foreach (var kv in secretValues)
+        foreach (var kv in secretValues.OrderBy(k => k.Key, StringComparer.Ordinal))
         {
             if (string.IsNullOrWhiteSpace(kv.Value))
                 continue;
 
             var material = new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: kv.Value.Trim());
 
-            if (workingSecretRefs.TryGetValue(kv.Key, out var existingRef)
-                && Guid.TryParse(existingRef, out var existingGuid))
+            workingSecretRefs.TryGetValue(kv.Key, out var existingRef);
+            if (await IsReferenceOwnedAsync(connectionId, kv.Key, existingRef, cancellationToken).ConfigureAwait(false))
             {
-                var secretId = new SecretId(existingGuid);
+                var secretId = new SecretId(Guid.Parse(existingRef!));
                 var version = await _secretStore.AddVersionAsync(secretId, material, cancellationToken).ConfigureAwait(false);
                 await _secretStore.ActivateVersionAsync(secretId, version, cancellationToken).ConfigureAwait(false);
-                workingSecretRefs[kv.Key] = existingRef;
+                workingSecretRefs[kv.Key] = existingRef!;
                 writes.Add(new ConnectionSecretWrite(kv.Key, Replaced: true));
             }
             else
             {
-                var descriptor = await _secretStore.CreateAsync(
-                        new SecretCreateRequest(
-                            BuildSecretName(connectionId, kv.Key),
-                            SecretProvider,
-                            SecretMaterialType.OpaqueString),
-                        cancellationToken)
+                var descriptor = await _secretStore.CreateAsync(NewOwnedSecretRequest(connectionId, kv.Key), cancellationToken)
                     .ConfigureAwait(false);
 
                 var version = await _secretStore.AddVersionAsync(descriptor.SecretId, material, cancellationToken).ConfigureAwait(false);
@@ -152,8 +148,9 @@ public sealed class ConnectionSecretMaterialProvisioner
         return writes;
     }
 
-    private static string BuildSecretName(ConnectionId connectionId, string fieldKey) =>
-        $"connection:{connectionId.Value}:{fieldKey}";
+    /// <summary>A new secret under the provider and name <see cref="ConnectionSecretOwnership"/> defines for the field, the rule every resolution checks.</summary>
+    private static SecretCreateRequest NewOwnedSecretRequest(ConnectionId connectionId, string fieldKey) =>
+        new(ConnectionSecretOwnership.NameFor(connectionId, fieldKey), ConnectionSecretOwnership.Provider, SecretMaterialType.OpaqueString);
 
     /// <summary>
     /// Maps request dictionary keys to canonical <see cref="ConnectionFieldDescriptor.Key"/> values (case-insensitive).
@@ -201,13 +198,7 @@ public sealed class ConnectionSecretMaterialProvisioner
         IReadOnlyDictionary<string, string> secretRefs)
     {
         var fieldsByKey = definition.ConnectionFields.ToDictionary(f => f.Key, StringComparer.Ordinal);
-        foreach (var kv in config)
-        {
-            if (!fieldsByKey.TryGetValue(kv.Key, out var field))
-                throw new InvalidOperationException($"Unknown connection config key '{kv.Key}' for connector {definition.Id.Value}.");
-            if (field.IsSecret)
-                throw new InvalidOperationException($"Key '{kv.Key}' is a secret field and must be supplied via secret provisioning, not config.");
-        }
+        ValidateConfigKeys(definition, fieldsByKey, config);
 
         foreach (var kv in secretRefs)
         {
@@ -229,6 +220,45 @@ public sealed class ConnectionSecretMaterialProvisioner
                 : config.TryGetValue(req, out var c) && !string.IsNullOrWhiteSpace(c);
             if (!hasValue)
                 throw new InvalidOperationException($"Required connection field '{req}' is missing for connector {definition.Id.Value}.");
+        }
+    }
+
+    /// <summary>
+    /// The check for an update. Config is checked as on creation. Secret references are not: an update leaves a reference it does
+    /// not touch exactly as stored (a stored reference of any shape, or a key the connector no longer declares, is a legacy row
+    /// that resolution refuses and that clearing or a new value repairs), so only whether each required field still has one is
+    /// asked. A request that clears a required field is therefore refused with a message that says so.
+    /// </summary>
+    /// <exception cref="InvalidConnectionRequestException">A required field would be left without a value.</exception>
+    public static void ValidateUpdatedConnectionMaterial(
+        ConnectorDefinition definition,
+        IReadOnlyDictionary<string, string> config,
+        IReadOnlyDictionary<string, string> secretRefs)
+    {
+        var fieldsByKey = definition.ConnectionFields.ToDictionary(f => f.Key, StringComparer.Ordinal);
+        ValidateConfigKeys(definition, fieldsByKey, config);
+
+        foreach (var req in definition.RequiredInputSchema.Keys)
+        {
+            if (!fieldsByKey.TryGetValue(req, out var field))
+                continue;
+            var hasValue = field.IsSecret
+                ? secretRefs.TryGetValue(req, out var stored) && !string.IsNullOrWhiteSpace(stored)
+                : config.TryGetValue(req, out var c) && !string.IsNullOrWhiteSpace(c);
+            if (!hasValue)
+                throw new InvalidConnectionRequestException($"Required connection field '{req}' is missing for connector {definition.Id.Value}.");
+        }
+    }
+
+    private static void ValidateConfigKeys(
+        ConnectorDefinition definition, IReadOnlyDictionary<string, ConnectionFieldDescriptor> fieldsByKey, IReadOnlyDictionary<string, string> config)
+    {
+        foreach (var kv in config)
+        {
+            if (!fieldsByKey.TryGetValue(kv.Key, out var field))
+                throw new InvalidOperationException($"Unknown connection config key '{kv.Key}' for connector {definition.Id.Value}.");
+            if (field.IsSecret)
+                throw new InvalidOperationException($"Key '{kv.Key}' is a secret field and must be supplied via secret provisioning, not config.");
         }
     }
 }

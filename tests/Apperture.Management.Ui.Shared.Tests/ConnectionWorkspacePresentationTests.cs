@@ -29,14 +29,14 @@ public sealed class ConnectionWorkspacePresentationTests
 
     private static ConnectionDto Connection(
         IReadOnlyDictionary<string, string>? config = null,
-        IReadOnlyDictionary<string, string>? secretRefs = null,
+        IReadOnlyList<ConnectionSecretFieldDto>? secretFields = null,
         string status = "NeverTested",
         bool supportsVerification = true,
         string? connectorDisplayName = "Platform SQL") =>
         new(
             "c-1", "Apperture.Platform.Sql", "Warehouse",
             config ?? new Dictionary<string, string> { ["Host"] = "db.example", ["Database"] = "Ops" },
-            secretRefs ?? new Dictionary<string, string> { ["Password"] = SecretGuid },
+            secretFields ?? [new ConnectionSecretFieldDto("Password", true)],
             null, null, "Active", supportsVerification, status, null, null, [],
             ConnectorDisplayName: connectorDisplayName);
 
@@ -55,7 +55,7 @@ public sealed class ConnectionWorkspacePresentationTests
     {
         var present = ConnectionWorkspacePresentation.ConfigurationRows(Connection(), Definition()).Single(r => r.IsSecret);
         var absent = ConnectionWorkspacePresentation.ConfigurationRows(
-            Connection(secretRefs: new Dictionary<string, string>()), Definition()).Single(r => r.IsSecret);
+            Connection(secretFields: []), Definition()).Single(r => r.IsSecret);
 
         present.IsSet.Should().BeTrue();
         absent.IsSet.Should().BeFalse();
@@ -67,10 +67,10 @@ public sealed class ConnectionWorkspacePresentationTests
     }
 
     [Fact]
-    public void A_secret_ref_that_is_blank_counts_as_absent()
+    public void A_secret_field_the_server_reports_as_not_configured_is_absent()
     {
         var rows = ConnectionWorkspacePresentation.ConfigurationRows(
-            Connection(secretRefs: new Dictionary<string, string> { ["Password"] = "  " }), Definition());
+            Connection(secretFields: [new ConnectionSecretFieldDto("Password", false)]), Definition());
 
         rows.Single(r => r.IsSecret).IsSet.Should().BeFalse();
     }
@@ -79,10 +79,27 @@ public sealed class ConnectionWorkspacePresentationTests
     public void A_config_value_stored_under_a_declared_secret_key_is_never_shown()
     {
         var rows = ConnectionWorkspacePresentation.ConfigurationRows(
-            Connection(config: new Dictionary<string, string> { ["Password"] = "leaked-in-config", ["Host"] = "h" }, secretRefs: new Dictionary<string, string>()),
+            Connection(config: new Dictionary<string, string> { ["Password"] = "leaked-in-config", ["Host"] = "h" }, secretFields: []),
             Definition());
 
         System.Text.Json.JsonSerializer.Serialize(rows).Should().NotContain("leaked-in-config");
+    }
+
+    [Fact]
+    public void A_stored_secret_that_shares_its_key_with_a_plain_field_still_gets_a_secret_row_that_can_be_removed()
+    {
+        // A legacy row: the connector declares Host as plain config, and the connection also stores a secret reference under "Host".
+        var rows = ConnectionWorkspacePresentation.ConfigurationRows(
+            Connection(secretFields: [new ConnectionSecretFieldDto("Password", true), new ConnectionSecretFieldDto("Host", true)]),
+            Definition());
+
+        rows.Where(r => r.Key == "Host").Should().HaveCount(2);
+        rows.Single(r => r.Key == "Host" && !r.IsSecret).Value.Should().Be("db.example");
+        var secret = rows.Single(r => r.Key == "Host" && r.IsSecret);
+        secret.IsUndeclared.Should().BeTrue();
+        secret.IsSet.Should().BeTrue();
+        secret.Value.Should().BeNull();
+        secret.Label.Should().NotBe("Server", "it is told apart from the plain field");
     }
 
     [Fact]
@@ -90,7 +107,7 @@ public sealed class ConnectionWorkspacePresentationTests
     {
         var rows = ConnectionWorkspacePresentation.ConfigurationRows(
             Connection(config: new Dictionary<string, string> { ["Host"] = "h", ["Legacy"] = "old" },
-                secretRefs: new Dictionary<string, string> { ["LegacySecret"] = SecretGuid }),
+                secretFields: [new ConnectionSecretFieldDto("Password", true), new ConnectionSecretFieldDto("LegacySecret", true)]),
             Definition());
 
         rows.Single(r => r.Key == "Legacy").Label.Should().Be("Legacy");
@@ -98,6 +115,9 @@ public sealed class ConnectionWorkspacePresentationTests
         rows.Single(r => r.Key == "LegacySecret").IsSecret.Should().BeTrue();
         rows.Single(r => r.Key == "LegacySecret").IsSet.Should().BeTrue();
         rows.Single(r => r.Key == "LegacySecret").Value.Should().BeNull();
+        rows.Single(r => r.Key == "LegacySecret").IsUndeclared.Should().BeTrue("a stored secret key the connector does not declare can only be removed");
+        rows.Single(r => r.Key == "Password").IsUndeclared.Should().BeFalse();
+        rows.Where(r => !r.IsSecret).Should().OnlyContain(r => !r.IsUndeclared);
     }
 
     [Fact]

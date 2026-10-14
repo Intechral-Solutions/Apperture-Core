@@ -170,15 +170,15 @@ public sealed class ConnectionVerifyBrowseSqlServerTests : IClassFixture<AuditIs
                 switch (change)
                 {
                     case Meanwhile.Rename:
-                        await service.UpdateConnectionAsync(id, new UpdateConnectionRequest("Renamed meanwhile", null, null, null));
+                        await service.UpdateConnectionAsync(id, new UpdateConnectionRequest("Renamed meanwhile", null, null));
                         break;
                     case Meanwhile.ConfigChange:
                         await service.UpdateConnectionAsync(id, new UpdateConnectionRequest(
-                            null, new Dictionary<string, string> { ["Host"] = HostSentinel, ["Database"] = "Ops" }, null, null));
+                            null, new Dictionary<string, string> { ["Host"] = HostSentinel, ["Database"] = "Ops" }, null));
                         break;
                     case Meanwhile.Rotation:
                         await service.UpdateConnectionAsync(id, new UpdateConnectionRequest(
-                            null, null, null, new Dictionary<string, string> { ["Password"] = NewSecret }));
+                            null, null, new Dictionary<string, string> { ["Password"] = NewSecret }));
                         break;
                     default:
                         await service.RetireConnectionAsync(id);
