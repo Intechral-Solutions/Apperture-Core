@@ -43,6 +43,14 @@ public sealed class AzureKeyVaultSecretResolver : ISecretResolver
         return new ResolvedSecret(secretRef, material, Version: bundle.Properties.Version);
     }
 
+    /// <summary>
+    /// Fails closed. A Key Vault secret has no descriptor carrying the owner that the platform stores (provider and name), so
+    /// ownership cannot be verified here, and a resolver that cannot verify must refuse rather than resolve. A holder whose
+    /// secrets live in Key Vault needs an owner model first.
+    /// </summary>
+    public ValueTask<ResolvedSecret> ResolveOwnedAsync(SecretRef secretRef, SecretOwner owner, CancellationToken cancellationToken = default) =>
+        throw new SecretUnavailableException();
+
     private (string secretName, string? version, SecretClient? clientForUri) ParseSecretRef(SecretRef secretRef)
     {
         string value = secretRef.Value;

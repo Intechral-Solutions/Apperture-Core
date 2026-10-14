@@ -1,4 +1,5 @@
 using System.Linq;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Domain.Connector;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Core.Security.Secrets.Models;
@@ -10,8 +11,6 @@ namespace Apperture.ControlPlane.Security;
 /// </summary>
 public sealed class ConnectionSecretMaterialProvisioner
 {
-    private const string SecretProvider = "platform-connection";
-
     private readonly ISecretStore _secretStore;
 
     public ConnectionSecretMaterialProvisioner(ISecretStore secretStore) =>
@@ -33,12 +32,7 @@ public sealed class ConnectionSecretMaterialProvisioner
             if (string.IsNullOrWhiteSpace(kv.Value))
                 continue;
 
-            var descriptor = await _secretStore.CreateAsync(
-                    new SecretCreateRequest(
-                        BuildSecretName(connectionId, kv.Key),
-                        SecretProvider,
-                        SecretMaterialType.OpaqueString),
-                    cancellationToken)
+            var descriptor = await _secretStore.CreateAsync(NewOwnedSecretRequest(connectionId, kv.Key), cancellationToken)
                 .ConfigureAwait(false);
 
             var version = await _secretStore.AddVersionAsync(
@@ -68,12 +62,8 @@ public sealed class ConnectionSecretMaterialProvisioner
         if (Guid.TryParse(reference, out var guid))
         {
             var descriptor = await _secretStore.GetAsync(new SecretId(guid), cancellationToken).ConfigureAwait(false);
-            if (descriptor is not null
-                && string.Equals(descriptor.Provider, SecretProvider, StringComparison.Ordinal)
-                && string.Equals(descriptor.Name, BuildSecretName(connectionId, fieldKey), StringComparison.Ordinal))
-            {
+            if (descriptor is not null && ConnectionSecretOwnership.For(connectionId, fieldKey).Matches(descriptor.Provider, descriptor.Name))
                 return;
-            }
         }
 
         throw new InvalidOperationException(
@@ -134,12 +124,7 @@ public sealed class ConnectionSecretMaterialProvisioner
             }
             else
             {
-                var descriptor = await _secretStore.CreateAsync(
-                        new SecretCreateRequest(
-                            BuildSecretName(connectionId, kv.Key),
-                            SecretProvider,
-                            SecretMaterialType.OpaqueString),
-                        cancellationToken)
+                var descriptor = await _secretStore.CreateAsync(NewOwnedSecretRequest(connectionId, kv.Key), cancellationToken)
                     .ConfigureAwait(false);
 
                 var version = await _secretStore.AddVersionAsync(descriptor.SecretId, material, cancellationToken).ConfigureAwait(false);
@@ -152,8 +137,9 @@ public sealed class ConnectionSecretMaterialProvisioner
         return writes;
     }
 
-    private static string BuildSecretName(ConnectionId connectionId, string fieldKey) =>
-        $"connection:{connectionId.Value}:{fieldKey}";
+    /// <summary>A new secret under the provider and name <see cref="ConnectionSecretOwnership"/> defines for the field, the rule every resolution checks.</summary>
+    private static SecretCreateRequest NewOwnedSecretRequest(ConnectionId connectionId, string fieldKey) =>
+        new(ConnectionSecretOwnership.NameFor(connectionId, fieldKey), ConnectionSecretOwnership.Provider, SecretMaterialType.OpaqueString);
 
     /// <summary>
     /// Maps request dictionary keys to canonical <see cref="ConnectionFieldDescriptor.Key"/> values (case-insensitive).

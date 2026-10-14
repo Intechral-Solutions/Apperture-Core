@@ -11,4 +11,8 @@ public sealed class DefaultSecretResolver : ISecretResolver
 {
     public ValueTask<ResolvedSecret> ResolveAsync(SecretRef secretRef, CancellationToken cancellationToken = default)
         => throw new NotImplementedException("TODO: implement resolution pipeline.");
+
+    /// <summary>Fails closed: this placeholder cannot verify ownership, so it never resolves.</summary>
+    public ValueTask<ResolvedSecret> ResolveOwnedAsync(SecretRef secretRef, SecretOwner owner, CancellationToken cancellationToken = default)
+        => throw new SecretUnavailableException();
 }

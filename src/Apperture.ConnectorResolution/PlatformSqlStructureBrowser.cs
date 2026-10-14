@@ -6,7 +6,6 @@ using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.ConnectionTools;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
-using Apperture.Core.Security.Secrets.Abstractions;
 using Microsoft.Data.SqlClient;
 
 namespace Apperture.ConnectorResolution;
@@ -49,16 +48,16 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         "Browsing structure needs a connection that signs in with its own SQL login (a User ID). Connections that use the platform's own identity cannot be browsed.";
     private const string FailedMessage = "The structure request could not be completed.";
 
-    private readonly ISecretResolver _secretResolver;
+    private readonly IConnectionMaterialResolver _materialResolver;
     private readonly IConnectorClientFactory<IDbConnection> _factory;
     private readonly SqlStructureBrowserOptions _options;
 
     public PlatformSqlStructureBrowser(
-        ISecretResolver secretResolver,
+        IConnectionMaterialResolver materialResolver,
         IConnectorClientFactory<IDbConnection> factory,
         SqlStructureBrowserOptions? options = null)
     {
-        _secretResolver = secretResolver;
+        _materialResolver = materialResolver;
         _factory = factory;
         _options = options ?? new SqlStructureBrowserOptions();
     }
@@ -126,7 +125,7 @@ public sealed class PlatformSqlStructureBrowser : ISqlStructureBrowser
         ResolvedConnectionMaterial material;
         try
         {
-            material = await ResolvedConnectionMaterialBuilder.BuildAsync(connection, _secretResolver, cancellationToken).ConfigureAwait(false);
+            material = await _materialResolver.ResolveAsync(connection, ConnectionResolutionPath.Browse, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {

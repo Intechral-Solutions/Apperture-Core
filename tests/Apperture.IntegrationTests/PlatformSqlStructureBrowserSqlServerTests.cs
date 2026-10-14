@@ -1,8 +1,7 @@
 using Apperture.ConnectorResolution;
 using Apperture.Core.Application.ConnectionTools;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Domain.Connector;
-using Apperture.Core.Security.Secrets.Abstractions;
-using Apperture.Core.Security.Secrets.Models;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -19,10 +18,17 @@ namespace Apperture.IntegrationTests;
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class PlatformSqlStructureBrowserSqlServerTests
 {
-    private sealed class FixedResolver(string password) : ISecretResolver
+    /// <summary>The boundary answered with the scratch catalog's own login password: this suite is about the metadata, not the secret.</summary>
+    private sealed class FixedResolver(string password) : IConnectionMaterialResolver
     {
-        public ValueTask<ResolvedSecret> ResolveAsync(SecretRef secretRef, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new ResolvedSecret(secretRef, new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: password)));
+        public ValueTask<ResolvedConnectionMaterial> ResolveAsync(
+            Connection connection, ConnectionResolutionPath path, CancellationToken cancellationToken = default)
+        {
+            var merged = new Dictionary<string, string>(connection.Config);
+            foreach (var key in connection.SecretRefs.Keys)
+                merged[key] = password;
+            return ValueTask.FromResult(new ResolvedConnectionMaterial(merged));
+        }
     }
 
     private static async Task<SqlServerScratchDatabase> RequireFixtureAsync(string prefix)

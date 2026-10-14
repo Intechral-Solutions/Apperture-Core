@@ -1069,6 +1069,14 @@ internal static class AuditDetailSchemas
         EnumField("change", true, "created", "replaced"),
     ]);
 
+    // SEC-2.2: a refusal to resolve a connection's secret. It names the field key and the kind of operation that asked, and
+    // nothing that would say why: not the reference, not the secret that was found, not its owner, not which condition failed.
+    internal static readonly AuditDetailSchema ConnectionSecretResolutionRefused = new(
+    [
+        IdField("fieldKey"),
+        EnumField("path", true, "run", "verify", "browse", "settings_options"),
+    ]);
+
     // ---- Resource contexts (AUD-1.4 slice 5) ----
     // The context is the event's target and its own related reference. The name is a snapshot; the slug is an id.
 

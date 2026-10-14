@@ -82,6 +82,9 @@ try
     builder.Services.AddApperturePersistence(
         sp => sp.GetRequiredService<IBootstrapConnectionProfile>().ConnectionString);
     builder.Services.AddAppertureSqlSecrets();
+    // The connection-material boundary writes a refusal row (a connection whose secret is not its own) as the worker; it needs
+    // the audit event writer. The worker records nothing else through it.
+    builder.Services.AddAppertureAuditRecorder();
     builder.Services.AddOperationItemizationPersistence();
     builder.Services.AddSingleton<IEnvironmentContext, RuntimeEnvironmentContext>();
     builder.Services.AddScoped<IAuditService, SqlAuditService>();

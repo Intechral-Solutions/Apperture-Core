@@ -4,6 +4,7 @@ using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Connector;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Management.Host;
 using Apperture.Persistence.SqlServer;
@@ -63,7 +64,9 @@ builder.Services.AddAppertureSftpConnector();
 builder.Services.AddPlatformSqlConnector();
 // The SQL structure browser is a management-plane operator tool (authorized, audited); runtime workers do not compose it.
 builder.Services.AddPlatformSqlStructureBrowser();
-builder.Services.AddConnectorResolution();
+// The Management Host resolves slots only for integration settings options (a live client for the Campus Nexus campuses), so that
+// is what a refused secret is recorded against here; the Worker Host's default is a run.
+builder.Services.AddConnectorResolution(ConnectionResolutionPath.SettingsOptions);
 builder.Services.AddAppertureConnectorWorkflows();
 builder.Services.AddAppertureIntegrationWorkflows();
 builder.Services.AddApperturePlatformEvents(builder.Configuration);

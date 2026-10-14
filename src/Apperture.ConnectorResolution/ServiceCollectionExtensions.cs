@@ -1,8 +1,10 @@
 using System.Data;
 using Apperture.Core.Application.ConnectionTools;
+using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Apperture.ConnectorResolution;
@@ -19,9 +21,18 @@ public static class ConnectorResolutionServiceCollectionExtensions
     /// and hosted registration of <see cref="IConnectorClientFactoryContributor"/> instances.
     /// Caller must register IConnectionRepository, IBindingRepository, IConnectorDefinitionRegistry, ISecretResolver.
     /// </summary>
-    public static IServiceCollection AddConnectorResolution(this IServiceCollection services)
+    /// <param name="services">The service collection.</param>
+    /// <param name="slotResolutionPath">
+    /// What slot resolution is in this host, as recorded on a refused secret: the Worker Host resolves slots to run steps
+    /// (the default); the Management Host resolves them only for integration settings options.
+    /// </param>
+    public static IServiceCollection AddConnectorResolution(
+        this IServiceCollection services,
+        ConnectionResolutionPath slotResolutionPath = ConnectionResolutionPath.Run)
     {
         services.AddSingleton<IConnectorClientFactoryRegistry, ConnectorClientFactoryRegistry>();
+        services.AddSingleton(new ConnectionSlotResolution(slotResolutionPath));
+        services.AddConnectionMaterialResolver();
         services.AddScoped<IConnectionResolver, DefaultConnectionResolver>();
         services.AddScoped<IRuntimeSlotResolver, SlotBoundResolver>();
         services.AddHostedService<ConnectorClientFactoryRegistrationHostedService>();
@@ -42,6 +53,7 @@ public static class ConnectorResolutionServiceCollectionExtensions
             return services;
 
         services.TryRegisterConnectorDefinitionRegistry();
+        services.AddConnectionMaterialResolver();
         services.AddSingleton<IConnectorClientFactory<IDbConnection>, PlatformSqlConnectorClientFactory>();
         services.AddSingleton<IConnectorClientFactoryContributor, PlatformSqlConnectorClientFactoryContributor>();
         services.AddScoped<IConnectionVerifier, PlatformSqlConnectionVerifier>();
@@ -63,6 +75,13 @@ public static class ConnectorResolutionServiceCollectionExtensions
         services.AddScoped<IConnectionToolProvider, PlatformSqlStructureBrowser>();
         return services;
     }
+
+    /// <summary>
+    /// The one connection-material boundary. Scoped, because it uses the scoped secret resolver and audit writer. Registered once
+    /// however many of the composition methods run.
+    /// </summary>
+    private static void AddConnectionMaterialResolver(this IServiceCollection services) =>
+        services.TryAddScoped<IConnectionMaterialResolver, ConnectionMaterialResolver>();
 
     private static void TryRegisterConnectorDefinitionRegistry(this IServiceCollection services)
     {

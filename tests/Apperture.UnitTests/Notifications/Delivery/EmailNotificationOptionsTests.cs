@@ -103,5 +103,9 @@ public sealed class EmailNotificationOptionsTests
                 secretRef,
                 new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: password)));
         }
+
+        // The SMTP password is a setting, not a connection field: nothing here resolves through an owner.
+        public ValueTask<ResolvedSecret> ResolveOwnedAsync(SecretRef secretRef, SecretOwner owner, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

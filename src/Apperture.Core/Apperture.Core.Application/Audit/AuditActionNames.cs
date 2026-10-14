@@ -197,6 +197,9 @@ public static class AuditActionNames
     public const string ConnectionStructureBrowseFailed = "connection.structure_browse_failed";
     public const string ConnectionSecretStored = "connection.secret.stored";
 
+    // SEC-2.2: a connection's material was refused because a secret field's reference does not name a secret that field owns.
+    public const string ConnectionSecretResolutionRefused = "connection.secret.resolution_refused";
+
     // AUD-1.4 slice 5: resource contexts. Declared by AUD-1.0 as legacy-bridge entries, converted here.
     public const string ResourceContextCreated = "resource_context.created";
     public const string ResourceContextUpdated = "resource_context.updated";

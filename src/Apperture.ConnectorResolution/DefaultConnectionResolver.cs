@@ -1,27 +1,38 @@
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Connector;
-using Apperture.Core.Security.Secrets.Abstractions;
 
 namespace Apperture.ConnectorResolution;
 
 /// <summary>
+/// Which <see cref="ConnectionResolutionPath"/> slot resolution reports in this host. The Worker Host resolves slots to run
+/// steps; the Management Host resolves them only for the integration settings options. Registered by
+/// <c>AddConnectorResolution</c>, so the label follows the host and not the caller.
+/// </summary>
+public sealed record ConnectionSlotResolution(ConnectionResolutionPath Path);
+
+/// <summary>
 /// Resolves a connection to a live client by building resolved material and delegating to the registered connector factory.
+/// The material comes only from <see cref="IConnectionMaterialResolver"/>, which proves each secret reference is the
+/// connection's own before the secret is read.
 /// </summary>
 public sealed class DefaultConnectionResolver : IConnectionResolver
 {
-    private readonly ISecretResolver _secretResolver;
+    private readonly IConnectionMaterialResolver _materialResolver;
     private readonly IConnectorDefinitionRegistry _connectorRegistry;
     private readonly IConnectorClientFactoryRegistry _factoryRegistry;
+    private readonly ConnectionResolutionPath _path;
 
     public DefaultConnectionResolver(
-        ISecretResolver secretResolver,
+        IConnectionMaterialResolver materialResolver,
         IConnectorDefinitionRegistry connectorRegistry,
-        IConnectorClientFactoryRegistry factoryRegistry)
+        IConnectorClientFactoryRegistry factoryRegistry,
+        ConnectionSlotResolution? slotResolution = null)
     {
-        _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
+        _materialResolver = materialResolver ?? throw new ArgumentNullException(nameof(materialResolver));
         _connectorRegistry = connectorRegistry ?? throw new ArgumentNullException(nameof(connectorRegistry));
         _factoryRegistry = factoryRegistry ?? throw new ArgumentNullException(nameof(factoryRegistry));
+        _path = slotResolution?.Path ?? ConnectionResolutionPath.Run;
     }
 
     /// <inheritdoc />
@@ -38,7 +49,7 @@ public sealed class DefaultConnectionResolver : IConnectionResolver
         if (factory is null)
             throw new InvalidOperationException($"No connector client factory registered for {connection.ConnectorDefinitionId.Value} and type {typeof(T).Name}.");
 
-        var material = await ResolvedConnectionMaterialBuilder.BuildAsync(connection, _secretResolver, cancellationToken);
+        var material = await _materialResolver.ResolveAsync(connection, _path, cancellationToken);
         return factory.Create(connection, material);
     }
 }

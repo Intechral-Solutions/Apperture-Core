@@ -1609,6 +1609,23 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            // A connection's material was refused (W3): a secret field's reference does not name a secret that field owns, or names
+            // nothing usable. One row per top-level resolution operation, whichever layers it passed through. It is never routine:
+            // each row is a connection the legacy inventory should have found. The row says which field and which kind of
+            // operation, never the reference, the secret found or its owner.
+            Action = "connection.secret.resolution_refused",
+            Category = AuditCategories.Secrets,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.Connection,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.ConnectionSecretResolutionRefused,
+            IntroducedIn = "SEC-2.2",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "ConnectionMaterialResolver.cs",
+        },
+        new()
+        {
             Action = "integration.deleted",
             Category = AuditCategories.Configuration,
             Severity = AuditSeverities.Standard,
