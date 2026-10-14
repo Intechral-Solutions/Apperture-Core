@@ -85,6 +85,9 @@ public sealed class AuditDetailSchemaTests
             typeof(Apperture.ModuleSdk.Abstractions.ModuleLifecycleState),
             typeof(Apperture.Core.Application.Services.ModuleLifecycleEffect),
             typeof(long),
+            // SEC-2.1: a point in time (the Timestamp field kind): when the acknowledged attention incident started, read from its
+            // persisted row. It is a date, not text, so it cannot carry a credential, a secret or a search value.
+            typeof(DateTimeOffset),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),

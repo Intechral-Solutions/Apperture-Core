@@ -128,4 +128,6 @@ Not verified by the reviewer, and not covered by a test: the 500 `outcome_unknow
 
 ### 1.8 CI
 
-To be completed.
+- **First run** (`589a50a`, run 38516164828): `browser-security` passed; `build-and-test` failed on one test, `AuditDetailSchemaTests.No_field_kind_carries_a_credential_secret_or_search_value`. It is a catalog-wide guard I had not run locally (my focused runs did not include that class). It whitelists the parameter types of the typed audit producers, and the new producer takes a `DateTimeOffset` (the incident's start time, the approved `Timestamp` field kind). No other test failed in that run. The guard now allows `DateTimeOffset` with a note on why it carries no credential, secret or search value.
+- After that fix the whole `Apperture.UnitTests.Audit` namespace (370 tests) passes locally.
+- Final CI result: see the pull request.
