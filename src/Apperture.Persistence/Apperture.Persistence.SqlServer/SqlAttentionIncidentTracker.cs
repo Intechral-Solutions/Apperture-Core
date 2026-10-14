@@ -165,29 +165,6 @@ public sealed class SqlAttentionIncidentTracker : IAttentionIncidentTracker
         return e is null ? null : ToProjection(e);
     }
 
-    /// <inheritdoc />
-    public async ValueTask<bool> AcknowledgeAsync(
-        IntegrationId integrationId,
-        string incidentId,
-        string acknowledgedBy,
-        string? note,
-        DateTimeOffset acknowledgedAtUtc,
-        CancellationToken cancellationToken = default)
-    {
-        var entity = await _db.AttentionIncidents
-            .FirstOrDefaultAsync(
-                e => e.Id == incidentId && e.IntegrationId == integrationId.Value,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (entity is null)
-            return false;
-        entity.AcknowledgedAtUtc = acknowledgedAtUtc;
-        entity.AcknowledgedBy = acknowledgedBy;
-        entity.AcknowledgementNote = note;
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return true;
-    }
-
     private static AttentionIncidentProjection ToProjection(AttentionIncidentEntity e) =>
         new(
             e.Id,

@@ -30,6 +30,7 @@ namespace Apperture.UnitTests.Audit;
 /// <item><term>Connections, resource contexts, ownership moves (slice 5)</term><description><c>Slice5AuditEventTests</c>, <c>ConnectionServiceSharesTheUnitContextTests</c>; SQL: <c>ConnectionLifecycleSqlServerTests</c>, <c>ConnectionVerifyBrowseSqlServerTests</c>, <c>ResourceContextSqlServerTests</c>, <c>OwnershipMoveSqlServerTests</c>, <c>OwnershipRealUnitRaceSqlServerTests</c></description></item>
 /// <item><term>Notification definitions, subscriptions, managed contacts, diagnostic sends (slice 6)</term><description><c>Slice6AuditEventTests</c>, <c>Aud14Slice6ConvertedWritersTests</c>, <c>NotificationServicesShareTheUnitContextTests</c>; SQL: <c>NotificationDefinitionSqlServerTests</c>, <c>NotificationSubscriptionSqlServerTests</c>, <c>ManagedContactSqlServerTests</c>, <c>NotificationDiagnosticsSqlServerTests</c></description></item>
 /// <item><term>Attention routing, module lifecycle, runtime shutdown request (slice 7)</term><description><c>Slice7AuditEventTests</c>, <c>Aud14Slice7ConvertedWritersTests</c>, <c>AttentionRoutingServiceSharesTheUnitContextTests</c>, <c>ModuleRegistryServiceSharesTheUnitContextTests</c>, <c>RuntimeControlServiceSharesTheUnitContextTests</c>; SQL: <c>AttentionRoutingSqlServerTests</c>, <c>ModuleLifecycleSqlServerTests</c>, <c>RuntimeShutdownRequestSqlServerTests</c></description></item>
+/// <item><term>Attention incident acknowledgement (SEC-2.1)</term><description><c>AttentionIncidentAcknowledgementServiceTests</c>, <c>AttentionIncidentAcknowledgementAuthorizationTests</c>; SQL: <c>AttentionIncidentAcknowledgementSqlServerTests</c>; host: <c>ManagementHostAttentionIncidentAcknowledgementHttpTests</c></description></item>
 /// <item><term>The catalog itself</term><description><c>AuditActionCatalogTests</c> (M1 completeness and the pinned lists), <c>AuditDetailSchemaTests</c>, <c>AuditRowClassifierTests</c></description></item>
 /// <item><term>This file</term><description>The executable guards: G1 catalog consistency and the retired set; G2 typed producers; G3 retired actions have no writer; G4 the legacy bridge (every action an appender writes is a literal or constant, or the file is declared dynamic); G5 persistence writers of the in-scope tables (set-level idioms and the file-level rule), each with self-tests that feed the scanners synthetic files</description></item>
 /// </list>
@@ -599,7 +600,7 @@ public sealed class Aud14ClosureGuardTests
     /// <summary>
     /// The entity sets (DbSet names of <c>AppertureDbContext</c>) that the AUD-1.4 families own: platform and integration settings,
     /// the secret store, integrations, schedules, bindings, connections, resource contexts, notification definitions, subscriptions,
-    /// opt-outs and preferences, managed contacts, attention routing, module installation, the runtime shutdown request, and the
+    /// opt-outs and preferences, managed contacts, attention routing, attention incidents (SEC-2.1), module installation, the runtime shutdown request, and the
     /// Entra registration (which owns a secret). Not listed, by decision: the worker's runtime state, notification delivery, platform
     /// events, identity and governance (AUD-1.2), run and operator state (AUD-1.3), operational teams (LST-1.4).
     /// </summary>
@@ -615,6 +616,7 @@ public sealed class Aud14ClosureGuardTests
         "NotificationDefinitions", "NotificationSubscriptions", "NotificationSubscriptionUserOverrides", "NotificationUserPreferences",
         "ManagedContacts", "ManagedContactIdentityLinks", "ManagedContactGroups",
         "InstanceAttentionRoutings", "IntegrationAttentionRoutings",
+        "AttentionIncidents",
         "ModuleInstallationStates",
         "RuntimeControlRequests",
         "EntraInstanceRegistrations",
@@ -628,6 +630,9 @@ public sealed class Aud14ClosureGuardTests
     /// </summary>
     private static readonly PersistenceWriter[] Writers =
     [
+        new("Apperture.ControlPlane/Apperture.ControlPlane.Security/AttentionIncidentAcknowledgementService.cs",
+            ["AttentionIncidents"],
+            "Audited unit: attention_incident.acknowledged (SEC-2.1). The one writer of the acknowledgement columns: the integration row lock, the re-run authorization, the incident row lock, the three columns and the audit row in one transaction."),
         new("Apperture.ControlPlane/Apperture.ControlPlane.Security/AttentionRoutingManagementService.cs",
             ["InstanceAttentionRoutings", "IntegrationAttentionRoutings"],
             "Audited units: attention_routing.default.updated, attention_routing.override.created, .updated and .cleared (slice 7)."),
@@ -637,6 +642,9 @@ public sealed class Aud14ClosureGuardTests
         new("Apperture.ControlPlane/Apperture.ControlPlane.Security/RuntimeControlService.cs",
             ["RuntimeControlRequests"],
             "The shutdown request unit (governance.runtime.shutdown.request.created, slice 7)."),
+        new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlAttentionIncidentTracker.cs",
+            ["AttentionIncidents"],
+            "EXCLUDED by decision: the observation worker opens, updates and resolves incidents as schedule evaluation moves (runtime state; no operator action, no audit row). It writes no acknowledgement column: since SEC-2.1 the tracker has no acknowledgement write, and a resolution writes only the columns it changes, so an acknowledgement made in between is kept."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlBindingRepository.cs",
             ["Bindings"],
             "BindingService units: binding.created (module-slot and capability) and binding.deleted (slice 4)."),
@@ -683,7 +691,7 @@ public sealed class Aud14ClosureGuardTests
             ["RuntimeControlRequests"],
             "EXCLUDED by decision: the worker applies a queued shutdown request and marks it applied. Runtime state, not a configuration change; the applied transition has no audit row (record section 7, unassigned; AUD-1.6 writer inventory)."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/HistoricalActorNormalization.cs",
-            ["NotificationDefinitions", "NotificationSubscriptions", "NotificationSubscriptionUserOverrides", "PlatformSettingValues", "RuntimeControlRequests"],
+            ["AttentionIncidents", "NotificationDefinitions", "NotificationSubscriptions", "NotificationSubscriptionUserOverrides", "PlatformSettingValues", "RuntimeControlRequests"],
             "EXCLUDED by decision: IAM-9 start-time maintenance that rewrites stored actor ids to user ids (raw SQL over a fixed column list). Not a configuration change."),
     ];
 

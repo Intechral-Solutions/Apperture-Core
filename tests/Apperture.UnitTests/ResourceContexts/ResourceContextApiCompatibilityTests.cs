@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Connector;
 using Apperture.Core.Application.Integration;
 using Apperture.Core.Application.ResourceContexts;
@@ -370,10 +371,9 @@ public sealed class ResourceContextApiCompatibilityTests
             Mock.Of<IIntegrationReadinessService>(),
             Mock.Of<IIntegrationConfigurationRegistry>(),
             Mock.Of<IIntegrationScheduleDiagnosticsService>(),
-            Mock.Of<IAttentionIncidentTracker>(),
+            Mock.Of<IAttentionIncidentAcknowledgementService>(),
             Mock.Of<IAttentionRoutingManagementService>(),
             Mock.Of<IPrincipalContext>(),
-            TimeProvider.System,
             resourceContexts.Object,
             Mock.Of<IResourceOwnershipMoveService>(),
             UnusedIntegrationAuthorization.Create());

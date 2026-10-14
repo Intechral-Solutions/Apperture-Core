@@ -1007,7 +1007,8 @@ public sealed class ManagementClient : IManagementClient
             .ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return false;
-        response.EnsureSuccessStatusCode();
+        // The server's message and status reach the caller: a 409 says the incident is resolved, a 403 that the permission is missing.
+        await EnsureSuccessOrThrowAsync(response, cancellationToken).ConfigureAwait(false);
         return true;
     }
 

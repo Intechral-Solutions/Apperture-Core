@@ -266,6 +266,10 @@ public static class AuditActionNames
     public const string ModuleDisableBlocked = "module.lifecycle.disable_blocked";
     public const string ModuleUninstallBlocked = "module.lifecycle.uninstall_blocked";
 
+    // SEC-2.1: an operator acknowledged an active attention incident. It targets the incident's integration (the closed target
+    // vocabulary has no attention incident) and carries the incident id as a field.
+    public const string AttentionIncidentAcknowledged = "attention_incident.acknowledged";
+
     /// <summary>The primary actions an override upsert may be recorded under, depending on whether the override already existed.</summary>
     public static IReadOnlyList<string> AttentionRoutingOverrideUpsertActions { get; } =
         [AttentionRoutingOverrideCreated, AttentionRoutingOverrideUpdated];

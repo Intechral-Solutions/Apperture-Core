@@ -76,10 +76,9 @@ public sealed class IntegrationFleetContextFilterTests
             Mock.Of<IIntegrationReadinessService>(),
             Mock.Of<IIntegrationConfigurationRegistry>(),
             Mock.Of<IIntegrationScheduleDiagnosticsService>(),
-            Mock.Of<IAttentionIncidentTracker>(),
+            Mock.Of<IAttentionIncidentAcknowledgementService>(),
             Mock.Of<IAttentionRoutingManagementService>(),
             Mock.Of<IPrincipalContext>(),
-            TimeProvider.System,
             resourceContexts.Object,
             Mock.Of<IResourceOwnershipMoveService>(),
             UnusedIntegrationAuthorization.Create());

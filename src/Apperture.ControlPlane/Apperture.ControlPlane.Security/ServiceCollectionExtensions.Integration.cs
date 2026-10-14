@@ -22,6 +22,7 @@ public static class IntegrationServiceCollectionExtensions
         services.AddResourceContextPersistence();
         services.AddScoped<IIntegrationRepository, SqlIntegrationRepository>();
         services.AddScoped<IAttentionIncidentTracker, SqlAttentionIncidentTracker>();
+        services.AddScoped<IAttentionIncidentAcknowledgementService, AttentionIncidentAcknowledgementService>();
         services.AddScoped<IAttentionRecipientResolver, SqlAttentionRecipientResolver>();
         services.AddScoped<IAttentionRoutingManagementService, AttentionRoutingManagementService>();
         services.AddScoped<IAttentionContactGroupManagementService, AttentionContactGroupManagementService>();
