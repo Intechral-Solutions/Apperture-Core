@@ -5,7 +5,7 @@
 | Date | 2026-10-13 |
 | Contract | [SEC-2.0 design gate](sec2-configuration-secret-and-operator-boundary-design-gate.md), approved 2026-10-13. The gate is binding; this record states what was built against it and the evidence. It changes no ruling. |
 | Baseline | `master` at `8f795f0` (PR #28, the SEC-2.0 merge) |
-| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented and merged** (PR #30, `master` at `5e27206`; U-3 closed and the code side of U-1; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded, A2.7, open**). **SEC-2.3 implemented** on branch `sec-2.3-setting-secret-ownership` (base `5e27206`), with an independent review (§3.11). It closes the code side of U-2 when its pull request merges and CI is green; **A2.7 stays an open rollout condition (§3.8).** **SEC-2.4 has not started.** |
+| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented and merged** (PR #30, `master` at `5e27206`; U-3 closed and the code side of U-1; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded, A2.7, open**). **SEC-2.3 implemented** on branch `sec-2.3-setting-secret-ownership` (base `5e27206`), with an independent review (§3.11). It closes the code side of U-2 when its pull request merges and CI is green; **A2.7 stays an open rollout condition (§3.8).** **SEC-2.3 merged** (PR #31, `master` at `e1e9b2e`). **SEC-2.4 implemented** on branch `sec-2.4-entra-probe-telemetry` (base `e1e9b2e`), with an independent review (§4.8). F2 closes only when its pull request merges and the result is verified; **A2.7 and the persistent-installation part of A3.7 are untouched and stay open.** |
 
 This record grows one section per package. Each package starts on the owner's instruction (gate §6.3).
 
@@ -439,3 +439,127 @@ Not verified by the reviewer, and checked afterwards: that `DeleteScopedAsync` a
 - **Cause.** Nothing in SEC-2.3 reads or sets that variable. `SqlServerTestConfigurationTests` clears and sets process-wide environment variables (`APPERTURE_TEST_SQL` among them) and had no collection, so xUnit ran it in parallel with the governance fixture, which reads `APPERTURE_TEST_SQL` when it starts. The log has the two within 200 ms of each other at the start of the run (the configuration tests passing at 01:33:27.09, the first fixture failure at 01:33:27.27). It is a latent race that the added test classes' ordering most likely exposed. **It did not reproduce locally in three attempts**, so the explanation rests on the log and on reading the code, not on a red-then-green run.
 - **Fix.** `SqlServerTestConfigurationTests` joins the existing serialized `SqlServerIntegration` collection, so it runs alone. It is one attribute, in a test file this package had not otherwise touched.
 - Final CI result: see the pull request.
+
+---
+
+## 4. SEC-2.4: Entra probe telemetry (F2)
+
+### 4.1 What changed
+
+| Area | Change |
+|---|---|
+| Schema | New table `EntraRegistrationDiagnostics` (1:1 with `EntraInstanceRegistrations`, keyed and foreign-keyed by `RegistrationId`, `ON DELETE CASCADE`). It holds the eight fields that used to be columns of the registration row: the OpenID status, last validation time, summary and detail, and the directory status, last discovery time, summary and detail. The two status columns default to 1 (`NotValidated`, `NotAttempted`), as the old columns did. |
+| Migration | `20261014120000_Sec24_EntraRegistrationDiagnostics` (hand-written with attributes and no designer file, like `Aud14_BindingTargetType`; the model snapshot is edited to match and `AppertureDbContextModelConsistencyTests` passes). `Up` creates the table, copies the eight values of every registration, then drops the old columns. `Down` restores the columns with their types and defaults, copies the values back and drops the table. |
+| Writers | `SqlEntraInstanceRegistrationRepository.UpdateOpenIdValidationOutcomeAsync` and `UpdateDirectoryDiscoveryOutcomeAsync` each issue one set-based update of the diagnostics row. They no longer read, track or update the registration row, so `UpdatedUtc` and `rowversion` are untouched. A missing diagnostics row is created by a guarded `INSERT ... SELECT` that tolerates a racing probe and a concurrent delete. `AddAsync` creates the row with the registration in the same save; a delete removes it by cascade. `UpdateAsync` and `SwitchActiveAsync` never touch it. |
+| Readers | Every read joins the diagnostics row and `ToDomain` maps a missing row to the defaults. `EntraInstanceRegistration`, `IEntraInstanceRegistrationRepository`, the controller, the DTOs, the Management client, the overview service and the UI are unchanged, so the list, the detail, the overview and the directory pages show what they showed. |
+| Authorization | Unchanged. No permission, route, status code or response shape changed; the controller was not edited. |
+| Audit | No catalog action. Probe outcomes are operational telemetry (P-7, P-10). |
+| Guard | `Aud14ClosureGuardTests`: the new table is an in-scope set; the repository's `Writers` entry classifies the probe writes as operational telemetry; the probe members are pinned to write only that table (§4.4). |
+| Existing tests | Two raw `INSERT`s and one entity read in existing tests followed the schema (they named the removed columns). |
+
+### 4.2 Decisions taken inside the gate
+
+| # | Decision |
+|---|---|
+| D1 | **The old columns are dropped in the same migration, after the copy.** Leaving them would be a second source of truth (the assignment forbids it) and would let a stale writer keep working. The migration is additive in the sense that matters for data: it creates, copies, and only then removes; `Down` returns the data. |
+| D2 | **The domain model and repository interface are unchanged.** The diagnostics stay on `EntraInstanceRegistration` as read-only context for every reader, so no client needs a new endpoint and the test doubles of the interface needed no change. |
+| D3 | **A probe is one set-based statement, not a read-modify-write.** The common path is `ExecuteUpdateAsync` on the diagnostics row alone: no tracked entity, no `SaveChanges` on a context that may hold other tracked changes, no read of the registration, and the two probe kinds cannot overwrite each other's columns. The last statement to arrive is the one recorded; there is no concurrency token on the diagnostics row (as before, a probe was last-writer-wins). |
+| D4 | **The fallback insert exists because rows exist without a diagnostics row.** The migration gives every registration one and `AddAsync` creates one, but tests and any other direct insert do not. The fallback inserts only when the registration exists and has no row, sets the probe's own group and leaves the other at its defaults. It reads the registration (for its id) and never writes it. |
+| D5 | **Three SQL errors are swallowed in the fallback, and only there:** duplicate key (2627, 2601: a concurrent probe created the row first) and foreign key (547: the registration was deleted between the check and the insert). In each case the outcome is recorded on the row that now exists, or nothing is recorded for a registration that is gone, which is what the old code did for a missing registration. Any other failure propagates. |
+| D6 | **Remote text is bounded once, before both write paths.** The summary is cut to 512 characters and the detail to 4000, the column lengths. Before, an over-long message made the update fail (the column is bounded and the remote error text is not); a fixed-size parameter on the insert path would have cut it silently. Both paths now store the same text. |
+| D7 | **The guard names the table and the members.** The diagnostics table joins `InScopeSets`, so no other file can write it unreviewed, and the repository's `Writers` entry lists it as operational telemetry. The registration table stays in scope with its audited path. A separate test pins the probe members (and every same-file member they call) to a write of the diagnostics table only (§4.4). |
+| D8 | **`HasDefaultValue(1)` on the status columns.** It reproduces the old database defaults in the model. EF reads a CLR 0 (`Unknown`) as "not set" on an insert, so an EF insert must not carry `Unknown`; the only EF insert (`AddAsync`) already maps it, and the probes write with SQL. A comment says so. |
+
+### 4.3 Acceptance matrix
+
+All SQL cases run on a locking READ COMMITTED catalog and a READ_COMMITTED_SNAPSHOT catalog (throwaway catalogs the tests create and drop), except the migration cases, which are independent of isolation mode.
+
+| # | Status | Evidence |
+|---|---|---|
+| A4.1 | Met | SQL `EntraProbeTelemetrySqlServerTests`, both modes: `A_probe_changes_nothing_on_the_registration_row_and_the_open_edit_form_still_saves` (an administrator opens the form with rowversion V; an OpenID validation and both directory searches run; every column of the registration row, including `UpdatedUtc` and the rowversion, is identical; the probes' outcomes are on the diagnostics row; the form saves with V and answers 200 with the probes' diagnostics; the edit leaves the telemetry alone); `A_genuine_competing_configuration_edit_still_conflicts_whatever_the_probes_do` (the second editor gets 409 after a real edit and a probe between); `A_probe_is_not_blocked_by_a_lock_held_on_the_registration_row_and_leaves_the_row_alone` (a transaction holds the registration row's exclusive lock; a control write to that row times out with 1222, so the lock is real; both probes finish); `Probes_and_a_configuration_edit_that_run_together_do_not_overwrite_each_other` (eight probes and an edit at once: the edit gets 200, and each group is the whole outcome of one probe). |
+| A4.2 | Met | SQL `EntraRegistrationDiagnosticsMigrationSqlServerTests`: a catalog migrated to `Aud14_BindingTargetType` is seeded in the old schema with six registrations (never probed; both probes succeeded with values at the column limits and non-ASCII text; both failed, with NULL fields; edge statuses including a stored 0; OpenID only; directory only), then upgraded through `AppertureDatabaseMigrator`. All eight values of every registration are identical, the configuration rows are identical including `rowversion` and `UpdatedUtc`, the old columns are gone, and the new table's keys, lengths, nullability, defaults and cascade foreign key are as specified. The repository (list, detail, active), the controller's list and detail, and the authentication overview read the seeded values. After the upgrade a created registration has its row, a delete removes it, and a migrated registration is probed and edited normally. `Rolling_back_…` runs `Down` (columns, defaults and data restored, telemetry recorded after the upgrade carried back) and applies the upgrade again. Lifecycle on both modes: `The_diagnostics_row_is_created_with_the_registration_and_removed_with_it`, `A_registration_inserted_without_a_diagnostics_row_reads_the_defaults_and_racing_first_probes_create_one_row`, `A_probe_of_a_registration_that_does_not_exist_records_nothing`. |
+| A4.3 | Met | `Aud14ClosureGuardTests` (§4.4): `InScopeSets` and the repository `Writers` entry name `EntraRegistrationDiagnostics` as operational telemetry; `G5_probe_telemetry_writes_only_the_diagnostics_table` (closure of the probe members, interface cross-check); its self-tests (a probe that writes the registration row by a tracked save, a set-based update, a raw update, or through a helper is detected); `G5_the_probe_fields_live_on_the_diagnostics_entity_and_not_on_the_registration_entity`; `G1_no_audit_action_records_an_entra_probe`. No existing entry was weakened (§4.4). |
+| A4.4 | Met | Controller level on SQL, both modes: `A_caller_without_the_permission_is_refused_and_no_probe_runs_or_is_recorded` (no permission: all three refused, nothing runs; `auth.configuration.read`: searches succeed, validation refused; `auth.entra.manage`: validation succeeds and the searches are accepted). Real Management Host pipeline, `ManagementHostEntraProbeAuthorizationHttpTests`: a reader searches users and groups (200) and the searches update telemetry only, leaving the registration's rowversion and `UpdatedUtc`; a reader is refused `validate-openid` (403, the validator never runs, no telemetry row); a manager runs the validation and a search; a principal with neither permission gets 403 and an unauthenticated caller 401 on all three routes, nothing runs and no diagnostic state is created. `BrowserRequestTrustHttpTests` (the SEC-1B2 directory-search rules) passes unchanged except for reading the outcome from the new table. |
+| No audit row, no search value | Met | `A_probe_writes_no_audit_row_and_stores_no_search_value`, both modes: `AuditLogs` is unchanged across a validation and two searches, and the search value reached the directory call and is in no diagnostics column and no audit row. |
+
+### 4.4 Closure guard (A4.3)
+
+- `InScopeSets` gains `EntraRegistrationDiagnostics`. The scanner therefore reports any file that writes the table, and the existing rule that a new writer file fails the test applies. The repository's `Writers` entry now lists both sets, with the reason: the registration set is audited by the controller's units; the diagnostics set is operational telemetry, unaudited by decision (P-7, P-10, SR-7).
+- The set-level guard alone cannot stop a regression inside the repository file, which is allowed to write the registration table. `G5_probe_telemetry_writes_only_the_diagnostics_table` therefore reads the probe members and every member of that file they call, transitively and across overloads, runs the writer scanner over that text, and requires exactly `EntraRegistrationDiagnostics`. It also forbids `UpdatedUtc`, `RowVersion`, `SaveChanges`, `Entry(`, a registration-set access and the word `Audit` there, forbids reaching `UpdateAsync` or any other configuration member, and requires every member of `IEntraInstanceRegistrationRepository` to be either a listed configuration operation or a listed probe, so a new way to write must be reviewed.
+- Self-tests feed the scanner a probe that updates the registration by a tracked save, by `ExecuteUpdate` and by raw SQL, a helper-based bypass with an overload, and the diagnostics `ExecuteUpdate` and the insert-select (a read of the registration is not a write).
+- `G1_no_audit_action_records_an_entra_probe` pins that the catalog has no action for a probe.
+- General audit coverage is not weakened: nothing was removed from `InScopeSets`, `Writers` or any other list, and the whole `Aud14ClosureGuardTests` class passes.
+
+### 4.5 Test evidence
+
+Heavy suites ran one at a time (the machine is memory constrained). The SQL Server suites use throwaway catalogs and fail rather than skip without SQL Server (`AuditSqlScratch`, the governance fixture's hard failure).
+
+| Suite | Result |
+|---|---|
+| `Apperture.UnitTests` (the whole project, final code) | 4832 passed (4831 at the review; the guard's helper-bypass self-test was added) |
+| `Aud14ClosureGuardTests` and `AppertureDbContextModelConsistencyTests` (final code) | 87 passed |
+| `Apperture.ArchTests`, `Apperture.Management.Ui.Client.Tests`, `Apperture.Management.Ui.Shared.Tests` | 38, 523 and 1496 passed (run before the review remediation, which changed only the repository, the guard and SQL tests, none of which these projects reference) |
+| `EntraProbeTelemetrySqlServerTests` | 24 passed (12 cases, each on both isolation modes) |
+| `EntraRegistrationDiagnosticsMigrationSqlServerTests` | 5 passed |
+| `ManagementHostEntraProbeAuthorizationHttpTests` | 4 passed |
+| `BrowserRequestTrustHttpTests` (the SEC-1B2 directory-search cases read the outcome from the new table) | 21 passed |
+| Broad SQL run: the whole `IntegrationTests.Audit` and `IntegrationTests.ManagementHost` namespaces, the migration suites and `UsernameFoundation`, on the code before the review remediation | 2020 selected; 1847 passed and 173 failed. **Every one of the 173 was an environmental failure and none an assertion**: from about 01:29 UTC the test SQL Server stopped answering (connection timeouts in the pre-login handshake and in fixture creation, with about 0.6 GB of the machine's 32 GB free), which failed 172 cases across eight classes, and the stopped `apperture-test-sftp` container failed the one SFTP governance case. After the stall the same eight classes were rerun in full: **177 of 177 passed**. `ManagementHostGovernanceHttpTests` with the SFTP container started: 48 of 48 passed. |
+| New and neighbouring SQL classes after the review remediation (the four rows above, one run) | 54 of 54 passed. Earlier attempts on the recovering server failed on connection timeouts only. |
+
+The whole `Apperture.IntegrationTests` project (2020+ cases, hours) was not run locally; the pull request's CI runs it. Everything this package can affect was.
+
+### 4.6 Mutation evidence
+
+Each mutation was applied to a committed tree, built, run against the tests and reverted with `git checkout`; the tree was verified clean after each.
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | A probe also updates the registration's `UpdatedUtc` (the old behaviour) | Killed: `G5_probe_telemetry_writes_only_the_diagnostics_table`, `ManagementHostEntraProbeAuthorizationHttpTests.A_manager_…`, and eight SQL cases (the form-saves case, the first-probe-race case, the concurrent case, both modes; the lock case waits for its 20-second cancellation in both modes, which is the old blocking) |
+| M2 | The migration copies no rows | Killed: four of the five migration cases (the fifth checks the schema only) |
+| M3 | No fallback insert | Killed: the missing-row cases, two HTTP cases and the `BrowserRequestTrustHttpTests` directory-search case |
+| M4 | The duplicate-key handling removed | **Survived the first version of the race test**, which rarely reached the collision. The test was replaced by a deterministic one (a probe held just before its insert, a concurrent first probe inserting in an uncommitted transaction, then a commit): under row versioning the loser's insert meets the key (one duplicate-key failure counted and recovered), under locking it waits and reads the committed row. The mutation then failed with the real `SqlException` under row versioning. |
+
+### 4.7 Database safeguards
+
+- No development, shared, persistent or production database was reset, reseeded or edited by hand. SR-17 was not exercised. The owner's backup of the primary development database was not needed.
+- All new SQL cases create uniquely named throwaway catalogs and drop them, except the Management Host cases, which use the governance fixture's existing test catalog like their neighbours. That catalog is migrated forward by the fixture, which is the upgrade of an existing database in miniature, and the cases write only rows with unique ids.
+- The Aspire stack was left alone; every build used `artifacts/sec24` (git-ignored, removed at the end). SQL credentials were read by the test configuration from the repository's `.env` and were never put on a command line.
+- **Test infrastructure was touched twice, both times narrowly.** The `apperture-test-sftp` container was stopped at the start; it was started once to run the one governance case that needs it (unrelated to this package) and stopped again. During the broad run the machine ran out of memory headroom, Docker Desktop stopped answering and the test SQL Server (`apperture-test-sql`) hung; **that one container was restarted once** (`docker restart apperture-test-sql`; its data is on its volume and the test catalogs are disposable). Docker Desktop itself and the other containers (the portal, the Aspire SQL on port 14333 and the rest) were not touched.
+
+### 4.8 Independent review
+
+An independent reviewer (a separate subagent run with the Opus model at high effort, as the assignment asked; given the approved gate, the assignment's requirements and the code at `071ff1d`, and none of this record's conclusions) read `e1e9b2e..071ff1d` and was asked for an explicit readiness verdict. It was read-only: it ran no build, test or database command.
+
+**Verdict: READY WITH CONDITIONS.** No blocker or major finding. Its two conditions were (1) add this record and the status updates, and (2) confirm that the Management Host HTTP cases ran green; both are met (this section; §4.5). It confirmed the migration's order and fidelity and the snapshot by reading, that no probe path touches the registration row, the upsert under both isolation modes, every reader and writer (enumerated independently with `git grep`, with no reference left to a removed column), authorization unchanged, no new log or audit of search values, and that the guard only adds entries.
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| M-1 | The A4.3 guard scanned only the three named members, so a probe that called a new helper, `UpdateAsync` or an unlisted overload would pass. | Minor | **Fixed.** The guard follows same-file calls transitively and across overloads, forbids reaching a configuration member, and cross-checks the repository interface (§4.4), with a self-test for the helper bypass. |
+| M-2 | The swallowed foreign-key error (547) branch was never exercised. | Minor | **Fixed.** `A_first_probe_whose_registration_is_deleted_while_it_creates_the_row_records_nothing_and_does_not_fail`, both modes (a probe held before its insert, an uncommitted delete, then a commit). The reviewer's hypothesis held: under row versioning the insert reads the committed registration, inserts, and the foreign key check fails (one 547 counted and handled); under locking the insert waits and writes nothing. |
+| M-3 | The fallback insert reads the registration, so it waits behind an in-flight change to it, and against a delete of the same registration it can deadlock (error 1205). The class summary overstated "not blocked". | Minor | **Accepted and documented** (L3); the summary is narrowed. Only a registration without a diagnostics row uses the path, which production data does not have. |
+| M-4 | An over-long remote message was cut on the insert path and failed the update path. | Minor | **Fixed** (D6); `Over_long_remote_text_is_stored_cut_to_the_columns_on_both_write_paths`, both modes. |
+| M-5 | The search value can still reach stored telemetry if Graph echoes its `$filter` in an error message that the service puts in `TechnicalDetail`. | Info, pre-existing | **Documented** (L4). Not introduced here; the new tests use a scripted discovery with fixed text, so they cannot detect it. |
+| N-1 | A swallowed duplicate or foreign-key error still produces an EF error-level log line for the failed command. | Nit | Accepted. The line names no value but the registration id. |
+| N-2 | `HasDefaultValue(1)` makes EF store 1 for a CLR 0 on an EF insert. | Nit | **Documented** by a comment (D8); no behaviour changes. |
+| N-3 | Last writer wins by statement arrival, so an older, slower probe can overwrite a newer result. | Nit | Accepted: as before. |
+| N-4 | The migration test compares `DateTimeOffset` by instant, not by offset. | Nit | Accepted: the column type does not change. |
+| N-5 | `CreateAtMigrationAsync` leaked its catalog if the migration threw. | Nit | **Fixed.** |
+
+Not assessed by the reviewer: it ran no build or test, so it could not confirm the snapshot against the model (`AppertureDbContextModelConsistencyTests`, which passes), or the lock and foreign-key behaviour behind M-2 and M-3 (now exercised by the new tests).
+
+### 4.9 Limitations and other items
+
+| # | Item |
+|---|---|
+| L1 | **A2.7 and the persistent-installation part of A3.7 are open and untouched.** SEC-2.4 shares nothing with them. They close only on the owner's applicability determination and evidence. |
+| L2 | **`Down` replaces the `rowversion` of every registration row** (the copy-back is an update). `UpdatedUtc` is not changed. A rollback invalidates open edit forms, which is acceptable for a rollback. The upgrade does not replace the rowversion. |
+| L3 | **The fallback insert is not independent of the registration row** (M-3). It exists only for a registration that has no diagnostics row. |
+| L4 | **Stored remote text is unchanged in content** (M-5). Whatever Graph or the discovery service puts in the summary or detail is stored, now bounded to the column lengths. The directory service's treatment of that text is a separate matter. |
+| L5 | **A configuration edit's read joins the diagnostics row.** Under locking READ COMMITTED it can wait for one in-flight single-statement probe update; it takes no lock on it afterwards. It cannot deadlock with a probe on the common path. |
+| L6 | **`SwitchActiveAsync` still sets `UpdatedUtc` on every registration** (existing behaviour, a configuration operation inside the activate unit). It is not a probe and was not changed. |
+| L7 | **Who may search the directory** stays an IAM-10.0 input (P-9, SR-9). No permission was added. |
+| L8 | **The AUD-1.4 record's §19.7 row for F2 still reads "Unassigned"**; it is a historical statement of the finding, left as written like F1's row. |
+
+### 4.10 CI
+
+Final CI result: see the pull request.
