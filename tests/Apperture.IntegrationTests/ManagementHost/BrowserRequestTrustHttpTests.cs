@@ -303,10 +303,12 @@ public sealed class BrowserRequestTrustHttpTests
     {
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        return await db.EntraInstanceRegistrations.AsNoTracking()
-            .Where(r => r.Id == registrationId)
-            .Select(r => r.LastDirectoryDiscoveryUtc)
-            .SingleAsync();
+        // The discovery outcome is probe telemetry, stored apart from the registration (SEC-2.4); a registration inserted
+        // directly, as this test does, has no diagnostics row until a probe records one.
+        return await db.EntraRegistrationDiagnostics.AsNoTracking()
+            .Where(d => d.RegistrationId == registrationId)
+            .Select(d => d.LastDirectoryDiscoveryUtc)
+            .SingleOrDefaultAsync();
     }
 
     private sealed class CountingDirectoryDiscovery : IEntraDirectoryDiscoveryService

@@ -155,8 +155,8 @@ public static class SettingSecretOwnershipSqlSupport
             """
             INSERT INTO EntraInstanceRegistrations
                 (Id, DisplayName, Authority, ClientId, UsesDeploymentSecret, ClientSecretRef, Enabled, IsActive, CreatedUtc, UpdatedUtc,
-                 OpenIdConfigurationStatus, DirectoryDiscoveryStatus, AllowMemberAccessRequests, AllowGuestAccessRequests)
-            VALUES (@id, N'Registration', N'https://login.example.test/tenant', N'client', 0, @ref, 1, 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), 0, 0, 0, 0);
+                 AllowMemberAccessRequests, AllowGuestAccessRequests)
+            VALUES (@id, N'Registration', N'https://login.example.test/tenant', N'client', 0, @ref, 1, 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), 0, 0);
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@ref", clientSecretRef);

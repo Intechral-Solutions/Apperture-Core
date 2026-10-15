@@ -69,6 +69,7 @@ public class AppertureDbContext : DbContext
     public DbSet<SchedulerDispatchHeartbeatEntity> SchedulerDispatchHeartbeats => Set<SchedulerDispatchHeartbeatEntity>();
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
+    public DbSet<EntraRegistrationDiagnosticsEntity> EntraRegistrationDiagnostics => Set<EntraRegistrationDiagnosticsEntity>();
     public DbSet<EntraAccessRequestEntity> EntraAccessRequests => Set<EntraAccessRequestEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
@@ -999,12 +1000,26 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.CallbackPath).HasMaxLength(256);
             e.Property(x => x.AzureTenantId).HasMaxLength(64);
             e.Property(x => x.AuthenticationContextId).HasMaxLength(8);
+            e.Property(x => x.RowVersion).IsRowVersion();
+            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
+            e.HasOne(x => x.Diagnostics)
+                .WithOne()
+                .HasForeignKey<EntraRegistrationDiagnosticsEntity>(x => x.RegistrationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Probe telemetry, apart from the registration so that a probe never touches the configuration row (SEC-2.4).
+        modelBuilder.Entity<EntraRegistrationDiagnosticsEntity>(e =>
+        {
+            e.ToTable("EntraRegistrationDiagnostics");
+            e.HasKey(x => x.RegistrationId);
+            e.Property(x => x.RegistrationId).HasMaxLength(64);
+            e.Property(x => x.OpenIdConfigurationStatus).HasDefaultValue(EntraRegistrationDiagnosticsEntity.DefaultOpenIdConfigurationStatus);
+            e.Property(x => x.DirectoryDiscoveryStatus).HasDefaultValue(EntraRegistrationDiagnosticsEntity.DefaultDirectoryDiscoveryStatus);
             e.Property(x => x.LastOpenIdValidationSummary).HasMaxLength(512);
             e.Property(x => x.LastOpenIdValidationDetail).HasMaxLength(4000);
             e.Property(x => x.LastDirectoryDiscoverySummary).HasMaxLength(512);
             e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
-            e.Property(x => x.RowVersion).IsRowVersion();
-            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("[IsActive] = 1");
         });
 
         modelBuilder.Entity<EntraAccessRequestEntity>(e =>

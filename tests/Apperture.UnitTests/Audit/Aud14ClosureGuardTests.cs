@@ -600,9 +600,11 @@ public sealed class Aud14ClosureGuardTests
     /// <summary>
     /// The entity sets (DbSet names of <c>AppertureDbContext</c>) that the AUD-1.4 families own: platform and integration settings,
     /// the secret store, integrations, schedules, bindings, connections, resource contexts, notification definitions, subscriptions,
-    /// opt-outs and preferences, managed contacts, attention routing, attention incidents (SEC-2.1), module installation, the runtime shutdown request, and the
-    /// Entra registration (which owns a secret). Not listed, by decision: the worker's runtime state, notification delivery, platform
-    /// events, identity and governance (AUD-1.2), run and operator state (AUD-1.3), operational teams (LST-1.4).
+    /// opt-outs and preferences, managed contacts, attention routing, attention incidents (SEC-2.1), module installation, the runtime shutdown request, the
+    /// Entra registration (which owns a secret) and its probe telemetry (SEC-2.4, <c>EntraRegistrationDiagnostics</c>, listed so that
+    /// no other file can write it and so the guard names the table the probe writes moved to). Not listed, by decision: the worker's
+    /// runtime state, notification delivery, platform events, identity and governance (AUD-1.2), run and operator state (AUD-1.3),
+    /// operational teams (LST-1.4).
     /// </summary>
     private static readonly string[] InScopeSets =
     [
@@ -620,6 +622,7 @@ public sealed class Aud14ClosureGuardTests
         "ModuleInstallationStates",
         "RuntimeControlRequests",
         "EntraInstanceRegistrations",
+        "EntraRegistrationDiagnostics",
     ];
 
     private sealed record PersistenceWriter(string File, string[] Sets, string Path);
@@ -652,8 +655,8 @@ public sealed class Aud14ClosureGuardTests
             ["Connections"],
             "ConnectionManagementService units (connection.created, .updated, .retired, .verified) and ResourceOwnershipMoveService (the narrow context change of an ownership move) (slice 5)."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlEntraInstanceRegistrationRepository.cs",
-            ["EntraInstanceRegistrations"],
-            "ConfigEntraTenantsController units (entra.tenant_registration.*, AUD-1.2 with the secret events of slice 1). EXCLUDED, unaudited (finding F2): UpdateOpenIdValidationOutcomeAsync and UpdateDirectoryDiscoveryOutcomeAsync record probe-result columns on the registration row outside any unit (AUD-1.2 family; recorded for AUD-1.6's writer inventory)."),
+            ["EntraInstanceRegistrations", "EntraRegistrationDiagnostics"],
+            "EntraInstanceRegistrations: ConfigEntraTenantsController units (entra.tenant_registration.*, AUD-1.2 with the secret events of slice 1). EntraRegistrationDiagnostics: OPERATIONAL TELEMETRY, unaudited by decision (finding F2 as resolved by SEC-2.4, gate P-7, P-8 and P-10; SR-7): UpdateOpenIdValidationOutcomeAsync and UpdateDirectoryDiscoveryOutcomeAsync record the probe outcome on the registration's 1:1 diagnostics row, outside any unit, with no audit row; AddAsync creates that row with the registration and the registration's delete removes it (cascade). G5_probe_telemetry_writes_only_the_diagnostics_table pins that the probe members never write the registration row."),
         new("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlIntegrationRepository.cs",
             ["Integrations"],
             "IntegrationManagementService units (integration.created, .updated, .activated, .deactivated, .retired) and ResourceOwnershipMoveService (slices 3 to 5)."),
@@ -803,6 +806,110 @@ public sealed class Aud14ClosureGuardTests
         EntityReferencingNonWriters.Values.Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r));
     }
 
+    // =====================================================================================================================
+    // SEC-2.4 (finding F2; gate P-7, P-8, P-10; acceptance A4.3): probe outcomes are telemetry on a table of their own
+    // =====================================================================================================================
+
+    private const string RegistrationRepositoryFile = "Apperture.Persistence/Apperture.Persistence.SqlServer/SqlEntraInstanceRegistrationRepository.cs";
+
+    /// <summary>
+    /// The members of the registration repository that record a probe outcome: the two public methods and the helper they share.
+    /// The telemetry classification is made on these, so a new member that records a probe must be added here by a reviewer.
+    /// </summary>
+    private static readonly string[] ProbeMembers = ["UpdateOpenIdValidationOutcomeAsync", "UpdateDirectoryDiscoveryOutcomeAsync", "RecordAsync"];
+
+    /// <summary>The eight diagnostic fields that left the registration row.</summary>
+    private static readonly string[] ProbeColumns =
+    [
+        "OpenIdConfigurationStatus", "LastOpenIdValidationUtc", "LastOpenIdValidationSummary", "LastOpenIdValidationDetail",
+        "DirectoryDiscoveryStatus", "LastDirectoryDiscoveryUtc", "LastDirectoryDiscoverySummary", "LastDirectoryDiscoveryDetail",
+    ];
+
+    /// <summary>The text of each named member (its name, parameters and body), found by its declaration.</summary>
+    private static Dictionary<string, string> MemberTexts(SourceFile file, IEnumerable<string> names)
+    {
+        var code = file.Code;
+        var spans = CSharpSource.StringSpans(code);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            foreach (Match m in Regex.Matches(code, $@"\b{Regex.Escape(name)}\s*\("))
+            {
+                if (!IsDeclaration(code, m.Index))
+                    continue;
+
+                var open = code.IndexOf('{', m.Index);
+                open.Should().BeGreaterThan(0, $"{name} has a block body");
+                result[name] = code[m.Index..CSharpSource.MatchingBrace(code, open, spans)];
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    [Fact]
+    public void G5_probe_telemetry_writes_only_the_diagnostics_table()
+    {
+        var file = RepositorySource.Find(RegistrationRepositoryFile);
+        file.Should().NotBeNull();
+        var members = MemberTexts(file!, ProbeMembers);
+        members.Keys.Should().BeEquivalentTo(ProbeMembers, "every probe member is declared in the registration repository");
+
+        var combined = string.Join("\n", members.Values);
+        var scan = PersistenceWriterScanner.Scan(Synthetic(Class(combined)), ScanModel.Value);
+
+        scan.Sets.Should().BeEquivalentTo(
+            new[] { "EntraRegistrationDiagnostics" },
+            $"a probe outcome is telemetry and is written to the diagnostics row only, never to the registration's configuration row (P-7, P-8); found by: {string.Join("; ", scan.Idioms)}");
+
+        // Belt and braces for what the scanner cannot see: the registration's identity and concurrency columns, a tracked save
+        // (which would write whatever else is tracked) and any audit.
+        foreach (var forbidden in new[] { "UpdatedUtc", "RowVersion", "SaveChanges", "Entry(", "EntraInstanceRegistrations.", "Audit" })
+            combined.Should().NotContain(forbidden, $"a probe member must not touch the registration row or the audit ({forbidden})");
+
+        members["UpdateOpenIdValidationOutcomeAsync"].Should().Contain("EntraRegistrationDiagnostics");
+        members["UpdateDirectoryDiscoveryOutcomeAsync"].Should().Contain("EntraRegistrationDiagnostics");
+    }
+
+    [Theory]
+    [InlineData("tracked read, then a save",
+        """async Task UpdateOpenIdValidationOutcomeAsync(string id) { var e = await _db.EntraInstanceRegistrations.FirstOrDefaultAsync(x => x.Id == id); e.UpdatedUtc = DateTimeOffset.UtcNow; await _db.SaveChangesAsync(); }""")]
+    [InlineData("set-based update of the registration",
+        """async Task UpdateDirectoryDiscoveryOutcomeAsync(string id) { await _db.EntraInstanceRegistrations.Where(x => x.Id == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.UpdatedUtc, DateTimeOffset.UtcNow)); }""")]
+    [InlineData("raw update of the registration",
+        """async Task RecordAsync(string id) { await _db.Database.ExecuteSqlRawAsync("UPDATE [EntraInstanceRegistrations] SET [UpdatedUtc] = SYSDATETIMEOFFSET() WHERE [Id] = @id"); }""")]
+    public void G5_self_test_a_probe_member_that_writes_the_registration_row_is_detected(string name, string code)
+    {
+        var scan = PersistenceWriterScanner.Scan(Synthetic(Class(code)), ScanModel.Value);
+
+        scan.Sets.Should().Contain("EntraInstanceRegistrations", $"{name}: the guard must see a probe write to the configuration row; found by: {string.Join("; ", scan.Idioms)}");
+    }
+
+    [Fact]
+    public void G5_the_probe_fields_live_on_the_diagnostics_entity_and_not_on_the_registration_entity()
+    {
+        var registration = typeof(EntraInstanceRegistrationEntity).GetProperties().Select(p => p.Name).ToList();
+        registration.Should().NotContain(ProbeColumns, "the eight diagnostic fields moved to EntraRegistrationDiagnostics (P-8); a field back on the registration row would be a second source of truth");
+        registration.Should().Contain("RowVersion").And.Contain("UpdatedUtc", "the configuration identity stays on the registration row");
+
+        var diagnostics = typeof(EntraRegistrationDiagnosticsEntity).GetProperties().Select(p => p.Name).ToList();
+        diagnostics.Should().BeEquivalentTo(ProbeColumns.Append("RegistrationId"),
+            "the diagnostics row carries the eight fields and its key, and no configuration identity (no UpdatedUtc, no concurrency token)");
+    }
+
+    [Fact]
+    public void G1_no_audit_action_records_an_entra_probe()
+    {
+        // P-7 and P-10 (SR-7): probe outcomes are telemetry with no audit row, so the catalog has no W1, W3 or W4 action for them.
+        var probeWords = new[] { "probe", "validate_openid", "openid_validation", "directory_search", "directory_discovery", "discovery" };
+
+        Catalog.Definitions
+            .Select(d => d.Action)
+            .Where(a => probeWords.Any(w => a.Contains(w, StringComparison.OrdinalIgnoreCase)))
+            .Should().BeEmpty("a probe outcome is operational telemetry and records no audit row");
+    }
+
     // ---- self-tests: the scanning functions are fed synthetic files and must report each idiom ----
 
     private static SourceFile Synthetic(string code, string path = "Apperture.Persistence/Synthetic/SyntheticWriter.cs") => new(path, code);
@@ -855,6 +962,9 @@ public sealed class Aud14ClosureGuardTests
         ("c: Set<T>() kept in a local, then Update", Class("""
             void M(ScheduleAssignmentEntity e) { var set = _db.Set<ScheduleAssignmentEntity>(); set.Update(e); _db.SaveChanges(); }
             """), "ScheduleAssignments"),
+        ("c: ExecuteUpdate on the Entra probe telemetry set", Class("""
+            async Task M(string id) { await _db.EntraRegistrationDiagnostics.Where(d => d.RegistrationId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.DirectoryDiscoveryStatus, 2)); }
+            """), "EntraRegistrationDiagnostics"),
 
         // (d) a projection is not an aggregate; only a terminal aggregate operator is exempt.
         ("d: tracked read through Select(identity)", Class("""
@@ -891,6 +1001,9 @@ public sealed class Aud14ClosureGuardTests
             WHERE i.State = 3"; cmd.ExecuteNonQuery(); } }
             """", "Bindings"),
         ("e: ExecuteSqlRaw in an EF file", Class("""async Task M() { await _db.Database.ExecuteSqlRawAsync("DELETE FROM Integrations WHERE State = 3"); }"""), "Integrations"),
+        ("e: raw insert-select into the probe telemetry table reads the registration table without writing it", Class("""
+            async Task M() { await _db.Database.ExecuteSqlRawAsync("INSERT INTO [EntraRegistrationDiagnostics] ([RegistrationId]) SELECT r.[Id] FROM [EntraInstanceRegistrations] AS r WHERE r.[Id] = @id"); }
+            """), "EntraRegistrationDiagnostics"),
         ("e: a literal that is just the table name in a raw-command file", """
             public sealed class RawWriter { void M(SqlCommand cmd, string key) { Run(cmd, "Integrations", key); cmd.ExecuteNonQuery(); } }
             """, "Integrations"),

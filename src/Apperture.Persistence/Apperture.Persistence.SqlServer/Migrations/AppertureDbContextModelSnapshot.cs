@@ -597,9 +597,6 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("DirectoryDiscoveryStatus")
-                        .HasColumnType("int");
-
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -610,6 +607,38 @@ namespace Apperture.Persistence.SqlServer.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTimeOffset>("UpdatedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("UsesDeploymentSecret")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive")
+                        .IsUnique()
+                        .HasFilter("[IsActive] = 1");
+
+                    b.ToTable("EntraInstanceRegistrations", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.EntraRegistrationDiagnosticsEntity", b =>
+                {
+                    b.Property<string>("RegistrationId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("DirectoryDiscoveryStatus")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
 
                     b.Property<string>("LastDirectoryDiscoveryDetail")
                         .HasMaxLength(4000)
@@ -634,27 +663,13 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("OpenIdConfigurationStatus")
-                        .HasColumnType("int");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                    b.HasKey("RegistrationId");
 
-                    b.Property<DateTimeOffset>("UpdatedUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("UsesDeploymentSecret")
-                        .HasColumnType("bit");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsActive")
-                        .IsUnique()
-                        .HasFilter("[IsActive] = 1");
-
-                    b.ToTable("EntraInstanceRegistrations", (string)null);
+                    b.ToTable("EntraRegistrationDiagnostics", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
@@ -3735,6 +3750,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.EntraRegistrationDiagnosticsEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.EntraInstanceRegistrationEntity", null)
+                        .WithOne("Diagnostics")
+                        .HasForeignKey("Apperture.Persistence.SqlServer.EntraRegistrationDiagnosticsEntity", "RegistrationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
                 {
                     b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
@@ -3898,6 +3922,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.EntraInstanceRegistrationEntity", b =>
+                {
+                    b.Navigation("Diagnostics");
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.OperationGroupEntity", b =>
