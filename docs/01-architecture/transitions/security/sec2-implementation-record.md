@@ -257,3 +257,146 @@ Not verified by the reviewer: it could not run SQL Server (F-1's premise was ver
 ### 2.8 CI
 
 Final CI result: see the pull request.
+
+---
+
+## 3. SEC-2.3: setting secret ownership and legacy remediation (U-2)
+
+### 3.1 What changed
+
+| Area | Change |
+|---|---|
+| Ownership rule | `SettingSecretOwnership` (`Core.Application/PlatformSettings`) is the one definition. An instance setting `K` owns provider `platform-setting`, name `platform-setting:K` (unchanged, so the SMTP password stays valid). Setting `K` of integration `I` owns provider `integration-setting`, name `integration-setting:I:K`, with `%` written `%25` and `:` written `%3A` in `I` and in `K`. Create, replace, clear, reset, retirement and every read take the owner from here. |
+| Writes | `PlatformSettingSecretMaterialProvisioner` takes a `SecretOwner`. `ReplaceAsync` adds a version only to a usable secret whose stored descriptor has exactly that provider and name; in every other case it stores a new owned secret and the service repoints the row, leaving the referenced secret untouched. `TryDisableOwnedSecretAsync` disables only an owned, usable secret. |
+| Reads | `ISettingSecretResolver` (`SettingSecretResolver`, `Core.Application`) resolves a row-sourced reference only through `ISecretResolver.ResolveOwnedAsync`, so the descriptor is checked before any version row or payload is read. Every refusal is one `SettingSecretUnavailableException` with a fixed message and the setting key only, and writes one W3 row. `IntegrationSettingsAccessor` and `EmailSmtpCredentialResolver` resolve through it. |
+| Legacy | `IntegrationSettingSecretClassifier.FindLegacySecretToRetireAsync` applies H1's evidence to a secret an integration row has just released (cleared, reset or repointed): usable, the legacy shape named for that very setting, and nothing else in any scope refers to it. `IntegrationSettingsService` retires it on that evidence only. |
+| Delete | The H1 classifier and retirement accept the integration-specific names next to the legacy shape. `PlannedSecretRetirement` carries the owner the classifier proved, and the retirement checks the descriptor against it again. |
+| SMTP | `EmailNotificationOptions.SmtpPasswordRefSource` (`Configuration` by default, `SettingRow` when the platform-settings overlay applied the row's reference) travels with the reference. A row-sourced reference goes through the boundary; a configuration-sourced one is deployment-trusted input outside the row rule (P-22) and goes through the named `ResolveDeploymentConfiguredAsync`. |
+| Evidence | Two new catalog actions (§3.3), and `replaced` joins the reasons of `integration.settings.secret.retired`. |
+| Inventory | `scripts/sec2/Get-SettingSecretOwnershipInventory.sql`, read-only. |
+| Guards | `SettingSecretBoundaryGuardTests` (identifier-based, with self-tests), `SettingSecretResolverCompositionTests`. |
+| Operations | `docs/03-operations/configuration-secret-ownership-upgrade.md` (both inventories and the recovery procedure) and the contract in `docs/04-api/contracts.md`. |
+
+### 3.2 Decisions taken inside the gate
+
+| # | Decision |
+|---|---|
+| D1 | **Q-3 settled: ids and keys may contain `:`.** Neither `IntegrationId` nor a setting key is validated (an id is 24 hex characters only because the service generates it; keys are module-declared). So the two components are escaped, which makes the name unambiguous and reversible (`TryParseIntegrationSettingName`). An id or key with neither character has exactly the approved name. A name that would not fit the store's 256 characters is refused, never truncated, and a read treats it as a refusal. The row's own primary key (`{kind}:{scopeId}:{key}`) is not escaped and already collides for pairs such as `("a:b","c")` and `("a","b:c")`; that is existing behaviour and is not changed here. |
+| D2 | **The instance identity is unchanged, so an instance row cannot be told from a legacy integration secret for the same key.** The legacy integration shape (`platform-setting:K`) equals the instance owner for `K`. An instance row that names it is treated as owned (P-18 accepts this). The reverse is handled: an integration row that names it is refused at read and is retired only on H1's evidence. |
+| D3 | **One boundary in `Core.Application`**, because the Worker Host (the accessor) and the Management Host (the SMTP password) both need it and neither references the other. It is registered with `TryAddScoped` by every extension that needs it. The unchecked `ResolveAsync` appears once, in `ResolveDeploymentConfiguredAsync`, and a guard allows only the SMTP resolver to call that. |
+| D4 | **Every `SecretUnavailableException` is a refusal**, including a blank reference, text that is not a GUID and a name that cannot fit the store (as SEC-2.2 D8 does for connections). Other failures (a protector error, a cancellation) are not refusals: they propagate and write no row. |
+| D5 | **A module sees `missing_secret`** (the SDK's "not configured") for every refusal. A secret that resolves to blank text stays `invalid_secret_reference`, as before. `IsSecretConfigured` still reports only that a reference is stored; it makes no descriptor read (it is synchronous and used by readiness). |
+| D6 | **Actor attribution.** One row per boundary call. An integration setting on `run` is attributed to the worker; an instance setting on `run` to `system:platform-settings`; on `management` to the signed-in principal, or `anonymous` when there is none (a recovery or invitation mail), so the row is always writable and never blames a person. The accessor uses `run` (the Worker Host is the only host that registers it); delivery uses `run` and account mail `management`. |
+| D7 | **The row's related context** is the integration's owning resource context, read best-effort through the integration repository; its absence leaves the reference out and changes nothing else. |
+| D8 | **Replace over a disabled secret of its own creates a new one**, as before. Replace over any other non-owned reference creates a new owned secret and never versions, disables or reads the old one. |
+| D9 | **An owned secret is disabled by exact ownership alone** (no reference scan). A reference to it from another row is already refused at read, so the scan would add nothing; H1's evidence is used only for the legacy shape, which cannot prove an owner. |
+| D10 | **Legacy retirement is optional wiring.** `IntegrationSettingsService` takes the classifier as an optional last constructor parameter; the host's container supplies it. Without it a legacy secret is simply kept, so there is no second, unsafe path. The new reason `replaced` records a retirement caused by re-entering a value. |
+| D11 | **Q-4 settled: a read-only SQL script**, as for U-1. It classifies by what the secret store says, needs no module code, and takes the sensitive keys from a list at the top that an operator extends (a key that is not listed is still reported, as `ordinary_guid_text`, with the relation the secret has to the row). The list is a `VALUES` constructor inside the query, so the script keeps no state and the test that forbids `INSERT`, `DECLARE` and `INTO` holds. |
+| D12 | **The delete's ambiguity rule is unchanged.** A secret named for another integration is retained while that integration's override holds it and otherwise refuses the delete (the operator resets the setting, then deletes). |
+| D13 | **Readiness is unchanged.** It reports that a reference is stored, so an integration whose row names a foreign secret reads as configured and then fails closed at run, with the audited refusal, until the value is re-entered. The inventory exists to find those rows before the upgrade. |
+
+### 3.3 Audit catalog entries
+
+| Action | Category, severity, basis | Target | Write class | Schema | Never recorded |
+|---|---|---|---|---|---|
+| `integration.settings.secret.resolution_refused` | `secrets`, elevated, `attempt` | `integration_setting` (`{integrationId}:{key}`); the owning resource context is the related reference | W3 | `path` (enum: `run`, `management`) | The reference, the secret found, its owner, which condition failed |
+| `platform.settings.secret.resolution_refused` | `secrets`, elevated, `attempt` | `platform_setting` | W3 | `path` (enum: `run`, `management`) | As above |
+
+`integration.settings.secret.retired` gains the reason `replaced`. Introduced in `SEC-2.3`; writer `SettingSecretResolver.cs`.
+
+### 3.4 Acceptance matrix
+
+All SQL cases run on a locking READ COMMITTED catalog and a READ_COMMITTED_SNAPSHOT catalog (throwaway catalogs the tests create and drop).
+
+| # | Status | Evidence |
+|---|---|---|
+| A3.1 | Met | SQL `Two_integrations_that_set_the_same_key_get_two_distinct_secrets_under_their_own_owner_and_the_instance_name_is_unchanged` (descriptor provider and name of two integrations and of the instance SMTP secret; each resolves for its own owner and a cross-owner resolve is refused), `A_second_replace_by_the_same_setting_versions_its_own_secret_and_keeps_the_reference`, and the race `Two_integrations_that_replace_the_same_key_at_once_each_end_with_a_secret_of_their_own`. Unit: `SettingSecretOwnershipTests` (format, delimiter and escape cases, round trip, length), `SettingSecretProvisionerOwnershipTests`, `SettingSecretOwnershipServiceTests`. |
+| A3.2 | Met | SQL `A_replace_over_a_reference_that_is_not_the_integration_settings_own_repoints_it_and_leaves_the_victim_unchanged`: another integration's secret, an instance setting's, a connection's, an Entra registration's, another key of the same integration, the owner's name under another provider, a case variant of the owner's name, and a dangling reference. For each, the row is repointed to a secret under the owner and the victim's snapshot (descriptor, every version with its protected payload, and its evidence rows) is identical before and after. The instance counterpart covers six shapes. Unit: ten shapes at the provisioner. |
+| A3.3 | Met | SQL `A_clear_by_B_never_disables_integration_A_s_secret…` and `A_reset_by_B…` (B's row names A's secret; A's snapshot is identical afterwards and no retirement row is written for B), `An_instance_clear_or_reset_never_disables_a_secret_it_does_not_own`, `A_clear_or_reset_of_the_settings_own_secret_still_retires_it_and_records_why`, and the race `A_clear_by_B_that_races_A_re_entering_its_value_never_disables_A_s_secret`. |
+| A3.4 | Met | SQL `The_runtime_accessor_refuses_a_reference_that_is_not_owned_before_any_foreign_payload_is_read_and_the_module_sees_not_configured`, eight kinds on both modes: a recording protector shows nothing is unprotected, the command log shows no query touches `SecretVersions`, the victim's snapshot is unchanged, the module gets `missing_secret`, nothing in the error names the reference, and exactly one W3 row is written (category `secrets`, elevated, outcome `rejected`, target the integration setting, the worker as actor, `path` `run`, the integration's context, and no reference, owner or secret name in any cell). `A_refusal_stands_and_nothing_foreign_is_read_when_the_evidence_cannot_be_written` (a writer that throws). SMTP: `A_row_sourced_smtp_reference_to_a_foreign_secret_reads_as_no_password…` (the operator is the actor, `path` `management`), `…to_the_instance_settings_own_secret_resolves`, and `A_deployment_configured_smtp_reference_is_outside_the_row_rule_and_keeps_working_whatever_secret_it_names`. Unit: `SettingSecretResolverTests` (owner passed, one row per call, actor and path, evidence failure, no leakage), `IntegrationSettingsAccessorSecretTests`, `SmtpPasswordRefOwnershipTests` (including the overlay feeding the resolver). |
+| A3.5 | Met | SQL `A_foreign_guid_stored_as_ordinary_text_is_refused_at_read_once_the_key_becomes_sensitive` (the key is read as ordinary text first, then declared sensitive), `…_is_not_versioned_by_a_replace_after_the_key_becomes_sensitive`, and `Text_that_is_not_a_guid_is_refused_at_read_…`. |
+| A3.6 | Met | Unit `IntegrationSettingSecretOwnershipDispositionTests` (the plan accepts the integration-specific name, refuses another key's and another integration's, retains one the other integration still holds, never retires another provider's, and the retirement re-checks the proven owner). SQL `IntegrationSettingSecretDispositionSqlServerTests.OwnerNames` (seven cases) next to the existing suite, whose legacy fixtures pass unchanged. |
+| A3.7 | Met for the code; **the persistent-installation part is a rollout condition** (§3.8) | `SettingSecretOwnershipInventorySqlServerTests`: the script returns exactly the seeded problem rows with the right class, owner details and H1 evidence (sole holder, other holders by kind), every spelling of a foreign reference, ids and keys that carry the delimiter and the escape character (clean, so the script's escaping equals the platform's), and nothing for a clean or empty catalog; it runs as a database user that has `SELECT` on the five tables and nothing else, changes nothing and is repeatable; a static test pins that it contains no write, `DECLARE`, `INTO`, temporary table or database name and never selects a payload. |
+| A3.8 | Met | SQL `An_ambiguous_legacy_reference_is_refused_at_read_and_never_adopted_or_renamed`, `Re_entering_the_value_of_a_shared_legacy_row_creates_an_owned_secret_and_retains_the_legacy_one_until_the_last_holder_has_moved`, `…_of_a_sole_holder_legacy_row_retires_the_legacy_secret`, `A_legacy_secret_that_any_other_holder_still_refers_to_is_never_retired_by_a_re_entry` (instance row, connection, Entra registration), `Clearing_or_resetting_a_sole_holder_legacy_row_…`, `A_legacy_secret_named_for_another_key_is_never_retired_…`, and the race `Two_integrations_re_entering_a_shared_legacy_secret_at_once_…`. The configuration-sourced SMTP reference is pinned by `A_reference_that_deployment_configuration_supplied_stays_outside_the_row_rule_and_keeps_working` (unit) and the SQL case above. The recovery procedure is `docs/03-operations/configuration-secret-ownership-upgrade.md`. |
+| M6 | Met | `SettingsAuditSqlServerTests` runs the five M6 obligations (audit insert failure leaves nothing; a lost acknowledgement is verified, not run again; a confirmed rollback reruns once; an unknown outcome is wholly committed or wholly absent; the operation lock is not granted) for three new operations: a replace over another integration's secret (repoint), a re-entry over a sole-holder legacy secret (new secret, repoint and retirement), and a clear of a sole-holder legacy row. Each asserts the setting row, both secrets, the store's own evidence and the audit rows. The existing integration secret cases now seed the owner the setting defines. |
+
+### 3.5 Test evidence
+
+Counts are from this branch at the final candidate. Heavy suites ran one at a time (the machine is memory constrained). The SQL Server suites use throwaway catalogs and fail rather than skip without SQL Server.
+
+TEST-EVIDENCE-PENDING
+
+**Test-first status.** The ownership definition and the provisioner were written test first: the tests were written against stubs, run, and failed for the right reason (a foreign secret was versioned and disabled) before the implementation. The same order held for the classifier's legacy method. The boundary, the accessor, the SMTP changes, the SQL suites and the inventory were written with or just after the code; for those the evidence is the mutation testing below.
+
+### 3.6 Mutation evidence
+
+Each mutation was applied to the committed code, built, run against the tests named, and reverted; `git diff` against the commit was empty afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| The provisioner treats every descriptor as the setting's own (no provider and name comparison) | 29 of 51 unit tests (every foreign replace and disable shape, B disabling A, the whitespace case, the instance and integration service cases) and 25 SQL cases (every foreign kind for replace, B's clear) |
+| The boundary resolves by reference alone, with the unchecked `ResolveAsync` | 13 of 25 unit tests (including the guard that pins the boundary's one unchecked call) and 22 of 26 SQL cases (sixteen accessor refusals, the ambiguous legacy reference, the SMTP refusal, the reclassification refusal) |
+| Legacy retirement ignores the other holders | 5 unit tests and 10 SQL cases (every other-holder kind, the shared re-entry sequence, clear and reset) |
+| The delete classifier accepts any integration-owned secret | 3 unit tests and 4 SQL cases (another key's secret, another integration's secret) |
+| The platform-settings overlay never marks a reference as row-sourced | 1 unit test at the time (`A_reference_overlaid_from_the_setting_row_is_marked_as_row_sourced`); the end-to-end pair `A_reference_the_overlay_took_from_the_row_is_checked_for_ownership_when_it_is_read` was added because of it |
+
+### 3.7 Legacy inventory and recovery procedure
+
+The U-2 inventory is `scripts/sec2/Get-SettingSecretOwnershipInventory.sql` (Q-4: a read-only script, as for U-1). It applies H1's evidence model (provider, name, sole holder, and the surviving-reference scan across setting rows, connections and Entra registrations) to every `PlatformSettingValues` row and lists each row that needs attention, with one class each:
+
+| Class | Disposition |
+|---|---|
+| `legacy_integration` | Refused at read. Re-enter the value; the legacy secret is retired only when `SoleHolder` is 1 |
+| `shared` | Each holder re-enters; nothing is adopted; the secret is retained |
+| `key_mismatch`, `foreign_provider` | Refused at read; the other secret is never modified; `foreign_provider` is an incident |
+| `ordinary_guid_text` | Reported only |
+| `dangling`, `unreadable` | Re-enter or clear |
+
+The recovery path for an operator is the one the gate approved (P-21, SR-14): inventory the setting; the row is refused safely at read; re-enter the value, which creates a newly owned secret and repoints the row; the legacy secret is retired only on H1's evidence. It, the sensitive-key list, the connection inventory and the disposition of every class are in `docs/03-operations/configuration-secret-ownership-upgrade.md`, and the contract is in `docs/04-api/contracts.md`.
+
+### 3.8 A2.7 and U-1: deployment disposition (assessment, separate from SEC-2.3's code acceptance)
+
+**Question.** Does any existing persistent installation require the U-1 (and now U-2) inventory?
+
+**Evidence reviewed** (read-only, at `master` `5e27206`, and the repository's GitHub metadata):
+
+| Source | What it shows |
+|---|---|
+| `deploy/` (`README.md`, `config/examples/*.example`, `docker/.env.example`, `docker-compose.dev.yml`) | Templates and development files only. Every connection string is a placeholder or a `localhost` development database. No installation, customer, host, server or catalog is named. |
+| `deploy/README.md` (RC1 note, 2026-10-03) | The RC1 production topology is delivered by OPS-1 and "does not exist yet: there is no installer, no service hosting and no supported upgrade or backup procedure today". |
+| `scripts/deployment/commands/Deploy-Environment.ps1` | A scaffold: it prints that the target's workflow "is not implemented". |
+| `CHANGELOG.md`, git tags, GitHub | `[Unreleased]` only; one tag (`archive/foundational-kernel-and-domain`); zero releases, zero deployments and no environments on the repository. |
+| `docs/00-overview/pre-release-product-roadmap.md` | Pre-release product development; the operator smoke runbooks and UAT are stated as not claimed passed. |
+| `docs/01-architecture/transitions/audit-hardening/aud1-design-gate.md` (line 904) | Says that whether a deployment already ran IAM-9.2 without AUD-1.1 "is operator knowledge": the program itself does not treat the repository as a record of installations. |
+
+**Assessment.** The evidence is consistent with there being no persistent installation: nothing in the repository, its releases or its deployment tooling describes one, and the supported upgrade path does not exist yet. It does not establish that there is none. The repository holds no deployment inventory to be complete or incomplete, and a hand-built UAT, pilot or demonstration database would leave no trace in it. Absence of names is not treated as absence of installations.
+
+**Disposition: A2.7 and U-1 remain open RC1 rollout conditions, unchanged.** SEC-2.3 neither closes nor changes them.
+
+**What would close them.** Either of:
+
+1. The inventories (this package's U-2 script and SEC-2.2's U-1 script) run on each persistent installation database named in the deployment records, with the results and each row's disposition recorded here; or
+2. The owner (or whoever holds the deployment records) records one statement: *"As of <date>, no persistent database exists other than disposable development and test databases; no installation has been upgraded or will be upgraded from a pre-SEC-2 build."* With that, A2.7 would be recorded not applicable for the first release, and the two inventories would stay as a documented upgrade requirement for any later installation ([the upgrade runbook](../../../03-operations/configuration-secret-ownership-upgrade.md)).
+
+No database name was invented, nothing was marked closed, and no database was inspected beyond the throwaway catalogs the tests create.
+
+### 3.9 Database safeguards
+
+- No development, shared, persistent or production database was reset, reseeded, migrated or written to by hand. SR-17 was not exercised.
+- The SQL Server suites create their own uniquely named catalogs (and drop them), as SEC-2.2 did. `SettingsAuditSqlServerTests`, the H1 disposition suites and the new suites each use such catalogs.
+- The only other use of the shared test SQL container was read-only: a probe of two JSON behaviours of the engine (`SELECT` with literals, no table), with the credential forwarded through the environment and never on a command line.
+- The owner's verified backup of the primary development database was not needed and was not touched. The Aspire stack that is running on the machine was left running; nothing was built into its output folders (all builds used `artifacts/sec23`, which is git-ignored and removed at the end).
+
+### 3.10 Limitations and other items
+
+| # | Item |
+|---|---|
+| L1 | **A2.7 is open** (§3.8). Enforcement does not wait on the inventories (gate §6.3), so a setting row that names a foreign secret reads as not configured after the upgrade until its value is re-entered. |
+| L2 | **An instance row that names the legacy integration shape for the same key is indistinguishable from an owned one** (D2; accepted by P-18). |
+| L3 | **Readiness reports presence only** (D13): an integration whose row names a foreign secret reads as configured and fails closed at run, with an audited refusal. |
+| L4 | **`IsSecretConfigured` is presence** (D5). |
+| L5 | **The inventory needs compatibility level 130**, reads the other holders by text (the hexadecimal GUID form is not found), and treats an array or an object value as not a reference (D11). |
+| L6 | **A retirement on re-entry reads the other holders in the change's transaction.** Under locking READ COMMITTED a competing uncommitted change is waited for; under snapshot isolation it is not seen, so a legacy secret can be kept longer than needed. It is never retired while a committed row names it (the concurrent re-entry test pins both modes). |
+| L7 | **The Entra client secret and the other holders that resolve a reference are unchanged** (gate K-3). `EntraClientSecretAccess` is the one remaining production file outside the boundaries that builds a `SecretRef`, and the guard names it with that reason. |
+| L8 | **The guard is identifier-based** and cannot see a reference passed through a variable defined in another file; the allow-list is three files and the runtime tests are the compensating control. |
+| L9 | **`PlatformSettingValues` row ids are not escaped** (D1): `("a:b","c")` and `("a","b:c")` collide as primary keys, which is existing behaviour. It does not weaken the ownership rule, whose names are escaped. |

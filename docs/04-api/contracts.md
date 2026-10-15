@@ -315,6 +315,35 @@ A `PATCH` that changes config is still refused while the connection keeps a refe
 
 **Persistent installations** run the read-only inventory (`scripts/sec2/Get-ConnectionSecretOwnershipInventory.sql`) before upgrading and clear or re-enter each listed field; see the SEC-2 implementation record.
 
+## Setting secret ownership (SEC-2.3)
+
+A sensitive setting stores its value in the secret store and keeps only an opaque reference in its row. A reference says nothing about who owns the secret it names, so every place that writes, clears, resets, retires or reads a setting's secret now proves, on the secret's own stored descriptor, that the secret belongs to that setting. **No request or response shape changes**: no field is added or removed, and the status codes stay as they were. What changes is which secret is acted on.
+
+**Ownership** (exact, case-sensitive comparison of provider and name):
+
+| Holder | Provider | Name |
+|---|---|---|
+| Instance setting `K` (`PUT /api/config/platform-settings/{key}`) | `platform-setting` | `platform-setting:K` (unchanged, so the SMTP password stays valid) |
+| Setting `K` of integration `I` (`PUT /api/integrations/{integrationId}/settings/{key}`) | `integration-setting` | `integration-setting:I:K` |
+
+Integration ids and setting keys are not character-validated, so in `I` and in `K` the characters `%` and `:` are written `%25` and `%3A`. That makes the name unambiguous and reversible; an id or key with neither character has exactly the name above. Two integrations that set the same key therefore own two different secrets.
+
+| Operation | Behaviour |
+|---|---|
+| **Replace** (a secret replace on a sensitive setting) | A new active version is added only to the secret the setting owns. If the row names nothing, or names a secret the setting does not own (another integration's, an instance setting's, a connection's, an Entra registration's, a missing or unreadable reference, a disabled secret), a new secret the setting owns is stored and the row is repointed to it in the same audited unit. The secret the row named before is never read, versioned, adopted or disabled, and its descriptor, versions, payload and evidence are untouched. |
+| **Clear** and **reset** | Disable only the secret the setting owns. A row that names any other secret is removed and that secret is left exactly as it was. Integration B clearing or resetting a setting never disables integration A's secret for the same key. A *legacy* secret (below) is retired only on the evidence below. |
+| **Read** by a module (`IIntegrationSettingsAccessor.GetSecretAsync`) | The reference is resolved only if the secret is the setting's own, and the secret's payload is not read or unprotected otherwise. A module whose setting names another holder's secret, a missing or disabled one, or text that is not a reference sees the setting as **not configured** (`missing_secret`). It never receives a foreign value, and the error names no reference. |
+| **Read** by the SMTP password resolver | The same rule applies to a reference that came from the platform setting's row: the password reads as not configured and no mail is sent with a foreign credential. A reference supplied by deployment configuration (`Notifications:Email:SmtpPasswordRef` in an application settings file or the environment) is not a setting row and is outside the rule, as are all other configured values (deployment configuration is trusted input). |
+| **Integration delete** | The H1 classifier accepts the integration-specific name next to the legacy shape. A secret named for another integration is never retired by this delete: it is retained while that integration's own override holds it, and otherwise the delete is refused as ambiguous (reset the setting, then delete). |
+
+**Reclassification.** A GUID that was stored as an ordinary value does not become a usable secret reference because a module later declares the key sensitive. At read it is refused like any other reference that is not the setting's own, and a replace stores a new owned secret without versioning the secret the text named.
+
+**Legacy references.** Before this change an integration setting's secret was stored under the instance shape (`platform-setting` / `platform-setting:K`), which cannot say which integration made it. Such a reference is **never adopted or renamed**. The row is refused at read until an operator re-enters the value, which stores a new secret the row owns and repoints the row. The legacy secret is then retired only if it is usable, is named for that very setting, and nothing else in any scope (any other setting row, a connection or an Entra registration) refers to it; otherwise it is kept untouched. A `integration.settings.secret.retired` row with reason `replaced`, `cleared` or `reset` records a retirement.
+
+**Evidence.** A refused read writes one audit row per top-level operation, whatever the reason, with no reference, owner or condition in it. The audit action is `integration.settings.secret.resolution_refused` (target the integration setting, field `path` of `run` or `management`) or `platform.settings.secret.resolution_refused` (target the platform setting, field `path`). They are `secrets` category, `elevated` severity, W3 attempt rows: they are best effort, and a row that cannot be written never changes the refusal.
+
+**Persistent installations** run the read-only inventory (`scripts/sec2/Get-SettingSecretOwnershipInventory.sql`) before upgrading and re-enter each listed value; see [configuration-secret-ownership-upgrade.md](../03-operations/configuration-secret-ownership-upgrade.md).
+
 ## Recovery API (Epic 31)
 
 Operator recovery and remediation workflows extend Epic 30 diagnostics with eligibility projection and safe retry actions.

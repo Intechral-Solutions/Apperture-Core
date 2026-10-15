@@ -177,6 +177,33 @@ public sealed class SmtpPasswordRefOwnershipTests
         options.SmtpPasswordRefSource.Should().Be(SmtpPasswordRefSource.Configuration);
     }
 
+    // ---- the overlay and the resolver agree, end to end ----
+
+    [Fact]
+    public async Task A_reference_the_overlay_took_from_the_row_is_checked_for_ownership_when_it_is_read()
+    {
+        var options = PostConfigured(PlatformSettingValueSource.Database, Reference);
+        var secrets = new Mock<ISettingSecretResolver>(MockBehavior.Strict);
+        secrets.Setup(s => s.ResolvePlatformSettingAsync(Key, Reference, SettingSecretResolutionPath.Run, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SettingSecretUnavailableException(Key));
+
+        var password = await Resolver(secrets).ResolvePasswordAsync(options);
+
+        password.Should().BeNull("a row that names a secret it does not own reads as not configured");
+        secrets.VerifyAll();
+    }
+
+    [Fact]
+    public async Task A_reference_the_overlay_left_as_configured_is_not_subject_to_the_row_rule_when_it_is_read()
+    {
+        var options = PostConfigured(PlatformSettingValueSource.ConfigurationDefault, Reference);
+        var secrets = new Mock<ISettingSecretResolver>(MockBehavior.Strict);
+        secrets.Setup(s => s.ResolveDeploymentConfiguredAsync(Reference, It.IsAny<CancellationToken>())).ReturnsAsync("configured-secret");
+
+        (await Resolver(secrets).ResolvePasswordAsync(options)).Should().Be("configured-secret");
+        secrets.VerifyAll();
+    }
+
     // ---- a copy of the options keeps where the reference came from ----
 
     [Fact]
