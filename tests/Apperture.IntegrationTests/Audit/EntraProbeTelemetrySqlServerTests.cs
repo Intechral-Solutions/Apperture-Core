@@ -305,6 +305,112 @@ public sealed class EntraProbeTelemetrySqlServerTests : IClassFixture<AuditIsola
 
     [Theory]
     [MemberData(nameof(Isolation))]
+    public async Task A_first_probe_that_loses_the_race_to_create_the_row_still_records_its_outcome(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var id = await InsertRegistrationWithoutDiagnosticsAsync(scratch);
+        var before = await ConfigurationRowAsync(scratch, id);
+
+        // Our OpenID probe starts and its update finds no row. It is held just before its insert.
+        var hook = new InsertHook();
+        await using var db = scratch.NewDb(hook);
+        var probe = Task.Run(() => new SqlEntraInstanceRegistrationRepository(db)
+            .UpdateOpenIdValidationOutcomeAsync(id, OpenIdConfigurationStatus.Valid, DateTimeOffset.UtcNow, "loser", null));
+        await hook.AtInsert.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // Meanwhile a concurrent first probe (a directory search) inserts the row, in a transaction that has not committed yet.
+        await using var winner = new SqlConnection(scratch.ConnectionString);
+        await winner.OpenAsync();
+        await using var winnerTransaction = (SqlTransaction)await winner.BeginTransactionAsync();
+        await using (var insert = winner.CreateCommand())
+        {
+            insert.Transaction = winnerTransaction;
+            insert.CommandText = $"INSERT INTO EntraRegistrationDiagnostics (RegistrationId, DirectoryDiscoveryStatus, LastDirectoryDiscoverySummary) VALUES (N'{id}', {(int)DirectoryDiscoveryStatus.Success}, N'winner');";
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        // Locking READ COMMITTED: the loser's insert waits to read the winner's key. READ_COMMITTED_SNAPSHOT: it cannot see the
+        // uncommitted row, so its insert goes ahead and waits on the winner's key.
+        hook.Release();
+        await WaitUntilAStatementIsBlockedAsync(scratch);
+        probe.IsCompleted.Should().BeFalse("the probe is waiting on the winner");
+
+        await winnerTransaction.CommitAsync();
+        await probe;
+
+        (await DiagnosticsRowCountAsync(scratch, id)).Should().Be(1);
+        var diagnostics = (await DiagnosticsRowAsync(scratch, id))!;
+        diagnostics["LastOpenIdValidationSummary"].Should().Be("loser", "the probe that lost the race still recorded its outcome");
+        diagnostics["OpenIdConfigurationStatus"].Should().Be((int)OpenIdConfigurationStatus.Valid);
+        diagnostics["LastDirectoryDiscoverySummary"].Should().Be("winner", "and it did not overwrite the other probe's outcome");
+        diagnostics["DirectoryDiscoveryStatus"].Should().Be((int)DirectoryDiscoveryStatus.Success);
+        (await ConfigurationRowAsync(scratch, id)).Should().BeEquivalentTo(before);
+
+        // Under row versioning the loser's insert really collided on the key and recovered; under locking it read the committed row.
+        hook.DuplicateKeyFailures.Should().Be(rcsi ? 1 : 0, rcsi
+            ? "the insert met the winner's key and the duplicate was handled"
+            : "the insert waited for the winner, saw its row and wrote nothing");
+    }
+
+    private static async Task WaitUntilAStatementIsBlockedAsync(AuditSqlScratch scratch)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var blocked = await scratch.ScalarAsync<int>($"""
+                SELECT COUNT(*) FROM sys.dm_exec_requests r
+                JOIN sys.databases d ON d.database_id = r.database_id
+                WHERE d.name = N'{scratch.Catalog}' AND r.blocking_session_id <> 0;
+                """);
+            if (blocked > 0)
+                return;
+            await Task.Delay(25);
+        }
+
+        throw new TimeoutException("No statement became blocked on the winner's uncommitted row.");
+    }
+
+    /// <summary>Holds the diagnostics insert until released, says when it has been reached, and counts duplicate-key failures.</summary>
+    private sealed class InsertHook : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource _atInsert = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _duplicateKeyFailures;
+
+        public Task AtInsert => _atInsert.Task;
+
+        public int DuplicateKeyFailures => Volatile.Read(ref _duplicateKeyFailures);
+
+        public void Release() => _release.TrySetResult();
+
+        public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData,
+            Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("INSERT INTO [EntraRegistrationDiagnostics]", StringComparison.Ordinal))
+            {
+                _atInsert.TrySetResult();
+                await _release.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            }
+
+            return result;
+        }
+
+        public override Task CommandFailedAsync(
+            System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandErrorEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Exception is SqlException { Number: 2627 or 2601 })
+                Interlocked.Increment(ref _duplicateKeyFailures);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Isolation))]
     public async Task A_probe_of_a_registration_that_does_not_exist_records_nothing(bool rcsi)
     {
         var scratch = Scratch(rcsi);
