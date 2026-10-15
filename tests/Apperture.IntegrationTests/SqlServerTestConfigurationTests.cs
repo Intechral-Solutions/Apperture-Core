@@ -3,6 +3,13 @@ using Xunit;
 
 namespace Apperture.IntegrationTests;
 
+/// <remarks>
+/// These tests clear and set process-wide environment variables (the SQL connection strings) and flip the configuration's global
+/// switches. Left in the implicit parallel collection of their own they ran alongside the Management Host fixtures, which read
+/// <c>APPERTURE_TEST_SQL</c> when they start, so a fixture that started in the same moment saw no connection string, fell back to
+/// LocalDB and failed every test of its collection (observed in CI on SEC-2.3). The serialized SQL collection runs them alone.
+/// </remarks>
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class SqlServerTestConfigurationTests
 {
     private readonly Dictionary<string, string?> _saved = new(StringComparer.OrdinalIgnoreCase);
