@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Date | 2026-10-13 (drafted and approved the same day) |
-| Status | **Approved / Ready for Implementation, not implemented.** The product owner approved SEC-2.0 on **2026-10-13**, including all 16 requested rulings (SR-1 to SR-16), adopting the architect's recommendations with the refinements recorded in §10.2. The design decisions P-1 to P-22 are binding as amended there. A further owner ruling on disposable development databases (SR-17, §10.3) was added at ratification. SEC-2.1, SEC-2.2 and SEC-2.3 are implemented and independently reviewed (§0 and the [implementation record](sec2-implementation-record.md)); SEC-2.4 is implemented and independently reviewed (§0 and the [implementation record](sec2-implementation-record.md) §4); F2 closes only when its pull request is merged and verified. |
+| Status | **Implemented and closed for the initial release (2026-10-15).** The product owner approved SEC-2.0 on **2026-10-13**, including all 16 requested rulings (SR-1 to SR-16), adopting the architect's recommendations with the refinements recorded in §10.2. The design decisions P-1 to P-22 are binding as amended there. A further owner ruling on disposable development databases (SR-17, §10.3) was added at ratification. SEC-2.1 to SEC-2.4 are implemented, independently reviewed and merged (PR #29 to #32), and **SEC-2 was closed for the initial release on 2026-10-15** (§12 and the [implementation record](sec2-implementation-record.md) §5). The approved decisions and rulings below are unchanged. |
 | Baseline | `master` at `65d95f0` (PR #27, the AUD-1.4 slice 8 merge). The source was read at `fdcf4fe`, whose tree is identical to `65d95f0`. |
 | Nature | Design only. No production code, test, migration or contract has changed. The findings are **not resolved**: approval fixes the design and the ownership, not the fix. |
 | Origin | The five findings of the [AUD-1.4 record](../audit-hardening/aud1-4-configuration-lifecycle-record.md) §19.7 that need an owner: F1, F2, U-1, U-2 and U-3. F3 to F5 and the carried items stay with their owners. |
@@ -31,12 +31,12 @@ The approved packages after SEC-2.0, in implementation order (SR-16):
 
 | Package | Finding | Approved RC1 class | State |
 |---|---|---|---|
-| SEC-2.1 | F1 | **Release blocker** | Implemented and independently reviewed; closes on merge ([record](sec2-implementation-record.md) §1) |
-| SEC-2.2 | U-1 and U-3 | **Release blocker** (U-1); U-3 ships with it | Implemented and independently reviewed; closes the code side on merge. **U-1 stays open until the persistent-installation inventories (A2.7) are recorded** ([record](sec2-implementation-record.md) §2) |
-| SEC-2.3 | U-2 | **Required for RC1** unless formally risk-accepted (SR-15) | Implemented and independently reviewed; closes the code side of U-2 on merge. **A2.7 (the persistent-installation inventories) stays an open rollout condition** ([record](sec2-implementation-record.md) §3) |
-| SEC-2.4 | F2 | Not independently blocking | Implemented and independently reviewed; closes F2 on merge and verification ([record](sec2-implementation-record.md) §4) |
+| SEC-2.1 | F1 | **Release blocker** | Merged (PR #29); **F1 closed** ([record](sec2-implementation-record.md) §1, §5) |
+| SEC-2.2 | U-1 and U-3 | **Release blocker** (U-1); U-3 ships with it | Merged (PR #30); **U-3 closed; U-1 closed for the initial release.** A2.7 (the persistent-installation inventories) is Not Applicable to the Initial Release ([record](sec2-implementation-record.md) §2, §5) |
+| SEC-2.3 | U-2 | **Required for RC1** unless formally risk-accepted (SR-15) | Merged (PR #31); **U-2 closed for the initial release**, with no risk acceptance. The persistent-installation part of A3.7 is Not Applicable to the Initial Release ([record](sec2-implementation-record.md) §3, §5) |
+| SEC-2.4 | F2 | Not independently blocking | Merged (PR #32); **F2 closed** ([record](sec2-implementation-record.md) §4, §5) |
 
-The classes are approved ownership and classification. They are not completion: no finding is resolved until its package ships and is verified.
+The classes are approved ownership and classification. They were not completion when approved; completion is recorded in §12.
 
 F2 is a fourth package because the original brief assigned it none (SR-1). IAM-10 stays separate; the interfaces the two genuinely share are listed in §4.5. SEC-2 adds no permission constant.
 
@@ -351,7 +351,7 @@ The rules below follow the AUD-1.4 rules for every slice:
 | A2.4 | **Exactly one** W3 `connection.secret.resolution_refused` row is written per top-level failed resolution operation (P-15), with the right actor and `path`. A connection with several poisoned fields, or a refusal that passes through the slot resolver, the default resolver and a verifier, still writes one row. **A failed W3 write leaves the result a refusal:** an injected audit failure still delivers no secret |
 | A2.5 | An owned connection resolves exactly as before on every path (regression). Lifecycle, active-version selection and protection are unchanged (P-12): a disabled secret, a missing or non-active version and a pinned version behave as they do today, the active version is the one delivered after a rotation, and the protector receives the stored key id. Ownership is checked on the descriptor before the version row or payload is read, which a recording store and protector prove |
 | A2.6 | The inventory script, on a seeded catalog, returns exactly the seeded rows with the right classes. On clean data it returns nothing. It succeeds under a read-only login |
-| A2.7 | **Persistent installations:** the inventory has been run on each persistent database listed in the deployment records, and its results and each row's disposition are recorded. A deliberately discarded disposable database is exempt (§6.4) |
+| A2.7 | **Persistent installations:** the inventory has been run on each persistent database listed in the deployment records, and its results and each row's disposition are recorded. A deliberately discarded disposable database is exempt (§6.4). **Recorded Not Applicable to the Initial Release on 2026-10-15** (§12) |
 | A2.8 | No connection response (list, get, create, `PATCH`, test-connect) contains a seeded reference anywhere in its serialized body. `secretFields` lists declared and undeclared keys with the right `configured` value |
 | A2.9 | `clearSecretFields` and `secretValues` repair a poisoned field without knowing any reference, **including an undeclared legacy field, which can be cleared**. The foreign secret's descriptor, versions and audit are unchanged (SQL), and nothing reads, adopts or alters it. A `PATCH` with `secretRefs` is refused with a 400 that names the replacement operations, with **no deprecation window** (SR-13) |
 | A2.10 | The UI renders Set and Not set and the undeclared legacy fields from `secretFields`; its source and render tests are updated. The contracts and the compatibility note are written |
@@ -366,7 +366,7 @@ The rules below follow the AUD-1.4 rules for every slice:
 | A3.4 | The runtime accessor and the SMTP resolver refuse a reference that is not owned. The module sees "not configured", the W3 row is written, and nothing is revealed |
 | A3.5 | **Reclassification:** a foreign GUID stored as an ordinary value, after the key becomes sensitive, is refused at read and not versioned at replace |
 | A3.6 | The H1 classifier and retirement accept the new names, and the existing disposition SQL suite passes with legacy and new fixtures |
-| A3.7 | The inventory classifies a seeded catalog correctly and is empty on clean data. For **persistent installations**, results and dispositions are recorded for each database in the deployment records. A deliberately discarded disposable database is exempt (§6.4) |
+| A3.7 | The inventory classifies a seeded catalog correctly and is empty on clean data. For **persistent installations**, results and dispositions are recorded for each database in the deployment records. A deliberately discarded disposable database is exempt (§6.4). **The persistent-installation part is recorded Not Applicable to the Initial Release on 2026-10-15** (§12) |
 | A3.8 | The legacy disposition behaves as SR-14 rules: an ambiguous legacy reference is refused and never adopted, and re-entering the value creates an owned secret and leaves the legacy one untouched unless the sole-holder test passes. The upgrade runbook documents the recovery procedure. A configuration-sourced SMTP reference keeps working and is pinned (P-22) |
 
 ### SEC-2.4 Entra probe telemetry (F2)
@@ -391,6 +391,8 @@ The owner approved these classes on 2026-10-13. They record **ownership and clas
 | F2 | **Not independently blocking** | SEC-2.4 | An integrity nuisance and a permission-design question. No exploit path found (§3.2). It becomes a blocker only if another exploit path is found |
 
 Program gate §1 requires an explicit ruling to promote anything; SR-15 is that ruling. The RC1 program gate's §8 register carries the same classes.
+
+*Closure note (2026-10-15).* The classes above are unchanged. Every finding in the table is now closed for the initial release (§12); U-1's blocker condition, the persistent-installation inventory, does not apply to it.
 
 ## 9. Dependencies and risk register
 
@@ -475,4 +477,26 @@ None blocks implementation. Each is settled inside the named package and recorde
 
 SEC-2.0 is **Approved / Ready for Implementation**. The gate changes no code, test, migration, contract or catalog entry, and no finding is resolved by it.
 
-SEC-2.1 is the first package in the approved order (SR-16). It was started on the owner's instruction after this gate merged, and is implemented and independently reviewed (see the [implementation record](sec2-implementation-record.md)). SEC-2.2 was then started on the owner's instruction and is implemented and independently reviewed (same record, §2); its acceptance criterion A2.7 is a rollout requirement and remains open. SEC-2.3 was then started on the owner's instruction and is implemented and independently reviewed (same record, §3); the persistent-installation part of A3.7 is the same rollout requirement. SEC-2.4 was then started on the owner's instruction and is implemented and independently reviewed (same record, §4). A2.7 and the persistent-installation part of A3.7 stay open; SEC-2.4 does not touch them.
+SEC-2.1 is the first package in the approved order (SR-16). It was started on the owner's instruction after this gate merged, and is implemented and independently reviewed (see the [implementation record](sec2-implementation-record.md)). SEC-2.2 was then started on the owner's instruction and is implemented and independently reviewed (same record, §2); its acceptance criterion A2.7 is a rollout requirement and remains open. SEC-2.3 was then started on the owner's instruction and is implemented and independently reviewed (same record, §3); the persistent-installation part of A3.7 is the same rollout requirement. SEC-2.4 was then started on the owner's instruction and is implemented and independently reviewed (same record, §4). All four packages have since merged, and A2.7 and the persistent-installation part of A3.7 are recorded Not Applicable to the Initial Release (§12).
+
+## 12. Closure (2026-10-15)
+
+SEC-2 is closed for the initial release. The [implementation record](sec2-implementation-record.md) §5 holds the evidence; this section states the outcome against the gate and changes no ruling.
+
+| Package | PR | Merge commit | Post-merge CI |
+|---|---|---|---|
+| SEC-2.1 | #29 | `8959b34` | passed |
+| SEC-2.2 | #30 | `5e27206` | passed |
+| SEC-2.3 | #31 | `e1e9b2e` | passed |
+| SEC-2.4 | #32 | `83be571` | passed |
+
+**Findings.** F1, F2 and U-3 are closed. U-1 and U-2 are closed for the initial release: their code, tests and reviews are complete, and the one requirement not met, the persistent-installation inventory (A2.7, and the persistent-installation part of A3.7), does not apply.
+
+**Why it does not apply.** The product owner confirmed on 2026-10-15 that Apperture Core has been used only for development and testing, and that no production, customer, pilot or UAT installation requires preservation or upgrade from a pre-SEC-2 build. §6.3 step 5 and §7 required the inventories for **persistent installations that existed before SEC-2**; none exists. This is recorded as **Not Applicable to the Initial Release**.
+
+**What it is not.**
+- It is **not a security risk acceptance**, and SR-15's risk-acceptance route for U-2 was not used.
+- It **does not waive** the inventory and recovery requirements for a future upgrade: for any later installation that holds connections or settings from a pre-SEC-2 build, §6.3 step 5 stands. The two inventory scripts (`scripts/sec2/`) and the [upgrade runbook](../../../03-operations/configuration-secret-ownership-upgrade.md) are preserved for that.
+- It changes nothing in §6.4 (SR-17). Resetting a disposable development database still requires its identity and disposable status to be verified first, and the legacy, poisoned-reference and upgrade regression tests stay mandatory.
+
+**Not closed here.** RC1 is not complete. The other RC1 security, functionality, operability and validation requirements stay open as the [RC1 program gate](../../rc1-program-gate.md) records them. Items the packages deferred (for example IAM-10 inputs, and the readiness question in the record's §3.10 L12) stay with their owners.
