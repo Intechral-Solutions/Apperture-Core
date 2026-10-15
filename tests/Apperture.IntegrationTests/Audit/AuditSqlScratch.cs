@@ -3,6 +3,9 @@ using Apperture.Persistence.SqlServer.Audit;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Apperture.IntegrationTests.Audit;
 
@@ -37,6 +40,35 @@ public sealed class AuditSqlScratch : IAsyncDisposable
         await using (var db = scratch.NewDb())
             await AppertureDatabaseMigrator.MigrateAsync(db);
         return scratch;
+    }
+
+    /// <summary>
+    /// A throwaway catalog migrated only as far as <paramref name="migrationId"/>, the state of an existing installation before the
+    /// next migration. Seed it with the old schema's SQL, then call <see cref="MigrateToCurrentAsync"/>. Fails, never skips,
+    /// without SQL Server.
+    /// </summary>
+    public static async Task<AuditSqlScratch> CreateAtMigrationAsync(string prefix, string migrationId)
+    {
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
+        var scratch = new AuditSqlScratch(baseConnectionString, prefix + Guid.NewGuid().ToString("N")[..12]);
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(scratch.ConnectionString);
+        await using var db = scratch.NewDb();
+        await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(migrationId);
+        return scratch;
+    }
+
+    /// <summary>Applies every pending migration through the supported entry point, as a Management Host start does.</summary>
+    public async Task MigrateToCurrentAsync()
+    {
+        await using var db = NewDb();
+        await AppertureDatabaseMigrator.MigrateAsync(db);
+    }
+
+    /// <summary>Moves the schema to <paramref name="migrationId"/>, which may be behind the current one (a rollback).</summary>
+    public async Task MigrateToAsync(string migrationId)
+    {
+        await using var db = NewDb();
+        await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(migrationId);
     }
 
     /// <summary>A context configured as production configures it: retry on failure and the recorder-row guard.</summary>
