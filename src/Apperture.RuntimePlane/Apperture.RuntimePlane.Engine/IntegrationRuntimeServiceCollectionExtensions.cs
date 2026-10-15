@@ -12,6 +12,9 @@ public static class IntegrationRuntimeServiceCollectionExtensions
     public static IServiceCollection AddAppertureIntegrationRuntimeAccessors(this IServiceCollection services)
     {
         services.AddSingleton<IIntegrationExecutionScopeAccessor, IntegrationExecutionScopeAccessor>();
+        // The accessor reads a sensitive setting's secret only through the setting-secret boundary. The host registers
+        // ISecretResolver and the audit event writer, which the boundary needs.
+        services.AddSettingSecretResolution();
         services.AddScoped<IIntegrationSettingsAccessor, IntegrationSettingsAccessor>();
         services.AddScoped<IIntegrationConnectionAccessor, IntegrationConnectionAccessor>();
         return services;

@@ -118,7 +118,7 @@ public sealed class SensitivePlatformSettingsTests
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var provisioner = new PlatformSettingSecretMaterialProvisioner(store);
-        var (existingRef, _) = await provisioner.ReplaceAsync(def.Key, "original", null);
+        var (existingRef, _) = await provisioner.ReplaceAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), "original", null);
         var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
         {
             Key = def.Key,
@@ -145,7 +145,7 @@ public sealed class SensitivePlatformSettingsTests
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var provisioner = new PlatformSettingSecretMaterialProvisioner(store);
-        var (existingRef, _) = await provisioner.ReplaceAsync(def.Key, "keep-me", null);
+        var (existingRef, _) = await provisioner.ReplaceAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), "keep-me", null);
         var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
         {
             Key = def.Key,
@@ -205,7 +205,7 @@ public sealed class SensitivePlatformSettingsTests
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var provisioner = new PlatformSettingSecretMaterialProvisioner(store);
-        var (existingRef, _) = await provisioner.ReplaceAsync(def.Key, "to-clear", null);
+        var (existingRef, _) = await provisioner.ReplaceAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), "to-clear", null);
         var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
         {
             Key = def.Key,
@@ -242,7 +242,7 @@ public sealed class SensitivePlatformSettingsTests
         var def = SmtpPasswordDef;
         var store = new InMemorySecretStore();
         var provisioner = new PlatformSettingSecretMaterialProvisioner(store);
-        var (existingRef, _) = await provisioner.ReplaceAsync(def.Key, "reset-me", null);
+        var (existingRef, _) = await provisioner.ReplaceAsync(SettingSecretOwnership.ForPlatformSetting(def.Key), "reset-me", null);
         var repo = new PlatformSettingRepositoryFake(new PlatformSettingValue
         {
             Key = def.Key,

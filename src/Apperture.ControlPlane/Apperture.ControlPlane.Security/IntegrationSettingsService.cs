@@ -32,6 +32,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     private readonly PlatformSettingSecretMaterialProvisioner _secretProvisioner;
     private readonly IIntegrationRepository _integrations;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IntegrationSettingSecretClassifier? _legacyDisposition;
 
     public IntegrationSettingsService(
         IIntegrationSettingDefinitionRegistry registry,
@@ -40,7 +41,8 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         PlatformSettingOptionProviderCoordinator optionProviderCoordinator,
         PlatformSettingSecretMaterialProvisioner secretProvisioner,
         IIntegrationRepository integrations,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IntegrationSettingSecretClassifier? legacyDisposition = null)
     {
         _registry = registry;
         _repository = repository;
@@ -49,6 +51,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         _secretProvisioner = secretProvisioner;
         _integrations = integrations;
         _auditedUnitOfWork = auditedUnitOfWork;
+        _legacyDisposition = legacyDisposition;
     }
 
     private IAuditedUnitOfWork Unit =>
@@ -108,7 +111,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingReset),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (await ResetCoreAsync(transaction, integrationId, def, ct).ConfigureAwait(false))
                     return true;
 
@@ -176,15 +181,56 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
         }
 
-        if (def.IsSensitive
-            && await _secretProvisioner.TryDisableOwnedSecretAsync(key, previousRef, ct).ConfigureAwait(false))
-        {
-            await transaction.StageAsync(
-                AuditEvents.IntegrationSettingSecretRetired(integrationId, key, "reset", resourceContextId),
-                ct).ConfigureAwait(false);
-        }
+        if (def.IsSensitive)
+            await RetireReleasedSecretAsync(transaction, integrationId, key, previousRef, "reset", resourceContextId, ct).ConfigureAwait(false);
 
         return true;
+    }
+
+    /// <summary>
+    /// Retires the secret a setting row has just released (cleared, reset, or repointed at a new secret), in the caller's transaction,
+    /// and stages the Secrets row only when one was retired. Only a secret proven to belong to the right holder is ever disabled:
+    /// the secret this very setting owns (exact provider and name), or a <i>legacy</i> secret (the instance shape for this key,
+    /// which cannot say which integration made it) on H1's evidence that nothing else, in any scope, still refers to it. Every
+    /// other secret, whoever's it is, is left exactly as it was. Without a classifier a legacy secret is simply retained.
+    /// </summary>
+    private async Task RetireReleasedSecretAsync(
+        IAuditedTransaction transaction,
+        string integrationId,
+        string key,
+        string? releasedRef,
+        string reason,
+        string? resourceContextId,
+        CancellationToken ct)
+    {
+        var retired = false;
+        try
+        {
+            retired = await _secretProvisioner
+                .TryDisableOwnedSecretAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, key), releasedRef, ct)
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            // An owner name the store cannot hold names no stored secret, so there is no owned secret to disable. Clearing and
+            // resetting must still work for such a row (a poisoned or historical one), so the legacy path below still runs.
+        }
+
+        if (!retired
+            && _legacyDisposition is not null
+            && await _legacyDisposition.FindLegacySecretToRetireAsync(key, releasedRef, ct).ConfigureAwait(false) is { } legacy)
+        {
+            retired = await _secretProvisioner
+                .TryDisableOwnedSecretAsync(SettingSecretOwnership.LegacyIntegrationSetting(key), legacy.ToString("D"), ct)
+                .ConfigureAwait(false);
+        }
+
+        if (retired)
+        {
+            await transaction.StageAsync(
+                AuditEvents.IntegrationSettingSecretRetired(integrationId, key, reason, resourceContextId),
+                ct).ConfigureAwait(false);
+        }
     }
 
     private async Task<PlatformSettingResolvedValue> SetSensitiveAsync(
@@ -224,7 +270,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -238,7 +286,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
 
                 // The secret store joins this transaction: the new version is live only once the change commits.
                 var (secretRef, createdNew) = await _secretProvisioner
-                    .ReplaceAsync(def.Key, payload.SecretValue, existingRef, ct)
+                    .ReplaceAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, def.Key), payload.SecretValue, existingRef, ct)
                     .ConfigureAwait(false);
 
                 await _repository.UpsertAsync(
@@ -265,6 +313,11 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                 await transaction.StageAsync(
                     AuditEvents.IntegrationSettingSecretStored(integrationId, def.Key, createdNew ? "created" : "replaced", resourceContextId),
                     ct).ConfigureAwait(false);
+
+                // The row now names a new secret. A reference it named before that was not this setting's own (a legacy secret, say)
+                // is released: it is retired only on H1's evidence, and every other secret is left untouched.
+                if (createdNew && !string.IsNullOrWhiteSpace(existingRef))
+                    await RetireReleasedSecretAsync(transaction, integrationId, def.Key, existingRef, "replaced", resourceContextId, ct).ConfigureAwait(false);
                 return true;
             },
             ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),
@@ -282,7 +335,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -311,13 +366,7 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
                     throw new DbUpdateConcurrencyException("Integration setting was modified by another request.");
                 }
 
-                if (await _secretProvisioner.TryDisableOwnedSecretAsync(def.Key, previousRef, ct).ConfigureAwait(false))
-                {
-                    await transaction.StageAsync(
-                        AuditEvents.IntegrationSettingSecretRetired(integrationId, def.Key, "cleared", resourceContextId),
-                        ct).ConfigureAwait(false);
-                }
-
+                await RetireReleasedSecretAsync(transaction, integrationId, def.Key, previousRef, "cleared", resourceContextId, ct).ConfigureAwait(false);
                 return true;
             },
             ct => _resolver.GetResolvedAsync(integrationId, def.Key, ct),
@@ -341,7 +390,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             async (transaction, ct) =>
             {
                 // Before the provider's options are read: they describe the integration, which is now fixed until the commit.
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
                 {
                     IReadOnlyList<PlatformSettingAllowedValue> options;
@@ -461,19 +512,22 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     /// exist, then re-runs the caller's authorization against it. Must be the first act of an attempt, after the unit's operation
     /// lock; the helper opens no transaction of its own and the lock is released only by the unit's commit or rollback.
     /// </summary>
-    private async Task LockIntegrationAsync(
+    /// <returns>The integration's id as it is stored, which is the spelling its secrets' owner names are built from.</returns>
+    private async Task<string> LockIntegrationAsync(
         string integrationId,
         Func<CancellationToken, ValueTask>? reauthorize,
         CancellationToken cancellationToken)
     {
         // Untracked, so a rerun of the attempt after a verified rollback reads the row afresh.
-        if (await _integrations.GetByIdForUpdateAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false) is null)
-            throw new KeyNotFoundException($"Integration {integrationId} not found.");
+        var integration = await _integrations.GetByIdForUpdateAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Integration {integrationId} not found.");
 
         // The row is now fixed until the commit: an ownership move that committed before the lock is visible to this check, and
         // none can commit after it.
         if (reauthorize is not null)
             await reauthorize(cancellationToken).ConfigureAwait(false);
+
+        return integration.Id.Value;
     }
 
     private async ValueTask<string?> ResolveResourceContextIdAsync(string integrationId, CancellationToken cancellationToken)

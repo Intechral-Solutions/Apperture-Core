@@ -46,7 +46,7 @@ public sealed class EmailNotificationOptionsTests
     public async Task Credential_resolver_uses_secret_ref_when_configured()
     {
         var secretId = "550e8400-e29b-41d4-a716-446655440000";
-        var resolver = new StubSecretResolver(secretId, "smtp-secret");
+        var resolver = new StubSettingSecretResolver(secretId, "smtp-secret");
         var sut = new EmailSmtpCredentialResolver(NullLogger<EmailSmtpCredentialResolver>.Instance, resolver);
         var password = await sut.ResolvePasswordAsync(new EmailNotificationOptions { SmtpPasswordRef = secretId });
         password.Should().Be("smtp-secret");
@@ -56,7 +56,7 @@ public sealed class EmailNotificationOptionsTests
     public async Task Credential_resolver_prefers_plain_password_over_ref()
     {
         var secretId = "550e8400-e29b-41d4-a716-446655440000";
-        var resolver = new StubSecretResolver(secretId, "from-ref");
+        var resolver = new StubSettingSecretResolver(secretId, "from-ref");
         var sut = new EmailSmtpCredentialResolver(NullLogger<EmailSmtpCredentialResolver>.Instance, resolver);
         var password = await sut.ResolvePasswordAsync(new EmailNotificationOptions
         {
@@ -94,18 +94,19 @@ public sealed class EmailNotificationOptionsTests
             Task.FromResult(_values.TryGetValue(key, out var v) ? v : null);
     }
 
-    private sealed class StubSecretResolver(string expectedId, string password) : ISecretResolver
+    /// <summary>A reference supplied by deployment configuration is trusted: only the deployment-configured call resolves it.</summary>
+    private sealed class StubSettingSecretResolver(string expectedId, string password) : ISettingSecretResolver
     {
-        public ValueTask<ResolvedSecret> ResolveAsync(SecretRef secretRef, CancellationToken cancellationToken = default)
+        public ValueTask<string> ResolveDeploymentConfiguredAsync(string reference, CancellationToken cancellationToken = default)
         {
-            secretRef.Value.Should().Be(expectedId);
-            return new ValueTask<ResolvedSecret>(new ResolvedSecret(
-                secretRef,
-                new SecretMaterial(SecretMaterialType.OpaqueString, OpaqueString: password)));
+            reference.Should().Be(expectedId);
+            return new ValueTask<string>(password);
         }
 
-        // The SMTP password is a setting, not a connection field: nothing here resolves through an owner.
-        public ValueTask<ResolvedSecret> ResolveOwnedAsync(SecretRef secretRef, SecretOwner owner, CancellationToken cancellationToken = default) =>
+        public ValueTask<string> ResolveIntegrationSettingAsync(string integrationId, string key, string? reference, SettingSecretResolutionPath path, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask<string> ResolvePlatformSettingAsync(string key, string? reference, SettingSecretResolutionPath path, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 }

@@ -60,8 +60,7 @@ public sealed class IntegrationSettingSecretRetirement
             var secretId = new SecretId(planned.SecretId);
             var descriptor = await _secretStore.GetAsync(secretId, cancellationToken).ConfigureAwait(false);
             if (descriptor is null
-                || !string.Equals(descriptor.Provider, PlatformSettingSecretMaterialProvisioner.SecretProvider, StringComparison.Ordinal)
-                || !string.Equals(descriptor.Name, PlatformSettingSecretMaterialProvisioner.BuildSecretName(planned.SettingKey), StringComparison.Ordinal)
+                || !planned.Owner.Matches(descriptor.Provider, descriptor.Name)
                 || descriptor.State is SecretState.Disabled or SecretState.Revoked)
             {
                 continue;

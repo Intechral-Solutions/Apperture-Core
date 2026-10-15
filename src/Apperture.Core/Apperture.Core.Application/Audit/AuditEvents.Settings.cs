@@ -115,6 +115,24 @@ public static partial class AuditEvents
         SettingEvent(AuditActionNames.IntegrationSettingSecretRetired, integrationId, key, resourceContextId,
             ("integrationId", integrationId), ("key", key), ("reason", reason));
 
+    /// <summary>
+    /// An integration setting's secret was refused because the reference in its row does not name a secret that setting owns
+    /// (attempt; nothing was delivered). Only the kind of operation is recorded (the setting is the target): never the reference,
+    /// the secret that was found, who owns it, or which of the refusing conditions applied.
+    /// </summary>
+    public static AuditEvent IntegrationSettingSecretResolutionRefused(string integrationId, string key, string path, string? resourceContextId = null) =>
+        AuditEvent.Create(
+            AuditActionCatalog.Default.Get(AuditActionNames.IntegrationSettingSecretResolutionRefused),
+            Target(AuditTargetTypes.IntegrationSetting, IntegrationSettingTargetId(integrationId, key)),
+            AuditOutcomeCodes.Rejected,
+            Fields(("path", path)),
+            new AuditRelatedReferences(ResourceContextId: BoundedId(resourceContextId, AuditLogResourceContextIdLength)));
+
+    /// <summary>As <see cref="IntegrationSettingSecretResolutionRefused"/>, for an instance setting.</summary>
+    public static AuditEvent PlatformSettingSecretResolutionRefused(string key, string path) =>
+        Event(AuditActionNames.PlatformSettingSecretResolutionRefused, Target(AuditTargetTypes.PlatformSetting, key), AuditOutcomeCodes.Rejected,
+            ("path", path));
+
     private static AuditEvent SettingEvent(
         string action,
         string integrationId,

@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Notifications.Delivery;
+using Apperture.Core.Application.PlatformSettings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -35,7 +36,9 @@ public sealed class AccountSecurityMailSender : IAccountSecurityMailSender
         if (string.IsNullOrWhiteSpace(options.SmtpHost) || string.IsNullOrWhiteSpace(options.FromAddress))
             return new AccountSecurityMailResult(false, AccountSecurityErrorCodes.SmtpNotConfigured);
 
-        var password = await _credentials.ResolvePasswordAsync(options, cancellationToken).ConfigureAwait(false);
+        var password = await _credentials
+            .ResolvePasswordAsync(options, SettingSecretResolutionPath.Management, cancellationToken)
+            .ConfigureAwait(false);
         var request = new EmailNotificationSendRequest(recipient, subject, plainTextBody);
         var result = await SmtpEmailTransport.SendAsync(options, password, request, _logger, cancellationToken)
             .ConfigureAwait(false);
@@ -51,6 +54,8 @@ public sealed class AccountSecurityMailSender : IAccountSecurityMailSender
         SmtpUser = source.SmtpUser,
         SmtpPassword = source.SmtpPassword,
         SmtpPasswordRef = source.SmtpPasswordRef,
+        // The source travels with the reference: a row-sourced reference copied without it would be read as a trusted one.
+        SmtpPasswordRefSource = source.SmtpPasswordRefSource,
         FromAddress = source.FromAddress,
         FromDisplayName = string.IsNullOrWhiteSpace(source.FromDisplayName)
             ? "Apperture"
