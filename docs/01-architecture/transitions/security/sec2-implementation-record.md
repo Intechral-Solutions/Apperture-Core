@@ -5,7 +5,7 @@
 | Date | 2026-10-13 |
 | Contract | [SEC-2.0 design gate](sec2-configuration-secret-and-operator-boundary-design-gate.md), approved 2026-10-13. The gate is binding; this record states what was built against it and the evidence. It changes no ruling. |
 | Baseline | `master` at `8f795f0` (PR #28, the SEC-2.0 merge) |
-| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented and merged** (PR #30, `master` at `5e27206`; U-3 closed and the code side of U-1; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded, A2.7, open**). **SEC-2.3 implemented** on branch `sec-2.3-setting-secret-ownership` (base `5e27206`), with an independent review (§3.11). It closes the code side of U-2 when its pull request merges and CI is green; **A2.7 stays an open rollout condition (§3.8).** **SEC-2.3 merged** (PR #31, `master` at `e1e9b2e`). **SEC-2.4 implemented** on branch `sec-2.4-entra-probe-telemetry` (base `e1e9b2e`), with an independent review (§4.8). F2 closes only when its pull request merges and the result is verified; **A2.7 and the persistent-installation part of A3.7 are untouched and stay open.** |
+| State | **SEC-2 is closed for the initial release (2026-10-15; §5).** All four packages are merged (PR #29 to #32, `master` at `83be571`) and each merge passed post-merge CI. F1, F2, U-1, U-2 and U-3 are closed. A2.7 and the persistent-installation part of A3.7 are recorded **Not Applicable to the Initial Release** on the product owner's installation-inventory determination (§5.2); that is not a security risk acceptance, and the inventories and the upgrade runbook are kept for any later installation. This does not make RC1 complete. |
 
 This record grows one section per package. Each package starts on the owner's instruction (gate §6.3).
 
@@ -131,7 +131,7 @@ Not verified by the reviewer, and not covered by a test: the 500 `outcome_unknow
 - **First run** (`589a50a`, run 38516164828): `browser-security` passed; `build-and-test` failed on one test, `AuditDetailSchemaTests.No_field_kind_carries_a_credential_secret_or_search_value`. It is a catalog-wide guard I had not run locally (my focused runs did not include that class). It whitelists the parameter types of the typed audit producers, and the new producer takes a `DateTimeOffset` (the incident's start time, the approved `Timestamp` field kind). No other test failed in that run. The guard now allows `DateTimeOffset` with a note on why it carries no credential, secret or search value.
 - After that fix the whole `Apperture.UnitTests.Audit` namespace (370 tests) passes locally.
 - **Second run** (`ee32ca2`, run 38519081730): `browser-security` passed; `build-and-test` failed on one of the new bUnit tests, `Acknowledging_sends_the_request_without_a_note_and_reloads_the_history`. It passed locally. The test verified the client call immediately after a click, but bUnit dispatches the click on the renderer, so on a slower runner the call had not been made yet. This was a timing assumption in the new test, not a product defect. The test now waits for the call, as the other tests of that class already did; the class passes six consecutive local runs.
-- Final CI result: see the pull request.
+- Final CI result: merged as PR #29 (`8959b34`); post-merge CI on `master` passed (run 38530238681). See §5.1.
 
 ---
 
@@ -195,7 +195,7 @@ Not verified by the reviewer, and not covered by a test: the 500 `outcome_unknow
 | A2.4 | Met | One row per call at every entry point, including a connection with two poisoned fields (the first in ordinal order is named) and three attempts writing three rows; the right actor (the worker, with no principal context at all, or the operator) and `path`. With a writer that throws, one that reports failure, and the real writer pointed at a missing database: the refusal stands, nothing is sent, nothing is unprotected, and there is no row. |
 | A2.5 | Met | An owned connection reaches its destination on every path and writes no refusal row. `For_a_secret_the_connection_owns_the_owned_call_agrees_with_the_unchecked_one_in_every_lifecycle_state` (active, pinned to an unknown version, disabled, revoked, a new version never activated) and the rotation and pinned-version tests show the lifecycle is unchanged; the protector receives the key id stored on the version row; the store runs the same two statements (descriptor, then version) as the unchecked path, asserted by statement count (K-2). |
 | A2.6 | Met | `ConnectionSecretOwnershipInventorySqlServerTests`, both isolation modes: 28 seeded problem rows (every class; a retired connection; non-string and null values; an unreadable map; every GUID spelling `Guid.TryParse` accepts; padding; text after a GUID; the hexadecimal form; a name that differs only by trailing spaces) are returned exactly, with the right class. Owned secrets written in other spellings, a clean catalog and an empty one return nothing. It runs as a database user with SELECT on the three tables only, changes nothing, and is repeatable. |
-| A2.7 | **Not met; a rollout requirement** | No persistent installation database is named in the deployment records in this repository (`deploy/` and `docs/03-operations/` hold only the development and example connection strings), so none was enumerated and none is invented. The script was run read-only against the four persistent **test-fixture** databases on the local test SQL container (`Apperture_BootstrapHttpTests`, `Apperture_BrowserTests`, `Apperture_IntegrationTests`, `Apperture_ManagementGovernanceTests`) and returned no row for each; they are fixtures, not installations, and are not evidence for A2.7. **U-1 therefore stays an RC1 blocker (gate §8) until each persistent installation's database has been inventoried and each listed row's disposition recorded here.** |
+| A2.7 | **Not met when this was recorded; since recorded Not Applicable to the Initial Release (§5.2).** The text below is the evidence as recorded at SEC-2.2 | No persistent installation database is named in the deployment records in this repository (`deploy/` and `docs/03-operations/` hold only the development and example connection strings), so none was enumerated and none is invented. The script was run read-only against the four persistent **test-fixture** databases on the local test SQL container (`Apperture_BootstrapHttpTests`, `Apperture_BrowserTests`, `Apperture_IntegrationTests`, `Apperture_ManagementGovernanceTests`) and returned no row for each; they are fixtures, not installations, and are not evidence for A2.7. **U-1 therefore stays an RC1 blocker (gate §8) until each persistent installation's database has been inventoried and each listed row's disposition recorded here.** |
 | A2.8 | Met | `ManagementHostConnectionSecretFieldsHttpTests` through the real Management host: list, detail, create (201), `PATCH` (rename and rotation) and test-connect carry no reference in any spelling, no `secretRefs` property and no secret value, and each carries `secretFields` with exactly `key` and `configured`. A declared field with nothing stored reads `configured: false`; an undeclared stored key is listed; a blank reference is `false`. No other API serializes a `Connection` (searched). |
 | A2.9 | Met | `PATCH` with `secretRefs` (non-empty, empty, with other fields) is a 400 naming both replacements and changes nothing. `secretValues` on a foreign field creates and repoints (unit, SQL, HTTP, and the M6 matrix with a new `RepairForeign` operation: audit failure, lost acknowledgement, confirmed rollback rerun, unknown outcome, lock not granted); the foreign secret's descriptor, versions, payloads and `SecretAudits` count are identical before and after, and a unit test records that only its descriptor is read. `clearSecretFields` clears declared and undeclared keys, is idempotent, and rejects unknown keys, blanks, a cleared-and-set field and a required field with a 400; both operations need `connection.update` (403 otherwise). |
 | A2.10 | Met | `ConnectionWorkspacePresentationTests`, `ConnectionWorkspaceRenderTests` and bUnit `ConnectionLegacySecretFieldUiTests`: Set and Not set from `secretFields`; an undeclared legacy field (and a stored secret that shares a key with a plain field) shown with a Remove action only for an operator who may update connections; the click sending exactly `ClearSecretFields` and reloading. `docs/04-api/contracts.md` carries the contract and the compatibility note. |
@@ -225,7 +225,7 @@ Counts are from this branch after the review remediation. Heavy suites were run 
 
 | # | Item |
 |---|---|
-| L1 | **A2.7 is open** (see the matrix). The inventory is a pre-upgrade step for each persistent installation. Enforcement does not wait on it (gate §6.3), so a connection with a poisoned reference fails after upgrade until it is repaired with `secretValues` or `clearSecretFields`. |
+| L1 | **A2.7 was open** (see the matrix); recorded Not Applicable to the Initial Release on 2026-10-15 (§5.2). The inventory is a pre-upgrade step for each persistent installation. Enforcement does not wait on it (gate §6.3), so a connection with a poisoned reference fails after upgrade until it is repaired with `secretValues` or `clearSecretFields`. |
 | L2 | **No persistent database was reset or modified.** The only databases created or dropped are the tests' uniquely named throwaway catalogs. The host HTTP tests write to `Apperture_ManagementGovernanceTests`, remove the connections and secrets they create, and leave only audit rows (append-only). The primary development database was not touched. |
 | L3 | **The inventory needs compatibility level 130** (`OPENJSON`, `ISJSON`) and recognizes `Guid.TryParse`'s forms by pattern. Only the hexadecimal form is reported as `check_by_hand`. |
 | L4 | **Settings and Entra secrets are not covered** (gate §1). `IntegrationSettingsAccessor`, the SMTP resolver and the Entra client secret still call the unchecked `ResolveAsync`; SEC-2.3 and K-3 own them. |
@@ -256,7 +256,7 @@ Not verified by the reviewer: it could not run SQL Server (F-1's premise was ver
 
 ### 2.8 CI
 
-Final CI result: see the pull request.
+Final CI result: merged as PR #30 (`5e27206`); post-merge CI on `master` passed (run 38571765409). See §5.1.
 
 ---
 
@@ -316,7 +316,7 @@ All SQL cases run on a locking READ COMMITTED catalog and a READ_COMMITTED_SNAPS
 | A3.4 | Met | SQL `The_runtime_accessor_refuses_a_reference_that_is_not_owned_before_any_foreign_payload_is_read_and_the_module_sees_not_configured`, eight kinds on both modes: a recording protector shows nothing is unprotected, the command log shows no query touches `SecretVersions`, the victim's snapshot is unchanged, the module gets `missing_secret`, nothing in the error names the reference, and exactly one W3 row is written (category `secrets`, elevated, outcome `rejected`, target the integration setting, the worker as actor, `path` `run`, the integration's context, and no reference, owner or secret name in any cell). `A_refusal_stands_and_nothing_foreign_is_read_when_the_evidence_cannot_be_written` (a writer that throws). SMTP: `A_row_sourced_smtp_reference_to_a_foreign_secret_reads_as_no_password…` (the operator is the actor, `path` `management`), `…to_the_instance_settings_own_secret_resolves`, and `A_deployment_configured_smtp_reference_is_outside_the_row_rule_and_keeps_working_whatever_secret_it_names`. Unit: `SettingSecretResolverTests` (owner passed, one row per call, actor and path, evidence failure, no leakage), `IntegrationSettingsAccessorSecretTests`, `SmtpPasswordRefOwnershipTests` (including the overlay feeding the resolver). |
 | A3.5 | Met | SQL `A_foreign_guid_stored_as_ordinary_text_is_refused_at_read_once_the_key_becomes_sensitive` (the key is read as ordinary text first, then declared sensitive), `…_is_not_versioned_by_a_replace_after_the_key_becomes_sensitive`, and `Text_that_is_not_a_guid_is_refused_at_read_…`. |
 | A3.6 | Met | Unit `IntegrationSettingSecretOwnershipDispositionTests` (the plan accepts the integration-specific name, refuses another key's and another integration's, retains one the other integration still holds, never retires another provider's, and the retirement re-checks the proven owner). SQL `IntegrationSettingSecretDispositionSqlServerTests.OwnerNames` (seven cases) next to the existing suite, whose legacy fixtures pass unchanged. |
-| A3.7 | Met for the code; **the persistent-installation part is a rollout condition** (§3.8) | `SettingSecretOwnershipInventorySqlServerTests`: the script returns exactly the seeded problem rows with the right class, owner details and H1 evidence (sole holder, other holders by kind), every spelling of a foreign reference, ids and keys that carry the delimiter and the escape character (clean, so the script's escaping equals the platform's), and nothing for a clean or empty catalog; it runs as a database user that has `SELECT` on the five tables and nothing else, changes nothing and is repeatable; a static test pins that it contains no write, `DECLARE`, `INTO`, temporary table or database name and never selects a payload. |
+| A3.7 | Met for the code; **the persistent-installation part was a rollout condition** (§3.8), **since recorded Not Applicable to the Initial Release (§5.2)** | `SettingSecretOwnershipInventorySqlServerTests`: the script returns exactly the seeded problem rows with the right class, owner details and H1 evidence (sole holder, other holders by kind), every spelling of a foreign reference, ids and keys that carry the delimiter and the escape character (clean, so the script's escaping equals the platform's), and nothing for a clean or empty catalog; it runs as a database user that has `SELECT` on the five tables and nothing else, changes nothing and is repeatable; a static test pins that it contains no write, `DECLARE`, `INTO`, temporary table or database name and never selects a payload. |
 | A3.8 | Met | SQL `An_ambiguous_legacy_reference_is_refused_at_read_and_never_adopted_or_renamed`, `Re_entering_the_value_of_a_shared_legacy_row_creates_an_owned_secret_and_retains_the_legacy_one_until_the_last_holder_has_moved`, `…_of_a_sole_holder_legacy_row_retires_the_legacy_secret`, `A_legacy_secret_that_any_other_holder_still_refers_to_is_never_retired_by_a_re_entry` (instance row, connection, Entra registration), `Clearing_or_resetting_a_sole_holder_legacy_row_…`, `A_legacy_secret_named_for_another_key_is_never_retired_…`, and the race `Two_integrations_re_entering_a_shared_legacy_secret_at_once_…`. The configuration-sourced SMTP reference is pinned by `A_reference_that_deployment_configuration_supplied_stays_outside_the_row_rule_and_keeps_working` (unit) and the SQL case above. The recovery procedure is `docs/03-operations/configuration-secret-ownership-upgrade.md`. |
 | M6 | Met | `SettingsAuditSqlServerTests` runs the five M6 obligations (audit insert failure leaves nothing; a lost acknowledgement is verified, not run again; a confirmed rollback reruns once; an unknown outcome is wholly committed or wholly absent; the operation lock is not granted) for three new operations: a replace over another integration's secret (repoint), a re-entry over a sole-holder legacy secret (new secret, repoint and retirement), and a clear of a sole-holder legacy row. Each asserts the setting row, both secrets, the store's own evidence and the audit rows. The existing integration secret cases now seed the owner the setting defines. |
 
@@ -391,6 +391,8 @@ The recovery path for an operator is the one the gate approved (P-21, SR-14): in
 
 No database name was invented, nothing was marked closed, and no database was inspected beyond the throwaway catalogs the tests create.
 
+**Update, 2026-10-15.** The owner has since made the statement in option 2. A2.7 and the persistent-installation part of A3.7 are recorded Not Applicable to the Initial Release in §5.2. The assessment above is unchanged.
+
 ### 3.9 Database safeguards
 
 - No development, shared, persistent or production database was reset, reseeded, migrated or written to by hand. SR-17 was not exercised.
@@ -402,7 +404,7 @@ No database name was invented, nothing was marked closed, and no database was in
 
 | # | Item |
 |---|---|
-| L1 | **A2.7 is open** (§3.8). Enforcement does not wait on the inventories (gate §6.3), so a setting row that names a foreign secret reads as not configured after the upgrade until its value is re-entered. |
+| L1 | **A2.7 was open** (§3.8); recorded Not Applicable to the Initial Release on 2026-10-15 (§5.2). Enforcement does not wait on the inventories (gate §6.3), so a setting row that names a foreign secret reads as not configured after the upgrade until its value is re-entered. |
 | L2 | **An instance row that names the legacy integration shape for the same key is indistinguishable from an owned one** (D2; accepted by P-18). |
 | L3 | **Readiness reports presence only** (D13): an integration whose row names a foreign secret reads as configured and fails closed at run, with an audited refusal. |
 | L4 | **`IsSecretConfigured` is presence** (D5). |
@@ -438,7 +440,7 @@ Not verified by the reviewer, and checked afterwards: that `DeleteScopedAsync` a
 - **First run** (`409f8c4`, run 38666014704): `browser-security` passed; `build-and-test` failed 150 tests, every one in the Management Host classes that use the governance fixture (`ManagementHostReliabilitySmokeTests`, `ManagementHostGovernanceHttpTests`, `BrowserRequestTrustHttpTests`, `ManagementHostConnectionToolsHttpTests`, `ManagementHostConnectionSecretFieldsHttpTests`, `ManagementHostIntegrationConfigurationHttpTests`, `ManagementHostAttentionIncidentAcknowledgementHttpTests`, `ManagementHostBreakGlassHttpTests`). Each reported that no SQL connection string was configured and that it had tried LocalDB. The other 1,924 integration tests passed, and the same classes passed in both of my full local runs.
 - **Cause.** Nothing in SEC-2.3 reads or sets that variable. `SqlServerTestConfigurationTests` clears and sets process-wide environment variables (`APPERTURE_TEST_SQL` among them) and had no collection, so xUnit ran it in parallel with the governance fixture, which reads `APPERTURE_TEST_SQL` when it starts. The log has the two within 200 ms of each other at the start of the run (the configuration tests passing at 01:33:27.09, the first fixture failure at 01:33:27.27). It is a latent race that the added test classes' ordering most likely exposed. **It did not reproduce locally in three attempts**, so the explanation rests on the log and on reading the code, not on a red-then-green run.
 - **Fix.** `SqlServerTestConfigurationTests` joins the existing serialized `SqlServerIntegration` collection, so it runs alone. It is one attribute, in a test file this package had not otherwise touched.
-- Final CI result: see the pull request.
+- Final CI result: merged as PR #31 (`e1e9b2e`); post-merge CI on `master` passed (run 38689265804). See §5.1.
 
 ---
 
@@ -551,7 +553,7 @@ Not assessed by the reviewer: it ran no build or test, so it could not confirm t
 
 | # | Item |
 |---|---|
-| L1 | **A2.7 and the persistent-installation part of A3.7 are open and untouched.** SEC-2.4 shares nothing with them. They close only on the owner's applicability determination and evidence. |
+| L1 | **A2.7 and the persistent-installation part of A3.7 were open and untouched.** SEC-2.4 shares nothing with them. They were to close only on the owner's applicability determination and evidence, which was made on 2026-10-15: Not Applicable to the Initial Release (§5.2). |
 | L2 | **`Down` replaces the `rowversion` of every registration row** (the copy-back is an update). `UpdatedUtc` is not changed. A rollback invalidates open edit forms, which is acceptable for a rollback. The upgrade does not replace the rowversion. |
 | L3 | **The fallback insert is not independent of the registration row** (M-3). It exists only for a registration that has no diagnostics row. |
 | L4 | **Stored remote text is unchanged in content** (M-5). Whatever Graph or the discovery service puts in the summary or detail is stored, now bounded to the column lengths. The directory service's treatment of that text is a separate matter. |
@@ -562,4 +564,69 @@ Not assessed by the reviewer: it ran no build or test, so it could not confirm t
 
 ### 4.10 CI
 
-Final CI result: see the pull request.
+Final CI result: merged as PR #32 (`83be571`); post-merge CI on `master` passed (run 38755362855). See §5.1.
+
+---
+
+## 5. SEC-2 closure (2026-10-15)
+
+A documentation-only closure. It changes no code, test, migration, script or contract, and it changes none of the design decisions or acceptance evidence recorded above.
+
+### 5.1 Merged checkpoints
+
+| Package | Finding | PR | Merge commit | Post-merge CI on `master` |
+|---|---|---|---|---|
+| SEC-2.1 | F1 | #29 | `8959b34` | passed (run 38530238681) |
+| SEC-2.2 | U-1, U-3 | #30 | `5e27206` | passed (run 38571765409) |
+| SEC-2.3 | U-2 | #31 | `e1e9b2e` | passed (run 38689265804) |
+| SEC-2.4 | F2 | #32 | `83be571` | passed (run 38755362855) |
+
+`83be571` is the `master` head at the time of this closure. The runs are the push-triggered `CI` workflow on each merge commit.
+
+### 5.2 Installation inventory determination (product owner)
+
+The product owner confirmed on 2026-10-15 that:
+
+- Apperture Core has been used only for development and testing.
+- No production, customer, pilot or UAT installation exists that must be preserved or upgraded from a pre-SEC-2 build.
+
+This is the statement §3.8 named as the way to close A2.7 (its option 2). It is recorded as follows:
+
+| Item | Disposition |
+|---|---|
+| A2.7 (persistent-installation inventory for the connection secret ownership rule) | **Not Applicable to the Initial Release**, on the owner's confirmation |
+| A3.7, persistent-installation part (the same, for setting secrets) | **Not Applicable to the Initial Release**, on the owner's confirmation |
+| A3.7, code part | Met, as recorded in §3.4 and unchanged |
+
+What this is not:
+
+- **It is not a security risk acceptance.** Nothing was found and accepted; the criterion does not apply because there is no installation to inventory.
+- **It does not waive the approved inventory and recovery requirements for a future upgrade.** If an installation ever exists that holds connections or settings from a pre-SEC-2 build, the inventories, each row's disposition and the recovery procedure are required for it (gate §6.3, step 5).
+- It does not touch the SR-17 safeguards for a disposable development database (gate §6.4). A database that is deliberately discarded needs no historical-data remediation, and a reset still requires its identity and disposable status to be verified first.
+
+Preserved, unchanged:
+
+- `scripts/sec2/Get-ConnectionSecretOwnershipInventory.sql`
+- `scripts/sec2/Get-SettingSecretOwnershipInventory.sql`
+- [the upgrade runbook](../../../03-operations/configuration-secret-ownership-upgrade.md)
+
+The legacy, poisoned-reference and upgrade regression tests stay mandatory (gate §6.4); a reseeded database does not substitute for them.
+
+### 5.3 Finding closure for the initial release
+
+| Finding | Package | Status | What completed it | What is not applicable |
+|---|---|---|---|---|
+| F1 | SEC-2.1 | **Closed** | Implemented (§1), independently reviewed (§1.7), merged (PR #29) with post-merge CI passing | |
+| F2 | SEC-2.4 | **Closed** | Implemented (§4), independently reviewed (§4.8), merged (PR #32) with post-merge CI passing. Its remaining question, who may search the directory, was always an IAM-10.0 input (gate P-9, SR-9) and is not part of this closure | |
+| U-1 | SEC-2.2 | **Closed for the initial release** | Implemented (§2), independently reviewed (§2.7), merged (PR #30) with post-merge CI passing | A2.7, the persistent-installation inventory. This was the condition that kept U-1 an RC1 blocker (gate §8); it no longer applies (§5.2) |
+| U-2 | SEC-2.3 | **Closed for the initial release** | Implemented (§3), independently reviewed (§3.11), merged (PR #31) with post-merge CI passing. No risk acceptance under SR-15 was needed or made | The persistent-installation part of A3.7 (§5.2) |
+| U-3 | SEC-2.2 | **Closed** | Shipped with SEC-2.2 (§2), as the gate required | |
+
+"Closed for the initial release" means the code, tests, evidence and review are complete, and the only requirement not met is one the owner has determined has no subject in the initial release. The two inventory scripts and the runbook remain the required procedure for any later upgrade.
+
+### 5.4 What this does not close
+
+- **RC1 is not complete.** SEC-2 closes five findings from the AUD-1.4 record. RC1's other security, functionality, operability and validation requirements stay open as the [RC1 program gate](../../rc1-program-gate.md) records them, including IAM-10 and IAM-11, OPS-1 and RCV-1.
+- **The limitations recorded in each package stay as written**: §1.6, §2.6, §3.10 (including L12, the readiness-reports-presence decision still wanted from the owner) and §4.9. Closing a finding does not retire them.
+- The AUD-1.4 record's §19.7 is a historical statement of the findings and is left as written.
+- A development database reset, if the owner chooses one, is a separate operation under SR-17. This record does not describe one and none was made as part of this change.
