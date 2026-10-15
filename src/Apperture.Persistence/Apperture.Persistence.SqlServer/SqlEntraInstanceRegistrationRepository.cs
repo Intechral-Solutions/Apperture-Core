@@ -1,31 +1,48 @@
 using Apperture.Core.Application.Services;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace Apperture.Persistence.SqlServer;
 
+/// <summary>
+/// The Entra registrations. A registration's configuration lives in <c>EntraInstanceRegistrations</c>; the outcome of its latest
+/// OpenID validation and directory discovery lives in <c>EntraRegistrationDiagnostics</c> (SEC-2.4). The two probe methods below
+/// are operational telemetry and write the diagnostics table only: they never update the registration row, so they leave its
+/// <c>UpdatedUtc</c> and <c>rowversion</c> alone and cannot make an administrator's save fail. A read joins the two, so a
+/// registration still carries the diagnostics it always did.
+/// </summary>
 public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegistrationRepository
 {
+    private const int SqlDuplicateKey = 2627;
+    private const int SqlDuplicateUniqueIndex = 2601;
+    private const int SqlForeignKeyViolation = 547;
+    private const int SummaryMaxLength = 512;
+    private const int DetailMaxLength = 4000;
+
     private readonly AppertureDbContext _db;
 
     public SqlEntraInstanceRegistrationRepository(AppertureDbContext db) => _db = db;
 
+    private IQueryable<EntraInstanceRegistrationEntity> ReadModel() =>
+        _db.EntraInstanceRegistrations.AsNoTracking().Include(x => x.Diagnostics);
+
     public async Task<EntraInstanceRegistration?> GetActiveAsync(CancellationToken cancellationToken = default)
     {
-        var e = await _db.EntraInstanceRegistrations.AsNoTracking()
+        var e = await ReadModel()
             .FirstOrDefaultAsync(x => x.IsActive, cancellationToken);
         return e is null ? null : ToDomain(e);
     }
 
     public async Task<EntraInstanceRegistration?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        var e = await _db.EntraInstanceRegistrations.AsNoTracking()
+        var e = await ReadModel()
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         return e is null ? null : ToDomain(e);
     }
 
     public async Task<IReadOnlyList<EntraInstanceRegistration>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var list = await _db.EntraInstanceRegistrations.AsNoTracking()
+        var list = await ReadModel()
             .OrderByDescending(x => x.IsActive)
             .ThenBy(x => x.DisplayName)
             .ToListAsync(cancellationToken);
@@ -57,16 +74,20 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             UpdatedUtc = now,
             AzureTenantId = registration.AzureTenantId,
             AuthenticationContextId = registration.AuthenticationContextId,
-            OpenIdConfigurationStatus = (int)openIdStatus,
-            LastOpenIdValidationUtc = registration.LastOpenIdValidationUtc,
-            LastOpenIdValidationSummary = registration.LastOpenIdValidationSummary,
-            LastOpenIdValidationDetail = registration.LastOpenIdValidationDetail,
-            DirectoryDiscoveryStatus = (int)dirStatus,
-            LastDirectoryDiscoveryUtc = registration.LastDirectoryDiscoveryUtc,
-            LastDirectoryDiscoverySummary = registration.LastDirectoryDiscoverySummary,
-            LastDirectoryDiscoveryDetail = registration.LastDirectoryDiscoveryDetail,
             AllowMemberAccessRequests = registration.AllowMemberAccessRequests,
-            AllowGuestAccessRequests = registration.AllowGuestAccessRequests
+            AllowGuestAccessRequests = registration.AllowGuestAccessRequests,
+            // The diagnostics row is created with the registration, in the same save, so every registration has one.
+            Diagnostics = new EntraRegistrationDiagnosticsEntity
+            {
+                OpenIdConfigurationStatus = (int)openIdStatus,
+                LastOpenIdValidationUtc = registration.LastOpenIdValidationUtc,
+                LastOpenIdValidationSummary = registration.LastOpenIdValidationSummary,
+                LastOpenIdValidationDetail = registration.LastOpenIdValidationDetail,
+                DirectoryDiscoveryStatus = (int)dirStatus,
+                LastDirectoryDiscoveryUtc = registration.LastDirectoryDiscoveryUtc,
+                LastDirectoryDiscoverySummary = registration.LastDirectoryDiscoverySummary,
+                LastDirectoryDiscoveryDetail = registration.LastDirectoryDiscoveryDetail
+            }
         };
         _db.EntraInstanceRegistrations.Add(e);
         await _db.SaveChangesAsync(cancellationToken);
@@ -150,6 +171,11 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    // Operational telemetry (SEC-2.4, gate P-7, P-8, P-10): no audit row, and no write to the registration table. Each outcome is
+    // one set-based statement on the diagnostics row alone, so a probe is not a read-modify-write that could overwrite the other
+    // probe's columns, and the last probe to finish is the one recorded. The common path does not even read the registration; the
+    // fallback that creates a missing diagnostics row reads it (for its id) and writes nothing to it.
+
     public async Task UpdateOpenIdValidationOutcomeAsync(
         string id,
         OpenIdConfigurationStatus status,
@@ -158,17 +184,37 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         string? detail,
         CancellationToken cancellationToken = default)
     {
-        var e = await _db.EntraInstanceRegistrations
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (e is null)
-            return;
-
-        e.OpenIdConfigurationStatus = (int)status;
-        e.LastOpenIdValidationUtc = validatedUtc;
-        e.LastOpenIdValidationSummary = summary;
-        e.LastOpenIdValidationDetail = detail;
-        e.UpdatedUtc = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken);
+        var statusValue = (int)status;
+        summary = Bound(summary, SummaryMaxLength);
+        detail = Bound(detail, DetailMaxLength);
+        await RecordAsync(
+            update: () => _db.EntraRegistrationDiagnostics
+                .Where(d => d.RegistrationId == id)
+                .ExecuteUpdateAsync(
+                    s => s
+                        .SetProperty(d => d.OpenIdConfigurationStatus, statusValue)
+                        .SetProperty(d => d.LastOpenIdValidationUtc, validatedUtc)
+                        .SetProperty(d => d.LastOpenIdValidationSummary, summary)
+                        .SetProperty(d => d.LastOpenIdValidationDetail, detail),
+                    cancellationToken),
+            // The row is missing only for a registration that was inserted without one. The other group keeps its defaults.
+            insert: () => _db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO [EntraRegistrationDiagnostics]
+                    ([RegistrationId], [OpenIdConfigurationStatus], [LastOpenIdValidationUtc], [LastOpenIdValidationSummary], [LastOpenIdValidationDetail])
+                SELECT r.[Id], @status, @utc, @summary, @detail
+                FROM [EntraInstanceRegistrations] AS r
+                WHERE r.[Id] = @id
+                  AND NOT EXISTS (SELECT 1 FROM [EntraRegistrationDiagnostics] AS d WHERE d.[RegistrationId] = r.[Id]);
+                """,
+                [
+                    new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 64) { Value = id },
+                    new SqlParameter("@status", System.Data.SqlDbType.Int) { Value = statusValue },
+                    new SqlParameter("@utc", System.Data.SqlDbType.DateTimeOffset) { Value = validatedUtc },
+                    new SqlParameter("@summary", System.Data.SqlDbType.NVarChar, 512) { Value = (object?)summary ?? DBNull.Value },
+                    new SqlParameter("@detail", System.Data.SqlDbType.NVarChar, 4000) { Value = (object?)detail ?? DBNull.Value }
+                ],
+                cancellationToken));
     }
 
     public async Task UpdateDirectoryDiscoveryOutcomeAsync(
@@ -179,21 +225,86 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         string? detail,
         CancellationToken cancellationToken = default)
     {
-        var e = await _db.EntraInstanceRegistrations
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (e is null)
-            return;
-
-        e.DirectoryDiscoveryStatus = (int)status;
-        e.LastDirectoryDiscoveryUtc = utc;
-        e.LastDirectoryDiscoverySummary = summary;
-        e.LastDirectoryDiscoveryDetail = detail;
-        e.UpdatedUtc = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken);
+        var statusValue = (int)status;
+        summary = Bound(summary, SummaryMaxLength);
+        detail = Bound(detail, DetailMaxLength);
+        await RecordAsync(
+            update: () => _db.EntraRegistrationDiagnostics
+                .Where(d => d.RegistrationId == id)
+                .ExecuteUpdateAsync(
+                    s => s
+                        .SetProperty(d => d.DirectoryDiscoveryStatus, statusValue)
+                        .SetProperty(d => d.LastDirectoryDiscoveryUtc, utc)
+                        .SetProperty(d => d.LastDirectoryDiscoverySummary, summary)
+                        .SetProperty(d => d.LastDirectoryDiscoveryDetail, detail),
+                    cancellationToken),
+            insert: () => _db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO [EntraRegistrationDiagnostics]
+                    ([RegistrationId], [DirectoryDiscoveryStatus], [LastDirectoryDiscoveryUtc], [LastDirectoryDiscoverySummary], [LastDirectoryDiscoveryDetail])
+                SELECT r.[Id], @status, @utc, @summary, @detail
+                FROM [EntraInstanceRegistrations] AS r
+                WHERE r.[Id] = @id
+                  AND NOT EXISTS (SELECT 1 FROM [EntraRegistrationDiagnostics] AS d WHERE d.[RegistrationId] = r.[Id]);
+                """,
+                [
+                    new SqlParameter("@id", System.Data.SqlDbType.NVarChar, 64) { Value = id },
+                    new SqlParameter("@status", System.Data.SqlDbType.Int) { Value = statusValue },
+                    new SqlParameter("@utc", System.Data.SqlDbType.DateTimeOffset) { Value = utc },
+                    new SqlParameter("@summary", System.Data.SqlDbType.NVarChar, 512) { Value = (object?)summary ?? DBNull.Value },
+                    new SqlParameter("@detail", System.Data.SqlDbType.NVarChar, 4000) { Value = (object?)detail ?? DBNull.Value }
+                ],
+                cancellationToken));
     }
 
-    private static EntraInstanceRegistration ToDomain(EntraInstanceRegistrationEntity e) =>
-        new()
+    /// <summary>
+    /// A remote error message has no length limit of its own, but the columns do. Both write paths store the same bounded text, so
+    /// an over-long message is cut the same way whether the row exists or has to be created, and never fails the probe.
+    /// </summary>
+    private static string? Bound(string? value, int maxLength) =>
+        value is not null && value.Length > maxLength ? value[..maxLength] : value;
+
+    /// <summary>
+    /// Records one probe outcome on the registration's diagnostics row, creating the row when it is missing. A registration that
+    /// does not exist (or was deleted meanwhile) records nothing, as before. The diagnostics row is the only thing written.
+    /// </summary>
+    private static async Task RecordAsync(Func<Task<int>> update, Func<Task<int>> insert)
+    {
+        if (await update() > 0)
+            return;
+
+        try
+        {
+            if (await insert() > 0)
+                return;
+        }
+        catch (Exception ex) when (IsConstraintRace(ex))
+        {
+            // A concurrent probe created the row first (duplicate key), or the registration was deleted between the check and
+            // the insert (foreign key). Either way the retry below records the outcome on the row that now exists, or nothing.
+        }
+
+        // The insert wrote nothing: either the registration is gone, or a concurrent probe created the row first. Record on
+        // whichever row exists now; for a registration that is gone this updates no row.
+        await update();
+    }
+
+    private static bool IsConstraintRace(Exception exception)
+    {
+        for (Exception? e = exception; e is not null; e = e.InnerException)
+        {
+            if (e is SqlException { Number: SqlDuplicateKey or SqlDuplicateUniqueIndex or SqlForeignKeyViolation })
+                return true;
+        }
+
+        return false;
+    }
+
+    private static EntraInstanceRegistration ToDomain(EntraInstanceRegistrationEntity e)
+    {
+        // A registration with no diagnostics row has never been probed: the defaults the column always carried.
+        var d = e.Diagnostics;
+        return new()
         {
             Id = e.Id,
             DisplayName = e.DisplayName,
@@ -209,15 +320,16 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             UpdatedUtc = e.UpdatedUtc,
             AzureTenantId = e.AzureTenantId,
             AuthenticationContextId = e.AuthenticationContextId,
-            OpenIdConfigurationStatus = (OpenIdConfigurationStatus)e.OpenIdConfigurationStatus,
-            LastOpenIdValidationUtc = e.LastOpenIdValidationUtc,
-            LastOpenIdValidationSummary = e.LastOpenIdValidationSummary,
-            LastOpenIdValidationDetail = e.LastOpenIdValidationDetail,
-            DirectoryDiscoveryStatus = (DirectoryDiscoveryStatus)e.DirectoryDiscoveryStatus,
-            LastDirectoryDiscoveryUtc = e.LastDirectoryDiscoveryUtc,
-            LastDirectoryDiscoverySummary = e.LastDirectoryDiscoverySummary,
-            LastDirectoryDiscoveryDetail = e.LastDirectoryDiscoveryDetail,
+            OpenIdConfigurationStatus = (OpenIdConfigurationStatus)(d?.OpenIdConfigurationStatus ?? EntraRegistrationDiagnosticsEntity.DefaultOpenIdConfigurationStatus),
+            LastOpenIdValidationUtc = d?.LastOpenIdValidationUtc,
+            LastOpenIdValidationSummary = d?.LastOpenIdValidationSummary,
+            LastOpenIdValidationDetail = d?.LastOpenIdValidationDetail,
+            DirectoryDiscoveryStatus = (DirectoryDiscoveryStatus)(d?.DirectoryDiscoveryStatus ?? EntraRegistrationDiagnosticsEntity.DefaultDirectoryDiscoveryStatus),
+            LastDirectoryDiscoveryUtc = d?.LastDirectoryDiscoveryUtc,
+            LastDirectoryDiscoverySummary = d?.LastDirectoryDiscoverySummary,
+            LastDirectoryDiscoveryDetail = d?.LastDirectoryDiscoveryDetail,
             AllowMemberAccessRequests = e.AllowMemberAccessRequests,
             AllowGuestAccessRequests = e.AllowGuestAccessRequests
         };
+    }
 }

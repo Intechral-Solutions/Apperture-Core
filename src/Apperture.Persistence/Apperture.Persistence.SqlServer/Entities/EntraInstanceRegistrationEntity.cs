@@ -30,23 +30,13 @@ public sealed class EntraInstanceRegistrationEntity
 
     public string? AuthenticationContextId { get; set; }
 
-    public int OpenIdConfigurationStatus { get; set; }
-
-    public DateTimeOffset? LastOpenIdValidationUtc { get; set; }
-
-    public string? LastOpenIdValidationSummary { get; set; }
-
-    public string? LastOpenIdValidationDetail { get; set; }
-
-    public int DirectoryDiscoveryStatus { get; set; }
-
-    public DateTimeOffset? LastDirectoryDiscoveryUtc { get; set; }
-
-    public string? LastDirectoryDiscoverySummary { get; set; }
-
-    public string? LastDirectoryDiscoveryDetail { get; set; }
-
     public bool AllowMemberAccessRequests { get; set; }
 
     public bool AllowGuestAccessRequests { get; set; }
+
+    /// <summary>
+    /// The registration's probe telemetry (the latest validation and discovery outcomes). Null when no probe has recorded one and
+    /// none was created with the row; a reader treats that as the defaults. Never written through this navigation by a probe.
+    /// </summary>
+    public EntraRegistrationDiagnosticsEntity? Diagnostics { get; set; }
 }

@@ -19,6 +19,8 @@ Managed contacts and import/linking need a stable foundation: persisted tenant m
 
 Migration: `Epic75_EntraValidationAndDirectoryDiscovery` adds the new columns with defaults `OpenIdConfigurationStatus = NotValidated`, `DirectoryDiscoveryStatus = NotAttempted`.
 
+Later change (SEC-2.4): the eight validation and discovery fields no longer live on `EntraInstanceRegistrations`. Migration `Sec24_EntraRegistrationDiagnostics` moved them, with their values and defaults, to a 1:1 `EntraRegistrationDiagnostics` table, so recording a probe does not change the registration's update time or concurrency token. The domain type, the API fields and the defaults described here are unchanged. See the [SEC-2 implementation record](../01-architecture/transitions/security/sec2-implementation-record.md) §4.
+
 ## OpenID validation
 
 - Service: `IEntraOpenIdConnectConfigurationValidator` — GET `{authority}/.well-known/openid-configuration`, validates required claims (`issuer`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`), optional issuer vs `AzureTenantId` GUID check, and deployment secret presence when applicable.
