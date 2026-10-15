@@ -50,6 +50,8 @@ public sealed class SettingSecretBoundaryGuardTests
     private static readonly string[] SettingReaders =
     [
         "IIntegrationSettingsResolver", "IPlatformSettingsResolver", "PlatformSettingResolvedValue", "IIntegrationSettingsAccessor",
+        // The stored rows themselves: code that reads them directly and resolves what it finds is a reader too.
+        "IPlatformSettingValueRepository", "PlatformSettingValueEntity", "PlatformSettingValues",
     ];
 
     /// <summary>Files that read settings and hold a resolver for a reason other than a setting's reference, each named and justified.</summary>
@@ -190,6 +192,20 @@ public sealed class SettingSecretBoundaryGuardTests
 
         violations.Select(v => v.Rule).Should().Contain(r => r.Contains("builds a SecretRef"))
             .And.Contain(r => r.Contains("reads settings"));
+    }
+
+    [Theory]
+    [InlineData("IPlatformSettingValueRepository")]
+    [InlineData("PlatformSettingValueEntity")]
+    [InlineData("PlatformSettingValues")]
+    public void Self_test_a_file_that_reads_the_stored_rows_directly_and_holds_a_resolver_is_caught_even_without_building_a_reference(string rowReader)
+    {
+        // The reference arrives from a helper the guard cannot see, so only the pairing of a row reader with a resolver gives it away.
+        var violations = Scan([Source(
+            "Apperture.ControlPlane/Apperture.ControlPlane.Security/AnotherReader.cs",
+            $"class R({rowReader} rows, ISecretResolver secrets) {{ async Task M(SecretRef r) => await secrets.ResolveAsync(r); }}")]);
+
+        violations.Select(v => v.Rule).Should().Contain(r => r.Contains("reads settings") && r.Contains(rowReader));
     }
 
     [Fact]

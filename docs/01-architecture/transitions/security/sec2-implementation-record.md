@@ -5,7 +5,7 @@
 | Date | 2026-10-13 |
 | Contract | [SEC-2.0 design gate](sec2-configuration-secret-and-operator-boundary-design-gate.md), approved 2026-10-13. The gate is binding; this record states what was built against it and the evidence. It changes no ruling. |
 | Baseline | `master` at `8f795f0` (PR #28, the SEC-2.0 merge) |
-| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented** on branch `sec-2.2-connection-secret-ownership` (base `8959b34`), with an independent review (§2.7). It closes U-3 and the code side of U-1 when its pull request merges and CI is green; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded (A2.7, open).** **SEC-2.3 and SEC-2.4 have not started.** |
+| State | **SEC-2.1 implemented and merged** (PR #29; F1 closed). **SEC-2.2 implemented and merged** (PR #30, `master` at `5e27206`; U-3 closed and the code side of U-1; **U-1 stays an RC1 blocker until the inventory of every persistent installation is recorded, A2.7, open**). **SEC-2.3 implemented** on branch `sec-2.3-setting-secret-ownership` (base `5e27206`), with an independent review (§3.11). It closes the code side of U-2 when its pull request merges and CI is green; **A2.7 stays an open rollout condition (§3.8).** **SEC-2.4 has not started.** |
 
 This record grows one section per package. Each package starts on the owner's instruction (gate §6.3).
 
@@ -324,7 +324,18 @@ All SQL cases run on a locking READ COMMITTED catalog and a READ_COMMITTED_SNAPS
 
 Counts are from this branch at the final candidate. Heavy suites ran one at a time (the machine is memory constrained). The SQL Server suites use throwaway catalogs and fail rather than skip without SQL Server.
 
-TEST-EVIDENCE-PENDING
+| Suite | Result |
+|---|---|
+| `Apperture.UnitTests` (the whole project, final code) | 4823 passed (4660 at the end of SEC-2.2) |
+| `Apperture.Management.Ui.Shared.Tests` | 1496 passed |
+| `Apperture.Management.Ui.Client.Tests` | 523 passed |
+| `Apperture.ArchTests` | 38 passed |
+| `Apperture.AppHost.Diagnostics.Tests`, `Apperture.ModuleSdk.Testing`, `Apperture.EndToEndTests` | 7, 6 and 1 passed |
+| `Apperture.BrowserTests` (opt-in; CI runs it in its own blocking job) | 71 passed, 62 skipped (not enabled locally) |
+| `Apperture.IntegrationTests`, the whole project, on the first candidate (`52386ff`) | 2071 passed, 1 failed: `AuditRecorderSqlServerTests.A_rename_commits_with_one_complete_recorder_row_…`, a rename test of the audit recorder that this package does not touch. It passed on its own and with its whole class (22 of 22) immediately afterwards; the two-hour run held the machine at about 490 MB free. Treated as a load flake, not a product defect |
+| After the review remediation: every SQL suite that exercises the changed code: `SettingSecretOwnershipSqlServerTests`, `SettingSecretOwnershipInventorySqlServerTests`, `IntegrationSettingSecretDispositionSqlServerTests` (both partials), `SettingsAuditSqlServerTests`, `IntegrationRowLockSqlServerTests` (both partials), `IntegrationLifecycleAuditSqlServerTests`, `AttentionRoutingSqlServerTests` and the Management host tests | 872 passed, 0 failed (37 minutes) |
+
+New unit suites: `SettingSecretOwnershipTests`, `SettingSecretProvisionerOwnershipTests`, `SettingSecretOwnershipServiceTests`, `IntegrationSettingSecretOwnershipDispositionTests`, `SettingSecretResolverTests`, `IntegrationSettingsAccessorSecretTests`, `SmtpPasswordRefOwnershipTests`, `SettingSecretBoundaryGuardTests`, `SettingSecretResolverCompositionTests`. New SQL suites: `SettingSecretOwnershipSqlServerTests`, `SettingSecretOwnershipInventorySqlServerTests` and the `OwnerNames` partial of the H1 disposition suite, plus three new operations in the M6 matrix of `SettingsAuditSqlServerTests`. Existing expectations were changed in four places, each because of an approved change and none weakening a guarantee: the catalog count and the secrets-category write-class pin (two new W3 actions), the reasons of `integration.settings.secret.retired` (`replaced`), and the M6 integration clear, which now seeds the secret the setting owns instead of the legacy shape.
 
 **Test-first status.** The ownership definition and the provisioner were written test first: the tests were written against stubs, run, and failed for the right reason (a foreign secret was versioned and disabled) before the implementation. The same order held for the classifier's legacy method. The boundary, the accessor, the SMTP changes, the SQL suites and the inventory were written with or just after the code; for those the evidence is the mutation testing below.
 
@@ -384,7 +395,7 @@ No database name was invented, nothing was marked closed, and no database was in
 
 - No development, shared, persistent or production database was reset, reseeded, migrated or written to by hand. SR-17 was not exercised.
 - The SQL Server suites create their own uniquely named catalogs (and drop them), as SEC-2.2 did. `SettingsAuditSqlServerTests`, the H1 disposition suites and the new suites each use such catalogs.
-- The only other use of the shared test SQL container was read-only: a probe of two JSON behaviours of the engine (`SELECT` with literals, no table), with the credential forwarded through the environment and never on a command line.
+- The only other use of the shared test SQL container was read-only: a probe of two JSON behaviours of the engine (`SELECT` with literals, no table), with the credential forwarded through the environment and never on a command line. The existing `apperture-test-sftp` container, which was stopped, was started for the host tests and stopped again afterwards.
 - The owner's verified backup of the primary development database was not needed and was not touched. The Aspire stack that is running on the machine was left running; nothing was built into its output folders (all builds used `artifacts/sec23`, which is git-ignored and removed at the end).
 
 ### 3.10 Limitations and other items
@@ -400,3 +411,28 @@ No database name was invented, nothing was marked closed, and no database was in
 | L7 | **The Entra client secret and the other holders that resolve a reference are unchanged** (gate K-3). `EntraClientSecretAccess` is the one remaining production file outside the boundaries that builds a `SecretRef`, and the guard names it with that reason. |
 | L8 | **The guard is identifier-based** and cannot see a reference passed through a variable defined in another file; the allow-list is three files and the runtime tests are the compensating control. |
 | L9 | **`PlatformSettingValues` row ids are not escaped** (D1): `("a:b","c")` and `("a","b:c")` collide as primary keys, which is existing behaviour. It does not weaken the ownership rule, whose names are escaped. |
+| L10 | **The sole-holder scan sees database locations only.** A reference that deployment configuration supplies (`Notifications:Email:SmtpPasswordRef`) is invisible to it. A legacy-shaped integration secret that the configuration also names could be retired by re-entering or clearing that integration's value. It needs a module to declare an integration setting with the same key as the instance one, plus a legacy row. The gap already existed in H1; the runbook now says to point the configuration at a secret nothing else owns first. |
+| L11 | **A notification delivery or test send is recorded as the platform, not the operator.** `SmtpEmailNotificationChannel` resolves with path `run`, so a refusal there is attributed to `system:platform-settings` even when an operator triggered the send (D6). Account mail is `management`. |
+| L12 | **An owner decision on readiness (D5, D13) is still wanted.** `IsSecretConfigured` and readiness report that a reference is stored, so a row that names another holder's secret reads as configured until the module asks for the secret, when it gets `missing_secret`. Making readiness read the descriptor is a larger change and was not done. |
+
+### 3.11 Independent review
+
+An independent reviewer (a separate subagent run with the Opus model at high effort, as the assignment asked; given the approved gate and the code at `52386ff` and none of this record's conclusions) read `5e27206..52386ff` against the gate and was asked for an explicit readiness verdict. It was read-only: it ran no build, test or database command.
+
+**Verdict: READY WITH CONDITIONS.** No critical or high finding. Its conditions were (1) record the test evidence and the CI result, and (2) decide F-1. Both are addressed below. It confirmed that integration B's replace, clear, reset, delete or read cannot read, version, disable or adopt integration A's secret, and checked the owner rule and its escaping (including that the script's `REPLACE` order equals the C# one), the exact comparison, the provisioner, the three services and the in-transaction reset, the legacy disposition and its concurrency behaviour, the delete classifier and retirement, the read boundary and its audit shape, the SMTP source marker, read and write path completeness, the DI of every host, the inventory script, and whether the tests would fail if their defects returned.
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| F-1 | The owner name is built from the id spelling the caller supplied, not the integration's stored id. SQL finds the integration case-insensitively but the comparison is ordinal, so `PUT .../ABC.../settings/K` for an integration stored as `abc...` creates a secret the worker (which uses the stored id) is then refused, orphans it on a later re-entry, and a delete through that spelling is refused as ambiguous. No cross-integration exposure. | Low | **Fixed.** `LockIntegrationAsync` returns the stored id and every unit then uses it for the owner, the row's scope and the audit target; the delete classifies by the locked entity's id. Unit tests (replace, clear and reset through an upper-case route) and the SQL test `A_route_that_spells_the_integration_id_in_another_case_…` on both isolation modes (the row, the descriptor name and the worker's read). |
+| F-2 | `IsConfigured` and `IsSecretConfigured` still report configured for a row that names a foreign or legacy secret; only `GetSecretAsync` reports not configured. | Low | **Accepted, owner decision requested** (D5, D13, L12). The gate's A3.4 and P-19 are met where the module asks for the secret. |
+| F-3 | `ForIntegrationSetting` throws when the escaped name exceeds 256 characters, and clear and reset called it unguarded, so such a row (poisoned or historical) could never be cleared. | Low | **Fixed.** The owned disable treats that as "no owned secret" and the legacy path still runs. Unit tests for clear and reset of such a row. |
+| F-4 | The guard's list of setting readers omitted the repository and the stored-row types, so a reader that gets a `SecretRef` from a helper and holds a resolver could pass. | Low | **Fixed.** `IPlatformSettingValueRepository`, `PlatformSettingValueEntity` and `PlatformSettingValues` are readers, with a self-test for each. No production file trips them. |
+| F-5 | The sole-holder scan cannot see a deployment-configured reference. | Informational | **Documented** (L10, the runbook's limits). |
+| F-6 | A notification test send or delivery started by an operator is recorded as `run` and a system actor. | Informational | **Accepted and documented** (L11). |
+| F-7 | The script trims ASCII whitespace; the platform trims all Unicode whitespace, so such a padded reference would be reported unreadable. | Informational | **Documented** in the script's fidelity notes (it over-reports and never hides a row). |
+
+Not verified by the reviewer, and checked afterwards: that `DeleteScopedAsync` and `UpsertAsync` save before the H1 scan reads (`SqlPlatformSettingValueRepository` calls `SaveChangesAsync` in both, inside the unit's transaction, and the sole-holder SQL cases depend on it); that account mail is never sent while an audited unit holds locks (`AccountSecurityMailDelivery` is documented and written as "never inside a transaction", sent only after the request committed, so its refusal row's separate connection cannot wait on the unit); and the catalog collation behind F-1 (the SQL regression test finds an integration through an upper-case id, so the test catalogs are case-insensitive, as SQL Server's default is). The reviewer could not run SQL Server, observe either isolation mode, or run any suite.
+
+### 3.12 CI
+
+Final CI result: see the pull request.

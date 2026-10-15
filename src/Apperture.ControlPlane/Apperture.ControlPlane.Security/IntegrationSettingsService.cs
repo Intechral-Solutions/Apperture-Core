@@ -111,7 +111,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingReset),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (await ResetCoreAsync(transaction, integrationId, def, ct).ConfigureAwait(false))
                     return true;
 
@@ -201,9 +203,18 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
         string? resourceContextId,
         CancellationToken ct)
     {
-        var retired = await _secretProvisioner
-            .TryDisableOwnedSecretAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, key), releasedRef, ct)
-            .ConfigureAwait(false);
+        var retired = false;
+        try
+        {
+            retired = await _secretProvisioner
+                .TryDisableOwnedSecretAsync(SettingSecretOwnership.ForIntegrationSetting(integrationId, key), releasedRef, ct)
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            // An owner name the store cannot hold names no stored secret, so there is no owned secret to disable. Clearing and
+            // resetting must still work for such a row (a poisoned or historical one), so the legacy path below still runs.
+        }
 
         if (!retired
             && _legacyDisposition is not null
@@ -259,7 +270,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -322,7 +335,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             Operation(AuditActionNames.IntegrationSettingSet),
             async (transaction, ct) =>
             {
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 var existing = await _repository
                     .GetScopedAsync(def.Key, PlatformSettingScopeConstants.IntegrationKind, integrationId, ct)
                     .ConfigureAwait(false);
@@ -375,7 +390,9 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
             async (transaction, ct) =>
             {
                 // Before the provider's options are read: they describe the integration, which is now fixed until the commit.
-                await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
+                // From here the integration is named as it is stored. The route may spell its id in another case (the catalog finds it
+                // all the same), and the secret's owner, the row's scope and the audit target must not depend on that spelling.
+                integrationId = await LockIntegrationAsync(integrationId, reauthorize, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(def.OptionProviderKey))
                 {
                     IReadOnlyList<PlatformSettingAllowedValue> options;
@@ -495,19 +512,22 @@ public sealed class IntegrationSettingsService : IIntegrationSettingsService, II
     /// exist, then re-runs the caller's authorization against it. Must be the first act of an attempt, after the unit's operation
     /// lock; the helper opens no transaction of its own and the lock is released only by the unit's commit or rollback.
     /// </summary>
-    private async Task LockIntegrationAsync(
+    /// <returns>The integration's id as it is stored, which is the spelling its secrets' owner names are built from.</returns>
+    private async Task<string> LockIntegrationAsync(
         string integrationId,
         Func<CancellationToken, ValueTask>? reauthorize,
         CancellationToken cancellationToken)
     {
         // Untracked, so a rerun of the attempt after a verified rollback reads the row afresh.
-        if (await _integrations.GetByIdForUpdateAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false) is null)
-            throw new KeyNotFoundException($"Integration {integrationId} not found.");
+        var integration = await _integrations.GetByIdForUpdateAsync(new IntegrationId(integrationId), cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Integration {integrationId} not found.");
 
         // The row is now fixed until the commit: an ownership move that committed before the lock is visible to this check, and
         // none can commit after it.
         if (reauthorize is not null)
             await reauthorize(cancellationToken).ConfigureAwait(false);
+
+        return integration.Id.Value;
     }
 
     private async ValueTask<string?> ResolveResourceContextIdAsync(string integrationId, CancellationToken cancellationToken)

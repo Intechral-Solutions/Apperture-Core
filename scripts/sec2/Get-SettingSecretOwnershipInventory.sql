@@ -80,7 +80,10 @@ dbo.SecretVersions.ProtectedPayload at all.
 
 Notes on fidelity: the platform reads a reference with .NET's Guid.TryParse, which trims surrounding whitespace and accepts
 the hyphenated form, the same in braces or in parentheses, and 32 digits without hyphens. This script recognizes exactly
-those by explicit pattern and reports anything else as unreadable (sensitive keys) or ignores it (other keys). The
+those by explicit pattern and reports anything else as unreadable (sensitive keys) or ignores it (other keys). Whitespace
+trimming covers space, tab, carriage return and line feed; the platform trims every Unicode space (a non-breaking space,
+say), so a reference padded with one of those that the platform would still resolve is reported as unreadable here. That
+errs towards over-reporting and never hides a row. The
 hexadecimal GUID form is not decoded; the product never wrote it. Holders are found by searching the other rows' text for
 the secret's hyphenated and 32-digit forms, which finds every spelling of a reference except the hexadecimal one. Name and
 provider are compared exactly, trailing spaces included. A value that is an array or an object is not a reference to one

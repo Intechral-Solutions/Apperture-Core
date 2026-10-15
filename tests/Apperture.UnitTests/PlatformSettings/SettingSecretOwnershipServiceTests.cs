@@ -24,7 +24,7 @@ public sealed class SettingSecretOwnershipServiceTests
 {
     private const string IntegrationA = "int-a";
     private const string IntegrationB = "int-b";
-    private static readonly string IntegrationKey = PlatformSettingTestDefinitions.IntegrationScopedSecretKey;
+    private const string IntegrationKey = PlatformSettingTestDefinitions.IntegrationScopedSecretKey;
     private static readonly string PlatformKey = PlatformSettingKeys.NotificationsEmailSmtpPasswordRef;
 
     private static readonly SecretOwner OwnerA = SettingSecretOwnership.ForIntegrationSetting(IntegrationA, IntegrationKey);
@@ -151,6 +151,59 @@ public sealed class SettingSecretOwnershipServiceTests
         h.Store.ActiveOpaque(aRef).Should().Be("a-value");
     }
 
+    // ---- the integration's stored id, not the spelling of the route ----
+
+    [Fact]
+    public async Task A_route_that_spells_the_integration_id_in_another_case_stores_the_secret_under_the_integrations_stored_id()
+    {
+        var h = new IntegrationHarness(storedIdIsCaseInsensitive: true);
+
+        await h.ReplaceAsync("INT-A", "a-value");
+
+        var reference = h.StoredRef(IntegrationA);
+        reference.Should().NotBeNull("the row is stored under the integration's own id, which the worker reads with");
+        h.StoredRef("INT-A").Should().BeNull("no row is stored under the spelling the caller used");
+        h.Store.Get(reference!)!.Name.Should().Be(OwnerA.Name, "the owner is derived from the stored id, so the worker's read is not refused");
+    }
+
+    [Theory]
+    [InlineData("clear")]
+    [InlineData("reset")]
+    public async Task A_clear_or_reset_through_another_spelling_retires_the_secret_the_stored_id_owns(string how)
+    {
+        var h = new IntegrationHarness(storedIdIsCaseInsensitive: true);
+        await h.ReplaceAsync(IntegrationA, "a-value");
+        var reference = h.StoredRef(IntegrationA)!;
+
+        if (how == "clear")
+            await h.ClearAsync("INT-A", IntegrationA);
+        else
+            await h.ResetAsync("INT-A");
+
+        h.Store.Get(reference)!.State.Should().Be(SecretState.Disabled, "the secret is the integration's own whatever spelling asked");
+    }
+
+    // ---- a name too long for the store never blocks clearing ----
+
+    [Theory]
+    [InlineData("clear")]
+    [InlineData("reset")]
+    public async Task A_row_whose_owner_name_cannot_fit_the_store_can_still_be_cleared_or_reset_and_nothing_is_disabled(string how)
+    {
+        var h = new IntegrationHarness();
+        var someSecret = await SeedAsync(h.Store, "platform-connection", "connection:con-1:Password", "other-material");
+        h.PointAt(IntegrationA, someSecret, IntegrationHarness.LongKey);
+
+        if (how == "clear")
+            await h.ClearAsync(IntegrationA, IntegrationA, IntegrationHarness.LongKey);
+        else
+            await h.ResetAsync(IntegrationA, IntegrationHarness.LongKey);
+
+        h.StoredRef(IntegrationA, IntegrationHarness.LongKey).Should().BeNull("the row is gone");
+        h.Store.Get(someSecret)!.State.Should().Be(SecretState.Active);
+        h.Store.DisableCalls.Should().Be(0);
+    }
+
     // ---- instance settings ----
 
     [Fact]
@@ -227,17 +280,27 @@ public sealed class SettingSecretOwnershipServiceTests
         private readonly IntegrationSettingsService _service;
         private readonly PlatformSettingDefinition _def = PlatformSettingTestDefinitions.IntegrationScopedSecretSample;
 
-        public IntegrationHarness()
+        /// <summary>A key whose escaped owner name cannot fit the secret store (each colon is written as three characters).</summary>
+        public static readonly string LongKey = new string(':', 100);
+
+        /// <param name="storedIdIsCaseInsensitive">
+        /// The catalog finds an integration whatever the case of the id it is given, as SQL Server's default collation does, and
+        /// returns the id as it is stored (<see cref="IntegrationA"/>).
+        /// </param>
+        public IntegrationHarness(bool storedIdIsCaseInsensitive = false)
         {
             Store = new InMemorySecretStore();
             Audit = new AuditRecording();
             var registry = new Mock<IIntegrationSettingDefinitionRegistry>();
             registry.Setup(r => r.TryGet(IntegrationKey)).Returns(_def);
+            registry.Setup(r => r.TryGet(LongKey)).Returns(_def with { Key = LongKey });
             registry.Setup(r => r.GetAll()).Returns([_def]);
 
             var integrations = new Mock<IIntegrationRepository>();
             ValueTask<DomainIntegration?> Find(IntegrationId id) => ValueTask.FromResult<DomainIntegration?>(
-                new DomainIntegration(id, "Test Integration", "mod-1", null, IntegrationState.Active, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)
+                new DomainIntegration(
+                    storedIdIsCaseInsensitive && string.Equals(id.Value, IntegrationA, StringComparison.OrdinalIgnoreCase) ? new IntegrationId(IntegrationA) : id,
+                    "Test Integration", "mod-1", null, IntegrationState.Active, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)
                 {
                     ResourceContextId = new ResourceContextId("shared"),
                 });
@@ -264,36 +327,38 @@ public sealed class SettingSecretOwnershipServiceTests
                 new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Replace, SecretValue = value },
                 RowVersionOf(integrationId));
 
-        public Task ClearAsync(string integrationId) =>
+        /// <param name="integrationId">The id the request names (the route).</param>
+        /// <param name="rowIntegrationId">The id the row is stored under, when it differs from the route's spelling.</param>
+        public Task ClearAsync(string integrationId, string? rowIntegrationId = null, string key = IntegrationKey) =>
             _service.SetAsync(
                 integrationId,
-                IntegrationKey,
+                key,
                 new PlatformSettingUpdatePayload { SecretOperation = PlatformSettingSecretOperations.Clear },
-                RowVersionOf(integrationId));
+                RowVersionOf(rowIntegrationId ?? integrationId, key));
 
-        public Task ResetAsync(string integrationId) => _service.ResetAsync(integrationId, IntegrationKey);
+        public Task ResetAsync(string integrationId, string key = IntegrationKey) => _service.ResetAsync(integrationId, key);
 
-        public string? StoredRef(string integrationId)
+        public string? StoredRef(string integrationId, string key = IntegrationKey)
         {
-            var row = _repo.GetScopedAsync(IntegrationKey, PlatformSettingScopeConstants.IntegrationKind, integrationId).GetAwaiter().GetResult();
+            var row = _repo.GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId).GetAwaiter().GetResult();
             return row is null ? null : JsonSerializer.Deserialize<string>(row.ValueJson);
         }
 
         /// <summary>Stores a row that names <paramref name="reference"/>, as a poisoned or legacy row would.</summary>
-        public void PointAt(string integrationId, string reference) =>
+        public void PointAt(string integrationId, string reference, string key = IntegrationKey) =>
             _repo.UpsertAsync(
                 new PlatformSettingValue
                 {
-                    Key = IntegrationKey,
+                    Key = key,
                     ScopeKind = PlatformSettingScopeConstants.IntegrationKind,
                     ScopeId = integrationId,
                     ValueJson = JsonSerializer.Serialize(reference),
                 },
                 null).GetAwaiter().GetResult();
 
-        private string? RowVersionOf(string integrationId)
+        private string? RowVersionOf(string integrationId, string key = IntegrationKey)
         {
-            var row = _repo.GetScopedAsync(IntegrationKey, PlatformSettingScopeConstants.IntegrationKind, integrationId).GetAwaiter().GetResult();
+            var row = _repo.GetScopedAsync(key, PlatformSettingScopeConstants.IntegrationKind, integrationId).GetAwaiter().GetResult();
             return row is null ? null : Convert.ToBase64String(row.RowVersion is { Length: > 0 } v ? v : [1]);
         }
     }

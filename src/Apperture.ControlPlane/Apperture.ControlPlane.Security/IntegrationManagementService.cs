@@ -366,7 +366,9 @@ public sealed class IntegrationManagementService : IIntegrationManagementService
 
                 // 4. Which overrides to remove and what to do with the secrets they name, read in this transaction. An
                 //    undetermined disposition refuses the whole delete here, before anything is staged or changed.
-                var plan = await classifier.ClassifyAsync(id.Value, ct).ConfigureAwait(false);
+                // By the id the integration is stored under, not the spelling the caller used: that is what its overrides' scope and its
+                // secrets' owner names carry (SEC-2.3).
+                var plan = await classifier.ClassifyAsync(integration.Id.Value, ct).ConfigureAwait(false);
                 plan.ThrowIfRefused();
 
                 var resourceContextId = integration.ResourceContextId.Value;

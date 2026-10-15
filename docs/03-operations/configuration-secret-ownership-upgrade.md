@@ -100,6 +100,11 @@ listed.
   instance setting's own secret, because the two have the same provider and name by design. It is not listed.
 - The inventories find other holders by searching row text for the secret's hyphenated and 32-digit forms. A reference written in
   the hexadecimal GUID form is not found; the product never wrote that form.
+- The scan for other holders reads **database** locations only (setting rows, connections and Entra registrations). A reference
+  that deployment configuration supplies, such as `Notifications:Email:SmtpPasswordRef`, is invisible to it. If a deployment names
+  a legacy-shaped integration secret there, and a module declares an integration setting with the same key as the instance one,
+  re-entering or clearing that integration's value could retire the secret the configuration still points at. Point
+  `Notifications:Email:SmtpPasswordRef` at a secret nothing else owns before you re-enter such a value.
 - Retirement on re-entry reads the other holders inside the change's transaction. Under locking `READ COMMITTED` a competing change
   that has not committed yet is waited for, and under snapshot isolation it is not seen, so the legacy secret may be **kept**
   longer than necessary. It is never retired while a committed row still names it.

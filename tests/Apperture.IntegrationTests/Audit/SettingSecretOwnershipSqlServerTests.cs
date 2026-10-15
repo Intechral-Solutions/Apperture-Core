@@ -109,6 +109,32 @@ public sealed class SettingSecretOwnershipSqlServerTests : IClassFixture<AuditIs
         (await res.Composite.ResolveOwnedAsync(new SecretRef(first), SettingSecretOwnership.ForIntegrationSetting(c.A, SecretKey))).Material.OpaqueString.Should().Be("two");
     }
 
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task A_route_that_spells_the_integration_id_in_another_case_stores_the_secret_under_the_stored_id_so_the_worker_can_read_it(bool rcsi)
+    {
+        var c = await NewCaseAsync(rcsi);
+        var routed = c.A.ToUpperInvariant();
+        routed.Should().NotBe(c.A, "the test needs an id that differs only in case");
+
+        await using (var db = c.Scratch.NewDb())
+            await IntegrationService(db, c.Principal, c.Registry).SetAsync(routed, SecretKey, Replace(OwnMaterial), null);
+
+        // The catalog finds the integration whatever the case; what matters is the spelling the row and the owner carry.
+        (await c.Scratch.ScalarAsync<int>(
+            $"SELECT COUNT(*) FROM PlatformSettingValues WHERE ScopeId COLLATE Latin1_General_100_BIN2 = N'{c.A}';")).Should().Be(1, "the row is stored under the integration's own id");
+        var reference = (await IntegrationRefAsync(c.Scratch, c.A, SecretKey))!;
+        (await DescriptorAsync(c.Scratch, reference)).Should().Be(("integration-setting", $"integration-setting:{c.A}:{SecretKey}"));
+        await using (var reading = Read(c.Scratch, c.A, c.Registry))
+            (await reading.Accessor.GetSecretAsync(SecretKey)).Should().Be(OwnMaterial, "the worker names the integration by its stored id and is not refused");
+        (await AuditRowsAsync(c.Scratch, AuditActionNames.IntegrationSettingSecretResolutionRefused, $"{c.A}:{SecretKey}")).Should().BeEmpty();
+
+        // A clear through the same spelling finds the row and retires the secret the stored id owns.
+        await using (var db = c.Scratch.NewDb())
+            await IntegrationService(db, c.Principal, c.Registry).SetAsync(routed, SecretKey, Clear(), await IntegrationRowVersionAsync(c.Scratch, c.A, SecretKey));
+        (await StateAsync(c.Scratch, reference)).Should().Be(SecretState.Disabled);
+    }
+
     // ---- A3.2: a replace never versions a secret that is not the setting's own ----
 
     [Theory]
