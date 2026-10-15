@@ -825,24 +825,62 @@ public sealed class Aud14ClosureGuardTests
         "DirectoryDiscoveryStatus", "LastDirectoryDiscoveryUtc", "LastDirectoryDiscoverySummary", "LastDirectoryDiscoveryDetail",
     ];
 
-    /// <summary>The text of each named member (its name, parameters and body), found by its declaration.</summary>
-    private static Dictionary<string, string> MemberTexts(SourceFile file, IEnumerable<string> names)
+    /// <summary>The members of the registration repository that write the registration's configuration (each is audited by its unit).</summary>
+    private static readonly string[] ConfigurationMembers = ["GetActiveAsync", "GetByIdAsync", "ListAsync", "AddAsync", "UpdateAsync", "DeleteAsync", "SetActiveAsync"];
+
+    /// <summary>
+    /// Every declaration (all overloads) of the named members, then every member of the same file they call, and so on: the
+    /// closure. Declarations are found with <see cref="IsDeclaration"/>; a body is a block or an expression. Keyed by member name,
+    /// each value is the text of all declarations of that name.
+    /// </summary>
+    private static Dictionary<string, string> MemberClosure(SourceFile file, IEnumerable<string> roots)
     {
         var code = file.Code;
         var spans = CSharpSource.StringSpans(code);
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var name in names)
+        var declared = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(code, @"\b([A-Za-z_]\w*)\s*\("))
         {
-            foreach (Match m in Regex.Matches(code, $@"\b{Regex.Escape(name)}\s*\("))
-            {
-                if (!IsDeclaration(code, m.Index))
-                    continue;
+            if (!IsDeclaration(code, m.Index))
+                continue;
 
-                var open = code.IndexOf('{', m.Index);
-                open.Should().BeGreaterThan(0, $"{name} has a block body");
-                result[name] = code[m.Index..CSharpSource.MatchingBrace(code, open, spans)];
-                break;
+            var depth = 0;
+            var i = m.Index + m.Length - 1;
+            for (; i < code.Length; i++)
+            {
+                if (code[i] == '(')
+                    depth++;
+                else if (code[i] == ')' && --depth == 0)
+                    break;
             }
+
+            i++;
+            while (i < code.Length && char.IsWhiteSpace(code[i]))
+                i++;
+            string text;
+            if (i + 1 < code.Length && code[i] == '=' && code[i + 1] == '>')
+                text = code[m.Index..(code.IndexOf(';', i) + 1)];
+            else if (i < code.Length && code[i] == '{')
+                text = code[m.Index..CSharpSource.MatchingBrace(code, i, spans)];
+            else
+                continue;
+
+            var name = m.Groups[1].Value;
+            if (!declared.TryGetValue(name, out var texts))
+                declared[name] = texts = [];
+            texts.Add(text);
+        }
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = new Queue<string>(roots);
+        while (pending.Count > 0)
+        {
+            var name = pending.Dequeue();
+            if (result.ContainsKey(name) || !declared.TryGetValue(name, out var texts))
+                continue;
+
+            result[name] = string.Join("\n", texts);
+            foreach (Match call in Regex.Matches(result[name], @"\b([A-Za-z_]\w*)\s*\("))
+                pending.Enqueue(call.Groups[1].Value);
         }
 
         return result;
@@ -853,8 +891,14 @@ public sealed class Aud14ClosureGuardTests
     {
         var file = RepositorySource.Find(RegistrationRepositoryFile);
         file.Should().NotBeNull();
-        var members = MemberTexts(file!, ProbeMembers);
-        members.Keys.Should().BeEquivalentTo(ProbeMembers, "every probe member is declared in the registration repository");
+        var members = MemberClosure(file!, ProbeMembers);
+        members.Keys.Should().Contain(ProbeMembers, "every probe member is declared in the registration repository");
+        members.Keys.Should().NotContain(ConfigurationMembers, "a probe member must not reach a configuration member (UpdateAsync, SetActiveAsync and the rest bump UpdatedUtc and the rowversion)");
+
+        // A repository member that is neither a configuration operation nor a known probe is a new way to write, and is reviewed.
+        typeof(IEntraInstanceRegistrationRepository).GetMethods().Select(m => m.Name)
+            .Except(ConfigurationMembers).Except(ProbeMembers)
+            .Should().BeEmpty("a new member of the registration repository is either a configuration operation (list it in ConfigurationMembers, audited) or a probe (list it in ProbeMembers)");
 
         var combined = string.Join("\n", members.Values);
         var scan = PersistenceWriterScanner.Scan(Synthetic(Class(combined)), ScanModel.Value);
@@ -884,6 +928,28 @@ public sealed class Aud14ClosureGuardTests
         var scan = PersistenceWriterScanner.Scan(Synthetic(Class(code)), ScanModel.Value);
 
         scan.Sets.Should().Contain("EntraInstanceRegistrations", $"{name}: the guard must see a probe write to the configuration row; found by: {string.Join("; ", scan.Idioms)}");
+    }
+
+    [Fact]
+    public void G5_self_test_the_probe_closure_follows_helpers_and_overloads()
+    {
+        var file = Synthetic("""
+            public sealed class SyntheticRepository
+            {
+                private readonly AppertureDbContext _db;
+                public Task UpdateOpenIdValidationOutcomeAsync(string id) => Touch(id);
+                public Task UpdateOpenIdValidationOutcomeAsync(string id, int extra) { return Task.CompletedTask; }
+                private async Task Touch(string id) { await _db.EntraInstanceRegistrations.Where(x => x.Id == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.UpdatedUtc, DateTimeOffset.UtcNow)); }
+                public Task UpdateAsync(string id) { return Task.CompletedTask; }
+            }
+            """);
+
+        var closure = MemberClosure(file, ["UpdateOpenIdValidationOutcomeAsync"]);
+
+        closure.Keys.Should().BeEquivalentTo("UpdateOpenIdValidationOutcomeAsync", "Touch");
+        closure["UpdateOpenIdValidationOutcomeAsync"].Should().Contain("Touch(id)").And.Contain("int extra", "both overloads are in the closure");
+        PersistenceWriterScanner.Scan(Synthetic(Class(string.Join("\n", closure.Values))), ScanModel.Value).Sets
+            .Should().Contain("EntraInstanceRegistrations", "a probe that reaches the registration row through a helper is found");
     }
 
     [Fact]

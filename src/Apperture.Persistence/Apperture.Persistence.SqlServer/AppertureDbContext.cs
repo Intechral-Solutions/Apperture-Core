@@ -1014,6 +1014,8 @@ public class AppertureDbContext : DbContext
             e.ToTable("EntraRegistrationDiagnostics");
             e.HasKey(x => x.RegistrationId);
             e.Property(x => x.RegistrationId).HasMaxLength(64);
+            // The database default applies to a column left out of an insert. EF also reads a CLR 0 (Unknown) as "left out" for an
+            // insert, so an EF insert must not carry Unknown; AddAsync maps it to the default, and the probes write with SQL.
             e.Property(x => x.OpenIdConfigurationStatus).HasDefaultValue(EntraRegistrationDiagnosticsEntity.DefaultOpenIdConfigurationStatus);
             e.Property(x => x.DirectoryDiscoveryStatus).HasDefaultValue(EntraRegistrationDiagnosticsEntity.DefaultDirectoryDiscoveryStatus);
             e.Property(x => x.LastOpenIdValidationSummary).HasMaxLength(512);

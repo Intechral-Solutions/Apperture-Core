@@ -17,8 +17,10 @@ namespace Apperture.IntegrationTests.Audit;
 /// <list type="bullet">
 /// <item>A probe changes no column of the registration row, including <c>UpdatedUtc</c> and <c>rowversion</c>, so an edit form opened
 /// before a probe saves without a spurious 409, and a genuine competing edit still conflicts.</item>
-/// <item>A probe is not blocked by a lock held on the registration row, and probes and configuration edits that run together do not
-/// overwrite each other's results.</item>
+/// <item>A probe's write (the repository's update of an existing diagnostics row) is not blocked by a lock held on the registration
+/// row; the controller's own read of the registration afterwards is a separate read and, under locking READ COMMITTED, still waits
+/// for an in-flight save, as it always did. Probes and configuration edits that run together do not overwrite each other's results.
+/// The fallback that creates a missing row reads the registration, so it does wait for an in-flight change to it (record, L3).</item>
 /// <item>The diagnostics row is created with the registration and removed with it; a registration inserted without one reads the
 /// defaults and the first probes create the row, even when they race.</item>
 /// <item>A probe writes no audit row and stores no search value; a caller without the permission gets 403 and no probe runs.</item>
@@ -376,10 +378,13 @@ public sealed class EntraProbeTelemetrySqlServerTests : IClassFixture<AuditIsola
         private readonly TaskCompletionSource _atInsert = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _duplicateKeyFailures;
+        private int _foreignKeyFailures;
 
         public Task AtInsert => _atInsert.Task;
 
         public int DuplicateKeyFailures => Volatile.Read(ref _duplicateKeyFailures);
+
+        public int ForeignKeyFailures => Volatile.Read(ref _foreignKeyFailures);
 
         public void Release() => _release.TrySetResult();
 
@@ -405,7 +410,74 @@ public sealed class EntraProbeTelemetrySqlServerTests : IClassFixture<AuditIsola
         {
             if (eventData.Exception is SqlException { Number: 2627 or 2601 })
                 Interlocked.Increment(ref _duplicateKeyFailures);
+            if (eventData.Exception is SqlException { Number: 547 })
+                Interlocked.Increment(ref _foreignKeyFailures);
             return Task.CompletedTask;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task A_first_probe_whose_registration_is_deleted_while_it_creates_the_row_records_nothing_and_does_not_fail(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var id = await InsertRegistrationWithoutDiagnosticsAsync(scratch);
+
+        // The probe's update finds no row and it is held just before its insert.
+        var hook = new InsertHook();
+        await using var db = scratch.NewDb(hook);
+        var probe = Task.Run(() => new SqlEntraInstanceRegistrationRepository(db)
+            .UpdateOpenIdValidationOutcomeAsync(id, OpenIdConfigurationStatus.Valid, DateTimeOffset.UtcNow, "too late", null));
+        await hook.AtInsert.WaitAsync(TimeSpan.FromSeconds(15));
+
+        // An administrator deletes the registration, in a transaction that has not committed yet.
+        await using var deleter = new SqlConnection(scratch.ConnectionString);
+        await deleter.OpenAsync();
+        await using var deleteTransaction = (SqlTransaction)await deleter.BeginTransactionAsync();
+        await using (var delete = deleter.CreateCommand())
+        {
+            delete.Transaction = deleteTransaction;
+            delete.CommandText = $"DELETE FROM EntraInstanceRegistrations WHERE Id = N'{id}';";
+            await delete.ExecuteNonQueryAsync();
+        }
+
+        // Locking: the insert waits to read the registration. Row versioning: it reads the committed registration, inserts, and
+        // its foreign key check waits for the delete.
+        hook.Release();
+        await WaitUntilAStatementIsBlockedAsync(scratch);
+        await deleteTransaction.CommitAsync();
+        await probe;
+
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{id}';")).Should().Be(0);
+        (await DiagnosticsRowCountAsync(scratch, id)).Should().Be(0, "a probe never leaves a diagnostics row behind for a deleted registration");
+        hook.ForeignKeyFailures.Should().Be(rcsi ? 1 : 0, rcsi
+            ? "the insert met the delete at its foreign key check and the failure was handled"
+            : "the insert waited, found no registration and wrote nothing");
+    }
+
+    [Theory]
+    [MemberData(nameof(Isolation))]
+    public async Task Over_long_remote_text_is_stored_cut_to_the_columns_on_both_write_paths(bool rcsi)
+    {
+        var scratch = Scratch(rcsi);
+        var admin = await AddAdministratorAsync(scratch);
+        var withRow = await CreateRegistrationAsync(scratch, admin);
+        var withoutRow = await InsertRegistrationWithoutDiagnosticsAsync(scratch);
+        var summary = new string('s', 700);
+        var detail = new string('d', 6000);
+
+        foreach (var id in new[] { withRow, withoutRow })
+        {
+            await using var db = scratch.NewDb();
+            var repository = new SqlEntraInstanceRegistrationRepository(db);
+            await repository.UpdateOpenIdValidationOutcomeAsync(id, OpenIdConfigurationStatus.TransientFailure, DateTimeOffset.UtcNow, summary, detail);
+            await repository.UpdateDirectoryDiscoveryOutcomeAsync(id, DirectoryDiscoveryStatus.TransientFailure, DateTimeOffset.UtcNow, summary, detail);
+
+            var stored = (await DiagnosticsRowAsync(scratch, id))!;
+            stored["LastOpenIdValidationSummary"].Should().Be(summary[..512], id);
+            stored["LastDirectoryDiscoverySummary"].Should().Be(summary[..512], id);
+            stored["LastOpenIdValidationDetail"].Should().Be(detail[..4000], id);
+            stored["LastDirectoryDiscoveryDetail"].Should().Be(detail[..4000], id);
         }
     }
 

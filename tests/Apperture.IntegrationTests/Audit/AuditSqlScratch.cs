@@ -52,9 +52,17 @@ public sealed class AuditSqlScratch : IAsyncDisposable
         var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
         var scratch = new AuditSqlScratch(baseConnectionString, prefix + Guid.NewGuid().ToString("N")[..12]);
         SqlServerTestConfiguration.EnsureTestDatabaseExists(scratch.ConnectionString);
-        await using var db = scratch.NewDb();
-        await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(migrationId);
-        return scratch;
+        try
+        {
+            await using var db = scratch.NewDb();
+            await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(migrationId);
+            return scratch;
+        }
+        catch
+        {
+            await scratch.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>Applies every pending migration through the supported entry point, as a Management Host start does.</summary>

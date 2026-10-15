@@ -16,6 +16,8 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
     private const int SqlDuplicateKey = 2627;
     private const int SqlDuplicateUniqueIndex = 2601;
     private const int SqlForeignKeyViolation = 547;
+    private const int SummaryMaxLength = 512;
+    private const int DetailMaxLength = 4000;
 
     private readonly AppertureDbContext _db;
 
@@ -183,6 +185,8 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         CancellationToken cancellationToken = default)
     {
         var statusValue = (int)status;
+        summary = Bound(summary, SummaryMaxLength);
+        detail = Bound(detail, DetailMaxLength);
         await RecordAsync(
             update: () => _db.EntraRegistrationDiagnostics
                 .Where(d => d.RegistrationId == id)
@@ -222,6 +226,8 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
         CancellationToken cancellationToken = default)
     {
         var statusValue = (int)status;
+        summary = Bound(summary, SummaryMaxLength);
+        detail = Bound(detail, DetailMaxLength);
         await RecordAsync(
             update: () => _db.EntraRegistrationDiagnostics
                 .Where(d => d.RegistrationId == id)
@@ -250,6 +256,13 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
                 ],
                 cancellationToken));
     }
+
+    /// <summary>
+    /// A remote error message has no length limit of its own, but the columns do. Both write paths store the same bounded text, so
+    /// an over-long message is cut the same way whether the row exists or has to be created, and never fails the probe.
+    /// </summary>
+    private static string? Bound(string? value, int maxLength) =>
+        value is not null && value.Length > maxLength ? value[..maxLength] : value;
 
     /// <summary>
     /// Records one probe outcome on the registration's diagnostics row, creating the row when it is missing. A registration that
