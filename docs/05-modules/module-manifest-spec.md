@@ -46,8 +46,16 @@ public ModuleManifest GetManifest() => new(ModuleId, "Hello World", "1.0.0", "Va
 {
     Permissions =
     [
-        new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
-        new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+        new ModulePermissionDeclaration(
+            "workflow.execute", "WorkflowInstance",
+            "Run Hello World workflows",
+            "Run the workflows provided by the Hello World module.",
+            PermissionSensitivity.Elevated),
+        new ModulePermissionDeclaration(
+            ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition,
+            "Run Hello World operations",
+            "Run the operations provided by the Hello World module.",
+            PermissionSensitivity.Elevated)
     ],
     Signals =
     [
@@ -91,9 +99,15 @@ Each **ModulePermissionDeclaration**:
 | Member | Required | Rule |
 |--------|----------|------|
 | **Action** | Yes | Lowercase, at least two dot-separated segments (ADR-0013), e.g. `workflow.execute` |
-| **ResourceType** | No | e.g. `WorkflowInstance`, `OperationDefinition`; host default if omitted |
+| **ResourceType** | Yes | e.g. `WorkflowInstance`, `OperationDefinition`; registration fails when it is omitted |
+| **DisplayName** | Yes | What an operator sees in the role editor; at most 80 characters. Name the module, because every module declares `workflow.execute` |
+| **Description** | Yes | One sentence saying what holding the permission allows; at most 300 characters |
+| **Sensitivity** | No | `Standard` (default), `Elevated` or `Critical`. A declared classification for operators, not a security boundary against the module (modules are trusted in-process). Running workflows or operations is `Elevated` |
+| **RequiresStepUp** | No | Default `false`. Declares that exercising the permission needs recent strong authentication |
 
-**Registration:** `ModulePermissionRegistrar` at Management/worker startup into `IResourceDescriptorRegistry` with scope `module:{moduleId}`.
+A declaration without a display name or description, or with an undefined sensitivity, fails registration with an error that names the module and the action. A module cannot decline the administrator default: every module permission is held by the Platform Administrator role. Names and descriptions are product text: they must not contain planning labels, epic or track identifiers, or migration names.
+
+**Registration:** `ModulePermissionRegistrar` at Management/worker startup into `IResourceDescriptorRegistry` with scope `module:{moduleId}`. The catalog entry is a `PermissionDefinition` with origin `Module` and the module id; the governance catalog endpoint reports source and module id from that origin, not from the scope key.
 
 **Runtime enforcement (Epic 5):**
 
@@ -206,9 +220,12 @@ Registers a resource descriptor in `IResourceDescriptorRegistry` (`ResourceFamil
 |--------|------|
 | **Action** | Required; must be **lowercase** dot-separated key |
 | **ResourceType** | Required, non-empty |
-| **IsPrivileged** | Optional; audit/reporting semantics for privileged actions |
+| **DisplayName** | Required; at most 80 characters |
+| **Description** | Required; one sentence, at most 300 characters |
+| **Sensitivity** | Optional; `Standard` (default), `Elevated` or `Critical` |
+| **RequiresStepUp** | Optional; default `false` |
 
-Registers a permission descriptor at scope `module:{moduleId}`.
+Registers a permission at scope `module:{moduleId}` with the same metadata rules as a `ModulePermissionDeclaration`. (The former `IsPrivileged` flag was never read and has been removed.)
 
 Invalid declarations cause `ModulePermissionRegistrar.Register` to throw `InvalidOperationException` at startup with module-scoped diagnostics.
 

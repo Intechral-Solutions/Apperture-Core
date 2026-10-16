@@ -105,7 +105,8 @@ public sealed class OperationStartAuthorizationServiceTests
         private readonly IReadOnlyList<PermissionDescriptor> _known;
         public StubRegistry(IReadOnlyList<PermissionDescriptor> known) => _known = known;
         public void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null) => throw new NotSupportedException();
-        public void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null) => throw new NotSupportedException();
+        public void RegisterPermission(PermissionDefinition definition) => throw new NotSupportedException();
+        public IReadOnlyList<PermissionDefinition> GetPermissionDefinitions(ResourceFamily? family = null) => throw new NotSupportedException();
         public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) => Array.Empty<ResourceDescriptor>();
         public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) => _known;
         public bool IsPermissionRegistered(PermissionDescriptor descriptor) => _known.Any(p => p.Equals(descriptor));

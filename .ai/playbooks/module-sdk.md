@@ -45,7 +45,7 @@ context.Signals.Telemetry.RecordCounter("myModule.rows", count);
 
 ## Resource and permission registration (implemented)
 
-Modules declare **Permissions** (and optional **GovernedResources** / **GovernedActions**) in the manifest. The host registers them at startup; modules do not call `RegisterPermission` themselves.
+Modules declare **Permissions** (and optional **GovernedResources** / **GovernedActions**) in the manifest. The host registers them at startup; modules do not call `RegisterPermission` themselves. Every declaration carries a display name and a one-sentence description (operator-facing product text, no planning labels) and may set `Sensitivity` and `RequiresStepUp`; an incomplete declaration fails registration naming the module.
 
 **Constraints:**
 

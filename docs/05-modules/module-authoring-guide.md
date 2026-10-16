@@ -266,7 +266,7 @@ Full field and validation reference: [module-manifest-spec.md](./module-manifest
 
 `ModuleManifest` also supports:
 
-- `Permissions` — `ModulePermissionDeclaration` (action + optional resource type)
+- `Permissions` — `ModulePermissionDeclaration` (action, resource type, display name, description, and optionally sensitivity and step-up). The name and description are what operators read in the role editor
 - `Signals` — platform event declarations (declare before emit)
 - `Procedures` — integration-scoped operator launch surface
 - `GovernedResources` / `GovernedActions` — extended governance catalog
@@ -281,8 +281,16 @@ public ModuleManifest GetManifest() => new(ModuleId, "Hello World", "1.0.0", "Va
 {
     Permissions =
     [
-        new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
-        new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+        new ModulePermissionDeclaration(
+            "workflow.execute", "WorkflowInstance",
+            "Run Hello World workflows",
+            "Run the workflows provided by the Hello World module.",
+            PermissionSensitivity.Elevated),
+        new ModulePermissionDeclaration(
+            ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition,
+            "Run Hello World operations",
+            "Run the operations provided by the Hello World module.",
+            PermissionSensitivity.Elevated)
     ],
     Signals =
     [

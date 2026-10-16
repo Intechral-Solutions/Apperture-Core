@@ -30,7 +30,11 @@ public sealed class FileImportModule : IModule, IModuleStepHandlerRegistrar, IIn
     {
         Permissions =
         [
-            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
+            new ModulePermissionDeclaration(
+                "workflow.execute", "WorkflowInstance",
+                "Run File Import workflows",
+                "Run the workflows provided by the File Import module.",
+                PermissionSensitivity.Elevated),
         ],
         Signals =
         [

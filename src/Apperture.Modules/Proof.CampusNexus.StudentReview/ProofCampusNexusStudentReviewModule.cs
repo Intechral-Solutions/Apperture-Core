@@ -33,8 +33,16 @@ public sealed class ProofCampusNexusStudentReviewModule : IModule, IModuleStepHa
     {
         Permissions =
         [
-            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
-            new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+            new ModulePermissionDeclaration(
+                "workflow.execute", "WorkflowInstance",
+                "Run Student Review workflows",
+                "Run the workflows provided by the Campus Nexus Student Review module.",
+                PermissionSensitivity.Elevated),
+            new ModulePermissionDeclaration(
+                ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition,
+                "Run Student Review operations",
+                "Run the operations provided by the Campus Nexus Student Review module.",
+                PermissionSensitivity.Elevated)
         ],
         Procedures =
         [

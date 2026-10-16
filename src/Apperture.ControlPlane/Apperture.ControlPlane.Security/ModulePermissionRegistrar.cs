@@ -45,10 +45,14 @@ public static class ModulePermissionRegistrar
                 if (!seen.Add(key))
                     continue;
 
-                var descriptor = new PermissionDescriptor(
+                registry.RegisterPermission(ToDefinition(
+                    moduleId,
                     decl.Action.Trim(),
-                    new ResourceDescriptor(resourceType, scopeKey));
-                registry.RegisterPermission(descriptor, ResourceFamily.Core);
+                    resourceType,
+                    decl.DisplayName,
+                    decl.Description,
+                    decl.Sensitivity,
+                    decl.RequiresStepUp));
             }
         }
 
@@ -109,13 +113,76 @@ public static class ModulePermissionRegistrar
                 continue;
             }
 
-            var scopeKey = ScopeKeyConstants.Module(moduleId);
-            registry.RegisterPermission(
-                new PermissionDescriptor(
-                    actionKey,
-                    new ResourceDescriptor(action.ResourceType.Trim(), scopeKey)),
-                ResourceFamily.Core);
+            if (!TryValidateMetadata(actionKey, action.DisplayName, action.Description, action.Sensitivity, out var metadataError))
+            {
+                errors.Add($"Module {moduleId}: governed action {metadataError}");
+                continue;
+            }
+
+            registry.RegisterPermission(ToDefinition(
+                moduleId,
+                actionKey,
+                action.ResourceType.Trim(),
+                action.DisplayName,
+                action.Description,
+                action.Sensitivity,
+                action.RequiresStepUp));
         }
+    }
+
+    /// <summary>
+    /// A module permission is always module-origin, in the Modules category, and always held by the Platform Administrator
+    /// by default: a module cannot decline the administrator default.
+    /// </summary>
+    private static PermissionDefinition ToDefinition(
+        string moduleId,
+        string action,
+        string resourceType,
+        string displayName,
+        string description,
+        PermissionSensitivity sensitivity,
+        bool requiresStepUp) =>
+        new(
+            new PermissionDescriptor(action, new ResourceDescriptor(resourceType, ScopeKeyConstants.Module(moduleId))),
+            displayName.Trim(),
+            description.Trim(),
+            PermissionCategory.Modules,
+            sensitivity,
+            requiresStepUp,
+            GrantedToPlatformAdministratorByDefault: true,
+            Origin: PermissionOrigin.Module,
+            ModuleId: moduleId,
+            Family: ResourceFamily.Core);
+
+    private static bool TryValidateMetadata(
+        string action,
+        string? displayName,
+        string? description,
+        PermissionSensitivity sensitivity,
+        out string? error)
+    {
+        var problems = new List<string>();
+        if (string.IsNullOrWhiteSpace(displayName))
+            problems.Add("DisplayName is required.");
+        else if (displayName.Trim().Length > PermissionDefinition.MaxDisplayNameLength)
+            problems.Add($"DisplayName must be at most {PermissionDefinition.MaxDisplayNameLength} characters.");
+
+        if (string.IsNullOrWhiteSpace(description))
+            problems.Add("Description is required (one sentence saying what holding the permission allows).");
+        else if (description.Trim().Length > PermissionDefinition.MaxDescriptionLength)
+            problems.Add($"Description must be at most {PermissionDefinition.MaxDescriptionLength} characters.");
+
+        if (!Enum.IsDefined(sensitivity))
+            problems.Add($"Sensitivity '{sensitivity}' is not a defined sensitivity (Standard, Elevated or Critical).");
+
+        if (problems.Count == 0)
+        {
+            error = null;
+            return true;
+        }
+
+        error = $"'{action}': {string.Join(" ", problems)}";
+        return false;
     }
 
     private static bool TryValidate(ModulePermissionDeclaration decl, string moduleId, out string? error)
@@ -148,6 +215,12 @@ public static class ModulePermissionRegistrar
         if (decl.ResourceType.Trim().Length == 0)
         {
             error = "ResourceType must not be whitespace.";
+            return false;
+        }
+
+        if (!TryValidateMetadata(action, decl.DisplayName, decl.Description, decl.Sensitivity, out var metadataError))
+        {
+            error = $"permission {metadataError}";
             return false;
         }
 

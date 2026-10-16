@@ -12,7 +12,7 @@ namespace Apperture.ControlPlane.Security;
 public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegistry
 {
     private readonly ConcurrentDictionary<string, (ResourceDescriptor Descriptor, ResourceFamily? Family)> _resources = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, (PermissionDescriptor Descriptor, ResourceFamily? Family)> _permissions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, PermissionDefinition> _permissions = new(StringComparer.Ordinal);
 
     /// <inheritdoc />
     public void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null)
@@ -32,24 +32,28 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
     }
 
     /// <inheritdoc />
-    public void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null)
+    public void RegisterPermission(PermissionDefinition definition)
     {
-        ValidatePermission(descriptor);
-        var key = ToPermissionKey(descriptor);
-        var entry = (descriptor, family);
-        if (!_permissions.TryAdd(key, entry))
+        ArgumentNullException.ThrowIfNull(definition);
+        ValidateDefinition(definition);
+        var key = ToPermissionKey(definition.Identity);
+        if (!_permissions.TryAdd(key, definition))
         {
             var existing = _permissions[key];
-            if (!existing.Descriptor.Equals(descriptor) || !Equals(existing.Family, family))
+            if (!existing.Equals(definition))
                 throw new InvalidOperationException(
                     $"Conflicting permission registration for key '{key}'. " +
-                    $"Existing: Action={existing.Descriptor.Action}, Resource={FormatResource(existing.Descriptor.Resource)}, Family={existing.Family}. " +
-                    $"Incoming: Action={descriptor.Action}, Resource={FormatResource(descriptor.Resource)}, Family={family}.");
+                    $"Existing: {Describe(existing)}. Incoming: {Describe(definition)}.");
         }
     }
 
     private static string FormatResource(ResourceDescriptor? r) =>
         r is null ? "null" : $"{r.ResourceType}:{r.ScopeKey}";
+
+    private static string Describe(PermissionDefinition d) =>
+        $"Action={d.Identity.Action}, Resource={FormatResource(d.Identity.Resource)}, Family={d.Family}, DisplayName='{d.DisplayName}', " +
+        $"Category={d.Category}, Sensitivity={d.Sensitivity}, RequiresStepUp={d.RequiresStepUp}, " +
+        $"GrantedToPlatformAdministratorByDefault={d.GrantedToPlatformAdministratorByDefault}, Origin={d.Origin}, ModuleId={d.ModuleId ?? "null"}";
 
     /// <inheritdoc />
     public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) =>
@@ -58,10 +62,14 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
             : _resources.Values.Where(r => r.Family == family).Select(r => r.Descriptor).ToList();
 
     /// <inheritdoc />
-    public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) =>
+    public IReadOnlyList<PermissionDefinition> GetPermissionDefinitions(ResourceFamily? family = null) =>
         family is null
-            ? _permissions.Values.Select(p => p.Descriptor).ToList()
-            : _permissions.Values.Where(p => p.Family == family).Select(p => p.Descriptor).ToList();
+            ? _permissions.Values.ToList()
+            : _permissions.Values.Where(p => p.Family == family).ToList();
+
+    /// <inheritdoc />
+    public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) =>
+        GetPermissionDefinitions(family).Select(p => p.Identity).ToList();
 
     /// <inheritdoc />
     public bool IsPermissionRegistered(PermissionDescriptor descriptor)
@@ -79,9 +87,7 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
 
     /// <inheritdoc />
     public IReadOnlyList<(PermissionDescriptor Descriptor, ResourceFamily? Family)> GetPermissionDescriptorsWithFamily(ResourceFamily? family = null) =>
-        family is null
-            ? _permissions.Values.Select(p => (p.Descriptor, p.Family)).ToList()
-            : _permissions.Values.Where(p => p.Family == family).Select(p => (p.Descriptor, p.Family)).ToList();
+        GetPermissionDefinitions(family).Select(p => (p.Identity, p.Family)).ToList();
 
     private static string ToResourceKey(ResourceDescriptor descriptor) =>
         $"{descriptor.ResourceType}::{descriptor.ScopeKey}";
@@ -105,6 +111,33 @@ public sealed class InMemoryResourceDescriptorRegistry : IResourceDescriptorRegi
             throw new InvalidOperationException("ScopeKey must not have leading or trailing whitespace.");
         if (descriptor.ResourceType.Length > 0 && !char.IsLetter(descriptor.ResourceType[0]))
             throw new InvalidOperationException($"ResourceType '{descriptor.ResourceType}' must start with a letter (PascalCase).");
+    }
+
+    private static void ValidateDefinition(PermissionDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition.Identity);
+        ValidatePermission(definition.Identity);
+        var who = $"Permission '{definition.Identity.Action}' ({FormatResource(definition.Identity.Resource)})";
+
+        if (string.IsNullOrWhiteSpace(definition.DisplayName))
+            throw new InvalidOperationException($"{who}: DisplayName is required.");
+        if (definition.DisplayName.Length > PermissionDefinition.MaxDisplayNameLength)
+            throw new InvalidOperationException($"{who}: DisplayName must be at most {PermissionDefinition.MaxDisplayNameLength} characters.");
+        if (string.IsNullOrWhiteSpace(definition.Description))
+            throw new InvalidOperationException($"{who}: Description is required.");
+        if (definition.Description.Length > PermissionDefinition.MaxDescriptionLength)
+            throw new InvalidOperationException($"{who}: Description must be at most {PermissionDefinition.MaxDescriptionLength} characters.");
+        if (!Enum.IsDefined(definition.Category))
+            throw new InvalidOperationException($"{who}: Category '{definition.Category}' is not a defined category.");
+        if (!Enum.IsDefined(definition.Sensitivity))
+            throw new InvalidOperationException($"{who}: Sensitivity '{definition.Sensitivity}' is not a defined sensitivity.");
+        if (!Enum.IsDefined(definition.Origin))
+            throw new InvalidOperationException($"{who}: Origin '{definition.Origin}' is not a defined origin.");
+
+        if (definition.Origin == PermissionOrigin.Module && string.IsNullOrWhiteSpace(definition.ModuleId))
+            throw new InvalidOperationException($"{who}: ModuleId is required for a module permission.");
+        if (definition.Origin == PermissionOrigin.Platform && definition.ModuleId is not null)
+            throw new InvalidOperationException($"{who}: ModuleId must be empty for a platform permission.");
     }
 
     private static void ValidatePermission(PermissionDescriptor descriptor)

@@ -20,10 +20,17 @@ public sealed class HelloWorldModule : IModule, IModuleStepHandlerRegistrar, IOp
     {
         Permissions =
         [
-            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance")
-            ,
+            new ModulePermissionDeclaration(
+                "workflow.execute", "WorkflowInstance",
+                "Run Hello World workflows",
+                "Run the workflows provided by the Hello World module.",
+                PermissionSensitivity.Elevated),
             // Allow operation execution for this module's operations.
-            new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+            new ModulePermissionDeclaration(
+                ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition,
+                "Run Hello World operations",
+                "Run the operations provided by the Hello World module.",
+                PermissionSensitivity.Elevated)
         ],
         Signals =
         [

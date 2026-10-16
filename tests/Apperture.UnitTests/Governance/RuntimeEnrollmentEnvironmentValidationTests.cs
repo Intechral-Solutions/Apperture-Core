@@ -374,7 +374,8 @@ public sealed class RuntimeEnrollmentEnvironmentValidationTests
 
     private sealed class StubResourceDescriptorRegistry : IResourceDescriptorRegistry
     {
-        public void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null) { }
+        public void RegisterPermission(PermissionDefinition definition) { }
+        public IReadOnlyList<PermissionDefinition> GetPermissionDefinitions(ResourceFamily? family = null) => Array.Empty<PermissionDefinition>();
         public void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null) { }
         public IReadOnlyList<ResourceDescriptor> GetResourceDescriptors(ResourceFamily? family = null) => Array.Empty<ResourceDescriptor>();
         public IReadOnlyList<PermissionDescriptor> GetPermissionDescriptors(ResourceFamily? family = null) => Array.Empty<PermissionDescriptor>();

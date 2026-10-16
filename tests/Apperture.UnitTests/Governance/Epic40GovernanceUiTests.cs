@@ -46,7 +46,9 @@ public sealed class Epic40GovernanceUiTests
     {
         var response = new GovernanceDescriptorResponse(
             [new ResourceCatalogEntryDto("User", "instance", "Core")],
-            [new PermissionCatalogEntryDto("user.read", "User", "instance", "Core", "platform", null)]);
+            [new PermissionCatalogEntryDto(
+                "user.read", "User", "instance", "Core", "platform", null,
+                "View users", "View users, their roles and how they sign in.", "AccessControl", "Standard", false)]);
         response.Resources.Should().ContainSingle();
         response.Resources[0].ResourceType.Should().Be("User");
         response.Resources[0].Family.Should().Be("Core");

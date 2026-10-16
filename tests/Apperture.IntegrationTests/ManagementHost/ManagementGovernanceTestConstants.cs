@@ -32,6 +32,9 @@ internal static class ManagementGovernanceTestConstants
     internal const string ExternalIntegrationScheduleOperator = "test-governance-integration-schedule-op";
     internal const string ExternalIntegrationAuthoringOperator = "test-governance-integration-authoring-op";
 
+    /// <summary>user.read on Role only: enough to read the governance permission catalog.</summary>
+    internal const string ExternalGovernanceReader = "test-governance-catalog-reader";
+
     /// <summary>integration.read + workflow.execute + operation.execute (Sample.HelloWorld) for procedure launch HTTP tests (Epic 56A/56B).</summary>
     internal const string ExternalProcedureLauncher = "test-governance-procedure-launcher";
 
@@ -47,6 +50,8 @@ internal static class ManagementGovernanceTestConstants
 
     internal const string UserProcedureLauncher = "usrgovernproclaunch00001";
 
+    internal const string UserGovernanceReader = "usrgovernreader000000001";
+
     internal const string UserWorkflowOnlyProcedureLauncher = "usrgovernwfonlyproc00001";
 
     // Role ids
@@ -57,6 +62,10 @@ internal static class ManagementGovernanceTestConstants
     internal const string RoleIntegrationAuthoring = "rolgovernintegauthor0001";
 
     internal const string RoleProcedureLauncher = "rolgovernproclaunch00001";
+
+    internal const string RoleGovernanceReader = "rolgovernreader000000001";
+
+    internal const string LinkGovernanceReader = "idlkgrvnreader0000000001";
 
     internal const string RoleWorkflowOnlyProcedureLauncher = "rolgovernwfonlyproc00001";
 

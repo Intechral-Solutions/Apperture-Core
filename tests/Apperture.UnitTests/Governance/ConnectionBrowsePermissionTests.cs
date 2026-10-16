@@ -47,7 +47,7 @@ public sealed class ConnectionBrowsePermissionTests
         actions.Should().NotContain(a => a.Contains("sql", StringComparison.OrdinalIgnoreCase) && a.Contains("execute", StringComparison.OrdinalIgnoreCase));
         actions.Should().NotContain(a => a.StartsWith("tool.", StringComparison.OrdinalIgnoreCase) || a.StartsWith("connection.tool", StringComparison.OrdinalIgnoreCase));
         actions.Where(a => a.StartsWith("connection.", StringComparison.Ordinal)).Should().BeEquivalentTo(
-            ["connection.create", "connection.read", "connection.update", "connection.delete", "connection.browse"]);
+            ["connection.create", "connection.read", "connection.update", "connection.delete", "connection.browse", "connection.verify"]);
     }
 
     [Fact]

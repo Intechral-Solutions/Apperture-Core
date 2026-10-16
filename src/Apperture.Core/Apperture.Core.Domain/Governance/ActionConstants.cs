@@ -33,6 +33,12 @@ public static class ActionConstants
     /// </summary>
     public const string ConnectionBrowse = "connection.browse";
 
+    /// <summary>
+    /// Test that a Connection can reach its external system, using the Connection's stored credentials. A separate permission from
+    /// <see cref="ConnectionRead"/> because the call is made with a credential on the caller's behalf.
+    /// </summary>
+    public const string ConnectionVerify = "connection.verify";
+
     // Connector
     /// <summary>Read the connector-definition catalog (shape metadata) at instance scope. Epic 52A.</summary>
     public const string ConnectorDefinitionRead = "connector.definition.read";
@@ -63,6 +69,9 @@ public static class ActionConstants
 
     // Schedule
     public const string ScheduleManage = "schedule.manage";
+
+    /// <summary>Create, change and delete operational teams and their members.</summary>
+    public const string OperationalTeamManage = "operational_team.manage";
 
     // Recovery (Epic 34)
     public const string RecoveryRead = "recovery.read";
@@ -104,6 +113,13 @@ public static class ActionConstants
 
     /// <summary>Create, update, delete, and activate Entra instance registrations.</summary>
     public const string AuthEntraManage = "auth.entra.manage";
+
+    /// <summary>
+    /// Search the Entra directory for people, using the registered tenant's stored credentials. A separate permission from
+    /// <see cref="AuthConfigurationRead"/> and <see cref="AuthEntraManage"/> because the call is made with a credential on the
+    /// caller's behalf.
+    /// </summary>
+    public const string AuthDirectorySearch = "auth.directory.search";
 
     /// <summary>List and search managed contacts (canonical contact layer). Epic 76.</summary>
     public const string ManagedContactRead = "managed_contact.read";

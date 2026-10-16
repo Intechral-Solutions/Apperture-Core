@@ -38,7 +38,11 @@ public sealed class ApiPollingModule : IModule, IModuleStepHandlerRegistrar, IIn
     {
         Permissions =
         [
-            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
+            new ModulePermissionDeclaration(
+                "workflow.execute", "WorkflowInstance",
+                "Run API Polling workflows",
+                "Run the workflows provided by the API Polling module.",
+                PermissionSensitivity.Elevated),
         ],
         Signals =
         [

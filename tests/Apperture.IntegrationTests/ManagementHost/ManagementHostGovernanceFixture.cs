@@ -256,6 +256,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
         await EnsureForeignModuleIntegrationForHarnessAsync(db).ConfigureAwait(false);
         await EnsureProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
         await EnsureWorkflowOnlyProcedureLauncherPrincipalAsync(db).ConfigureAwait(false);
+        await EnsureGovernanceReaderPrincipalAsync(db).ConfigureAwait(false);
         await EnsureIntegrationAuthoringPrincipalAsync(db).ConfigureAwait(false);
         await EnsureHelloWorldModuleEnabledForHarnessAsync(db).ConfigureAwait(false);
     }
@@ -366,6 +367,49 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
             {
                 UserId = ManagementGovernanceTestConstants.UserProcedureLauncher,
                 RoleId = ManagementGovernanceTestConstants.RoleProcedureLauncher
+            });
+
+        await db.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static async Task EnsureGovernanceReaderPrincipalAsync(AppertureDbContext db)
+    {
+        if (await db.Users.AnyAsync(u => u.Id == ManagementGovernanceTestConstants.UserGovernanceReader).ConfigureAwait(false))
+            return;
+
+        db.Roles.Add(
+            new RoleEntity
+            {
+                Id = ManagementGovernanceTestConstants.RoleGovernanceReader,
+                Name = "Governance test — catalog reader",
+                Description = "Reads the governance permission catalog",
+                PermissionsJson = """[{"action":"user.read","resource":{"resourceType":"Role","scopeKey":"instance"}}]""",
+                IsSystemRole = false
+            });
+
+        db.AddUsersWithCurrentUsernames(
+            new UserEntity
+            {
+                Id = ManagementGovernanceTestConstants.UserGovernanceReader,
+                Username = ManagementGovernanceTestConstants.ExternalGovernanceReader,
+                DisplayName = "Governance test — catalog reader",
+                IsBreakGlassEligible = false
+            });
+
+        db.IdentityLinks.Add(
+            new IdentityLinkEntity
+            {
+                Id = ManagementGovernanceTestConstants.LinkGovernanceReader,
+                UserId = ManagementGovernanceTestConstants.UserGovernanceReader,
+                Source = (int)IdentitySource.Local,
+                ExternalId = ManagementGovernanceTestConstants.ExternalGovernanceReader
+            });
+
+        db.UserRoles.Add(
+            new UserRoleEntity
+            {
+                UserId = ManagementGovernanceTestConstants.UserGovernanceReader,
+                RoleId = ManagementGovernanceTestConstants.RoleGovernanceReader
             });
 
         await db.SaveChangesAsync().ConfigureAwait(false);

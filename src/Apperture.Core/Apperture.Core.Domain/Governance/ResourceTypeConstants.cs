@@ -25,6 +25,9 @@ public static class ResourceTypeConstants
 
     // Administrative
     public const string Schedule = "Schedule";
+
+    /// <summary>A group of people that receives alerts and tasks; managed apart from the schedules it serves.</summary>
+    public const string OperationalTeam = "OperationalTeam";
     public const string Recovery = "Recovery";
     public const string RuntimeHealth = "RuntimeHealth";
     public const string SecretDescriptor = "SecretDescriptor";

@@ -125,6 +125,47 @@ public sealed class ManagementHostGovernanceHttpTests
     }
 
     [Fact]
+    public async Task Get_governance_descriptors_exposes_permission_metadata_and_derives_origin_from_the_definition()
+    {
+        AssertSqlAvailable();
+        using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalGovernanceReader);
+
+        var response = await client.GetAsync("/api/governance/descriptors");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var permissions = doc.RootElement.GetProperty("permissions").EnumerateArray().ToList();
+        permissions.Should().NotBeEmpty();
+        foreach (var p in permissions)
+        {
+            var key = $"{p.GetProperty("action").GetString()}@{p.GetProperty("scopeKey").GetString()}";
+            p.GetProperty("displayName").GetString().Should().NotBeNullOrWhiteSpace(key);
+            p.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace(key);
+            p.GetProperty("category").GetString().Should().NotBeNullOrWhiteSpace(key);
+            p.GetProperty("sensitivity").GetString().Should().BeOneOf(["Standard", "Elevated", "Critical"], key);
+            p.TryGetProperty("requiresStepUp", out _).Should().BeTrue(key);
+        }
+
+        JsonElement Find(string action, string? scopeKey = null) =>
+            permissions.Single(p => p.GetProperty("action").GetString() == action &&
+                                    (scopeKey is null || p.GetProperty("scopeKey").GetString() == scopeKey));
+
+        var roleManage = Find("role.manage");
+        roleManage.GetProperty("sensitivity").GetString().Should().Be("Critical");
+        roleManage.GetProperty("source").GetString().Should().Be("platform");
+        roleManage.GetProperty("moduleId").ValueKind.Should().Be(JsonValueKind.Null);
+
+        foreach (var action in new[] { "operational_team.manage", "auth.directory.search", "connection.verify" })
+            Find(action).GetProperty("sensitivity").GetString().Should().Be("Elevated", action);
+
+        var helloWorld = Find("workflow.execute", "module:Sample.HelloWorld");
+        helloWorld.GetProperty("source").GetString().Should().Be("module");
+        helloWorld.GetProperty("moduleId").GetString().Should().Be("Sample.HelloWorld");
+        helloWorld.GetProperty("sensitivity").GetString().Should().Be("Elevated");
+        helloWorld.GetProperty("displayName").GetString().Should().Be("Run Hello World workflows");
+    }
+
+    [Fact]
     public async Task Post_connection_test_connect_without_auth_returns_401()
     {
         AssertSqlAvailable();

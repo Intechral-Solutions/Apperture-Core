@@ -2,6 +2,8 @@ namespace Apperture.Management.Api.Models;
 
 /// <summary>
 /// Permission entry in the governance catalog with metadata for admin display.
+/// <c>Source</c> ("platform" or "module") and <c>ModuleId</c> are the permission's origin, not parsed from its scope key.
+/// <c>Category</c> and <c>Sensitivity</c> are the names of the corresponding enum values.
 /// </summary>
 public sealed record PermissionCatalogEntryDto(
     string Action,
@@ -9,7 +11,12 @@ public sealed record PermissionCatalogEntryDto(
     string? ScopeKey,
     string? Family,
     string Source,
-    string? ModuleId);
+    string? ModuleId,
+    string DisplayName,
+    string Description,
+    string Category,
+    string Sensitivity,
+    bool RequiresStepUp);
 
 /// <summary>
 /// Resource entry in the governance catalog with metadata for admin display.
