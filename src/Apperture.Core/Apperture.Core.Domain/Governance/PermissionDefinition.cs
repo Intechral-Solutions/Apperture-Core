@@ -11,7 +11,7 @@ namespace Apperture.Core.Domain.Governance;
 /// <param name="Category">The group the permission is presented under.</param>
 /// <param name="Sensitivity">How much harm holding the permission can do.</param>
 /// <param name="RequiresStepUp">Whether exercising the permission needs recent strong authentication. Declared here; enforcement is separate.</param>
-/// <param name="GrantedToPlatformAdministratorByDefault">Whether the Platform Administrator role holds the permission without being asked.</param>
+/// <param name="GrantedToPlatformAdministratorByDefault">Whether the Platform Administrator role is meant to hold the permission without being asked. Catalog metadata: it does not change what any role holds.</param>
 /// <param name="Origin">Whether the platform or a module contributed the permission.</param>
 /// <param name="ModuleId">The contributing module. Present exactly when <paramref name="Origin"/> is <see cref="PermissionOrigin.Module"/>.</param>
 /// <param name="Family">Optional taxonomy grouping.</param>
