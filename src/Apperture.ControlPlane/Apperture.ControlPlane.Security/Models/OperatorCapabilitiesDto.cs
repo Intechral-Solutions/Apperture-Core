@@ -14,8 +14,9 @@ namespace Apperture.ControlPlane.Security.Models;
 /// CanBrowseConnections (connection.browse on Connection at instance scope), true only together with CanViewConnections: browsing is additive to reading.
 /// Role lifecycle: CanManageRoles (role.manage on Role at instance scope). Grant replacement stays CanAssignPermissions.
 /// CanViewGovernance is user.read on User at instance scope (the permission every governance read API enforces).
-/// CanSearchDirectory (auth.directory.search on InstanceConfiguration) and CanVerifyConnections (connection.verify on
-/// Connection) each mirror the one permission their routes accept. All capability flags are instance-wide.
+/// CanSearchDirectory mirrors auth.directory.search on InstanceConfiguration, the one permission the directory-search routes accept.
+/// CanVerifyConnections (connection.verify on Connection) is true only together with CanViewConnections, because test-connect needs
+/// both: verifying is additive to reading, as browsing is. All capability flags are instance-wide.
 /// </summary>
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,

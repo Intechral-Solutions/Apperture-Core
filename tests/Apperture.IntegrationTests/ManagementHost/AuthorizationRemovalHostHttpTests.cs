@@ -4,6 +4,7 @@ using System.Text.Json;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -214,9 +215,15 @@ public sealed class AuthorizationRemovalHostHttpTests
     }
 
     [Fact]
-    public async Task Test_connect_follows_connection_verify_and_the_flag_mirrors_the_route()
+    public async Task Test_connect_needs_both_connection_read_and_connection_verify_and_an_unauthorized_request_never_probes()
     {
         RequireSql();
+        var probe = new CountingVerification();
+        // Starting a host runs the data step, which would give an existing connection.read holder connection.verify (as it should).
+        // The principals are added after the host has started, as an operator would add roles to a running instance.
+        using var factory = _fixture.Factory!.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<Apperture.Core.Application.Services.IConnectionVerificationService>(probe)));
+        _ = factory.Server;
         using var creator = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationAuthoringOperator);
         var create = await creator.PostAsJsonAsync("/api/connections", new
         {
@@ -230,23 +237,65 @@ public sealed class AuthorizationRemovalHostHttpTests
         var connectionId = (await create.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("id").GetString();
 
         var (reader, readerRole) = await AddPrincipalAsync("connread", Roles(Grant("connection.read", "Connection")));
-        var (verifier, _) = await AddPrincipalAsync("connverify", Roles(Grant("connection.read", "Connection"), Grant("connection.verify", "Connection")));
+        var (verifyOnly, _) = await AddPrincipalAsync("connverifyonly", Roles(Grant("connection.verify", "Connection")));
+        var (both, _) = await AddPrincipalAsync("connboth", Roles(Grant("connection.read", "Connection"), Grant("connection.verify", "Connection")));
+        var (neither, _) = await AddPrincipalAsync("connneither", Roles(Grant("integration.read", "Integration")));
 
         async Task<HttpStatusCode> TestConnectAsync(string external)
         {
-            using var client = _fixture.CreateAuthenticatedClient(external);
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, external);
             return (await client.PostAsync($"/api/connections/{connectionId}/test-connect", null)).StatusCode;
         }
 
-        (await TestConnectAsync(reader)).Should().Be(HttpStatusCode.Forbidden, "connection.read alone no longer reaches test-connect");
-        (await CapabilitiesAsync(reader)).GetProperty("canVerifyConnections").GetBoolean().Should().BeFalse();
-        (await TestConnectAsync(verifier)).Should().NotBe(HttpStatusCode.Forbidden);
-        (await CapabilitiesAsync(verifier)).GetProperty("canVerifyConnections").GetBoolean().Should().BeTrue();
+        async Task<JsonElement> FlagsAsync(string external)
+        {
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, external);
+            return await client.GetFromJsonAsync<JsonElement>("/api/control/capabilities", Json);
+        }
 
+        // Read only, verify only and neither are all refused, and none of them reaches the remote system.
+        foreach (var refused in new[] { reader, verifyOnly, neither })
+            (await TestConnectAsync(refused)).Should().Be(HttpStatusCode.Forbidden);
+        probe.Calls.Should().Be(0, "an unauthorized request never invokes the remote test");
+
+        // Both permissions: authorized, and the remote test runs exactly once.
+        (await TestConnectAsync(both)).Should().Be(HttpStatusCode.OK);
+        probe.Calls.Should().Be(1);
+
+        // The flag mirrors the route; connection visibility is independent of it.
+        var readerFlags = await FlagsAsync(reader);
+        readerFlags.GetProperty("canVerifyConnections").GetBoolean().Should().BeFalse();
+        readerFlags.GetProperty("canViewConnections").GetBoolean().Should().BeTrue();
+        var verifyOnlyFlags = await FlagsAsync(verifyOnly);
+        verifyOnlyFlags.GetProperty("canVerifyConnections").GetBoolean().Should().BeFalse("verify without read grants nothing");
+        verifyOnlyFlags.GetProperty("canViewConnections").GetBoolean().Should().BeFalse();
+        var bothFlags = await FlagsAsync(both);
+        bothFlags.GetProperty("canVerifyConnections").GetBoolean().Should().BeTrue();
+        bothFlags.GetProperty("canViewConnections").GetBoolean().Should().BeTrue();
+        (await FlagsAsync(neither)).GetProperty("canVerifyConnections").GetBoolean().Should().BeFalse();
+
+        // The data step gives the connection.read holder the verify permission, after which the holder has both.
         await ApplyThePlanAsync(readerRole);
+        (await TestConnectAsync(reader)).Should().Be(HttpStatusCode.OK, "the step granted the connection.read holder connection.verify");
+        probe.Calls.Should().Be(2);
+        (await FlagsAsync(reader)).GetProperty("canVerifyConnections").GetBoolean().Should().BeTrue();
+    }
 
-        (await TestConnectAsync(reader)).Should().NotBe(HttpStatusCode.Forbidden, "the step granted the connection.read holder connection.verify");
-        (await CapabilitiesAsync(reader)).GetProperty("canVerifyConnections").GetBoolean().Should().BeTrue();
+    /// <summary>Stands in for the remote system: counts how often a test-connect reaches the verifier.</summary>
+    private sealed class CountingVerification : Apperture.Core.Application.Services.IConnectionVerificationService
+    {
+        private int _calls;
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ValueTask<Apperture.Core.Application.Connector.ConnectionVerificationResult> VerifyAsync(
+            Apperture.Core.Domain.Connector.Connection connection, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            return ValueTask.FromResult(new Apperture.Core.Application.Connector.ConnectionVerificationResult(
+                Apperture.Core.Domain.Connector.ConnectionVerificationStatus.Success, DateTimeOffset.UtcNow, "Counted by the test; no remote system was contacted."));
+        }
     }
 
     // ---------------------------------------------------------------------------------------------------------------

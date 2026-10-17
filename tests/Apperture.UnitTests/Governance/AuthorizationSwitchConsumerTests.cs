@@ -211,11 +211,21 @@ public sealed class AuthorizationSwitchConsumerTests
     }
 
     [Fact]
-    public async Task CanVerifyConnections_is_true_only_for_connection_verify()
+    public async Task CanVerifyConnections_is_true_only_for_a_caller_holding_both_connection_read_and_connection_verify()
     {
-        (await CapabilitiesAsync(ConnectionVerify)).CanVerifyConnections.Should().BeTrue();
-        (await CapabilitiesAsync(ConnectionRead)).CanVerifyConnections.Should().BeFalse("connection.read no longer reaches test-connect");
+        (await CapabilitiesAsync(ConnectionRead, ConnectionVerify)).CanVerifyConnections.Should().BeTrue();
+        (await CapabilitiesAsync(ConnectionRead)).CanVerifyConnections.Should().BeFalse("connection.read alone does not reach test-connect");
+        (await CapabilitiesAsync(ConnectionVerify)).CanVerifyConnections.Should().BeFalse("connection.verify without connection.read grants nothing");
         (await CapabilitiesAsync()).CanVerifyConnections.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanViewConnections_stays_independent_of_connection_verify()
+    {
+        (await CapabilitiesAsync(ConnectionRead)).CanViewConnections.Should().BeTrue();
+        (await CapabilitiesAsync(ConnectionRead, ConnectionVerify)).CanViewConnections.Should().BeTrue();
+        (await CapabilitiesAsync(ConnectionVerify)).CanViewConnections.Should().BeFalse();
+        (await CapabilitiesAsync()).CanViewConnections.Should().BeFalse();
     }
 
     [Fact]
@@ -283,13 +293,17 @@ public sealed class AuthorizationSwitchConsumerTests
     }
 
     [Fact]
-    public void Test_connect_is_guarded_by_connection_verify_and_not_by_connection_read()
+    public void Test_connect_is_guarded_by_both_connection_read_and_connection_verify_before_the_probe()
     {
         var source = Source("Apperture.ControlPlane/Apperture.ControlPlane.Security/ConnectionManagementService.cs");
         var body = MethodBody(source, "VerifyConnectionAsync(");
 
-        body.Should().Contain("ActionConstants.ConnectionVerify");
-        body.Should().NotContain("ActionConstants.ConnectionRead");
+        var read = body.IndexOf("ActionConstants.ConnectionRead", StringComparison.Ordinal);
+        var verify = body.IndexOf("ActionConstants.ConnectionVerify", StringComparison.Ordinal);
+        var probe = body.IndexOf("_connectionVerification.VerifyAsync(", StringComparison.Ordinal);
+        read.Should().BeGreaterThan(-1);
+        verify.Should().BeGreaterThan(-1);
+        probe.Should().BeGreaterThan(Math.Max(read, verify), "both permissions are checked before the remote system is touched");
     }
 
     /// <summary>The text from the declaration containing <paramref name="signature"/> to the next member at the same indentation.</summary>

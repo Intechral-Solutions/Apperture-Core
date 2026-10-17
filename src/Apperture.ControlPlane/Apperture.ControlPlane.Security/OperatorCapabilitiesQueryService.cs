@@ -175,7 +175,9 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.AuthDirectorySearch,
                 ResourceTypeConstants.InstanceConfiguration,
                 cancellationToken).ConfigureAwait(false);
-            var canVerifyConnections = await EvaluateAsync(
+            // Additive to connection.read, like browse: the test-connect route needs both, so a caller who cannot read connections is
+            // never reported as able to verify them. CanViewConnections stays what connection.read alone decides.
+            var canVerifyConnections = canViewConnections && await EvaluateAsync(
                 actor,
                 ActionConstants.ConnectionVerify,
                 ResourceTypeConstants.Connection,
