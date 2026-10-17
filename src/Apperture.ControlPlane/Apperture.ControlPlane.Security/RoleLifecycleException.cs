@@ -3,15 +3,12 @@ namespace Apperture.ControlPlane.Security;
 /// <summary>
 /// Expected role-lifecycle refusal with a stable client-facing code.
 /// </summary>
-public sealed class RoleLifecycleException : Exception
+public sealed class RoleLifecycleException : GovernanceConflictException
 {
-    public RoleLifecycleException(string code, string message, int? assignmentCount = null) : base(message)
+    public RoleLifecycleException(string code, string message, int? assignmentCount = null) : base(code, message)
     {
-        Code = code;
         AssignmentCount = assignmentCount;
     }
-
-    public string Code { get; }
 
     public int? AssignmentCount { get; }
 }

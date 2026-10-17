@@ -18,6 +18,11 @@ namespace Apperture.ControlPlane.Security;
 /// the decision depends on, the change and its audit row commit together; a refusal changes nothing and its row is written
 /// after the transaction has rolled back. A request that changes nothing writes no row. A Recovery Access session marks its
 /// rows <c>viaRecoveryAccess</c> through the recorder, which replaces the earlier pre-mutation marker row.
+/// IAM-10.2a: a change to a role or to a role assignment is decided inside the unit, from the actor's roles and the target role
+/// as <see cref="IRoleRepository.LockAuthoritySnapshotAsync"/> locked them. The permission check made before the unit is an
+/// advisory fast refusal and never the decision. Rule 1: permissions added to a role must be held by the actor. Rule 2: a role
+/// can be assigned or removed only by an actor who holds all of its permissions, and the Platform Administrator role only by a
+/// Platform Administrator.
 /// </remarks>
 public sealed class UserManagementService : IUserManagementService
 {
@@ -38,6 +43,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly IAccountActionTokenService? _actionTokens;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly IScopeContainmentEvaluator _scopeEvaluator;
 
     public UserManagementService(
         IPrincipalContext principalContext,
@@ -56,8 +62,10 @@ public sealed class UserManagementService : IUserManagementService
         IAccountInvitationService? invitations = null,
         IAccountActionTokenService? actionTokens = null,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        IScopeContainmentEvaluator? scopeEvaluator = null)
     {
+        _scopeEvaluator = scopeEvaluator ?? new ScopeContainmentEvaluator();
         _auditedUnitOfWork = auditedUnitOfWork;
         _auditEvents = auditEvents;
         _entraAssociation = entraAssociation;
@@ -150,19 +158,31 @@ public sealed class UserManagementService : IUserManagementService
     /// <inheritdoc />
     public async ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default)
     {
+        // Advisory only: the decision is made below, from the locked rows.
         await RequirePermissionAssignAsync(cancellationToken);
+        var (actor, actorUserId) = await CurrentActorAsync(cancellationToken);
 
         await Unit.ExecuteRefusableAsync(
             Events,
             Operation(AuditActionNames.PermissionAssignmentUpdated),
             async (transaction, refusals, ct) =>
             {
-                var role = await _roleRepository.GetAsync(roleId, ct)
-                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, roleId, targetUserId: null, ct);
+                var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
+                if (!authority.Allows(RoleAuthorityRules.PermissionAssign, RoleAuthorityRules.PermissionAssign.Resource, null))
+                    throw new UnauthorizedAccessException("Not authorized to assign permissions.");
+
+                var role = snapshot.TargetRole
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
                 if (role.IsSystemRole)
                     return refusals.Refuse<bool>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
 
                 ValidateCatalogPermissions(permissions);
+
+                // Rule 1: only what this replacement adds to the locked role has to be held. Removing needs nothing further.
+                var notHeld = RoleAuthorityRules.NotHeld(authority, RoleAuthorityRules.Added(role, permissions));
+                if (notHeld.Count > 0)
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleMutationRejected(roleId, "grant_exceeds_authority", missing: notHeld), GrantExceedsAuthority(notHeld));
 
                 // The diff is the one the replacement committed (D9). An identical set changes nothing and writes no row.
                 var change = await _roleRepository.ReplacePermissionsAsync(roleId, permissions, ct);
@@ -186,10 +206,12 @@ public sealed class UserManagementService : IUserManagementService
         IReadOnlyList<PermissionDescriptor>? permissions = null,
         CancellationToken cancellationToken = default)
     {
+        // Advisory only: the decision is made below, from the locked rows.
         await RequireRoleManageAsync(cancellationToken);
         var grants = permissions ?? Array.Empty<PermissionDescriptor>();
         if (grants.Count > 0)
             await RequirePermissionAssignAsync(cancellationToken);
+        var (actor, actorUserId) = await CurrentActorAsync(cancellationToken);
 
         var normalizedName = NormalizeRoleName(name);
         var normalizedDescription = NormalizeRoleDescription(description);
@@ -203,10 +225,23 @@ public sealed class UserManagementService : IUserManagementService
             grants,
             IsSystemRole: false);
 
-        return await Unit.ExecuteAsync(
+        return await Unit.ExecuteRefusableAsync(
+            Events,
             Operation(AuditActionNames.RoleCreated),
-            async (transaction, ct) =>
+            async (transaction, refusals, ct) =>
             {
+                var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, targetRoleId: null, targetUserId: null, ct);
+                var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
+                if (!authority.Allows(RoleAuthorityRules.RoleManage, RoleAuthorityRules.RoleManage.Resource, null))
+                    throw new UnauthorizedAccessException("Not authorized to manage roles.");
+                if (grants.Count > 0 && !authority.Allows(RoleAuthorityRules.PermissionAssign, RoleAuthorityRules.PermissionAssign.Resource, null))
+                    throw new UnauthorizedAccessException("Not authorized to assign permissions.");
+
+                // Rule 1: every permission a new role starts with has to be held by the actor.
+                var notHeld = RoleAuthorityRules.NotHeld(authority, grants);
+                if (notHeld.Count > 0)
+                    return refusals.Refuse<Role>(transaction, AuditEvents.RoleMutationRejected(role.Id, "grant_exceeds_authority", missing: notHeld), GrantExceedsAuthority(notHeld));
+
                 await EnsureRoleNameAvailableAsync(normalizedName, excludeRoleId: null, ct);
                 try
                 {
@@ -239,7 +274,7 @@ public sealed class UserManagementService : IUserManagementService
             async (transaction, refusals, ct) =>
             {
                 var role = await _roleRepository.GetAsync(roleId, ct)
-                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
                 if (role.IsSystemRole)
                     return refusals.Refuse<Role>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
 
@@ -285,7 +320,7 @@ public sealed class UserManagementService : IUserManagementService
             async (transaction, refusals, ct) =>
             {
                 var role = await _roleRepository.GetAsync(roleId, ct)
-                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
                 if (role.IsSystemRole)
                     return refusals.Refuse<bool>(transaction, AuditEvents.RoleMutationRejected(roleId, "system_role"), SystemRoleRefusal());
 
@@ -294,7 +329,7 @@ public sealed class UserManagementService : IUserManagementService
                 switch (result.Outcome)
                 {
                     case RoleUnassignedDeleteOutcome.NotFound:
-                        throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                        throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
                     case RoleUnassignedDeleteOutcome.AssignmentsRemain:
                         return refusals.Refuse<bool>(
                             transaction,
@@ -307,7 +342,7 @@ public sealed class UserManagementService : IUserManagementService
                         await transaction.StageAsync(AuditEvents.RoleDeleted(roleId, result.Name ?? role.Name), ct);
                         return true;
                     default:
-                        throw new InvalidOperationException($"Unexpected role delete outcome {result.Outcome}.");
+                        throw new AuditInvariantException($"Unexpected role delete outcome {result.Outcome}.");
                 }
             },
             Done,
@@ -347,15 +382,17 @@ public sealed class UserManagementService : IUserManagementService
             try
             {
                 if (!_descriptorRegistry.IsPermissionRegistered(p))
-                    throw new InvalidOperationException(
+                    throw new GovernanceValidationException(
+                        GovernanceValidationCodes.InvalidPermission,
                         $"Permission at index {i} is not in the canonical governance catalog: Action={p.Action}, Resource={FormatResource(p.Resource)}. " +
                         "Only permissions registered at platform or module startup may be assigned to roles.");
             }
-            catch (InvalidOperationException ex) when (ex.Message.Contains("is not in the canonical") == false)
+            catch (InvalidOperationException ex)
             {
-                throw new InvalidOperationException(
-                    $"Permission at index {i} is malformed: {ex.Message}. Action={p.Action}, Resource={FormatResource(p.Resource)}.",
-                    ex);
+                // The registry rejects a descriptor it cannot even look up (for example no action).
+                throw new GovernanceValidationException(
+                    GovernanceValidationCodes.InvalidPermission,
+                    $"Permission at index {i} is malformed: {ex.Message}. Action={p.Action}, Resource={FormatResource(p.Resource)}.");
             }
         }
     }
@@ -363,10 +400,10 @@ public sealed class UserManagementService : IUserManagementService
     private static string NormalizeRoleName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
-            throw new InvalidOperationException("Role name is required.");
+            throw new GovernanceValidationException(GovernanceValidationCodes.RoleNameRequired, "Role name is required.");
         var trimmed = name.Trim();
         if (trimmed.Length > 256)
-            throw new InvalidOperationException("Role name must be 256 characters or fewer.");
+            throw new GovernanceValidationException(GovernanceValidationCodes.RoleNameTooLong, "Role name must be 256 characters or fewer.");
         return trimmed;
     }
 
@@ -376,9 +413,24 @@ public sealed class UserManagementService : IUserManagementService
             return null;
         var trimmed = description.Trim();
         if (trimmed.Length > 512)
-            throw new InvalidOperationException("Role description must be 512 characters or fewer.");
+            throw new GovernanceValidationException(GovernanceValidationCodes.RoleDescriptionTooLong, "Role description must be 512 characters or fewer.");
         return trimmed;
     }
+
+    /// <summary>The acting principal and the user it resolved to (null when it resolved to none).</summary>
+    private async ValueTask<(IActor? Actor, UserId? UserId)> CurrentActorAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return (null, null);
+        return (actor, await _principalToUserResolver.ResolveUserIdAsync(actor, cancellationToken));
+    }
+
+    private static AuthorizationRefusalException GrantExceedsAuthority(IReadOnlyList<PermissionDescriptor> notHeld) =>
+        new(
+            AuthorizationRefusalCodes.GrantExceedsAuthority,
+            "You cannot grant permissions you do not hold.",
+            notHeld);
 
     private async ValueTask EnsureRoleNameAvailableAsync(string name, RoleId? excludeRoleId, CancellationToken cancellationToken)
     {
@@ -773,14 +825,30 @@ public sealed class UserManagementService : IUserManagementService
     /// <inheritdoc />
     public async ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
+        // Advisory only: the decision is made below, from the locked rows.
         await RequireRoleAssignAsync(cancellationToken);
+        var (actor, actorUserId) = await CurrentActorAsync(cancellationToken);
 
-        await Unit.ExecuteAsync(
+        await Unit.ExecuteRefusableAsync(
+            Events,
             Operation(AuditActionNames.RoleAssigned),
-            async (transaction, ct) =>
+            async (transaction, refusals, ct) =>
             {
+                // 1. The lock set and the decision snapshot.
+                var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, roleId, userId, ct);
+                var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
+
+                // 2. Authorization refusals, before anything that could make the request a no-op.
+                if (!authority.Allows(RoleAuthorityRules.RoleAssign, RoleAuthorityRules.RoleAssign.Resource, null))
+                    throw new UnauthorizedAccessException("Not authorized to assign roles.");
+                var role = snapshot.TargetRole
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+                if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, roleId, refused.Reason, refused.Missing), refused.ToException());
+
+                // 3. A system-managed target (Recovery Access).
                 var user = await _userRepository.GetByIdAsync(userId, ct)
-                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.User, userId.Value);
                 if (EmergencyAccessIdentity.IsSystemManaged(user))
                 {
                     throw new EmergencyAccessException(
@@ -788,14 +856,23 @@ public sealed class UserManagementService : IUserManagementService
                         "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
                 }
 
-                _ = await _roleRepository.GetAsync(roleId, ct)
-                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
-
-                // Already assigned: nothing changes and nothing is recorded; the request still succeeds.
-                if (user.AssignedRoleIds.Any(r => r.Value == roleId.Value))
+                // 4. Already assigned (read under the assignment key lock): nothing changes and nothing is recorded; the request still succeeds.
+                if (snapshot.TargetAssignmentExists)
                 {
                     transaction.DeclareNoOp();
                     return true;
+                }
+
+                // 5. State refusals, for a real change only: a role whose stored permissions cannot be read is not assigned, because it
+                // looks empty and would silently gain permissions once the data is repaired.
+                if (!role.PermissionsReadable)
+                {
+                    return refusals.Refuse<bool>(
+                        transaction,
+                        AuditEvents.RoleAssignmentRejected(userId, roleId, "role_permissions_unreadable"),
+                        new GovernanceConflictException(
+                            GovernanceConflictCodes.RolePermissionsUnreadable,
+                            "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first."));
                 }
 
                 await _roleRepository.AssignToUserAsync(userId, roleId, ct);
@@ -809,15 +886,31 @@ public sealed class UserManagementService : IUserManagementService
     /// <inheritdoc />
     public async ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default)
     {
+        // Advisory only: the decision is made below, from the locked rows.
         await RequireRoleAssignAsync(cancellationToken);
+        var (actor, actorUserId) = await CurrentActorAsync(cancellationToken);
 
         await Unit.ExecuteRefusableAsync(
             Events,
             Operation(AuditActionNames.RoleRemoved),
             async (transaction, refusals, ct) =>
             {
+                // 1. The lock set and the decision snapshot.
+                var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, roleId, userId, ct);
+                var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
+
+                // 2. Authorization refusals, before anything that could make the request a no-op. Removal needs the same
+                // entitlement as assignment; a user removing a role from themselves holds it, so needs nothing more.
+                if (!authority.Allows(RoleAuthorityRules.RoleAssign, RoleAuthorityRules.RoleAssign.Resource, null))
+                    throw new UnauthorizedAccessException("Not authorized to assign roles.");
+                var role = snapshot.TargetRole
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+                if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: true) is { } refused)
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, roleId, refused.Reason, refused.Missing), refused.ToException());
+
+                // 3. A system-managed target (Recovery Access).
                 var user = await _userRepository.GetByIdAsync(userId, ct)
-                    ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+                    ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.User, userId.Value);
                 if (EmergencyAccessIdentity.IsSystemManaged(user))
                 {
                     if (await IsRecoveryAccessUserAsync(userId, ct))
@@ -827,28 +920,30 @@ public sealed class UserManagementService : IUserManagementService
                         "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
                 }
 
-                _ = await _roleRepository.GetAsync(roleId, ct)
-                    ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
+                if (roleId.Value == BootstrapConstants.PlatformAdminRoleId && await IsRecoveryAccessUserAsync(userId, ct))
+                    return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "role.remove_platform_administrator"), EmergencyAccessService.UnsafeOperationRefusal());
 
+                // 4. Not assigned (read under the assignment key lock): nothing changes and nothing is recorded; the request still succeeds.
+                if (!snapshot.TargetAssignmentExists)
+                {
+                    transaction.DeclareNoOp();
+                    return true;
+                }
+
+                // 5. State refusals, for a real change only. The last-administrator guard is unchanged here: it counts assignments
+                // and is replaced by the shared viability invariant in IAM-10.2b.
                 if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
                 {
-                    if (await IsRecoveryAccessUserAsync(userId, ct))
-                        return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "role.remove_platform_administrator"), EmergencyAccessService.UnsafeOperationRefusal());
                     var count = await _roleRepository.CountUserAssignmentsAsync(roleId, ct);
                     if (count <= 1)
                     {
                         return refusals.Refuse<bool>(
                             transaction,
                             AuditEvents.BlockedLastPlatformAdminRemoval(userId, roleId),
-                            new InvalidOperationException("Cannot remove the last platform administrator role assignment."));
+                            new GovernanceConflictException(
+                                GovernanceConflictCodes.LastViableAdministrator,
+                                "Cannot remove the last platform administrator role assignment."));
                     }
-                }
-
-                // Not assigned: nothing changes and nothing is recorded; the request still succeeds.
-                if (!user.AssignedRoleIds.Any(r => r.Value == roleId.Value))
-                {
-                    transaction.DeclareNoOp();
-                    return true;
                 }
 
                 await _roleRepository.RemoveFromUserAsync(userId, roleId, ct);

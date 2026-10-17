@@ -78,8 +78,19 @@ internal static class AuditDetailSchemas
     internal static readonly AuditDetailSchema RoleMutationRejected = new(
     [
         IdField("roleId"),
-        EnumField("reason", true, "system_role", "assignments_remain"),
+        EnumField("reason", true, "system_role", "assignments_remain", "grant_exceeds_authority"),
         CountField("assignmentCount", required: false),
+        CountField("missingCount", required: false),
+        PermissionListField("missingPermissions"),
+    ]);
+
+    internal static readonly AuditDetailSchema RoleAssignmentRejected = new(
+    [
+        IdField("userId"),
+        IdField("roleId"),
+        EnumField("reason", true, "exceeds_authority", "platform_administrator_restricted", "removal_exceeds_authority", "role_permissions_unreadable"),
+        CountField("missingCount", required: false),
+        PermissionListField("missingPermissions"),
     ]);
 
     // ---- Users, assignments, identity links and credentials ----

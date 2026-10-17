@@ -81,6 +81,10 @@ internal static class ProductionAuthorizationCheckCorpus
         new(Security + "UserManagementService.cs", PermissionAssign, Role),
         new(Security + "UserProvisioningService.cs", RoleAssign, Role),
         new(Security + "UserProvisioningService.cs", UserManage, User),
+        // Asked of the held set directly, inside the audited unit, from the locked rows (the check before the unit is advisory).
+        new(Security + "RoleAuthorityRules.cs", RoleManage, Role),
+        new(Security + "RoleAuthorityRules.cs", PermissionAssign, Role),
+        new(Security + "RoleAuthorityRules.cs", RoleAssign, Role),
         new(Controllers + "ConfigAuthOverviewController.cs", AuthConfigurationRead, InstanceConfiguration),
         new(Controllers + "ConfigAuthOverviewController.cs", AuthUiPolicyManage, InstanceConfiguration),
         new(Controllers + "ConfigAuthUiPolicyController.cs", AuthConfigurationRead, InstanceConfiguration),

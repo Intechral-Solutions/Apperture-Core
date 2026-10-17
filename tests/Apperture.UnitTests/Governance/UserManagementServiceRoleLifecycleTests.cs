@@ -78,8 +78,9 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
         var act = () => harness.Service.CreateRoleAsync("Readers", null, [unknown]).AsTask();
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*not in the canonical governance catalog*");
+        var ex = await act.Should().ThrowAsync<GovernanceValidationException>();
+        ex.Which.Code.Should().Be(GovernanceValidationCodes.InvalidPermission);
+        ex.Which.Message.Should().Contain("not in the canonical governance catalog");
         harness.Roles.Created.Should().BeEmpty();
         harness.Audit.Actions.Should().NotContain(GovernanceAuditActionNames.RoleCreated);
     }
@@ -199,7 +200,8 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
         var act = () => harness.Service.UpdateRoleMetadataAsync(new RoleId("role-" + new string('a', 32)), "Name", null).AsTask();
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+        var ex = await act.Should().ThrowAsync<GovernanceNotFoundException>();
+        ex.Which.Kind.Should().Be(GovernanceNotFoundKinds.Role);
         harness.Audit.Actions.Should().BeEmpty();
     }
 
@@ -313,7 +315,8 @@ public sealed class UserManagementServiceRoleLifecycleTests
 
         var act = () => harness.Service.DeleteRoleAsync(new RoleId("role-" + new string('b', 32))).AsTask();
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not found*");
+        var ex = await act.Should().ThrowAsync<GovernanceNotFoundException>();
+        ex.Which.Kind.Should().Be(GovernanceNotFoundKinds.Role);
         harness.Audit.Actions.Should().BeEmpty();
     }
 
@@ -372,6 +375,20 @@ public sealed class UserManagementServiceRoleLifecycleTests
             registry.RegisterPermission(TestPermissionDefinitions.For(KnownPermission(), ResourceFamily.Core));
 
             var roles = new RecordingRoles();
+
+            // The administrator holds exactly what the test lets them do, so the advisory check and the decision made from the
+            // locked rows agree: the grants a test hands out (user.read, user.manage) and the role-management permissions.
+            var held = new List<PermissionDescriptor>
+            {
+                KnownPermission(),
+                new(ActionConstants.UserManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
+            };
+            if (allowRoleManage)
+                held.Add(new(ActionConstants.RoleManage, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)));
+            if (allowPermissionAssign)
+                held.Add(new(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)));
+            roles.ActorRoles.Add(new Role(new RoleId("role-test-administrator"), "Test administrator", null, held, IsSystemRole: false));
+
             var users = new RecordingUsers();
             var audit = new AuditRecording();
             var service = new UserManagementService(
@@ -444,8 +461,14 @@ public sealed class UserManagementServiceRoleLifecycleTests
         public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<Role>>(_roles.Values.ToList());
 
+        /// <summary>The roles the signed-in administrator ("admin") holds; they decide what the in-unit authorization lets the tests do.</summary>
+        public List<Role> ActorRoles { get; } = [];
+
         public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<Role>>([]);
+            ValueTask.FromResult<IReadOnlyList<Role>>(
+                userId.Value == "admin"
+                    ? ActorRoles.ToList()
+                    : Assigned.Where(a => a.UserId == userId.Value).Select(a => _roles[a.RoleId]).ToList());
 
         public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Assigned.Count(a => a.RoleId == roleId.Value));

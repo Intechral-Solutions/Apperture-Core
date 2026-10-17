@@ -353,6 +353,102 @@ public sealed class UserProvisioningServiceTests
         string? upn = "jane@contoso.com") =>
         new(Oid, "Jane Smith", upn, mail, "Member", enabled, EntraDirectoryAppertureStatus.Available, null);
 
+    // ---- IAM-10.2a: the initial role is decided under the authority lock set, by the same rules as an assignment ----
+
+    private static readonly PermissionDescriptor Held = new("connection.read", new ResourceDescriptor("Connection", "instance"));
+    private static readonly PermissionDescriptor NotHeld = new("connection.update", new ResourceDescriptor("Connection", "instance"));
+    private static readonly PermissionDescriptor RoleAssignGrant = new("role.assign", new ResourceDescriptor("Role", "instance"));
+
+    private static Harness HarnessWithOrdinaryAdministrator()
+    {
+        var harness = Harness.Create();
+        harness.Roles.ActorRoles = [new Role(new RoleId("role-people-admin"), "People admin", null, [RoleAssignGrant, Held], IsSystemRole: false)];
+        harness.Roles.Defined["role-subset"] = new Role(new RoleId("role-subset"), "Subset", null, [Held], IsSystemRole: false);
+        harness.Roles.Defined["role-exceeding"] = new Role(new RoleId("role-exceeding"), "Exceeding", null, [Held, NotHeld], IsSystemRole: false);
+        harness.Roles.Defined["role-broken"] = new Role(new RoleId("role-broken"), "Broken", null, [], IsSystemRole: false, PermissionsReadable: false);
+        return harness;
+    }
+
+    [Fact]
+    public async Task An_administrator_who_is_not_a_platform_administrator_cannot_give_the_administrator_role_to_a_new_person()
+    {
+        var harness = HarnessWithOrdinaryAdministrator();
+
+        var act = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: BootstrapConstants.PlatformAdminRoleId)).AsTask();
+
+        (await act.Should().ThrowAsync<AuthorizationRefusalException>()).Which.Code.Should().Be("platform_administrator_restricted");
+        harness.Users.Added.Should().BeEmpty("the person was not added: the refusal rolled the unit back");
+        harness.Roles.Assigned.Should().BeEmpty();
+        harness.Audit.Actions.Should().Equal(AuditActionNames.RoleAssignmentRejected);
+    }
+
+    [Fact]
+    public async Task An_initial_role_exceeding_the_administrator_is_refused_and_a_subset_role_is_assigned_with_the_person()
+    {
+        var harness = HarnessWithOrdinaryAdministrator();
+
+        var refused = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: "role-exceeding")).AsTask();
+        (await refused.Should().ThrowAsync<AuthorizationRefusalException>()).Which.Code.Should().Be("assignment_exceeds_authority");
+        harness.Users.Added.Should().BeEmpty();
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: "role-subset"));
+
+        result.RoleAssigned.Should().BeTrue();
+        harness.Roles.Assigned.Should().ContainSingle(a => a.RoleId == "role-subset" && a.UserId == result.UserId.Value);
+        harness.Audit.Actions.Should().Equal(
+            AuditActionNames.RoleAssignmentRejected,
+            UserProvisioningAuditActionNames.EntraDirectoryProvisioned,
+            AuditActionNames.RoleAssigned);
+    }
+
+    [Fact]
+    public async Task An_unreadable_initial_role_is_a_typed_conflict_and_adds_nobody()
+    {
+        var harness = HarnessWithOrdinaryAdministrator();
+
+        var broken = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: "role-broken")).AsTask();
+
+        (await broken.Should().ThrowAsync<GovernanceConflictException>()).Which.Code.Should().Be(GovernanceConflictCodes.RolePermissionsUnreadable);
+        harness.Users.Added.Should().BeEmpty();
+        harness.Audit.Single(AuditActionNames.RoleAssignmentRejected).Fields["reason"].Should().Be("role_permissions_unreadable");
+    }
+
+    [Fact]
+    public async Task Approving_an_access_request_applies_the_same_rules_to_the_initial_role()
+    {
+        var harness = HarnessWithOrdinaryAdministrator();
+        harness.Requests.Seed(new EntraAccessRequest(
+            "req-1", "reg-1", Tid, Oid, "Jane Smith", "jane@contoso.com", "jane@contoso.com", "Member",
+            DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(-4), EntraAccessRequestStatus.Pending));
+
+        var refused = () => harness.Service.ProvisionFromAccessRequestAsync(
+            new AccessRequestApprovalProvisioningRequest("req-1", InitialRoleId: BootstrapConstants.PlatformAdminRoleId)).AsTask();
+        (await refused.Should().ThrowAsync<AuthorizationRefusalException>()).Which.Code.Should().Be("platform_administrator_restricted");
+        harness.Users.Added.Should().BeEmpty();
+        harness.Requests.Items["req-1"].Status.Should().Be(EntraAccessRequestStatus.Pending, "a refused approval leaves the request pending");
+
+        var result = await harness.Service.ProvisionFromAccessRequestAsync(
+            new AccessRequestApprovalProvisioningRequest("req-1", InitialRoleId: "role-subset"));
+
+        result.RoleAssigned.Should().BeTrue();
+        harness.Requests.Items["req-1"].Status.Should().Be(EntraAccessRequestStatus.Approved);
+    }
+
+    [Fact]
+    public async Task A_platform_administrator_may_give_any_initial_role()
+    {
+        var harness = Harness.Create();
+
+        var result = await harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: BootstrapConstants.PlatformAdminRoleId));
+
+        result.RoleAssigned.Should().BeTrue();
+    }
+
     private sealed class Harness
     {
         public RecordingUsers Users { get; } = new();
@@ -611,14 +707,24 @@ public sealed class UserProvisioningServiceTests
     {
         public List<(string UserId, string RoleId)> Assigned { get; } = [];
 
+        /// <summary>Roles a test defines; any other id reads as an empty system role.</summary>
+        public Dictionary<string, Role> Defined { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The signed-in administrator's roles; null means a Platform Administrator.</summary>
+        public List<Role>? ActorRoles { get; set; }
+
         public ValueTask<Role?> GetAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<Role?>(new Role(roleId, "Role", null, [], IsSystemRole: true));
+            ValueTask.FromResult<Role?>(Defined.TryGetValue(roleId.Value, out var defined) ? defined : new Role(roleId, "Role", null, [], IsSystemRole: true));
 
         public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<Role>>([]);
 
+        // The signed-in administrator ("admin") is a Platform Administrator, who may give any initial role.
         public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<Role>>([]);
+            ValueTask.FromResult<IReadOnlyList<Role>>(
+                userId.Value != "admin"
+                    ? []
+                    : ActorRoles ?? [new Role(new RoleId(BootstrapConstants.PlatformAdminRoleId), "Platform Administrator", null, [], IsSystemRole: true)]);
 
         public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Assigned.Count(a => a.RoleId == roleId.Value));

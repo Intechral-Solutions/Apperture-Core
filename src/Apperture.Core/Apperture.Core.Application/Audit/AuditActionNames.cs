@@ -16,6 +16,7 @@ public static class AuditActionNames
     public const string RoleDeleted = "governance.role.deleted";
     public const string PermissionAssignmentUpdated = "governance.permission.assignment.updated";
     public const string RoleMutationRejected = "governance.role.mutation_rejected";
+    public const string RoleAssignmentRejected = "governance.role.assignment_rejected";
     public const string UserCreated = "user.created";
     public const string RoleAssigned = "governance.role.assignment.created";
     public const string RoleRemoved = "governance.role.assignment.removed";

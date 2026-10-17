@@ -20,7 +20,8 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task SetPermissions_WhenUnknownPermission_Returns400()
     {
-        var userManagement = new StubUserManagementService(setThrows: new InvalidOperationException(
+        var userManagement = new StubUserManagementService(setThrows: new GovernanceValidationException(
+            GovernanceValidationCodes.InvalidPermission,
             "Permission at index 0 is not in the canonical governance catalog: Action=unknown.action, Resource=UnknownType:instance."));
         var controller = new RolesController(userManagement);
         var request = new SetRolePermissionsRequest([
@@ -35,7 +36,8 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task SetPermissions_WhenMalformedPermission_Returns400()
     {
-        var userManagement = new StubUserManagementService(setThrows: new InvalidOperationException(
+        var userManagement = new StubUserManagementService(setThrows: new GovernanceValidationException(
+            GovernanceValidationCodes.InvalidPermission,
             "Permission at index 0 is malformed: ResourceType must not have leading or trailing whitespace."));
         var controller = new RolesController(userManagement);
         var request = new SetRolePermissionsRequest([
@@ -116,7 +118,7 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task SetPermissions_WhenRoleNotFound_Returns404()
     {
-        var userManagement = new StubUserManagementService(setThrows: new InvalidOperationException("Role role-999 not found."));
+        var userManagement = new StubUserManagementService(setThrows: new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, "role-999"));
         var controller = new RolesController(userManagement);
         var request = new SetRolePermissionsRequest([new RolePermissionDto("user.read", "User", "instance")]);
 
@@ -305,7 +307,7 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task Create_WhenInvalid_Returns400()
     {
-        var userManagement = new StubUserManagementService(createThrows: new InvalidOperationException("Role name is required."));
+        var userManagement = new StubUserManagementService(createThrows: new GovernanceValidationException(GovernanceValidationCodes.RoleNameRequired, "Role name is required."));
         var controller = new RolesController(userManagement);
 
         var result = await controller.Create(new CreateRoleRequest(" "), CancellationToken.None);
@@ -394,7 +396,7 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task UpdateMetadata_WhenMissing_Returns404()
     {
-        var userManagement = new StubUserManagementService(updateThrows: new InvalidOperationException("Role role-missing not found."));
+        var userManagement = new StubUserManagementService(updateThrows: new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, "role-missing"));
         var controller = new RolesController(userManagement);
 
         var result = await controller.UpdateMetadata("role-missing", new UpdateRoleMetadataRequest("Operators", null), CancellationToken.None);
@@ -416,7 +418,7 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task UpdateMetadata_WhenInvalid_Returns400()
     {
-        var userManagement = new StubUserManagementService(updateThrows: new InvalidOperationException("Role description must be 512 characters or fewer."));
+        var userManagement = new StubUserManagementService(updateThrows: new GovernanceValidationException(GovernanceValidationCodes.RoleDescriptionTooLong, "Role description must be 512 characters or fewer."));
         var controller = new RolesController(userManagement);
 
         var result = await controller.UpdateMetadata("role-abc", new UpdateRoleMetadataRequest("Operators", new string('x', 513)), CancellationToken.None);
@@ -481,7 +483,7 @@ public sealed class RolesControllerTests
     [Fact]
     public async Task Delete_WhenMissing_Returns404()
     {
-        var userManagement = new StubUserManagementService(deleteThrows: new InvalidOperationException("Role role-missing not found."));
+        var userManagement = new StubUserManagementService(deleteThrows: new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, "role-missing"));
         var controller = new RolesController(userManagement);
 
         var result = await controller.Delete("role-missing", CancellationToken.None);

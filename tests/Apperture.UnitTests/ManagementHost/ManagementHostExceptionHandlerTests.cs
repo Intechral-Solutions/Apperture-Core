@@ -90,6 +90,17 @@ public sealed class ManagementHostExceptionHandlerTests
     }
 
     [Fact]
+    public void MapException_treats_an_audit_programming_error_as_the_internal_error_it_is_never_a_refusal_or_not_found()
+    {
+        // IAM-10.2a (P-37): AuditInvariantException derives from InvalidOperationException, whose message used to be read as "not found".
+        var mapping = ManagementHostExceptionHandler.MapException(
+            new Apperture.Core.Application.Audit.AuditInvariantException("The audited operation expected a row and staged none."));
+
+        mapping.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        mapping.Detail.Should().BeNull();
+    }
+
+    [Fact]
     public void MapException_reports_a_committed_operation_whose_result_could_not_be_read_as_applied()
     {
         // AUD-1.3: verification confirmed the commit; the response says so and names the operation, so the client reloads

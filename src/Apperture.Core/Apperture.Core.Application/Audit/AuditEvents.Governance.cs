@@ -52,15 +52,53 @@ public static partial class AuditEvents
             ("permissionsAdded", change.Added.Count == 0 ? null : Identities(change.Added)),
             ("permissionsRemoved", change.Removed.Count == 0 ? null : Identities(change.Removed)));
 
-    /// <summary>A change to a role was refused. <paramref name="reason"/> is <c>system_role</c> or <c>assignments_remain</c>.</summary>
-    public static AuditEvent RoleMutationRejected(RoleId role, string reason, int? assignmentCount = null) =>
+    /// <summary>The most missing permission identities a refusal records; the count is always recorded in full.</summary>
+    public const int MaxMissingPermissionsRecorded = 20;
+
+    /// <summary>
+    /// A change to a role was refused. <paramref name="reason"/> is <c>system_role</c>, <c>assignments_remain</c> or
+    /// <c>grant_exceeds_authority</c>; the last carries the permissions the actor does not hold (at most
+    /// <see cref="MaxMissingPermissionsRecorded"/> identities, and the full count).
+    /// </summary>
+    public static AuditEvent RoleMutationRejected(
+        RoleId role,
+        string reason,
+        int? assignmentCount = null,
+        IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>? missing = null) =>
         Event(
             AuditActionNames.RoleMutationRejected,
             Target(AuditTargetTypes.Role, role.Value),
             AuditOutcomeCodes.Rejected,
             ("roleId", role.Value),
             ("reason", reason),
-            ("assignmentCount", assignmentCount));
+            ("assignmentCount", assignmentCount),
+            ("missingCount", missing is { Count: > 0 } ? missing.Count : null),
+            ("missingPermissions", MissingIdentities(missing)));
+
+    /// <summary>
+    /// Assigning or removing a role was refused because of the actor's own authority. <paramref name="reason"/> is
+    /// <c>exceeds_authority</c>, <c>removal_exceeds_authority</c>, <c>platform_administrator_restricted</c> or, for a role whose
+    /// stored permissions cannot be read, <c>role_permissions_unreadable</c>.
+    /// </summary>
+    public static AuditEvent RoleAssignmentRejected(
+        UserId user,
+        RoleId role,
+        string reason,
+        IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>? missing = null) =>
+        Event(
+            AuditActionNames.RoleAssignmentRejected,
+            Target(AuditTargetTypes.User, user.Value),
+            AuditOutcomeCodes.Rejected,
+            ("userId", user.Value),
+            ("roleId", role.Value),
+            ("reason", reason),
+            ("missingCount", missing is { Count: > 0 } ? missing.Count : null),
+            ("missingPermissions", MissingIdentities(missing)));
+
+    private static IReadOnlyList<string>? MissingIdentities(IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor>? missing) =>
+        missing is not { Count: > 0 }
+            ? null
+            : Identities(missing.OrderBy(PermissionSetChange.Identity, StringComparer.Ordinal).Take(MaxMissingPermissionsRecorded));
 
     /// <summary>
     /// A local user was created. <paramref name="localSignInReady"/> is true when a password was set at creation, so the

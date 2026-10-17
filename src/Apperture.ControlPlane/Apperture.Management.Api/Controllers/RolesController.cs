@@ -226,23 +226,14 @@ public sealed class RolesController : ControllerBase
     private static IReadOnlyList<PermissionDescriptor>? ToPermissionDescriptors(IReadOnlyList<RolePermissionDto>? permissions) =>
         permissions?.Select(ToPermissionDescriptor).ToList();
 
+    // Only the typed outcomes are business results. An InvalidOperationException (an audit programming error included) is not
+    // one of them and reaches the host's exception handler as the internal error it is.
     private static bool IsRoleFailure(Exception ex) =>
-        ex is UnauthorizedAccessException or RoleLifecycleException or InvalidOperationException;
+        ex is UnauthorizedAccessException || GovernanceFailureResults.IsGovernanceOutcome(ex);
 
-    private static ActionResult MapRoleFailure(Exception ex) => ex switch
-    {
-        UnauthorizedAccessException => new ForbidResult(),
-        RoleLifecycleException lifecycle => new ConflictObjectResult(new
-        {
-            error = lifecycle.Code,
-            message = lifecycle.Message,
-            assignmentCount = lifecycle.AssignmentCount
-        }),
-        InvalidOperationException invalid when invalid.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
-            => new NotFoundObjectResult(new { message = invalid.Message }),
-        InvalidOperationException invalid => new BadRequestObjectResult(new { message = invalid.Message }),
-        _ => throw ex
-    };
+    private static ActionResult MapRoleFailure(Exception ex) => ex is UnauthorizedAccessException
+        ? new ForbidResult()
+        : GovernanceFailureResults.Map(ex, legacyErrorProperty: true);
 
     private static RolePermissionDto ToRolePermission(PermissionDescriptor permission) =>
         new(

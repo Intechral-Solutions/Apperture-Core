@@ -99,6 +99,20 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            Action = "governance.role.assignment_rejected",
+            Category = AuditCategories.Governance,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.RoleAssignmentRejected,
+            IntroducedIn = "IAM-10.2a",
+            IntroducedAfterEpic37Migration = true,
+            OutcomeMap = Map(("auth-admin", AuditOutcomeCodes.Rejected)),
+            Writer = "UserManagementService.cs",
+        },
+        new()
+        {
             Action = "governance.role.deleted",
             Category = AuditCategories.Governance,
             Severity = AuditSeverities.Elevated,

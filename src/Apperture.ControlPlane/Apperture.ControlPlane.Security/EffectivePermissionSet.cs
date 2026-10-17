@@ -86,6 +86,9 @@ public sealed class EffectivePermissionSet
         return false;
     }
 
+    /// <summary>True when one of the roles is the seeded Platform Administrator role (compared as the floor compares it).</summary>
+    public bool HoldsPlatformAdministratorRole => _holdsPlatformAdministratorRole.Value;
+
     /// <summary>Allows with the target scope taken the way the evaluator takes it from its arguments.</summary>
     public bool Allows(PermissionDescriptor permission, ResourceDescriptor? resource, IGovernedResourceIdentity? resourceIdentity) =>
         Allows(permission, ResolveTargetScope(resource, resourceIdentity));

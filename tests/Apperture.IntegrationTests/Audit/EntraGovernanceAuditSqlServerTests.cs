@@ -106,7 +106,9 @@ public sealed class EntraGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task When_the_audit_insert_fails_an_approval_leaves_no_user_link_role_or_decision_and_sends_nothing()
     {
+        // A Platform Administrator, who alone may hand out the administrator role as the approval's initial role.
         var (admin, _) = await AddUserAsync("admin");
+        await _db.ExecuteAsync($"INSERT INTO UserRoles (UserId, RoleId) VALUES (N'{admin}', N'{Apperture.Core.Application.BootstrapConstants.PlatformAdminRoleId}');");
         var objectId = Guid.NewGuid().ToString();
         var requestId = await AddRequestAsync(objectId);
         var mail = new CountingMail();
@@ -122,7 +124,7 @@ public sealed class EntraGovernanceAuditSqlServerTests : IAsyncLifetime
         failAudit.Failures.Should().BeGreaterThan(0);
         (await _db.ScalarAsync<int>($"SELECT Status FROM EntraAccessRequests WHERE Id = N'{requestId}';")).Should().Be(0, "still pending");
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM IdentityLinks WHERE ExternalId = N'{objectId}';")).Should().Be(0);
-        (await _db.ScalarAsync<int>("SELECT COUNT(*) FROM UserRoles;")).Should().Be(0);
+        (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId <> N'{admin}';")).Should().Be(0, "no role was given to the person being approved");
         mail.Sent.Should().Be(0, "nothing is sent for a change that did not commit");
     }
 

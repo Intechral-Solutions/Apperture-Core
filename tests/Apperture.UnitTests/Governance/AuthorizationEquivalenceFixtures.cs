@@ -1,8 +1,6 @@
-using System.Reflection;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
-using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
 
 namespace Apperture.UnitTests.Governance;
@@ -111,7 +109,7 @@ internal static class AuthorizationEquivalenceFixtures
 
             try
             {
-                return new Role(new RoleId(Id), Name, null, ReadLikeTheRepository(Json), false);
+                return new Role(new RoleId(Id), Name, null, ReadWithTheOriginalParser(Json), false);
             }
             catch (Exception ex)
             {
@@ -121,22 +119,13 @@ internal static class AuthorizationEquivalenceFixtures
         }
     }
 
-    private static readonly MethodInfo RepositoryParser =
-        typeof(SqlRoleRepository).GetMethod("DeserializePermissions", BindingFlags.NonPublic | BindingFlags.Static)
-        ?? throw new InvalidOperationException("SqlRoleRepository.DeserializePermissions was not found; update the equivalence fixtures.");
-
-    /// <summary>Reads stored role JSON with the repository's own parser, so that malformed data is read the way it really is.</summary>
-    public static IReadOnlyList<PermissionDescriptor> ReadLikeTheRepository(string json)
-    {
-        try
-        {
-            return (IReadOnlyList<PermissionDescriptor>)RepositoryParser.Invoke(null, [json])!;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            throw ex.InnerException;
-        }
-    }
+    /// <summary>
+    /// Reads stored role JSON with the frozen copy of the parser the repository had when the held set was introduced
+    /// (<see cref="LegacyRolePermissionsParser"/>), so malformed data is read the way the equivalence proof always read it,
+    /// independently of the production parser that has since been corrected.
+    /// </summary>
+    public static IReadOnlyList<PermissionDescriptor> ReadWithTheOriginalParser(string json) =>
+        LegacyRolePermissionsParser.Read(json);
 
     /// <summary>Stored role JSON as found in a database, readable and not.</summary>
     public static readonly IReadOnlyList<(string Name, string Json)> StoredJson =

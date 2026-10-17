@@ -31,6 +31,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
     private readonly AccountSecurityLinkBuilder _links;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly IScopeContainmentEvaluator _scopeEvaluator;
 
     public UserProvisioningService(
         IPrincipalContext principalContext,
@@ -45,8 +46,10 @@ public sealed class UserProvisioningService : IUserProvisioningService
         IAccountSecurityMailSender mail,
         AccountSecurityLinkBuilder links,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
-        IAuditEventWriter? auditEvents = null)
+        IAuditEventWriter? auditEvents = null,
+        IScopeContainmentEvaluator? scopeEvaluator = null)
     {
+        _scopeEvaluator = scopeEvaluator ?? new ScopeContainmentEvaluator();
         _principalContext = principalContext;
         _auth = auth;
         _users = users;
@@ -128,9 +131,10 @@ public sealed class UserProvisioningService : IUserProvisioningService
         var reviewedAt = _clock.GetUtcNow();
 
         // The user, its link, the initial role, the reconciled access request and their rows commit together (AUD-1.2).
-        var (created, roleAssigned, reconciled) = await Unit.ExecuteAsync(
+        var (created, roleAssigned, reconciled) = await Unit.ExecuteRefusableAsync(
+            Events,
             Operation(AuditActionNames.ProvisionedFromDirectory),
-            async (transaction, ct) =>
+            async (transaction, refusals, ct) =>
             {
                 var current = await _registrations.GetByIdAsync(registration.Id, ct);
                 if (current is null || !current.Enabled)
@@ -140,6 +144,11 @@ public sealed class UserProvisioningService : IUserProvisioningService
                         "That Microsoft directory registration is disabled.");
                 }
 
+                // The initial role is decided before anything is written, from the rows the lock set returned.
+                var initialRole = await DecideInitialRoleAsync(userId, request.InitialRoleId, ct);
+                if (initialRole.Refusal is { } refusal)
+                    return refusals.Refuse<(string, bool, string?)>(transaction, refusal.Event, refusal.Exception);
+
                 var user = await AddWithGeneratedUsernameAsync(
                     username => new User(userId, displayName, [pendingLink], [], IsBreakGlassEligible: false) { Username = username },
                     new UsernameGenerationSources(directoryUser.UserPrincipalName, directoryUser.Mail, displayName),
@@ -147,7 +156,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 await transaction.StageAsync(
                     AuditEvents.ProvisionedFromDirectory(userId, user.Username, tenantId, objectId!, registration.Id), ct);
 
-                var assigned = await TryAssignRoleAsync(transaction, userId, request.InitialRoleId, ct);
+                var assigned = await AssignInitialRoleAsync(transaction, userId, initialRole.Role, ct);
                 var reconciledId = await ReconcilePendingAsync(transaction, tenantId, objectId!, userId, actorId, reviewedAt, ct);
                 return (user.Username, assigned, reconciledId);
             },
@@ -192,12 +201,13 @@ public sealed class UserProvisioningService : IUserProvisioningService
         var userId = NewUserId();
         var linkId = IdentityLink.NewLinkId();
         var reviewedAt = _clock.GetUtcNow();
-        var approval = await Unit.ExecuteAsync(
+        var approval = await Unit.ExecuteRefusableAsync(
+            Events,
             new AuditedOperation(
                 AuditActionNames.ProvisionedFromAccessRequest,
                 AuditActor.CurrentPrincipal,
                 [AuditActionNames.AccessRequestReconciled]),
-            async (transaction, ct) =>
+            async (transaction, refusals, ct) =>
             {
                 // Every check the approval depends on is read in this transaction.
                 var accessRequest = await _requests.GetByIdAsync(request.RequestId, ct)
@@ -254,6 +264,11 @@ public sealed class UserProvisioningService : IUserProvisioningService
                     MailSnapshot: accessRequest.MailSnapshot,
                     LinkId: linkId);
 
+                // The initial role is decided before anything is written, from the rows the lock set returned.
+                var initialRole = await DecideInitialRoleAsync(userId, request.InitialRoleId, ct);
+                if (initialRole.Refusal is { } refusal)
+                    return refusals.Refuse<Approval>(transaction, refusal.Event, refusal.Exception);
+
                 var created = await AddWithGeneratedUsernameAsync(
                     username => new User(userId, displayName, [link], [], IsBreakGlassEligible: false) { Username = username },
                     new UsernameGenerationSources(
@@ -264,7 +279,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 await transaction.StageAsync(
                     AuditEvents.ProvisionedFromAccessRequest(userId, created.Username, tenantId, objectId!, accessRequest.Id), ct);
 
-                var roleAssigned = await TryAssignRoleAsync(transaction, userId, request.InitialRoleId, ct);
+                var roleAssigned = await AssignInitialRoleAsync(transaction, userId, initialRole.Role, ct);
                 await _requests.UpdateAsync(
                     accessRequest with
                     {
@@ -409,14 +424,63 @@ public sealed class UserProvisioningService : IUserProvisioningService
         return (true, delivery.Succeeded, delivery.FailureSummary);
     }
 
-    /// <summary>Assigns the initial role inside the provisioning transaction, with its own assignment row.</summary>
-    private async ValueTask<bool> TryAssignRoleAsync(IAuditedTransaction transaction, UserId userId, string? roleId, CancellationToken cancellationToken)
+    /// <summary>What deciding the initial role found: the role to assign, or the refusal to record.</summary>
+    private sealed record InitialRoleDecision(Role? Role, InitialRoleRefusal? Refusal);
+
+    private sealed record InitialRoleRefusal(Apperture.Core.Application.Audit.AuditEvent Event, Exception Exception);
+
+    /// <summary>
+    /// Decides, under the authority lock set and inside the provisioning transaction, whether the acting administrator may give the
+    /// new user the requested initial role. The administrator must hold every permission of the role, and only a Platform
+    /// Administrator can give the Platform Administrator role; a role whose stored permissions cannot be read is refused. The
+    /// new user does not exist yet, so the assignment key is absent and the target user is the one being created.
+    /// </summary>
+    private async ValueTask<InitialRoleDecision> DecideInitialRoleAsync(UserId newUserId, string? requestedRoleId, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(roleId))
+        if (string.IsNullOrWhiteSpace(requestedRoleId))
+            return new InitialRoleDecision(null, null);
+
+        var roleId = new RoleId(requestedRoleId.Trim());
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        // A session's actor id is the user id (HumanActor); the identity-link validity of the session is not an authority change.
+        UserId? actorUserId = actor is null ? null : new UserId(actor.Id.Value);
+        var snapshot = await _roles.LockAuthoritySnapshotAsync(actorUserId, roleId, newUserId, cancellationToken);
+        var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
+
+        if (!authority.Allows(RoleAuthorityRules.RoleAssign, RoleAuthorityRules.RoleAssign.Resource, null))
+        {
+            throw new UserProvisioningException(
+                UserProvisioningErrorCodes.RoleAssignForbidden,
+                "You can add people but you cannot assign that role.");
+        }
+
+        var role = snapshot.TargetRole ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+        if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
+        {
+            return new InitialRoleDecision(
+                null,
+                new InitialRoleRefusal(AuditEvents.RoleAssignmentRejected(newUserId, roleId, refused.Reason, refused.Missing), refused.ToException()));
+        }
+
+        if (!role.PermissionsReadable)
+        {
+            return new InitialRoleDecision(
+                null,
+                new InitialRoleRefusal(
+                    AuditEvents.RoleAssignmentRejected(newUserId, roleId, "role_permissions_unreadable"),
+                    new GovernanceConflictException(
+                        GovernanceConflictCodes.RolePermissionsUnreadable,
+                        "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first.")));
+        }
+
+        return new InitialRoleDecision(role, null);
+    }
+
+    /// <summary>Assigns the initial role the decision allowed, inside the provisioning transaction, with its own assignment row.</summary>
+    private async ValueTask<bool> AssignInitialRoleAsync(IAuditedTransaction transaction, UserId userId, Role? role, CancellationToken cancellationToken)
+    {
+        if (role is null)
             return false;
-        var id = new RoleId(roleId.Trim());
-        var role = await _roles.GetAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Role {roleId} was not found.");
         await _roles.AssignToUserAsync(userId, role.Id, cancellationToken);
         await transaction.StageAsync(AuditEvents.RoleAssigned(userId, role.Id), cancellationToken);
         return true;

@@ -29,6 +29,9 @@ public sealed class ActorAuthority
     /// <summary>True for a session that passes every check without consulting any role.</summary>
     public bool IsUnrestricted { get; }
 
+    /// <summary>True for a session that passes every check, and for an actor assigned the Platform Administrator role.</summary>
+    public bool HoldsPlatformAdministratorRole => IsUnrestricted || (_set is not null && _set.HoldsPlatformAdministratorRole);
+
     /// <summary>The evaluator's decision for these arguments.</summary>
     public bool Allows(PermissionDescriptor permission, ResourceDescriptor? resource, IGovernedResourceIdentity? resourceIdentity)
     {

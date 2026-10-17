@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
@@ -11,11 +10,6 @@ namespace Apperture.Persistence.SqlServer;
 /// </summary>
 public sealed class SqlRoleRepository : IRoleRepository
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly AppertureDbContext _db;
 
     public SqlRoleRepository(AppertureDbContext db) => _db = db;
@@ -107,7 +101,8 @@ public sealed class SqlRoleRepository : IRoleRepository
         // anyone changed the row after this read, so the diff is exactly what committed.
         var entity = await _db.Roles.FirstOrDefaultAsync(e => e.Id == roleId.Value, cancellationToken)
             ?? throw new InvalidOperationException($"Role {roleId.Value} not found.");
-        var change = PermissionSetChange.Between(DeserializePermissions(entity.PermissionsJson), permissions);
+        // Against an unreadable stored list the previous set is empty, so every requested permission is an addition.
+        var change = PermissionSetChange.Between(StoredRolePermissions.Read(entity.PermissionsJson).Permissions, permissions);
         entity.PermissionsJson = SerializePermissions(permissions);
         await _db.SaveChangesAsync(cancellationToken);
         return change;
@@ -212,6 +207,76 @@ public sealed class SqlRoleRepository : IRoleRepository
         return new RoleUnassignedDeleteResult(RoleUnassignedDeleteOutcome.Deleted, 0, entity.Name);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<AuthoritySnapshot> LockAuthoritySnapshotAsync(
+        UserId? actorUserId,
+        RoleId? targetRoleId,
+        UserId? targetUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_db.Database.IsRelational())
+        {
+            // No locks exist to take (the in-memory provider): the same rows, read.
+            return await ReadAuthoritySnapshotAsync(actorUserId, targetRoleId, targetUserId, cancellationToken);
+        }
+
+        if (_db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("The authority snapshot can only be locked inside an open transaction.");
+
+        // Order matters for deadlock avoidance and is part of the contract: L1 the actor's assignments, L2 the role rows in
+        // ascending id order, L3 the target assignment key. Every statement uses UPDLOCK, HOLDLOCK, which take locks under
+        // READ_COMMITTED_SNAPSHOT as well, where an unhinted read would only see a version.
+        var actorRoleIds = new List<string>();
+        if (actorUserId is not null)
+        {
+            var assignments = await _db.UserRoles
+                .FromSqlInterpolated($"SELECT * FROM [UserRoles] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] = {actorUserId.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            actorRoleIds.AddRange(assignments.Select(a => a.RoleId));
+        }
+
+        var lockedRoles = new Dictionary<string, Role?>(StringComparer.Ordinal);
+        var roleIds = actorRoleIds.Concat(targetRoleId is null ? [] : [targetRoleId.Value])
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal);
+        foreach (var id in roleIds)
+        {
+            var rows = await _db.Roles
+                .FromSqlInterpolated($"SELECT * FROM [Roles] WITH (UPDLOCK, HOLDLOCK) WHERE [Id] = {id}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            lockedRoles[id] = rows.Count == 0 ? null : ToDomain(rows[0]);
+        }
+
+        var assigned = false;
+        if (targetUserId is not null && targetRoleId is not null)
+        {
+            var rows = await _db.UserRoles
+                .FromSqlInterpolated($"SELECT * FROM [UserRoles] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] = {targetUserId.Value} AND [RoleId] = {targetRoleId.Value}")
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            assigned = rows.Count > 0;
+        }
+
+        var actorRoles = actorRoleIds
+            .Select(id => lockedRoles.GetValueOrDefault(id))
+            .Where(r => r is not null)
+            .Select(r => r!)
+            .ToList();
+        return new AuthoritySnapshot(actorRoles, targetRoleId is null ? null : lockedRoles.GetValueOrDefault(targetRoleId.Value), assigned);
+    }
+
+    private async ValueTask<AuthoritySnapshot> ReadAuthoritySnapshotAsync(
+        UserId? actorUserId, RoleId? targetRoleId, UserId? targetUserId, CancellationToken cancellationToken)
+    {
+        var actorRoles = actorUserId is null ? Array.Empty<Role>() : await GetForUserAsync(actorUserId, cancellationToken);
+        var targetRole = targetRoleId is null ? null : await GetAsync(targetRoleId, cancellationToken);
+        var assigned = targetUserId is not null && targetRoleId is not null
+            && await _db.UserRoles.AnyAsync(ur => ur.UserId == targetUserId.Value && ur.RoleId == targetRoleId.Value, cancellationToken);
+        return new AuthoritySnapshot(actorRoles, targetRole, assigned);
+    }
+
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
         for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
@@ -225,64 +290,17 @@ public sealed class SqlRoleRepository : IRoleRepository
 
     private static Role ToDomain(RoleEntity e)
     {
-        var permissions = DeserializePermissions(e.PermissionsJson);
+        // An unreadable stored list is a role with no grants that says so, so that nobody assigns it believing it is empty.
+        var reading = StoredRolePermissions.Read(e.PermissionsJson);
         return new Role(
             new RoleId(e.Id),
             e.Name,
             e.Description,
-            permissions,
-            e.IsSystemRole);
+            reading.Permissions,
+            e.IsSystemRole,
+            reading.IsReadable);
     }
 
-    private static IReadOnlyList<PermissionDescriptor> DeserializePermissions(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json == "[]")
-            return Array.Empty<PermissionDescriptor>();
-
-        List<PermissionDescriptorDto>? list;
-        try
-        {
-            list = JsonSerializer.Deserialize<List<PermissionDescriptorDto>>(json, JsonOptions);
-        }
-        catch
-        {
-            // Defensive hardening: malformed role permissions should not take down API endpoints.
-            // Auth will evaluate as "no permissions" and callers will receive 401/403 instead of 500.
-            return Array.Empty<PermissionDescriptor>();
-        }
-        if (list is null)
-            return Array.Empty<PermissionDescriptor>();
-
-        return list.Select(dto => new PermissionDescriptor(
-            dto.Action,
-            dto.Resource is null ? null : new ResourceDescriptor(dto.Resource.ResourceType, dto.Resource.ScopeKey))).ToList();
-    }
-
-    private sealed class PermissionDescriptorDto
-    {
-        public string Action { get; set; } = "";
-        public ResourceDescriptorDto? Resource { get; set; }
-    }
-
-    private sealed class ResourceDescriptorDto
-    {
-        public string ResourceType { get; set; } = "";
-        public string ScopeKey { get; set; } = "";
-    }
-
-    private static string SerializePermissions(IReadOnlyList<PermissionDescriptor> permissions)
-    {
-        if (permissions is null || permissions.Count == 0)
-            return "[]";
-        var dtos = permissions.Select(p => new PermissionDescriptorDto
-        {
-            Action = p.Action,
-            Resource = p.Resource is null ? null : new ResourceDescriptorDto
-            {
-                ResourceType = p.Resource.ResourceType,
-                ScopeKey = p.Resource.ScopeKey
-            }
-        }).ToList();
-        return JsonSerializer.Serialize(dtos, JsonOptions);
-    }
+    private static string SerializePermissions(IReadOnlyList<PermissionDescriptor> permissions) =>
+        StoredRolePermissions.Serialize(permissions);
 }

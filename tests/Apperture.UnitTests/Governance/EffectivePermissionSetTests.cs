@@ -158,8 +158,8 @@ public sealed class EffectivePermissionSetTests
     [Fact]
     public void A_role_whose_stored_permissions_cannot_be_read_contributes_nothing_and_does_not_hide_the_others()
     {
-        var unreadable = RoleOf("broken", ReadLikeTheRepository("{not json").ToArray());
-        unreadable.Permissions.Should().BeEmpty("the repository reads unreadable JSON as no permissions");
+        var unreadable = RoleOf("broken", ReadWithTheOriginalParser("{not json").ToArray());
+        unreadable.Permissions.Should().BeEmpty("an unreadable list reads as no permissions");
         var readable = RoleOf("fine", Perm("connection.read", "Connection"));
 
         var set = SetOf(unreadable, readable);
@@ -171,7 +171,7 @@ public sealed class EffectivePermissionSetTests
     [Fact]
     public void An_element_with_no_action_matches_nothing()
     {
-        var damaged = RoleOf("damaged", ReadLikeTheRepository("[{\"action\":null,\"resource\":{\"resourceType\":\"Role\",\"scopeKey\":\"instance\"}}]").ToArray());
+        var damaged = RoleOf("damaged", ReadWithTheOriginalParser("[{\"action\":null,\"resource\":{\"resourceType\":\"Role\",\"scopeKey\":\"instance\"}}]").ToArray());
 
         SetOf(damaged).Allows(Perm("user.read", "Role"), "instance").Should().BeFalse();
     }
@@ -238,7 +238,7 @@ public sealed class EffectivePermissionSetTests
     [Fact]
     public void An_unreadable_administrator_role_still_gets_the_floor()
     {
-        var unreadable = RoleOf(BootstrapConstants.PlatformAdminRoleId, ReadLikeTheRepository("{not json").ToArray());
+        var unreadable = RoleOf(BootstrapConstants.PlatformAdminRoleId, ReadWithTheOriginalParser("{not json").ToArray());
 
         SetOf(unreadable).Allows(Perm("auth.entra.manage", "InstanceConfiguration"), "instance").Should().BeTrue();
     }

@@ -38,13 +38,15 @@ public interface IUserManagementService
     ValueTask<IReadOnlyList<PermissionDescriptor>> GetRolePermissionsAsync(RoleId roleId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Replaces explicit permission assignments for a role. Requires permission.assign.
+    /// Replaces explicit permission assignments for a role. Requires permission.assign, and the actor must hold every permission
+    /// the replacement adds (keeping or removing a permission needs nothing further). Decided inside the audited unit from the rows
+    /// the authority lock set returned. A permission the actor lacks is an authorization refusal (403), not a validation error.
     /// </summary>
     ValueTask SetRolePermissionsAsync(RoleId roleId, IReadOnlyList<PermissionDescriptor> permissions, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Creates a user-created role and optional initial grants in one operation. Requires role.manage.
-    /// Non-empty initial grants also require permission.assign. Empty grants are allowed.
+    /// Non-empty initial grants also require permission.assign, and the creator must hold every one of them. Empty grants are allowed.
     /// </summary>
     ValueTask<Role> CreateRoleAsync(
         string name,
@@ -121,12 +123,16 @@ public interface IUserManagementService
     ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Assigns a role to a user. Requires role.assign.
+    /// Assigns a role to a user. Requires role.assign, and the actor must hold every permission of the role; the Platform
+    /// Administrator role can be assigned only by a Platform Administrator, and a role whose stored permissions cannot be read cannot
+    /// be assigned. The entitlement is checked before the request is judged a no-op: assigning a role the user already holds is a
+    /// silent success only for an actor entitled to manage that role.
     /// </summary>
     ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes a role from a user. Requires role.assign.
+    /// Removes a role from a user. Requires role.assign and the same entitlement as assigning the role (a user may remove a role they
+    /// hold from themselves). Removing a role the user does not hold is a silent success only for an entitled actor.
     /// </summary>
     ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);
 
