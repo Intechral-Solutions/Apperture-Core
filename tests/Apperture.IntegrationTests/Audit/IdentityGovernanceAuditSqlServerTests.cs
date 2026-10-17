@@ -513,10 +513,22 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     private UserManagementService Service(AppertureDbContext db, IPrincipalContext principal, IEmergencyAccessService? emergency = null)
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        registry.RegisterPermission(UserRead, ResourceFamily.Core);
-        registry.RegisterPermission(UserManage, ResourceFamily.Core);
+        registry.RegisterPermission(CatalogEntry(UserRead));
+        registry.RegisterPermission(CatalogEntry(UserManage));
         return RenameService(db, principal, NewUnit(db, principal), Events(principal), emergency, registry);
     }
+
+    private static PermissionDefinition CatalogEntry(PermissionDescriptor identity) =>
+        new(
+            identity,
+            DisplayName: $"Test {identity.Action}",
+            Description: $"Test permission {identity.Action}.",
+            Category: PermissionCategory.AccessControl,
+            Sensitivity: PermissionSensitivity.Standard,
+            RequiresStepUp: false,
+            GrantedToPlatformAdministratorByDefault: true,
+            Origin: PermissionOrigin.Platform,
+            Family: ResourceFamily.Core);
 
     private SqlAuditEventWriter Events(IPrincipalContext principal) =>
         new(_db.Options(), principal, HarnessCatalog, null, null, null);

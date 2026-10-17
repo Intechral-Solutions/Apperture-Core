@@ -46,9 +46,7 @@ public sealed class GovernanceControllerTests
     {
         var registry = new InMemoryResourceDescriptorRegistry();
         registry.RegisterResource(new ResourceDescriptor("User", "instance"), ResourceFamily.Core);
-        registry.RegisterPermission(
-            new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
-            ResourceFamily.Core);
+        registry.RegisterPermission(TestPermissionDefinitions.For("user.read", "User", family: ResourceFamily.Core));
 
         var controller = new GovernanceController(
             registry,
@@ -69,10 +67,83 @@ public sealed class GovernanceControllerTests
     public async Task GetDescriptors_WhenAuthorized_ReturnsCatalogWithFamilyAndSourceMetadata()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        registry.RegisterPermission(
-            new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
-            ResourceFamily.Core);
+        registry.RegisterPermission(TestPermissionDefinitions.For("user.read", "User", family: ResourceFamily.Core));
 
+        var response = await GetCatalogAsync(registry);
+
+        var perm = response.Permissions.Single(p => p.Action == "user.read");
+        perm.Family.Should().Be("Core");
+        perm.Source.Should().Be("platform");
+        perm.ModuleId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetDescriptors_ExposesNameDescriptionCategorySensitivityAndStepUpMetadata()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        registry.RegisterPermission(TestPermissionDefinitions.For("role.manage", "Role", family: ResourceFamily.Core) with
+        {
+            DisplayName = "Manage roles",
+            Description = "Create, rename and delete custom roles.",
+            Category = PermissionCategory.AccessControl,
+            Sensitivity = PermissionSensitivity.Critical,
+            RequiresStepUp = true,
+        });
+
+        var response = await GetCatalogAsync(registry);
+
+        var perm = response.Permissions.Single();
+        perm.DisplayName.Should().Be("Manage roles");
+        perm.Description.Should().Be("Create, rename and delete custom roles.");
+        perm.Category.Should().Be("AccessControl");
+        perm.Sensitivity.Should().Be("Critical");
+        perm.RequiresStepUp.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetDescriptors_DerivesSourceAndModuleIdFromOriginNotFromTheScopeKey()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        // A module permission whose scope is a slot of the module: parsing the scope key would give the module id "Sample.HelloWorld:slot:input".
+        registry.RegisterPermission(TestPermissionDefinitions.For("workflow.execute", "WorkflowInstance", "module:Sample.HelloWorld:slot:input") with
+        {
+            Origin = PermissionOrigin.Module,
+            ModuleId = "Sample.HelloWorld",
+            Category = PermissionCategory.Modules,
+        });
+        // A platform permission whose scope key merely looks like a module scope.
+        registry.RegisterPermission(TestPermissionDefinitions.For("connection.read", "Connection", "module:looks-like-a-module"));
+
+        var response = await GetCatalogAsync(registry);
+
+        var module = response.Permissions.Single(p => p.Action == "workflow.execute");
+        module.Source.Should().Be("module");
+        module.ModuleId.Should().Be("Sample.HelloWorld");
+        var platform = response.Permissions.Single(p => p.Action == "connection.read");
+        platform.Source.Should().Be("platform");
+        platform.ModuleId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetDescriptors_ListsEveryPlatformPermissionWithCompleteMetadata()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new FixedEnvironment()).Seed(registry);
+
+        var response = await GetCatalogAsync(registry);
+
+        response.Permissions.Should().HaveCount(registry.GetPermissionDefinitions().Count);
+        response.Permissions.Should().OnlyContain(p =>
+            !string.IsNullOrWhiteSpace(p.DisplayName) &&
+            !string.IsNullOrWhiteSpace(p.Description) &&
+            !string.IsNullOrWhiteSpace(p.Category) &&
+            !string.IsNullOrWhiteSpace(p.Sensitivity) &&
+            p.Source == "platform" &&
+            p.ModuleId == null);
+    }
+
+    private static async Task<GovernanceDescriptorResponse> GetCatalogAsync(InMemoryResourceDescriptorRegistry registry)
+    {
         var controller = new GovernanceController(
             registry,
             new StubPrincipalContext(),
@@ -82,12 +153,12 @@ public sealed class GovernanceControllerTests
         var result = await controller.GetDescriptors(CancellationToken.None);
 
         result.Result.Should().BeOfType<OkObjectResult>();
-        var ok = (OkObjectResult)result.Result!;
-        var response = (GovernanceDescriptorResponse)ok.Value!;
-        var perm = response.Permissions.Single(p => p.Action == "user.read");
-        perm.Family.Should().Be("Core");
-        perm.Source.Should().Be("platform");
-        perm.ModuleId.Should().BeNull();
+        return (GovernanceDescriptorResponse)((OkObjectResult)result.Result!).Value!;
+    }
+
+    private sealed class FixedEnvironment : IEnvironmentContext
+    {
+        public string EnvironmentId => "local";
     }
 
     [Fact]

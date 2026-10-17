@@ -17,11 +17,16 @@ public interface IResourceDescriptorRegistry
     void RegisterResource(ResourceDescriptor descriptor, ResourceFamily? family = null);
 
     /// <summary>
-    /// Registers a permission descriptor.
+    /// Registers a permission with its product metadata. A definition without a display name or description is rejected, and
+    /// registering the same identity again with different metadata is a conflict.
     /// </summary>
-    /// <param name="descriptor">The permission descriptor.</param>
-    /// <param name="family">Optional resource family for taxonomy grouping.</param>
-    void RegisterPermission(PermissionDescriptor descriptor, ResourceFamily? family = null);
+    /// <param name="definition">The permission definition.</param>
+    void RegisterPermission(PermissionDefinition definition);
+
+    /// <summary>
+    /// Gets every registered permission definition, optionally filtered by family.
+    /// </summary>
+    IReadOnlyList<PermissionDefinition> GetPermissionDefinitions(ResourceFamily? family = null);
 
     /// <summary>
     /// Gets all registered resource descriptors, optionally filtered by family.

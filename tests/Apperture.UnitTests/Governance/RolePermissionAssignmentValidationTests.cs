@@ -19,9 +19,7 @@ public sealed class RolePermissionAssignmentValidationTests
     public async Task SetRolePermissionsAsync_throws_when_permission_not_in_catalog()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        registry.RegisterPermission(
-            new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
-            ResourceFamily.Core);
+        registry.RegisterPermission(TestPermissionDefinitions.For("user.read", "User", family: ResourceFamily.Core));
 
         var userManagement = new UserManagementService(
             new StubPrincipalContext(),
@@ -52,9 +50,7 @@ public sealed class RolePermissionAssignmentValidationTests
     public async Task SetRolePermissionsAsync_succeeds_when_all_permissions_in_catalog()
     {
         var registry = new InMemoryResourceDescriptorRegistry();
-        registry.RegisterPermission(
-            new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
-            ResourceFamily.Core);
+        registry.RegisterPermission(TestPermissionDefinitions.For("user.read", "User", family: ResourceFamily.Core));
 
         var roleRepo = new StubRoleRepository();
         var userManagement = new UserManagementService(

@@ -153,7 +153,7 @@ public sealed class UserManagementServiceRoleLifecycleTests
     {
         var harness = Harness.Create();
         var other = new PermissionDescriptor(ActionConstants.UserManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance));
-        harness.Registry.RegisterPermission(other, ResourceFamily.Core);
+        harness.Registry.RegisterPermission(TestPermissionDefinitions.For(other, ResourceFamily.Core));
         var created = await harness.Service.CreateRoleAsync("Operators", null, [KnownPermission()]);
         harness.Audit.Clear();
 
@@ -369,7 +369,7 @@ public sealed class UserManagementServiceRoleLifecycleTests
             bool allowUserRead = true)
         {
             var registry = new InMemoryResourceDescriptorRegistry();
-            registry.RegisterPermission(KnownPermission(), ResourceFamily.Core);
+            registry.RegisterPermission(TestPermissionDefinitions.For(KnownPermission(), ResourceFamily.Core));
 
             var roles = new RecordingRoles();
             var users = new RecordingUsers();

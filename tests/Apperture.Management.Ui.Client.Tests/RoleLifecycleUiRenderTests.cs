@@ -409,7 +409,9 @@ public sealed class RoleLifecycleUiRenderTests
         client.Setup(c => c.GetGovernanceDescriptorsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GovernanceDescriptorResponse(
                 [],
-                [new PermissionCatalogEntryDto("user.read", "User", "instance", "Core", "platform", null)]));
+                [new PermissionCatalogEntryDto(
+                    "user.read", "User", "instance", "Core", "platform", null,
+                    "View users", "View users, their roles and how they sign in.", "AccessControl", "Standard", false)]));
         var (renderer, nav, toasts, _) = await StartRendererAsync(
             client,
             Caps(canView: true, canManage, canAssignPermissions),

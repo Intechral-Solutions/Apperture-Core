@@ -853,8 +853,8 @@ public sealed class ModuleLifecycleRegistryTests
         {
             Permissions =
             [
-                new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
-                new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+                new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance", "Run test workflows", "Run the workflows provided by the test module."),
+                new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition, "Run test operations", "Run the operations provided by the test module.")
             ]
         };
 

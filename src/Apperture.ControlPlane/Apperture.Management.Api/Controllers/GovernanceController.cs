@@ -59,8 +59,8 @@ public sealed class GovernanceController : ControllerBase
             .OrderBy(r => r.ResourceType, StringComparer.Ordinal)
             .ThenBy(r => r.ScopeKey, StringComparer.Ordinal)
             .ToList();
-        var permissions = _registry.GetPermissionDescriptorsWithFamily()
-            .Select(p => ToPermissionCatalogEntry(p.Descriptor, p.Family))
+        var permissions = _registry.GetPermissionDefinitions()
+            .Select(ToPermissionCatalogEntry)
             .OrderBy(p => p.Action, StringComparer.Ordinal)
             .ThenBy(p => p.ResourceType, StringComparer.Ordinal)
             .ThenBy(p => p.ScopeKey, StringComparer.Ordinal)
@@ -69,31 +69,21 @@ public sealed class GovernanceController : ControllerBase
         return Ok(new GovernanceDescriptorResponse(resources, permissions));
     }
 
-    private static PermissionCatalogEntryDto ToPermissionCatalogEntry(Apperture.Shared.Kernel.PermissionDescriptor descriptor, ResourceFamily? family)
+    private static PermissionCatalogEntryDto ToPermissionCatalogEntry(PermissionDefinition definition)
     {
-        var scopeKey = descriptor.Resource?.ScopeKey ?? ScopeKeyConstants.Instance;
-        var (source, moduleId) = DeriveSourceAndModuleId(scopeKey);
+        var descriptor = definition.Identity;
         return new PermissionCatalogEntryDto(
             descriptor.Action,
             descriptor.Resource?.ResourceType,
             descriptor.Resource?.ScopeKey,
-            family?.ToString(),
-            source,
-            moduleId);
-    }
-
-    private static (string Source, string? ModuleId) DeriveSourceAndModuleId(string scopeKey)
-    {
-        if (string.IsNullOrEmpty(scopeKey))
-            return (SourcePlatform, null);
-        if (scopeKey == ScopeKeyConstants.Instance)
-            return (SourcePlatform, null);
-        if (scopeKey.StartsWith("module:", StringComparison.Ordinal))
-        {
-            var moduleId = scopeKey.Length > 7 ? scopeKey[7..] : null;
-            return (SourceModule, string.IsNullOrEmpty(moduleId) ? null : moduleId);
-        }
-        return (SourcePlatform, null);
+            definition.Family?.ToString(),
+            definition.Origin == PermissionOrigin.Module ? SourceModule : SourcePlatform,
+            definition.Origin == PermissionOrigin.Module ? definition.ModuleId : null,
+            definition.DisplayName,
+            definition.Description,
+            definition.Category.ToString(),
+            definition.Sensitivity.ToString(),
+            definition.RequiresStepUp);
     }
 
     [HttpGet("effective-permissions")]

@@ -1088,7 +1088,12 @@ public sealed record PermissionCatalogEntryDto(
     string? ScopeKey,
     string? Family,
     string Source,
-    string? ModuleId);
+    string? ModuleId,
+    string DisplayName,
+    string Description,
+    string Category,
+    string Sensitivity,
+    bool RequiresStepUp);
 
 public sealed record RoleDto(string Id, string Name, string? Description, bool IsSystemRole);
 

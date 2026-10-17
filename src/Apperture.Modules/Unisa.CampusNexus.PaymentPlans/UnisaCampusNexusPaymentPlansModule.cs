@@ -27,8 +27,16 @@ public sealed class UnisaCampusNexusPaymentPlansModule : IModule, IModuleStepHan
     {
         Permissions =
         [
-            new ModulePermissionDeclaration("workflow.execute", "WorkflowInstance"),
-            new ModulePermissionDeclaration(ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition)
+            new ModulePermissionDeclaration(
+                "workflow.execute", "WorkflowInstance",
+                "Run payment plan workflows",
+                "Run the workflows provided by the UNISA Campus Nexus payment plans module.",
+                PermissionSensitivity.Elevated),
+            new ModulePermissionDeclaration(
+                ActionConstants.OperationExecute, ResourceTypeConstants.OperationDefinition,
+                "Run payment plan operations",
+                "Run the operations provided by the UNISA Campus Nexus payment plans module.",
+                PermissionSensitivity.Elevated)
         ],
         Procedures =
         [
