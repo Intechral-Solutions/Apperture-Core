@@ -458,9 +458,10 @@ public sealed class ConnectionManagementService : IConnectionManagementService
 
     /// <inheritdoc />
     /// <remarks>
-    /// <para><b>One external attempt and one audited unit</b> (AUD-1.4 slice 5; design gate §11.6, §13.3). Test-connect is
-    /// available to anyone who can read the connection; it only updates verification metadata. An early read and
-    /// <c>connection.read</c> check authorize the probe. The probe itself runs first, outside any transaction: a transaction never
+    /// <para><b>One external attempt and one audited unit</b> (AUD-1.4 slice 5; design gate §11.6, §13.3). Test-connect uses the
+    /// credentials the connection stores, so it needs <c>connection.verify</c>, a permission of its own that
+    /// <c>connection.read</c> no longer reaches; it only updates verification metadata. An early read and
+    /// <c>connection.verify</c> check authorize the probe. The probe itself runs first, outside any transaction: a transaction never
     /// makes an external effect atomic, and the stored material is used against the remote host whatever happens next.</para>
     /// <para>One unit then records what happened. It locks the connection row, writes <b>only</b> the three verification columns
     /// over the row as locked (so an edit, rotation or retirement made while the probe ran is kept, not overwritten with the
@@ -483,7 +484,7 @@ public sealed class ConnectionManagementService : IConnectionManagementService
         var unit = Unit;
         var existing = await _connectionRepository.GetByIdAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Connection {id.Value} not found.");
-        await AuthorizeAsync(actor, existing, ActionConstants.ConnectionRead, "Not authorized to verify this connection.", cancellationToken).ConfigureAwait(false);
+        await AuthorizeAsync(actor, existing, ActionConstants.ConnectionVerify, "Not authorized to verify this connection.", cancellationToken).ConfigureAwait(false);
 
         ConnectionVerificationResult? verification = null;
         ExceptionDispatchInfo? failure = null;

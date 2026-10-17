@@ -181,12 +181,21 @@ public sealed class EffectivePermissionSetTests
     // ---------------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void The_floor_gives_the_administrator_ten_combinations_at_instance_even_when_stored_permissions_are_empty()
+    public void The_floor_gives_the_administrator_eight_combinations_at_instance_even_when_stored_permissions_are_empty()
     {
         var set = SetOf(AdminWith());
 
-        foreach (var (action, type) in FloorCombinations)
+        foreach (var (action, type) in CurrentFloorCombinations)
             set.Allows(Perm(action, type), "instance").Should().BeTrue($"{action} on {type} is part of the floor");
+    }
+
+    [Theory]
+    [InlineData("user.read", "Role")]
+    [InlineData("role.assign", "User")]
+    public void The_two_combinations_that_left_the_floor_are_no_longer_allowed_by_it(string action, string type)
+    {
+        SetOf(AdminWith()).Allows(Perm(action, type), "instance").Should().BeFalse(
+            "user.read on Role (its consumers moved to user.read on User) and role.assign on User (nothing asks for it) are not authority the floor gives");
     }
 
     [Fact]
@@ -209,8 +218,8 @@ public sealed class EffectivePermissionSetTests
     {
         var set = SetOf(AdminWith());
 
-        set.Allows(Perm("user.read", "role"), "instance").Should().BeTrue();
-        set.Allows(Perm("USER.READ", "Role"), "instance").Should().BeFalse("the floor matches action constants exactly");
+        set.Allows(Perm("permission.assign", "role"), "instance").Should().BeTrue();
+        set.Allows(Perm("PERMISSION.ASSIGN", "Role"), "instance").Should().BeFalse("the floor matches action constants exactly");
     }
 
     [Theory]
@@ -256,22 +265,34 @@ public sealed class EffectivePermissionSetTests
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // The transitional role.manage implication (replaced by A10.2.2 when the implication is removed)
+    // A10.2.2: role.manage no longer implies anything. This replaces the tests that pinned the implication.
     // ---------------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void Transitional_instance_role_manage_on_Role_implies_the_ten_combinations_at_instance_only()
+    public void A_role_holding_only_role_manage_is_refused_every_combination_it_used_to_imply()
     {
         var set = SetOf(RoleOf("role-manager", Perm("role.manage", "Role")));
 
         foreach (var (action, type) in FloorCombinations)
         {
-            set.Allows(Perm(action, type), "instance").Should().BeTrue($"{action} on {type} is implied");
-            set.Allows(Perm(action, type), "module:X").Should().BeFalse($"{action} on {type} is not implied below the instance");
+            set.Allows(Perm(action, type), "instance").Should().BeFalse($"{action} on {type} is not implied by role.manage any more");
+            set.Allows(Perm(action, type), "module:X").Should().BeFalse();
         }
 
         set.Allows(Perm("connection.read", "Connection"), "instance").Should().BeFalse();
-        set.Allows(Perm("role.manage", "Role"), "instance").Should().BeTrue();
+        set.Allows(Perm("role.manage", "Role"), "instance").Should().BeTrue("the grant still allows what it names");
+    }
+
+    [Fact]
+    public void A_role_manage_role_that_holds_some_of_the_combinations_explicitly_is_allowed_exactly_those()
+    {
+        var set = SetOf(RoleOf("role-manager", Perm("role.manage", "Role"), Perm("user.read", "User"), Perm("credential.manage", "User")));
+
+        foreach (var (action, type) in FloorCombinations)
+        {
+            var explicitlyHeld = (action, type) is ("user.read", "User") or ("credential.manage", "User");
+            set.Allows(Perm(action, type), "instance").Should().Be(explicitlyHeld, $"{action} on {type}");
+        }
     }
 
     [Theory]
@@ -279,11 +300,28 @@ public sealed class EffectivePermissionSetTests
     [InlineData("role.manage", "User", "instance")]
     [InlineData("role.manage", "InstanceConfiguration", "instance")]
     [InlineData("role.manage", null, "instance")]
-    public void Transitional_implication_needs_an_instance_scoped_role_manage_grant_on_the_Role_type(string action, string? type, string scope)
+    public void Role_manage_in_any_other_shape_never_implied_anything_either(string action, string? type, string scope)
     {
         var set = SetOf(RoleOf("role-manager", Perm(action, type, scope)));
 
-        set.Allows(Perm("user.read", "Role"), "instance").Should().BeFalse();
+        set.Allows(Perm("user.read", "User"), "instance").Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_implication_no_longer_exists_in_the_held_set()
+    {
+        typeof(EffectivePermissionSet).GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)
+            .Select(m => m.Name)
+            .Should().NotContain(n => n.Contains("Implied", StringComparison.OrdinalIgnoreCase), "slice 3 deletes the implication");
+    }
+
+    [Fact]
+    public void Administrators_floor_still_serves_a_role_manage_holder_who_is_also_the_administrator()
+    {
+        // The floor is the administrator's, not role.manage's: the same user holding both gets the floor.
+        var set = SetOf(AdminWith(), RoleOf("role-manager", Perm("role.manage", "Role")));
+
+        set.Allows(Perm("user.manage", "User"), "instance").Should().BeTrue();
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -451,7 +489,7 @@ public sealed class EffectivePermissionSetTests
     // ---------------------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void The_floor_is_exactly_the_ten_combinations_and_only_at_instance_scope()
+    public void The_floor_is_exactly_the_eight_combinations_and_only_at_instance_scope()
     {
         var actions = typeof(ActionConstants).GetFields(BindingFlags.Public | BindingFlags.Static)
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
@@ -464,7 +502,7 @@ public sealed class EffectivePermissionSetTests
         actions.Should().NotBeEmpty();
         types.Should().NotBeEmpty();
 
-        var floor = FloorCombinations.ToHashSet();
+        var floor = CurrentFloorCombinations.ToHashSet();
         var disagreements = new List<string>();
         foreach (var action in actions)
             foreach (var type in types)
@@ -477,22 +515,44 @@ public sealed class EffectivePermissionSetTests
                 }
 
         disagreements.Should().BeEmpty();
-        floor.Should().HaveCount(10);
+        floor.Should().HaveCount(8);
     }
 
     [Fact]
-    public void Every_floor_combination_but_the_one_nothing_asks_for_is_in_the_repair_lists_the_administrator_role_is_given()
+    public void The_floor_is_a_strict_subset_of_the_repair_lists_the_administrator_role_is_given()
     {
-        // Slice 3 takes user.read on Role out of the floor and the stopgap out of the repair list, and role.assign on User
-        // leaves the floor, after which the floor is a strict subset of the repair lists. Until then the one combination
-        // outside them is role.assign on User, which no production code asks for (the corpus guard shows that).
+        // Since slice 3 took user.read on Role and role.assign on User out of the floor, every combination of the floor is a
+        // grant the startup repair forces onto the administrator role, and the repair lists give more than the floor does.
         var repaired = ApprovedNonCatalogStoredGrants.AllRepairGrants().ToHashSet();
 
-        var outside = FloorCombinations
+        var outside = CurrentFloorCombinations
             .Where(c => !repaired.Contains(Perm(c.Action, c.ResourceType)))
             .ToList();
 
-        outside.Should().BeEquivalentTo([("role.assign", "User")]);
+        outside.Should().BeEmpty("the floor must be a subset of the repair lists");
+        repaired.Count.Should().BeGreaterThan(CurrentFloorCombinations.Count);
+    }
+
+    [Fact]
+    public void The_stopgap_read_on_Role_is_in_no_repair_list_and_is_the_repairs_obsolete_grant()
+    {
+        ApprovedNonCatalogStoredGrants.AllRepairGrants().Should().NotContain(Perm("user.read", "Role"));
+        PlatformAdminRolePermissionRepair.ObsoletePermissions.Should().Equal(Perm("user.read", "Role"));
+    }
+
+    [Fact]
+    public void The_repair_removes_the_stopgap_from_the_administrator_role_and_keeps_workflow_execute()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironment()).Seed(registry);
+        var before = new[] { Perm("user.read", "Role"), Perm("workflow.execute", "WorkflowInstance"), Perm("role.manage", "Role") };
+
+        var stored = PlatformAdminRolePermissionRepair.ApplyAllRepairs(before, registry);
+
+        stored.Should().NotContain(Perm("user.read", "Role"));
+        stored.Should().Contain(Perm("workflow.execute", "WorkflowInstance"));
+        stored.Should().Contain(Perm("role.manage", "Role"), "only listed obsolete grants are removed");
+        PlatformAdminRolePermissionRepair.ApplyAllRepairs(stored, registry).Should().BeEquivalentTo(stored, "the repair is idempotent");
     }
 
     [Fact]

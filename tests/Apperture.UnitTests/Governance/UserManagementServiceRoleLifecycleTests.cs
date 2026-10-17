@@ -346,6 +346,30 @@ public sealed class UserManagementServiceRoleLifecycleTests
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }
 
+    [Fact]
+    public async Task CountRoleAssignments_needs_role_manage_and_not_user_read()
+    {
+        // Reporting a role the caller just created or renamed must not need a second permission: since role.manage stopped implying
+        // user.read, the holders list (user.read) is refused to a role manager who cannot read users, but the count is not.
+        var harness = Harness.Create(allowUserRead: false);
+        var created = await harness.Service.CreateRoleAsync("Operators");
+        await harness.Roles.AssignToUserAsync(new UserId("user-a"), created.Id);
+
+        (await harness.Service.CountRoleAssignmentsAsync(created.Id)).Should().Be(1);
+        var holders = () => harness.Service.GetRoleAssignmentsAsync(created.Id).AsTask();
+        await holders.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task CountRoleAssignments_without_role_manage_is_rejected()
+    {
+        var harness = Harness.Create(allowRoleManage: false);
+
+        var act = () => harness.Service.CountRoleAssignmentsAsync(new RoleId("role-x")).AsTask();
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
     private static PermissionDescriptor KnownPermission() =>
         new(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance));
 

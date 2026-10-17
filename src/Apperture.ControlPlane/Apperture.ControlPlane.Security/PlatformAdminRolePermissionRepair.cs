@@ -23,14 +23,40 @@ public static class PlatformAdminRolePermissionRepair
     ];
 
     /// <summary>
-    /// Governance admin UI: permission catalog, role grants, operator capabilities (CanViewGovernance / CanAssignPermissions).
-    /// Uses <c>user.read</c> on <see cref="ResourceTypeConstants.Role"/> because no separate governance.read permission exists yet
-    /// (see <see cref="OperatorCapabilitiesQueryService"/> and <see cref="GovernanceController"/>).
+    /// Governance admin UI: role grants (CanAssignPermissions). Reading the governance catalog is <c>user.read</c> on User, in
+    /// <see cref="RequiredAuthAdminPermissions"/>; <c>user.read</c> on Role, which three consumers used to check, is obsolete
+    /// (see <see cref="ObsoletePermissions"/>).
     /// </summary>
     public static readonly PermissionDescriptor[] RequiredGovernanceSurfacePermissions =
     [
-        new(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
         new(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>
+    /// Grants the repair removes from the administrator role when it finds them. Only a listed permission is ever removed; the
+    /// repair otherwise only adds. <c>user.read</c> on Role is no longer checked by anything.
+    /// </summary>
+    public static readonly PermissionDescriptor[] ObsoletePermissions =
+    [
+        new(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>Team management (<c>operational_team.manage</c>), which no longer rides on <c>schedule.manage</c>.</summary>
+    public static readonly PermissionDescriptor[] RequiredOperationalTeamPermissions =
+    [
+        new(ActionConstants.OperationalTeamManage, new ResourceDescriptor(ResourceTypeConstants.OperationalTeam, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>Searching the Entra directory with the registered tenant's stored credentials.</summary>
+    public static readonly PermissionDescriptor[] RequiredDirectorySearchPermissions =
+    [
+        new(ActionConstants.AuthDirectorySearch, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance))
+    ];
+
+    /// <summary>Testing a connection with the credentials it stores. Separate from reading and from browsing.</summary>
+    public static readonly PermissionDescriptor[] RequiredConnectionVerifyPermissions =
+    [
+        new(ActionConstants.ConnectionVerify, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance))
     ];
 
     /// <summary>Managed contacts and Entra import (Epic 76).</summary>
@@ -137,7 +163,16 @@ public static class PlatformAdminRolePermissionRepair
         step = EnsureSet(step, RequiredNotificationDefinitionPermissions);
         step = EnsureSet(step, RequiredPlatformSettingsPermissions);
         step = EnsureSet(step, RequiredResourceContextPermissions);
-        return step;
+        step = EnsureSet(step, RequiredOperationalTeamPermissions);
+        step = EnsureSet(step, RequiredDirectorySearchPermissions);
+        step = EnsureSet(step, RequiredConnectionVerifyPermissions);
+        return RemoveObsolete(step);
+    }
+
+    private static List<PermissionDescriptor> RemoveObsolete(List<PermissionDescriptor> permissions)
+    {
+        var obsolete = ObsoletePermissions.Select(Key).ToHashSet(StringComparer.Ordinal);
+        return permissions.Where(p => !obsolete.Contains(Key(p))).ToList();
     }
 
     /// <summary>True if both lists contain the same permission keys (order-insensitive).</summary>

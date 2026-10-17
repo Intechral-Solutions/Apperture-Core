@@ -11,13 +11,12 @@ namespace Apperture.UnitTests.Governance;
 internal static class ApprovedNonCatalogStoredGrants
 {
     /// <summary>
-    /// <c>user.read</c> on Role is a stopgap read check that is pruned when the governance-read consumers switch to
-    /// <c>user.read</c> on User. <c>workflow.execute</c> at instance scope lets the administrator satisfy every
-    /// module-scoped check by containment, so it stays.
+    /// <c>workflow.execute</c> at instance scope lets the administrator satisfy every module-scoped check by containment, so it
+    /// stays. The other exception the design named, <c>user.read</c> on Role (a stopgap read check), left the repair lists when
+    /// its three consumers moved to <c>user.read</c> on User; the repair now removes it as an obsolete grant.
     /// </summary>
     public static readonly IReadOnlySet<PermissionDescriptor> Exceptions = new HashSet<PermissionDescriptor>
     {
-        new(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
         new("workflow.execute", new ResourceDescriptor(ResourceTypeConstants.WorkflowInstance, ScopeKeyConstants.Instance)),
     };
 
@@ -33,5 +32,8 @@ internal static class ApprovedNonCatalogStoredGrants
             .Concat(PlatformAdminRolePermissionRepair.RequiredIntegrationPermissions)
             .Concat(PlatformAdminRolePermissionRepair.RequiredConnectorOperatorPermissions)
             .Concat(PlatformAdminRolePermissionRepair.RequiredConnectionBrowsePermissions)
+            .Concat(PlatformAdminRolePermissionRepair.RequiredOperationalTeamPermissions)
+            .Concat(PlatformAdminRolePermissionRepair.RequiredDirectorySearchPermissions)
+            .Concat(PlatformAdminRolePermissionRepair.RequiredConnectionVerifyPermissions)
             .Concat(PlatformAdminRolePermissionRepair.RequiredOperatorUiPermissions);
 }

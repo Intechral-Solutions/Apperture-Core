@@ -12,10 +12,14 @@ namespace Apperture.UnitTests.Governance;
 public enum EvaluatorMutation
 {
     None,
-    DropImplication,
-    ImplicationIgnoresGrantType,
-    ImplicationIgnoresGrantScope,
-    ImplicationAllowsCaseSensitiveAction,
+    /// <summary>The removed <c>role.manage</c> implication is back, with its original shape.</summary>
+    ReintroduceImplication,
+    /// <summary>The removed implication is back and no longer looks at the type of the <c>role.manage</c> grant.</summary>
+    ReintroduceImplicationIgnoringGrantType,
+    /// <summary>The floor still contains <c>user.read</c> on Role, which only the removed stopgap consumers asked for.</summary>
+    FloorKeepsGovernanceReadOnRole,
+    /// <summary>The floor still contains <c>role.assign</c> on User, which nothing asks for.</summary>
+    FloorKeepsRoleAssignOnUser,
     DropPlatformAdministratorFloor,
     FloorAppliesAtAnyScope,
     FloorMatchesActionIgnoringCase,
@@ -33,13 +37,19 @@ public enum EvaluatorMutation
 }
 
 /// <summary>
-/// A frozen copy of <c>RbacAuthorizationPolicyEvaluator</c> as it was at master 1ab3b5f, before the held-set refactor,
-/// kept as the oracle of the differential equivalence tests. It is deliberately self-contained: it shares no type with
-/// the production implementation except the collaborator interfaces, and it spells out every action, resource type and
-/// scope as a literal so that a change to a production constant cannot move the oracle with it.
-/// With <see cref="EvaluatorMutation.None"/> (the only value production-facing tests use) its behaviour must never
-/// change. It is retargeted, not deleted, when the <c>role.manage</c> implication is removed.
+/// The oracle of the differential equivalence tests: the authorization rule as it is after the <c>role.manage</c> implication
+/// was removed (IAM-10.2a slice 3). It started as a frozen copy of the evaluator at master 1ab3b5f and was retargeted, not
+/// replaced, by exactly the approved change: the implication is gone, and the Platform Administrator floor is the eight
+/// combinations that remain after <c>user.read</c> on Role (its consumers moved to <c>user.read</c> on User) and
+/// <c>role.assign</c> on User (nothing asks for it) left it. <see cref="PreRemovalRbacEvaluatorReference"/> keeps the rule as it
+/// was, for the upgrade-window proof.
 /// </summary>
+/// <remarks>
+/// Deliberately self-contained: it shares no type with the production implementation except the collaborator interfaces, and it
+/// spells out every action, resource type and scope as a literal so that a change to a production constant cannot move the
+/// oracle with it. With <see cref="EvaluatorMutation.None"/> (the only value production-facing tests use) its behaviour must
+/// never change.
+/// </remarks>
 internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluator
 {
     private const string PlatformAdminRoleId = "role-platform-administrator";
@@ -112,14 +122,11 @@ internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluat
                 var contained = Mutated(EvaluatorMutation.ContainmentReversed)
                     ? _scopeEvaluator.IsContained(grantScopeKey, targetScopeKey)
                     : _scopeEvaluator.IsContained(targetScopeKey, grantScopeKey);
-                if (!contained && !Mutated(EvaluatorMutation.ImplicationIgnoresGrantScope))
-                    continue;
-
-                if (!Mutated(EvaluatorMutation.DropImplication) && ImpliedByInstanceRoleManage(permission, rolePerm, targetScopeKey))
-                    return true;
-
                 if (!contained)
                     continue;
+
+                if (ImpliedByRemovedRoleManageRule(permission, rolePerm, targetScopeKey))
+                    return true;
 
                 var sameAction = Mutated(EvaluatorMutation.ActionComparedCaseSensitively)
                     ? string.Equals(rolePerm.Action, permission.Action, StringComparison.Ordinal)
@@ -143,25 +150,27 @@ internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluat
         return false;
     }
 
-    private bool ImpliedByInstanceRoleManage(
-        PermissionDescriptor required,
-        PermissionDescriptor grant,
-        string targetScopeKey)
+    /// <summary>
+    /// The rule slice 3 removed. It exists here only so a mutation can put it back; with every other mutation, and with none, a
+    /// <c>role.manage</c> grant is an ordinary grant that allows <c>role.manage</c> and nothing else.
+    /// </summary>
+    private bool ImpliedByRemovedRoleManageRule(PermissionDescriptor required, PermissionDescriptor grant, string targetScopeKey)
     {
-        var comparison = Mutated(EvaluatorMutation.ImplicationAllowsCaseSensitiveAction)
-            ? StringComparison.Ordinal
-            : StringComparison.OrdinalIgnoreCase;
-        if (!string.Equals(grant.Action, "role.manage", comparison))
+        var reintroduced = Mutated(EvaluatorMutation.ReintroduceImplication) || Mutated(EvaluatorMutation.ReintroduceImplicationIgnoringGrantType);
+        if (!reintroduced)
+            return false;
+
+        if (!string.Equals(grant.Action, "role.manage", StringComparison.OrdinalIgnoreCase))
             return false;
 
         if (grant.Resource is null)
             return false;
 
-        if (!Mutated(EvaluatorMutation.ImplicationIgnoresGrantType) &&
+        if (!Mutated(EvaluatorMutation.ReintroduceImplicationIgnoringGrantType) &&
             !string.Equals(grant.Resource.ResourceType, "Role", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        return IsGovernanceOrAuthConfigurationSurface(required, targetScopeKey);
+        return RemovedFloorWithTenCombinations(required, targetScopeKey);
     }
 
     private bool UserHasPlatformAdministratorRole(IReadOnlyList<Role> roles) =>
@@ -170,6 +179,19 @@ internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluat
             PlatformAdminRoleId,
             Mutated(EvaluatorMutation.FloorRoleIdCaseSensitive) ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The ten combinations the floor and the implication used to share, for the mutations that restore them.</summary>
+    private static bool RemovedFloorWithTenCombinations(PermissionDescriptor required, string targetScopeKey) =>
+        string.Equals(targetScopeKey, Instance, StringComparison.Ordinal) &&
+        required.Resource is not null &&
+        (required.Resource.ResourceType.ToUpperInvariant(), required.Action) switch
+        {
+            ("ROLE", "user.read" or "permission.assign" or "role.assign") => true,
+            ("INSTANCECONFIGURATION", "auth.configuration.read" or "auth.ui_policy.manage" or "auth.entra.manage") => true,
+            ("USER", "user.read" or "user.manage" or "role.assign" or "credential.manage") => true,
+            _ => false,
+        };
+
+    /// <summary>The eight combinations of the floor after slice 3.</summary>
     private bool IsGovernanceOrAuthConfigurationSurface(PermissionDescriptor required, string targetScopeKey)
     {
         if (!Mutated(EvaluatorMutation.FloorAppliesAtAnyScope) &&
@@ -185,9 +207,9 @@ internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluat
         {
             if (string.Equals(required.Resource.ResourceType, "Role", StringComparison.OrdinalIgnoreCase))
             {
-                return action is "user.read"
-                    or "permission.assign"
-                    or "role.assign";
+                return action is "permission.assign"
+                    or "role.assign"
+                    || (Mutated(EvaluatorMutation.FloorKeepsGovernanceReadOnRole) && action is "user.read");
             }
 
             if (string.Equals(required.Resource.ResourceType, "InstanceConfiguration", StringComparison.OrdinalIgnoreCase))
@@ -202,7 +224,7 @@ internal sealed class LegacyRbacEvaluatorReference : IAuthorizationPolicyEvaluat
 
         return action is "user.read"
             or "user.manage"
-            or "role.assign"
-            or "credential.manage";
+            or "credential.manage"
+            || (Mutated(EvaluatorMutation.FloorKeepsRoleAssignOnUser) && action is "role.assign");
     }
 }

@@ -45,5 +45,9 @@ public static class AppertureDatabaseMigrator
         }
 
         await db.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+
+        // Authorization data step (IAM-10.2a). It needs no schema change of its own, so it runs after the last migration, on every
+        // start: idempotent, one audited transaction, silent when there is nothing to change. If it throws, the host does not start.
+        await RoleAuthorizationDataStep.RunAsync(db, logger, cancellationToken).ConfigureAwait(false);
     }
 }

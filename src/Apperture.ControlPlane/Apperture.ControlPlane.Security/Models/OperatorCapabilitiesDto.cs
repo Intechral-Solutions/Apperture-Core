@@ -13,6 +13,9 @@ namespace Apperture.ControlPlane.Security.Models;
 /// CTX-3A: CanManageResourceContexts (resource_context.manage on ResourceContext at instance scope).
 /// CanBrowseConnections (connection.browse on Connection at instance scope), true only together with CanViewConnections: browsing is additive to reading.
 /// Role lifecycle: CanManageRoles (role.manage on Role at instance scope). Grant replacement stays CanAssignPermissions.
+/// CanViewGovernance is user.read on User at instance scope (the permission every governance read API enforces).
+/// CanSearchDirectory (auth.directory.search on InstanceConfiguration) and CanVerifyConnections (connection.verify on
+/// Connection) each mirror the one permission their routes accept. All capability flags are instance-wide.
 /// </summary>
 public sealed record OperatorCapabilitiesDto(
     bool CanManageSchedules,
@@ -45,4 +48,6 @@ public sealed record OperatorCapabilitiesDto(
     bool CanManageCredentials = false,
     bool CanManageResourceContexts = false,
     bool CanBrowseConnections = false,
-    bool CanManageRoles = false);
+    bool CanManageRoles = false,
+    bool CanSearchDirectory = false,
+    bool CanVerifyConnections = false);

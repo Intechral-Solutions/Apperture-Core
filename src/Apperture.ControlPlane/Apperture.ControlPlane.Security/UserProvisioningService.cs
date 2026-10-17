@@ -32,6 +32,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
     private readonly IScopeContainmentEvaluator _scopeEvaluator;
+    private readonly IResourceDescriptorRegistry? _descriptorRegistry;
 
     public UserProvisioningService(
         IPrincipalContext principalContext,
@@ -47,8 +48,10 @@ public sealed class UserProvisioningService : IUserProvisioningService
         AccountSecurityLinkBuilder links,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
         IAuditEventWriter? auditEvents = null,
-        IScopeContainmentEvaluator? scopeEvaluator = null)
+        IScopeContainmentEvaluator? scopeEvaluator = null,
+        IResourceDescriptorRegistry? descriptorRegistry = null)
     {
+        _descriptorRegistry = descriptorRegistry;
         _scopeEvaluator = scopeEvaluator ?? new ScopeContainmentEvaluator();
         _principalContext = principalContext;
         _auth = auth;
@@ -482,7 +485,8 @@ public sealed class UserProvisioningService : IUserProvisioningService
         if (role is null)
             return false;
         await _roles.AssignToUserAsync(userId, role.Id, cancellationToken);
-        await transaction.StageAsync(AuditEvents.RoleAssigned(userId, role.Id), cancellationToken);
+        var maxSensitivity = _descriptorRegistry is null ? null : AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry);
+        await transaction.StageAsync(AuditEvents.RoleAssigned(userId, role.Id, maxSensitivity), cancellationToken);
         return true;
     }
 

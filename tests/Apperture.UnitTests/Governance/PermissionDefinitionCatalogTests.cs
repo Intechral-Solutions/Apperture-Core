@@ -336,7 +336,7 @@ public sealed class PermissionDefinitionCatalogTests
     }
 
     [Fact]
-    public void Every_permission_the_repair_forces_is_in_the_catalog_except_the_two_approved_exceptions()
+    public void Every_permission_the_repair_forces_is_in_the_catalog_except_the_one_approved_exception()
     {
         var registry = SeedPlatformAndInTreeModules();
         var catalog = registry.GetPermissionDescriptors().ToHashSet();
@@ -346,7 +346,7 @@ public sealed class PermissionDefinitionCatalogTests
             .ToHashSet();
 
         outsideCatalog.Should().BeEquivalentTo(ApprovedNonCatalogStoredGrants.Exceptions);
-        ApprovedNonCatalogStoredGrants.Exceptions.Should().HaveCount(2);
+        ApprovedNonCatalogStoredGrants.Exceptions.Should().HaveCount(1);
     }
 
     private sealed class FixedEnvironment : IEnvironmentContext

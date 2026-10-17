@@ -192,7 +192,9 @@ public sealed class UserManagementService : IUserManagementService
                     return true;
                 }
 
-                await transaction.StageAsync(AuditEvents.PermissionAssignmentUpdated(roleId, change, permissions.Count), ct);
+                await transaction.StageAsync(
+                    AuditEvents.PermissionAssignmentUpdated(roleId, change, permissions.Count, AuditSensitivities.MaxOf(change.Added, _descriptorRegistry)),
+                    ct);
                 return true;
             },
             Done,
@@ -252,7 +254,7 @@ public sealed class UserManagementService : IUserManagementService
                     throw new RoleLifecycleException(RoleLifecycleErrorCodes.DuplicateName, "A role with this name already exists.");
                 }
 
-                await transaction.StageAsync(AuditEvents.RoleCreated(role.Id, role.Name, grants), ct);
+                await transaction.StageAsync(AuditEvents.RoleCreated(role.Id, role.Name, grants, AuditSensitivities.MaxOf(grants, _descriptorRegistry)), ct);
                 return role;
             },
             async (_, ct) => await _roleRepository.GetAsync(role.Id, ct) ?? role,
@@ -366,6 +368,13 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         return new RoleAssignmentList(holders.Count, holders);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<int> CountRoleAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default)
+    {
+        await RequireRoleManageAsync(cancellationToken);
+        return (await _roleRepository.ListUserIdsWithRoleAsync(roleId, cancellationToken)).Count;
     }
 
     private static string FormatResource(ResourceDescriptor? r) =>
@@ -876,7 +885,7 @@ public sealed class UserManagementService : IUserManagementService
                 }
 
                 await _roleRepository.AssignToUserAsync(userId, roleId, ct);
-                await transaction.StageAsync(AuditEvents.RoleAssigned(userId, roleId), ct);
+                await transaction.StageAsync(AuditEvents.RoleAssigned(userId, roleId, AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry)), ct);
                 return true;
             },
             Done,

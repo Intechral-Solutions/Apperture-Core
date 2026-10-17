@@ -34,6 +34,14 @@ internal sealed class InMemoryGovernanceWorld
 
     public static PermissionDescriptor Perm(string action, string type, string scope = "instance") => new(action, new ResourceDescriptor(type, scope));
 
+    /// <summary>The sensitivity each universe permission is registered with: the three authority permissions are Critical, writes Elevated, reads Standard.</summary>
+    public static PermissionSensitivity SensitivityOf(PermissionDescriptor permission) => permission.Action switch
+    {
+        "role.manage" or "permission.assign" or "role.assign" => PermissionSensitivity.Critical,
+        "connection.update" or "schedule.manage" or "workflow.execute" => PermissionSensitivity.Elevated,
+        _ => PermissionSensitivity.Standard,
+    };
+
     private readonly MemoryRoles _roles = new();
     private readonly MemoryUsers _users;
     private readonly ScopeContainmentEvaluator _scope = new();
@@ -44,7 +52,7 @@ internal sealed class InMemoryGovernanceWorld
         _users = new MemoryUsers(_roles);
         var registry = new InMemoryResourceDescriptorRegistry();
         foreach (var permission in Universe)
-            registry.RegisterPermission(TestPermissionDefinitions.For(permission));
+            registry.RegisterPermission(TestPermissionDefinitions.For(permission, sensitivity: SensitivityOf(permission)));
 
         Audit = new AuditRecording();
         var principal = new SwitchablePrincipal(this);

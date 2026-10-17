@@ -45,12 +45,17 @@ internal static class AuditDetailSchemas
 
     // ---- Roles and permissions ----
 
+    /// <summary>The most sensitive permission a grant or assignment event involves, as <see cref="AuditSensitivities"/> spells it.</summary>
+    private static AuditFieldDefinition MaxSensitivityField() =>
+        EnumField("maxSensitivity", false, AuditSensitivities.Standard, AuditSensitivities.Elevated, AuditSensitivities.Critical);
+
     internal static readonly AuditDetailSchema RoleCreated = new(
     [
         IdField("roleId"),
         NameField("name"),
         CountField("permissionCount"),
         PermissionListField("permissionsAdded"),
+        MaxSensitivityField(),
     ]);
 
     internal static readonly AuditDetailSchema RoleMetadataUpdated = new(
@@ -73,6 +78,25 @@ internal static class AuditDetailSchemas
         CountField("permissionCount"),
         PermissionListField("permissionsAdded"),
         PermissionListField("permissionsRemoved"),
+        MaxSensitivityField(),
+    ]);
+
+    /// <summary>
+    /// The one summary of the startup step that preserves what the removed role.manage implication gave and grants the new
+    /// permissions to the holders of the ones they replace. Role ids and permission identities only; no names, no user data.
+    /// The lists are bounded; the counts are always exact.
+    /// </summary>
+    internal static readonly AuditDetailSchema AuthorizationGrantsMigrated = new(
+    [
+        CountField("rolesChanged"),
+        CountField("grantsAdded"),
+        CountField("grantsRemoved"),
+        CountField("unreadableRoleCount"),
+        CountField("broadGrantRoleCount"),
+        new AuditFieldDefinition("changedRoles", AuditFieldKind.IdList, Required: false, MaxLength: 160, MaxItems: 100),
+        new AuditFieldDefinition("changes", AuditFieldKind.IdList, Required: false, MaxLength: 700, MaxItems: 100),
+        new AuditFieldDefinition("unreadableRoles", AuditFieldKind.IdList, Required: false, MaxLength: 160, MaxItems: 100),
+        new AuditFieldDefinition("broadGrantRoles", AuditFieldKind.IdList, Required: false, MaxLength: 160, MaxItems: 100),
     ]);
 
     internal static readonly AuditDetailSchema RoleMutationRejected = new(
@@ -108,6 +132,14 @@ internal static class AuditDetailSchemas
     [
         IdField("userId"),
         IdField("roleId"),
+    ]);
+
+    /// <summary>A role assigned to a user: the assignment, and the most sensitive permission the role holds.</summary>
+    internal static readonly AuditDetailSchema RoleAssignmentCreated = new(
+    [
+        IdField("userId"),
+        IdField("roleId"),
+        MaxSensitivityField(),
     ]);
 
     internal static readonly AuditDetailSchema EntraLinkPending = new(

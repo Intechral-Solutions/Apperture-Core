@@ -87,8 +87,8 @@ public sealed class RolesController : ControllerBase
                 request.Description,
                 ToPermissionDescriptors(request.Permissions),
                 cancellationToken);
-            var assignments = await _userManagement.GetRoleAssignmentsAsync(role.Id, cancellationToken);
-            var detail = ToDetail(role, assignments?.Count ?? 0);
+            // The role is committed. Reporting it needs only role.manage, which the caller has: the holders list would need user.read.
+            var detail = ToDetail(role, await _userManagement.CountRoleAssignmentsAsync(role.Id, cancellationToken));
             return CreatedAtAction(nameof(Get), new { id = role.Id.Value }, detail);
         }
         catch (Exception ex) when (IsRoleFailure(ex))
@@ -113,8 +113,7 @@ public sealed class RolesController : ControllerBase
         {
             var roleId = new RoleId(id);
             var role = await _userManagement.UpdateRoleMetadataAsync(roleId, request.Name, request.Description, cancellationToken);
-            var assignments = await _userManagement.GetRoleAssignmentsAsync(role.Id, cancellationToken);
-            return Ok(ToDetail(role, assignments?.Count ?? 0));
+            return Ok(ToDetail(role, await _userManagement.CountRoleAssignmentsAsync(role.Id, cancellationToken)));
         }
         catch (Exception ex) when (IsRoleFailure(ex))
         {

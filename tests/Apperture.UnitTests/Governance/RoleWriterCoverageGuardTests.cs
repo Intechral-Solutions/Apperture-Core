@@ -65,6 +65,7 @@ public sealed class RoleWriterCoverageGuardTests
         new(Security + "FirstAdminBootstrapService.cs", Writes.UserCreatedWithRoleIds, 1, Group.Exempt, "first administrator setup"),
         new(Security + "EmergencyAccessService.cs", Writes.UserCreatedWithRoleIds, 1, Group.Exempt, "Recovery Access provisioning"),
         new(Security + "PlatformAdminRoleRepairService.cs", Writes.RolePermissionJsonCall, 1, Group.Exempt, "the startup repair of the administrator role"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", Writes.DirectTableWrite, 1, Group.Exempt, "the startup data step that preserves what the removed role.manage implication gave (audited, one transaction, adds only the grants it names)"),
 
         // Mechanisms: carry out a write that an ordinary or exempt writer decided.
         new(Security + "SqlRoleProvider.cs", Writes.RoleAssignmentCall, 2, Group.Mechanism, "the role provider's assign and remove, which nothing in production calls"),

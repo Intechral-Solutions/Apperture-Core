@@ -267,7 +267,7 @@ public sealed class BrowserRequestTrustHttpTests
             Id = roleId,
             Name = "Directory search test " + externalId,
             Description = "test",
-            PermissionsJson = """[{"action":"auth.configuration.read","resource":{"resourceType":"InstanceConfiguration","scopeKey":"instance"}}]""",
+            PermissionsJson = """[{"action":"auth.directory.search","resource":{"resourceType":"InstanceConfiguration","scopeKey":"instance"}}]""",
             IsSystemRole = false,
         });
         db.AddUsersWithCurrentUsernames(new UserEntity { Id = userId, Username = externalId, DisplayName = externalId, IsBreakGlassEligible = false });

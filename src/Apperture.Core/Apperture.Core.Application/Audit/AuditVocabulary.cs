@@ -98,6 +98,46 @@ public static class AuditVisibilities
     public static IReadOnlySet<string> All { get; } = AuditActorKinds.Set(Default, Routine);
 }
 
+/// <summary>
+/// The sensitivity of the most sensitive permission a grant or assignment event involves (IAM-10 gate P-30(c)), spelled like
+/// the severities. It describes the permissions; it never changes the action's own severity.
+/// </summary>
+public static class AuditSensitivities
+{
+    public const string Standard = "standard";
+    public const string Elevated = "elevated";
+    public const string Critical = "critical";
+
+    public static string Of(Apperture.Core.Domain.Governance.PermissionSensitivity sensitivity) => sensitivity switch
+    {
+        Apperture.Core.Domain.Governance.PermissionSensitivity.Standard => Standard,
+        Apperture.Core.Domain.Governance.PermissionSensitivity.Elevated => Elevated,
+        Apperture.Core.Domain.Governance.PermissionSensitivity.Critical => Critical,
+        _ => throw new ArgumentOutOfRangeException(nameof(sensitivity), sensitivity, "Unknown permission sensitivity."),
+    };
+
+    /// <summary>
+    /// The most sensitive of the permissions the catalog defines, or null when none of them is defined (a permission the
+    /// catalog does not know has no sensitivity to report, and is not guessed at).
+    /// </summary>
+    public static string? MaxOf(
+        IEnumerable<Apperture.Shared.Kernel.PermissionDescriptor> permissions,
+        Apperture.Core.Application.Services.IResourceDescriptorRegistry registry)
+    {
+        var defined = registry.GetPermissionDefinitions()
+            .GroupBy(d => d.Identity)
+            .ToDictionary(g => g.Key, g => g.Max(d => d.Sensitivity));
+        Apperture.Core.Domain.Governance.PermissionSensitivity? max = null;
+        foreach (var permission in permissions)
+        {
+            if (defined.TryGetValue(permission, out var sensitivity) && (max is null || sensitivity > max))
+                max = sensitivity;
+        }
+
+        return max is null ? null : Of(max.Value);
+    }
+}
+
 /// <summary>What a row asserts (§11.6).</summary>
 public static class AuditBases
 {

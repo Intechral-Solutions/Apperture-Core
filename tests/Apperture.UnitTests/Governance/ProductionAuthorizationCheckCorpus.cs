@@ -26,8 +26,8 @@ internal sealed record ProductionAuthorizationCheck(string File, string Action, 
 internal sealed record AuthorizationDefinitionSite(string File, string Action, int References, string Role);
 
 /// <summary>
-/// The corpus of production authorization checks for the permissions that the evaluator treats specially (the ten
-/// combinations of the Platform Administrator floor, plus <c>role.manage</c>, which implies them), derived by reading
+/// The corpus of production authorization checks for the permissions that the evaluator treats specially (the eight
+/// combinations of the Platform Administrator floor, plus <c>role.manage</c>, which used to imply ten), derived by reading
 /// the source and guarded against going stale by <c>ProductionAuthorizationCheckCorpusGuardTests</c>.
 /// </summary>
 /// <remarks>
@@ -39,6 +39,7 @@ internal static class ProductionAuthorizationCheckCorpus
 {
     private const string Security = "Apperture.ControlPlane/Apperture.ControlPlane.Security/";
     private const string Controllers = "Apperture.ControlPlane/Apperture.Management.Api/Controllers/";
+    private const string Persistence = "Apperture.Persistence/Apperture.Persistence.SqlServer/";
 
     private const string UserRead = nameof(ActionConstants.UserRead);
     private const string UserManage = nameof(ActionConstants.UserManage);
@@ -60,11 +61,11 @@ internal static class ProductionAuthorizationCheckCorpus
         new(Security + "Dashboard/AuthWarningsDashboardCardProvider.cs", AuthConfigurationRead, InstanceConfiguration),
         new(Security + "Dashboard/AuthWarningsDashboardCardProvider.cs", AuthUiPolicyManage, InstanceConfiguration),
         new(Security + "Dashboard/AuthWarningsDashboardCardProvider.cs", AuthEntraManage, InstanceConfiguration),
-        new(Security + "Dashboard/GovernanceDashboardCardProvider.cs", UserRead, Role),
+        new(Security + "Dashboard/GovernanceDashboardCardProvider.cs", UserRead, User),
         new(Security + "EntraAccessRequestService.cs", UserManage, User),
         new(Security + "EntraProvisioningDirectoryService.cs", UserManage, User),
         new(Security + "ManagedContactManagementService.cs", UserRead, User),
-        new(Security + "OperatorCapabilitiesQueryService.cs", UserRead, Role),
+        new(Security + "OperatorCapabilitiesQueryService.cs", UserRead, User),
         new(Security + "OperatorCapabilitiesQueryService.cs", PermissionAssign, Role),
         new(Security + "OperatorCapabilitiesQueryService.cs", RoleAssign, Role),
         new(Security + "OperatorCapabilitiesQueryService.cs", AuthUiPolicyManage, InstanceConfiguration),
@@ -91,8 +92,8 @@ internal static class ProductionAuthorizationCheckCorpus
         new(Controllers + "ConfigAuthUiPolicyController.cs", AuthUiPolicyManage, InstanceConfiguration),
         new(Controllers + "ConfigEntraTenantsController.cs", AuthConfigurationRead, InstanceConfiguration),
         new(Controllers + "ConfigEntraTenantsController.cs", AuthEntraManage, InstanceConfiguration, ChecksPerFile: 2),
-        new(Controllers + "GovernanceController.cs", UserRead, Role),
-        new(Controllers + "GovernanceController.cs", UserRead, User),
+        // The descriptors endpoint and the user-list endpoint both check user.read on User since the governance-read switch.
+        new(Controllers + "GovernanceController.cs", UserRead, User, ChecksPerFile: 2),
     ];
 
     /// <summary>Files that name these actions without asking for them, with how many times and why.</summary>
@@ -119,18 +120,27 @@ internal static class ProductionAuthorizationCheckCorpus
         new(Security + "PlatformAdminRolePermissionRepair.cs", AuthConfigurationRead, 1, "administrator repair list"),
         new(Security + "PlatformAdminRolePermissionRepair.cs", AuthEntraManage, 1, "administrator repair list"),
 
-        // The floor itself: the ten combinations.
-        new(Security + "PlatformAdministratorGovernancePermissions.cs", UserRead, 2, "administrator floor"),
+        // The floor itself: the eight combinations.
+        new(Security + "PlatformAdministratorGovernancePermissions.cs", UserRead, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", PermissionAssign, 1, "administrator floor"),
-        new(Security + "PlatformAdministratorGovernancePermissions.cs", RoleAssign, 2, "administrator floor"),
+        new(Security + "PlatformAdministratorGovernancePermissions.cs", RoleAssign, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", AuthConfigurationRead, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", AuthUiPolicyManage, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", AuthEntraManage, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", UserManage, 1, "administrator floor"),
         new(Security + "PlatformAdministratorGovernancePermissions.cs", CredentialManage, 1, "administrator floor"),
 
-        // The transitional implication.
-        new(Security + "EffectivePermissionSet.cs", RoleManage, 1, "role.manage implication"),
+        // The startup data step that preserved what the removed role.manage implication gave, and pruned the obsolete read on
+        // Role. It names the combinations as data; it asks the evaluator for none of them.
+        new(Persistence + "RoleAuthorizationDataStep.cs", UserRead, 2, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", UserManage, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", RoleAssign, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", RoleManage, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", PermissionAssign, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", CredentialManage, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", AuthConfigurationRead, 2, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", AuthUiPolicyManage, 1, "preserving data step"),
+        new(Persistence + "RoleAuthorizationDataStep.cs", AuthEntraManage, 2, "preserving data step"),
     ];
 
     /// <summary>The helper methods that turn an action and resource type into a check; each must pass scope instance.</summary>

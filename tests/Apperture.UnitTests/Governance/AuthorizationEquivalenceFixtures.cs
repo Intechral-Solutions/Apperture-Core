@@ -16,8 +16,16 @@ internal static class AuthorizationEquivalenceFixtures
     public const string UserKey = "user-1";
 
     /// <summary>
-    /// The ten resource and action combinations of the Platform Administrator floor, as (action, resource type):
-    /// rows 1 to 10 of the IAM-10.0 gate section 2.2.
+    /// The eight combinations of the Platform Administrator floor since the <c>role.manage</c> implication was removed: the
+    /// ten of the IAM-10.0 gate section 2.2 without <c>user.read</c> on Role (row 1) and <c>role.assign</c> on User (row 9).
+    /// </summary>
+    public static IReadOnlyList<(string Action, string ResourceType)> CurrentFloorCombinations =>
+        FloorCombinations.Where(c => c is not (("user.read", "Role") or ("role.assign", "User"))).ToList();
+
+    /// <summary>
+    /// The ten resource and action combinations the floor and the removed <c>role.manage</c> implication used to share, as
+    /// (action, resource type): rows 1 to 10 of the IAM-10.0 gate section 2.2. They remain the basis of the generated
+    /// inputs, so the tests keep asking about everything the old rule decided.
     /// </summary>
     public static readonly IReadOnlyList<(string Action, string ResourceType)> FloorCombinations =
     [

@@ -79,6 +79,14 @@ public interface IUserManagementService
         throw new NotSupportedException();
 
     /// <summary>
+    /// How many users hold a role, for the response to a role mutation. Requires role.manage, the permission the mutation itself
+    /// needed, so that reporting a change a caller was entitled to make never needs a second permission (the holders list needs
+    /// user.read). Returns 0 when the role is missing.
+    /// </summary>
+    async ValueTask<int> CountRoleAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
+        (await GetRoleAssignmentsAsync(roleId, cancellationToken).ConfigureAwait(false))?.Count ?? 0;
+
+    /// <summary>
     /// Creates a new user with one initial identity link. Local source requires a password hashed through
     /// the platform hasher (not a hash supplied by the caller). Requires user.manage.
     /// </summary>

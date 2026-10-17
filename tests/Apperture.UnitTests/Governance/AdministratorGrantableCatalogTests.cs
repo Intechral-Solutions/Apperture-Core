@@ -50,18 +50,19 @@ public sealed class AdministratorGrantableCatalogTests
             .Order(StringComparer.Ordinal)
             .ToList();
 
+        // The three permissions whose enforcement switched in this release (team management, directory search, test-connect)
+        // are given to the administrator by the startup repair's lists, because the administrator would otherwise lose the
+        // functions. Everything else below waits for the repair that reconciles the lists with the catalog's
+        // administrator defaults; relationship.manage never will (it is dormant and is not an administrator default).
         cannotGrant.Should().Equal(
-            "auth.directory.search@InstanceConfiguration:instance",
             "capability.consume@CapabilitySlot:instance",
             "capability.register@CapabilityRegistration:instance",
-            "connection.verify@Connection:instance",
             "connector.manage@ConnectorDefinition:instance",
             "environment.read@Environment:environment:local",
             "mapping.manage@MappingDefinition:instance",
             "module.install@Module:instance",
             "operation.execute@OperationDefinition:instance",
             "operation.read@OperationDefinition:instance",
-            "operational_team.manage@OperationalTeam:instance",
             "relationship.manage@TrustRelationship:instance",
             "runtime.control.shutdown.request@RuntimeInstance:environment:local",
             "runtime.enroll.invitation.create@RuntimeInstance:environment:local",

@@ -177,7 +177,7 @@ public sealed class RoleAuthorityHostHttpTests : IClassFixture<RoleAuthorityHost
             name,
             permissions = new[] { new { action = "connection.read", resourceType = "Connection", scopeKey = "instance" } },
         });
-        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
     }
 
     // ---- A10.2.9: Rule 2, the order of P-4, and refusals that are not 404 ----

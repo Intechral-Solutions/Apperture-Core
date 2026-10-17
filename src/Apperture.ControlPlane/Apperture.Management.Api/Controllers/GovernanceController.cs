@@ -48,7 +48,7 @@ public sealed class GovernanceController : ControllerBase
         var allowed = await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(
                 actor,
-                new Apperture.Shared.Kernel.PermissionDescriptor(ActionConstants.UserRead, new Apperture.Shared.Kernel.ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+                new Apperture.Shared.Kernel.PermissionDescriptor(ActionConstants.UserRead, new Apperture.Shared.Kernel.ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
                 null),
             cancellationToken);
         if (!allowed)

@@ -143,16 +143,17 @@ public sealed class ProductionAuthorizationCheckCorpusGuardTests
     }
 
     [Fact]
-    public void The_corpus_covers_every_floor_combination_that_has_a_consumer_and_names_the_one_that_has_none()
+    public void The_corpus_covers_every_floor_combination_and_asks_for_nothing_that_left_the_floor()
     {
         var asked = Permissions().Select(p => (p.Action, p.Resource!.ResourceType)).ToHashSet();
 
-        var floorWithoutConsumer = AuthorizationEquivalenceFixtures.FloorCombinations.Where(c => !asked.Contains(c)).ToList();
-
-        // Row 9 of the IAM-10.0 gate section 2.2 (role.assign on User) is the vestigial combination: nothing asks for it.
-        floorWithoutConsumer.Should().BeEquivalentTo([("role.assign", "User")]);
-        asked.Should().Contain(("role.manage", "Role"), "the implying permission has production consumers too");
-        asked.Except(AuthorizationEquivalenceFixtures.FloorCombinations.Append(("role.manage", "Role"))).Should().BeEmpty();
+        // Every combination of the floor has a production consumer. The two that left it (user.read on Role, whose three
+        // consumers moved to user.read on User, and role.assign on User, which nothing asks for) are asked by no one.
+        AuthorizationEquivalenceFixtures.CurrentFloorCombinations.Where(c => !asked.Contains(c)).Should().BeEmpty();
+        asked.Should().NotContain(("user.read", "Role"));
+        asked.Should().NotContain(("role.assign", "User"));
+        asked.Should().Contain(("role.manage", "Role"), "role.manage itself still has production consumers");
+        asked.Except(AuthorizationEquivalenceFixtures.CurrentFloorCombinations.Append(("role.manage", "Role"))).Should().BeEmpty();
     }
 
     // ---------------------------------------------------------------------------------------------------------------

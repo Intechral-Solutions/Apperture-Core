@@ -10,11 +10,13 @@ namespace Apperture.ControlPlane.Security;
 /// <see cref="RbacAuthorizationPolicyEvaluator"/> exactly, so the evaluator and every caller that needs to know what an
 /// actor <em>holds</em> share a single implementation:
 /// <list type="bullet">
-/// <item>the Platform Administrator floor (<see cref="PlatformAdministratorGovernancePermissions"/>) applies at instance
-/// scope whenever any assigned role is the seeded administrator role, whatever its stored permissions say;</item>
+/// <item>the Platform Administrator floor (<see cref="PlatformAdministratorGovernancePermissions"/>, eight combinations)
+/// applies at instance scope whenever any assigned role is the seeded administrator role, whatever its stored permissions
+/// say;</item>
 /// <item>the grants of all assigned roles are one de-duplicated union, with no deny and no precedence;</item>
 /// <item>a grant matches on action (ignoring case), on resource type (only when both sides carry one) and on scope
-/// containment; a grant with no resource is a broad instance-scope grant;</item>
+/// containment; a grant with no resource is a broad instance-scope grant. No grant implies another: <c>role.manage</c>
+/// allows <c>role.manage</c> and nothing else;</item>
 /// <item>the target scope is an explicit input and is never read from <see cref="PermissionDescriptor.Resource"/> of the
 /// permission being checked.</item>
 /// </list>
@@ -67,9 +69,6 @@ public sealed class EffectivePermissionSet
             if (!_scopeEvaluator.IsContained(targetScopeKey, grantScopeKey))
                 continue;
 
-            if (ImpliedByInstanceRoleManage(permission, rolePerm, targetScopeKey))
-                return true;
-
             if (!string.Equals(rolePerm.Action, permission.Action, StringComparison.OrdinalIgnoreCase))
                 continue;
 
@@ -99,26 +98,4 @@ public sealed class EffectivePermissionSet
     /// </summary>
     public bool Holds(PermissionDescriptor grant) =>
         Allows(grant, ResolveTargetScope(grant.Resource, resourceIdentity: null));
-
-    /// <summary>
-    /// Transitional: instance-scoped <c>role.manage</c> on <see cref="ResourceTypeConstants.Role"/> implies governance and
-    /// configuration-surface permissions only when the evaluated target scope is the instance (not module-scoped checks).
-    /// It is kept so that introducing the set changes no result, and is removed together with its data step.
-    /// </summary>
-    private static bool ImpliedByInstanceRoleManage(
-        PermissionDescriptor required,
-        PermissionDescriptor grant,
-        string targetScopeKey)
-    {
-        if (!string.Equals(grant.Action, ActionConstants.RoleManage, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (grant.Resource is null)
-            return false;
-
-        if (!string.Equals(grant.Resource.ResourceType, ResourceTypeConstants.Role, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        return PlatformAdministratorGovernancePermissions.IsGovernanceOrAuthConfigurationSurface(required, targetScopeKey);
-    }
 }

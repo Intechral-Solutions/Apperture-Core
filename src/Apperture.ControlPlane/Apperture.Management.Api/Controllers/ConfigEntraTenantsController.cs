@@ -572,7 +572,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         [FromBody] EntraDirectorySearchRequestBody request,
         CancellationToken cancellationToken = default)
     {
-        if (!await AuthorizeReadAsync(cancellationToken))
+        if (!await AuthorizeDirectorySearchAsync(cancellationToken))
             return Forbid();
 
         return await SearchDirectoryUsersCoreAsync(id, request.Search, request.Top, cancellationToken);
@@ -586,7 +586,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         [FromBody] EntraDirectorySearchRequestBody request,
         CancellationToken cancellationToken = default)
     {
-        if (!await AuthorizeReadAsync(cancellationToken))
+        if (!await AuthorizeDirectorySearchAsync(cancellationToken))
             return Forbid();
 
         return await SearchDirectoryGroupsCoreAsync(id, request.Search, request.Top, cancellationToken);
@@ -815,6 +815,25 @@ public sealed class ConfigEntraTenantsController : ControllerBase
 
         return await _authorizationEvaluation.EvaluateAsync(
             new AuthorizationEvaluationContext(actor, manage, manage.Resource),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The two directory searches call Microsoft Graph with the registered tenant's stored secret, so they have a permission of
+    /// their own. Neither the read check nor the manage check reaches them, and there is no period in which either is accepted.
+    /// </summary>
+    private async Task<bool> AuthorizeDirectorySearchAsync(CancellationToken cancellationToken)
+    {
+        var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
+        if (actor is null)
+            return false;
+
+        var search = new PermissionDescriptor(
+            ActionConstants.AuthDirectorySearch,
+            new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance));
+
+        return await _authorizationEvaluation.EvaluateAsync(
+            new AuthorizationEvaluationContext(actor, search, search.Resource),
             cancellationToken);
     }
 

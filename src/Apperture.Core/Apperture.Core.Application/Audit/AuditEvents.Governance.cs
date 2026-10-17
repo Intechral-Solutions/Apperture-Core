@@ -8,7 +8,11 @@ namespace Apperture.Core.Application.Audit;
 public static partial class AuditEvents
 {
     /// <summary>A role was created, with the permissions it was created with.</summary>
-    public static AuditEvent RoleCreated(RoleId role, string name, IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor> granted) =>
+    public static AuditEvent RoleCreated(
+        RoleId role,
+        string name,
+        IReadOnlyList<Apperture.Shared.Kernel.PermissionDescriptor> granted,
+        string? maxSensitivity = null) =>
         Event(
             AuditActionNames.RoleCreated,
             Target(AuditTargetTypes.Role, role.Value),
@@ -16,7 +20,8 @@ public static partial class AuditEvents
             ("roleId", role.Value),
             ("name", name),
             ("permissionCount", granted.Count),
-            ("permissionsAdded", granted.Count == 0 ? null : Identities(granted.OrderBy(PermissionSetChange.Identity, StringComparer.Ordinal))));
+            ("permissionsAdded", granted.Count == 0 ? null : Identities(granted.OrderBy(PermissionSetChange.Identity, StringComparer.Ordinal))),
+            ("maxSensitivity", maxSensitivity));
 
     /// <summary>A role's name or description changed.</summary>
     public static AuditEvent RoleMetadataUpdated(RoleId role, string previousName, string newName, bool descriptionChanged) =>
@@ -42,7 +47,11 @@ public static partial class AuditEvents
     /// A role's permission set was replaced. The additions and removals are the ones that committed (D9); recording them is
     /// attribution, not a statement that the change was appropriate.
     /// </summary>
-    public static AuditEvent PermissionAssignmentUpdated(RoleId role, PermissionSetChange change, int permissionCount) =>
+    public static AuditEvent PermissionAssignmentUpdated(
+        RoleId role,
+        PermissionSetChange change,
+        int permissionCount,
+        string? maxSensitivity = null) =>
         Event(
             AuditActionNames.PermissionAssignmentUpdated,
             Target(AuditTargetTypes.Role, role.Value),
@@ -50,7 +59,8 @@ public static partial class AuditEvents
             ("roleId", role.Value),
             ("permissionCount", permissionCount),
             ("permissionsAdded", change.Added.Count == 0 ? null : Identities(change.Added)),
-            ("permissionsRemoved", change.Removed.Count == 0 ? null : Identities(change.Removed)));
+            ("permissionsRemoved", change.Removed.Count == 0 ? null : Identities(change.Removed)),
+            ("maxSensitivity", maxSensitivity));
 
     /// <summary>The most missing permission identities a refusal records; the count is always recorded in full.</summary>
     public const int MaxMissingPermissionsRecorded = 20;
@@ -116,13 +126,48 @@ public static partial class AuditEvents
             ("setupInvitationRequested", setupInvitationRequested));
 
     /// <summary>A role was assigned to a user.</summary>
-    public static AuditEvent RoleAssigned(UserId user, RoleId role) =>
+    public static AuditEvent RoleAssigned(UserId user, RoleId role, string? maxSensitivity = null) =>
         Event(
             AuditActionNames.RoleAssigned,
             Target(AuditTargetTypes.User, user.Value),
             AuditOutcomeCodes.Succeeded,
             ("userId", user.Value),
-            ("roleId", role.Value));
+            ("roleId", role.Value),
+            ("maxSensitivity", maxSensitivity));
+
+    /// <summary>The most roles, and the most role-and-permission changes, the grants-migration summary names; the counts are exact.</summary>
+    public const int MaxMigrationItemsRecorded = 100;
+
+    /// <summary>
+    /// The startup step that preserved the access the removed <c>role.manage</c> implication gave (as explicit grants), granted
+    /// the replacement permissions to their holders and removed the obsolete read on Role changed custom roles. One summary per
+    /// run that changed anything. Records role ids and permission identities only. <paramref name="changes"/> are
+    /// <c>roleId|+identity</c> and <c>roleId|-identity</c> entries.
+    /// </summary>
+    public static AuditEvent AuthorizationGrantsMigrated(
+        int rolesChanged,
+        int grantsAdded,
+        int grantsRemoved,
+        IReadOnlyList<string> changedRoleIds,
+        IReadOnlyList<string> changes,
+        IReadOnlyList<string> unreadableRoleIds,
+        IReadOnlyList<string> broadGrantRoleIds) =>
+        Event(
+            AuditActionNames.AuthorizationGrantsMigrated,
+            target: null,
+            AuditOutcomeCodes.Succeeded,
+            ("rolesChanged", rolesChanged),
+            ("grantsAdded", grantsAdded),
+            ("grantsRemoved", grantsRemoved),
+            ("unreadableRoleCount", unreadableRoleIds.Count),
+            ("broadGrantRoleCount", broadGrantRoleIds.Count),
+            ("changedRoles", Bounded(changedRoleIds)),
+            ("changes", Bounded(changes)),
+            ("unreadableRoles", Bounded(unreadableRoleIds)),
+            ("broadGrantRoles", Bounded(broadGrantRoleIds)));
+
+    private static IReadOnlyList<string>? Bounded(IReadOnlyList<string> items) =>
+        items.Count == 0 ? null : items.Take(MaxMigrationItemsRecorded).ToList();
 
     /// <summary>A role was removed from a user.</summary>
     public static AuditEvent RoleRemoved(UserId user, RoleId role) =>

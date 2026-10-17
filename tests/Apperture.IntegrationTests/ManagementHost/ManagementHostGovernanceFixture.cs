@@ -29,7 +29,7 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
         """[{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"workflow.execute","resource":{"resourceType":"WorkflowInstance","scopeKey":"module:Sample.HelloWorld"}}]""";
 
     private const string IntegrationAuthoringPermissionsJson =
-        """[{"action":"integration.create","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.update","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"binding.assign","resource":{"resourceType":"Binding","scopeKey":"instance"}},{"action":"schedule.manage","resource":{"resourceType":"Schedule","scopeKey":"instance"}},{"action":"connection.create","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.read","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.update","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connector.definition.read","resource":{"resourceType":"ConnectorDefinition","scopeKey":"instance"}}]""";
+        """[{"action":"integration.create","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.read","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"integration.update","resource":{"resourceType":"Integration","scopeKey":"instance"}},{"action":"binding.assign","resource":{"resourceType":"Binding","scopeKey":"instance"}},{"action":"schedule.manage","resource":{"resourceType":"Schedule","scopeKey":"instance"}},{"action":"connection.create","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.read","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.verify","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connection.update","resource":{"resourceType":"Connection","scopeKey":"instance"}},{"action":"connector.definition.read","resource":{"resourceType":"ConnectorDefinition","scopeKey":"instance"}}]""";
 
     public string? ConnectionString { get; private set; }
 
@@ -375,7 +375,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
     private static async Task EnsureGovernanceReaderPrincipalAsync(AppertureDbContext db)
     {
         if (await db.Users.AnyAsync(u => u.Id == ManagementGovernanceTestConstants.UserGovernanceReader).ConfigureAwait(false))
+        {
+            // This catalog outlives a run. An earlier run stored the reader's role with the obsolete read on Role, which the data
+            // step removes at host start (it is checked by nothing now); the reader reads governance with user.read on User.
+            var existing = await db.Roles.SingleAsync(r => r.Id == ManagementGovernanceTestConstants.RoleGovernanceReader).ConfigureAwait(false);
+            existing.PermissionsJson = """[{"action":"user.read","resource":{"resourceType":"User","scopeKey":"instance"}}]""";
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return;
+        }
 
         db.Roles.Add(
             new RoleEntity
@@ -383,7 +390,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{catalog}')
                 Id = ManagementGovernanceTestConstants.RoleGovernanceReader,
                 Name = "Governance test — catalog reader",
                 Description = "Reads the governance permission catalog",
-                PermissionsJson = """[{"action":"user.read","resource":{"resourceType":"Role","scopeKey":"instance"}}]""",
+                PermissionsJson = """[{"action":"user.read","resource":{"resourceType":"User","scopeKey":"instance"}}]""",
                 IsSystemRole = false
             });
 

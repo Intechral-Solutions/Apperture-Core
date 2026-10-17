@@ -113,6 +113,19 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            Action = "governance.authorization.grants_migrated",
+            Category = AuditCategories.Governance,
+            Severity = AuditSeverities.Elevated,
+            TargetType = null,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AuthorizationGrantsMigrated,
+            IntroducedIn = "IAM-10.2a",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "RoleAuthorizationDataStep.cs",
+        },
+        new()
+        {
             Action = "governance.role.deleted",
             Category = AuditCategories.Governance,
             Severity = AuditSeverities.Elevated,
@@ -214,7 +227,7 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.User,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
-            Details = AuditDetailSchemas.RoleAssignment,
+            Details = AuditDetailSchemas.RoleAssignmentCreated,
             IntroducedIn = "dada531a",
             IntroducedAfterEpic37Migration = false,
             EraInvariant = true,

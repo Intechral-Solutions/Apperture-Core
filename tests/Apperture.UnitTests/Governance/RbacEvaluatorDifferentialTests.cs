@@ -84,6 +84,7 @@ public sealed class RbacEvaluatorDifferentialTests
         IPrincipalToUserResolver resolver, IRoleProvider roles, IScopeContainmentEvaluator scope);
 
     private static readonly Subject Oracle = (r, p, s) => new LegacyRbacEvaluatorReference(r, p, s);
+    private static readonly Subject PreRemoval = (r, p, s) => new PreRemovalRbacEvaluatorReference(r, p, s);
     private static readonly Subject Refactored = (r, p, s) => new RbacAuthorizationPolicyEvaluator(r, p, s);
     private static Subject Mutant(EvaluatorMutation mutation) => (r, p, s) => new LegacyRbacEvaluatorReference(r, p, s, mutation);
 
@@ -144,18 +145,37 @@ public sealed class RbacEvaluatorDifferentialTests
         }
     }
 
+    /// <summary>What a comparison requires of the subject against its oracle.</summary>
+    private enum Agreement
+    {
+        /// <summary>The same answer, the same failure and the same calls to the collaborators.</summary>
+        Identical,
+
+        /// <summary>The subject never allows what the oracle did not allow (the upgrade window of P-39). It may allow less.</summary>
+        NeverAllowsMore,
+    }
+
     private sealed class Comparison
     {
         private readonly List<string> _mismatches = [];
         private readonly int _stopAfter;
+        private readonly Agreement _agreement;
 
-        public Comparison(int stopAfter = int.MaxValue) => _stopAfter = stopAfter;
+        public Comparison(int stopAfter = int.MaxValue, Agreement agreement = Agreement.Identical)
+        {
+            _stopAfter = stopAfter;
+            _agreement = agreement;
+        }
 
         public bool Done => _mismatches.Count >= _stopAfter;
         public int Scenarios { get; private set; }
         public int Allowed { get; private set; }
         public int Denied { get; private set; }
         public int Threw { get; private set; }
+
+        /// <summary>Scenarios where the oracle allowed and the subject did not (only meaningful for <see cref="Agreement.NeverAllowsMore"/>).</summary>
+        public int AllowedByOracleOnly { get; private set; }
+
         public int Mismatches => _mismatches.Count;
         public IReadOnlyList<string> First(int count) => _mismatches.Take(count).ToList();
 
@@ -165,6 +185,15 @@ public sealed class RbacEvaluatorDifferentialTests
             if (expected.Failure is not null) Threw++;
             else if (expected.Allowed == true) Allowed++;
             else Denied++;
+
+            if (_agreement == Agreement.NeverAllowsMore)
+            {
+                if (actual.Allowed == true && expected.Allowed != true)
+                    _mismatches.Add($"{scenario}\n      oracle:  {expected}\n      subject: {actual}");
+                else if (expected.Allowed == true && actual.Allowed != true)
+                    AllowedByOracleOnly++;
+                return;
+            }
 
             if (expected != actual)
                 _mismatches.Add($"{scenario}\n      oracle:  {expected}\n      subject: {actual}");
@@ -195,10 +224,11 @@ public sealed class RbacEvaluatorDifferentialTests
     // ---------------------------------------------------------------------------------------------------------------
 
     /// <summary>Every single-role shape asked every question against every target scope source.</summary>
-    private static Comparison RunExhaustiveSingleRole(Subject subject, bool recordCalls = true, int stopAfter = int.MaxValue)
+    private static Comparison RunExhaustiveSingleRole(
+        Subject subject, bool recordCalls = true, int stopAfter = int.MaxValue, Subject? against = null, Agreement agreement = Agreement.Identical)
     {
-        var comparison = new Comparison(stopAfter);
-        var oracle = new Rig(Oracle);
+        var comparison = new Comparison(stopAfter, agreement);
+        var oracle = new Rig(against ?? Oracle);
         var rig = new Rig(subject);
         foreach (var spec in SingleRoleShapes())
         {
@@ -216,10 +246,11 @@ public sealed class RbacEvaluatorDifferentialTests
     }
 
     /// <summary>Every actor and resolution state against representative role sets and the questions that matter.</summary>
-    private static Comparison RunActorMatrix(Subject subject, int stopAfter = int.MaxValue)
+    private static Comparison RunActorMatrix(
+        Subject subject, int stopAfter = int.MaxValue, Subject? against = null, Agreement agreement = Agreement.Identical)
     {
-        var comparison = new Comparison(stopAfter);
-        var oracle = new Rig(Oracle);
+        var comparison = new Comparison(stopAfter, agreement);
+        var oracle = new Rig(against ?? Oracle);
         var rig = new Rig(subject);
 
         var roleSets = new List<IReadOnlyList<RoleSpec>>
@@ -259,11 +290,13 @@ public sealed class RbacEvaluatorDifferentialTests
     }
 
     /// <summary>Reproducible random role sets (0 to 4 roles, mixed ids, grants and stored JSON), questions, targets and actors.</summary>
-    private static Comparison RunRandom(Subject subject, int seed, int iterations, bool humanOnlyResolved = false, int stopAfter = int.MaxValue)
+    private static Comparison RunRandom(
+        Subject subject, int seed, int iterations, bool humanOnlyResolved = false, int stopAfter = int.MaxValue,
+        Subject? against = null, Agreement agreement = Agreement.Identical)
     {
         var random = new Random(seed);
-        var comparison = new Comparison(stopAfter);
-        var oracle = new Rig(Oracle);
+        var comparison = new Comparison(stopAfter, agreement);
+        var oracle = new Rig(against ?? Oracle);
         var rig = new Rig(subject);
         for (var i = 0; i < iterations && !comparison.Done; i++)
         {
@@ -288,7 +321,7 @@ public sealed class RbacEvaluatorDifferentialTests
         Report("single-role exhaustive", comparison);
 
         AssertEquivalent(comparison);
-        comparison.Allowed.Should().BeGreaterThan(1000, "the inputs must reach allow decisions through floor, grants and the implication");
+        comparison.Allowed.Should().BeGreaterThan(1000, "the inputs must reach allow decisions through the floor and through grants");
         comparison.Denied.Should().BeGreaterThan(1000);
         comparison.Threw.Should().BeGreaterThan(0, "role data the loader cannot read must be part of the inputs");
     }
@@ -376,6 +409,84 @@ public sealed class RbacEvaluatorDifferentialTests
         _output.WriteLine($"holds: {total:N0} questions, {holds:N0} held, {mismatches.Count:N0} differences");
         mismatches.Should().BeEmpty("Holds must be the evaluator called with the grant as its own resource; first differences:\n{0}", string.Join("\n", mismatches.Take(8)));
         holds.Should().BeGreaterThan(500);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // A10.2.5 / P-39: the upgrade window. New code over data the preserving step has not yet migrated may deny what the old
+    // evaluator allowed. It must never allow what the old evaluator denied.
+    // ---------------------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Over_pre_step_data_the_new_evaluator_never_allows_what_the_old_evaluator_denied_for_every_single_role_shape()
+    {
+        var comparison = RunExhaustiveSingleRole(Refactored, recordCalls: false, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        Report("window, single-role exhaustive", comparison);
+
+        comparison.Mismatches.Should().Be(0, "the new evaluator must be deny-only over pre-step data; first widenings:\n{0}", string.Join("\n", comparison.First(8)));
+        comparison.AllowedByOracleOnly.Should().BeGreaterThan(100, "the window must really deny something the old evaluator allowed (a role.manage-only role, for one)");
+        comparison.Allowed.Should().BeGreaterThan(1000);
+    }
+
+    [Fact]
+    public void Over_pre_step_data_the_new_evaluator_never_allows_more_for_every_actor_kind_and_resolution_state()
+    {
+        var comparison = RunActorMatrix(Refactored, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        Report("window, actor matrix", comparison);
+
+        comparison.Mismatches.Should().Be(0, "first widenings:\n{0}", string.Join("\n", comparison.First(8)));
+        comparison.AllowedByOracleOnly.Should().BeGreaterThan(0);
+    }
+
+    [Theory]
+    [InlineData(20261017, 40_000)]
+    [InlineData(7, 20_000)]
+    [InlineData(123456789, 20_000)]
+    public void Over_pre_step_data_the_new_evaluator_never_allows_more_for_random_multi_role_sets(int seed, int iterations)
+    {
+        var comparison = RunRandom(Refactored, seed, iterations, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        Report($"window, random seed {seed}", comparison);
+
+        comparison.Mismatches.Should().Be(0, "first widenings:\n{0}", string.Join("\n", comparison.First(8)));
+        comparison.AllowedByOracleOnly.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void The_held_set_used_directly_is_also_deny_only_over_pre_step_data()
+    {
+        var comparison = RunRandom(DirectSet, seed: 31415926, iterations: 40_000, humanOnlyResolved: true, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        Report("window, held set, random", comparison);
+
+        comparison.Mismatches.Should().Be(0, "first widenings:\n{0}", string.Join("\n", comparison.First(8)));
+    }
+
+    public static IEnumerable<object[]> WideningMutations() =>
+        new[]
+        {
+            EvaluatorMutation.ResourceTypeIgnored,
+            EvaluatorMutation.FloorAppliesAtAnyScope,
+            EvaluatorMutation.NonHumanActorsEvaluated,
+            EvaluatorMutation.MarkerHonouredBeforeResolution,
+            EvaluatorMutation.ReintroduceImplicationIgnoringGrantType,
+        }.Select(m => new object[] { m });
+
+    [Theory]
+    [MemberData(nameof(WideningMutations))]
+    public void The_window_check_notices_an_evaluator_that_allows_more_than_the_old_one(EvaluatorMutation widening)
+    {
+        var exhaustive = RunExhaustiveSingleRole(Mutant(widening), recordCalls: false, stopAfter: 1, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        var actors = RunActorMatrix(Mutant(widening), stopAfter: 1, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        var random = RunRandom(Mutant(widening), seed: 20261017, iterations: 20_000, stopAfter: 1, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+
+        (exhaustive.Mismatches + actors.Mismatches + random.Mismatches).Should().BeGreaterThan(
+            0, "an evaluator with the defect '{0}' allows what the old evaluator denied, and the window check must say so", widening);
+    }
+
+    [Fact]
+    public void The_window_check_does_not_object_to_the_old_evaluator_itself()
+    {
+        var comparison = RunExhaustiveSingleRole(PreRemoval, recordCalls: false, against: PreRemoval, agreement: Agreement.NeverAllowsMore);
+        comparison.Mismatches.Should().Be(0);
+        comparison.AllowedByOracleOnly.Should().Be(0);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

@@ -15,7 +15,9 @@ internal static class PlatformAdministratorGovernancePermissions
         roles.Any(r => string.Equals(r.Id.Value, BootstrapConstants.PlatformAdminRoleId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Instance-scoped permissions that power operator capabilities and governance/auth config APIs.
+    /// The floor: eight instance-scoped combinations that power operator capabilities and governance/auth config APIs, held by
+    /// the administrator role whatever its stored permissions say. <c>user.read</c> on Role (a stopgap whose three consumers now
+    /// check <c>user.read</c> on User) and <c>role.assign</c> on User (which nothing asks for) are not part of it.
     /// </summary>
     public static bool IsGovernanceOrAuthConfigurationSurface(PermissionDescriptor required, string targetScopeKey)
     {
@@ -29,8 +31,7 @@ internal static class PlatformAdministratorGovernancePermissions
         {
             if (string.Equals(required.Resource.ResourceType, ResourceTypeConstants.Role, StringComparison.OrdinalIgnoreCase))
             {
-                return required.Action is ActionConstants.UserRead
-                    or ActionConstants.PermissionAssign
+                return required.Action is ActionConstants.PermissionAssign
                     or ActionConstants.RoleAssign;
             }
 
@@ -46,7 +47,6 @@ internal static class PlatformAdministratorGovernancePermissions
 
         return required.Action is ActionConstants.UserRead
             or ActionConstants.UserManage
-            or ActionConstants.RoleAssign
             or ActionConstants.CredentialManage;
     }
 }

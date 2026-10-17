@@ -138,10 +138,14 @@ public sealed partial class AuditActionCatalogTests
         "platform.settings.secret.resolution_refused",
     ];
 
-    /// <summary>The action IAM-10.2a adds: the W3 refusal of a role assignment or removal that exceeds the actor's authority.</summary>
+    /// <summary>
+    /// The actions IAM-10.2a adds: the W3 refusal of a role assignment or removal that exceeds the actor's authority, and the W1
+    /// summary of the startup data step that preserves what the removed role.manage implication gave.
+    /// </summary>
     private static readonly string[] Iam10Additions =
     [
         "governance.role.assignment_rejected",
+        "governance.authorization.grants_migrated",
     ];
 
     [Fact]
