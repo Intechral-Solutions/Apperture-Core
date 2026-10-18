@@ -27,7 +27,8 @@ namespace Apperture.Persistence.SqlServer;
 /// <item>A holder of <c>auth.configuration.read</c> or <c>auth.entra.manage</c> on InstanceConfiguration at instance scope
 /// (including the ones step 1 just gave) is given <c>auth.directory.search</c>; a holder of <c>connection.read</c> on Connection
 /// at instance scope is given <c>connection.verify</c>.</item>
-/// <item>The obsolete <c>user.read</c> on Role is removed.</item>
+/// <item>The obsolete <c>user.read</c> on Role is removed at every scope, from readable custom roles only. <c>user.read</c> on User and
+/// a grant with no resource are never touched.</item>
 /// </list>
 /// A role "holds" a grant when it stores a grant with the same action and resource type (compared ignoring case) and the instance
 /// scope. A role whose stored permissions cannot be read is listed and left exactly as it is: it contributes no grants to any
@@ -140,8 +141,9 @@ public static class RoleAuthorizationDataStep
             if (grants.Any(g => Holds(g, ConnectionReadOnConnection)))
                 AddIfMissing(grants, added, ConnectionVerify);
 
-            // 4. The grant nothing checks any more.
-            var removed = grants.Where(IsObsolete).ToList();
+            // 4. The grant nothing checks any more, at any scope. A grant stored twice is one removal in the counts and the summary
+            // (every copy is removed), as the administrator repair counts it.
+            var removed = grants.Where(IsObsolete).DistinctBy(PermissionSetChange.Identity, StringComparer.Ordinal).ToList();
             grants.RemoveAll(IsObsolete);
 
             if (added.Count == 0 && removed.Count == 0)

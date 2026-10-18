@@ -133,6 +133,72 @@ public sealed class RoleAuthorizationDataPlanTests
             .BeEquivalentTo([P("workflow.execute", "WorkflowInstance"), P("relationship.manage", "TrustRelationship")]);
     }
 
+    [Theory]
+    [InlineData("instance")]
+    [InlineData("Instance")]
+    [InlineData("module:X")]
+    [InlineData("module:X:slot:Y")]
+    [InlineData("environment:local")]
+    [InlineData("connection:abc")]
+    [InlineData("")]
+    public void The_obsolete_read_on_Role_is_removed_whatever_the_scope_and_the_read_on_User_at_the_same_scope_is_kept(string scope)
+    {
+        var change = Plan("r", Json(P("user.read", "Role", scope), P("user.read", "User", scope), P("integration.read", "Integration"))).Changes.Single();
+
+        change.Removed.Select(PermissionSetChange.Identity).Should().Equal($"user.read@Role:{scope}");
+        change.Added.Should().BeEmpty();
+        StoredRolePermissions.Read(change.PermissionsJson).Permissions.Should()
+            .BeEquivalentTo([P("user.read", "User", scope), P("integration.read", "Integration")], "only the obsolete grant goes");
+    }
+
+    [Fact]
+    public void The_obsolete_read_on_Role_is_removed_from_every_scope_it_is_stored_at_and_a_broad_read_is_kept_and_listed()
+    {
+        var broad = new PermissionDescriptor("user.read");
+        var plan = Plan("r", Json(P("user.read", "Role"), P("user.read", "Role", "module:X"), P("USER.READ", "ROLE", "environment:local"), broad, P("user.read", "User")));
+
+        var change = plan.Changes.Single();
+        change.Removed.Should().HaveCount(3);
+        StoredRolePermissions.Read(change.PermissionsJson).Permissions.Should().BeEquivalentTo([broad, P("user.read", "User")]);
+        plan.BroadGrantRoleIds.Should().Equal(["r"], "a null-resource grant is never changed; its role is listed");
+    }
+
+    [Fact]
+    public void An_identical_obsolete_grant_stored_twice_is_one_removal_in_the_counts_and_the_summary()
+    {
+        var plan = Plan("r", Json(P("user.read", "Role"), P("user.read", "Role"), P("integration.read", "Integration")));
+
+        var change = plan.Changes.Single();
+        change.Removed.Should().HaveCount(1, "the same grant is counted once, as the administrator repair counts it");
+        plan.GrantsRemoved.Should().Be(1);
+        StoredRolePermissions.Read(change.PermissionsJson).Permissions.Should().Equal([P("integration.read", "Integration")], "both copies are gone");
+    }
+
+    [Fact]
+    public void The_obsolete_read_is_not_removed_from_a_system_role_or_an_unreadable_one()
+    {
+        var plan = RoleAuthorizationDataStep.PlanChanges(
+        [
+            ("system", true, Json(P("user.read", "Role", "module:X"))),
+            ("broken", false, "{not json"),
+            ("half", false, """[{"action":"user.read","resource":{"resourceType":"Role","scopeKey":"module:X"}},null]"""),
+        ]);
+
+        plan.IsEmpty.Should().BeTrue();
+        plan.UnreadableRoleIds.Should().BeEquivalentTo("broken", "half");
+    }
+
+    [Fact]
+    public void Planning_again_over_what_the_plan_stored_removes_nothing_more()
+    {
+        var first = Plan("r", Json(P("user.read", "Role"), P("user.read", "Role", "module:X"), P("connection.read", "Connection"))).Changes.Single();
+
+        var second = Plan("r", first.PermissionsJson);
+
+        second.Changes.Where(c => c.Removed.Count > 0).Should().BeEmpty();
+        second.GrantsRemoved.Should().Be(0);
+    }
+
     [Fact]
     public void A_role_left_with_no_grants_stores_an_empty_list()
     {

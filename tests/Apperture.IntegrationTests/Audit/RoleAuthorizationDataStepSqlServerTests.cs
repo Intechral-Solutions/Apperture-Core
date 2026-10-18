@@ -352,6 +352,68 @@ public sealed class RoleAuthorizationDataStepSqlServerTests
     }
 
     // ---------------------------------------------------------------------------------------------------------------
+    // The obsolete read on Role at every scope (the same rule as the administrator repair)
+    // ---------------------------------------------------------------------------------------------------------------
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task The_obsolete_read_on_Role_is_removed_at_every_scope_from_readable_custom_roles_only_and_the_summary_is_exact(bool rcsi)
+    {
+        await using var s = await NewCatalogAsync(rcsi);
+        const string unreadableJson = """[null,{"action":"user.read","resource":{"resourceType":"Role","scopeKey":"module:X"}}]""";
+        await AddRoleAsync(s, "r-ob-scopes", Json(
+            G("user.read", "Role"), G("user.read", "Role", "module:X"), G("user.read", "Role", "environment:local"),
+            G("user.read", "User"), G("user.read", "User", "module:X"), G("integration.read", "Integration")));
+        await AddRoleAsync(s, "r-ob-dup", Json(G("user.read", "Role"), G("user.read", "Role"), G("connection.browse", "Connection")));
+        await AddRoleAsync(s, "r-ob-broad", Json(G("user.read"), G("user.read", "Role", "module:Y")));
+        await AddRoleAsync(s, "r-ob-unreadable", unreadableJson);
+        await AddRoleAsync(s, "r-ob-system", Json(G("user.read", "Role", "module:X")), system: true);
+        await AddRoleAsync(s, "r-ob-clean", Json(G("user.read", "User")));
+        var systemBefore = await StoredJsonAsync(s, "r-ob-system");
+        var cleanVersion = await s.ScalarAsync<long>("SELECT CONVERT(bigint, RowVersion) FROM Roles WHERE Id = N'r-ob-clean';");
+
+        Report report;
+        await using (var db = s.NewDb())
+            report = await RoleAuthorizationDataStep.RunAsync(db);
+
+        (await IdentitiesAsync(s, "r-ob-scopes")).Should().Equal(Expected("user.read@User:instance", "user.read@User:module:X", "integration.read@Integration:instance"));
+        (await IdentitiesAsync(s, "r-ob-dup")).Should().Equal(Expected("connection.browse@Connection:instance"));
+        (await IdentitiesAsync(s, "r-ob-broad")).Should().Equal(Expected("user.read"), "the broad grant is never changed");
+        (await StoredJsonAsync(s, "r-ob-unreadable")).Should().Be(unreadableJson, "unreadable data is left exactly as stored");
+        (await StoredJsonAsync(s, "r-ob-system")).Should().Be(systemBefore, "a system role is the repair's, not the step's");
+        (await s.ScalarAsync<long>("SELECT CONVERT(bigint, RowVersion) FROM Roles WHERE Id = N'r-ob-clean';")).Should().Be(cleanVersion, "a role with nothing obsolete is not written");
+
+        report.Committed.Should().BeTrue();
+        report.RolesChanged.Should().Be(3);
+        report.GrantsRemoved.Should().Be(5, "three scopes, one identical pair counted once, one module scope");
+        report.GrantsAdded.Should().Be(0);
+
+        var rows = await s.RowsAsync($"SELECT * FROM AuditLogs WHERE Action = N'{StepAction}';");
+        var details = JsonDocument.Parse((string)rows.Should().ContainSingle().Subject["Details"]!).RootElement;
+        details.GetProperty("rolesChanged").GetInt32().Should().Be(3);
+        details.GetProperty("grantsRemoved").GetInt32().Should().Be(5);
+        details.GetProperty("grantsAdded").GetInt32().Should().Be(0);
+        details.GetProperty("changes").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(
+        [
+            "r-ob-scopes|-user.read@Role:instance", "r-ob-scopes|-user.read@Role:module:X", "r-ob-scopes|-user.read@Role:environment:local",
+            "r-ob-dup|-user.read@Role:instance", "r-ob-broad|-user.read@Role:module:Y",
+        ]);
+        details.GetProperty("changedRoles").EnumerateArray().Select(e => e.GetString()).Should().BeEquivalentTo(["r-ob-scopes", "r-ob-dup", "r-ob-broad"]);
+        details.GetProperty("unreadableRoles").EnumerateArray().Select(e => e.GetString()).Should().Equal("r-ob-unreadable");
+        details.GetProperty("broadGrantRoles").EnumerateArray().Select(e => e.GetString()).Should().Equal("r-ob-broad");
+
+        // A second run finds nothing: no change, no second event, no row version moves.
+        var snapshot = await s.RowsAsync("SELECT Id, PermissionsJson, CONVERT(bigint, RowVersion) AS Rv FROM Roles ORDER BY Id;");
+        Report second;
+        await using (var db = s.NewDb())
+            second = await RoleAuthorizationDataStep.RunAsync(db);
+        second.Committed.Should().BeFalse();
+        (await s.RowsAsync("SELECT Id, PermissionsJson, CONVERT(bigint, RowVersion) AS Rv FROM Roles ORDER BY Id;")).Should().BeEquivalentTo(snapshot);
+        (await s.ScalarAsync<int>($"SELECT COUNT(*) FROM AuditLogs WHERE Action = N'{StepAction}';")).Should().Be(1);
+        _output.WriteLine(s.ExecutionMarker);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
     // Idempotency, startup and failure
     // ---------------------------------------------------------------------------------------------------------------
 
