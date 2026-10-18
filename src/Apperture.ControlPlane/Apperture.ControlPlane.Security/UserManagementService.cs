@@ -790,7 +790,7 @@ public sealed class UserManagementService : IUserManagementService
                     if (await IsRecoveryAccessUserAsync(userId, ct))
                         return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "identity_link.remove_local"), EmergencyAccessService.UnsafeOperationRefusal());
                     var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
-                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(RoleAuthorityRules.IsPlatformAdministratorRole);
                     if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
                     {
                         return refusals.Refuse<bool>(
@@ -852,8 +852,12 @@ public sealed class UserManagementService : IUserManagementService
                     throw new UnauthorizedAccessException("Not authorized to assign roles.");
                 var role = snapshot.TargetRole
                     ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+                // From here on the role is the locked row, and its own id is the only id used: on a case-insensitive catalog a request
+                // can spell the id in another case and still find the row, but every decision, stored assignment and audit row
+                // names the role by the id the row carries.
+                var lockedRoleId = role.Id;
                 if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
-                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, roleId, refused.Reason, refused.Missing), refused.ToException());
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, lockedRoleId, refused.Reason, refused.Missing), refused.ToException());
 
                 // 3. A system-managed target (Recovery Access).
                 var user = await _userRepository.GetByIdAsync(userId, ct)
@@ -878,14 +882,14 @@ public sealed class UserManagementService : IUserManagementService
                 {
                     return refusals.Refuse<bool>(
                         transaction,
-                        AuditEvents.RoleAssignmentRejected(userId, roleId, "role_permissions_unreadable"),
+                        AuditEvents.RoleAssignmentRejected(userId, lockedRoleId, "role_permissions_unreadable"),
                         new GovernanceConflictException(
                             GovernanceConflictCodes.RolePermissionsUnreadable,
                             "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first."));
                 }
 
-                await _roleRepository.AssignToUserAsync(userId, roleId, ct);
-                await transaction.StageAsync(AuditEvents.RoleAssigned(userId, roleId, AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry)), ct);
+                await _roleRepository.AssignToUserAsync(userId, lockedRoleId, ct);
+                await transaction.StageAsync(AuditEvents.RoleAssigned(userId, lockedRoleId, AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry)), ct);
                 return true;
             },
             Done,
@@ -914,8 +918,10 @@ public sealed class UserManagementService : IUserManagementService
                     throw new UnauthorizedAccessException("Not authorized to assign roles.");
                 var role = snapshot.TargetRole
                     ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+                // The locked row's own id from here on, as in assignment: a request may spell the id in another case.
+                var lockedRoleId = role.Id;
                 if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: true) is { } refused)
-                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, roleId, refused.Reason, refused.Missing), refused.ToException());
+                    return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, lockedRoleId, refused.Reason, refused.Missing), refused.ToException());
 
                 // 3. A system-managed target (Recovery Access).
                 var user = await _userRepository.GetByIdAsync(userId, ct)
@@ -929,7 +935,7 @@ public sealed class UserManagementService : IUserManagementService
                         "Recovery Access is system-managed. Role membership cannot be changed through ordinary user administration.");
                 }
 
-                if (roleId.Value == BootstrapConstants.PlatformAdminRoleId && await IsRecoveryAccessUserAsync(userId, ct))
+                if (RoleAuthorityRules.IsPlatformAdministratorRole(lockedRoleId) && await IsRecoveryAccessUserAsync(userId, ct))
                     return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "role.remove_platform_administrator"), EmergencyAccessService.UnsafeOperationRefusal());
 
                 // 4. Not assigned (read under the assignment key lock): nothing changes and nothing is recorded; the request still succeeds.
@@ -941,22 +947,22 @@ public sealed class UserManagementService : IUserManagementService
 
                 // 5. State refusals, for a real change only. The last-administrator guard is unchanged here: it counts assignments
                 // and is replaced by the shared viability invariant in IAM-10.2b.
-                if (roleId.Value == BootstrapConstants.PlatformAdminRoleId)
+                if (RoleAuthorityRules.IsPlatformAdministratorRole(lockedRoleId))
                 {
-                    var count = await _roleRepository.CountUserAssignmentsAsync(roleId, ct);
+                    var count = await _roleRepository.CountUserAssignmentsAsync(lockedRoleId, ct);
                     if (count <= 1)
                     {
                         return refusals.Refuse<bool>(
                             transaction,
-                            AuditEvents.BlockedLastPlatformAdminRemoval(userId, roleId),
+                            AuditEvents.BlockedLastPlatformAdminRemoval(userId, lockedRoleId),
                             new GovernanceConflictException(
                                 GovernanceConflictCodes.LastViableAdministrator,
                                 "Cannot remove the last platform administrator role assignment."));
                     }
                 }
 
-                await _roleRepository.RemoveFromUserAsync(userId, roleId, ct);
-                await transaction.StageAsync(AuditEvents.RoleRemoved(userId, roleId), ct);
+                await _roleRepository.RemoveFromUserAsync(userId, lockedRoleId, ct);
+                await transaction.StageAsync(AuditEvents.RoleRemoved(userId, lockedRoleId), ct);
                 return true;
             },
             Done,
@@ -1048,7 +1054,7 @@ public sealed class UserManagementService : IUserManagementService
                     if (await IsRecoveryAccessUserAsync(userId, ct))
                         return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "credential.disable"), EmergencyAccessService.UnsafeOperationRefusal());
                     var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
-                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(r => r.Value == BootstrapConstants.PlatformAdminRoleId);
+                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(RoleAuthorityRules.IsPlatformAdministratorRole);
                     if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
                     {
                         return refusals.Refuse<bool>(

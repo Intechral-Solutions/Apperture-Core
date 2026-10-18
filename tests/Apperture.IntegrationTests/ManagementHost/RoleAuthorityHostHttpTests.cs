@@ -320,4 +320,25 @@ public sealed class RoleAuthorityHostHttpTests : IClassFixture<RoleAuthorityHost
         (await world.AssignmentExistsAsync(sole.Id, AdminRoleId)).Should().BeTrue();
         (await world.AuditRowsAsync(BlockedLastAdmin, sole.Id)).Should().Be(1);
     }
+
+    [Theory]
+    [InlineData("ROLE-PLATFORM-ADMINISTRATOR", false)]
+    [InlineData("Role-Platform-Administrator", true)]
+    public async Task Removing_the_last_administrator_with_a_case_variant_of_the_role_id_is_still_409_last_viable_administrator(string variant, bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Iam10LastCase_", rcsi);
+        var world = new RoleAuthorityWorld(scratch);
+        var sole = await world.NewPersonAsync("sole-admin", AdminRoleId);
+        await using var host = new ManagementHostWebApplicationFactory(scratch.ConnectionString);
+        using (var warmUp = host.CreateClient())
+            _ = await warmUp.GetAsync("/signin");
+
+        using var client = As(host, sole);
+        var response = await client.DeleteAsync($"api/users/{sole.Id}/roles/{variant}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await BodyAsync(response)).GetProperty("code").GetString().Should().Be("last_viable_administrator");
+        (await world.AssignmentExistsAsync(sole.Id, AdminRoleId)).Should().BeTrue();
+        (await world.AuditRowsAsync(BlockedLastAdmin, sole.Id)).Should().Be(1);
+    }
 }

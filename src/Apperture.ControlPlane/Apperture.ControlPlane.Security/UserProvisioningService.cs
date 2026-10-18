@@ -458,11 +458,12 @@ public sealed class UserProvisioningService : IUserProvisioningService
         }
 
         var role = snapshot.TargetRole ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+        // The refusal names the role by the id of the locked row, as the assignment that follows does (role.Id), whatever case was requested.
         if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
         {
             return new InitialRoleDecision(
                 null,
-                new InitialRoleRefusal(AuditEvents.RoleAssignmentRejected(newUserId, roleId, refused.Reason, refused.Missing), refused.ToException()));
+                new InitialRoleRefusal(AuditEvents.RoleAssignmentRejected(newUserId, role.Id, refused.Reason, refused.Missing), refused.ToException()));
         }
 
         if (!role.PermissionsReadable)
@@ -470,7 +471,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
             return new InitialRoleDecision(
                 null,
                 new InitialRoleRefusal(
-                    AuditEvents.RoleAssignmentRejected(newUserId, roleId, "role_permissions_unreadable"),
+                    AuditEvents.RoleAssignmentRejected(newUserId, role.Id, "role_permissions_unreadable"),
                     new GovernanceConflictException(
                         GovernanceConflictCodes.RolePermissionsUnreadable,
                         "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first.")));

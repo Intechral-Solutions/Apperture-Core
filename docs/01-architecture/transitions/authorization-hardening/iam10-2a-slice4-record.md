@@ -74,3 +74,21 @@ All SQL cases run on a throwaway catalog with locking READ COMMITTED and on one 
 Owner rulings on this slice: the obsolete `user.read` on Role is removed at any scope (approved); unreadable administrator permissions fail the start and are preserved (approved); historical environment-scoped grants are preserved for now; the administrator-default Critical permissions and the repair summary's static Elevated severity are approved; whether the repair needs a deadlock-rerun test is left to the independent review.
 
 `RoleAuthorizationDataStep` already matched `user.read` on Role by action and resource type at any scope, from readable custom roles, leaving `user.read` on User, null-resource grants, unreadable roles and system roles alone. One difference from the repair remained in its summary: an identical obsolete grant stored twice was counted and listed twice. It is now one removal in `grantsRemoved` and in the `changes` list (every copy is still removed), as in the repair. Tests added: a scope matrix, mixed-scope roles, duplicates, broad grants, unreadable and system roles, idempotency of the plan, and, against SQL Server on both isolation modes, the stored roles, the exact summary counts and entries, untouched `RowVersion` for a role with nothing obsolete, and a second run that changes and writes nothing.
+
+## Independent review remediation
+
+The independent security review returned *safe after bounded remediation* with no Critical or High findings.
+
+**M-1 (Medium), fixed.** `AssignRoleAsync` and `RemoveRoleAsync` loaded and locked the target role but then compared and recorded the caller's spelling of its id. On a case-insensitive catalog an id such as `ROLE-PLATFORM-ADMINISTRATOR` finds the administrator row, passes the entitlement check (which already ignored case), and then skipped the last-administrator guard (an ordinal comparison against the exact id), so the last administrator's role could be removed. Every decision, repository call and audit row after the lock now uses the id of the locked row (`role.Id`) and `RoleAuthorityRules.IsPlatformAdministratorRole`: the Recovery Access removal check, the last-administrator count and refusal, the stored assignment, the removal, and the assignment, removal and refusal audit events. The same mismatch was removed from the adjacent places that decide on an administrator assignment or record a refusal: the two user-level guards that read `AssignedRoleIds` (last local link, last local credential) and the provisioning refusals of the initial role. Rule 2, the authorization-before-no-op order, the typed refusals and the audit contracts are unchanged, and no viability design or administrator-set lock was added. An assignment row written before this fix by a case-variant request (possible on a case-insensitive catalog) is not migrated; the guards that read stored assignment ids now compare ignoring case, so such a row is still recognised as the administrator role.
+
+**L-3 (Low), documented.** `docs/04-api/contracts.md` now separates two effects in the upgrade-window statement: the evaluator is deny-only relative to the old one (pinned by the upgrade-window tests, unchanged), and the approved governance-read switch makes the governance surfaces visible to holders of `user.read` on User from the first request.
+
+**Deferred observations (recorded, not implemented).**
+
+| # | Observation | Owner |
+|---|---|---|
+| L-1 | Credential-route audit exception mapping | IAM-10.2b |
+| L-2 | Semantics of a broad legacy grant (no resource) when an action appears on several resource types | open |
+| L-4 | Provisioning actor resolution | IAM-11 |
+| - | The Entra provisioning-directory endpoint's relationship to `auth.directory.search`; its permission is not switched without a separate owner decision | owner |
+| - | Role replace-permissions, rename and delete still name the role in their audit rows by the caller's spelling (the target is a custom role, never the administrator role, and the decision is not affected) | open |
