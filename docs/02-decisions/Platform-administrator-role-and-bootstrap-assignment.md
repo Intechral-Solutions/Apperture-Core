@@ -6,13 +6,13 @@ The **Platform Administrator** role (`role-platform-administrator`, display name
 
 ## Permission repair (startup)
 
-`PlatformAdminRoleRepairService` runs on every Management host startup and merges required grants into the role (deduplicated). Logic lives in `PlatformAdminRolePermissionRepair` (unit-tested) and includes:
+`PlatformAdminRoleRepairService` runs on every Management host startup, after the platform catalog is seeded and the module permissions are registered, and before the first administrator is assigned. It is one **audited unit of work**: it reads the role under `UPDLOCK, HOLDLOCK` (the lock an assignment of that role takes), decides from the row as locked, and commits the change together with one `governance.authorization.administrator_role_repaired` summary row. A start that finds the role already correct writes nothing. Logic lives in `PlatformAdminRolePermissionRepair.Plan` (unit-tested). The stored set ends up as:
 
-- **Auth admin (Epic 3):** `user.read`, `user.manage`, `role.assign`, `credential.manage` on `User` / `Role` as defined in code.
-- **Governance UI / catalog:** `user.read` and `permission.assign` on **`Role`** at `instance` scope.  
-  These match `GovernanceController` and `OperatorCapabilitiesQueryService` (there is no separate `governance.read` permission today).
-- **Operator console:** module configure, workflow execute/start, schedules, recovery, audit read, runtime health (as in previous repair lists).
-- **Module-scoped permissions:** any `module:*` permissions registered in `IResourceDescriptorRegistry` at startup.
+- **Every registered permission whose definition is an administrator default** (`GrantedToPlatformAdministratorByDefault`), by its own resource type and scope: platform permissions at instance scope, environment permissions at the real environment's scope, and every registered module permission at its module scope. `relationship.manage` is in the catalog but is not an administrator default, so it is not added.
+- **The fixed grants of `PlatformAdminRolePermissionRepair`**: the eight combinations of the administrator floor and `workflow.execute` on WorkflowInstance at instance scope, the one stored grant that is deliberately not a catalog permission (it lets the administrator satisfy every module-scoped check by containment).
+- **Whatever else the role already holds.** Only the approved obsolete list is removed: `user.read` on Role (at any scope), which nothing checks any more.
+
+Stored permissions that cannot be read are never overwritten: the repair stops with `platform_administrator_role_permissions_unreadable` and the host does not start. Restore a readable value for the role's `PermissionsJson` (or a backup) and start again.
 
 ## Bootstrap principal assignment
 

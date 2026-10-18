@@ -166,6 +166,26 @@ public static partial class AuditEvents
             ("unreadableRoles", Bounded(unreadableRoleIds)),
             ("broadGrantRoles", Bounded(broadGrantRoleIds)));
 
+    /// <summary>
+    /// The startup repair changed the stored permissions of the Platform Administrator role: it added the catalog's administrator
+    /// defaults the role lacked and removed the approved obsolete grants. One summary per repair that changed anything. The
+    /// counts are exact; the identities (<c>action@resourceType:scopeKey</c>) are bounded to <see cref="MaxMigrationItemsRecorded"/>.
+    /// </summary>
+    public static AuditEvent AdministratorRoleRepaired(
+        RoleId role,
+        PermissionSetChange change,
+        int permissionCount) =>
+        Event(
+            AuditActionNames.AdministratorRoleRepaired,
+            Target(AuditTargetTypes.Role, role.Value),
+            AuditOutcomeCodes.Succeeded,
+            ("roleId", role.Value),
+            ("permissionCount", permissionCount),
+            ("grantsAdded", change.Added.Count),
+            ("grantsRemoved", change.Removed.Count),
+            ("permissionsAdded", Bounded(Identities(change.Added.OrderBy(PermissionSetChange.Identity, StringComparer.Ordinal)))),
+            ("permissionsRemoved", Bounded(Identities(change.Removed.OrderBy(PermissionSetChange.Identity, StringComparer.Ordinal)))));
+
     private static IReadOnlyList<string>? Bounded(IReadOnlyList<string> items) =>
         items.Count == 0 ? null : items.Take(MaxMigrationItemsRecorded).ToList();
 

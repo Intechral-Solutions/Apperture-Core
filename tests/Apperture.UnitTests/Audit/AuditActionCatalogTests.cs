@@ -139,13 +139,15 @@ public sealed partial class AuditActionCatalogTests
     ];
 
     /// <summary>
-    /// The actions IAM-10.2a adds: the W3 refusal of a role assignment or removal that exceeds the actor's authority, and the W1
-    /// summary of the startup data step that preserves what the removed role.manage implication gave.
+    /// The actions IAM-10.2a adds: the W3 refusal of a role assignment or removal that exceeds the actor's authority, the W1
+    /// summary of the startup data step that preserves what the removed role.manage implication gave, and the W1 summary of the
+    /// startup repair of the administrator role.
     /// </summary>
     private static readonly string[] Iam10Additions =
     [
         "governance.role.assignment_rejected",
         "governance.authorization.grants_migrated",
+        "governance.authorization.administrator_role_repaired",
     ];
 
     [Fact]

@@ -99,6 +99,21 @@ internal static class AuditDetailSchemas
         new AuditFieldDefinition("broadGrantRoles", AuditFieldKind.IdList, Required: false, MaxLength: 160, MaxItems: 100),
     ]);
 
+    /// <summary>
+    /// The one summary of the startup repair of the Platform Administrator role: the role id, the size of the stored set after the
+    /// repair, exact counts of what it added and removed, and the permission identities, bounded to 100 each. No name, no stored
+    /// JSON and no user data.
+    /// </summary>
+    internal static readonly AuditDetailSchema AdministratorRoleRepaired = new(
+    [
+        IdField("roleId"),
+        CountField("permissionCount"),
+        CountField("grantsAdded"),
+        CountField("grantsRemoved"),
+        new AuditFieldDefinition("permissionsAdded", AuditFieldKind.IdList, Required: false, MaxLength: PermissionIdentityLength, MaxItems: 100),
+        new AuditFieldDefinition("permissionsRemoved", AuditFieldKind.IdList, Required: false, MaxLength: PermissionIdentityLength, MaxItems: 100),
+    ]);
+
     internal static readonly AuditDetailSchema RoleMutationRejected = new(
     [
         IdField("roleId"),

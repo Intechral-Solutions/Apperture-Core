@@ -44,6 +44,6 @@ System roles are never touched. A role whose stored permissions cannot be read i
 
 `POST /api/roles` and `PATCH /api/roles/{id}` reported the committed role by reading the role's holders, which needs `user.read` on User. A role manager held that only through the implication, so once the implication was gone a manager without `user.read` got 403 for a role that had in fact been created. The two routes now report the holder count through `CountRoleAssignmentsAsync`, which needs only `role.manage` (the permission the mutation needed; the delete refusal already reports the same count to a `role.manage` holder). The holders list (`GET .../assignments`, role detail) still needs `user.read`.
 
-## Known interim limitation (slice 4)
+## Known interim limitation (resolved in slice 4)
 
-Rule 1 stops an actor from granting what the actor does not hold, and the administrator's stored grants are still the seed plus today's repair lists. The catalog permissions the administrator cannot yet hand out are pinned by `AdministratorGrantableCatalogTests`. The three permissions switched here are no longer on that list; `relationship.manage` is dormant, is not an administrator default and must not be added to make the list empty.
+Rule 1 stops an actor from granting what the actor does not hold, and at this slice the administrator's stored grants were still the seed plus the repair lists, so thirteen catalog permissions could not be handed out by anyone. [Slice 4](iam10-2a-slice4-record.md) makes the audited repair catalog-driven: twelve of them are now held, and the thirteenth, `relationship.manage`, is dormant, is not an administrator default, and was deliberately not added.

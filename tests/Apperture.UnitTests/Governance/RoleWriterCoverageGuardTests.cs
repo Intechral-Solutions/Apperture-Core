@@ -64,7 +64,7 @@ public sealed class RoleWriterCoverageGuardTests
         new(Security + "RealBootstrapRecoveryService.cs", Writes.RoleAssignmentCall, 1, Group.Exempt, "bootstrap recovery restores the administrator role"),
         new(Security + "FirstAdminBootstrapService.cs", Writes.UserCreatedWithRoleIds, 1, Group.Exempt, "first administrator setup"),
         new(Security + "EmergencyAccessService.cs", Writes.UserCreatedWithRoleIds, 1, Group.Exempt, "Recovery Access provisioning"),
-        new(Security + "PlatformAdminRoleRepairService.cs", Writes.RolePermissionJsonCall, 1, Group.Exempt, "the startup repair of the administrator role"),
+        new(Security + "PlatformAdminRoleRepairService.cs", Writes.RolePermissionJsonCall, 1, Group.Exempt, "the startup repair of the administrator role (system actor administrator-repair; one audited unit that locks the role row before it decides and writes)"),
         new(Persistence + "RoleAuthorizationDataStep.cs", Writes.DirectTableWrite, 1, Group.Exempt, "the startup data step that preserves what the removed role.manage implication gave (audited, one transaction, adds only the grants it names)"),
 
         // Mechanisms: carry out a write that an ordinary or exempt writer decided.

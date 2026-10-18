@@ -126,6 +126,19 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            Action = "governance.authorization.administrator_role_repaired",
+            Category = AuditCategories.Governance,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.Role,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.AdministratorRoleRepaired,
+            IntroducedIn = "IAM-10.2a",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "PlatformAdminRoleRepairService.cs",
+        },
+        new()
+        {
             Action = "governance.role.deleted",
             Category = AuditCategories.Governance,
             Severity = AuditSeverities.Elevated,

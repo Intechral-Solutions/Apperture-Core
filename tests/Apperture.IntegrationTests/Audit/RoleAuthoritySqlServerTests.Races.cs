@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
@@ -430,13 +431,50 @@ public sealed partial class RoleAuthoritySqlServerTests
 
         (await world.AssignmentExistsAsync(promoted, AdminRoleId)).Should().BeTrue();
         (await world.RoleGrantsAsync(AdminRoleId)).Should().Contain(Grant("schedule.manage", "Schedule"), "the repair then wrote the role");
+        (await AssignedRowSensitivityAsync(world, promoted)).Should().Be("standard", "the assignment decided on the role as it was before the repair");
     }
 
-    private static async Task RunStartupRepairAsync(RoleAuthorityWorld world)
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task RT8_an_assignment_of_the_administrator_role_waits_for_a_repair_in_flight_and_decides_on_the_repaired_role(bool rcsi)
+    {
+        var world = World(rcsi);
+        await world.Scratch.ExecuteAsync(
+            $"UPDATE Roles SET PermissionsJson = N'{StoredRolePermissions.Serialize([P])}' WHERE Id = N'{AdminRoleId}';");
+        var administrator = await world.NewUserAsync("administrator", AdminRoleId);
+        var promoted = await world.NewUserAsync("promoted");
+        var pause = PauseAt.AfterRoleLock(AdminRoleId);
+
+        var repair = Task.Run(() => RunStartupRepairAsync(world, pause));
+        await pause.Reached.WaitAsync(Patience);
+        var operation = Assign(world, administrator, promoted, AdminRoleId);
+        await world.WaitUntilBlockedOnAsync("Roles", operation);
+        operation.IsCompleted.Should().BeFalse("the repair holds the administrator role row");
+        (await world.AssignmentExistsAsync(promoted, AdminRoleId)).Should().BeFalse();
+
+        pause.Release();
+        await repair.WaitAsync(Patience);
+        await operation.WaitAsync(Patience);
+
+        (await world.AssignmentExistsAsync(promoted, AdminRoleId)).Should().BeTrue();
+        (await world.RoleGrantsAsync(AdminRoleId)).Should().Contain(Grant("schedule.manage", "Schedule"));
+        (await AssignedRowSensitivityAsync(world, promoted)).Should().Be("critical", "the assignment woke to the repaired role and decided on that");
+    }
+
+    private static async Task<string?> AssignedRowSensitivityAsync(RoleAuthorityWorld world, string user)
+    {
+        var rows = await world.AuditRowDetailsAsync(Assigned, user);
+        var details = rows.Should().ContainSingle().Subject["Details"]!.ToString()!;
+        using var json = System.Text.Json.JsonDocument.Parse(details);
+        return json.RootElement.TryGetProperty("maxSensitivity", out var value) ? value.GetString() : null;
+    }
+
+    private static async Task RunStartupRepairAsync(RoleAuthorityWorld world, params IInterceptor[] interceptors)
     {
         var services = new ServiceCollection();
-        services.AddScoped(_ => world.Scratch.NewDb());
+        services.AddScoped(_ => world.Scratch.NewDb(interceptors));
         services.AddScoped<IRoleRepository>(sp => new SqlRoleRepository(sp.GetRequiredService<AppertureDbContext>()));
+        services.AddScoped<IAuditedUnitOfWork>(sp => NewUnit(sp.GetRequiredService<AppertureDbContext>(), null));
         services.AddSingleton(CatalogRegistry);
         await using var provider = services.BuildServiceProvider();
         await new PlatformAdminRoleRepairService(provider.GetRequiredService<IServiceScopeFactory>()).StartAsync(CancellationToken.None);
