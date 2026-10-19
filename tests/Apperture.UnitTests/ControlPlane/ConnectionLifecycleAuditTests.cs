@@ -1069,6 +1069,40 @@ public sealed class ConnectionLifecycleAuditTests : IAsyncDisposable
         _unit.Single(AuditActionNames.ConnectionVerified).Fields["name"].Should().Be("Renamed meanwhile");
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task Test_connect_needs_both_connection_read_and_connection_verify_and_otherwise_never_probes(bool holdsRead, bool holdsVerify)
+    {
+        var created = await CreateAsync();
+        _unit.Operations.Clear();
+        _verification.Invocations.Clear();
+        _auth.Setup(a => a.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AuthorizationEvaluationContext context, CancellationToken _) =>
+                (context.Permission.Action == ActionConstants.ConnectionRead && holdsRead)
+                || (context.Permission.Action == ActionConstants.ConnectionVerify && holdsVerify));
+
+        await FluentActions.Awaiting(() => _sut.VerifyConnectionAsync(created.Id).AsTask()).Should().ThrowAsync<UnauthorizedAccessException>();
+
+        _verification.Invocations.Should().BeEmpty("an unauthorized request never reaches the remote system");
+        _unit.Operations.Should().BeEmpty("nothing happened, so nothing is recorded as having happened");
+    }
+
+    [Fact]
+    public async Task Test_connect_runs_the_probe_once_for_a_caller_holding_both_connection_read_and_connection_verify()
+    {
+        var created = await CreateAsync();
+        _verification.Invocations.Clear();
+        _auth.Setup(a => a.EvaluateAsync(It.IsAny<AuthorizationEvaluationContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AuthorizationEvaluationContext context, CancellationToken _) =>
+                context.Permission.Action is ActionConstants.ConnectionRead or ActionConstants.ConnectionVerify);
+
+        await _sut.VerifyConnectionAsync(created.Id);
+
+        _verification.Invocations.Count(i => i.Method.Name == "VerifyAsync").Should().Be(1);
+    }
+
     [Fact]
     public async Task A_denied_verification_never_probes_and_records_nothing()
     {

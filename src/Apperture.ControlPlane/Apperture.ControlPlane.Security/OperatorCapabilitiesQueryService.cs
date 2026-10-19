@@ -47,9 +47,9 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
             var canViewAudit = await EvaluateAsync(actor, ActionConstants.AuditRead, ResourceTypeConstants.AuditPolicy, cancellationToken).ConfigureAwait(false);
             var canViewRuntimeHealth = await EvaluateAsync(actor, ActionConstants.RuntimeHealthRead, ResourceTypeConstants.RuntimeHealth, cancellationToken).ConfigureAwait(false);
             var canManageModules = await EvaluateAsync(actor, ActionConstants.ModuleConfigure, ResourceTypeConstants.Module, cancellationToken).ConfigureAwait(false);
-            // CanViewGovernance: uses user.read on Role because no distinct governance-read permission exists.
-            // Backend governance endpoints rely on user.read. If a more specific governance-read permission is added, update here.
-            var canViewGovernance = await EvaluateAsync(actor, ActionConstants.UserRead, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
+            // CanViewGovernance: user.read on User, the permission every governance read API enforces. No distinct
+            // governance-read permission exists. If one is added, update here and in the descriptors endpoint and dashboard card.
+            var canViewGovernance = await EvaluateAsync(actor, ActionConstants.UserRead, ResourceTypeConstants.User, cancellationToken).ConfigureAwait(false);
             var canAssignPermissions = await EvaluateAsync(actor, ActionConstants.PermissionAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
             var canAssignRoles = await EvaluateAsync(actor, ActionConstants.RoleAssign, ResourceTypeConstants.Role, cancellationToken).ConfigureAwait(false);
             var canManageAuthUiPolicy = await EvaluateAsync(
@@ -168,6 +168,20 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 ActionConstants.RoleManage,
                 ResourceTypeConstants.Role,
                 cancellationToken).ConfigureAwait(false);
+            // Each mirrors exactly one route permission and is not additive to another: the directory search and test-connect
+            // routes accept only these.
+            var canSearchDirectory = await EvaluateAsync(
+                actor,
+                ActionConstants.AuthDirectorySearch,
+                ResourceTypeConstants.InstanceConfiguration,
+                cancellationToken).ConfigureAwait(false);
+            // Additive to connection.read, like browse: the test-connect route needs both, so a caller who cannot read connections is
+            // never reported as able to verify them. CanViewConnections stays what connection.read alone decides.
+            var canVerifyConnections = canViewConnections && await EvaluateAsync(
+                actor,
+                ActionConstants.ConnectionVerify,
+                ResourceTypeConstants.Connection,
+                cancellationToken).ConfigureAwait(false);
 
             return new OperatorCapabilitiesDto(
                 canManageSchedules,
@@ -200,7 +214,9 @@ public sealed class OperatorCapabilitiesQueryService : IOperatorCapabilitiesQuer
                 canManageCredentials,
                 canManageResourceContexts,
                 canBrowseConnections,
-                canManageRoles);
+                canManageRoles,
+                canSearchDirectory,
+                canVerifyConnections);
         }
         catch (OperationCanceledException ex)
         {

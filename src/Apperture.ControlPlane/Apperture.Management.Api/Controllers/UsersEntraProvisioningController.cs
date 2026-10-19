@@ -118,6 +118,12 @@ public sealed class UsersEntraProvisioningController : ControllerBase
                 results.Add(new EntraProvisioningPersonResultDto(
                     false, objectId, null, null, null, ex.Code, ex.Message, false, false, null));
             }
+            catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+            {
+                // The initial role was refused (or does not exist): this person is not added, the others are unaffected.
+                results.Add(new EntraProvisioningPersonResultDto(
+                    false, objectId, null, null, null, GovernanceFailureResults.CodeOf(ex), ex.Message, false, false, null));
+            }
             catch (AuditOutcomeUnknownException)
             {
                 // Per person (gate §13.2): the people before this one committed and keep their results; this one may or may
@@ -192,6 +198,10 @@ public sealed class UsersEntraProvisioningController : ControllerBase
         catch (EntraAccessRequestException ex)
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
+        }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
         }
     }
 

@@ -459,9 +459,9 @@ public sealed class UsersController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
         {
-            return NotFound(new { message = ex.Message });
+            return GovernanceFailureResults.Map(ex);
         }
     }
 
@@ -488,9 +488,9 @@ public sealed class UsersController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
         {
-            return NotFound(new { message = ex.Message });
+            return GovernanceFailureResults.Map(ex);
         }
     }
 

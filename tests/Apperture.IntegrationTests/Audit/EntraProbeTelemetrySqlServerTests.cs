@@ -23,7 +23,8 @@ namespace Apperture.IntegrationTests.Audit;
 /// The fallback that creates a missing row reads the registration, so it does wait for an in-flight change to it (record, L3).</item>
 /// <item>The diagnostics row is created with the registration and removed with it; a registration inserted without one reads the
 /// defaults and the first probes create the row, even when they race.</item>
-/// <item>A probe writes no audit row and stores no search value; a caller without the permission gets 403 and no probe runs.</item>
+/// <item>A probe writes no audit row and stores no search value; a caller without the probe's own permission gets 403 and no probe
+/// runs. The directory searches need <c>auth.directory.search</c> (IAM-10.2a) and the OpenID validation needs <c>auth.entra.manage</c>.</item>
 /// </list>
 /// Fails, never skips, without SQL Server.
 /// </summary>
@@ -530,7 +531,7 @@ public sealed class EntraProbeTelemetrySqlServerTests : IClassFixture<AuditIsola
 
     [Theory]
     [MemberData(nameof(Isolation))]
-    public async Task A_caller_without_the_permission_is_refused_and_no_probe_runs_or_is_recorded(bool rcsi)
+    public async Task Each_probe_needs_its_own_permission_and_a_refused_probe_neither_runs_nor_is_recorded(bool rcsi)
     {
         var scratch = Scratch(rcsi);
         var admin = await AddAdministratorAsync(scratch);
@@ -548,27 +549,52 @@ public sealed class EntraProbeTelemetrySqlServerTests : IClassFixture<AuditIsola
             (await controller.SearchDirectoryGroups(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>();
         }
 
-        // The read permission opens the directory searches and not the OpenID validation.
+        // auth.configuration.read reaches none of the three: the old implicit authority for the searches is gone, and there is no
+        // period in which it is accepted. Neither the validator nor Graph is called, and no telemetry is written.
         await using (var db = scratch.NewDb())
         {
             var reader = Controller(scratch, db, admin, validator, discovery, new Allow(ActionConstants.AuthConfigurationRead));
             (await reader.ValidateOpenId(id, CancellationToken.None)).Result.Should().BeOfType<ForbidResult>("validation needs auth.entra.manage");
-            validator.Calls.Should().Be(0);
-            discovery.Calls.Should().Be(0, "nothing above reached Graph");
-            (await DiagnosticsRowAsync(scratch, id)).Should().BeEquivalentTo(diagnosticsBefore, "a refused request updates no telemetry");
+            (await reader.SearchDirectoryUsers(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>("the user search needs auth.directory.search");
+            (await reader.SearchDirectoryGroups(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>("the group search needs auth.directory.search");
+        }
 
-            (await reader.SearchDirectoryUsers(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
-            (await reader.SearchDirectoryGroups(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
+        // auth.entra.manage alone no longer reaches the searches, and neither do both old permissions together.
+        await using (var db = scratch.NewDb())
+        {
+            foreach (var oldPermissions in new[] { new[] { ActionConstants.AuthEntraManage }, [ActionConstants.AuthConfigurationRead, ActionConstants.AuthEntraManage] })
+            {
+                var holder = Controller(scratch, db, admin, validator, discovery, new Allow(oldPermissions));
+                var held = string.Join(" + ", oldPermissions);
+                (await holder.SearchDirectoryUsers(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>(held);
+                (await holder.SearchDirectoryGroups(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<ForbidResult>(held);
+            }
+        }
+
+        validator.Calls.Should().Be(0);
+        discovery.Calls.Should().Be(0, "nothing above reached Graph");
+        (await DiagnosticsRowAsync(scratch, id)).Should().BeEquivalentTo(diagnosticsBefore, "a refused request updates no telemetry");
+
+        // auth.directory.search opens the two searches and nothing else: it does not authorize the OpenID validation.
+        await using (var db = scratch.NewDb())
+        {
+            var searcher = Controller(scratch, db, admin, validator, discovery, new Allow(ActionConstants.AuthDirectorySearch));
+            (await searcher.ValidateOpenId(id, CancellationToken.None)).Result.Should().BeOfType<ForbidResult>("searching the directory is not validating the registration");
+            validator.Calls.Should().Be(0);
+            (await DiagnosticsRowAsync(scratch, id)).Should().BeEquivalentTo(diagnosticsBefore, "a refused validation updates no telemetry");
+
+            (await searcher.SearchDirectoryUsers(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
+            (await searcher.SearchDirectoryGroups(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
             discovery.Calls.Should().Be(2);
         }
 
-        // The management permission opens both (auth.entra.manage is accepted for the searches as before).
+        // auth.entra.manage keeps the OpenID validation.
         await using (var db = scratch.NewDb())
         {
             var manager = Controller(scratch, db, admin, validator, discovery, new Allow(ActionConstants.AuthEntraManage));
             (await manager.ValidateOpenId(id, CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
-            (await manager.SearchDirectoryUsers(id, new EntraDirectorySearchRequestBody("x", 5), CancellationToken.None)).Result.Should().BeOfType<OkObjectResult>();
             validator.Calls.Should().Be(1);
+            discovery.Calls.Should().Be(2, "the validation does not search the directory");
         }
     }
 }

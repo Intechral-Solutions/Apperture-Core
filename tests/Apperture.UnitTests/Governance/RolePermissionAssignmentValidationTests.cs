@@ -42,8 +42,9 @@ public sealed class RolePermissionAssignmentValidationTests
             new RoleId("role-1"),
             [unknownPermission]);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*not in the canonical governance catalog*");
+        var ex = await act.Should().ThrowAsync<GovernanceValidationException>();
+        ex.Which.Code.Should().Be(GovernanceValidationCodes.InvalidPermission);
+        ex.Which.Message.Should().Contain("not in the canonical governance catalog");
     }
 
     [Fact]
@@ -141,7 +142,20 @@ public sealed class RolePermissionAssignmentValidationTests
             ValueTask.FromResult<Role?>(new Role(roleId, "Test", null, [], false));
 
         public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
-        public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
+        // The signed-in administrator may assign permissions and holds the one permission these tests hand out.
+        public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<Role>>(
+            [
+                new Role(
+                    new RoleId("role-actor"),
+                    "Actor",
+                    null,
+                    [
+                        new PermissionDescriptor("permission.assign", new ResourceDescriptor("Role", "instance")),
+                        new PermissionDescriptor("user.read", new ResourceDescriptor("User", "instance")),
+                    ],
+                    false),
+            ]);
         public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
         public ValueTask AssignToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;

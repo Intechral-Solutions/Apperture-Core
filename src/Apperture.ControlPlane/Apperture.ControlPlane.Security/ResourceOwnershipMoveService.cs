@@ -111,7 +111,7 @@ public sealed class ResourceOwnershipMoveService : IResourceOwnershipMoveService
         // api/schedules` is already gated, via schedule.manage against the Schedule resource type at
         // Instance scope, never resource_context.manage. Because this check needs nothing from the loaded
         // row, it runs BEFORE the repository load (house pattern:
-        // OperationalTeamManagementService.RequireScheduleManageAsync /
+        // OperationalTeamManagementService.RequireTeamManageAsync /
         // AttentionContactGroupManagementService's equivalent) -- unlike Integration/Connection, whose
         // authorization is against the loaded entity's governed identity and so cannot run first. This
         // keeps an unauthorized caller from using not-found vs. unauthorized as a schedule-existence oracle.

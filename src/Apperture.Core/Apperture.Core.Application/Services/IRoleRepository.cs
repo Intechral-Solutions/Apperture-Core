@@ -85,4 +85,33 @@ public interface IRoleRepository
     /// </summary>
     ValueTask<RoleUnassignedDeleteResult> TryDeleteUnassignedAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+
+    /// <summary>
+    /// Locks and returns the rows an authorization decision about a role change is made from. The SQL implementation must run
+    /// inside an open transaction (it refuses otherwise) and takes, with <c>UPDLOCK, HOLDLOCK</c> and in this order:
+    /// <list type="number">
+    /// <item>the actor's <c>UserRoles</c> key range;</item>
+    /// <item>the <c>Roles</c> rows of the actor's roles and of <paramref name="targetRoleId"/>, once each, in ascending ordinal
+    /// role-id order;</item>
+    /// <item>when both <paramref name="targetUserId"/> and <paramref name="targetRoleId"/> are given, the <c>(user, role)</c>
+    /// assignment key, present or absent.</item>
+    /// </list>
+    /// The locks are held until the surrounding transaction ends. The default reads the same rows without locking, for test
+    /// doubles that have no transaction.
+    /// </summary>
+    async ValueTask<AuthoritySnapshot> LockAuthoritySnapshotAsync(
+        UserId? actorUserId,
+        RoleId? targetRoleId,
+        UserId? targetUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var actorRoles = actorUserId is null
+            ? Array.Empty<Role>()
+            : await GetForUserAsync(actorUserId, cancellationToken).ConfigureAwait(false);
+        var targetRole = targetRoleId is null ? null : await GetAsync(targetRoleId, cancellationToken).ConfigureAwait(false);
+        var assigned = targetUserId is not null
+            && targetRoleId is not null
+            && (await GetForUserAsync(targetUserId, cancellationToken).ConfigureAwait(false)).Any(r => r.Id.Value == targetRoleId.Value);
+        return new AuthoritySnapshot(actorRoles, targetRole, assigned);
+    }
 }

@@ -82,16 +82,16 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_instance_role_manage_implies_governance_and_auth_admin_at_instance_scope()
+    public async Task EvaluateAsync_role_manage_alone_no_longer_implies_governance_or_auth_admin_at_instance_scope()
     {
         var userId = new UserId("user-1");
         var actor = new TestActor(new ActorId("alice"), ActorKind.Human, "Alice");
         var role = new Role(
-            new RoleId("role-platform-administrator"),
-            "Platform Administrator",
+            new RoleId("role-custom-role-manager"),
+            "Role manager",
             null,
             [new PermissionDescriptor(ActionConstants.RoleManage, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance))],
-            true);
+            false);
 
         var userResolver = new Mock<IPrincipalToUserResolver>();
         userResolver.Setup(r => r.ResolveUserIdAsync(actor, It.IsAny<CancellationToken>()))
@@ -106,29 +106,27 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
             roleProvider.Object,
             new ScopeContainmentEvaluator());
 
-        (await evaluator.EvaluateAsync(
-            actor,
+        foreach (var denied in new[]
+        {
             new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
-            null,
-            null)).Should().BeTrue();
-
-        (await evaluator.EvaluateAsync(
-            actor,
             new PermissionDescriptor(ActionConstants.PermissionAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
-            null,
-            null)).Should().BeTrue();
-
-        (await evaluator.EvaluateAsync(
-            actor,
+            new PermissionDescriptor(ActionConstants.RoleAssign, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
             new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
-            null,
-            null)).Should().BeTrue();
+            new PermissionDescriptor(ActionConstants.UserManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.CredentialManage, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.AuthConfigurationRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.AuthUiPolicyManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.AuthEntraManage, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+        })
+        {
+            (await evaluator.EvaluateAsync(actor, denied, null, null)).Should().BeFalse($"{denied.Action} on {denied.Resource!.ResourceType} is not implied by role.manage");
+        }
 
         (await evaluator.EvaluateAsync(
             actor,
-            new PermissionDescriptor(ActionConstants.AuthConfigurationRead, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.RoleManage, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
             null,
-            null)).Should().BeTrue();
+            null)).Should().BeTrue("the grant still allows the permission it names");
     }
 
     [Fact]
@@ -158,7 +156,7 @@ public sealed class RbacAuthorizationPolicyEvaluatorTests
 
         (await evaluator.EvaluateAsync(
             actor,
-            new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.Role, ScopeKeyConstants.Instance)),
+            new PermissionDescriptor(ActionConstants.UserRead, new ResourceDescriptor(ResourceTypeConstants.User, ScopeKeyConstants.Instance)),
             null,
             null)).Should().BeTrue();
     }

@@ -27,7 +27,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
 
     public async ValueTask<IReadOnlyList<OperationalTeamListItem>> ListAsync(bool includeDisabled, CancellationToken cancellationToken = default)
     {
-        await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireTeamManageAsync(cancellationToken).ConfigureAwait(false);
         var q = _db.OperationalTeams.AsNoTracking();
         if (!includeDisabled)
             q = q.Where(x => x.IsEnabled);
@@ -37,7 +37,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
 
     public async ValueTask<OperationalTeamDetail?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
-        await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireTeamManageAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(id))
             return null;
         var team = await _db.OperationalTeams.AsNoTracking()
@@ -57,7 +57,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
 
     public async ValueTask<OperationalTeamDetail> CreateAsync(OperationalTeamCreateCommand command, CancellationToken cancellationToken = default)
     {
-        await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireTeamManageAsync(cancellationToken).ConfigureAwait(false);
         var name = command.Name.Trim();
         if (name.Length == 0)
             throw new InvalidOperationException("Team name is required.");
@@ -78,7 +78,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
 
     public async ValueTask<OperationalTeamDetail?> UpdateAsync(string id, OperationalTeamUpdateCommand command, CancellationToken cancellationToken = default)
     {
-        await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireTeamManageAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(id))
             return null;
         var row = await _db.OperationalTeams.FirstOrDefaultAsync(x => x.Id == id.Trim(), cancellationToken).ConfigureAwait(false);
@@ -98,7 +98,7 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
 
     public async ValueTask<OperationalTeamDetail?> ReplaceMembersAsync(string id, IReadOnlyList<OperationalTeamMemberUpsertItem> members, CancellationToken cancellationToken = default)
     {
-        await RequireScheduleManageAsync(cancellationToken).ConfigureAwait(false);
+        await RequireTeamManageAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(id))
             return null;
         var teamId = id.Trim();
@@ -168,7 +168,11 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
         return ToDetail(team, refreshed);
     }
 
-    private async ValueTask RequireScheduleManageAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Team management has its own permission. <c>schedule.manage</c> no longer reaches it, and there is no period in which either
+    /// is accepted: the startup step grants the new permission to every role that held the old one.
+    /// </summary>
+    private async ValueTask RequireTeamManageAsync(CancellationToken cancellationToken)
     {
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken).ConfigureAwait(false);
         if (actor is null)
@@ -177,8 +181,8 @@ public sealed class OperationalTeamManagementService : IOperationalTeamManagemen
             new AuthorizationEvaluationContext(
                 actor,
                 new PermissionDescriptor(
-                    ActionConstants.ScheduleManage,
-                    new ResourceDescriptor(ResourceTypeConstants.Schedule, ScopeKeyConstants.Instance)),
+                    ActionConstants.OperationalTeamManage,
+                    new ResourceDescriptor(ResourceTypeConstants.OperationalTeam, ScopeKeyConstants.Instance)),
                 null),
             cancellationToken).ConfigureAwait(false);
         if (!allowed)

@@ -27,11 +27,11 @@ public sealed class PlatformAdminRolePermissionRepairTests
 
         var repaired = PlatformAdminRolePermissionRepair.ApplyAllRepairs(minimal, registry);
 
-        repaired.Should().Contain(p =>
+        repaired.Should().NotContain(p =>
             p.Action == ActionConstants.UserRead &&
             p.Resource != null &&
-            p.Resource.ResourceType == ResourceTypeConstants.Role &&
-            p.Resource.ScopeKey == ScopeKeyConstants.Instance);
+            p.Resource.ResourceType == ResourceTypeConstants.Role,
+            "user.read on Role is obsolete: its consumers check user.read on User");
         repaired.Should().Contain(p =>
             p.Action == ActionConstants.PermissionAssign &&
             p.Resource != null &&
@@ -91,11 +91,33 @@ public sealed class PlatformAdminRolePermissionRepairTests
     [Fact]
     public void RequiredGovernanceSurfacePermissions_MatchesOperatorCapabilitiesAndGovernanceController()
     {
-        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions.Should().HaveCount(2);
-        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[0].Action.Should().Be(ActionConstants.UserRead);
+        // Governance read is user.read on User (in the auth-admin list). Only permission assignment remains on Role.
+        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions.Should().HaveCount(1);
+        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[0].Action.Should().Be(ActionConstants.PermissionAssign);
         PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[0].Resource!.ResourceType.Should().Be(ResourceTypeConstants.Role);
-        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[1].Action.Should().Be(ActionConstants.PermissionAssign);
-        PlatformAdminRolePermissionRepair.RequiredGovernanceSurfacePermissions[1].Resource!.ResourceType.Should().Be(ResourceTypeConstants.Role);
+    }
+
+    [Fact]
+    public void ApplyAllRepairs_GrantsTheThreeSwitchedPermissionsToThePlatformAdministrator()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        var repaired = PlatformAdminRolePermissionRepair.ApplyAllRepairs(Array.Empty<PermissionDescriptor>(), registry);
+
+        repaired.Should().Contain(new PermissionDescriptor(ActionConstants.OperationalTeamManage, new ResourceDescriptor(ResourceTypeConstants.OperationalTeam, ScopeKeyConstants.Instance)));
+        repaired.Should().Contain(new PermissionDescriptor(ActionConstants.AuthDirectorySearch, new ResourceDescriptor(ResourceTypeConstants.InstanceConfiguration, ScopeKeyConstants.Instance)));
+        repaired.Should().Contain(new PermissionDescriptor(ActionConstants.ConnectionVerify, new ResourceDescriptor(ResourceTypeConstants.Connection, ScopeKeyConstants.Instance)));
+    }
+
+    [Fact]
+    public void ApplyAllRepairs_DoesNotAddTheDormantRelationshipPermission()
+    {
+        var registry = new InMemoryResourceDescriptorRegistry();
+        new PlatformPermissionSeederService(new StubEnvironmentContext()).Seed(registry);
+
+        PlatformAdminRolePermissionRepair.ApplyAllRepairs(Array.Empty<PermissionDescriptor>(), registry)
+            .Should().NotContain(p => p.Action == ActionConstants.RelationshipManage);
     }
 
     [Fact]

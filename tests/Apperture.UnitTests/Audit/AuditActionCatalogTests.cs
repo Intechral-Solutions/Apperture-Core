@@ -138,6 +138,18 @@ public sealed partial class AuditActionCatalogTests
         "platform.settings.secret.resolution_refused",
     ];
 
+    /// <summary>
+    /// The actions IAM-10.2a adds: the W3 refusal of a role assignment or removal that exceeds the actor's authority, the W1
+    /// summary of the startup data step that preserves what the removed role.manage implication gave, and the W1 summary of the
+    /// startup repair of the administrator role.
+    /// </summary>
+    private static readonly string[] Iam10Additions =
+    [
+        "governance.role.assignment_rejected",
+        "governance.authorization.grants_migrated",
+        "governance.authorization.administrator_role_repaired",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -160,9 +172,11 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.2").Select(d => d.Action).Should().BeEquivalentTo(Sec22Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Sec23Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.3").Select(d => d.Action).Should().BeEquivalentTo(Sec23Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Iam10Additions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "IAM-10.2a").Select(d => d.Action).Should().BeEquivalentTo(Iam10Additions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length + Sec23Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4 and SEC-2.1 to SEC-2.3 add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length + Sec23Additions.Length + Iam10Additions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4, SEC-2.1 to SEC-2.3 and IAM-10.2a add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 
@@ -317,6 +331,7 @@ public sealed partial class AuditActionCatalogTests
     [InlineData("governance.user.username.changed", "auth-admin", "unknown")]
     [InlineData("entra.access_request.rejected", "auth-admin", "unknown")]
     [InlineData("governance.role.mutation_rejected", "auth-admin", "rejected")]
+    [InlineData("governance.role.assignment_rejected", "auth-admin", "rejected")]
     [InlineData("auth_admin.blocked.last_admin_link_removed", "auth-admin", "blocked")]
     [InlineData("auth.local.login.failed", "auth", "failed")]
     [InlineData("recovery.restore_platform_access.denied", "recovery", "denied")]

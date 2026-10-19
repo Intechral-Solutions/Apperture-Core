@@ -167,6 +167,7 @@ public sealed class UserManagementServiceCreateUserTests
         var harness = Harness.Create();
         var roleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
         harness.Users.Seed(new User(new UserId("held-1"), "Held", [], [roleId], IsBreakGlassEligible: false) { Username = "held1" });
+        harness.Roles.Existing.Add(("held-1", roleId.Value));
 
         await harness.Service.AssignRoleAsync(new UserId("held-1"), roleId);
 
@@ -421,7 +422,11 @@ public sealed class UserManagementServiceCreateUserTests
 
     private sealed class RecordingRoles : IRoleRepository
     {
+        /// <summary>Assignments made through the service under test.</summary>
         public List<(string UserId, string RoleId)> Assigned { get; } = [];
+
+        /// <summary>Assignments that existed before the test acted.</summary>
+        public List<(string UserId, string RoleId)> Existing { get; } = [];
 
         public ValueTask<Role?> GetAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<Role?>(new Role(roleId, "Role", null, [], IsSystemRole: true));
@@ -429,8 +434,15 @@ public sealed class UserManagementServiceCreateUserTests
         public ValueTask<IReadOnlyList<Role>> GetAllAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<Role>>([]);
 
+        // The signed-in administrator ("admin") is a Platform Administrator; any other user holds what was assigned to them.
         public ValueTask<IReadOnlyList<Role>> GetForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<Role>>([]);
+            ValueTask.FromResult<IReadOnlyList<Role>>(
+                userId.Value == "admin"
+                    ? [new Role(new RoleId(BootstrapConstants.PlatformAdminRoleId), "Platform Administrator", null, [], IsSystemRole: true)]
+                    : Existing.Concat(Assigned)
+                        .Where(a => a.UserId == userId.Value)
+                        .Select(a => new Role(new RoleId(a.RoleId), "Role", null, [], IsSystemRole: true))
+                        .ToList());
 
         public ValueTask<int> CountUserAssignmentsAsync(RoleId roleId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Assigned.Count(a => a.RoleId == roleId.Value));

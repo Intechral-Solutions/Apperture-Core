@@ -29,7 +29,7 @@ public sealed class GovernanceDashboardCardProvider : IDashboardCardProvider
             _principalContext,
             _authorization,
             ActionConstants.UserRead,
-            ResourceTypeConstants.Role,
+            ResourceTypeConstants.User,
             cancellationToken).ConfigureAwait(false);
         if (!allowed)
             return null;

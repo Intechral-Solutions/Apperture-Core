@@ -49,7 +49,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task Role_creation_and_permission_replacement_commit_with_rows_holding_the_committed_diff()
     {
-        var (admin, _) = await AddUserAsync("admin");
+        var (admin, _) = await AddAdministratorAsync();
         var principal = new Principal(admin);
 
         Role role;
@@ -75,7 +75,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task When_the_audit_insert_fails_a_permission_change_rolls_back_with_it()
     {
-        var (admin, _) = await AddUserAsync("admin");
+        var (admin, _) = await AddAdministratorAsync();
         var principal = new Principal(admin);
         Role role;
         await using (var db = _db.NewDb())
@@ -97,7 +97,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task A_role_delete_whose_acknowledgement_is_lost_is_reported_as_done_not_as_not_found()
     {
-        var (admin, _) = await AddUserAsync("admin");
+        var (admin, _) = await AddAdministratorAsync();
         var principal = new Principal(admin);
         Role role;
         await using (var db = _db.NewDb())
@@ -129,7 +129,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         await using (var db = _db.NewDb())
         {
             var act = () => Service(db, principal).RemoveRoleAsync(new UserId(admin), new RoleId(PlatformAdmin)).AsTask();
-            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*last platform administrator*");
+            // A typed conflict (409 last_viable_administrator at the host), no longer an InvalidOperationException read as "not found".
+            (await act.Should().ThrowAsync<GovernanceConflictException>()).Which.Code.Should().Be(GovernanceConflictCodes.LastViableAdministrator);
         }
 
         (await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserRoles WHERE UserId = N'{admin}' AND RoleId = N'{PlatformAdmin}';")).Should().Be(1);
@@ -222,7 +223,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task An_ordinary_session_never_marks_its_rows()
     {
-        var (admin, _) = await AddUserAsync("admin");
+        var (admin, _) = await AddAdministratorAsync();
         var (target, _) = await AddUserAsync("target");
 
         await using (var db = _db.NewDb())
@@ -501,6 +502,14 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     }
 
     // ---- helpers ----
+
+    /// <summary>A Platform Administrator: the actor of the role and assignment operations, which are decided from the roles the actor holds.</summary>
+    private async Task<(string Id, string Username)> AddAdministratorAsync()
+    {
+        var (id, username) = await AddUserAsync("admin");
+        await _db.ExecuteAsync($"INSERT INTO UserRoles (UserId, RoleId) VALUES (N'{id}', N'{PlatformAdmin}');");
+        return (id, username);
+    }
 
     private async Task<(string Id, string Username)> AddUserAsync(string stem)
     {
