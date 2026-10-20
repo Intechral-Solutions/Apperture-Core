@@ -20,8 +20,10 @@ public interface IEffectiveSignInConfigurationProvider
 /// <inheritdoc cref="IEffectiveSignInConfigurationProvider" />
 /// <remarks>
 /// <para><b>Now.</b> The running host's own options, read as its code reads them: the endpoints gate on the options fixed when the
-/// host built them (<c>EntraRuntimeState.IsUsable</c> over <c>IOptions</c>), and the OpenID Connect handler is configured from
-/// the options monitor's value. Entra counts as usable only when both are. The sign-in then compares the token's tenant with the
+/// host built them (<c>EntraRuntimeState.IsUsable</c> over <c>IOptions</c>), and the OpenID Connect handler holds the options the
+/// framework built for it once and caches (<see cref="IRunningEntraHandlerBindingSource"/>), which a later reload of the Entra
+/// options does not change. Entra counts as usable only when both are, and a handler whose configuration cannot be established is
+/// never read as usable and makes the Entra reading unknown. The sign-in then compares the token's tenant with the
 /// <i>live</i> active registration (<see cref="EntraDirectoryTenantResolver.ResolveAcceptedTokenTenantId"/>), so that tenant is
 /// the accepted one, unless the running handler is bound to a different directory, in which case no token is accepted.</para>
 /// <para><b>Restart.</b> The deployment's Entra options with the persisted active registration overlaid by
@@ -75,9 +77,23 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
             IsEstimate: false,
             restartNotes);
 
-        var now = reading.Running is null
-            ? restart with { View = ViabilityView.Now, IsEstimate = true, Notes = ["The running host's options cannot be observed from this process; the persisted configuration stands in for them."] }
-            : ReadNow(reading.Running, active);
+        SignInAvailability now;
+        if (reading.Running is null)
+        {
+            now = restart with { View = ViabilityView.Now, IsEstimate = true, Notes = ["The running host's options cannot be observed from this process; the persisted configuration stands in for them."] };
+        }
+        else
+        {
+            now = ReadNow(reading.Running, active);
+            if (reading.Running.Handler.State == RunningHandlerState.Unavailable && entraTrust == ConfigurationTrustLevel.Trusted)
+            {
+                // Never read an unknown handler as usable, and never read it as unusable either: what Entra can do is unknown.
+                entraTrust = ConfigurationTrustLevel.Unknown;
+                reasons.Add(
+                    "The configuration of the running sign-in handler cannot be established" +
+                    (string.IsNullOrWhiteSpace(reading.Running.Handler.Detail) ? "." : $" ({reading.Running.Handler.Detail})."));
+            }
+        }
 
         return new EffectiveSignInConfiguration(now, restart, new ConfigurationTrust(reading.LocalTrust, entraTrust, reasons));
     }
@@ -88,10 +104,14 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
         var local = running.Local.Enabled;
 
         var endpointUsable = EntraUsable(running.EntraEndpoints, local);
-        var handlerUsable = EntraConfigurationState.IsUsable(running.EntraHandler);
-        if (endpointUsable != handlerUsable)
+        var handlerUsable = running.Handler.IsUsable;
+        if (running.Handler.State == RunningHandlerState.Unavailable)
         {
-            notes.Add("The options the sign-in endpoints read and the options the OpenID Connect handler was built from disagree; Entra is counted as usable only when both are.");
+            notes.Add("The running sign-in handler's configuration is unavailable; Entra is not counted as usable.");
+        }
+        else if (endpointUsable != handlerUsable)
+        {
+            notes.Add("The options the sign-in endpoints read and the configuration the OpenID Connect handler holds disagree; Entra is counted as usable only when both are.");
         }
 
         if (endpointUsable != EntraConfigurationState.IsUsable(running.EntraEndpoints))
@@ -104,7 +124,7 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
         string? accepted = null;
         if (usable && liveTenant is not null)
         {
-            var handlerTenant = HandlerTenant(running.EntraHandler);
+            var handlerTenant = HandlerTenant(running.Handler);
             if (TenantsConflict(handlerTenant, liveTenant))
             {
                 notes.Add(
@@ -123,10 +143,12 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
     private static bool EntraUsable(EntraAuthOptions entra, bool localEnabled) =>
         AuthSignInOptionsMerger.Merge(new LocalAuthOptions { Enabled = localEnabled }, entra, new InstanceAuthUiPolicy()).EntraSignInEnabled;
 
-    private static string? HandlerTenant(EntraAuthOptions handler) =>
-        EntraTokenClaims.Normalize(
-            EntraAuthorityHelper.TryGetTenantSegmentFromAuthority(
-                EntraAuthorityHelper.ToMicrosoftIdentityPlatformAuthority(handler.Authority, handler.AzureTenantId)));
+    /// <summary>
+    /// The directory the handler signs users in through: the tenant segment of the authority it holds. That authority is already the
+    /// tenant-specific form the host built for it, so nothing is derived again here.
+    /// </summary>
+    private static string? HandlerTenant(RunningHandlerBinding handler) =>
+        EntraTokenClaims.Normalize(EntraAuthorityHelper.TryGetTenantSegmentFromAuthority(handler.Authority));
 
     /// <summary>Two concrete directory ids that differ. A domain name or a multi-tenant alias is not compared: the live tenant decides.</summary>
     private static bool TenantsConflict(string? handlerTenant, string liveTenant) =>

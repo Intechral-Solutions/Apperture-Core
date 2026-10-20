@@ -548,14 +548,20 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     public void Configure(OpenIdConnectOptions options) => Configure(Options.DefaultName, options);
 
     /// <summary>
+    /// The client id and secret a handler holds while Entra is off. The running-handler reader recognizes a disabled handler by it,
+    /// so a placeholder is never read as a usable sign-in path.
+    /// </summary>
+    internal const string DisabledPlaceholder = "Apperture-Entra-Disabled-Placeholder";
+
+    /// <summary>
     /// Values are never used for production sign-in while <see cref="EntraAuthOptions.Enabled"/> is false
     /// (the host /signin endpoint and default challenge scheme avoid OIDC). They exist only to satisfy framework validation.
     /// </summary>
     private static void ApplyDisabledEntraPlaceholders(OpenIdConnectOptions options)
     {
         options.Authority = "https://login.microsoftonline.com/common";
-        options.ClientId = "Apperture-Entra-Disabled-Placeholder";
-        options.ClientSecret = "Apperture-Entra-Disabled-Placeholder";
+        options.ClientId = DisabledPlaceholder;
+        options.ClientSecret = DisabledPlaceholder;
         options.CallbackPath = "/signin-oidc";
         options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
         options.ResponseType = "code";

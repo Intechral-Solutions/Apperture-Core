@@ -60,10 +60,14 @@ public sealed class EffectiveSignInConfigurationProviderTests
         string[]? reasons = null) =>
         new(localTrust, entraTrust, reasons ?? [], localDeployment, entraBase ?? new EntraAuthOptions { ClientSecret = "deployment-secret" }, authoritative, running);
 
-    private static RunningAuthenticationReading Running(EntraAuthOptions? endpoints = null, EntraAuthOptions? handler = null, bool local = true)
+    /// <summary>A running host whose endpoints read <paramref name="endpoints"/> and whose handler holds <paramref name="handler"/> (by default the same authority and client).</summary>
+    private static RunningAuthenticationReading Running(EntraAuthOptions? endpoints = null, RunningHandlerBinding? handler = null, bool local = true)
     {
         var entra = endpoints ?? UsableEntra();
-        return new RunningAuthenticationReading(new LocalAuthOptions { Enabled = local }, entra, handler ?? entra);
+        return new RunningAuthenticationReading(
+            new LocalAuthOptions { Enabled = local },
+            entra,
+            handler ?? RunningHandlerBinding.Bound(entra.Authority, entra.ClientId, hasClientSecret: !string.IsNullOrWhiteSpace(entra.ClientSecret)));
     }
 
     private static EffectiveSignInConfigurationProvider Provider(
@@ -192,10 +196,8 @@ public sealed class EffectiveSignInConfigurationProviderTests
     [Fact]
     public async Task Now_does_not_compare_a_domain_name_authority_with_a_directory_id()
     {
-        var handler = UsableEntra();
-        handler.Authority = "https://login.microsoftonline.com/contoso.onmicrosoft.com";
-        handler.AzureTenantId = null;
-        var provider = Provider(Host(running: Running(handler)), Registration(Tenant));
+        var handler = RunningHandlerBinding.Bound("https://login.microsoftonline.com/contoso.onmicrosoft.com", "client", hasClientSecret: true);
+        var provider = Provider(Host(running: Running(handler: handler)), Registration(Tenant));
 
         (await provider.ReadAsync()).Now.AcceptedEntraTenantId.Should().Be(Tenant);
     }
@@ -204,8 +206,7 @@ public sealed class EffectiveSignInConfigurationProviderTests
     public async Task Now_counts_entra_as_usable_only_when_the_endpoints_and_the_handler_both_are_and_reports_a_disagreement()
     {
         var endpoints = UsableEntra();
-        var handler = UsableEntra();
-        handler.ClientSecret = "";
+        var handler = RunningHandlerBinding.Bound(endpoints.Authority, endpoints.ClientId, hasClientSecret: false);
         var provider = Provider(Host(running: Running(endpoints, handler)), Registration());
 
         var configuration = await provider.ReadAsync();
@@ -225,6 +226,40 @@ public sealed class EffectiveSignInConfigurationProviderTests
         EntraConfigurationState.IsUsable(invalidContext).Should().BeTrue("IsUsable does not look at the authentication context");
         configuration.Now.EntraSignInUsable.Should().BeFalse("the merged snapshot, the single definition, rejects it");
         configuration.Now.Notes.Should().Contain(n => n.Contains("authentication context"));
+    }
+
+    [Fact]
+    public async Task A_handler_whose_configuration_cannot_be_established_is_never_read_as_usable_and_makes_the_entra_reading_unknown()
+    {
+        var running = Running(handler: RunningHandlerBinding.Unavailable("its options could not be built (InvalidOperationException)"));
+        var configuration = await Provider(Host(running: running), Registration()).ReadAsync();
+
+        configuration.Now.EntraSignInUsable.Should().BeFalse("an unknown handler is not optimistically a usable one");
+        configuration.Now.AcceptedEntraTenantId.Should().BeNull();
+        configuration.Trust.Entra.Should().Be(ConfigurationTrustLevel.Unknown);
+        configuration.Trust.EntraKnown.Should().BeFalse();
+        configuration.Trust.Reasons.Should().Contain(r => r.Contains("running sign-in handler") && r.Contains("InvalidOperationException"));
+        configuration.Trust.LocalKnown.Should().BeTrue("the Local reading does not depend on the handler");
+    }
+
+    [Fact]
+    public async Task A_handler_holding_the_disabled_placeholders_is_a_known_unusable_entra_not_a_sign_in_path()
+    {
+        var running = Running(handler: RunningHandlerBinding.Disabled());
+        var configuration = await Provider(Host(running: running), Registration()).ReadAsync();
+
+        configuration.Now.EntraSignInUsable.Should().BeFalse();
+        configuration.Now.AcceptedEntraTenantId.Should().BeNull();
+        configuration.Trust.Entra.Should().Be(ConfigurationTrustLevel.Trusted, "it is known that Entra is off in the running host");
+    }
+
+    [Fact]
+    public async Task A_bound_handler_without_a_secret_is_not_usable()
+    {
+        var endpoints = UsableEntra();
+        var running = Running(endpoints, RunningHandlerBinding.Bound(endpoints.Authority, endpoints.ClientId, hasClientSecret: false));
+
+        (await Provider(Host(running: running), Registration()).ReadAsync()).Now.EntraSignInUsable.Should().BeFalse();
     }
 
     [Fact]

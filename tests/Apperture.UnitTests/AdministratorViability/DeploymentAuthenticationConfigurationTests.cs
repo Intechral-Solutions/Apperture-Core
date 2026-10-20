@@ -93,7 +93,7 @@ public sealed class DeploymentAuthenticationConfigurationTests
         reading.LocalSignInEnabled.Should().BeTrue("the deployment configuration says what a restart would run");
         reading.Running!.Local.Enabled.Should().BeFalse("the host that is running was built with Local disabled");
         reading.Running.EntraEndpoints.ClientSecret.Should().Be("running");
-        reading.Running.EntraHandler.ClientSecret.Should().Be("running");
+        reading.Running.Handler.State.Should().Be(RunningHandlerState.Bound);
         reading.EntraBase.ClientSecret.Should().Be("deployment");
     }
 
@@ -115,7 +115,8 @@ public sealed class DeploymentAuthenticationConfigurationTests
         IConfiguration configuration,
         LocalAuthOptions local,
         EntraAuthOptions entra,
-        bool validate = false)
+        bool validate = false,
+        IRunningEntraHandlerBindingSource? handler = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(configuration);
@@ -134,7 +135,29 @@ public sealed class DeploymentAuthenticationConfigurationTests
             configuration,
             provider.GetRequiredService<IOptions<LocalAuthOptions>>(),
             provider.GetRequiredService<IOptions<EntraAuthOptions>>(),
-            provider.GetRequiredService<IOptionsMonitor<EntraAuthOptions>>());
+            handler ?? new FixedHandler(RunningHandlerBinding.Bound("https://login.microsoftonline.com/t", "client", hasClientSecret: true)));
         return sut.Read();
+    }
+
+    private sealed class FixedHandler(RunningHandlerBinding binding) : IRunningEntraHandlerBindingSource
+    {
+        public RunningHandlerBinding Read() => binding;
+    }
+
+    [Fact]
+    public void A_host_that_registers_no_way_to_read_its_handler_reports_it_unavailable_not_usable()
+    {
+        var services = new ServiceCollection();
+        services.Configure<LocalAuthOptions>(o => o.Enabled = true);
+        services.Configure<EntraAuthOptions>(o => o.Enabled = false);
+        var provider = services.BuildServiceProvider();
+
+        var reading = new HostDeploymentAuthenticationConfiguration(
+            Config(("LocalAuth:Enabled", "true")),
+            provider.GetRequiredService<IOptions<LocalAuthOptions>>(),
+            provider.GetRequiredService<IOptions<EntraAuthOptions>>()).Read();
+
+        reading.Running!.Handler.State.Should().Be(RunningHandlerState.Unavailable);
+        reading.Running.Handler.IsUsable.Should().BeFalse();
     }
 }

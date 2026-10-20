@@ -29,7 +29,7 @@ public sealed class AdministratorViabilitySqlServerTests
 
     // ---------------------------------------------------------------- seeding
 
-    private static async Task SeedAsync(
+    internal static async Task SeedAsync(
         AuditSqlScratch s,
         string id,
         bool admin = true,
@@ -72,7 +72,7 @@ public sealed class AdministratorViabilitySqlServerTests
                 """))}
             """);
 
-    private static Task SeedRegistrationAsync(AuditSqlScratch s, string tenant, bool active = true, bool enabled = true) =>
+    internal static Task SeedRegistrationAsync(AuditSqlScratch s, string tenant, bool active = true, bool enabled = true) =>
         s.ExecuteAsync($"""
             DELETE FROM EntraRegistrationDiagnostics;
             DELETE FROM EntraInstanceRegistrations;
@@ -89,7 +89,7 @@ public sealed class AdministratorViabilitySqlServerTests
     }
 
     /// <summary>A host that started with a usable Entra registration for <paramref name="runningTenant"/>, or a reader that cannot see one.</summary>
-    private static DeploymentAuthenticationReading Reading(string? runningTenant, bool local = true)
+    internal static DeploymentAuthenticationReading Reading(string? runningTenant, bool local = true)
     {
         var running = runningTenant is null
             ? null
@@ -103,14 +103,7 @@ public sealed class AdministratorViabilitySqlServerTests
                     ClientSecret = "secret",
                     AzureTenantId = runningTenant,
                 },
-                new EntraAuthOptions
-                {
-                    Enabled = true,
-                    Authority = "https://login.microsoftonline.com/" + runningTenant,
-                    ClientId = "client",
-                    ClientSecret = "secret",
-                    AzureTenantId = runningTenant,
-                });
+                RunningHandlerBinding.Bound("https://login.microsoftonline.com/" + runningTenant, "client", hasClientSecret: true));
 
         return new DeploymentAuthenticationReading(
             ConfigurationTrustLevel.Trusted,
@@ -122,7 +115,7 @@ public sealed class AdministratorViabilitySqlServerTests
             running);
     }
 
-    private static AdministratorViabilityService Service(AppertureDbContext db, DeploymentAuthenticationReading reading) =>
+    internal static AdministratorViabilityService Service(AppertureDbContext db, DeploymentAuthenticationReading reading) =>
         new(new SqlAdministratorFactsReader(db), new EffectiveSignInConfigurationProvider(new StubDeployment(reading), new SqlEntraInstanceRegistrationRepository(db)));
 
     // ---------------------------------------------------------------- facts

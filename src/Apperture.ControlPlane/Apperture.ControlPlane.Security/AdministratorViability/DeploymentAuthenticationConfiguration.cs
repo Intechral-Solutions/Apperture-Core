@@ -6,11 +6,11 @@ namespace Apperture.ControlPlane.Security.AdministratorViability;
 /// <summary>The options a running host is actually using, as its sign-in endpoints and handler read them.</summary>
 /// <param name="Local">The Local options the login routes read.</param>
 /// <param name="EntraEndpoints">The Entra options the sign-in, link and step-up endpoints gate on (fixed when the host built them).</param>
-/// <param name="EntraHandler">The Entra options the OpenID Connect handler was configured from.</param>
+/// <param name="Handler">The configuration the OpenID Connect handler actually holds (read from the framework's own cache).</param>
 public sealed record RunningAuthenticationReading(
     LocalAuthOptions Local,
     EntraAuthOptions EntraEndpoints,
-    EntraAuthOptions EntraHandler);
+    RunningHandlerBinding Handler);
 
 /// <summary>One reading of the deployment's authentication configuration.</summary>
 /// <param name="LocalTrust">How far <paramref name="LocalSignInEnabled"/> can be relied on.</param>
@@ -54,18 +54,22 @@ public sealed class HostDeploymentAuthenticationConfiguration : IDeploymentAuthe
     private readonly IConfiguration _configuration;
     private readonly IOptions<LocalAuthOptions> _local;
     private readonly IOptions<EntraAuthOptions> _entra;
-    private readonly IOptionsMonitor<EntraAuthOptions> _entraMonitor;
+    private readonly IRunningEntraHandlerBindingSource? _handler;
 
+    /// <param name="handler">
+    /// Where the running handler's configuration is read. A host that registers none cannot say what its handler does, which is
+    /// reported as unavailable and never as usable.
+    /// </param>
     public HostDeploymentAuthenticationConfiguration(
         IConfiguration configuration,
         IOptions<LocalAuthOptions> local,
         IOptions<EntraAuthOptions> entra,
-        IOptionsMonitor<EntraAuthOptions> entraMonitor)
+        IRunningEntraHandlerBindingSource? handler = null)
     {
         _configuration = configuration;
         _local = local;
         _entra = entra;
-        _entraMonitor = entraMonitor;
+        _handler = handler;
     }
 
     /// <inheritdoc />
@@ -85,7 +89,10 @@ public sealed class HostDeploymentAuthenticationConfiguration : IDeploymentAuthe
                 localBase.Enabled,
                 entraBase,
                 AuthoritativeAboutSecrets: true,
-                new RunningAuthenticationReading(_local.Value, _entra.Value, _entraMonitor.CurrentValue));
+                new RunningAuthenticationReading(
+                    _local.Value,
+                    _entra.Value,
+                    _handler?.Read() ?? RunningHandlerBinding.Unavailable("This host registers no way to read its sign-in handler.")));
         }
         catch (OptionsValidationException ex)
         {
