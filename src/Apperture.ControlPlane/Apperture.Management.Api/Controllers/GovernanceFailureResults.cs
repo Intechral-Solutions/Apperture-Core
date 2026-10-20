@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.AdministratorViability;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Apperture.Management.Api.Controllers;
@@ -15,6 +16,7 @@ public static class GovernanceFailureResults
         exception is AuthorizationRefusalException
             or GovernanceConflictException
             or GovernanceBusyException
+            or PlatformAdministratorSetBusyException
             or GovernanceNotFoundException
             or GovernanceValidationException;
 
@@ -24,6 +26,7 @@ public static class GovernanceFailureResults
         AuthorizationRefusalException refusal => refusal.Code,
         GovernanceConflictException conflict => conflict.Code,
         GovernanceBusyException => GovernanceBusyException.Code,
+        PlatformAdministratorSetBusyException => PlatformAdministratorSetBusyException.BusyCode,
         GovernanceNotFoundException notFound => notFound.Code,
         GovernanceValidationException invalid => invalid.Code,
         _ => throw new ArgumentException($"{exception.GetType().Name} is not a governance outcome.", nameof(exception)),
@@ -53,7 +56,7 @@ public static class GovernanceFailureResults
                     ? new { error = code, code, message, assignmentCount = lifecycle.AssignmentCount }
                     : (object)new { code, message, assignmentCount = lifecycle.AssignmentCount }),
             GovernanceConflictException => new ConflictObjectResult(legacy ? new { error = code, code, message } : (object)new { code, message }),
-            GovernanceBusyException => new ConflictObjectResult(legacy ? new { error = code, code, message, retry = true } : (object)new { code, message, retry = true }),
+            GovernanceBusyException or PlatformAdministratorSetBusyException => new ConflictObjectResult(legacy ? new { error = code, code, message, retry = true } : (object)new { code, message, retry = true }),
             GovernanceNotFoundException => new NotFoundObjectResult(legacy ? new { error = code, code, message } : (object)new { code, message }),
             GovernanceValidationException => new BadRequestObjectResult(legacy ? new { error = code, code, message } : (object)new { code, message }),
             _ => throw new ArgumentException($"{exception.GetType().Name} is not a governance outcome.", nameof(exception)),

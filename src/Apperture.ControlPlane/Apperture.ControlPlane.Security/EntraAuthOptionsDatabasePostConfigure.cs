@@ -32,36 +32,20 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
                 return;
 
             var active = repo.GetActiveAsync(CancellationToken.None).GetAwaiter().GetResult();
-            if (active is null || !active.Enabled)
-                return;
 
-            options.Authority = active.Authority;
-            options.ClientId = active.ClientId;
-            if (!string.IsNullOrWhiteSpace(active.AzureTenantId))
-                options.AzureTenantId = active.AzureTenantId;
-            options.AuthenticationContextId = string.IsNullOrWhiteSpace(active.AuthenticationContextId)
-                ? null
-                : active.AuthenticationContextId.Trim();
-            if (!string.IsNullOrWhiteSpace(active.CallbackPath))
-                options.CallbackPath = active.CallbackPath!;
-
-            var resolver = scope.ServiceProvider.GetService<ISecretResolver>();
-            var resolved = EntraClientSecretAccess
-                .TryResolveAsync(active, resolver, options.ClientSecret, CancellationToken.None)
+            var resolver = active is { Enabled: true } ? scope.ServiceProvider.GetService<ISecretResolver>() : null;
+            var outcome = EntraAuthOptionsOverlay
+                .ApplyAsync(active, options, resolver, CancellationToken.None)
+                .AsTask()
                 .GetAwaiter()
                 .GetResult();
-            if (!string.IsNullOrWhiteSpace(resolved))
-                options.ClientSecret = resolved;
 
-            if (string.IsNullOrWhiteSpace(options.ClientSecret))
+            if (outcome == EntraOverlayOutcome.AppliedWithoutSecret)
             {
                 _logger.LogWarning(
                     "Active Entra registration '{RegistrationId}' has no client secret in the secret store or Entra:ClientSecret. Entra sign-in stays disabled until a secret is recorded.",
-                    active.Id);
-                return;
+                    active!.Id);
             }
-
-            options.Enabled = true;
         }
         catch (Exception ex)
         {

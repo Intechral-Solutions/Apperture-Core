@@ -370,7 +370,7 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
     /// operator who configured only a tenant-specific authority still gets tenant validation.
     /// </summary>
     private static string? ResolveActiveTenantId(EntraInstanceRegistration? registration) =>
-        registration is null ? null : EntraTokenClaims.Normalize(EntraDirectoryTenantResolver.TryResolveGraphTenantId(registration));
+        EntraDirectoryTenantResolver.ResolveAcceptedTokenTenantId(registration);
 
     /// <summary>
     /// Snapshots are convenience only: when Graph is unavailable the association still proceeds with oid + tid.

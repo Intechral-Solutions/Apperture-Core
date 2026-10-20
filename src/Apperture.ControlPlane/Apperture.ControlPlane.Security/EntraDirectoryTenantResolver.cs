@@ -14,4 +14,13 @@ public static class EntraDirectoryTenantResolver
             return registration.AzureTenantId.Trim();
         return EntraAuthorityHelper.TryGetTenantSegmentFromAuthority(registration.Authority);
     }
+
+    /// <summary>
+    /// The directory id a sign-in token must carry to be accepted for the active registration, normalized as
+    /// <see cref="EntraTokenClaims.TenantMatches"/> compares it. Null when there is no registration or its tenant cannot be
+    /// determined, in which case no token matches. This is the one rule: the sign-in and link completion and the administrator
+    /// viability evaluation all read it here.
+    /// </summary>
+    public static string? ResolveAcceptedTokenTenantId(EntraInstanceRegistration? registration) =>
+        registration is null ? null : EntraTokenClaims.Normalize(TryResolveGraphTenantId(registration));
 }

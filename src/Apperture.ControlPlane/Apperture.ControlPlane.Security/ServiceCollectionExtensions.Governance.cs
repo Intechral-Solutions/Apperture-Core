@@ -1,6 +1,8 @@
 using Apperture.Bootstrap;
 using Apperture.ControlPlane.Dashboard;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.ControlPlane.Security.Audit;
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.ComponentCatalog;
 using Apperture.Core.Application.Integration;
@@ -75,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IPendingMfaLoginTicketService, PendingMfaLoginTicketService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
+        services.AddAdministratorViability<HostDeploymentAuthenticationConfiguration>();
         services.AddHostedService<EmergencyAccessCanonicalizationHostedService>();
         services.AddScoped<IEntraPrimaryAuthenticationPolicy, EntraPrimaryAuthenticationPolicy>();
         services.AddScoped<IAuthenticationAssuranceEvaluator, AuthenticationAssuranceEvaluator>();
@@ -228,6 +231,23 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
+        services.AddScoped<IEntraInstanceRegistrationRepository, SqlEntraInstanceRegistrationRepository>();
+        services.AddAdministratorViability<ConfiguredDeploymentAuthenticationConfiguration>();
+        return services;
+    }
+
+    /// <summary>
+    /// The administrator-set gate, the viability reads and the effective sign-in configuration provider (IAM-10.2b). Each process
+    /// names where it reads the deployment's authentication configuration from.
+    /// </summary>
+    private static IServiceCollection AddAdministratorViability<TDeployment>(this IServiceCollection services)
+        where TDeployment : class, IDeploymentAuthenticationConfiguration
+    {
+        services.AddScoped<IPlatformAdministratorSetGate, SqlPlatformAdministratorSetGate>();
+        services.AddScoped<IAdministratorFactsReader, SqlAdministratorFactsReader>();
+        services.AddScoped<IDeploymentAuthenticationConfiguration, TDeployment>();
+        services.AddScoped<IEffectiveSignInConfigurationProvider, EffectiveSignInConfigurationProvider>();
+        services.AddScoped<IAdministratorViabilityService, AdministratorViabilityService>();
         return services;
     }
 
