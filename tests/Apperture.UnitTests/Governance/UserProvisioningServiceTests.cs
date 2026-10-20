@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.Audit;
 using Apperture.UnitTests.Audit;
 using Apperture.Core.Application;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -449,6 +450,46 @@ public sealed class UserProvisioningServiceTests
         result.RoleAssigned.Should().BeTrue();
     }
 
+    // ---- IAM-10.2b: the administrator role as an initial role is a raise, serialized by the gate ----
+
+    [Fact]
+    public async Task Giving_a_new_person_the_administrator_role_takes_the_gate_once_and_another_initial_role_takes_none()
+    {
+        var administrator = Harness.Create();
+        await administrator.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: BootstrapConstants.PlatformAdminRoleId));
+        administrator.Gate.Acquired.Should().Be(1);
+
+        var ordinary = HarnessWithOrdinaryAdministrator();
+        await ordinary.Service.ProvisionFromEntraDirectoryAsync(new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: "role-subset"));
+        ordinary.Gate.Acquired.Should().Be(0, "an ordinary role cannot change administrator viability");
+    }
+
+    [Fact]
+    public async Task A_refused_initial_administrator_role_still_took_the_gate_first_and_is_rolled_back_with_the_refusal()
+    {
+        var harness = HarnessWithOrdinaryAdministrator();
+
+        var act = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: BootstrapConstants.PlatformAdminRoleId)).AsTask();
+
+        (await act.Should().ThrowAsync<AuthorizationRefusalException>()).Which.Code.Should().Be("platform_administrator_restricted");
+        harness.Gate.Acquired.Should().Be(1, "the gate comes before the authority locks that decide the refusal");
+        harness.Users.Added.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_service_built_without_the_coordinator_cannot_hand_out_the_administrator_role()
+    {
+        var harness = Harness.Create(withViability: false);
+
+        var act = () => harness.Service.ProvisionFromEntraDirectoryAsync(
+            new EntraDirectoryProvisioningRequest("reg-1", Oid, InitialRoleId: BootstrapConstants.PlatformAdminRoleId)).AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*viability coordinator*");
+        harness.Users.Added.Should().BeEmpty();
+    }
+
     private sealed class Harness
     {
         public RecordingUsers Users { get; } = new();
@@ -458,8 +499,9 @@ public sealed class UserProvisioningServiceTests
         public RecordingRequests Requests { get; } = new();
         public StubDirectory Directory { get; } = new();
         public UserProvisioningService Service { get; }
+        public RecordingGate Gate { get; } = new();
 
-        private Harness(bool allowUserManage, bool allowRoleAssign)
+        private Harness(bool allowUserManage, bool allowRoleAssign, bool withViability = true)
         {
             Directory.User = DirectoryUser();
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -479,11 +521,12 @@ public sealed class UserProvisioningServiceTests
                 Mail,
                 new AccountSecurityLinkBuilder(config),
                 Audit,
-                Audit);
+                Audit,
+                viability: withViability ? FakeViability.Scripted(Gate) : null);
         }
 
-        public static Harness Create(bool allowUserManage = true, bool allowRoleAssign = true) =>
-            new(allowUserManage, allowRoleAssign);
+        public static Harness Create(bool allowUserManage = true, bool allowRoleAssign = true, bool withViability = true) =>
+            new(allowUserManage, allowRoleAssign, withViability);
     }
 
     private sealed class StubDirectory : IEntraProvisioningDirectoryService

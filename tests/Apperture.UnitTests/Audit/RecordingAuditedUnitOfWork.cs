@@ -28,6 +28,13 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
     public AuditActor CurrentPrincipalActor { get; set; } =
         AuditActor.AuthenticatedUser(new Apperture.Core.Domain.Identity.UserId("usr_unit_test_actor"));
 
+    /// <summary>
+    /// Captures the state an attempt may change and returns what puts it back. The SQL unit rolls an attempt back when it declares
+    /// that it changed nothing (a refusal made after the change was applied) or throws, so a double over in-memory state that does the
+    /// same lets a test see that a refused change left nothing behind.
+    /// </summary>
+    public Func<Action>? CaptureState { get; set; }
+
     public async Task<T> ExecuteAsync<T>(
         AuditedOperation operation,
         Func<IAuditedTransaction, CancellationToken, Task<T>> attempt,
@@ -36,11 +43,25 @@ internal sealed class RecordingAuditedUnitOfWork : IAuditedUnitOfWork
     {
         var recorded = new RecordedOperation(operation, operation.Actor.IsCurrentPrincipal ? CurrentPrincipalActor : operation.Actor);
         Operations.Add(recorded);
-        var result = await attempt(recorded, cancellationToken);
+        var restore = CaptureState?.Invoke();
+        T result;
+        try
+        {
+            result = await attempt(recorded, cancellationToken);
+        }
+        catch
+        {
+            restore?.Invoke();
+            throw;
+        }
+
         if (!recorded.NoOp && !recorded.Staged.Any(e => operation.AcceptsPrimary(e.Action)))
             throw new InvalidOperationException($"The operation expected a '{operation.PrimaryAction}' row and staged none.");
         if (recorded.NoOp)
+        {
+            restore?.Invoke();
             return result;
+        }
 
         switch (Acknowledgement)
         {

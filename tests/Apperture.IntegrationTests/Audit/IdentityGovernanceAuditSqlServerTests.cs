@@ -120,6 +120,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     {
         var (admin, _) = await AddUserAsync("admin");
         await _db.ExecuteAsync($"INSERT INTO UserRoles (UserId, RoleId) VALUES (N'{admin}', N'{PlatformAdmin}');");
+        // IAM-10.2b: the refusal protects the last administrator who can sign in, so this one has a working Local credential.
+        await _db.ExecuteAsync($"INSERT INTO LocalCredentials (UserId, PasswordHash, Salt, Algorithm, IsDisabled) VALUES (N'{admin}', N'hash', N'salt', N'test', 0);");
         var principal = new Principal(admin);
 
         await using (var db = _db.NewDb())

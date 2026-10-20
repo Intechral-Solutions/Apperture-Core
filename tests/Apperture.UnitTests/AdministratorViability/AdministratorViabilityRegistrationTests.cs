@@ -28,6 +28,7 @@ public sealed class AdministratorViabilityRegistrationTests
         Scoped(typeof(IDeploymentAuthenticationConfiguration), deployment);
         Scoped(typeof(IEffectiveSignInConfigurationProvider), typeof(EffectiveSignInConfigurationProvider));
         Scoped(typeof(IAdministratorViabilityService), typeof(AdministratorViabilityService));
+        Scoped(typeof(IAdministratorViabilityCoordinator), typeof(AdministratorViabilityCoordinator));
     }
 
     [Fact]

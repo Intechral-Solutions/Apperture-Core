@@ -1,5 +1,7 @@
 using System.Data.Common;
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -81,7 +83,60 @@ internal sealed class RoleAuthorityWorld
         await Scratch.AddUserAsync(id, NewUsername(stem));
         foreach (var roleId in roleIds)
             await AssignRawAsync(id, roleId);
+        await GiveAdministratorsASignInAsync(id, roleIds);
         return id;
+    }
+
+    /// <summary>
+    /// An administrator made here can sign in (a Local link, which every seeded user has, and an enabled Local credential), so that
+    /// the viability invariants (IAM-10.2b) see the same administrators the assignment count of IAM-10.2a saw. A test about who
+    /// cannot sign in removes that explicitly.
+    /// </summary>
+    private Task GiveAdministratorsASignInAsync(string userId, IEnumerable<string> roleIds) =>
+        roleIds.Any(r => string.Equals(r.Trim(), AdminRoleId, StringComparison.OrdinalIgnoreCase))
+            ? AddCredentialAsync(userId)
+            : Task.CompletedTask;
+
+    /// <summary>A Local credential row, enabled unless <paramref name="disabled"/>.</summary>
+    public Task AddCredentialAsync(string userId, bool disabled = false) =>
+        Scratch.ExecuteAsync($"""
+            INSERT INTO LocalCredentials (UserId, PasswordHash, Salt, Algorithm, IsDisabled)
+            VALUES (N'{userId}', N'hash', N'salt', N'test', {(disabled ? 1 : 0)});
+            """);
+
+    public Task<bool> CredentialDisabledAsync(string userId) =>
+        Scratch.ScalarAsync<bool>($"SELECT IsDisabled FROM LocalCredentials WHERE UserId = N'{userId}';");
+
+    /// <summary>An Entra link for <paramref name="tenant"/>, proven by a sign-in unless <paramref name="proven"/> is false.</summary>
+    public Task AddEntraLinkAsync(string userId, string tenant, bool proven = true) =>
+        Scratch.ExecuteAsync($"""
+            INSERT INTO IdentityLinks (Id, UserId, Source, ExternalId, TenantId, LinkedAt, LastAuthenticatedAt)
+            VALUES (N'E{userId}', N'{userId}', 0, N'oid-{userId}', N'{tenant}', SYSDATETIMEOFFSET(), {(proven ? "SYSDATETIMEOFFSET()" : "NULL")});
+            """);
+
+    public Task<int> LinkCountAsync(string userId, int source) =>
+        Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM IdentityLinks WHERE UserId = N'{userId}' AND Source = {source};");
+
+    /// <summary>The active Entra registration the sign-in checks tokens against (and the Restart view reads).</summary>
+    public Task SetActiveRegistrationAsync(string tenant) => AdministratorViabilitySqlServerTests.SeedRegistrationAsync(Scratch, tenant);
+
+    /// <summary>Marks the user as the designated Recovery Access account.</summary>
+    public Task DesignateRecoveryAccessAsync(string userId) =>
+        Scratch.ExecuteAsync($"UPDATE Users SET IsBreakGlassEligible = 1 WHERE Id = N'{userId}';");
+
+    /// <summary>
+    /// Gives the designated Recovery Access account everything the posture asks for (role, Local credential, enrolled MFA, unused
+    /// recovery codes), so that Recovery Access is demonstrably healthy.
+    /// </summary>
+    public async Task MakeRecoveryAccessHealthyAsync(string userId)
+    {
+        await DesignateRecoveryAccessAsync(userId);
+        await Scratch.ExecuteAsync($"""
+            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, CreatedAtUtc)
+            VALUES (N'{userId}', 0x01, N'k', 1, SYSDATETIMEOFFSET());
+            INSERT INTO UserMfaRecoveryCodes (Id, UserId, CodeHash, Salt, Algorithm, CreatedAtUtc, ConsumedAtUtc)
+            VALUES (N'c-{userId}-0', N'{userId}', N'h', N's', N'test', SYSDATETIMEOFFSET(), NULL);
+            """);
     }
 
     /// <summary>A person who can sign in to a test host by their <see cref="Person.Username"/>.</summary>
@@ -94,6 +149,7 @@ internal sealed class RoleAuthorityWorld
         await Scratch.AddUserAsync(id, username);
         foreach (var roleId in roleIds)
             await AssignRawAsync(id, roleId);
+        await GiveAdministratorsASignInAsync(id, roleIds);
         return new Person(id, username);
     }
 
@@ -134,7 +190,11 @@ internal sealed class RoleAuthorityWorld
         string actorUserId,
         bool advisoryAllowsAll = false,
         IAuditedUnitOfWork? unit = null,
-        IAuditEventWriter? events = null)
+        IAuditEventWriter? events = null,
+        IPlatformAdministratorSetGate? gate = null,
+        DeploymentAuthenticationReading? deployment = null,
+        IStrongAuthenticationGate? strongAuthentication = null,
+        IEmergencyAccessService? emergencyAccess = null)
     {
         var principal = new Principal(actorUserId);
         var roles = new SqlRoleRepository(db);
@@ -152,9 +212,24 @@ internal sealed class RoleAuthorityWorld
             new SqlLocalCredentialRepository(db),
             new LocalPasswordHasher(),
             Options.Create(new LocalAuthOptions()),
+            strongAuthentication: strongAuthentication,
+            emergencyAccess: emergencyAccess,
             auditedUnitOfWork: unit ?? NewUnit(db, principal),
-            auditEvents: events ?? NewWriter(principal));
+            auditEvents: events ?? NewWriter(principal),
+            viability: Viability(db, gate, deployment));
     }
+
+    /// <summary>
+    /// The coordinator the production service is built with: the real gate and the real viability reads over <paramref name="db"/>.
+    /// Local sign-in is on and the host runs no Entra handler unless <paramref name="deployment"/> says what the host started with.
+    /// </summary>
+    public static AdministratorViabilityCoordinator Viability(
+        AppertureDbContext db,
+        IPlatformAdministratorSetGate? gate = null,
+        DeploymentAuthenticationReading? deployment = null) =>
+        new(
+            gate ?? new SqlPlatformAdministratorSetGate(db),
+            AdministratorViabilitySqlServerTests.Service(db, deployment ?? AdministratorViabilitySqlServerTests.Reading(null)));
 
     public SqlAuditEventWriter NewWriter(IPrincipalContext principal) =>
         new(Scratch.Options(), principal, HarnessCatalog, null, null, null);

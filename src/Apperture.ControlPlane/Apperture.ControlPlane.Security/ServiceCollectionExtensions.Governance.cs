@@ -248,6 +248,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDeploymentAuthenticationConfiguration, TDeployment>();
         services.AddScoped<IEffectiveSignInConfigurationProvider, EffectiveSignInConfigurationProvider>();
         services.AddScoped<IAdministratorViabilityService, AdministratorViabilityService>();
+        services.AddScoped<IAdministratorViabilityCoordinator, AdministratorViabilityCoordinator>();
         return services;
     }
 

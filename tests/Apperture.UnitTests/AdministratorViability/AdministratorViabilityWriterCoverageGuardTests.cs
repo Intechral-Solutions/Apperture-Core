@@ -9,8 +9,10 @@ namespace Apperture.UnitTests.AdministratorViability;
 /// WP0 reconciliation). Every production place that can change a viability input is classified: a <b>reducer</b> or a <b>gated
 /// raiser</b> (it takes the global gate; <i>pending</i> until the package that integrates it), an approved <b>exception</b>, the
 /// non-refusable <b>recovery-code consumption</b> (C-14), or <b>out of category</b> (it cannot change a viability input, and a test
-/// pins why). A writer in none of them fails here, so a new writer cannot appear unclassified. In this package no mutation path
-/// takes the gate yet, which is also pinned.
+/// pins why). A writer in none of them fails here, so a new writer cannot appear unclassified. A reducer or raiser is either
+/// <b>integrated</b> (WP2: the person-driven administrator, credential and link writers, checked method by method for the gate before
+/// the authority row locks and the writes, and for the check after them) or explicitly <b>pending</b> (every other package), and a
+/// pending file must not already reference the gate or the coordinator, so that the pending list cannot go stale unnoticed.
 /// </summary>
 public sealed class AdministratorViabilityWriterCoverageGuardTests
 {
@@ -61,10 +63,16 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Finding,
     }
 
+    /// <summary>The packages whose writers are integrated. Moving a package here is what makes the method-level checks apply to it.</summary>
+    private static readonly string[] IntegratedPackages = ["WP2"];
+
     private sealed record Classified(string File, Writes Kind, int Count, Class Class, string Package, string Why)
     {
+        /// <summary>A reducer or gated raiser whose package is integrated: it takes the gate, and the method-level checks apply.</summary>
+        public bool Integrated => Class is Class.Reducer or Class.GatedRaiser && IntegratedPackages.Contains(Package);
+
         /// <summary>A reducer or gated raiser that a later package has not integrated yet.</summary>
-        public bool Pending => Class is Class.Reducer or Class.GatedRaiser;
+        public bool Pending => Class is Class.Reducer or Class.GatedRaiser && !IntegratedPackages.Contains(Package);
     }
 
     private const string Security = "Apperture.ControlPlane/Apperture.ControlPlane.Security/";
@@ -284,11 +292,15 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         return differences;
     }
 
-    /// <summary>The text of a method, from its name to the brace that closes it.</summary>
+    /// <summary>The text of a method, from its declaration to the brace that closes it. A call of the same name is not its declaration.</summary>
     private static string MethodBody(string code, string methodName)
     {
-        var at = code.IndexOf(" " + methodName + "(", StringComparison.Ordinal);
-        at.Should().BeGreaterThanOrEqualTo(0, $"{methodName} must exist");
+        var declaration = Regex.Match(
+            code,
+            @"^[ \t]*(?:public|private|internal|protected)[^\r\n]* " + Regex.Escape(methodName) + @"\(",
+            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        declaration.Success.Should().BeTrue($"{methodName} must be declared");
+        var at = declaration.Index;
         var open = code.IndexOf('{', at);
         var depth = 0;
         for (var i = open; i < code.Length; i++)
@@ -347,21 +359,24 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     [Fact]
-    public void In_this_package_no_pending_writer_takes_the_gate_so_no_mutation_path_changes()
+    public void A_pending_writer_does_not_yet_reference_the_gate_or_the_coordinator_and_no_file_is_both_pending_and_integrated()
     {
         var pending = Inventory.Where(i => i.Pending).Select(i => i.File).Distinct().ToList();
+        var integrated = Inventory.Where(i => i.Integrated).Select(i => i.File).Distinct().ToList();
 
         pending.Should().NotBeEmpty();
+        integrated.Should().NotBeEmpty();
+        pending.Intersect(integrated).Should().BeEmpty("a file is integrated or pending as a whole, so the method-level checks cannot miss a writer in it");
         foreach (var file in pending)
         {
-            StripComments(Source(file)).Should().NotContain(
-                "IPlatformAdministratorSetGate",
-                $"{file} is classified pending; integrating it is the work of a later package, which also changes this expectation");
+            StripComments(Source(file)).Should().NotContainAny(
+                new[] { "IPlatformAdministratorSetGate", "IAdministratorViabilityCoordinator", "AdministratorViabilityScope" },
+                $"{file} is classified pending; integrating it is the work of a later package, which also moves its inventory entries to integrated");
         }
     }
 
     [Fact]
-    public void Only_the_gate_its_contract_and_the_registration_name_the_gate()
+    public void Only_the_gate_its_contract_the_registration_and_the_coordinator_name_the_gate()
     {
         var users = ProductionSource()
             .Where(s => StripComments(s.Text).Contains("IPlatformAdministratorSetGate", StringComparison.Ordinal))
@@ -373,8 +388,138 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             [
                 "Apperture.Core/Apperture.Core.Application/AdministratorViability/IPlatformAdministratorSetGate.cs",
                 "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
+                "Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/AdministratorViabilityCoordinator.cs",
                 "Apperture.Persistence/Apperture.Persistence.SqlServer/SqlPlatformAdministratorSetGate.cs",
             ]);
+    }
+
+    [Fact]
+    public void Only_the_integrated_writers_the_coordinator_and_its_helper_name_the_coordinator()
+    {
+        var users = ProductionSource()
+            .Where(s => StripComments(s.Text).Contains("IAdministratorViabilityCoordinator", StringComparison.Ordinal))
+            .Select(s => s.Relative)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        users.Should().BeEquivalentTo(
+            Inventory.Where(i => i.Integrated).Select(i => i.File)
+                .Concat(
+                [
+                    "Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/AdministratorViabilityCoordinator.cs",
+                    "Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/AdministratorRoleGate.cs",
+                    "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
+                ])
+                .Distinct(),
+            "an unclassified file that takes the coordinator would be a writer the inventory does not know");
+    }
+
+    // ---- The integrated writers, method by method ----
+
+    /// <summary>What an integrated writer must do, in this order, inside its method.</summary>
+    /// <param name="File">The source file.</param>
+    /// <param name="Method">The method that holds the writes.</param>
+    /// <param name="Kind">The write kind the inventory counts in this file.</param>
+    /// <param name="Steps">Fragments that must all appear, each after the one before it.</param>
+    private sealed record Sequence(string File, string Method, Writes Kind, string[] Steps);
+
+    private const string TakeGate = "Viability.EnterAsync(";
+    private const string TakeGateForRole = "EnterForAdministratorRoleAsync(";
+
+    private static readonly IReadOnlyList<Sequence> IntegratedSequences =
+    [
+        // Role assignment: the gate before the authority row locks, then the write, then the assertion. A raiser.
+        new(Security + "UserManagementService.cs", "AssignRoleAsync", Writes.RoleAssign,
+            [TakeGateForRole, "LockAuthoritySnapshotAsync(", "CaptureBeforeAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // Role removal: the gate, the authority locks, the authorization refusals, the no-op, the state before, the write, the verdict.
+        new(Security + "UserManagementService.cs", "RemoveRoleAsync", Writes.RoleRemove,
+            [TakeGateForRole, "LockAuthoritySnapshotAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", ".RemoveFromUserAsync(", "VerifyAfterAsync(", "ViabilityRefusal.For(", "StageAsync("]),
+
+        // Credential disable or enable: the gate first, the no-op before the invariants (P-9, F-9), then the write and the verdict.
+        new(Security + "UserManagementService.cs", "SetLocalCredentialDisabledAsync", Writes.CredentialDisable,
+            [TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", ".SetDisabledAsync(", "VerifyAfterAsync(", "ViabilityRefusal.For(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // Link removal, Local or Entra: the same shape.
+        new(Security + "UserManagementService.cs", "RemoveIdentityLinkAsync", Writes.LinkRemove,
+            [TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_userRepository.RemoveIdentityLinkAsync(", "VerifyAfterAsync(", "ViabilityRefusal.For(", "StageAsync("]),
+
+        // Link addition: the gate before the first write; the helper holds the state before, the write and the assertion.
+        new(Security + "UserManagementService.cs", "AddIdentityLinkAsync", Writes.LinkAdd,
+            [TakeGate, "RequireLinkableUserAsync(userId, ct)", "RaiseOnlyAsync(", "StageAsync("]),
+        new(Security + "UserManagementService.cs", "RaiseOnlyAsync", Writes.LinkAdd,
+            ["CaptureBeforeAsync(", "await write()", "AssertRaiseOnlyAsync("]),
+
+        // The initial role of a provisioned person: the gate before the authority locks; the assignment is captured and asserted.
+        new(Security + "UserProvisioningService.cs", "DecideInitialRoleAsync", Writes.RoleAssign,
+            [TakeGateForRole, "LockAuthoritySnapshotAsync("]),
+        new(Security + "UserProvisioningService.cs", "AssignInitialRoleAsync", Writes.RoleAssign,
+            ["CaptureBeforeAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+    ];
+
+    [Fact]
+    public void Each_integrated_writer_takes_the_gate_before_its_locks_and_writes_and_checks_after_them()
+    {
+        foreach (var sequence in IntegratedSequences)
+        {
+            var body = MethodBody(StripComments(Source(sequence.File)), sequence.Method);
+
+            var at = -1;
+            foreach (var step in sequence.Steps)
+            {
+                var next = body.IndexOf(step, at + 1, StringComparison.Ordinal);
+                next.Should().BeGreaterThan(at, $"{sequence.File} {sequence.Method} must reach '{step}' after the step before it ({string.Join(" -> ", sequence.Steps)})");
+                at = next;
+            }
+        }
+    }
+
+    [Fact]
+    public void Each_counted_write_of_an_integrated_file_is_inside_a_method_whose_order_is_checked()
+    {
+        // The inventory's count for an integrated file is the writes found in the methods checked above, so a write added
+        // anywhere else in the file changes the count of the whole file and the first test, or is found here.
+        foreach (var file in Inventory.Where(i => i.Integrated).Select(i => i.File).Distinct())
+        {
+            var code = StripComments(Source(file));
+            foreach (var entry in Inventory.Where(i => i.File == file && i.Integrated))
+            {
+                var checkedMethods = IntegratedSequences.Where(s => s.File == file && s.Kind == entry.Kind).Select(s => s.Method).ToList();
+                checkedMethods.Should().NotBeEmpty($"{file} {entry.Kind} is integrated, so a method must be checked for it");
+
+                var inChecked = checkedMethods.Sum(method => WriteMatches(entry.Kind, MethodBody(code, method)));
+                inChecked.Should().Be(entry.Count, $"every {entry.Kind} write of {file} must be in a method this guard checks ({string.Join(", ", checkedMethods)})");
+            }
+        }
+    }
+
+    private static int WriteMatches(Writes kind, string code) => kind switch
+    {
+        Writes.RoleAssign => RoleAssignCall.Matches(code).Count,
+        Writes.RoleRemove => RoleRemoveCall.Matches(code).Count,
+        Writes.CredentialDisable => DisableCall.Matches(code).Count,
+        Writes.LinkAdd => LinkAddCall.Matches(code).Count,
+        Writes.LinkRemove => LinkRemoveCall.Matches(code).Count,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
+    };
+
+    [Fact]
+    public void The_superseded_assignment_count_and_entra_options_predicates_are_gone_from_the_integrated_writers()
+    {
+        var code = StripComments(Source(Security + "UserManagementService.cs"));
+
+        code.Should().NotContainAny(
+            new[] { "CountUserAssignmentsAsync(", "HasViableAlternateSignIn", "EntraConfigurationState" },
+            "the shared viability guard is the one definition; a second predicate beside it could disagree with it");
+    }
+
+    [Fact]
+    public void The_gate_helper_refuses_to_proceed_when_the_role_is_reached_without_the_gate()
+    {
+        var code = StripComments(Source(Security + "AdministratorViability/AdministratorRoleGate.cs"));
+
+        MethodBody(code, "RequireGateHeldFor").Should().Contain("AuditInvariantException");
+        MethodBody(code, "EnterForAdministratorRoleAsync").Should().Contain("GetAsync(").And.Contain("IsPlatformAdministratorRole(");
     }
 
     [Fact]

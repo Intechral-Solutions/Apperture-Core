@@ -371,7 +371,8 @@ public sealed class EntraGovernanceAuditSqlServerTests : IAsyncLifetime
             mail ?? new CountingMail(),
             new AccountSecurityLinkBuilder(new ConfigurationBuilder().Build()),
             unit ?? NewUnit(db, principal),
-            Events(principal));
+            Events(principal),
+            viability: RoleAuthorityWorld.Viability(db));
 
     private EntraAccessRequestService AccessRequests(AppertureDbContext db) =>
         new(

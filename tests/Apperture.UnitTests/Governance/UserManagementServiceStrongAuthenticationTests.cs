@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.UnitTests.Audit;
@@ -148,6 +149,7 @@ public sealed class UserManagementServiceStrongAuthenticationTests
             new StubHasher(),
             Options.Create(new LocalAuthOptions()),
             strongAuthentication: gate,
+            viability: FakeViability.Inert(),
             auditedUnitOfWork: audit,
             auditEvents: audit);
     }

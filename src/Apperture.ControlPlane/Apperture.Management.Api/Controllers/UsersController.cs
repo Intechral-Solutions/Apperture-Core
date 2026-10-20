@@ -382,7 +382,12 @@ public sealed class UsersController : ControllerBase
         {
             return BadRequest(new IdentityLinkErrorResponse(ex.Message, ex.Code));
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            // A busy administrator-set gate: 409 with a retry hint.
+            return GovernanceFailureResults.Map(ex);
+        }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException && ex.Message.Contains("already exists"))
         {
             return Conflict(new IdentityLinkErrorResponse(
                 "An identity link with this source and external id is already attached to another user.",
@@ -424,7 +429,12 @@ public sealed class UsersController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("last identity link"))
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            // The viability refusals (409 with a stable code) and a busy gate (409, retry): never an unhandled exception.
+            return GovernanceFailureResults.Map(ex);
+        }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException && ex.Message.Contains("last identity link"))
         {
             return BadRequest(new { message = ex.Message });
         }
@@ -473,6 +483,7 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> RemoveRole(string id, string roleId, CancellationToken cancellationToken = default)
     {
         try
@@ -567,7 +578,12 @@ public sealed class UsersController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            // The viability refusals (409 with a stable code) and a busy gate (409, retry).
+            return GovernanceFailureResults.Map(ex);
+        }
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
             if (ex.Message.Contains("not found") || ex.Message.Contains("no Local") || ex.Message.Contains("no local credential"))
                 return NotFound(new { message = ex.Message });

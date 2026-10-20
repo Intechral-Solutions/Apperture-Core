@@ -1,4 +1,6 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.AdministratorViability;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -55,6 +57,17 @@ internal sealed class InMemoryGovernanceWorld
             registry.RegisterPermission(TestPermissionDefinitions.For(permission, sensitivity: SensitivityOf(permission)));
 
         Audit = new AuditRecording();
+        Audit.Unit.CaptureState = () =>
+        {
+            var before = _roles.Assignments.ToHashSet();
+            return () =>
+            {
+                _roles.Assignments.Clear();
+                foreach (var assignment in before)
+                    _roles.Assignments.Add(assignment);
+            };
+        };
+        Gate = new RecordingGate();
         var principal = new SwitchablePrincipal(this);
         var advisory = new DelegatingAuthorizationService(
             new RbacAuthorizationPolicyEvaluator(new IdentityResolver(), new SqlRoleProvider(_roles), _scope));
@@ -69,11 +82,15 @@ internal sealed class InMemoryGovernanceWorld
             new NoHasher(),
             Options.Create(new LocalAuthOptions()),
             auditedUnitOfWork: Audit,
-            auditEvents: Audit);
+            auditEvents: Audit,
+            viability: FakeViability.OverFacts(Gate, new MemoryAdministratorFacts(_roles, _users)));
     }
 
     public UserManagementService Service { get; }
     public AuditRecording Audit { get; }
+
+    /// <summary>The administrator-set gate, to see how often a change took it.</summary>
+    public RecordingGate Gate { get; }
     public Func<IActor> ActorFactory { get; set; } = () => new HumanActor(new ActorId("actor"), "actor");
 
     /// <summary>Runs after the roles were first read (by the check made before the unit), once: a change between that check and the decision.</summary>
@@ -229,6 +246,32 @@ internal sealed class InMemoryGovernanceWorld
             ValueTask.FromResult<(IReadOnlyList<User>, int)>((Rows.Values.Skip(skip).Take(take).ToList(), Rows.Count));
         public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Every holder of the administrator role can sign in with a Local credential, except the designated Recovery Access account,
+    /// which is flagged: the in-memory world has no credentials of its own, and "who holds the role" is what its cases are about.
+    /// Viability against real credentials and links is proven on SQL Server.
+    /// </summary>
+    private sealed class MemoryAdministratorFacts(MemoryRoles roles, MemoryUsers users) : IAdministratorFactsReader
+    {
+        public ValueTask<IReadOnlyList<AdministratorFacts>> ReadAdministratorsAsync(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<AdministratorFacts> holders = roles.Assignments
+                .Where(a => string.Equals(a.Role, BootstrapConstants.PlatformAdminRoleId, StringComparison.Ordinal))
+                .Select(a => new AdministratorFacts(
+                    a.User,
+                    IsRecoveryAccess: users.Rows.TryGetValue(a.User, out var user) && user.IsBreakGlassEligible,
+                    HasLocalLink: true,
+                    LocalCredentialEnabled: true,
+                    ProvenEntraLinkTenantIds: []))
+                .OrderBy(h => h.UserId, StringComparer.Ordinal)
+                .ToList();
+            return ValueTask.FromResult(holders);
+        }
+
+        public ValueTask<RecoveryAccessFacts> ReadRecoveryAccessAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new RecoveryAccessFacts(null, false, false, false, false, 0));
     }
 
     private sealed class NoCredentials : ILocalCredentialRepository

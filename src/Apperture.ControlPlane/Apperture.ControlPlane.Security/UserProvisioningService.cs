@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
@@ -33,6 +34,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
     private readonly IAuditEventWriter? _auditEvents;
     private readonly IScopeContainmentEvaluator _scopeEvaluator;
     private readonly IResourceDescriptorRegistry? _descriptorRegistry;
+    private readonly IAdministratorViabilityCoordinator? _viability;
 
     public UserProvisioningService(
         IPrincipalContext principalContext,
@@ -49,8 +51,10 @@ public sealed class UserProvisioningService : IUserProvisioningService
         IAuditedUnitOfWork? auditedUnitOfWork = null,
         IAuditEventWriter? auditEvents = null,
         IScopeContainmentEvaluator? scopeEvaluator = null,
-        IResourceDescriptorRegistry? descriptorRegistry = null)
+        IResourceDescriptorRegistry? descriptorRegistry = null,
+        IAdministratorViabilityCoordinator? viability = null)
     {
+        _viability = viability;
         _descriptorRegistry = descriptorRegistry;
         _scopeEvaluator = scopeEvaluator ?? new ScopeContainmentEvaluator();
         _principalContext = principalContext;
@@ -159,7 +163,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 await transaction.StageAsync(
                     AuditEvents.ProvisionedFromDirectory(userId, user.Username, tenantId, objectId!, registration.Id), ct);
 
-                var assigned = await AssignInitialRoleAsync(transaction, userId, initialRole.Role, ct);
+                var assigned = await AssignInitialRoleAsync(transaction, userId, initialRole, ct);
                 var reconciledId = await ReconcilePendingAsync(transaction, tenantId, objectId!, userId, actorId, reviewedAt, ct);
                 return (user.Username, assigned, reconciledId);
             },
@@ -282,7 +286,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
                 await transaction.StageAsync(
                     AuditEvents.ProvisionedFromAccessRequest(userId, created.Username, tenantId, objectId!, accessRequest.Id), ct);
 
-                var roleAssigned = await AssignInitialRoleAsync(transaction, userId, initialRole.Role, ct);
+                var roleAssigned = await AssignInitialRoleAsync(transaction, userId, initialRole, ct);
                 await _requests.UpdateAsync(
                     accessRequest with
                     {
@@ -428,7 +432,10 @@ public sealed class UserProvisioningService : IUserProvisioningService
     }
 
     /// <summary>What deciding the initial role found: the role to assign, or the refusal to record.</summary>
-    private sealed record InitialRoleDecision(Role? Role, InitialRoleRefusal? Refusal);
+    /// <param name="Role">The role to assign, or null when none is requested or the request is refused.</param>
+    /// <param name="Refusal">The refusal to record, or null.</param>
+    /// <param name="Viability">The administrator-set gate, held, when the Platform Administrator role was requested.</param>
+    private sealed record InitialRoleDecision(Role? Role, InitialRoleRefusal? Refusal, AdministratorViabilityScope? Viability = null);
 
     private sealed record InitialRoleRefusal(Apperture.Core.Application.Audit.AuditEvent Event, Exception Exception);
 
@@ -447,6 +454,12 @@ public sealed class UserProvisioningService : IUserProvisioningService
         var actor = await _principalContext.GetCurrentActorAsync(cancellationToken);
         // A session's actor id is the user id (HumanActor); the identity-link validity of the session is not an authority change.
         UserId? actorUserId = actor is null ? null : new UserId(actor.Id.Value);
+
+        // IAM-10.2b: the Platform Administrator role as an initial role is a raise of administrator viability, serialized with every
+        // reducer by the global gate, which comes before every authority row lock.
+        var viability = _viability is null
+            ? null
+            : await _viability.EnterForAdministratorRoleAsync(_roles, roleId, cancellationToken);
         var snapshot = await _roles.LockAuthoritySnapshotAsync(actorUserId, roleId, newUserId, cancellationToken);
         var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
 
@@ -458,6 +471,9 @@ public sealed class UserProvisioningService : IUserProvisioningService
         }
 
         var role = snapshot.TargetRole ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
+        // A provisioning service built without the coordinator cannot take the gate, so it must not hand out the administrator role.
+        if (viability is null && RoleAuthorityRules.IsPlatformAdministratorRole(role.Id))
+            throw new InvalidOperationException("Assigning the Platform Administrator role requires the administrator viability coordinator.");
         // The refusal names the role by the id of the locked row, as the assignment that follows does (role.Id), whatever case was requested.
         if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
         {
@@ -477,15 +493,21 @@ public sealed class UserProvisioningService : IUserProvisioningService
                         "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first.")));
         }
 
-        return new InitialRoleDecision(role, null);
+        return new InitialRoleDecision(role, null, viability);
     }
 
     /// <summary>Assigns the initial role the decision allowed, inside the provisioning transaction, with its own assignment row.</summary>
-    private async ValueTask<bool> AssignInitialRoleAsync(IAuditedTransaction transaction, UserId userId, Role? role, CancellationToken cancellationToken)
+    private async ValueTask<bool> AssignInitialRoleAsync(IAuditedTransaction transaction, UserId userId, InitialRoleDecision decision, CancellationToken cancellationToken)
     {
+        var role = decision.Role;
         if (role is null)
             return false;
+        if (decision.Viability is { } viability)
+            await viability.CaptureBeforeAsync(cancellationToken);
         await _roles.AssignToUserAsync(userId, role.Id, cancellationToken);
+        // Giving a person the role can only add to administrator viability: asserted under the gate, never refused.
+        if (decision.Viability is not null)
+            await decision.Viability.AssertRaiseOnlyAsync(cancellationToken);
         var maxSensitivity = _descriptorRegistry is null ? null : AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry);
         await transaction.StageAsync(AuditEvents.RoleAssigned(userId, role.Id, maxSensitivity), cancellationToken);
         return true;

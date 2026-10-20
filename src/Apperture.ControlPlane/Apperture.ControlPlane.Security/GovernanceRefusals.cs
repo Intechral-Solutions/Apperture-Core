@@ -64,6 +64,21 @@ public static class GovernanceConflictCodes
 {
     public const string RolePermissionsUnreadable = "role_permissions_unreadable";
     public const string LastViableAdministrator = "last_viable_administrator";
+
+    /// <summary>I-VIABLE, for a link whose removal would leave no ordinary administrator able to sign in.</summary>
+    public const string LastViableSignInMethod = "last_viable_sign_in_method";
+
+    /// <summary>I-VIABLE, for a Local credential whose disablement would leave no ordinary administrator able to sign in.</summary>
+    public const string LastLocalCredential = "last_local_credential";
+
+    /// <summary>I-FALLBACK (and C-13-R): the change would leave no ordinary administrator who can sign in without Entra while Recovery Access cannot stand in.</summary>
+    public const string EntraIndependentFallbackRequired = "entra_independent_fallback_required";
+
+    /// <summary>
+    /// The installation's authentication configuration could not be established, so a change that could reduce administrator
+    /// viability is refused rather than guessed at.
+    /// </summary>
+    public const string AdministratorViabilityUnavailable = "administrator_viability_unavailable";
 }
 
 /// <summary>

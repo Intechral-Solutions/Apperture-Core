@@ -212,10 +212,10 @@ public sealed class RoleWriterCoverageGuardTests
         AssertLocksBefore(management, "public async ValueTask<Role> CreateRoleAsync(", "_roleRepository.CreateAsync(");
         AssertLocksBefore(management, "public async ValueTask AssignRoleAsync(", "AssignToUserAsync(");
         AssertLocksBefore(management, "public async ValueTask RemoveRoleAsync(", "RemoveFromUserAsync(");
-        AssertLocksBefore(provisioning, "private async ValueTask<InitialRoleDecision> DecideInitialRoleAsync(", "return new InitialRoleDecision(role, null);");
+        AssertLocksBefore(provisioning, "private async ValueTask<InitialRoleDecision> DecideInitialRoleAsync(", "return new InitialRoleDecision(role, null, viability);");
 
-        // The provisioning writer assigns only a role the decision allowed.
-        provisioning.Should().Contain("AssignInitialRoleAsync(transaction, userId, initialRole.Role, ct)");
+        // The provisioning writer assigns only a role the decision allowed (IAM-10.2b: the decision also carries the gate it holds).
+        provisioning.Should().Contain("AssignInitialRoleAsync(transaction, userId, initialRole, ct)");
         provisioning.Should().NotContain("TryAssignRoleAsync", "the earlier assignment that needed only role.assign is gone");
     }
 
