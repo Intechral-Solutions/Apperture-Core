@@ -10,6 +10,16 @@ namespace Apperture.ControlPlane.Security.AdministratorViability;
 public interface IAdministratorViabilityCoordinator
 {
     /// <summary>
+    /// Builds, outside any transaction, what the viability reads are made from (R-1). The first reading of a host builds its running
+    /// Entra options, which reads the persisted registration and its secret through a connection of its own; made inside a unit that
+    /// has written a registration row, that read waits for the unit's own row under locking READ COMMITTED and reads the row as it
+    /// was before under READ_COMMITTED_SNAPSHOT, and the options it builds are then cached. A writer of Entra registrations calls
+    /// this before it opens its audited unit, so that the first build can never happen behind the unit's own locks. A failure to
+    /// build propagates: it is never turned into a reading.
+    /// </summary>
+    ValueTask PrepareAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Takes <see cref="IPlatformAdministratorSetGate"/> for the caller's open transaction. It must be the first lock the unit takes
     /// after its operation lock: before the authority row locks of <c>IRoleRepository.LockAuthoritySnapshotAsync</c> and
     /// before any other row. The gate is held until the unit's transaction ends, so a rerun after a rollback calls this again.
@@ -32,6 +42,12 @@ public sealed class AdministratorViabilityScope
     private string? _affectedUserId;
 
     internal AdministratorViabilityScope(IAdministratorViabilityService reads) => _reads = reads;
+
+    /// <summary>The state read before the change, by <see cref="CaptureBeforeAsync"/> or <see cref="CaptureBeforeForRaiseAsync"/>.</summary>
+    public AdministratorViabilityState? Captured => _before;
+
+    /// <summary>The state read by the last <see cref="VerifyAfterAsync"/> or <see cref="AssertRaiseOnlyAsync"/>: what the applied change left.</summary>
+    public AdministratorViabilityState? After { get; private set; }
 
     /// <summary>
     /// For a raise-only writer: reads the state before the mutation and remembers whose viability the writer is changing. The
@@ -58,6 +74,7 @@ public sealed class AdministratorViabilityScope
     {
         var before = Before();
         var after = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+        After = after;
         return AdministratorViabilityGuard.Evaluate(before, after);
     }
 
@@ -76,6 +93,7 @@ public sealed class AdministratorViabilityScope
         var affected = _affectedUserId
             ?? throw new InvalidOperationException("A raise-only writer must capture the state with CaptureBeforeForRaiseAsync.");
         var after = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+        After = after;
         if (RaiseOnlyAttribution.FindReduction(before, after, affected) is { } reduction)
             throw new AuditInvariantException($"A change that may only add to administrator viability reduced it: {reduction}.");
     }
@@ -89,11 +107,24 @@ public sealed class AdministratorViabilityCoordinator : IAdministratorViabilityC
 {
     private readonly IPlatformAdministratorSetGate _gate;
     private readonly IAdministratorViabilityService _reads;
+    private readonly IDeploymentAuthenticationConfiguration? _deployment;
 
-    public AdministratorViabilityCoordinator(IPlatformAdministratorSetGate gate, IAdministratorViabilityService reads)
+    public AdministratorViabilityCoordinator(
+        IPlatformAdministratorSetGate gate,
+        IAdministratorViabilityService reads,
+        IDeploymentAuthenticationConfiguration? deployment = null)
     {
         _gate = gate;
         _reads = reads;
+        _deployment = deployment;
+    }
+
+    /// <inheritdoc />
+    public ValueTask PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _deployment?.EnsureInitialized();
+        return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />

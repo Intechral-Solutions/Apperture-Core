@@ -25,12 +25,18 @@ public enum RunningHandlerState
 /// <param name="ClientId">The client id the handler was built with.</param>
 /// <param name="HasClientSecret">The handler holds a client secret.</param>
 /// <param name="Detail">Why the binding is unavailable or disabled, for the operator.</param>
+/// <param name="Quality">
+/// How completely the Entra options the handler's options were built from were themselves built (R-1), or null when nothing was
+/// recorded. A degraded build means the handler holds what the deployment configuration said, because the persisted registration or
+/// its secret could not be read at that moment.
+/// </param>
 public sealed record RunningHandlerBinding(
     RunningHandlerState State,
     string? Authority,
     string? ClientId,
     bool HasClientSecret,
-    string? Detail)
+    string? Detail,
+    EntraOptionsBuildQuality? Quality = null)
 {
     /// <summary>The binding of a handler that cannot be read.</summary>
     public static RunningHandlerBinding Unavailable(string detail) => new(RunningHandlerState.Unavailable, null, null, false, detail);

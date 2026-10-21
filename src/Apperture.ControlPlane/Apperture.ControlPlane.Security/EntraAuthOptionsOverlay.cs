@@ -16,6 +16,36 @@ public enum EntraOverlayOutcome
     Applied,
 }
 
+/// <summary>Where the client secret an overlaid set of options ended with came from.</summary>
+public enum EntraSecretProvenance
+{
+    /// <summary>The options hold no client secret.</summary>
+    None,
+
+    /// <summary>The registration's own stored secret.</summary>
+    StoredSecret,
+
+    /// <summary>The deployment's secret, which the registration asks for (<c>UsesDeploymentSecret</c>).</summary>
+    DeploymentSecretRequested,
+
+    /// <summary>
+    /// The deployment's secret, which the registration neither asks for nor replaces with one of its own. The host has always kept
+    /// it in the options and enabled Entra with it; it is reported so the secret is not mistaken for the registration's.
+    /// </summary>
+    DeploymentSecretLegacyFallback,
+}
+
+/// <summary>What the overlay did, with the certainty and the origin of the client secret.</summary>
+/// <param name="Outcome">What happened to the options.</param>
+/// <param name="SecretStatus">How far the registration's own secret resolution can be relied on (<see cref="EntraClientSecretAccess.ResolveAsync"/>).</param>
+/// <param name="Provenance">Where the secret the options ended with came from.</param>
+public sealed record EntraOverlayResult(EntraOverlayOutcome Outcome, EntraClientSecretStatus SecretStatus, EntraSecretProvenance Provenance)
+{
+    /// <summary>The options were left alone.</summary>
+    public static EntraOverlayResult NoActiveRegistration { get; } =
+        new(EntraOverlayOutcome.NoActiveRegistration, EntraClientSecretStatus.Absent, EntraSecretProvenance.None);
+}
+
 /// <summary>
 /// The rule that overlays the active Entra registration on the deployment options. It is the one place the rule lives: the host
 /// applies it when it builds <see cref="EntraAuthOptions"/>, and the administrator-viability evaluation applies it to the
@@ -31,10 +61,21 @@ public static class EntraAuthOptionsOverlay
         EntraInstanceRegistration? active,
         EntraAuthOptions options,
         ISecretResolver? secretResolver,
+        CancellationToken cancellationToken = default) =>
+        (await ApplyDetailedAsync(active, options, secretResolver, cancellationToken).ConfigureAwait(false)).Outcome;
+
+    /// <summary>
+    /// <see cref="ApplyAsync"/>, reporting too whether the registration's secret was resolved with certainty and where the secret
+    /// the options ended with came from. The options are changed exactly as <see cref="ApplyAsync"/> changes them.
+    /// </summary>
+    public static async ValueTask<EntraOverlayResult> ApplyDetailedAsync(
+        EntraInstanceRegistration? active,
+        EntraAuthOptions options,
+        ISecretResolver? secretResolver,
         CancellationToken cancellationToken = default)
     {
         if (active is null || !active.Enabled)
-            return EntraOverlayOutcome.NoActiveRegistration;
+            return EntraOverlayResult.NoActiveRegistration;
 
         options.Authority = active.Authority;
         options.ClientId = active.ClientId;
@@ -46,16 +87,23 @@ public static class EntraAuthOptionsOverlay
         if (!string.IsNullOrWhiteSpace(active.CallbackPath))
             options.CallbackPath = active.CallbackPath!;
 
-        var resolved = await EntraClientSecretAccess
-            .TryResolveAsync(active, secretResolver, options.ClientSecret, cancellationToken)
+        var resolution = await EntraClientSecretAccess
+            .ResolveAsync(active, secretResolver, options.ClientSecret, cancellationToken)
             .ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(resolved))
-            options.ClientSecret = resolved;
+        if (!string.IsNullOrWhiteSpace(resolution.Secret))
+            options.ClientSecret = resolution.Secret;
+
+        var provenance = resolution.Source switch
+        {
+            EntraClientSecretSource.SecretStore => EntraSecretProvenance.StoredSecret,
+            EntraClientSecretSource.DeploymentSecret => EntraSecretProvenance.DeploymentSecretRequested,
+            _ => string.IsNullOrWhiteSpace(options.ClientSecret) ? EntraSecretProvenance.None : EntraSecretProvenance.DeploymentSecretLegacyFallback,
+        };
 
         if (string.IsNullOrWhiteSpace(options.ClientSecret))
-            return EntraOverlayOutcome.AppliedWithoutSecret;
+            return new EntraOverlayResult(EntraOverlayOutcome.AppliedWithoutSecret, resolution.Status, EntraSecretProvenance.None);
 
         options.Enabled = true;
-        return EntraOverlayOutcome.Applied;
+        return new EntraOverlayResult(EntraOverlayOutcome.Applied, resolution.Status, provenance);
     }
 }

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Host;
@@ -28,6 +29,7 @@ public static class AuthenticationServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 
+        services.TryAddSingleton<IEntraOptionsBuildHealth, EntraOptionsBuildHealth>();
         services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
         services.AddSingleton<IRunningEntraHandlerBindingSource, OpenIdConnectHandlerBindingSource>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();

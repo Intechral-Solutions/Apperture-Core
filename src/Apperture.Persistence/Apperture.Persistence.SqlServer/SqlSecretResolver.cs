@@ -27,7 +27,7 @@ public sealed class SqlSecretResolver : ISecretResolver
         var secretId = new SecretId(guid);
         var payload = await _store.TryGetPayloadAsync(secretId, secretRef.Version, cancellationToken).ConfigureAwait(false);
         if (payload is null)
-            throw new InvalidOperationException("Secret could not be resolved (not found or ineligible).");
+            throw new SecretNotFoundException();
         return await UnprotectAsync(secretRef, payload.Value, cancellationToken).ConfigureAwait(false);
     }
 

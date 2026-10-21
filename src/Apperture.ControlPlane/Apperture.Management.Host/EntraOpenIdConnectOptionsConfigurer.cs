@@ -27,11 +27,16 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
 {
     private readonly IOptionsMonitor<EntraAuthOptions> _entra;
     private readonly IConfiguration _configuration;
+    private readonly IEntraOptionsBuildHealth? _health;
 
-    public EntraOpenIdConnectOptionsConfigurer(IOptionsMonitor<EntraAuthOptions> entra, IConfiguration configuration)
+    public EntraOpenIdConnectOptionsConfigurer(
+        IOptionsMonitor<EntraAuthOptions> entra,
+        IConfiguration configuration,
+        IEntraOptionsBuildHealth? health = null)
     {
         _entra = entra;
         _configuration = configuration;
+        _health = health;
     }
 
     public void Configure(string? name, OpenIdConnectOptions options)
@@ -40,6 +45,10 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
 
         var e = _entra.CurrentValue;
+
+        // The handler holds what it was built from. If those Entra options were built while the registration or its secret could
+        // not be read, say so against the handler's options too (R-1): the framework keeps them until it rebuilds them.
+        _health?.Carry(e, options);
         if (!EntraRuntimeState.IsUsable(e))
         {
             // The OIDC scheme is always registered so it can be activated consistently (e.g. DB overlay + restart).

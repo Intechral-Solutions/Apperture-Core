@@ -57,16 +57,32 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
         // Restart: what the next start builds from the persisted registration.
         var restartEntra = Clone(reading.EntraBase);
         var overlay = await EntraAuthOptionsOverlay
-            .ApplyAsync(active, restartEntra, _secretResolver, cancellationToken)
+            .ApplyDetailedAsync(active, restartEntra, _secretResolver, cancellationToken)
             .ConfigureAwait(false);
         var restartNotes = new List<string>();
-        if (overlay == EntraOverlayOutcome.AppliedWithoutSecret && !reading.AuthoritativeAboutSecrets
+        if (overlay.Outcome == EntraOverlayOutcome.AppliedWithoutSecret && !reading.AuthoritativeAboutSecrets
             && entraTrust == ConfigurationTrustLevel.Trusted)
         {
             // This reader cannot see the host's deployment secret or secret store, so "no secret" proves nothing.
             entraTrust = ConfigurationTrustLevel.Unknown;
             reasons.Add(
                 "The active Entra registration's client secret cannot be established from here: it is held by the deployment configuration or the secret store of the Management Host.");
+        }
+
+        if (overlay.SecretStatus == EntraClientSecretStatus.Unavailable && entraTrust == ConfigurationTrustLevel.Trusted)
+        {
+            // The registration names a stored secret and the store could not be read: whether it exists, and which secret the
+            // registration would use, is not established, so "no secret" and "a secret" are both guesses. The sign-in's own
+            // fall-through to the deployment secret is unchanged and is not read as the answer.
+            entraTrust = ConfigurationTrustLevel.Unknown;
+            reasons.Add(
+                "The active Entra registration's client secret could not be read from the secret store, so whether Microsoft sign-in works cannot be established. Try again when the secret store is available.");
+        }
+
+        if (overlay.Provenance == EntraSecretProvenance.DeploymentSecretLegacyFallback)
+        {
+            restartNotes.Add(
+                "The active Entra registration does not ask for the deployment's client secret and holds none of its own; Microsoft sign-in is usable only through the deployment secret, as the host has always applied it.");
         }
 
         var restart = new SignInAvailability(
@@ -92,6 +108,18 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
                 reasons.Add(
                     "The configuration of the running sign-in handler cannot be established" +
                     (string.IsNullOrWhiteSpace(reading.Running.Handler.Detail) ? "." : $" ({reading.Running.Handler.Detail})."));
+            }
+
+            if ((reading.Running.EndpointsQuality == EntraOptionsBuildQuality.Degraded
+                 || reading.Running.Handler.Quality == EntraOptionsBuildQuality.Degraded)
+                && entraTrust == ConfigurationTrustLevel.Trusted)
+            {
+                // R-1: the framework built the running options while the registration or its secret could not be read, and keeps
+                // them until it rebuilds them. They are what the host runs, but they were not built from the persisted
+                // configuration, so what the host accepts now is not a settled reading.
+                entraTrust = ConfigurationTrustLevel.Unknown;
+                reasons.Add(
+                    "The running sign-in options were built while the Microsoft registration or its client secret could not be read, so what the host accepts now is not established until the host is restarted once they can be read.");
             }
         }
 

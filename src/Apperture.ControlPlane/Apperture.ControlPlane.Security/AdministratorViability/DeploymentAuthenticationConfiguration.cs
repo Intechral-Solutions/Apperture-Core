@@ -7,10 +7,15 @@ namespace Apperture.ControlPlane.Security.AdministratorViability;
 /// <param name="Local">The Local options the login routes read.</param>
 /// <param name="EntraEndpoints">The Entra options the sign-in, link and step-up endpoints gate on (fixed when the host built them).</param>
 /// <param name="Handler">The configuration the OpenID Connect handler actually holds (read from the framework's own cache).</param>
+/// <param name="EndpointsQuality">
+/// How completely <paramref name="EntraEndpoints"/> was built from the persisted registration and its secret (R-1), or null when
+/// nothing was recorded.
+/// </param>
 public sealed record RunningAuthenticationReading(
     LocalAuthOptions Local,
     EntraAuthOptions EntraEndpoints,
-    RunningHandlerBinding Handler);
+    RunningHandlerBinding Handler,
+    EntraOptionsBuildQuality? EndpointsQuality = null);
 
 /// <summary>One reading of the deployment's authentication configuration.</summary>
 /// <param name="LocalTrust">How far <paramref name="LocalSignInEnabled"/> can be relied on.</param>
@@ -43,6 +48,16 @@ public interface IDeploymentAuthenticationConfiguration
 {
     /// <summary>Reads the configuration now.</summary>
     DeploymentAuthenticationReading Read();
+
+    /// <summary>
+    /// Builds, if they are not built yet, whatever a reading is made from. A reading made for the first time builds the running
+    /// Entra options, which reads the persisted registration and its secret through a connection of its own; made inside a
+    /// transaction that has written a registration row, that read waits for the row or reads it as it was before. A writer of
+    /// registrations calls this before it opens its unit (R-1). A reader with nothing to build does nothing.
+    /// </summary>
+    void EnsureInitialized()
+    {
+    }
 }
 
 /// <summary>
@@ -55,22 +70,29 @@ public sealed class HostDeploymentAuthenticationConfiguration : IDeploymentAuthe
     private readonly IOptions<LocalAuthOptions> _local;
     private readonly IOptions<EntraAuthOptions> _entra;
     private readonly IRunningEntraHandlerBindingSource? _handler;
+    private readonly IEntraOptionsBuildHealth? _health;
 
     /// <param name="handler">
     /// Where the running handler's configuration is read. A host that registers none cannot say what its handler does, which is
     /// reported as unavailable and never as usable.
     /// </param>
+    /// <param name="health">Where the way the running Entra options were built is recorded (R-1). A host that registers none records nothing.</param>
     public HostDeploymentAuthenticationConfiguration(
         IConfiguration configuration,
         IOptions<LocalAuthOptions> local,
         IOptions<EntraAuthOptions> entra,
-        IRunningEntraHandlerBindingSource? handler = null)
+        IRunningEntraHandlerBindingSource? handler = null,
+        IEntraOptionsBuildHealth? health = null)
     {
         _configuration = configuration;
         _local = local;
         _entra = entra;
         _handler = handler;
+        _health = health;
     }
+
+    /// <inheritdoc />
+    public void EnsureInitialized() => _ = Read();
 
     /// <inheritdoc />
     public DeploymentAuthenticationReading Read()
@@ -82,6 +104,8 @@ public sealed class HostDeploymentAuthenticationConfiguration : IDeploymentAuthe
 
         try
         {
+            var local = _local.Value;
+            var entraEndpoints = _entra.Value;
             return new DeploymentAuthenticationReading(
                 ConfigurationTrustLevel.Trusted,
                 ConfigurationTrustLevel.Trusted,
@@ -90,9 +114,10 @@ public sealed class HostDeploymentAuthenticationConfiguration : IDeploymentAuthe
                 entraBase,
                 AuthoritativeAboutSecrets: true,
                 new RunningAuthenticationReading(
-                    _local.Value,
-                    _entra.Value,
-                    _handler?.Read() ?? RunningHandlerBinding.Unavailable("This host registers no way to read its sign-in handler.")));
+                    local,
+                    entraEndpoints,
+                    _handler?.Read() ?? RunningHandlerBinding.Unavailable("This host registers no way to read its sign-in handler."),
+                    _health?.QualityOf(entraEndpoints)));
         }
         catch (OptionsValidationException ex)
         {

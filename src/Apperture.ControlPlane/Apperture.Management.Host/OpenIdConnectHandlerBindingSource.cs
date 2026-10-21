@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security;
 using Apperture.ControlPlane.Security.AdministratorViability;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Options;
@@ -22,8 +23,13 @@ namespace Apperture.Management.Host;
 internal sealed class OpenIdConnectHandlerBindingSource : IRunningEntraHandlerBindingSource
 {
     private readonly IOptionsMonitor<OpenIdConnectOptions> _options;
+    private readonly IEntraOptionsBuildHealth? _health;
 
-    public OpenIdConnectHandlerBindingSource(IOptionsMonitor<OpenIdConnectOptions> options) => _options = options;
+    public OpenIdConnectHandlerBindingSource(IOptionsMonitor<OpenIdConnectOptions> options, IEntraOptionsBuildHealth? health = null)
+    {
+        _options = options;
+        _health = health;
+    }
 
     /// <inheritdoc />
     public RunningHandlerBinding Read()
@@ -39,15 +45,18 @@ internal sealed class OpenIdConnectHandlerBindingSource : IRunningEntraHandlerBi
             return RunningHandlerBinding.Unavailable($"the handler's options could not be built ({ex.GetType().Name})");
         }
 
+        // How the Entra options this handler was configured from were built (R-1), recorded when the configurer ran.
+        var quality = _health?.QualityOf(options);
+
         if (string.Equals(options.ClientId, EntraOpenIdConnectOptionsConfigurer.DisabledPlaceholder, StringComparison.Ordinal)
             || string.Equals(options.ClientSecret, EntraOpenIdConnectOptionsConfigurer.DisabledPlaceholder, StringComparison.Ordinal))
         {
-            return RunningHandlerBinding.Disabled();
+            return RunningHandlerBinding.Disabled() with { Quality = quality };
         }
 
         return RunningHandlerBinding.Bound(
             options.Authority,
             options.ClientId,
-            hasClientSecret: !string.IsNullOrWhiteSpace(options.ClientSecret));
+            hasClientSecret: !string.IsNullOrWhiteSpace(options.ClientSecret)) with { Quality = quality };
     }
 }
