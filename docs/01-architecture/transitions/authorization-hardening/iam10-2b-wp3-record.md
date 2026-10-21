@@ -97,3 +97,44 @@ Integrated (WP2 and WP3): the administrator role (assign, remove, initial role),
 ## 9. Remaining findings
 
 F-1 (WP4B, mandatory), D-6 (owner decision before WP4B), R-2 (WP4B), the IAM-10.4 UI presentation of a refused change, the deployment-secret fallback decision (§5, only if a change is wanted).
+
+Known until WP4A and WP4B land, and unchanged by this package: a writer that does not yet take the gate (the Entra-primary policy at sign-in, the bootstrap and Recovery Access writers) can change an administrator's contribution between a reducer's two reads. A reducer compares the whole system, so the effect is a refusal in the safe direction at worst (the WP2 review §2 states the same limitation for the raise-only writers).
+
+## 10. Evidence
+
+**Source.** Commits `8584e89` (WP3-A) and `2ec392a` (WP3-B). The binaries were built from `2ec392a` with a clean working tree before and after (`git status --porcelain` empty). Tree hashes of the built source: `src` = `fa7d0542ea1baa5da6a471c8f58b7ef2b80458ad`, `tests` = `1210430ef60bdb17eefe563870493f412adb442a` (`git rev-parse <commit>:src <commit>:tests`); the commit that adds this section changes documentation only. WP3-A was also built on its own in a temporary worktree (both test projects, 0 errors) and its 70 unit cases for the prerequisites and the guard passed there; its SQL cases ran in the development tree before the commit.
+
+**Build** (clean: a new output directory, `--no-incremental`), from the repository root, .NET SDK 10.0.402, 9 minutes:
+
+```
+dotnet build tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --artifacts-path artifacts/wp3-final --no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers -v:q -nologo
+dotnet build tests/Apperture.UnitTests/Apperture.UnitTests.csproj             --artifacts-path artifacts/wp3-final --no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers -v:q -nologo
+```
+
+Both: 0 errors. Tests were run with `dotnet test … --artifacts-path artifacts/wp3-final --no-build --logger trx`, only after that build of that tree.
+
+| Run | Result |
+|---|---|
+| Whole unit project | 5632 passed, 0 failed, 0 skipped (5544 at WP2; 88 added) |
+| Focused integration set (below) | 1025 passed, 0 failed, 0 skipped |
+
+**Isolation modes**, read from the trx names: 424 cases carry `rcsi: False` (locking READ COMMITTED) and all passed; 424 carry `rcsi: True` (READ_COMMITTED_SNAPSHOT) and all passed; the remaining 177 take no isolation parameter (host suites and audit suites on a catalog of their own, in the default mode) and are counted toward neither. WP3 classes alone: `EntraRegistrationViabilityWp3SqlServerTests` 256 (128 and 128), `EntraOptionsInitializationSqlServerTests` 10 (5 and 5), `EntraRegistrationHostSqlServerTests` 6 (3 and 3), `EntraRegistrationViabilityHostHttpTests` 18 (9 and 9, each with its own host on the matching catalog). No SQL Server suite here skips: it fails without SQL Server.
+
+**Focused integration set, by class:** the WP3 classes above; `AdministratorViabilityWp2SqlServerTests` 288 (including the corrected environment-change case), `AdministratorViabilityHostHttpTests` 12, `RoleAuthorityHostHttpTests` 19, `RoleAuthoritySqlServerTests` 148, `AdministratorViabilitySqlServerTests` 21, `PlatformAdministratorSetGateSqlServerTests` 14, `RunningHandlerViabilitySqlServerTests` 6, `IdentityGovernanceAuditSqlServerTests` 18, `EntraGovernanceAuditSqlServerTests` 12, `AuditRecorderSqlServerTests` 22, `PlatformAdminRoleRepairSqlServerTests` 28, `AccountServicesAuditSqlServerTests` 18, `AuthConfigurationAuditSqlServerTests` 20 (the existing registration and policy audit suite, on the new controllers), `EntraProbeTelemetrySqlServerTests` 24, `EntraRegistrationDiagnosticsMigrationSqlServerTests` 5, and the host suites `ManagementHostEntraProbeAuthorizationHttpTests` 6, `ManagementHostEntraLinkingHttpTests` 13, `ManagementHostSessionIdentityHttpTests` 9, `ManagementHostUserSearchHttpTests` 9, `ManagementHostUsernameRenameHttpTests` 15, `AuthorizationRemovalHostHttpTests` 7, `BrowserRequestTrustHttpTests` 21.
+
+**What the WP3 cases cover.** Sequential matrix: every refusal and every allowed change of §1 for the four reducers, tenant change, switch with and without a second proven tenant, Recovery Access never counted, the fallback invariant never produced, an inactive registration, no active registration, no secret, a stored-only secret (activation raises, edit is judged on it), an invalid stored authentication context (activation refused, repair allowed), the legacy fallback, a secret-store outage (unknown, fail closed, message free of the reference and the resolver's text) beside a confirmed absence (known), unknown configuration (reducing refused, non-reducing allowed), no-ops (including when already unhealthy), 404, 403, the policy contract. Views: a switch refused in the Now view alone, a change refused in the Restart view alone, an inconsistent running view not stopping the repair, the simulated restart reconciling both views, tenant by authority only. Concurrency (deterministic, the first writer parked with everything it holds, the second shown waiting on the application lock and on no row): every registration reducer against every WP2 administrator reducer, in both orders (12 pairs each way on each mode) and sequentially, three controls with the gate removed (row versioning leaves nobody; locking READ COMMITTED shows a row-lock wait that is not the gate), a registration change unable to move the accepted tenant between an administrator writer's two reads, busy and cancellation for all four reducers. M6 for create, edit with a secret, delete and activate (audit-insert failure, lost acknowledgement, confirmed rollback with one secret stored, unknown outcome committed, operation lock not granted), a refusal after the write rolling back the new secret and the retirement together with a failing refusal row. Lock order: the gate is the first lock after the operation lock, before any registration or secret row, for create, edit, delete, activate and the policy.
+
+**Mutation checks** (source edited in a working copy, a separate build directory, the file restored from a byte-identical backup and its hash compared; the build directory deleted afterwards).
+
+| Mutation | Fails |
+|---|---|
+| The coordinator no longer takes the gate | 101 of the 256 WP3 SQL cases: all 48 concurrent pairs, the lock-order, busy, cancellation and M6 gate-count cases, the policy ordering cases |
+| The verdict of an applied change is ignored | 64 of the 256: every refusal case, the Recovery Access, tenant, view, unknown-configuration and secret-rollback cases |
+| `PrepareAsync` builds nothing | 2 unit and 6 SQL cases (the preparation, the options never read behind the unit's locks, the order test, the create reading nothing) |
+| An unreadable secret store is read as an absence | 10 unit and 4 SQL cases |
+| A degraded build is not distrusted | 3 unit and 6 SQL cases |
+| M-2's whole-system comparison restored | the original fixture 10 of 20, the corrected 12 of 20 (see the [WP2 review record](iam10-2b-wp2-review-record.md) §8) |
+| `Prepare` removed from the controller | the writer guard's order test |
+| The switch as it was | the first run of the matrix, before the fix (§6) |
+
+**Not executed, and limitations.** The full multi-hour integration suite was not run. No Browser or UI test was run. A row-lock deadlock victim rerun was not written for the registration units (the recorder's rerun is covered by the confirmed-rollback case, which takes the gate again and stores its secret once, and the deadlock rerun for the same recorder by the WP2 case). An HTTP case for a host whose Entra options fail validation cannot be built (such a host fails its own pipeline before the writer runs); it is covered at the SQL level. A rebuild of the options on a reload that coincides with an in-flight registration write is recorded and fails closed, not prevented (§3).

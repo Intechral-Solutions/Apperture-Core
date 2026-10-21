@@ -79,7 +79,7 @@ Focused integration set, by class: `AdministratorViabilityWp2SqlServerTests` 288
 
 **Correction (WP3, test only; no production code).** The case now arranges an affected user who is viable only through a proven Entra link, asserts the effective availability before and after (Microsoft sign-in usable now and after a restart; then usable in neither view: the running options off, and a deployment with no client secret for the registration to use), asserts that the user is viable before and not viable after in both views, and only then runs the writer between the two reads. A comparison of the whole system would read that as a reduction the writer caused; the writer-attributed comparison does not.
 
-**Re-measurement (WP3), stated as such.** The reviewed production code (`1883d87`) was built with M-2's whole-system comparison restored in `AdministratorViabilityScope.AssertRaiseOnlyAsync`, in a build directory of its own, and the cases of the M-2 group (`M2_*`, 20 SQL cases, each on both isolation modes) were run:
+**Re-measurement (WP3), stated as such.** The WP3 working tree, in which `AdministratorViabilityScope.AssertRaiseOnlyAsync` and everything it calls are unchanged from `1883d87`, was built with M-2's whole-system comparison restored in that method, in a build directory of its own, once with the test file of `1883d87` swapped in (the original fixture) and once with the corrected test file, and the cases of the M-2 group (`M2_*`, 20 SQL cases, each on both isolation modes) were run:
 
 | Fixture | SQL cases failing under the mutation |
 |---|---|
