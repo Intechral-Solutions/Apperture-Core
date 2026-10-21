@@ -54,6 +54,14 @@ Tests use the real host registration, the real options post-configure over a cha
 | Writer-guard hardening | **WP2**, then **WP5** | The guard stays explicit about pending integrations; it is hardened as each package flips its writers from pending. |
 | The deployment-secret fallback: a registration that does not use the deployment secret and has no stored secret still enables Entra from the deployment secret | An **owner decision before WP3**, only if a behaviour change is proposed | Existing behaviour, unchanged here and pinned by a differential test. |
 
+### 2.1 Tracked risks with owners and deadlines (added in the [WP2 review record](iam10-2b-wp2-review-record.md))
+
+| Risk | Definition | Owner | Deadline |
+|---|---|---|---|
+| **R-1** First-time Entra options construction inside a registration mutation | The first construction of the Entra options (and so of the OpenID Connect handler's cached options) reads the persisted registration and the secret store through a scope and connection of its own. If that happens inside a unit that holds the administrator-set gate **and has written a registration row**, the separate read can block on the unit's own uncommitted row (or read the pre-change row), leaving options that are cached incorrectly initialized, and the viability reading would then be built on them. WP2 units write no registration or secret row, and the request pipeline builds the options before any unit runs, so WP2 is not exposed. | **WP3** (the registration and sign-in policy writers) | Resolved and proven by a test before any WP3 writer is integrated; reviewed in the WP3 independent security review |
+| **R-2** A startup writer initializing the handler options too early | A hosted service that runs at start (the bootstrap and repair services of WP4B) can cause the OpenID Connect handler's options to be built before migrations have run or before the registration state is ready, so the framework caches the disabled or incomplete configuration for the life of the process, and the Now view then reports a handler that does not match what an administrator later configures. | **WP4B** (the startup and bootstrap writers) | Resolved and proven by a test before the WP4B review; recorded in the WP5 closure record |
+| **UI** Refusal presentation | The management client reports a refused role removal or a busy gate as a bare 409 and explains none of the stable codes. The API contract is complete (`docs/04-api/contracts.md`). | **IAM-10.4** (role editor and UI) | Before the IAM-10.4 UI sign-off |
+
 The acceptance criteria of the design gate are not changed to accommodate the tests.
 
 ## 3. Observations made during the remediation

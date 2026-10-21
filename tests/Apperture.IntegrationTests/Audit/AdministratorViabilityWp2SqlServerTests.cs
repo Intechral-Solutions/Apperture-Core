@@ -96,8 +96,9 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
         DeploymentAuthenticationReading? reading = null,
         IPlatformAdministratorSetGate? gate = null,
         IAuditedUnitOfWork? unit = null,
-        IAuditEventWriter? events = null) =>
-        world.Service(db, actor, advisoryAllowsAll: true, unit: unit, events: events, gate: gate, deployment: reading, strongAuthentication: StrongAuthentication);
+        IAuditEventWriter? events = null,
+        IAdministratorViabilityCoordinator? coordinator = null) =>
+        world.Service(db, actor, advisoryAllowsAll: true, unit: unit, events: events, gate: gate, deployment: reading, strongAuthentication: StrongAuthentication, coordinator: coordinator);
 
     private static async Task<string> UsernameOfAsync(RoleAuthorityWorld world, string userId) =>
         await world.Scratch.ScalarAsync<string>($"SELECT Username FROM Users WHERE Id = N'{userId}';");
@@ -811,6 +812,7 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
     internal sealed class OrderedLog
     {
         private readonly List<string> _entries = [];
+        private readonly List<int> _outsideTransaction = [];
 
         public IReadOnlyList<string> Entries
         {
@@ -821,10 +823,24 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
             }
         }
 
-        public void Add(string entry)
+        /// <summary>The positions of the statements that were issued with no transaction on the command.</summary>
+        public IReadOnlyList<int> OutsideTransaction
+        {
+            get
+            {
+                lock (_entries)
+                    return _outsideTransaction.ToList();
+            }
+        }
+
+        public void Add(string entry, bool inTransaction = true)
         {
             lock (_entries)
+            {
+                if (!inTransaction)
+                    _outsideTransaction.Add(_entries.Count);
                 _entries.Add(entry);
+            }
         }
     }
 
@@ -833,21 +849,21 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            log.Add(command.CommandText);
+            log.Add(command.CommandText, command.Transaction is not null);
             return ValueTask.FromResult(result);
         }
 
         public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            log.Add(command.CommandText);
+            log.Add(command.CommandText, command.Transaction is not null);
             return ValueTask.FromResult(result);
         }
 
         public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
             DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken cancellationToken = default)
         {
-            log.Add(command.CommandText);
+            log.Add(command.CommandText, command.Transaction is not null);
             return ValueTask.FromResult(result);
         }
     }

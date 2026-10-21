@@ -194,7 +194,8 @@ internal sealed class RoleAuthorityWorld
         IPlatformAdministratorSetGate? gate = null,
         DeploymentAuthenticationReading? deployment = null,
         IStrongAuthenticationGate? strongAuthentication = null,
-        IEmergencyAccessService? emergencyAccess = null)
+        IEmergencyAccessService? emergencyAccess = null,
+        IAdministratorViabilityCoordinator? coordinator = null)
     {
         var principal = new Principal(actorUserId);
         var roles = new SqlRoleRepository(db);
@@ -216,7 +217,7 @@ internal sealed class RoleAuthorityWorld
             emergencyAccess: emergencyAccess,
             auditedUnitOfWork: unit ?? NewUnit(db, principal),
             auditEvents: events ?? NewWriter(principal),
-            viability: Viability(db, gate, deployment));
+            viability: coordinator ?? Viability(db, gate, deployment));
     }
 
     /// <summary>

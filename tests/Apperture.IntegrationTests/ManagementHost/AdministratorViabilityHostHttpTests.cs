@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.AdministratorViability;
 using Apperture.IntegrationTests.Audit;
 using Apperture.Persistence.SqlServer;
@@ -90,6 +91,26 @@ public sealed class AdministratorViabilityHostHttpTests : IClassFixture<Administ
             client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, username);
             return client;
         }
+
+        private sealed class UnreadableHandler : IRunningEntraHandlerBindingSource
+        {
+            public RunningHandlerBinding Read() => RunningHandlerBinding.Unavailable("InvalidOperationException");
+        }
+
+        /// <summary>A host on the same catalog whose sign-in handler's options cannot be read (the Entra reading is unknown).</summary>
+        public HttpClient UnreadableHandlerClient(HostFactory host, string username)
+        {
+            var unreadable = host.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IRunningEntraHandlerBindingSource>();
+                services.AddSingleton<IRunningEntraHandlerBindingSource, UnreadableHandler>();
+            }));
+            _extra.Add(unreadable);
+            var client = unreadable.CreateClient();
+            client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, username);
+            return client;
+        }
+
 
         public async Task DisposeAsync()
         {
@@ -238,6 +259,57 @@ public sealed class AdministratorViabilityHostHttpTests : IClassFixture<Administ
         var allowed = await client.DeleteAsync($"api/users/{entraOnly.Id}/identity-links?source=Entra&externalId=oid-{entraOnly.Id}");
         allowed.StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await world.LinkCountAsync(entraOnly.Id, 0)).Should().Be(0);
+    }
+
+    // ----------------------------------------------------------------------- untrusted configuration (WP2 review, M-1)
+
+    public static IEnumerable<object[]> UntrustedHostsOnBothModes() =>
+        from rcsi in new[] { false, true }
+        select new object[] { rcsi };
+
+    [Theory]
+    [MemberData(nameof(UntrustedHostsOnBothModes))]
+    public async Task M1_an_ordinary_users_change_is_204_and_an_administrators_reduction_is_409_when_the_entra_configuration_cannot_be_trusted(bool rcsi)
+    {
+        var (world, host) = For(rcsi, entra: false);
+        await ClearAdministratorsAsync(world);
+        var actor = await StrandedActorAsync(world);
+        var spare = await world.NewPersonAsync("spare", Admin);
+        var viableAdmin = await world.NewPersonAsync("viable", Admin);
+        var ordinary = await world.NewPersonAsync("ordinary");
+        await world.AddCredentialAsync(ordinary.Id);
+        await world.AddEntraLinkAsync(ordinary.Id, Tenant, proven: true);
+        var withPending = await world.NewPersonAsync("with-pending");
+        await world.AddCredentialAsync(withPending.Id);
+        await world.AddEntraLinkAsync(withPending.Id, Tenant, proven: false);
+        using var client = _hosts.UnreadableHandlerClient(host, actor.Username);
+
+        // The ordinary user's credential, Local link and Entra link: nothing an administrator-viability definition reads moves.
+        var disable = await client.PatchAsJsonAsync($"api/users/{ordinary.Id}/local-credential", new { isDisabled = true });
+        var removeLocal = await client.DeleteAsync($"api/users/{withPending.Id}/identity-links?source=Local&externalId={Uri.EscapeDataString(withPending.Username)}");
+        var removeEntra = await client.DeleteAsync($"api/users/{ordinary.Id}/identity-links?source=Entra&externalId=oid-{ordinary.Id}");
+
+        disable.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        removeLocal.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        removeEntra.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await world.CredentialDisabledAsync(ordinary.Id)).Should().BeTrue();
+        (await world.LinkCountAsync(withPending.Id, 1)).Should().Be(0);
+        (await world.LinkCountAsync(ordinary.Id, 0)).Should().Be(0);
+        foreach (var action in new[] { "auth_admin.blocked.last_admin_credential_disabled", "auth_admin.blocked.last_admin_link_removed" })
+        {
+            (await world.AuditRowsAsync(action, ordinary.Id)).Should().Be(0);
+            (await world.AuditRowsAsync(action, "L" + withPending.Id)).Should().Be(0);
+            (await world.AuditRowsAsync(action, "E" + ordinary.Id)).Should().Be(0);
+        }
+
+        // An administrator's credential, an administrator's role: still fail closed.
+        var refusedCredential = await client.PatchAsJsonAsync($"api/users/{viableAdmin.Id}/local-credential", new { isDisabled = true });
+        var refusedRole = await client.DeleteAsync($"api/users/{spare.Id}/roles/{Admin}");
+
+        await AssertRefusalAsync(refusedCredential, "administrator_viability_unavailable");
+        await AssertRefusalAsync(refusedRole, "administrator_viability_unavailable");
+        (await world.CredentialDisabledAsync(viableAdmin.Id)).Should().BeFalse();
+        (await world.AssignmentExistsAsync(spare.Id, Admin)).Should().BeTrue();
     }
 
     // ------------------------------------------------------------------------------------------------- busy gate

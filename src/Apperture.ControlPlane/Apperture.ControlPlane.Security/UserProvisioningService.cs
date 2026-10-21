@@ -503,7 +503,7 @@ public sealed class UserProvisioningService : IUserProvisioningService
         if (role is null)
             return false;
         if (decision.Viability is { } viability)
-            await viability.CaptureBeforeAsync(cancellationToken);
+            await viability.CaptureBeforeForRaiseAsync(userId.Value, cancellationToken);
         await _roles.AssignToUserAsync(userId, role.Id, cancellationToken);
         // Giving a person the role can only add to administrator viability: asserted under the gate, never refused.
         if (decision.Viability is not null)

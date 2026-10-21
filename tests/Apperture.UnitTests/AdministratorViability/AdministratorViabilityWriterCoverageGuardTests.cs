@@ -430,7 +430,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     [
         // Role assignment: the gate before the authority row locks, then the write, then the assertion. A raiser.
         new(Security + "UserManagementService.cs", "AssignRoleAsync", Writes.RoleAssign,
-            [TakeGateForRole, "LockAuthoritySnapshotAsync(", "CaptureBeforeAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            [TakeGateForRole, "LockAuthoritySnapshotAsync(", "CaptureBeforeForRaiseAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
 
         // Role removal: the gate, the authority locks, the authorization refusals, the no-op, the state before, the write, the verdict.
         new(Security + "UserManagementService.cs", "RemoveRoleAsync", Writes.RoleRemove,
@@ -438,7 +438,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
         // Credential disable or enable: the gate first, the no-op before the invariants (P-9, F-9), then the write and the verdict.
         new(Security + "UserManagementService.cs", "SetLocalCredentialDisabledAsync", Writes.CredentialDisable,
-            [TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", ".SetDisabledAsync(", "VerifyAfterAsync(", "ViabilityRefusal.For(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            [TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "CaptureBeforeForRaiseAsync(", ".SetDisabledAsync(", "VerifyAfterAsync(", "ViabilityRefusal.For(", "AssertRaiseOnlyAsync(", "StageAsync("]),
 
         // Link removal, Local or Entra: the same shape.
         new(Security + "UserManagementService.cs", "RemoveIdentityLinkAsync", Writes.LinkRemove,
@@ -448,13 +448,13 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "UserManagementService.cs", "AddIdentityLinkAsync", Writes.LinkAdd,
             [TakeGate, "RequireLinkableUserAsync(userId, ct)", "RaiseOnlyAsync(", "StageAsync("]),
         new(Security + "UserManagementService.cs", "RaiseOnlyAsync", Writes.LinkAdd,
-            ["CaptureBeforeAsync(", "await write()", "AssertRaiseOnlyAsync("]),
+            ["CaptureBeforeForRaiseAsync(", "await write()", "AssertRaiseOnlyAsync("]),
 
         // The initial role of a provisioned person: the gate before the authority locks; the assignment is captured and asserted.
         new(Security + "UserProvisioningService.cs", "DecideInitialRoleAsync", Writes.RoleAssign,
             [TakeGateForRole, "LockAuthoritySnapshotAsync("]),
         new(Security + "UserProvisioningService.cs", "AssignInitialRoleAsync", Writes.RoleAssign,
-            ["CaptureBeforeAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            ["CaptureBeforeForRaiseAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
     ];
 
     [Fact]

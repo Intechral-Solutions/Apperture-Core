@@ -59,6 +59,37 @@ internal static class ViabilityTestData
             trust);
     }
 
+    /// <summary>The Recovery Access posture inputs of a healthy account, or of nobody designated.</summary>
+    public static RecoveryAccessFacts Recovery(bool healthy = false, string user = "recovery") =>
+        healthy
+            ? new RecoveryAccessFacts(user, true, true, true, true, 3)
+            : new RecoveryAccessFacts(null, false, false, false, false, 0);
+
+    /// <summary>
+    /// A state derived from stored facts the way the service derives it: both snapshots are the definitions applied to the facts under
+    /// the given availabilities, and the facts travel with the state.
+    /// </summary>
+    public static AdministratorViabilityState FromFacts(
+        IReadOnlyList<AdministratorFacts> administrators,
+        SignInAvailability? now = null,
+        SignInAvailability? restart = null,
+        RecoveryAccessFacts? recovery = null,
+        ConfigurationTrust? trust = null)
+    {
+        now ??= Availability(ViabilityView.Now);
+        restart ??= Availability(ViabilityView.Restart);
+        recovery ??= Recovery();
+        trust ??= ConfigurationTrust.Full;
+        return new AdministratorViabilityState(
+            AdministratorViabilityEvaluator.Evaluate(administrators, now),
+            AdministratorViabilityEvaluator.Evaluate(administrators, restart),
+            recovery.IsHealthy,
+            trust,
+            new EffectiveSignInConfiguration(now, restart, trust),
+            administrators,
+            recovery);
+    }
+
     private static EffectiveSignInConfiguration Configuration(ConfigurationTrust? trust) =>
         new(
             Availability(ViabilityView.Now),

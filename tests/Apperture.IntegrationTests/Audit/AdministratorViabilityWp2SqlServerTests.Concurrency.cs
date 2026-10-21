@@ -210,11 +210,33 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
     [MemberData(nameof(BothModes))]
     public async Task A13_a_writer_that_takes_only_row_locks_never_waits_for_the_gate(bool rcsi)
     {
-        var p = await PairAsync(rcsi, Op.RemoveRole, Op.DisableCredential);
-        var scratch = p.World.Scratch;
-        var assignable = await p.World.NewRoleAsync("assignable", P);
-        var assigner = await p.World.NewUserAsync("assigner", await p.World.NewRoleAsync("assigner-role", RoleAssign, P));
-        var user = await p.World.NewUserAsync("user");
+        // The key-range locks of the authority snapshot also cover the next key of the index, so two writers whose user ids happen to be
+        // neighbours would wait for each other by accident. The ids here are fixed so that they are not: the first writer's users sort
+        // last, the second writer's first, with an unrelated assignment between them.
+        var world = await FreshAsync(rcsi);
+        var scratch = world.Scratch;
+        await world.SetActiveRegistrationAsync(Tenant);
+        async Task<string> UserAsync(string prefix, string stem, params string[] roles)
+        {
+            var id = prefix + Guid.NewGuid().ToString("N")[..22];
+            await scratch.AddUserAsync(id, AuditRecorderTestSupport.NewUsername(stem));
+            foreach (var role in roles)
+                await world.AssignRawAsync(id, role);
+            if (roles.Contains(Admin))
+                await world.AddCredentialAsync(id);
+            return id;
+        }
+
+        var assignable = await world.NewRoleAsync("assignable", P);
+        var assignerRole = await world.NewRoleAsync("assigner-role", RoleAssign, P);
+        var assigner = await UserAsync("10", "assigner", assignerRole);
+        var user = await UserAsync("11", "user");
+        _ = await UserAsync("80", "separator", assignable);
+        var actorA = await UserAsync("f0", "actor-a", Admin);
+        await DisableCredentialRawAsync(world, actorA);
+        var targetX = await UserAsync("f1", "target-x", Admin);
+        _ = await UserAsync("f2", "spare", Admin);
+        var p = new Pair(world, targetX, string.Empty, actorA, string.Empty);
 
         var pause = PauseAt.BeforeStatement("INSERT INTO [AuditLogs]");
         var a = Task.Run(async () =>
@@ -248,6 +270,7 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         RemoveEntraLink,
         AssignRole,
         AddLocalLink,
+        EnableCredential,
     }
 
     public static IEnumerable<object[]> EveryUnitOnBothModes() =>
@@ -316,6 +339,13 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
                 break;
             }
 
+            case UnitKind.EnableCredential:
+            {
+                var stranded = await StrandedAdminAsync(world, "stranded-target");
+                await service.SetLocalCredentialDisabledAsync(new UserId(stranded), disabled: false);
+                break;
+            }
+
             default:
             {
                 var linkless = await world.NewUserAsync("linkless", Admin);
@@ -340,6 +370,22 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         entries.Skip(gateAt).Should().Contain(e => IsLockingOrWriting(e), "the unit does lock and write after the gate; the order is what is being checked");
         if (kind is UnitKind.RemoveRole or UnitKind.RemoveRoleSpelledInCapitals or UnitKind.RemoveRoleSpelledWithPadding or UnitKind.AssignRole)
             entries.Skip(gateAt).Should().Contain(e => e.Contains("UPDLOCK"), "the authority row locks follow the gate");
+
+        if (kind is UnitKind.AssignRole or UnitKind.AddLocalLink or UnitKind.EnableCredential)
+        {
+            // A raise-only writer: its assertion reads the state after the change inside the audited transaction, before the audit row.
+            var auditInsert = entries.ToList().FindIndex(e => e.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
+            auditInsert.Should().BeGreaterThan(gateAt);
+            var lastWrite = entries.ToList().FindLastIndex(
+                auditInsert - 1,
+                auditInsert,
+                e => (e.Contains("INSERT INTO [", StringComparison.Ordinal) || e.Contains("UPDATE [", StringComparison.Ordinal) || e.Contains("DELETE FROM", StringComparison.Ordinal))
+                     && !e.Contains("[AuditLogs]", StringComparison.Ordinal));
+            lastWrite.Should().BeGreaterThan(gateAt);
+            entries.Skip(lastWrite + 1).Take(auditInsert - lastWrite - 1)
+                .Should().Contain(e => e.Contains("[UserRoles]", StringComparison.Ordinal) && e.Contains("SELECT", StringComparison.Ordinal),
+                    "the state after the change is read in the same transaction, before the audit row");
+        }
     }
 
     private static bool IsLockingOrWriting(string statement) =>

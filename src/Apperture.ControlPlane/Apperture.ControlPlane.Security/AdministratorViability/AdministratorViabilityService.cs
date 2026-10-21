@@ -37,6 +37,8 @@ public sealed class AdministratorViabilityService : IAdministratorViabilityServi
             AdministratorViabilityEvaluator.Evaluate(administrators, configuration.Restart),
             recovery.IsHealthy,
             configuration.Trust,
-            configuration);
+            configuration,
+            administrators,
+            recovery);
     }
 }

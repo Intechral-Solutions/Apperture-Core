@@ -713,7 +713,7 @@ public sealed class UserManagementService : IUserManagementService
                     if (existingEntra is not null)
                         throw ExternalIdInUse();
 
-                    await RaiseOnlyAsync(viability, () => _userRepository.AddIdentityLinkAsync(userId, pendingLink with { LinkId = linkId }, ct), ct);
+                    await RaiseOnlyAsync(viability, userId, () => _userRepository.AddIdentityLinkAsync(userId, pendingLink with { LinkId = linkId }, ct), ct);
                     await transaction.StageAsync(
                         AuditEvents.EntraLinkPending(userId, linkId, pendingLink.TenantId!, pendingLink.ExternalId), ct);
                     return true;
@@ -735,6 +735,7 @@ public sealed class UserManagementService : IUserManagementService
                 {
                     await RaiseOnlyAsync(
                         viability,
+                        userId,
                         () => _userRepository.AddIdentityLinkAsync(
                             userId, new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null, LinkId: linkId), ct),
                         ct);
@@ -743,7 +744,7 @@ public sealed class UserManagementService : IUserManagementService
                 {
                     // A Microsoft link without the directory association needs a tenant the store requires; the store
                     // refuses it, as it always has.
-                    await RaiseOnlyAsync(viability, () => _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, ct), ct);
+                    await RaiseOnlyAsync(viability, userId, () => _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, ct), ct);
                 }
 
                 await transaction.StageAsync(AuditEvents.IdentityLinkAdded(userId, linkId, source, linkExternalId), ct);
@@ -757,9 +758,9 @@ public sealed class UserManagementService : IUserManagementService
     /// A write that can only add to administrator viability, made under the gate: the state before, the write, then the assertion
     /// that nothing was reduced.
     /// </summary>
-    private static async ValueTask RaiseOnlyAsync(AdministratorViabilityScope viability, Func<ValueTask> write, CancellationToken cancellationToken)
+    private static async ValueTask RaiseOnlyAsync(AdministratorViabilityScope viability, UserId affectedUser, Func<ValueTask> write, CancellationToken cancellationToken)
     {
-        await viability.CaptureBeforeAsync(cancellationToken);
+        await viability.CaptureBeforeForRaiseAsync(affectedUser.Value, cancellationToken);
         await write();
         await viability.AssertRaiseOnlyAsync(cancellationToken);
     }
@@ -929,7 +930,7 @@ public sealed class UserManagementService : IUserManagementService
                 // Assigning can only add to administrator viability: the gate serializes it with every reducer, and the state it left
                 // is asserted, never refused.
                 if (viability is not null)
-                    await viability.CaptureBeforeAsync(ct);
+                    await viability.CaptureBeforeForRaiseAsync(userId.Value, ct);
                 await _roleRepository.AssignToUserAsync(userId, lockedRoleId, ct);
                 if (viability is not null)
                     await viability.AssertRaiseOnlyAsync(ct);
@@ -1116,7 +1117,10 @@ public sealed class UserManagementService : IUserManagementService
                 }
 
                 // Apply, verify under the gate, refuse. Enabling can only add, so it is asserted and never refused.
-                await viability.CaptureBeforeAsync(ct);
+                if (disabled)
+                    await viability.CaptureBeforeAsync(ct);
+                else
+                    await viability.CaptureBeforeForRaiseAsync(userId.Value, ct);
                 await _localCredentialRepository.SetDisabledAsync(userId, disabled, ct);
                 if (disabled)
                 {

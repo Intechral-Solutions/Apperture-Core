@@ -29,10 +29,22 @@ public sealed class AdministratorViabilityScope
 {
     private readonly IAdministratorViabilityService _reads;
     private AdministratorViabilityState? _before;
+    private string? _affectedUserId;
 
     internal AdministratorViabilityScope(IAdministratorViabilityService reads) => _reads = reads;
 
-    /// <summary>Reads the state before the mutation. Call it after the gate is held and before the mutation is applied.</summary>
+    /// <summary>
+    /// For a raise-only writer: reads the state before the mutation and remembers whose viability the writer is changing. The
+    /// assertion afterwards is about that user alone, under the configuration read here (see <see cref="AssertRaiseOnlyAsync"/>).
+    /// </summary>
+    public async ValueTask CaptureBeforeForRaiseAsync(string affectedUserId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(affectedUserId);
+        _affectedUserId = affectedUserId;
+        _before = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads the state before a reducer's mutation. Call it after the gate is held and before the mutation is applied.</summary>
     public async ValueTask CaptureBeforeAsync(CancellationToken cancellationToken = default) =>
         _before = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
 
@@ -51,19 +63,21 @@ public sealed class AdministratorViabilityScope
 
     /// <summary>
     /// For a mutation that can only add (assign the role, enable a credential, add a link): reads the state after it and asserts that
-    /// nothing was reduced. It never refuses a person. A reduction here is a defect in the writer, so it is reported as an audit
-    /// invariant failure: the unit rolls back and the failure is an internal error, never a business outcome.
+    /// <i>the writer's own change</i> reduced nothing. The assertion is attributed to the affected user: their stored facts before
+    /// and after are judged under the configuration captured before the change, so a reload of the configuration, a change in
+    /// Recovery Access health or a change to another administrator, none of which this writer did, cannot fail it. It never refuses
+    /// a person and needs no trusted configuration. A reduction of the affected user's own contribution to VOA or EI is a defect in
+    /// the writer, so it is reported as an audit invariant failure: the unit rolls back and the failure is an internal error, never
+    /// a business outcome.
     /// </summary>
     public async ValueTask AssertRaiseOnlyAsync(CancellationToken cancellationToken = default)
     {
         var before = Before();
+        var affected = _affectedUserId
+            ?? throw new InvalidOperationException("A raise-only writer must capture the state with CaptureBeforeForRaiseAsync.");
         var after = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var verdict = AdministratorViabilityGuard.Detect(before, after);
-        if (!verdict.IsAllowed)
-        {
-            throw new AuditInvariantException(
-                $"A change that may only add to administrator viability reduced it ({verdict.Kind}, {verdict.View}).");
-        }
+        if (RaiseOnlyAttribution.FindReduction(before, after, affected) is { } reduction)
+            throw new AuditInvariantException($"A change that may only add to administrator viability reduced it: {reduction}.");
     }
 
     private AdministratorViabilityState Before() =>

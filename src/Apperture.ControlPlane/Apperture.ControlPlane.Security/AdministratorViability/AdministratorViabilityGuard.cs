@@ -46,6 +46,13 @@ public static class AdministratorViabilityGuard
     /// </summary>
     public static ViabilityVerdict Evaluate(AdministratorViabilityState pre, AdministratorViabilityState post)
     {
+        // A change that left every input the definitions read exactly as it was (every stored fact, and the configuration they are
+        // judged under) cannot have reduced anything, so it needs no trusted configuration to be allowed: an ordinary user's
+        // credential or link. The comparison is of what was read under the gate before and after the change, in the writer's own
+        // transaction. A state without facts, or a change to any input, goes on to the full evaluation, which fails closed.
+        if (AdministratorViabilityState.InputsUnchanged(pre, post))
+            return ViabilityVerdict.Allowed;
+
         var unavailable = RequireTrust(pre, post, needEntra: true);
         return unavailable ?? Detect(pre, post);
     }
