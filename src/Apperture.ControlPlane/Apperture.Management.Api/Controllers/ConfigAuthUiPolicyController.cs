@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -23,6 +24,7 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
     private readonly LocalAuthOptions _localOptions;
     private readonly EntraAuthOptions _entraOptions;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAdministratorViabilityCoordinator? _viability;
 
     public ConfigAuthUiPolicyController(
         IInstanceAuthUiPolicyRepository policyRepository,
@@ -30,7 +32,8 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
         IAuthorizationEvaluationService authorizationEvaluation,
         IOptions<LocalAuthOptions> localOptions,
         IOptions<EntraAuthOptions> entraOptions,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAdministratorViabilityCoordinator? viability = null)
     {
         _policyRepository = policyRepository;
         _principalContext = principalContext;
@@ -38,10 +41,14 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
         _localOptions = localOptions.Value;
         _entraOptions = entraOptions.Value;
         _auditedUnitOfWork = auditedUnitOfWork;
+        _viability = viability;
     }
 
     private IAuditedUnitOfWork Unit =>
         _auditedUnitOfWork ?? throw new InvalidOperationException("Sign-in policy changes require the audited unit of work.");
+
+    private IAdministratorViabilityCoordinator Viability =>
+        _viability ?? throw new InvalidOperationException("Sign-in policy changes require the administrator viability coordinator.");
 
     [HttpGet]
     [ProducesResponseType(typeof(AuthUiPolicyResponse), StatusCodes.Status200OK)]
@@ -93,6 +100,9 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
             return BadRequest(new { message = "rowVersionBase64 is not valid base64." });
         }
 
+        // The running Entra options are built before the unit opens (R-1).
+        await Viability.PrepareAsync(cancellationToken);
+
         // AUD-1.2: the policy and its row commit together; the same settings change nothing and write no row (D7).
         try
         {
@@ -100,6 +110,13 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
                 new AuditedOperation(AuditActionNames.SignInPolicyUpdated, AuditActor.CurrentPrincipal),
                 async (transaction, ct) =>
                 {
+                    // The administrator-set gate first (IAM-10.2b). The chooser flags are not an input of administrator viability: the
+                    // direct Local login route is available whenever Local sign-in is enabled, whatever the chooser shows, and no
+                    // production sign-in endpoint is restricted by these flags. This change therefore cannot reduce either set and is
+                    // never refused by the viability invariants; it takes the gate so that it is serialized with every other writer
+                    // of the sign-in configuration, and its only viability outcome is a busy gate.
+                    await Viability.EnterAsync(ct);
+
                     var current = await _policyRepository.GetAsync(ct);
                     if (current.RowVersion is null || !current.RowVersion.SequenceEqual(expected))
                         throw new DbUpdateConcurrencyException("Instance auth UI policy was modified by another request.");
@@ -133,6 +150,10 @@ public sealed class ConfigAuthUiPolicyController : ControllerBase
         catch (DbUpdateConcurrencyException)
         {
             return Conflict(new { message = "Policy was modified elsewhere. Refresh and try again." });
+        }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
         }
 
         var updated = await _policyRepository.GetAsync(cancellationToken);

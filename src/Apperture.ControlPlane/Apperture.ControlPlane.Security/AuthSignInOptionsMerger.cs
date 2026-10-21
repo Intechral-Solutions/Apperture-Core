@@ -38,6 +38,12 @@ public static class AuthSignInOptionsMerger
         var entraSignInEnabled = entra.Enabled &&
             !entraValidator.Validate(null, entra).Failed;
 
+        return ValidatePolicyUpdate(proposed, entraSignInEnabled);
+    }
+
+    /// <summary>The same rules over the one fact they read: whether Entra sign-in is enabled and correctly configured.</summary>
+    public static string? ValidatePolicyUpdate(InstanceAuthUiPolicy proposed, bool entraSignInEnabled)
+    {
         if (!proposed.ShowLocalSignInInPrimaryChooser && !entraSignInEnabled)
             return "Cannot hide local sign-in from the primary page unless Entra sign-in is enabled and correctly configured.";
 

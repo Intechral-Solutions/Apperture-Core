@@ -115,8 +115,9 @@ public sealed class AdministratorViabilitySqlServerTests
             running);
     }
 
-    internal static AdministratorViabilityService Service(AppertureDbContext db, DeploymentAuthenticationReading reading) =>
-        new(new SqlAdministratorFactsReader(db), new EffectiveSignInConfigurationProvider(new StubDeployment(reading), new SqlEntraInstanceRegistrationRepository(db)));
+    internal static AdministratorViabilityService Service(
+        AppertureDbContext db, DeploymentAuthenticationReading reading, Apperture.Core.Security.Secrets.Abstractions.ISecretResolver? resolver = null) =>
+        new(new SqlAdministratorFactsReader(db), new EffectiveSignInConfigurationProvider(new StubDeployment(reading), new SqlEntraInstanceRegistrationRepository(db), resolver));
 
     // ---------------------------------------------------------------- facts
 

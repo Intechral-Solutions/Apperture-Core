@@ -360,18 +360,53 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         var world = await FreshAsync(rcsi);
         await world.SetActiveRegistrationAsync(Tenant);
         var actor = await ActorAsync(world, "actor");
-        var entraOnly = await EntraOnlyAdminAsync(world, "entra-only");
-        var target = await StrandedAdminAsync(world, "target");
-        await world.Scratch.ExecuteAsync($"DELETE FROM IdentityLinks WHERE UserId = N'{target}';");
-        (await ViabilityAsync(world.Scratch, EntraReading)).Now.ViableOrdinaryAdministrators.Should().BeEquivalentTo([entraOnly]);
 
-        // The environment changes: Microsoft sign-in goes off for everybody, which the writer did not do and cannot undo.
+        // The affected user signs in only through a proven Entra link for the accepted tenant (their Local credential is disabled) and
+        // has no Local link yet. The writer adds the Local link; it can only add.
+        var target = await EntraOnlyAdminAsync(world, "target");
+        await world.Scratch.ExecuteAsync($"DELETE FROM IdentityLinks WHERE UserId = N'{target}' AND Source = 1;");
+
+        // R-L1: the environment change must really change what Microsoft sign-in is, in both views, and the test says so. A
+        // reading that merely replaced the running options with an estimate left the persisted registration, and the deployment
+        // secret, usable: Entra stayed usable in the Restart view and the case proved nothing.
+        var entraOn = await EffectiveAsync(world.Scratch, EntraReading);
+        var entraOff = await EffectiveAsync(world.Scratch, EntraTurnedOffEverywhere());
+        (entraOn.Now.EntraSignInUsable, entraOn.Restart.EntraSignInUsable).Should().Be((true, true), "before the change Microsoft sign-in works now and after a restart");
+        (entraOff.Now.EntraSignInUsable, entraOff.Restart.EntraSignInUsable).Should().Be((false, false), "after it Microsoft sign-in works in neither view");
+        (await ViabilityAsync(world.Scratch, EntraReading)).Now.ViableOrdinaryAdministrators.Should().BeEquivalentTo([target], "the target is viable under the first environment");
+        var offState = await ViabilityAsync(world.Scratch, EntraTurnedOffEverywhere());
+        offState.Now.ViableOrdinaryAdministrators.Should().BeEmpty("and is not viable under the second, in the Now view");
+        offState.Restart.ViableOrdinaryAdministrators.Should().BeEmpty("or in the Restart view: a comparison of the whole system would read this as a reduction the writer caused");
+
+        // The environment changes between the writer's two reads, which the writer did not do and cannot undo.
         await using var db = world.Scratch.NewDb();
-        var coordinator = FlippingCoordinator(db, EntraReading, AdministratorViabilitySqlServerTests.Reading(null), out _);
+        var coordinator = FlippingCoordinator(db, EntraReading, EntraTurnedOffEverywhere(), out var deployment);
         await Service(world, db, actor, coordinator: coordinator).AddIdentityLinkAsync(new UserId(target), IdentitySource.Local, null);
 
+        deployment.Reads.Should().Be(2, "the configuration was read before the change and after it, and was different the second time");
         (await world.LinkCountAsync(target, 1)).Should().Be(1);
-        (await world.AuditRowsAsync(AuditActionNames.IdentityLinkAdded, await world.Scratch.ScalarAsync<string>($"SELECT Id FROM IdentityLinks WHERE UserId = N'{target}';"))).Should().Be(1);
+        (await world.AuditRowsAsync(AuditActionNames.IdentityLinkAdded, await world.Scratch.ScalarAsync<string>($"SELECT Id FROM IdentityLinks WHERE UserId = N'{target}' AND Source = 1;"))).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A host whose Microsoft sign-in is off in the running options and whose persisted registration is unusable after a restart too:
+    /// the deployment has no client secret for the registration to use. (An estimate from a reader that cannot see the running host
+    /// would leave the registration, and the deployment secret, usable, and change nothing.)
+    /// </summary>
+    private static DeploymentAuthenticationReading EntraTurnedOffEverywhere() =>
+        new(
+            ConfigurationTrustLevel.Trusted,
+            ConfigurationTrustLevel.Trusted,
+            [],
+            true,
+            new EntraAuthOptions(),
+            AuthoritativeAboutSecrets: true,
+            new RunningAuthenticationReading(new LocalAuthOptions { Enabled = true }, new EntraAuthOptions { Enabled = false }, RunningHandlerBinding.Disabled()));
+
+    private static async Task<EffectiveSignInConfiguration> EffectiveAsync(AuditSqlScratch scratch, DeploymentAuthenticationReading reading)
+    {
+        await using var db = scratch.NewDb();
+        return await new EffectiveSignInConfigurationProvider(new FlippingDeployment(reading, reading), new SqlEntraInstanceRegistrationRepository(db)).ReadAsync();
     }
 
     [Theory]

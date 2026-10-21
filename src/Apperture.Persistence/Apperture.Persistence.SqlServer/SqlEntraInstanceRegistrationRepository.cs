@@ -162,6 +162,19 @@ public sealed class SqlEntraInstanceRegistrationRepository : IEntraInstanceRegis
             throw new InvalidOperationException("Cannot activate a disabled registration.");
 
         var now = DateTimeOffset.UtcNow;
+
+        // At most one registration may be active (a filtered unique index), and one save writes the rows it changes in key order. A
+        // target that sorts before the registration it replaces would be written active beside it, and the index would refuse the
+        // switch. The registration being replaced is therefore deactivated and saved first; both saves are in the same transaction,
+        // so the switch is still one change, and every registration's row version still moves with it.
+        foreach (var r in rows.Where(x => x.IsActive && x.Id != id))
+        {
+            r.IsActive = false;
+            r.UpdatedUtc = now;
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
         foreach (var r in rows)
         {
             r.IsActive = r.Id == id;

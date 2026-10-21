@@ -30,11 +30,27 @@ public static class AuthenticationConfigurationGuard
     public static string? ValidateNoLockout(LocalAuthOptions local, InstanceAuthUiPolicy policy, EntraAuthOptions effectiveEntra)
     {
         var snap = AuthSignInOptionsMerger.Merge(local, effectiveEntra, policy);
-        if (!snap.LocalSignInEnabled && !snap.EntraSignInEnabled)
+        return ValidateNoLockout(snap.LocalSignInEnabled, snap.EntraSignInEnabled, policy);
+    }
+
+    /// <summary>
+    /// The same instance-level rules over the two facts they read. The registration writers ask it of the configuration their
+    /// change has just applied (the Restart reading of the effective sign-in configuration), so the answer is the host's own
+    /// rule over the state the change would persist, not a simulation of it.
+    /// </summary>
+    public static string? ValidateNoLockout(bool localSignInEnabled, bool entraSignInUsable, InstanceAuthUiPolicy policy)
+    {
+        if (!localSignInEnabled && !entraSignInUsable)
             return "That change would remove every viable sign-in path for this instance.";
 
-        return AuthSignInOptionsMerger.ValidatePolicyUpdate(policy, local, effectiveEntra);
+        return AuthSignInOptionsMerger.ValidatePolicyUpdate(policy, entraSignInUsable);
     }
+
+    /// <summary>
+    /// True when a change took the instance from satisfying the instance-level rules to violating them. A violation that was
+    /// already there is not the change's doing, and is no reason to refuse an unrelated or repairing change.
+    /// </summary>
+    public static bool NewlyViolates(string? errorBefore, string? errorAfter) => errorBefore is null && errorAfter is not null;
 
     /// <summary>Builds Entra options as they would be with only appsettings (no DB overlay).</summary>
     public static EntraAuthOptions ReadLegacyEntraFromConfiguration(IConfiguration configuration)

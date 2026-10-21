@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
@@ -24,7 +25,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly IPrincipalContext _principalContext;
     private readonly IAuthorizationEvaluationService _authorizationEvaluation;
     private readonly IConfiguration _configuration;
-    private readonly IOptions<LocalAuthOptions> _localOptions;
     private readonly IInstanceAuthUiPolicyRepository _policyRepository;
     private readonly IEntraOpenIdConnectConfigurationValidator _openIdValidator;
     private readonly IEntraDirectoryDiscoveryService _directoryDiscovery;
@@ -32,13 +32,13 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     private readonly ISecretResolver _secretResolver;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
     private readonly IAuditEventWriter? _auditEvents;
+    private readonly IAdministratorViabilityCoordinator? _viability;
 
     public ConfigEntraTenantsController(
         IEntraInstanceRegistrationRepository repository,
         IPrincipalContext principalContext,
         IAuthorizationEvaluationService authorizationEvaluation,
         IConfiguration configuration,
-        IOptions<LocalAuthOptions> localOptions,
         IInstanceAuthUiPolicyRepository policyRepository,
         IEntraOpenIdConnectConfigurationValidator openIdValidator,
         IEntraDirectoryDiscoveryService directoryDiscovery,
@@ -46,6 +46,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         ISecretResolver secretResolver,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
         IAuditEventWriter? auditEvents = null,
+        IAdministratorViabilityCoordinator? viability = null,
         ILogger<ConfigEntraTenantsController>? logger = null)
     {
         _ = logger;
@@ -53,7 +54,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _principalContext = principalContext;
         _authorizationEvaluation = authorizationEvaluation;
         _configuration = configuration;
-        _localOptions = localOptions;
         _policyRepository = policyRepository;
         _openIdValidator = openIdValidator;
         _directoryDiscovery = directoryDiscovery;
@@ -61,10 +61,65 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         _secretResolver = secretResolver;
         _auditedUnitOfWork = auditedUnitOfWork;
         _auditEvents = auditEvents;
+        _viability = viability;
     }
 
     private IAuditedUnitOfWork Unit =>
         _auditedUnitOfWork ?? throw new InvalidOperationException("Entra registration changes require the audited unit of work.");
+
+    // A registration change that cannot ask whether it leaves anybody able to sign in is not made: no coordinator is a defect of the
+    // composition, never a reason to skip the check.
+    private IAdministratorViabilityCoordinator Viability =>
+        _viability ?? throw new InvalidOperationException("Entra registration changes require the administrator viability coordinator.");
+
+    /// <summary>A change that the instance-level rule or administrator viability refused: the W3 row to write after the rollback, and the response.</summary>
+    private sealed record RegistrationRefusal(Apperture.Core.Application.Audit.AuditEvent Event, ActionResult Result);
+
+    /// <summary>
+    /// The instance-level sign-in rules over one reading of the persisted configuration. A reading whose Local or Entra input is not
+    /// established asserts nothing: administrator viability, which fails closed on it, is what decides then.
+    /// </summary>
+    private static string? InstanceRuleViolation(AdministratorViabilityState state, InstanceAuthUiPolicy policy)
+    {
+        if (!state.Configuration.Trust.LocalKnown || !state.Configuration.Trust.EntraKnown)
+            return null;
+        var restart = state.Configuration.Restart;
+        return AuthenticationConfigurationGuard.ValidateNoLockout(restart.LocalSignInEnabled, restart.EntraSignInUsable, policy);
+    }
+
+    /// <summary>
+    /// Decides a change that has been applied in the unit's transaction and is not yet staged: the instance-level rule first (400,
+    /// as it has always been, now asked of the persisted state the change produced and refused only when the change newly breaks
+    /// it), then administrator viability in both views (409, typed). Null allows the change.
+    /// </summary>
+    private async Task<RegistrationRefusal?> DecideAppliedChangeAsync(
+        AdministratorViabilityScope viability,
+        InstanceAuthUiPolicy policy,
+        string registrationId,
+        string change,
+        CancellationToken ct)
+    {
+        var verdict = await viability.VerifyAfterAsync(ct);
+        var before = viability.Captured ?? throw new InvalidOperationException("The state before the change was not captured.");
+        var after = viability.After ?? throw new InvalidOperationException("The state after the change was not read.");
+
+        var errorAfter = InstanceRuleViolation(after, policy);
+        if (AuthenticationConfigurationGuard.NewlyViolates(InstanceRuleViolation(before, policy), errorAfter))
+        {
+            return new RegistrationRefusal(
+                AuditEvents.TenantRegistrationChangeRefused(registrationId, change, "sign_in_lockout"),
+                BadRequest(new { message = errorAfter }));
+        }
+
+        if (!verdict.IsAllowed)
+        {
+            return new RegistrationRefusal(
+                AuditEvents.TenantRegistrationChangeRefused(registrationId, change, "sign_in_lockout"),
+                GovernanceFailureResults.Map(ViabilityRefusal.For(verdict, ViabilityMutation.RegistrationChange)));
+        }
+
+        return null;
+    }
 
     private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
 
@@ -119,6 +174,7 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(EntraTenantListItemResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<EntraTenantListItemResponse>> Create(
         [FromBody] CreateEntraTenantRequestBody body,
         CancellationToken cancellationToken)
@@ -159,33 +215,53 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             AllowGuestAccessRequests = body.AllowGuestAccessRequests
         };
 
+        // The running Entra options are built before the unit opens, so that their first build can never read behind the unit's own
+        // locks (R-1).
+        await Viability.PrepareAsync(cancellationToken);
+
         // A verified commit is the attempt that ran last, so this is the secret its row names.
         string? storedSecretRef = null;
-        var created = await Unit.ExecuteAsync(
-            Operation(AuditActionNames.TenantRegistrationCreated),
-            async (transaction, ct) =>
-            {
-                storedSecretRef = secretSupplied
-                    ? await _clientSecretProvisioner.StoreNewAsync(registrationId, body.ClientSecret!, ct).ConfigureAwait(false)
-                    : null;
-                var added = await _repository.AddAsync(Draft(storedSecretRef), ct);
-                await transaction.StageAsync(
-                    AuditEvents.TenantRegistrationCreated(
-                        added.Id,
-                        added.DisplayName,
-                        added.ClientId,
-                        added.AzureTenantId,
-                        added.Enabled,
-                        clientAuthenticationReplaced: storedSecretRef is not null,
-                        added.AllowMemberAccessRequests,
-                        added.AllowGuestAccessRequests),
-                    ct);
-                if (storedSecretRef is not null)
-                    await transaction.StageAsync(AuditEvents.TenantRegistrationClientSecretStored(added.Id, "registration_created"), ct);
-                return added;
-            },
-            async (_, ct) => await _repository.GetByIdAsync(registrationId, ct) ?? Draft(storedSecretRef),
-            cancellationToken);
+        EntraInstanceRegistration created;
+        try
+        {
+            created = await Unit.ExecuteAsync(
+                Operation(AuditActionNames.TenantRegistrationCreated),
+                async (transaction, ct) =>
+                {
+                    // The administrator-set gate first (IAM-10.2b): the registration is a viability input, and this writer only adds to it.
+                    await Viability.EnterAsync(ct);
+
+                    // A new registration is never the active one, so it cannot change what the sign-in accepts. That is asserted of
+                    // this writer's own effect (the active registration, before and after), not of the whole system: a configuration
+                    // reload or a change of Recovery Access health is not this writer's doing.
+                    var activeBefore = await _repository.GetActiveAsync(ct);
+                    storedSecretRef = secretSupplied
+                        ? await _clientSecretProvisioner.StoreNewAsync(registrationId, body.ClientSecret!, ct).ConfigureAwait(false)
+                        : null;
+                    var added = await _repository.AddAsync(Draft(storedSecretRef), ct);
+                    RegistrationRaiseOnlyAssertion.RequireActiveRegistrationUnchanged(activeBefore, await _repository.GetActiveAsync(ct), added.Id);
+                    await transaction.StageAsync(
+                        AuditEvents.TenantRegistrationCreated(
+                            added.Id,
+                            added.DisplayName,
+                            added.ClientId,
+                            added.AzureTenantId,
+                            added.Enabled,
+                            clientAuthenticationReplaced: storedSecretRef is not null,
+                            added.AllowMemberAccessRequests,
+                            added.AllowGuestAccessRequests),
+                        ct);
+                    if (storedSecretRef is not null)
+                        await transaction.StageAsync(AuditEvents.TenantRegistrationClientSecretStored(added.Id, "registration_created"), ct);
+                    return added;
+                },
+                async (_, ct) => await _repository.GetByIdAsync(registrationId, ct) ?? Draft(storedSecretRef),
+                cancellationToken);
+        }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
+        }
 
         var refreshed = await _repository.GetByIdAsync(created.Id, cancellationToken) ?? created;
         var dto = ToListItem(refreshed, DeploymentSecretPresent());
@@ -239,7 +315,11 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         // its current secret until the change commits, and a refused, conflicting, failed or rolled-back change stores and
         // retires nothing. After an unknown outcome it is either all committed or none.
         var secretSupplied = !string.IsNullOrWhiteSpace(body.ClientSecret);
-        var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
+
+        // The running Entra options are built before the unit opens, so that their first build can never read behind the unit's own
+        // locks (R-1).
+        await Viability.PrepareAsync(cancellationToken);
+
         ActionResult? refusal;
         Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
         try
@@ -249,6 +329,9 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                 async (transaction, ct) =>
                 {
                     refusalEvent = null;
+
+                    // The administrator-set gate first (IAM-10.2b), before any registration row is read for the decision or locked.
+                    var viability = await Viability.EnterAsync(ct);
 
                     // Every condition the change depends on is read in this transaction.
                     var current = await _repository.GetByIdAsync(id, ct);
@@ -271,15 +354,11 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                         return null;
                     }
 
+                    // Apply, then verify (P-9): the change is written in this transaction, the persisted configuration it produces is
+                    // read back, and a change that breaks an invariant is rolled back with everything it did, including a secret it
+                    // stored. The state before is read under the gate and before the first write.
                     var policy = await _policyRepository.GetAsync(ct);
-                    var simulatedEffective = SimulateEffectiveEntraAfterUpdate(legacy, await _repository.ListAsync(ct), updatedModel);
-                    var lockout = AuthenticationConfigurationGuard.ValidateNoLockout(_localOptions.Value, policy, simulatedEffective);
-                    if (lockout is not null)
-                    {
-                        refusalEvent = AuditEvents.TenantRegistrationChangeRefused(current.Id, "update", "sign_in_lockout");
-                        transaction.DeclareNoOp();
-                        return BadRequest(new { message = lockout });
-                    }
+                    await viability.CaptureBeforeAsync(ct);
 
                     if (secretSupplied)
                     {
@@ -288,6 +367,14 @@ public sealed class ConfigEntraTenantsController : ControllerBase
                     }
 
                     await _repository.UpdateAsync(updatedModel, expected, ct);
+
+                    if (await DecideAppliedChangeAsync(viability, policy, current.Id, "update", ct) is { } refused)
+                    {
+                        refusalEvent = refused.Event;
+                        transaction.DeclareNoOp();
+                        return refused.Result;
+                    }
+
                     var stillActive = current.IsActive && updatedModel.Enabled;
                     await transaction.StageAsync(
                         AuditEvents.TenantRegistrationUpdated(current.Id, updatedModel.DisplayName, changed, updatedModel.Enabled, stillActive),
@@ -315,6 +402,10 @@ public sealed class ConfigEntraTenantsController : ControllerBase
         {
             return Conflict(new { message = "Registration was modified elsewhere. Refresh and try again." });
         }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
+        }
 
         if (refusal is not null)
         {
@@ -329,46 +420,60 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     [HttpDelete("{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
         if (!await AuthorizeManageAsync(cancellationToken))
             return Forbid();
 
+        // The running Entra options are built before the unit opens, so that their first build can never read behind the unit's own
+        // locks (R-1).
+        await Viability.PrepareAsync(cancellationToken);
+
         // The registration's own secret is retired in the delete's unit, so it is retired exactly when the delete commits.
-        var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
         Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
-        var refusal = await Unit.ExecuteAsync<IActionResult?>(
-            Operation(AuditActionNames.TenantRegistrationDeleted),
-            async (transaction, ct) =>
-            {
-                refusalEvent = null;
-                var existing = await _repository.GetByIdAsync(id, ct);
-                if (existing is null)
+        IActionResult? refusal;
+        try
+        {
+            refusal = await Unit.ExecuteAsync<IActionResult?>(
+                Operation(AuditActionNames.TenantRegistrationDeleted),
+                async (transaction, ct) =>
                 {
-                    transaction.DeclareNoOp();
+                    refusalEvent = null;
+
+                    // The administrator-set gate first (IAM-10.2b), before the registration row is read for the decision or locked.
+                    var viability = await Viability.EnterAsync(ct);
+
+                    var existing = await _repository.GetByIdAsync(id, ct);
+                    if (existing is null)
+                    {
+                        transaction.DeclareNoOp();
+                        return null;
+                    }
+
+                    // Apply, then verify (P-9): the persisted configuration without this registration is what is judged.
+                    var policy = await _policyRepository.GetAsync(ct);
+                    await viability.CaptureBeforeAsync(ct);
+                    await _repository.DeleteAsync(id, ct);
+
+                    if (await DecideAppliedChangeAsync(viability, policy, existing.Id, "delete", ct) is { } refused)
+                    {
+                        refusalEvent = refused.Event;
+                        transaction.DeclareNoOp();
+                        return refused.Result;
+                    }
+
+                    await transaction.StageAsync(AuditEvents.TenantRegistrationDeleted(existing.Id, existing.DisplayName, existing.IsActive), ct);
+                    await RetireOwnedSecretAsync(transaction, existing.Id, existing.ClientSecretRef, "registration_deleted", ct);
                     return null;
-                }
-
-                var policy = await _policyRepository.GetAsync(ct);
-                var err = AuthenticationConfigurationGuard.ValidateDeleteActiveRegistration(
-                    _localOptions.Value,
-                    policy,
-                    legacy,
-                    existing.IsActive);
-                if (err is not null)
-                {
-                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(existing.Id, "delete", "sign_in_lockout");
-                    transaction.DeclareNoOp();
-                    return BadRequest(new { message = err });
-                }
-
-                await _repository.DeleteAsync(id, ct);
-                await transaction.StageAsync(AuditEvents.TenantRegistrationDeleted(existing.Id, existing.DisplayName, existing.IsActive), ct);
-                await RetireOwnedSecretAsync(transaction, existing.Id, existing.ClientSecretRef, "registration_deleted", ct);
-                return null;
-            },
-            (_, _) => Task.FromResult<IActionResult?>(null),
-            cancellationToken);
+                },
+                (_, _) => Task.FromResult<IActionResult?>(null),
+                cancellationToken);
+        }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
+        }
 
         if (refusal is not null)
         {
@@ -383,62 +488,73 @@ public sealed class ConfigEntraTenantsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Activate(string id, CancellationToken cancellationToken)
     {
         if (!await AuthorizeManageAsync(cancellationToken))
             return Forbid();
 
-        var legacy = AuthenticationConfigurationGuard.ReadLegacyEntraFromConfiguration(_configuration);
+        // The running Entra options are built before the unit opens, so that their first build can never read behind the unit's own
+        // locks (R-1).
+        await Viability.PrepareAsync(cancellationToken);
+
         Apperture.Core.Application.Audit.AuditEvent? refusalEvent = null;
-        var refusal = await Unit.ExecuteAsync<IActionResult?>(
-            Operation(AuditActionNames.TenantRegistrationActivated),
-            async (transaction, ct) =>
-            {
-                refusalEvent = null;
-                var target = await _repository.GetByIdAsync(id, ct);
-                if (target is null)
+        IActionResult? refusal;
+        try
+        {
+            refusal = await Unit.ExecuteAsync<IActionResult?>(
+                Operation(AuditActionNames.TenantRegistrationActivated),
+                async (transaction, ct) =>
                 {
-                    transaction.DeclareNoOp();
-                    return NotFound();
-                }
+                    refusalEvent = null;
 
-                if (!target.Enabled)
-                {
-                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(target.Id, "activate", "registration_disabled");
-                    transaction.DeclareNoOp();
-                    return BadRequest(new { message = "Cannot activate a disabled registration." });
-                }
+                    // The administrator-set gate first (IAM-10.2b), before the registration rows are read for the decision or locked.
+                    var viability = await Viability.EnterAsync(ct);
 
-                if (target.IsActive)
-                {
-                    // Already the active registration: nothing changes and no row (D7).
-                    transaction.DeclareNoOp();
+                    var target = await _repository.GetByIdAsync(id, ct);
+                    if (target is null)
+                    {
+                        transaction.DeclareNoOp();
+                        return NotFound();
+                    }
+
+                    if (!target.Enabled)
+                    {
+                        refusalEvent = AuditEvents.TenantRegistrationChangeRefused(target.Id, "activate", "registration_disabled");
+                        transaction.DeclareNoOp();
+                        return BadRequest(new { message = "Cannot activate a disabled registration." });
+                    }
+
+                    if (target.IsActive)
+                    {
+                        // Already the active registration: nothing changes and no row (D7).
+                        transaction.DeclareNoOp();
+                        return null;
+                    }
+
+                    // Apply, then verify (P-9): the persisted configuration with this registration active is what is judged.
+                    var policy = await _policyRepository.GetAsync(ct);
+                    await viability.CaptureBeforeAsync(ct);
+                    var previous = await _repository.GetActiveAsync(ct);
+                    await _repository.SetActiveAsync(id, ct);
+
+                    if (await DecideAppliedChangeAsync(viability, policy, target.Id, "activate", ct) is { } refused)
+                    {
+                        refusalEvent = refused.Event;
+                        transaction.DeclareNoOp();
+                        return refused.Result;
+                    }
+
+                    await transaction.StageAsync(AuditEvents.TenantRegistrationActivated(target.Id, previous?.Id), ct);
                     return null;
-                }
-
-                var policy = await _policyRepository.GetAsync(ct);
-                var simulated = CloneEntra(legacy);
-                simulated.Enabled = true;
-                simulated.Authority = target.Authority;
-                simulated.ClientId = target.ClientId;
-                if (!string.IsNullOrWhiteSpace(target.CallbackPath))
-                    simulated.CallbackPath = target.CallbackPath!;
-
-                var lockout = AuthenticationConfigurationGuard.ValidateNoLockout(_localOptions.Value, policy, simulated);
-                if (lockout is not null)
-                {
-                    refusalEvent = AuditEvents.TenantRegistrationChangeRefused(target.Id, "activate", "sign_in_lockout");
-                    transaction.DeclareNoOp();
-                    return BadRequest(new { message = lockout });
-                }
-
-                var previous = await _repository.GetActiveAsync(ct);
-                await _repository.SetActiveAsync(id, ct);
-                await transaction.StageAsync(AuditEvents.TenantRegistrationActivated(target.Id, previous?.Id), ct);
-                return null;
-            },
-            (_, _) => Task.FromResult<IActionResult?>(null),
-            cancellationToken);
+                },
+                (_, _) => Task.FromResult<IActionResult?>(null),
+                cancellationToken);
+        }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            return GovernanceFailureResults.Map(ex);
+        }
 
         if (refusal is not null)
             await RecordRefusalAsync(refusalEvent);
@@ -693,39 +809,6 @@ public sealed class ConfigEntraTenantsController : ControllerBase
             _ => DirectoryDiscoveryStatus.Unknown
         };
     }
-
-    private static EntraAuthOptions SimulateEffectiveEntraAfterUpdate(
-        EntraAuthOptions legacy,
-        IReadOnlyList<EntraInstanceRegistration> all,
-        EntraInstanceRegistration updated)
-    {
-        var mergedList = all.Select(r => r.Id == updated.Id ? updated : r).ToList();
-        var active = mergedList.FirstOrDefault(r => r.IsActive && r.Enabled);
-        var o = CloneEntra(legacy);
-        if (active is null || !active.Enabled)
-            return o;
-
-        o.Authority = active.Authority;
-        o.ClientId = active.ClientId;
-        o.Enabled = true;
-        o.AuthenticationContextId = active.AuthenticationContextId;
-        if (!string.IsNullOrWhiteSpace(active.CallbackPath))
-            o.CallbackPath = active.CallbackPath!;
-        return o;
-    }
-
-    private static EntraAuthOptions CloneEntra(EntraAuthOptions source) =>
-        new()
-        {
-            Enabled = source.Enabled,
-            Authority = source.Authority,
-            ClientId = source.ClientId,
-            ClientSecret = source.ClientSecret,
-            AzureTenantId = source.AzureTenantId,
-            AuthenticationContextId = source.AuthenticationContextId,
-            CallbackPath = source.CallbackPath,
-            Scopes = source.Scopes?.ToArray() ?? ["openid", "profile"]
-        };
 
     private static EntraTenantListItemResponse ToListItem(EntraInstanceRegistration e, bool deploymentSecretConfigured)
     {

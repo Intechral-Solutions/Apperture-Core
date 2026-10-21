@@ -10,9 +10,10 @@ namespace Apperture.UnitTests.AdministratorViability;
 /// raiser</b> (it takes the global gate; <i>pending</i> until the package that integrates it), an approved <b>exception</b>, the
 /// non-refusable <b>recovery-code consumption</b> (C-14), or <b>out of category</b> (it cannot change a viability input, and a test
 /// pins why). A writer in none of them fails here, so a new writer cannot appear unclassified. A reducer or raiser is either
-/// <b>integrated</b> (WP2: the person-driven administrator, credential and link writers, checked method by method for the gate before
-/// the authority row locks and the writes, and for the check after them) or explicitly <b>pending</b> (every other package), and a
-/// pending file must not already reference the gate or the coordinator, so that the pending list cannot go stale unnoticed.
+/// <b>integrated</b> (WP2: the person-driven administrator, credential and link writers; WP3: the Entra registration and sign-in
+/// policy writers; each checked method by method for the gate before the row locks and the writes, and for the check after them) or
+/// explicitly <b>pending</b> (every other package), and a pending file must not already reference the gate or the coordinator, so
+/// that the pending list cannot go stale unnoticed.
 /// </summary>
 public sealed class AdministratorViabilityWriterCoverageGuardTests
 {
@@ -64,7 +65,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     /// <summary>The packages whose writers are integrated. Moving a package here is what makes the method-level checks apply to it.</summary>
-    private static readonly string[] IntegratedPackages = ["WP2"];
+    private static readonly string[] IntegratedPackages = ["WP2", "WP3"];
 
     private sealed record Classified(string File, Writes Kind, int Count, Class Class, string Package, string Why)
     {
@@ -172,11 +173,32 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     private static readonly Regex LinkAddCall = R(@"_userRepository\.AddIdentityLinkAsync\(");
     private static readonly Regex LinkRemoveCall = R(@"_userRepository\.RemoveIdentityLinkAsync\(");
     private static readonly Regex LinkProofCall = R(@"_userRepository\.(CompleteEntraLinkProofAsync|UpdateLastAuthenticatedAtAsync)\(");
-    private static readonly Regex RegistrationCreateCall = R(@"\b(_repository|_registrations|_entraRegistrations|registrations)\.AddAsync\(");
-    private static readonly Regex RegistrationUpdateCall = R(@"\b(_repository|_registrations|_entraRegistrations|registrations)\.UpdateAsync\(");
-    private static readonly Regex RegistrationDeleteCall = R(@"\b(_repository|_registrations|_entraRegistrations|registrations)\.DeleteAsync\(");
     private static readonly Regex RegistrationActivateCall = R(@"\.SetActiveAsync\(");
     private static readonly Regex PolicySaveCall = R(@"\.SaveAsync\(");
+
+    /// <summary>
+    /// Every name a file gives to a holder of <paramref name="type"/> (a field, a parameter, a local), with and without a leading
+    /// underscore. A write is found by the type its receiver was declared with, not by one of a few conventional variable names, so
+    /// a writer that names its repository something new is found all the same.
+    /// </summary>
+    private static string[] NamesHolding(string code, string type)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match match in Regex.Matches(code, @"\b" + Regex.Escape(type) + @"\??\s+(\w+)", RegexOptions.CultureInvariant))
+        {
+            var name = match.Groups[1].Value;
+            names.Add(name);
+            names.Add("_" + name.TrimStart('_'));
+            names.Add(name.TrimStart('_'));
+        }
+
+        return [.. names];
+    }
+
+    private static int CallsOn(string code, string[] receivers, string method) =>
+        receivers.Length == 0
+            ? 0
+            : Regex.Matches(code, @"\b(?:" + string.Join("|", receivers.Select(Regex.Escape)) + @")\." + method + @"\(", RegexOptions.CultureInvariant).Count;
     private static readonly Regex UserUpdateCall = R(@"\b(_users|_userRepository|userRepo|_userRepo)\.UpdateAsync\(");
     private static readonly Regex MfaResetCall = R(@"_totp\.DeleteAsync\(|_recoveryCodes\.DeleteAllAsync\(");
     private static readonly Regex MfaEnrolCall = R(@"_totp\.(UpsertPendingAsync|MarkEnrolledAsync)\(|_recoveryCodes\.ReplaceAllAsync\(");
@@ -214,17 +236,14 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             Add(file, Writes.LinkRemove, LinkRemoveCall.Matches(code).Count);
             Add(file, Writes.LinkProof, LinkProofCall.Matches(code).Count);
 
-            if (code.Contains("IEntraInstanceRegistrationRepository", StringComparison.Ordinal))
-            {
-                Add(file, Writes.RegistrationCreate, RegistrationCreateCall.Matches(code).Count);
-                Add(file, Writes.RegistrationUpdate, RegistrationUpdateCall.Matches(code).Count);
-                Add(file, Writes.RegistrationDelete, RegistrationDeleteCall.Matches(code).Count);
-            }
-
+            var registrationRepositories = NamesHolding(code, "IEntraInstanceRegistrationRepository");
+            Add(file, Writes.RegistrationCreate, CallsOn(code, registrationRepositories, "AddAsync"));
+            Add(file, Writes.RegistrationUpdate, CallsOn(code, registrationRepositories, "UpdateAsync"));
+            Add(file, Writes.RegistrationDelete, CallsOn(code, registrationRepositories, "DeleteAsync"));
             Add(file, Writes.RegistrationActivate, RegistrationActivateCall.Matches(code).Count);
 
-            if (code.Contains("IInstanceAuthUiPolicyRepository", StringComparison.Ordinal))
-                Add(file, Writes.PolicySave, PolicySaveCall.Matches(code).Count);
+            var policyRepositories = NamesHolding(code, "IInstanceAuthUiPolicyRepository");
+            Add(file, Writes.PolicySave, CallsOn(code, policyRepositories, "SaveAsync"));
 
             if (code.Contains("IUserRepository", StringComparison.Ordinal))
                 Add(file, Writes.DesignationFlagUpdate, UserUpdateCall.Matches(code).Count);
@@ -455,7 +474,29 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             [TakeGateForRole, "LockAuthoritySnapshotAsync("]),
         new(Security + "UserProvisioningService.cs", "AssignInitialRoleAsync", Writes.RoleAssign,
             ["CaptureBeforeForRaiseAsync(", ".AssignToUserAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // WP3. The running options are built before the unit opens (R-1); inside the unit the gate comes before the first read of
+        // a registration for the decision; the state is captured under the gate and before the first write; the change is applied;
+        // the applied change is decided (instance-level rule, then viability); only then are rows staged and secrets retired.
+        new(Api + "ConfigEntraTenantsController.cs", "Create", Writes.RegistrationCreate,
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "GetActiveAsync(", "StoreNewAsync(", "_repository.AddAsync(", "RequireActiveRegistrationUnchanged(", "StageAsync("]),
+        new(Api + "ConfigEntraTenantsController.cs", "Patch", Writes.RegistrationUpdate,
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "StoreNewAsync(", "_repository.UpdateAsync(", DecideApplied, "StageAsync(", "RetireOwnedSecretAsync("]),
+        new(Api + "ConfigEntraTenantsController.cs", "Delete", Writes.RegistrationDelete,
+            [PrepareOptions, "Unit.ExecuteAsync", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_repository.DeleteAsync(", DecideApplied, "StageAsync(", "RetireOwnedSecretAsync("]),
+        new(Api + "ConfigEntraTenantsController.cs", "Activate", Writes.RegistrationActivate,
+            [PrepareOptions, "Unit.ExecuteAsync", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_repository.SetActiveAsync(", DecideApplied, "StageAsync("]),
+        new(Api + "ConfigEntraTenantsController.cs", "DecideAppliedChangeAsync", Writes.RegistrationActivate,
+            ["VerifyAfterAsync(", ".Captured", "NewlyViolates(", "ViabilityRefusal.For("]),
+
+        // The sign-in policy takes the gate before it reads or writes the policy row, and reads no viability state: the chooser flags
+        // are not an input of administrator viability, so this change cannot reduce either set.
+        new(Api + "ConfigAuthUiPolicyController.cs", "Patch", Writes.PolicySave,
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "GetAsync(", "DeclareNoOp()", "_policyRepository.SaveAsync(", "StageAsync("]),
     ];
+
+    private const string PrepareOptions = "Viability.PrepareAsync(";
+    private const string DecideApplied = "DecideAppliedChangeAsync(";
 
     [Fact]
     public void Each_integrated_writer_takes_the_gate_before_its_locks_and_writes_and_checks_after_them()
@@ -487,19 +528,25 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
                 var checkedMethods = IntegratedSequences.Where(s => s.File == file && s.Kind == entry.Kind).Select(s => s.Method).ToList();
                 checkedMethods.Should().NotBeEmpty($"{file} {entry.Kind} is integrated, so a method must be checked for it");
 
-                var inChecked = checkedMethods.Sum(method => WriteMatches(entry.Kind, MethodBody(code, method)));
+                var inChecked = checkedMethods.Sum(method => WriteMatches(entry.Kind, MethodBody(code, method), code));
                 inChecked.Should().Be(entry.Count, $"every {entry.Kind} write of {file} must be in a method this guard checks ({string.Join(", ", checkedMethods)})");
             }
         }
     }
 
-    private static int WriteMatches(Writes kind, string code) => kind switch
+    /// <summary>The writes of <paramref name="kind"/> in <paramref name="code"/> (one method), the receivers' names being those the whole file <paramref name="fileCode"/> declares.</summary>
+    private static int WriteMatches(Writes kind, string code, string fileCode) => kind switch
     {
         Writes.RoleAssign => RoleAssignCall.Matches(code).Count,
         Writes.RoleRemove => RoleRemoveCall.Matches(code).Count,
         Writes.CredentialDisable => DisableCall.Matches(code).Count,
         Writes.LinkAdd => LinkAddCall.Matches(code).Count,
         Writes.LinkRemove => LinkRemoveCall.Matches(code).Count,
+        Writes.RegistrationCreate => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "AddAsync"),
+        Writes.RegistrationUpdate => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "UpdateAsync"),
+        Writes.RegistrationDelete => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "DeleteAsync"),
+        Writes.RegistrationActivate => RegistrationActivateCall.Matches(code).Count,
+        Writes.PolicySave => CallsOn(code, NamesHolding(fileCode, "IInstanceAuthUiPolicyRepository"), "SaveAsync"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 
@@ -669,5 +716,104 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             .Should().Contain("EntraTokenClaims.TenantMatches(");
         StripComments(Source(Security + "AdministratorViability/EffectiveSignInConfigurationProvider.cs"))
             .Should().Contain("EntraDirectoryTenantResolver.ResolveAcceptedTokenTenantId(");
+    }
+
+    // ---- WP3: registrations and the sign-in policy ----
+
+    [Fact]
+    public void The_hand_built_configuration_simulation_is_gone_from_the_registration_controller()
+    {
+        var code = StripComments(Source(Api + "ConfigEntraTenantsController.cs"));
+
+        code.Should().NotContainAny(
+            new[]
+            {
+                "SimulateEffectiveEntraAfterUpdate", "CloneEntra(", "ReadLegacyEntraFromConfiguration", "ValidateDeleteActiveRegistration",
+                "_localOptions", "ValidateNoLockout(_",
+            },
+            "the instance-level rule is asked of the persisted state the change produced, and viability by the one shared definition; a second simulation could disagree with the runtime");
+    }
+
+    [Fact]
+    public void A_registration_change_is_decided_after_it_is_applied_and_before_anything_is_staged()
+    {
+        foreach (var method in new[] { "Patch", "Delete", "Activate" })
+        {
+            var body = MethodBody(StripComments(Source(Api + "ConfigEntraTenantsController.cs")), method);
+            body.IndexOf(DecideApplied, StringComparison.Ordinal).Should().BeGreaterThan(0, method);
+            body.IndexOf(DecideApplied, StringComparison.Ordinal)
+                .Should().BeLessThan(body.IndexOf("StageAsync(", StringComparison.Ordinal), $"{method} must decide before it stages a row, because staging forbids a refusal");
+        }
+    }
+
+    [Fact]
+    public void The_sign_in_policy_writer_reads_no_viability_state_because_the_chooser_flags_cannot_reduce_it()
+    {
+        var body = MethodBody(StripComments(Source(Api + "ConfigAuthUiPolicyController.cs")), "Patch");
+
+        body.Should().NotContainAny(new[] { "VerifyAfterAsync", "CaptureBefore", "AssertRaiseOnlyAsync", "ViabilityRefusal" });
+        Inventory.Single(i => i.Kind == Writes.PolicySave).Class.Should().Be(Class.GatedRaiser);
+    }
+
+    [Fact]
+    public void A_registration_writer_that_names_its_repository_differently_is_still_found()
+    {
+        const string source = """
+            public sealed class Sneaky
+            {
+                private readonly IEntraInstanceRegistrationRepository _entraRepo;
+                public Sneaky(IEntraInstanceRegistrationRepository entraRepo) { _entraRepo = entraRepo; }
+                public Task A() => _entraRepo.AddAsync(null!);
+                public Task B() => _entraRepo.DeleteAsync("x");
+            }
+            """;
+        var found = Scan([("Apperture.ControlPlane/Sneaky.cs", source)]);
+
+        found[("Apperture.ControlPlane/Sneaky.cs", Writes.RegistrationCreate)].Should().Be(1);
+        found[("Apperture.ControlPlane/Sneaky.cs", Writes.RegistrationDelete)].Should().Be(1);
+        Differences(found, Inventory).Should().Contain(d => d.StartsWith("UNCLASSIFIED WRITER") && d.Contains("Sneaky.cs"));
+    }
+
+    [Fact]
+    public void A_reader_of_registrations_is_not_a_writer()
+    {
+        const string source = """
+            public sealed class Reader
+            {
+                private readonly IEntraInstanceRegistrationRepository _registrations;
+                public Task<object?> A() => _registrations.GetActiveAsync();
+                public Task B() => _registrations.UpdateOpenIdValidationOutcomeAsync("x");
+            }
+            """;
+
+        Scan([("Apperture.ControlPlane/Reader.cs", source)]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Nothing_outside_the_persistence_layer_reads_a_registration_or_policy_table_directly()
+    {
+        var direct = R(@"\.(EntraInstanceRegistrations|InstanceAuthUiPolicies|EntraRegistrationDiagnostics)\b");
+        const string secretInventory = "Apperture.ControlPlane/Apperture.ControlPlane.Security/IntegrationSettingSecretInventory.cs";
+
+        var users = ProductionSource()
+            .Where(s => !s.Relative.StartsWith("Apperture.Persistence/Apperture.Persistence.SqlServer/", StringComparison.Ordinal))
+            .Where(s => direct.IsMatch(StripComments(s.Text)))
+            .ToList();
+
+        // The one reader outside the persistence layer is the secret inventory, which projects the secret references to find
+        // secrets nothing names any more. It reads; it writes nothing.
+        users.Select(s => s.Relative).Should().BeEquivalentTo([secretInventory], "a registration or the policy is written through its repository, which the inventory counts");
+        StripComments(users.Single().Text).Should().NotContainAny(
+            new[] { "SaveChanges", "ExecuteUpdate", "ExecuteDelete", "ExecuteSqlRaw", "_db.Add", "_db.Remove", "_db.Update", "EntityState.", "_db.Entry(" },
+            "the inventory is read-only");
+    }
+
+    [Fact]
+    public void The_registration_and_policy_inventory_entries_are_all_integrated_in_wp3()
+    {
+        var wp3 = Inventory.Where(i => i.Kind is Writes.RegistrationCreate or Writes.RegistrationUpdate or Writes.RegistrationDelete or Writes.RegistrationActivate or Writes.PolicySave).ToList();
+
+        wp3.Should().HaveCount(5);
+        wp3.Should().OnlyContain(i => i.Integrated, "WP3 integrated every registration and policy writer");
     }
 }

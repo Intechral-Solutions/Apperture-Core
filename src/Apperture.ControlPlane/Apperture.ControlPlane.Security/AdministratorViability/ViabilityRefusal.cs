@@ -11,6 +11,9 @@ public enum ViabilityMutation
 
     /// <summary>A Local or Entra identity link is removed.</summary>
     IdentityLinkRemoval,
+
+    /// <summary>The Microsoft registration is edited, disabled, deleted, or another registration is made the active one.</summary>
+    RegistrationChange,
 }
 
 /// <summary>
@@ -31,6 +34,9 @@ public static class ViabilityRefusal
                 ViabilityMutation.LocalCredentialDisable => new(
                     GovernanceConflictCodes.LastLocalCredential,
                     "Cannot disable this local credential: it is the only sign-in method the last ordinary Platform Administrator who can sign in has. Give another administrator, or this one, another working sign-in method first."),
+                ViabilityMutation.RegistrationChange => new(
+                    GovernanceConflictCodes.LastViableSignInMethod,
+                    "Cannot make this change to the Microsoft registration: it would leave no ordinary Platform Administrator able to sign in, because the administrators who can sign in today depend on Microsoft sign-in as this registration provides it. Give an administrator a working local sign-in first, or keep the registration as it is."),
                 _ => new(
                     GovernanceConflictCodes.LastViableSignInMethod,
                     "Cannot remove this sign-in method: it is the only one the last ordinary Platform Administrator who can sign in has. A Microsoft identity counts only after it has been used to sign in, and only while Microsoft sign-in is working for this installation."),
