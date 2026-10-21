@@ -53,29 +53,34 @@ public sealed class AdministratorViabilityRemediationTests
 
     [Theory]
     [MemberData(nameof(AnyChangeToAFact))]
-    public void A_change_to_any_fact_a_definition_reads_is_not_unchanged_and_goes_on_to_fail_closed(
-        AdministratorFacts[] after, RecoveryAccessFacts? recoveryAfter)
+    public void A_change_to_any_fact_a_definition_reads_is_not_unchanged_and_goes_on_to_the_full_evaluation(
+        AdministratorFacts[] after, RecoveryAccessFacts? recoveryAfter, bool localAdministratorRemains)
     {
-        var before = new[] { LocalAdmin("admin"), new AdministratorFacts("other", false, true, true, [Tenant]) };
+        // The second administrator signs in through Microsoft only, so the unproven Entra reading matters unless the change
+        // leaves a proven Entra-independent administrator behind (WP3 review, M-1): then the change is allowed on that proof alone.
+        var before = new[] { LocalAdmin("admin"), new AdministratorFacts("other", false, false, false, [Tenant]) };
         var pre = FromFacts(before, trust: EntraUnknown);
         var post = FromFacts(after, recovery: recoveryAfter, trust: EntraUnknown);
 
         AdministratorViabilityState.FactsUnchanged(pre, post).Should().BeFalse();
-        AdministratorViabilityGuard.Evaluate(pre, post).Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable);
+        AdministratorViabilityState.InputsUnchanged(pre, post).Should().BeFalse();
+        AdministratorViabilityGuard.ProvesSafeWithoutEntra(post).Should().Be(localAdministratorRemains);
+        AdministratorViabilityGuard.Evaluate(pre, post).Kind.Should().Be(
+            localAdministratorRemains ? ViabilityVerdictKind.Allowed : ViabilityVerdictKind.ConfigurationUnavailable);
     }
 
     public static IEnumerable<object?[]> AnyChangeToAFact()
     {
         var admin = LocalAdmin("admin");
-        var other = new AdministratorFacts("other", false, true, true, [Tenant]);
-        yield return [new[] { admin with { LocalCredentialEnabled = false }, other }, null];
-        yield return [new[] { admin with { HasLocalLink = false }, other }, null];
-        yield return [new[] { admin, other with { ProvenEntraLinkTenantIds = [] } }, null];
-        yield return [new[] { admin, other with { ProvenEntraLinkTenantIds = [OtherTenant] } }, null];
-        yield return [new[] { admin with { IsRecoveryAccess = true }, other }, null];
-        yield return [new[] { admin }, null];
-        yield return [new[] { admin, other, LocalAdmin("new-holder") }, null];
-        yield return [new[] { admin, other }, Recovery(healthy: true)];
+        var other = new AdministratorFacts("other", false, false, false, [Tenant]);
+        yield return [new[] { admin with { LocalCredentialEnabled = false }, other }, null, false];
+        yield return [new[] { admin with { HasLocalLink = false }, other }, null, false];
+        yield return [new[] { admin, other with { ProvenEntraLinkTenantIds = [] } }, null, true];
+        yield return [new[] { admin, other with { ProvenEntraLinkTenantIds = [OtherTenant] } }, null, true];
+        yield return [new[] { admin with { IsRecoveryAccess = true }, other }, null, false];
+        yield return [new[] { admin }, null, true];
+        yield return [new[] { admin, other, LocalAdmin("new-holder") }, null, true];
+        yield return [new[] { admin, other }, Recovery(healthy: true), true];
     }
 
     [Fact]

@@ -322,6 +322,39 @@ public sealed class EntraRegistrationViabilityHostHttpTests : IClassFixture<Admi
         (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{registrationId}';")).Should().Be(0);
     }
 
+    // ---------------------------------------------------------------------------------------- a persistent secret-store failure
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_stored_secret_the_host_cannot_unprotect_refuses_a_reducing_change_until_a_local_administrator_can_sign_in_and_then_allows_it(bool rcsi)
+    {
+        var a = await ArrangeAsync(rcsi);
+        using var client = As(a.Host, a.Actor.Username);
+
+        // The registration names a stored secret whose payload the host's protector (DPAPI) rejects: the failure does not go away on
+        // its own, and a restart would meet the same payload. What the host can accept from Microsoft is therefore not established.
+        var secretId = Guid.NewGuid();
+        await a.World.Scratch.ExecuteAsync($"""
+            INSERT INTO SecretDescriptors (Id, Name, Provider, MaterialType, ActiveVersion, State, CreatedAt)
+            VALUES ('{secretId}', N'unreadable-{secretId:N}', N'EntraRegistration', 0, N'1', 1, SYSDATETIMEOFFSET());
+            INSERT INTO SecretVersions (SecretId, Version, State, ProtectedPayload, KeyId, CreatedAt)
+            VALUES ('{secretId}', N'1', 1, 0x0102030405060708, N'dpapi-localmachine', SYSDATETIMEOFFSET());
+            UPDATE EntraInstanceRegistrations SET ClientSecretRef = N'{secretId}' WHERE Id = N'{a.RegistrationId}';
+            """);
+
+        // Nobody signs in locally: the change cannot be shown safe, so it is refused as unavailable, with nothing changed.
+        var refused = await client.DeleteAsync($"{Route}/{a.RegistrationId}");
+        await AssertRefusalAsync(refused, "administrator_viability_unavailable");
+        (await a.World.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{a.RegistrationId}';")).Should().Be(1);
+        (await a.World.Scratch.ScalarAsync<int>($"SELECT State FROM SecretDescriptors WHERE Id = '{secretId}';")).Should().Be(1, "a refused delete retires nothing");
+
+        // An ordinary administrator who signs in locally makes the same change provably safe without Microsoft.
+        await a.World.NewPersonAsync("local", Admin);
+        var allowed = await client.DeleteAsync($"{Route}/{a.RegistrationId}");
+        allowed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await a.World.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{a.RegistrationId}';")).Should().Be(0);
+    }
+
     // ---------------------------------------------------------------------------------------- sign-in policy
 
     [Theory]

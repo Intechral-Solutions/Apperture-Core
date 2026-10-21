@@ -274,7 +274,12 @@ public sealed class AdministratorViabilityHostHttpTests : IClassFixture<Administ
         var (world, host) = For(rcsi, entra: false);
         await ClearAdministratorsAsync(world);
         var actor = await StrandedActorAsync(world);
+
+        // The other administrator signs in only through Microsoft, which this host cannot be asked: `viableAdmin` is the only one
+        // who signs in locally.
         var spare = await world.NewPersonAsync("spare", Admin);
+        await world.Scratch.ExecuteAsync($"UPDATE LocalCredentials SET IsDisabled = 1 WHERE UserId = N'{spare.Id}';");
+        await world.AddEntraLinkAsync(spare.Id, Tenant, proven: true);
         var viableAdmin = await world.NewPersonAsync("viable", Admin);
         var ordinary = await world.NewPersonAsync("ordinary");
         await world.AddCredentialAsync(ordinary.Id);
@@ -304,12 +309,18 @@ public sealed class AdministratorViabilityHostHttpTests : IClassFixture<Administ
 
         // An administrator's credential, an administrator's role: still fail closed.
         var refusedCredential = await client.PatchAsJsonAsync($"api/users/{viableAdmin.Id}/local-credential", new { isDisabled = true });
-        var refusedRole = await client.DeleteAsync($"api/users/{spare.Id}/roles/{Admin}");
+        var refusedRole = await client.DeleteAsync($"api/users/{viableAdmin.Id}/roles/{Admin}");
 
         await AssertRefusalAsync(refusedCredential, "administrator_viability_unavailable");
         await AssertRefusalAsync(refusedRole, "administrator_viability_unavailable");
         (await world.CredentialDisabledAsync(viableAdmin.Id)).Should().BeFalse();
-        (await world.AssignmentExistsAsync(spare.Id, Admin)).Should().BeTrue();
+        (await world.AssignmentExistsAsync(viableAdmin.Id, Admin)).Should().BeTrue();
+
+        // Another ordinary administrator who signs in locally makes the same change provably safe without Microsoft: it is allowed.
+        await world.NewPersonAsync("local-fallback", Admin);
+        var allowedCredential = await client.PatchAsJsonAsync($"api/users/{viableAdmin.Id}/local-credential", new { isDisabled = true });
+        allowedCredential.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await world.CredentialDisabledAsync(viableAdmin.Id)).Should().BeTrue();
     }
 
     // ------------------------------------------------------------------------------------------------- busy gate

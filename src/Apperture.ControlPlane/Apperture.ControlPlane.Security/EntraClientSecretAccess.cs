@@ -24,6 +24,24 @@ public enum EntraClientSecretStatus
     Unavailable,
 }
 
+/// <summary>What <see cref="EntraClientSecretAccess.ResolveAsync"/> does with a failure of the database the secret store reads from.</summary>
+public enum EntraSecretFailureHandling
+{
+    /// <summary>
+    /// A failure to read the store of any kind, a database failure included, is <see cref="EntraClientSecretStatus.Unavailable"/>, and
+    /// the sign-in falls through as it always has. This is what the host's sign-in and every other caller use.
+    /// </summary>
+    Contain,
+
+    /// <summary>
+    /// A database failure (a <see cref="System.Data.Common.DbException"/>, directly or anywhere in the exception's chain: a deadlock
+    /// victim, a timeout) is not an answer about the secret and propagates, so that the transaction the caller reads in can fail,
+    /// roll back and be retried by its own machinery. Only the administrator-viability evaluation, which reads inside an audited
+    /// unit, asks for this; a store that cannot be reached for any other reason is still <see cref="EntraClientSecretStatus.Unavailable"/>.
+    /// </summary>
+    PropagateDatabaseFailures,
+}
+
 /// <summary>Where a resolved client secret came from.</summary>
 public enum EntraClientSecretSource
 {
@@ -81,7 +99,8 @@ public static class EntraClientSecretAccess
         EntraInstanceRegistration registration,
         ISecretResolver? secretResolver,
         string? deploymentSecret,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        EntraSecretFailureHandling failureHandling = EntraSecretFailureHandling.Contain)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
@@ -107,6 +126,12 @@ public static class EntraClientSecretAccess
                     // The caller cancelled: that is not a failure of the store, and not a reason to fall through.
                     throw;
                 }
+                catch (Exception ex) when (failureHandling == EntraSecretFailureHandling.PropagateDatabaseFailures && IsDatabaseFailure(ex))
+                {
+                    // The failure is the caller's transaction's, not an answer about the secret: it must reach that transaction's own
+                    // rollback and retry, and must not become a reading ("unavailable") that a business decision is then made on.
+                    throw;
+                }
                 catch (Exception ex) when (ex is not (SecretNotFoundException or SecretUnavailableException))
                 {
                     // Neither a missing secret nor a refusal: the store could not be read. The caller logs at its own layer, without the text.
@@ -130,5 +155,23 @@ public static class EntraClientSecretAccess
         return deployment is null
             ? new EntraClientSecretResolution(EntraClientSecretStatus.Absent, EntraClientSecretSource.None, null)
             : new EntraClientSecretResolution(EntraClientSecretStatus.Resolved, EntraClientSecretSource.DeploymentSecret, deployment);
+    }
+
+    /// <summary>
+    /// True when the exception, or any exception it wraps (an inner exception, or a member of an aggregate), is a database error.
+    /// That is the same walk the database provider's retrying execution strategy makes to find a deadlock victim or a timeout it may
+    /// retry, so what it would retry reaches it.
+    /// </summary>
+    private static bool IsDatabaseFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is System.Data.Common.DbException)
+                return true;
+            if (current is AggregateException aggregate && aggregate.InnerExceptions.Any(IsDatabaseFailure))
+                return true;
+        }
+
+        return false;
     }
 }

@@ -53,8 +53,44 @@ public static class AdministratorViabilityGuard
         if (AdministratorViabilityState.InputsUnchanged(pre, post))
             return ViabilityVerdict.Allowed;
 
+        // A result that still holds an Entra-independent ordinary administrator in both views satisfies both invariants whatever
+        // Microsoft sign-in can do (EI is a subset of VOA, and an EI administrator makes the fallback invariant hold), so an Entra
+        // reading that cannot be established (a secret store that cannot be read) is no reason to refuse it.
+        if (ProvesSafeWithoutEntra(post))
+            return ViabilityVerdict.Allowed;
+
         var unavailable = RequireTrust(pre, post, needEntra: true);
         return unavailable ?? Detect(pre, post);
+    }
+
+    /// <summary>
+    /// True only when <paramref name="post"/>, the state a change <i>produced</i>, independently proves I-VIABLE and I-FALLBACK
+    /// without any Microsoft sign-in: Local sign-in is established, the stored facts and the Recovery Access posture inputs are
+    /// present (read from the database, never a test double's bare snapshot), and, applying the one definition of an
+    /// Entra-independent administrator to those facts under each view's own availability, at least one ordinary (not Recovery
+    /// Access) administrator with an enabled Local route, credential and identity link exists in the Now view <i>and</i> in the
+    /// Restart view. The state's own snapshots must say the same, so a snapshot that claims more, or less, than the facts prove is
+    /// not believed. It never reads the Entra trust, the pre-state, an aggregate count of role holders or Recovery Access health.
+    /// </summary>
+    public static bool ProvesSafeWithoutEntra(AdministratorViabilityState post)
+    {
+        if (!post.Trust.LocalKnown || post.Administrators is null || post.Recovery is null)
+            return false;
+
+        foreach (var view in Views)
+        {
+            var availability = view == ViabilityView.Now ? post.Configuration.Now : post.Configuration.Restart;
+            var derived = AdministratorViabilityEvaluator.Evaluate(post.Administrators, availability);
+            var reported = post.For(view);
+            if (derived.EntraIndependentAdministrators.Count == 0
+                || !derived.EntraIndependentAdministrators.SetEquals(reported.EntraIndependentAdministrators)
+                || !derived.ViableOrdinaryAdministrators.SetEquals(reported.ViableOrdinaryAdministrators))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

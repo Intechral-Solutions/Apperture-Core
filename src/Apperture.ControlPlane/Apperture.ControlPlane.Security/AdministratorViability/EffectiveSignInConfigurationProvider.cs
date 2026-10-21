@@ -57,7 +57,7 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
         // Restart: what the next start builds from the persisted registration.
         var restartEntra = Clone(reading.EntraBase);
         var overlay = await EntraAuthOptionsOverlay
-            .ApplyDetailedAsync(active, restartEntra, _secretResolver, cancellationToken)
+            .ApplyDetailedAsync(active, restartEntra, _secretResolver, cancellationToken, EntraSecretFailureHandling.PropagateDatabaseFailures)
             .ConfigureAwait(false);
         var restartNotes = new List<string>();
         if (overlay.Outcome == EntraOverlayOutcome.AppliedWithoutSecret && !reading.AuthoritativeAboutSecrets

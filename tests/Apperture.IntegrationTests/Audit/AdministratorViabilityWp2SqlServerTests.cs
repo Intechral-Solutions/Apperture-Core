@@ -734,8 +734,8 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
         var actor = await ActorAsync(world, "actor");
         await world.SetActiveRegistrationAsync(Tenant);
         var first = await LocalAdminAsync(world, "first");
-        var second = await LocalAdminAsync(world, "second");
         var entraOnly = await EntraOnlyAdminAsync(world, "entra");
+        await EntraOnlyAdminAsync(world, "other-entra");
         await HealthyRecoveryAsync(world);
         var unreadable = new DeploymentAuthenticationReading(
             ConfigurationTrustLevel.Trusted,
@@ -750,21 +750,26 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests : IClassFixt
                 RunningHandlerBinding.Unavailable("InvalidOperationException")));
         var before = await StateAsync(world.Scratch);
 
+        // `first` is the only administrator who signs in locally: the others depend on Microsoft, which the host cannot be asked.
         foreach (var op in new[] { Op.RemoveRole, Op.DisableCredential })
         {
             await using var db = world.Scratch.NewDb();
             (await RefusedAsync(() => RunAsync(world, op, actor, first, db, unreadable))).Code.Should().Be("administrator_viability_unavailable");
         }
 
-        await using (var db = world.Scratch.NewDb())
-            (await RefusedAsync(() => RunAsync(world, Op.RemoveEntraLink, actor, entraOnly, db, unreadable))).Code.Should().Be("administrator_viability_unavailable");
-
         (await StateAsync(world.Scratch)).Should().Be(before, "an unreadable handler is neither usable nor unusable, so nothing that could reduce viability is decided on it");
 
-        // The handler never counted: the Entra-only administrator is not viable now, so the state read for a raise is unaffected.
+        // The handler never counted: the Entra-only administrators are not viable now, so the state read for a raise is unaffected.
         var state = await ViabilityAsync(world.Scratch, unreadable);
-        state.Now.ViableOrdinaryAdministrators.Should().BeEquivalentTo([first, second]);
+        state.Now.ViableOrdinaryAdministrators.Should().BeEquivalentTo([first]);
         state.Trust.EntraKnown.Should().BeFalse();
+
+        // With `first` no longer able to sign in (arranged directly), removing an Entra link leaves nobody proven, so it is refused.
+        await DisableCredentialRawAsync(world, first);
+        var strandedState = await StateAsync(world.Scratch);
+        await using (var db = world.Scratch.NewDb())
+            (await RefusedAsync(() => RunAsync(world, Op.RemoveEntraLink, actor, entraOnly, db, unreadable))).Code.Should().Be("administrator_viability_unavailable");
+        (await StateAsync(world.Scratch)).Should().Be(strandedState);
     }
 
     // ---- authorization is preserved ----

@@ -92,9 +92,9 @@ public sealed class EntraRegistrationHostSqlServerTests : IClassFixture<AuditIso
     {
         var scratch = _catalogs.For(rcsi);
         var (world, _, r1, actor) = await EntraRunningHost.ArrangeAsync(scratch);
-        await world.NewUserAsync("local-admin", Admin);
         var failing = new FailingCommand(sql => sql.Contains("[EntraInstanceRegistrations]", StringComparison.Ordinal));
 
+        // Nobody signs in locally, so the change cannot be shown safe without knowing what Microsoft sign-in does.
         using var broken = new EntraRunningHost(scratch, optionsDb: () => scratch.NewDb(failing));
         await using (var db = scratch.NewDb())
         {
@@ -108,9 +108,28 @@ public sealed class EntraRegistrationHostSqlServerTests : IClassFixture<AuditIso
         (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{r1}';")).Should().Be(1);
 
         // A restart reads the registration and the host decides on what is true.
+        await world.NewUserAsync("local-admin", Admin);
         using var restarted = new EntraRunningHost(scratch);
         await using (var db = scratch.NewDb())
             (await Controller(world, restarted, actor, db).Delete(r1, CancellationToken.None)).Should().BeOfType<NoContentResult>("a Local administrator exists");
         restarted.Health.QualityOf(restarted.Endpoints).Should().Be(EntraOptionsBuildQuality.Complete);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_host_whose_options_could_not_be_built_completely_still_allows_a_change_that_leaves_an_administrator_who_signs_in_locally(bool rcsi)
+    {
+        var scratch = _catalogs.For(rcsi);
+        var (world, _, r1, actor) = await EntraRunningHost.ArrangeAsync(scratch);
+        await world.NewUserAsync("local-admin", Admin);
+        var failing = new FailingCommand(sql => sql.Contains("[EntraInstanceRegistrations]", StringComparison.Ordinal));
+
+        using var broken = new EntraRunningHost(scratch, optionsDb: () => scratch.NewDb(failing));
+        await using var db = scratch.NewDb();
+        var response = await Controller(world, broken, actor, db).Delete(r1, CancellationToken.None);
+
+        response.Should().BeOfType<NoContentResult>("the reading of Microsoft sign-in is not established, but a Local administrator is, and that is enough");
+        broken.Health.QualityOf(broken.Endpoints).Should().Be(EntraOptionsBuildQuality.Degraded, "the running options were not rebuilt: a restart is what makes the host agree with the change");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{r1}';")).Should().Be(0);
     }
 }

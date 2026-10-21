@@ -113,12 +113,16 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
 
     [Theory]
     [MemberData(nameof(AdministratorOpsUnderUntrustedConfigurations))]
-    public async Task M1_a_reduction_aimed_at_an_administrator_still_fails_closed_when_the_configuration_cannot_be_trusted(Op op, UntrustedConfiguration kind, bool rcsi)
+    public async Task M1_a_reduction_aimed_at_an_administrator_still_fails_closed_when_the_configuration_cannot_be_trusted_and_no_local_administrator_remains(Op op, UntrustedConfiguration kind, bool rcsi)
     {
+        // The administrator who remains signs in only through Microsoft (and Recovery Access is healthy), so with a trusted
+        // reading every one of these would be allowed: it is the unreadable Microsoft reading, and no proven Local administrator,
+        // that refuses them.
         var world = await FreshAsync(rcsi);
         await world.SetActiveRegistrationAsync(Tenant);
         var actor = await ActorAsync(world, "actor");
-        await LocalAdminAsync(world, "spare");
+        await EntraOnlyAdminAsync(world, "spare");
+        await HealthyRecoveryAsync(world);
         var target = await TargetOfAsync(world, op, "target");
         var before = await StateAsync(world.Scratch);
 
@@ -129,6 +133,27 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         (await StateAsync(world.Scratch)).Should().Be(before, "the provisional change was rolled back");
         (await world.AuditRowsAsync(BlockedAction(op), AuditTarget(op, target))).Should().Be(1);
         (await world.AuditRowsAsync(SuccessAction(op), AuditTarget(op, target))).Should().Be(0);
+    }
+
+    [Theory]
+    [MemberData(nameof(AdministratorOpsUnderUntrustedConfigurations))]
+    public async Task M1_a_reduction_aimed_at_an_administrator_is_allowed_when_the_configuration_cannot_be_trusted_but_an_ordinary_administrator_still_signs_in_locally(Op op, UntrustedConfiguration kind, bool rcsi)
+    {
+        // The change leaves an ordinary administrator with an enabled Local credential and link while Local sign-in is on, in both
+        // views: both invariants hold without Microsoft, so what Microsoft can do is not needed to allow it.
+        var world = await FreshAsync(rcsi);
+        await world.SetActiveRegistrationAsync(Tenant);
+        var actor = await ActorAsync(world, "actor");
+        var spare = await LocalAdminAsync(world, "spare");
+        var target = await TargetOfAsync(world, op, "target");
+
+        await using var db = world.Scratch.NewDb();
+        await RunAsync(world, op, actor, target, db, Untrusted(kind));
+
+        (await AppliedAsync(world, op, target)).Should().BeTrue();
+        (await world.AuditRowsAsync(SuccessAction(op), AuditTarget(op, target))).Should().Be(1);
+        (await world.AuditRowsAsync(BlockedAction(op), AuditTarget(op, target))).Should().Be(0, "a permitted change records no refusal");
+        (await ViabilityAsync(world.Scratch)).Now.EntraIndependentAdministrators.Should().Contain(spare);
     }
 
     [Theory]
@@ -188,7 +213,11 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         var scratch = world.Scratch;
         var actorA = await ActorAsync(world, "actor-a");
         var actorB = await ActorAsync(world, "actor-b");
-        await LocalAdminAsync(world, "spare");
+
+        // The administrator who remains signs in only through Microsoft, which the reading cannot establish: if the user is judged
+        // as the administrator he is, disabling his credential leaves no proven Local administrator and is refused.
+        await EntraOnlyAdminAsync(world, "spare");
+        await HealthyRecoveryAsync(world);
         var user = await world.NewUserAsync("user");
         await world.AddCredentialAsync(user);
         var other = await world.NewUserAsync("other");

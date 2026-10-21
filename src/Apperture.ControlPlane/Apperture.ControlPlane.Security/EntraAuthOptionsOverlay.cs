@@ -72,7 +72,8 @@ public static class EntraAuthOptionsOverlay
         EntraInstanceRegistration? active,
         EntraAuthOptions options,
         ISecretResolver? secretResolver,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        EntraSecretFailureHandling failureHandling = EntraSecretFailureHandling.Contain)
     {
         if (active is null || !active.Enabled)
             return EntraOverlayResult.NoActiveRegistration;
@@ -88,7 +89,7 @@ public static class EntraAuthOptionsOverlay
             options.CallbackPath = active.CallbackPath!;
 
         var resolution = await EntraClientSecretAccess
-            .ResolveAsync(active, secretResolver, options.ClientSecret, cancellationToken)
+            .ResolveAsync(active, secretResolver, options.ClientSecret, cancellationToken, failureHandling)
             .ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(resolution.Secret))
             options.ClientSecret = resolution.Secret;
