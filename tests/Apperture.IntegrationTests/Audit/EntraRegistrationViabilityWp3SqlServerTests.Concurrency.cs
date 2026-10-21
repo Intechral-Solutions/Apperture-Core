@@ -21,7 +21,7 @@ namespace Apperture.IntegrationTests.Audit;
 // does without it. Contention is a busy outcome, never a refusal; a cancelled wait is the caller's cancellation.
 public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
 {
-    private sealed class AllowingStrongAuthentication : IStrongAuthenticationGate
+    internal sealed class AllowingStrongAuthentication : IStrongAuthenticationGate
     {
         public ValueTask<AuthenticationAssurance> GetCurrentAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new AuthenticationAssurance("test", true, DateTimeOffset.UtcNow, "c1", true));
@@ -31,20 +31,20 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
 
     // ---------------------------------------------------------------------------------------- the server's view
 
-    private static Task<int> RowLockWaitersAsync(AuditSqlScratch scratch) =>
+    internal static Task<int> RowLockWaitersAsync(AuditSqlScratch scratch) =>
         scratch.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.dm_tran_locks WHERE resource_type IN (N'KEY', N'RID', N'PAGE', N'OBJECT') AND request_status = N'WAIT' AND resource_database_id = DB_ID();");
 
-    private static Task<int> ApplicationLockWaitersAsync(AuditSqlScratch scratch) =>
+    internal static Task<int> ApplicationLockWaitersAsync(AuditSqlScratch scratch) =>
         scratch.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.dm_tran_locks WHERE resource_type = N'APPLICATION' AND request_status = N'WAIT' AND resource_database_id = DB_ID();");
 
-    private static Task<int> GrantedApplicationLocksAsync(AuditSqlScratch scratch) =>
+    internal static Task<int> GrantedApplicationLocksAsync(AuditSqlScratch scratch) =>
         scratch.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.dm_tran_locks WHERE resource_type = N'APPLICATION' AND request_status = N'GRANT' AND resource_database_id = DB_ID();");
 
     /// <summary>Tries to take the gate from a session of its own without waiting: -1 means somebody holds it.</summary>
-    private static async Task<int> ProbeGateAsync(AuditSqlScratch scratch)
+    internal static async Task<int> ProbeGateAsync(AuditSqlScratch scratch)
     {
         await using var connection = new SqlConnection(scratch.ConnectionString);
         await connection.OpenAsync();
@@ -397,7 +397,7 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
         from rcsi in new[] { false, true }
         select new object[] { op, rcsi };
 
-    private static Task HoldGateAsync(RawSession session) =>
+    internal static Task HoldGateAsync(RawSession session) =>
         session.ExecuteAsync(
             "DECLARE @r int; EXEC @r = sp_getapplock @Resource = N'" + PlatformAdministratorSetLock.ResourceName
             + "', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 0;");

@@ -11,7 +11,8 @@ namespace Apperture.UnitTests.AdministratorViability;
 /// non-refusable <b>recovery-code consumption</b> (C-14), or <b>out of category</b> (it cannot change a viability input, and a test
 /// pins why). A writer in none of them fails here, so a new writer cannot appear unclassified. A reducer or raiser is either
 /// <b>integrated</b> (WP2: the person-driven administrator, credential and link writers; WP3: the Entra registration and sign-in
-/// policy writers; each checked method by method for the gate before the row locks and the writes, and for the check after them) or
+/// policy writers; WP4A: the Entra-primary policy's credential disable; each checked method by method for the gate before the row
+/// locks and the writes, and for the check after them) or
 /// explicitly <b>pending</b> (every other package), and a pending file must not already reference the gate or the coordinator, so
 /// that the pending list cannot go stale unnoticed.
 /// </summary>
@@ -65,7 +66,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     /// <summary>The packages whose writers are integrated. Moving a package here is what makes the method-level checks apply to it.</summary>
-    private static readonly string[] IntegratedPackages = ["WP2", "WP3"];
+    private static readonly string[] IntegratedPackages = ["WP2", "WP3", "WP4A"];
 
     private sealed record Classified(string File, Writes Kind, int Count, Class Class, string Package, string Why)
     {
@@ -98,7 +99,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
         // Credential disablement.
         new(Security + "UserManagementService.cs", Writes.CredentialDisable, 1, Class.Reducer, "WP2", "disable (reducer) or re-enable (raiser) a Local credential"),
-        new(Security + "EntraPrimaryAuthenticationPolicy.cs", Writes.CredentialDisable, 1, Class.Reducer, "WP4A", "the policy disables a Local credential; it takes the gate itself and is not covered by E-2"),
+        new(Security + "EntraPrimaryAuthenticationPolicy.cs", Writes.CredentialDisable, 1, Class.Reducer, "WP4A", "the Entra-primary policy disables a Local credential: it takes the gate, applies, verifies and defers; it is not covered by E-2"),
 
         // Identity links.
         new(Security + "UserManagementService.cs", Writes.LinkAdd, 3, Class.GatedRaiser, "WP2", "an administrator adds a link"),
@@ -489,6 +490,13 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Api + "ConfigEntraTenantsController.cs", "DecideAppliedChangeAsync", Writes.RegistrationActivate,
             ["VerifyAfterAsync(", ".Captured", "NewlyViolates(", "ViabilityRefusal.For("]),
 
+        // WP4A. The Entra-primary policy answers "nothing to disable" without the gate (it only ever answers no); a change to a
+        // credential is decided inside the unit: the gate first, then the target and its credential, the state before, the write,
+        // the state after and the verdict, and only then the success row. A deferral declares the attempt a no-op so the unit
+        // rolls the disable back.
+        new(Security + "EntraPrimaryAuthenticationPolicy.cs", "ApplyAfterEntraProvenAsync", Writes.CredentialDisable,
+            ["NothingToDisableAsync(", "Unit.ExecuteAsync(", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", ".SetDisabledAsync(", "VerifyAfterAsync(", "DeclareNoOp()", "StageAsync("]),
+
         // The sign-in policy takes the gate before it reads or writes the policy row, and reads no viability state: the chooser flags
         // are not an input of administrator viability, so this change cannot reduce either set.
         new(Api + "ConfigAuthUiPolicyController.cs", "Patch", Writes.PolicySave,
@@ -558,6 +566,36 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         code.Should().NotContainAny(
             new[] { "CountUserAssignmentsAsync(", "HasViableAlternateSignIn", "EntraConfigurationState" },
             "the shared viability guard is the one definition; a second predicate beside it could disagree with it");
+    }
+
+    [Fact]
+    public void The_entra_primary_policy_has_no_decision_of_its_own_beside_the_shared_guard()
+    {
+        var code = StripComments(Source(Security + "EntraPrimaryAuthenticationPolicy.cs"));
+
+        code.Should().NotContainAny(
+            new[]
+            {
+                "ListUserIdsWithRoleAsync(", "CountOtherEntraIndependent", "IEmergencyAccessService", "GetPostureAsync(", "IRoleRepository",
+                "CountUserAssignmentsAsync(", "HasViableAlternateSignIn", "EntraConfigurationState",
+            },
+            "the shared viability guard is the one definition of a viable and of an Entra-independent administrator");
+        MethodBody(code, "ApplyAfterEntraProvenAsync").Should().Contain("VerifyAfterAsync(", "the verdict is the coordinator's scope applying the shared guard");
+    }
+
+    [Fact]
+    public void The_entra_primary_policy_turns_only_a_busy_gate_into_an_outcome_and_the_display_takes_no_gate()
+    {
+        var code = StripComments(Source(Security + "EntraPrimaryAuthenticationPolicy.cs"));
+        var apply = MethodBody(code, "ApplyAfterEntraProvenAsync");
+
+        Regex.Matches(apply, @"\bcatch\b").Count.Should().Be(1, "no blanket catch may turn an infrastructure failure into a policy outcome");
+        apply.Should().Contain("catch (PlatformAdministratorSetBusyException)");
+        apply.Should().Contain("NotAppliedBusy");
+
+        foreach (var method in new[] { "DescribeAsync", "WouldDeferAsync" })
+            MethodBody(code, method).Should().NotContain("EnterAsync(", "a display only describes the state; it takes no gate and writes nothing");
+        Regex.Matches(code, @"TryWriteAsync\(").Count.Should().Be(1, "an attempt row is written after the unit, once, by the one place that knows the verdict");
     }
 
     [Fact]

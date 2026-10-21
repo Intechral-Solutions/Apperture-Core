@@ -131,7 +131,8 @@ public sealed class SqlPrincipalToUserResolver : IPrincipalToUserResolver
             return;
         try
         {
-            await _entraPrimaryPolicy.ApplyAfterEntraProvenAsync(userId, cancellationToken).ConfigureAwait(false);
+            var outcome = await _entraPrimaryPolicy.ApplyAfterEntraProvenAsync(userId, cancellationToken).ConfigureAwait(false);
+            EntraPrimaryOutcomeLogging.Log(_logger, userId, outcome);
         }
         catch (Exception ex)
         {

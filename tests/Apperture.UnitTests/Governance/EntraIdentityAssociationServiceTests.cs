@@ -7,6 +7,7 @@ using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -113,6 +114,72 @@ public sealed class EntraIdentityAssociationServiceTests
 
         harness.Policy.AppliedUserIds.Should().ContainSingle().Which.Should().Be("usr-1");
         harness.Audit.Actions.Should().NotContain(EntraLinkAuditActionNames.Proven);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_busy_gate_is_logged_as_not_applied_and_the_sign_in_or_link_still_succeeds(bool selfLink)
+    {
+        var harness = new Harness();
+        harness.Policy.Outcome = EntraPrimaryLocalDisableOutcome.NotAppliedBusy;
+        if (selfLink)
+            harness.Repository.Seed(NewUser("usr-1", LocalLink("operator")));
+        else
+            harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        var outcome = selfLink
+            ? await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion())
+            : await harness.Service.CompleteSignInAsync(Assertion());
+
+        outcome.Succeeded.Should().BeTrue("the policy is best-effort; a busy gate never fails the caller");
+        var warning = harness.Log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("not applied")).Subject;
+        warning.Message.Should().Contain("usr-1").And.Contain("another change to administrator access is in progress");
+        harness.Log.Entries.Should().NotContain(e => e.Level >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task An_unavailable_configuration_deferral_is_logged_without_claiming_a_last_administrator()
+    {
+        var harness = new Harness();
+        harness.Policy.Outcome = EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable;
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        var outcome = await harness.Service.CompleteSignInAsync(Assertion());
+
+        outcome.Succeeded.Should().BeTrue();
+        harness.Log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("could not be established") && e.Message.Contains("usr-1"));
+    }
+
+    [Theory]
+    [InlineData(EntraPrimaryLocalDisableOutcome.Disabled)]
+    [InlineData(EntraPrimaryLocalDisableOutcome.AlreadyDisabled)]
+    [InlineData(EntraPrimaryLocalDisableOutcome.NoLocalCredential)]
+    [InlineData(EntraPrimaryLocalDisableOutcome.ProtectedEmergencyAccount)]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator)]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator)]
+    public async Task An_outcome_that_is_already_recorded_or_needs_no_record_is_not_logged_again_by_the_caller(EntraPrimaryLocalDisableOutcome reported)
+    {
+        var harness = new Harness();
+        harness.Policy.Outcome = reported;
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        await harness.Service.CompleteSignInAsync(Assertion());
+
+        harness.Log.Entries.Should().NotContain(e => e.Level >= LogLevel.Warning, "the policy wrote its own row, or there was nothing to record");
+    }
+
+    [Fact]
+    public async Task An_unknown_outcome_keeps_its_distinct_error_with_the_operation_id()
+    {
+        var harness = new Harness();
+        harness.Policy.Failure = new AuditOutcomeUnknownException("op-unknown-1");
+        harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        var outcome = await harness.Service.CompleteSignInAsync(Assertion());
+
+        outcome.Succeeded.Should().BeTrue();
+        harness.Log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Error && e.Message.Contains("op-unknown-1") && e.Message.Contains("unknown outcome"));
     }
 
     [Fact]
@@ -445,7 +512,7 @@ public sealed class EntraIdentityAssociationServiceTests
                     })
                     .Build(),
                 new FixedTimeProvider(Now),
-                NullLogger<EntraIdentityAssociationService>.Instance,
+                Log,
                 entraPrimaryPolicy: Policy,
                 auditedUnitOfWork: Audit,
                 auditEvents: Audit);
@@ -460,6 +527,8 @@ public sealed class EntraIdentityAssociationServiceTests
         public StubDirectoryDiscovery Directory { get; }
 
         public RecordingEntraPrimaryPolicy Policy { get; } = new();
+
+        public RecordingLogger<EntraIdentityAssociationService> Log { get; } = new();
 
         public EntraIdentityAssociationService Service { get; }
     }
@@ -544,12 +613,20 @@ public sealed class EntraIdentityAssociationServiceTests
     {
         public List<string> AppliedUserIds { get; } = [];
 
+        /// <summary>What the next application reports.</summary>
+        public EntraPrimaryLocalDisableOutcome Outcome { get; set; } = EntraPrimaryLocalDisableOutcome.Disabled;
+
+        /// <summary>When set, the next application throws it.</summary>
+        public Exception? Failure { get; set; }
+
         public ValueTask<EntraPrimaryLocalDisableOutcome> ApplyAfterEntraProvenAsync(
             UserId userId,
             CancellationToken cancellationToken = default)
         {
             AppliedUserIds.Add(userId.Value);
-            return ValueTask.FromResult(EntraPrimaryLocalDisableOutcome.Disabled);
+            if (Failure is not null)
+                throw Failure;
+            return ValueTask.FromResult(Outcome);
         }
 
         public ValueTask<LocalAuthenticationPresentation> DescribeAsync(

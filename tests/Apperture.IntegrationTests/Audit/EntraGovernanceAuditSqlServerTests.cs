@@ -398,15 +398,20 @@ public sealed class EntraGovernanceAuditSqlServerTests : IAsyncLifetime
             auditedUnitOfWork: NewUnit(db, principal),
             auditEvents: Events(principal));
 
-    private EntraPrimaryAuthenticationPolicy Policy(AppertureDbContext db) =>
-        new(
+    private EntraPrimaryAuthenticationPolicy Policy(AppertureDbContext db)
+    {
+        // The policy decides under the global administrator-set gate with the shared viability reads (IAM-10.2b WP4A). These cases
+        // disable an ordinary user's credential, which no administrator-viability input reads.
+        var reading = AdministratorViabilitySqlServerTests.Reading(null);
+        return new(
             new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
             new SqlLocalCredentialRepository(db),
-            new SqlRoleRepository(db),
             NullLogger<EntraPrimaryAuthenticationPolicy>.Instance,
-            emergencyAccess: null,
+            EntraRegistrationSqlHarness.Viability(db, reading: reading, resolver: EntraRegistrationSqlHarness.SecretResolver(db)),
+            AdministratorViabilitySqlServerTests.Service(db, reading),
             auditedUnitOfWork: NewUnit(db, null),
             auditEvents: Events(null));
+    }
 
     private Task<List<Dictionary<string, object?>>> RowsAsync(string targetType, string targetId) =>
         _db.RowsAsync($"SELECT * FROM AuditLogs WHERE TargetType = N'{targetType}' AND TargetId = N'{targetId}' ORDER BY Id;");
