@@ -353,6 +353,139 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         restored.Should().Be(EntraPrimaryLocalDisableOutcome.Disabled);
     }
 
+    // ----- a concurrent change to administrator access between the two reads (IAM-10.2b WP4A review, L-1) -----
+
+    [Fact]
+    public async Task A_recovery_posture_change_between_the_reads_defers_a_user_who_is_not_an_administrator_without_the_last_administrator_row()
+    {
+        // Recovery Access is healthy, nobody is Entra-independent, and the target holds no role. The last recovery code is consumed at
+        // its sign-in (ruling C-14: exempt from the gate) after the state before was read. The result reads as a fallback violation,
+        // but the user never contributed to it.
+        var control = Harness.OrdinaryUser();
+        control.SeedRecoveryAccount(healthy: true);
+        (await control.Policy.ApplyAfterEntraProvenAsync(new UserId("usr-1"))).Should().Be(EntraPrimaryLocalDisableOutcome.Disabled, "without the change between the reads the same arrangement is allowed");
+
+        var harness = Harness.OrdinaryUser();
+        harness.SeedRecoveryAccount(healthy: true);
+        harness.Credentials.BeforeDisabledWrite = () => harness.RecoveryCodes = 0;
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("usr-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange);
+        harness.RecoveryCodes.Should().Be(0, "the exempt change did happen");
+        harness.Credentials.Disabled["usr-1"].Should().BeFalse("the proposed disable is rolled back");
+        harness.Credentials.Hashes["usr-1"].Should().Be("hash-original");
+        harness.Audit.Actions.Should().BeEmpty("neither the success row nor the last-administrator attempt row is true of this user");
+        harness.Audit.Unit.Operations.Should().ContainSingle();
+        harness.Gate.Acquired.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task The_removal_of_the_only_viable_administrator_between_the_reads_is_not_attributed_to_a_user_who_is_not_an_administrator()
+    {
+        // The I-VIABLE branch of the same attribution: a writer that is not yet under the gate removes the one administrator who can
+        // sign in. The target is an ordinary user, so the viable-administrator row would not be true of them either.
+        var harness = Harness.OrdinaryUser();
+        harness.SeedLocalAdministrator("admin-2");
+        harness.Credentials.BeforeDisabledWrite = () => harness.Roles.UserIds.Remove(new UserId("admin-2"));
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("usr-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange);
+        harness.Credentials.Disabled["usr-1"].Should().BeFalse();
+        harness.Audit.Actions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_genuine_fallback_deferral_keeps_its_attempt_row_even_when_the_posture_also_changed_between_the_reads()
+    {
+        // The user is the only Entra-independent administrator in the state read under the gate, so the row is true of them whatever
+        // else happened: disabling their credential is what takes the last such administrator away.
+        var harness = Harness.SolePlatformAdministrator();
+        harness.SeedRecoveryAccount(healthy: true);
+        harness.Credentials.BeforeDisabledWrite = () => harness.RecoveryCodes = 0;
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator);
+        harness.Credentials.Disabled["admin-1"].Should().BeFalse();
+        harness.Audit.Actions.Should().Equal(StrongAuthenticationAuditActionNames.LocalDisableDeferredLastAdmin);
+    }
+
+    [Fact]
+    public async Task A_genuine_viable_administrator_deferral_keeps_its_attempt_row_and_its_outcome()
+    {
+        var harness = Harness.SolePlatformAdministrator(entra: PendingEntra());
+        harness.SeedRecoveryAccount(healthy: true);
+
+        var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId("admin-1"));
+
+        outcome.Should().Be(EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator);
+        harness.Audit.Actions.Should().Equal(StrongAuthenticationAuditActionNames.LocalDisableDeferredLastAdmin);
+    }
+
+    [Fact]
+    public async Task The_viability_decision_is_the_same_with_or_without_the_attribution()
+    {
+        // Same arrangement, same state: only what is said about the refusal differs. The credential and the audit trail of the
+        // success path are those of any refusal.
+        foreach (var attributable in new[] { true, false })
+        {
+            var harness = attributable ? Harness.SolePlatformAdministrator() : Harness.OrdinaryUser();
+            harness.SeedRecoveryAccount(healthy: true);
+            harness.Credentials.BeforeDisabledWrite = () => harness.RecoveryCodes = 0;
+            var id = attributable ? "admin-1" : "usr-1";
+
+            var outcome = await harness.Policy.ApplyAfterEntraProvenAsync(new UserId(id));
+
+            outcome.Should().NotBe(EntraPrimaryLocalDisableOutcome.Disabled, $"attributable to the user: {attributable}");
+            harness.Credentials.Disabled[id].Should().BeFalse();
+            harness.Audit.Actions.Should().NotContain(StrongAuthenticationAuditActionNames.LocalDisabledEntraPrimary);
+        }
+    }
+
+    public static IEnumerable<object?[]> RefusalsThatNeedTheUserInTheDecidingView()
+    {
+        var user = new UserId("usr-1");
+        var other = ViabilityTestData.Snapshot(ViabilityView.Now, ["other"], ["other"]);
+        var restartOther = ViabilityTestData.Snapshot(ViabilityView.Restart, ["other"], ["other"]);
+        var nowMine = ViabilityTestData.Snapshot(ViabilityView.Now, ["usr-1"], ["usr-1"]);
+        var restartMine = ViabilityTestData.Snapshot(ViabilityView.Restart, ["usr-1"], ["usr-1"]);
+
+        // The user is Entra-independent in the deciding view.
+        yield return [ViabilityVerdictKind.EntraIndependentFallbackRequired, ViabilityView.Now, ViabilityTestData.State(nowMine, restartOther), EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator];
+        yield return [ViabilityVerdictKind.EntraIndependentFallbackRequired, ViabilityView.Restart, ViabilityTestData.State(other, restartMine), EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator];
+        yield return [ViabilityVerdictKind.LastViableAdministrator, ViabilityView.Now, ViabilityTestData.State(nowMine, restartOther), EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator];
+        yield return [ViabilityVerdictKind.LastViableAdministrator, ViabilityView.Restart, ViabilityTestData.State(other, restartMine), EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator];
+
+        // The user is Entra-independent only in the other view, or in neither: the deciding view does not establish it.
+        yield return [ViabilityVerdictKind.EntraIndependentFallbackRequired, ViabilityView.Now, ViabilityTestData.State(other, restartMine), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+        yield return [ViabilityVerdictKind.LastViableAdministrator, ViabilityView.Restart, ViabilityTestData.State(nowMine, restartOther), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+        yield return [ViabilityVerdictKind.EntraIndependentFallbackRequired, ViabilityView.Now, ViabilityTestData.State(other, restartOther), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+
+        // A user who is viable but not Entra-independent in the view (signs in only through Microsoft) is not the one who was lost.
+        yield return [ViabilityVerdictKind.LastViableAdministrator, ViabilityView.Now, ViabilityTestData.State(ViabilityTestData.Snapshot(ViabilityView.Now, ["usr-1"], []), restartOther), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+
+        // Nothing established: no deciding view, or no captured state.
+        yield return [ViabilityVerdictKind.EntraIndependentFallbackRequired, null, ViabilityTestData.State(nowMine, restartMine), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+        yield return [ViabilityVerdictKind.LastViableAdministrator, null, ViabilityTestData.State(nowMine, restartMine), EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+        yield return [ViabilityVerdictKind.LastViableAdministrator, ViabilityView.Now, null, EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange];
+
+        // An unavailable configuration is its own outcome whatever the captured state says.
+        yield return [ViabilityVerdictKind.ConfigurationUnavailable, null, ViabilityTestData.State(nowMine, restartMine), EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable];
+        yield return [ViabilityVerdictKind.ConfigurationUnavailable, null, null, EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable];
+    }
+
+    [Theory]
+    [MemberData(nameof(RefusalsThatNeedTheUserInTheDecidingView))]
+    public void A_refusal_is_attributed_to_the_user_only_when_the_captured_deciding_view_shows_them_entra_independent(
+        ViabilityVerdictKind kind, ViabilityView? view, AdministratorViabilityState? captured, EntraPrimaryLocalDisableOutcome expected)
+    {
+        var verdict = new ViabilityVerdict(kind, view, "detail");
+
+        EntraPrimaryAuthenticationPolicy.Deferred(verdict, captured, new UserId("usr-1")).Should().Be(expected);
+    }
+
     // ----- the gate -----
 
     [Fact]
@@ -785,9 +918,13 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
             return ValueTask.CompletedTask;
         }
 
+        /// <summary>Runs when the disable is written: after the state before was read and before the state after is, where a concurrent writer's change lands.</summary>
+        public Action? BeforeDisabledWrite { get; set; }
+
         public ValueTask SetDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
         {
             log.Add("credential write");
+            BeforeDisabledWrite?.Invoke();
             Disabled[userId.Value] = disabled;
             return ValueTask.CompletedTask;
         }

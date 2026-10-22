@@ -143,6 +143,7 @@ public sealed class SqlPrincipalToUserResolverTests
     [Theory]
     [InlineData(EntraPrimaryLocalDisableOutcome.NotAppliedBusy, true, "another change to administrator access is in progress")]
     [InlineData(EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable, true, "could not be established")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange, true, "administrator access changed while it was being applied")]
     [InlineData(EntraPrimaryLocalDisableOutcome.Disabled, false, "")]
     [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator, false, "")]
     [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator, false, "")]

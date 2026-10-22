@@ -152,6 +152,29 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_deferral_caused_by_a_concurrent_change_to_administrator_access_is_logged_once_without_claiming_a_last_administrator(bool selfLink)
+    {
+        var harness = new Harness();
+        harness.Policy.Outcome = EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange;
+        if (selfLink)
+            harness.Repository.Seed(NewUser("usr-1", LocalLink("operator")));
+        else
+            harness.Repository.Seed(NewUser("usr-1", EntraLink(Oid, provenAt: Now.AddDays(-1), tenantId: ActiveTenantId)));
+
+        var outcome = selfLink
+            ? await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion())
+            : await harness.Service.CompleteSignInAsync(Assertion());
+
+        outcome.Succeeded.Should().BeTrue("the policy is best-effort; a deferral never fails the caller");
+        var warning = harness.Log.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Subject;
+        warning.Message.Should().Contain("usr-1").And.Contain("administrator access changed while it was being applied");
+        warning.Message.Should().NotContainEquivalentOf("last administrator").And.NotContainEquivalentOf("last Entra-independent");
+        harness.Log.Entries.Should().NotContain(e => e.Level >= LogLevel.Error);
+    }
+
+    [Theory]
     [InlineData(EntraPrimaryLocalDisableOutcome.Disabled)]
     [InlineData(EntraPrimaryLocalDisableOutcome.AlreadyDisabled)]
     [InlineData(EntraPrimaryLocalDisableOutcome.NoLocalCredential)]

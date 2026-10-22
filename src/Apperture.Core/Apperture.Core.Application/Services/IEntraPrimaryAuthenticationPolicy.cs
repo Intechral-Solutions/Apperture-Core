@@ -66,6 +66,15 @@ public enum EntraPrimaryLocalDisableOutcome
     /// the credential stays enabled, no row is written, and the next successful Entra sign-in applies the policy again.
     /// </summary>
     NotAppliedBusy,
+
+    /// <summary>
+    /// The change was refused, but not because of this user: administrator access changed between the two reads of the decision
+    /// (an exempt writer such as the consumption of the last Recovery Access recovery code, or a writer not yet under the gate), and
+    /// the state read under the gate does not show the user as an Entra-independent administrator. The credential stays enabled and
+    /// no attempt row is written, because the last-administrator row would not be true of this user; the caller logs it. The next
+    /// successful Entra sign-in applies the policy again.
+    /// </summary>
+    DeferredConcurrentAdministratorAccessChange,
 }
 
 /// <summary>

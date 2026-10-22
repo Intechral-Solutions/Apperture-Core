@@ -28,6 +28,12 @@ internal static class EntraPrimaryOutcomeLogging
                     userId.Value);
                 break;
 
+            case EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange:
+                logger.LogWarning(
+                    "The Entra-primary local-authentication policy was deferred for {UserId}: administrator access changed while it was being applied, so whether disabling local sign-in is safe was not established. Local sign-in stays enabled and the policy is applied again at the next Entra sign-in.",
+                    userId.Value);
+                break;
+
             case EntraPrimaryLocalDisableOutcome.Disabled:
             case EntraPrimaryLocalDisableOutcome.AlreadyDisabled:
             case EntraPrimaryLocalDisableOutcome.NoLocalCredential:

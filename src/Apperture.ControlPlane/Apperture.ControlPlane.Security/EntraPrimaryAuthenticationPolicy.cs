@@ -123,11 +123,13 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
                     var verdict = await viability.VerifyAfterAsync(ct);
                     if (!verdict.IsAllowed)
                     {
-                        // The unit rolls the disable back. A deferral of a proven violation is an attempt row; a configuration that
-                        // could not be established proves nothing about the administrators, so it is not recorded as one.
-                        kept = verdict.Kind == ViabilityVerdictKind.ConfigurationUnavailable ? null : AuditEvents.LocalDisableDeferredLastAdmin(userId);
+                        // The unit rolls the disable back. A deferral of a proven violation that the target's own contribution caused is
+                        // an attempt row; a configuration that could not be established, or a violation that a concurrent change to
+                        // administrator access caused, proves nothing about this user, so it is not recorded as one.
+                        var deferral = Deferred(verdict, viability.Captured, userId);
+                        kept = RecordsLastAdministratorAttempt(deferral) ? AuditEvents.LocalDisableDeferredLastAdmin(userId) : null;
                         transaction.DeclareNoOp();
-                        return Deferred(verdict);
+                        return deferral;
                     }
 
                     var recoveryHealthy = viability.Captured?.RecoveryHealthy ?? false;
@@ -149,12 +151,37 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         }
     }
 
-    private static EntraPrimaryLocalDisableOutcome Deferred(ViabilityVerdict verdict) => verdict.Kind switch
+    /// <summary>
+    /// The outcome of a refused verdict. The verdict compares the state read before the write with the state read after it, so a
+    /// change that is not this write's (an exempt writer, such as the consumption of the last Recovery Access recovery code at its
+    /// sign-in, or a writer not yet under the gate) between the two reads can make it a refusal. A violation is this user's only
+    /// when the state captured under the gate shows the user as an Entra-independent administrator in the view that was violated:
+    /// disabling a Local credential can only reduce the viable or the Entra-independent administrators by that user, and a user who
+    /// can sign in locally is Entra-independent. Anything else (no deciding view, no captured state, another user) is not
+    /// attributed to this user. The decision to defer is the verdict's and is unchanged; only what is said about it differs.
+    /// </summary>
+    internal static EntraPrimaryLocalDisableOutcome Deferred(ViabilityVerdict verdict, AdministratorViabilityState? captured, UserId userId)
     {
-        ViabilityVerdictKind.LastViableAdministrator => EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator,
-        ViabilityVerdictKind.EntraIndependentFallbackRequired => EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator,
-        _ => EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable,
-    };
+        var outcome = verdict.Kind switch
+        {
+            ViabilityVerdictKind.LastViableAdministrator => EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator,
+            ViabilityVerdictKind.EntraIndependentFallbackRequired => EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator,
+            _ => EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable,
+        };
+
+        return RecordsLastAdministratorAttempt(outcome) && !WasEntraIndependent(verdict, captured, userId)
+            ? EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange
+            : outcome;
+    }
+
+    private static bool RecordsLastAdministratorAttempt(EntraPrimaryLocalDisableOutcome outcome) =>
+        outcome is EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator
+            or EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator;
+
+    private static bool WasEntraIndependent(ViabilityVerdict verdict, AdministratorViabilityState? captured, UserId userId) =>
+        verdict.View is { } view
+        && captured is not null
+        && captured.For(view).EntraIndependentAdministrators.Contains(userId.Value);
 
     /// <summary>
     /// The outcome when there is no credential to disable or it is disabled already, read without any lock. It only ever answers
