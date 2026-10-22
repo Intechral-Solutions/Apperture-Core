@@ -124,10 +124,15 @@ public sealed class AccountProfileServiceTests
         var fixture = new Fixture();
         fixture.Users.BeforeUpdate = users => users.SetStoredDesignation(Owner.Value, true);
 
-        var act = () => fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("System", "System", "Europe/London")).AsTask();
+        fixture.Preferences.Seed(Owner.Value, new UserPreferences(AppearancePreference.Light, TimeFormatPreference.Hour12));
+
+        var act = () => fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("Dark", "Hour24", "Europe/London")).AsTask();
 
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.StaleUpdate, "a time zone is allowed for Recovery Access, so the request is repeatable, not a restriction");
+        fixture.Preferences.UpsertCount.Should().Be(0, "the stale user update comes first, so the refused request wrote none of its preferences");
+        (await fixture.Preferences.GetAsync(Owner))!.Should().Be(new UserPreferences(AppearancePreference.Light, TimeFormatPreference.Hour12));
+        fixture.Users.Get(Owner.Value).DisplayTimeZoneId.Should().BeNull();
 
         fixture.Users.BeforeUpdate = null;
         var repeated = await fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("System", "System", "Europe/London"));

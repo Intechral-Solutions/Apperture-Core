@@ -21,6 +21,37 @@ public sealed class SqlUserPreferencesRepository : IUserPreferencesRepository
     }
 
     /// <inheritdoc />
+    public async ValueTask UpsertAfterAsync(
+        UserId userId,
+        UserPreferences preferences,
+        Func<CancellationToken, ValueTask> first,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_db.Database.IsRelational() || _db.Database.CurrentTransaction is not null)
+        {
+            await first(cancellationToken).ConfigureAwait(false);
+            await UpsertAsync(userId, preferences, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Retry-on-failure is enabled, so an explicit transaction must run inside the execution strategy, and a rerun starts from
+        // what the database holds: a preference row the failed attempt left tracked is forgotten first.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(
+            async ct =>
+            {
+                foreach (var entry in _db.ChangeTracker.Entries<UserPreferenceEntity>().Where(e => e.Entity.UserId == userId.Value).ToList())
+                    entry.State = EntityState.Detached;
+
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+                await first(ct).ConfigureAwait(false);
+                await UpsertAsync(userId, preferences, ct).ConfigureAwait(false);
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask UpsertAsync(
         UserId userId,
         UserPreferences preferences,

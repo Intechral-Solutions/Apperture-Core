@@ -140,13 +140,23 @@ public sealed class AccountProfileService : IAccountProfileService
         var timeZoneId = NormalizeTimeZoneOrThrow(update.DisplayTimeZoneId);
 
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
-        await _preferences
-            .UpsertAsync(userId, new UserPreferences(appearance, timeFormat), cancellationToken)
-            .ConfigureAwait(false);
+        var preferences = new UserPreferences(appearance, timeFormat);
 
-        if (!string.Equals(user.DisplayTimeZoneId, timeZoneId, StringComparison.Ordinal))
+        // One request, one transaction: the appearance and clock format are written together with the time zone, and the time zone is
+        // written first. If the account's designation changed since it was read, nothing is written and the request is refused as
+        // stale; a failure of either write undoes the other. (Previously the preferences committed before the user update could fail.)
+        if (string.Equals(user.DisplayTimeZoneId, timeZoneId, StringComparison.Ordinal))
         {
-            await UpdateUserAsync(user with { DisplayTimeZoneId = timeZoneId }, restricted: false, cancellationToken)
+            await _preferences.UpsertAsync(userId, preferences, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _preferences
+                .UpsertAfterAsync(
+                    userId,
+                    preferences,
+                    ct => UpdateUserAsync(user with { DisplayTimeZoneId = timeZoneId }, restricted: false, ct),
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 

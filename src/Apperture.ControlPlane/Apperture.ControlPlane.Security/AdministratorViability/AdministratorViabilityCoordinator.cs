@@ -32,9 +32,10 @@ public interface IAdministratorViabilityCoordinator
     /// Takes the same gate, in the same place in the unit, for a writer that is proven unable to reduce administrator viability
     /// and reads no viability state: one that only creates an account that holds no administrator facts yet, or restores the
     /// administrator role to an account that does not hold it. It builds nothing and reads nothing: no deployment configuration, so
-    /// no Entra or OpenID Connect options, and no administrator facts. That is what lets startup paths use it before the database,
-    /// the secret store and the host's authentication wiring are ready (the first build of the running Entra options must happen on
-    /// real traffic, once the migration state is complete).
+    /// no Entra or OpenID Connect options, and no administrator facts. The gate is an application lock held in the database, so
+    /// the database must be reachable and migrated; what the caller does not need is the secret store or the host's authentication
+    /// wiring, so a startup step that runs after the migrations can use it without causing the first build of the running Entra
+    /// options (which must happen on real traffic, once the migration state is complete).
     /// </summary>
     /// <remarks>
     /// The scope it returns has no way to capture or verify a state, so it cannot be used to judge a reduction; a writer that can

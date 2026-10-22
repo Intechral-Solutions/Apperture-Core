@@ -4,7 +4,7 @@
 |---|---|
 | Package | IAM-10.2b, work package 4B-A ([decision record](iam10-2b-wp4b-decision-record.md) §5.5, §6, §7; [handoff](iam10-2b-wp4b-a-handoff.md)), on the verified [WP4A](iam10-2b-wp4a-record.md) foundation. |
 | Branch | `feat/iam-10.2b-administrator-viability`, from `5a77e24`. Not pushed, not merged. |
-| Status | Implemented and validated (§9). Awaiting the focused independent security review. |
+| Status | Implemented and validated (§9); independently reviewed (accepted with bounded remediation: L-1 and L-2). The remediation is in the commit after `b10a657` and is recorded in §13. |
 | Changes no behaviour of | Recovery Access designate/revoke/provision as an operation (no gate, no viability, same audit), MFA reset/enrol/regenerate, bootstrap writers, the emergency command line, the Entra-primary policy, E-1, E-2, C-14, the legacy deployment-secret fallback. |
 | Not in scope | The attestation (WP4B-B), designate/revoke/reset integration and the replacement candidate (WP4B-C), bootstrap writer integration (WP4B-D), IAM-10.4, WP5. |
 
@@ -25,6 +25,8 @@
 
 **Conditional setter.** `TrySetDesignationAsync(userId, expected, designated)` is `UPDATE ... WHERE Id = @id AND IsBreakGlassEligible = @expected`; true when one row changed. `EmergencyAccessService.SetDesignationAsync` is its only caller: designate demotes the previous account first (`expected: true`), then designates (`expected: false`); revoke sets `expected: true`. A request that changes nothing (re-designating the designated account) makes no call, so a legitimate no-op is not an invariant failure. A `false` result throws `AuditInvariantException`: the unit rolls back, no row is written, and the failure is an internal error, never a business refusal. The filtered unique index `UX_Users_EmergencyAccess` is untouched and is still the arbiter of one designated account (a test shows a second designation hits it).
 
+**"One writer", precisely.** The conditional setter is the only way the designation of an **existing** account changes. Recovery Access provisioning (`EmergencyAccessService.ProvisionAsync`) also stores the designation, in the row of a **new** account it adds already designated through `AddAsync`; the filtered unique index arbitrates that insert, and it is a different operation (it creates the account) from changing an existing one (review I-1).
+
 **Not done here (WP4B-C):** `DesignateAsync`/`RevokeAsync` do not take the gate and do not evaluate viability. Their behaviour is otherwise as it was.
 
 ## 3. Stale generic writers: every site, what it does now
@@ -34,7 +36,7 @@ The requirement (decision record §6.2): an established restriction is enforced 
 | Site | Check made on | Recheck at the write | Refusal when designated at write time | When revoked in between |
 |---|---|---|---|---|
 | `AccountProfileService` (display name, avatar x3) | copy read at the start of the unit | `UpdateAsync` (lock + compare) | the established "Recovery Access is system-managed. Display name and avatar cannot be changed here." (`UnsafeOperation`) | `StaleUpdate` (repeatable) |
-| `AccountProfileService.UpdatePreferencesAsync` (time zone; allowed for Recovery Access) | copy | `UpdateAsync` | not a restriction: a mismatch is `StaleUpdate` either way | `StaleUpdate` |
+| `AccountProfileService.UpdatePreferencesAsync` (time zone; allowed for Recovery Access) | copy | `UpdateAsync`, inside the same transaction as the preferences write (§13.2) | not a restriction: a mismatch is `StaleUpdate` either way, and the request is refused whole | `StaleUpdate` |
 | `AccountContactService` (request, verify) | copy | `UpdateAsync` | "Recovery Access does not use contact email." (`SystemManaged`) | `StaleUpdate` |
 | `AccountInvitationService.StageSetupInvitationAsync` | copy | `UpdateAsync` | "Recovery Access cannot receive an onboarding invitation." | `StaleUpdate` |
 | `AccountInvitationService.CompletePasswordSetupAsync` | copy | locked read of the designation **before `SetPasswordAsync`** (the password is the protected write; the address update after it also goes through `UpdateAsync`) | "Recovery Access cannot use an onboarding invitation." | n/a (read as ordinary) |
@@ -53,7 +55,7 @@ Rejections roll the whole unit back: a consumed link, a staged credential or a s
 1. **`UserManagementService`** (role, credential, link, set-password, username paths) decides the restriction after the global gate, which closes the window **only once designation takes the gate** (WP4B-C). Until then a CLI designation is not serialised with them. This package does not widen them.
 2. **Link issuance with no user write.** `AccountContactService.ResendAsync` and an invitation whose pending address is unchanged issue a one-time link for an account that may be designated since. Nothing about the account changes, and completing the link goes through the recheck above and is refused, so the link is inert. Not closed separately.
 3. **E-2 is not widened.** The Entra link completion keeps its place outside the gate; the recheck is the same refusal that account already had, made at the write.
-4. **Outside a transaction** the generic update opens its own, so its check and its write are one unit; the only such caller is the time zone.
+4. **Outside a transaction** the generic update opens its own, so its check and its write are one unit. After the remediation (§13.2) the time zone is no longer such a caller: it runs inside the transaction of the preferences request.
 
 ## 4. Pending enrolment
 
@@ -153,13 +155,15 @@ M12 is the one survivor, reported rather than hidden: the existing SQL completio
 ### 9.5 Limitations of this validation
 
 - The Browser/UI suites and the full IntegrationTests suite were not run. The focused set was not repeated after the three test-only changes (§9.1); the five new classes were.
-- The password change in `AuthController` and the contact `Resend` are covered by source pins and unit tests, not by a SQL interleaving (the password change needs the controller's request context). The Entra link completion is covered by a unit case and a source pin, not a SQL interleaving.
+- **Correction (review L-1).** This bullet originally said the password change in `AuthController` was covered by "source pins and unit tests". That was wrong: it was covered by a **source-level pin only** (a text check that the locked read sits in the check method and the method is called before the write), which would stay green if the read were moved outside the audited unit. Behavioural evidence for it now exists (§13.1). Source-level assertions and behavioural tests are distinguished throughout §13.
+- The contact `Resend` is covered by source pins and unit tests, not by a SQL interleaving. The Entra link completion is covered by a behavioural unit case and a source pin, not a SQL interleaving.
 - The recorded start order is the order the framework starts the services this host registers; it does not prove that a future registration cannot start earlier, which is what the pinned order test is for.
 - The first-administrator concurrency case does not execute (§6).
 
 ## 10. What the later packages must do with this
 
 - **WP4B-D** (bootstrap writers): move the configured-administrator, first-administrator and bootstrap-recovery writers onto `EnterGateOnlyAsync` where the affected user holds no administrator facts (adding each to `GateOnlyCallers` with its `// Cannot reduce:` reason), or onto the capture-and-assert form where that cannot be shown; unskip `FirstAdministratorConcurrencySqlServerTests` and make it pass on both modes; recheck eligibility under the gate. The writer guard still reports those writers as pending gated raisers, accurately.
+- **Carried forward from the review (decision record §13):** **M-P1** (concurrent first-administrator creation) is **WP4B-D's and blocks the IAM-10.2b merge**: the skipped regression must be an executed, passing test on both modes. **L-P2** (`MarkEnrolledAsync` can enrol a secret other than the verified one) is **WP4B-C's**, in addition to the replacement workflow. **L-P3** (`UserManagementService` writers serialised with a designation only once designation takes the gate) is **WP4B-C's**.
 - **WP4B-B** (attestation): nothing here forces the options to be built; keep it so.
 - **WP4B-C** (designate/revoke/reset): put `DesignateAsync`/`RevokeAsync` behind the gate and viability; that also closes limitation 1 of §3 (designation serialised with the gate-holding `UserManagementService` writers). The conditional setter and its single caller are the seam.
 
@@ -170,3 +174,81 @@ The decision record now states the owner's exceptional-recovery policy (§3.6): 
 ## 12. Post-RC1 candidates (not commitments)
 
 Automated offline incident recovery; a technical barrier to early options construction (for example a guard that fails fast if the options are built before the migrations complete); closing the first-administrator window beyond the gate.
+
+## 13. Review remediation (L-1, L-2 and the carried-forward findings)
+
+The independent review (Opus 5.5) accepted the core of WP4B-A, with no confirmed production security-enforcement defect, and asked for two low-severity corrections. This section is the record of that remediation, one commit after `b10a657`. It changes no accepted behaviour of F-1, the pending write, the gate-only entry, the first-administrator early read or the startup contract.
+
+### 13.1 L-1: the password change, behaviourally
+
+**Finding.** `AuthController.ChangeLocalPassword` rechecks the stored designation under the user's row lock as the last check of its audited unit. Its only evidence was a source-level pin (a text check that the locked read is in the check method and the check method is called before the write), which stays green if the read is moved outside the unit. The original §9.5 called this "source pins and unit tests"; that was wrong and is corrected in §9.5.
+
+**Production code.** Unchanged. The recheck was already inside the unit (`CheckPasswordChangeAsync` runs inside the `Unit.ExecuteAsync` attempt); the test now proves it.
+
+**Behavioural evidence** (`PasswordChangeDesignationSqlServerTests`, real SQL Server, both isolation modes, the production controller, repository and audited unit; 8 cases):
+
+| Case | What it forces and shows |
+|---|---|
+| Designated after the first read | The change is parked at the locked read (after its first read, before the recheck); the designation commits in a session of its own; the change resumes. Response `409` with `LocalPasswordChangeErrorCodes.NoCredential` and the system-managed message (the existing contract, the same as for an account designated all along). The old password still verifies, the new one does not; the designation is not undone; **no `LocalPasswordChanged` row**; exactly one `LocalPasswordChangeRefused` row (an attempt row, written after the rollback, reason `system_managed`, no password in its details); the account's unrevoked password-reset link is still active (nothing else the unit would have done was committed) |
+| A designation waits | The change is parked just after the locked read; a designation started then **blocks on the `Users` row** (shown in the server's lock list) and completes only after the change has committed; the change returns `204`, the new password verifies, one success row, the reset link is revoked in the same transaction. This is the placement evidence: a check made before the transaction, or one whose lock was released at the end of its statement, lets the designation through at once and fails the case |
+| Designated all along | The same refusal and response, no write, no success row (control for the contract) |
+| Ordinary change | `204`, one success row, no refusal row, reset link revoked (control for ordinary behaviour) |
+
+**Placement pin.** The existing source pin stays, now described as a source-level assertion. The behavioural placement evidence is the "A designation waits" case, which fails (mutation N2) when the lock is not held to the end of the transaction.
+
+### 13.2 L-2: the preferences request
+
+**Root cause (traced before editing).** `AccountProfileService.UpdatePreferencesAsync` was not in any transaction. It (1) read the user, (2) **committed** the appearance and clock format (`IUserPreferencesRepository.UpsertAsync`, its own `SaveChanges`), and only then (3) wrote the time zone through `IUserRepository.UpdateAsync`. Step 3 reads the stored designation under a lock in a transaction of its own; if the designation had changed since step 1 it raised `UserDesignationChangedException`, which the service mapped to `EmergencyAccessException(emergency.access.stale_update)`. `AccountController.UpdatePreferences` caught only `ArgumentException`, so the exception became an unhandled **500**, with the appearance and clock format already committed and the time zone not: a partial update reported as an error.
+
+**Selected correction (bounded; no redesign of preference persistence).**
+
+1. **Atomic.** `IUserPreferencesRepository` gains one member, `UpsertAfterAsync(userId, preferences, first, ct)`: it runs `first` and the upsert **in one transaction** (through the execution strategy; a rerun starts from what the database holds). The service passes the time-zone update as `first`, so the time zone is written first, under the designation recheck, and a stale refusal happens before any preference is written; a failure of either write undoes the other. A request that changes no time zone writes the preferences row alone. The default implementation (for stores with no transactions, and the unit-test fakes) runs the two in the same order.
+2. **Mapping.** `AccountController.UpdatePreferences` catches `EmergencyAccessException` and returns the same non-sensitive `409 {message, code}` the profile and avatar endpoints already return (`emergency.access.stale_update`, "The account changed while this was being processed. Try again."), and declares 409 in its response types. The other account endpoints already mapped it.
+3. **Truthful semantics.** The `409` is now true: nothing was written. The request can be repeated unchanged.
+
+No restriction was added (a time zone remains allowed for Recovery Access), and the success response, validation (400) and audit behaviour are unchanged: preferences are deliberately not audited.
+
+**Evidence** (`PreferencesAtomicitySqlServerTests`, real SQL Server, both modes, 12 cases; `AccountProfileServiceTests` and `AccountControllerPreferencesTests`, unit):
+
+- an ordinary update writes appearance, clock format and time zone and **no audit row**; an update with no time-zone change still writes the preferences;
+- the request parked at the user row's locked read, a designation committed, resumed: `StaleUpdate`, and **the appearance and clock format are unchanged** (they were written before the correction), the time zone unchanged, the designation not undone, no audit row; the same request repeated then succeeds on the now-designated account;
+- the same with a revocation: stale, nothing written, the designation not restored;
+- a failure injected at the preferences write **undoes the time zone** (it was written first, in the same transaction);
+- a commit whose acknowledgement is lost leaves **both** writes committed, never one without the other;
+- unit: the service writes none of the preferences when the user update is refused (the fake's upsert count stays 0 and the stored preferences are unchanged); the controller returns `409` with the stable code and no user id, the saved preferences for an ordinary update, and a validation problem for a bad value.
+
+**Not applicable, stated:** the request is not an audited unit (preferences are not audited), so there is no unknown audited outcome to report; the lost-acknowledgement case above is the unknown-outcome analogue and shows the all-or-nothing property on the database.
+
+### 13.3 Informational findings
+
+- **I-1.** The "one writer" claim is stated precisely in §2, the decision record §6.1 and `IUserRepository`: the conditional setter is the only way the designation of an **existing** account changes; provisioning also stores the designation of a **new** account it adds already designated, arbitrated by the filtered unique index.
+- **I-2.** The gate-only comment no longer says startup may use it "before the database is ready". The gate is a database application lock: the database must be reachable and migrated. What the caller does not need is the secret store or the host's authentication wiring.
+- **I-3.** The operator-facing reason for a degraded options build now names the database as well as the registration and the client secret ("...built while the database, the Microsoft registration or its client secret could not be read..."), which is true of `built_before_ready` too. The fail-safe behaviour (Entra unknown) is unchanged; an existing test pins the phrase "could not be read".
+
+### 13.4 Carried forward (not implemented here)
+
+M-P1, L-P2 and L-P3, with owners and mandatory closure points, are in the [decision record](iam10-2b-wp4b-decision-record.md) §13. §3's wording about `UserManagementService` already says it is serialised with a designation only once designation takes the gate (WP4B-C); the decision record's table no longer calls that case "closed".
+
+### 13.5 Validation
+
+- SDK `10.0.402`. Clean builds (`--no-incremental`, `-m:1`, `UseSharedCompilation=false`, `--disable-build-servers`) into `artifacts/wp4ba-rem-final` for `Apperture.UnitTests` (5 min 39 s, 91 warnings), `Apperture.IntegrationTests` (5 min 11 s, 48 warnings) and `Apperture.ArchTests` (3 min 1 s, 30 warnings); 0 errors each. The output is exactly one level below `artifacts/`, which the documentation tests' repository-root computation requires (the review's three `Epic77UatDocumentationTests` failures were an extra directory level in its own build layout, not a product defect).
+- **Whole unit project: 5,781 passed, 0 failed, 0 skipped** (5,778 before; 3 new), including the `Epic77UatDocumentationTests`. Architecture tests: 38 passed.
+- **Focused integration set, 40 classes** (the 27 WP4A classes, the five WP4B-A classes, the six classes the review added because they exercise changed paths, and the two new classes), both isolation modes: **1,337 passed, 0 failed, 1 skipped** in 36 min 57 s; 544 cases carry `rcsi: False`, 544 `rcsi: True`, 250 take no isolation parameter. The skip is the first-administrator concurrency case, skipped on purpose until WP4B-D (M-P1).
+- The first whole-unit run on a first build of this remediation had four failures, all introduced by this remediation and fixed before the evidence run: three tests that pin the phrase "could not be read" (the first draft of the I-3 wording dropped it) and one assertion of a controller test (a `ValidationProblem` result carries its status in its details, not on the result). The final run is on the final tree.
+- `apperture-test-sql` was running and unrestarted (`startedAt` 2026-10-22T00:34:49Z) before and after the integration run and in every mutation snapshot. Not run, as instructed: the full IntegrationTests suite and the Browser/UI suites.
+- Source provenance: tested staged tree `189bceae249880c117219f37d19c5fdc2f3bf086`; `src` `895d74498f7ad2e6ac7703dc7b2c73e818046890`, `tests/Apperture.UnitTests` `4cb7a97c332efa2e040e24ee975ceebde58a823d`, `tests/Apperture.IntegrationTests` `0852cc6bf87824808af287f900b7551efd026ad4` (before: `2e619c72...`, `1d85eca6...`, `454a16f4...`). The commit's own tree hashes are in the commit message. Logs, trx files, console output and the mutation summaries are under `artifacts/wp4ba-rem-logs/` (untracked).
+
+### 13.6 Mutation checks
+
+One line of production source per run, the harness of the earlier packages (SHA-256 before, mutated and after; restored byte-identically in all seven runs; SQL container state before and after; trx and console output kept; failures read as assertions, none flagged as infrastructure). The baseline (a no-op replacement through the same harness) passed 82 unit and 20 SQL cases.
+
+| # | Mutation | Failed | Controls that passed |
+|---|---|---|---|
+| N1 | the password-change recheck removed (the locked read replaced by "not designated") | 4 of 8 SQL, all because the locked-read statement the cases pause on is never issued ("finished without reaching the pause"); a detection, but by absence of the statement, so N1b is the behavioural one | designated all along, ordinary change (4) |
+| N1b | the recheck still reads, but its result is ignored | 2 of 8 SQL: the password is changed (`NoContent`) where `Conflict` is expected, both modes | designated all along, ordinary change, the designation-waits case (6) |
+| N2 | the row lock is not held (`UPDLOCK` replaced by `NOLOCK`) | 2 of 8 SQL: the designation did not wait for a `Users` row, both modes | designated all along, ordinary change, the stale case (6) |
+| N3 | the controller does not map the stale conflict | 1 unit: the exception escapes | the ordinary and the invalid-value cases (2) |
+| N4 | no transaction around the two preference writes | 4 of 12 SQL: the time zone stays after a failed preference write; the lost acknowledgement leaves one write without the other, both modes | ordinary, no-time-zone, stale designation, stale revocation (8) |
+| N5 | the original order (preferences first, then the user) | 1 unit and 4 of 12 SQL: the refused request's appearance and clock format are written, both modes | ordinary, no-time-zone, failed-write undo (7) |
+
+N5 shows the defect the review found (the appearance and clock format committed by a refused request) is reproduced by the original order and caught by the new cases. Limitations: a mutation of the whole recheck statement is caught by the pause not being reached, not by behaviour (N1); a unit test of the service's ordering uses the fake store's default (sequential) implementation, and the SQL cases show the same property under the real transaction.

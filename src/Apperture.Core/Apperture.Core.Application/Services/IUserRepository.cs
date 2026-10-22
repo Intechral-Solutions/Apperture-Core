@@ -56,7 +56,9 @@ public interface IUserRepository
 
     /// <summary>
     /// Updates an existing user's profile and contact fields (display name, time zone, contact email, avatar). It never writes the
-    /// Recovery Access designation, which has one writer (<see cref="TrySetDesignationAsync"/>): a copy of a user read earlier must
+    /// Recovery Access designation. The designation of an existing account changes only through <see cref="TrySetDesignationAsync"/>
+    /// (the one setter); the only other way it is ever stored is the row of a new account that Recovery Access provisioning adds
+    /// already designated (<see cref="AddAsync"/>, arbitrated by the filtered unique index). A copy of a user read earlier must
     /// not be able to set or clear it. The stored designation is read under a row lock in the writer's own transaction and
     /// compared with the one on <paramref name="user"/>, so a change to an account that was designated or revoked since the caller
     /// read it is refused, not applied to an account whose restrictions the caller did not check.

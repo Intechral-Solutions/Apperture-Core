@@ -114,12 +114,12 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
                  || reading.Running.Handler.Quality == EntraOptionsBuildQuality.Degraded)
                 && entraTrust == ConfigurationTrustLevel.Trusted)
             {
-                // R-1: the framework built the running options while the registration or its secret could not be read, and keeps
-                // them until it rebuilds them. They are what the host runs, but they were not built from the persisted
-                // configuration, so what the host accepts now is not a settled reading.
+                // R-1: the framework built the running options while the registration or its secret could not be read, or before the
+                // host's database migrations had completed, and keeps them until it rebuilds them. They are what the host runs, but
+                // they were not built from the persisted configuration, so what the host accepts now is not a settled reading.
                 entraTrust = ConfigurationTrustLevel.Unknown;
                 reasons.Add(
-                    "The running sign-in options were built while the Microsoft registration or its client secret could not be read, so what the host accepts now is not established until the host is restarted once they can be read.");
+                    "The running sign-in options were built while the database, the Microsoft registration or its client secret could not be read, so what the host accepts now is not established until the host is restarted once they can be read.");
             }
         }
 

@@ -249,6 +249,7 @@ public sealed class AccountController : ControllerBase
     [ProducesResponseType(typeof(UserPreferencesDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserPreferencesDto>> UpdatePreferences(
         [FromBody] UpdateUserPreferencesRequest request,
         CancellationToken cancellationToken)
@@ -268,6 +269,11 @@ public sealed class AccountController : ControllerBase
         catch (ArgumentException ex)
         {
             return ValidationProblem("preferences", ex.Message);
+        }
+        catch (EmergencyAccessException ex)
+        {
+            // The account changed while the request was processed; nothing was written.
+            return Conflict(new { message = ex.Message, code = ex.Code });
         }
     }
 
