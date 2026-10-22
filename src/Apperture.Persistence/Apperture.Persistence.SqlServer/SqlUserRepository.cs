@@ -175,6 +175,7 @@ public sealed class SqlUserRepository : IUserRepository
         string newUsername,
         string retiredReason,
         string? newDisplayName = null,
+        bool expectedDesignation = false,
         CancellationToken cancellationToken = default)
     {
         if (!UsernamePolicy.IsCanonical(newUsername) || !UsernamePolicy.IsValidFormat(newUsername))
@@ -185,7 +186,7 @@ public sealed class SqlUserRepository : IUserRepository
         if (_db.Database.CurrentTransaction is not null)
         {
             return await ChangeUsernameTranslatingErrorsAsync(
-                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, commit: null, cancellationToken);
+                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, expectedDesignation, commit: null, cancellationToken);
         }
 
         // Retry-on-failure is enabled, so an explicit transaction must run inside the execution strategy.
@@ -195,7 +196,7 @@ public sealed class SqlUserRepository : IUserRepository
             {
                 await using var transaction = await _db.Database.BeginTransactionAsync(ct);
                 return await ChangeUsernameTranslatingErrorsAsync(
-                    userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, transaction, ct);
+                    userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, expectedDesignation, transaction, ct);
             },
             cancellationToken);
     }
@@ -210,6 +211,7 @@ public sealed class SqlUserRepository : IUserRepository
         string newUsername,
         string retiredReason,
         string? newDisplayName,
+        bool expectedDesignation,
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? commit,
         CancellationToken cancellationToken)
     {
@@ -217,7 +219,7 @@ public sealed class SqlUserRepository : IUserRepository
         try
         {
             var outcome = await ChangeUsernameCoreAsync(
-                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, tracked, cancellationToken);
+                userId, expectedCurrentUsername, newUsername, retiredReason, newDisplayName, expectedDesignation, tracked, cancellationToken);
             await _db.SaveChangesAsync(cancellationToken);
             if (commit is not null)
                 await commit.CommitAsync(cancellationToken);
@@ -250,9 +252,18 @@ public sealed class SqlUserRepository : IUserRepository
         string newUsername,
         string retiredReason,
         string? newDisplayName,
+        bool expectedDesignation,
         List<object> tracked,
         CancellationToken cancellationToken)
     {
+        // The row lock first, in the rename's own transaction: a caller that decided on a copy of the user read earlier (an ordinary
+        // rename of an account that has since been designated) must not rename an account it did not check, and a designation
+        // waits until the rename has committed.
+        var stored = await ReadDesignationUnderLockAsync(userId.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId.Value} not found.");
+        if (stored != expectedDesignation)
+            throw new UserDesignationChangedException(stored);
+
         var user = await _db.Users.FirstOrDefaultAsync(e => e.Id == userId.Value, cancellationToken)
             ?? throw new InvalidOperationException($"User {userId.Value} not found.");
         tracked.Add(user);
@@ -352,17 +363,97 @@ public sealed class SqlUserRepository : IUserRepository
     /// <inheritdoc />
     public async ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default)
     {
+        // The designation check holds the row until the write is done, so it must share the write's transaction. Every restricted
+        // caller runs inside an audited unit; one outside any unit gets a transaction of its own rather than a check that is
+        // released before the write.
+        if (!_db.Database.IsRelational() || _db.Database.CurrentTransaction is not null)
+        {
+            await UpdateCoreAsync(user, cancellationToken);
+            return;
+        }
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(
+            async ct =>
+            {
+                await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+                await UpdateCoreAsync(user, ct);
+                await transaction.CommitAsync(ct);
+            },
+            cancellationToken);
+    }
+
+    private async ValueTask UpdateCoreAsync(User user, CancellationToken cancellationToken)
+    {
+        // The stored designation under the row lock, before anything is written: a writer that checked a copy read earlier must not
+        // reach an account that was designated (or revoked) since. The designation itself is never written here.
+        var stored = await ReadDesignationUnderLockAsync(user.Id.Value, cancellationToken)
+            ?? throw new InvalidOperationException($"User {user.Id.Value} not found.");
+        if (stored != user.IsBreakGlassEligible)
+            throw new UserDesignationChangedException(stored);
+
         var entity = await _db.Users.FirstOrDefaultAsync(e => e.Id == user.Id.Value, cancellationToken)
             ?? throw new InvalidOperationException($"User {user.Id.Value} not found.");
 
         entity.DisplayName = user.DisplayName;
-        entity.IsBreakGlassEligible = user.IsBreakGlassEligible;
         entity.DisplayTimeZoneId = user.DisplayTimeZoneId;
         entity.EmailAddress = user.EmailAddress;
         entity.EmailVerifiedAtUtc = user.EmailVerifiedAtUtc;
         entity.PendingEmailAddress = user.PendingEmailAddress;
         ApplyAvatar(entity, user.Avatar);
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool?> GetDesignationForUpdateAsync(UserId userId, CancellationToken cancellationToken = default) =>
+        await ReadDesignationUnderLockAsync(userId.Value, cancellationToken);
+
+    /// <summary>
+    /// The stored designation of a user, read with an update lock that is held to the end of the transaction. Untracked, so a rerun
+    /// after a rolled-back attempt reads the row afresh and never an entity the context kept from the attempt before.
+    /// </summary>
+    private async ValueTask<bool?> ReadDesignationUnderLockAsync(string userId, CancellationToken cancellationToken)
+    {
+        if (!_db.Database.IsRelational())
+        {
+            return await _db.Users.AsNoTracking()
+                .Where(e => e.Id == userId)
+                .Select(e => (bool?)e.IsBreakGlassEligible)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        // The hint is in the SQL text, so the lock is taken (and a designation or revocation waits for it) under locking READ
+        // COMMITTED and under READ_COMMITTED_SNAPSHOT alike.
+        var rows = await _db.Users
+            .FromSqlInterpolated($"SELECT * FROM [Users] WITH (UPDLOCK, ROWLOCK) WHERE [Id] = {userId}")
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        return rows.SingleOrDefault()?.IsBreakGlassEligible;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> TrySetDesignationAsync(
+        UserId userId,
+        bool expected,
+        bool designated,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_db.Database.IsRelational())
+        {
+            var entity = await _db.Users.FirstOrDefaultAsync(e => e.Id == userId.Value, cancellationToken);
+            if (entity is null || entity.IsBreakGlassEligible != expected)
+                return false;
+            entity.IsBreakGlassEligible = designated;
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        // One statement: the row changes only while it still holds the expected value, so a concurrent designation or
+        // revocation that committed first makes this report false instead of overwriting it.
+        var changed = await _db.Users
+            .Where(e => e.Id == userId.Value && e.IsBreakGlassEligible == expected)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(e => e.IsBreakGlassEligible, designated), cancellationToken);
+        return changed == 1;
     }
 
     /// <summary>

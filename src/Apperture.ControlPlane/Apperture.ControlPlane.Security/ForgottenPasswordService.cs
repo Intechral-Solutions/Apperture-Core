@@ -153,6 +153,12 @@ public sealed class ForgottenPasswordService : IForgottenPasswordService
                 if (consumed is null || consumed.Id != link.Id)
                     throw ResetLinkInvalid();
 
+                // The password is a protected write: the stored designation under the row lock, in this transaction, immediately
+                // before it. An account designated since the check above is refused like one that was designated all along, and the
+                // consumption above is rolled back with the unit.
+                if (await _users.GetDesignationForUpdateAsync(user.Id, ct) != false)
+                    throw ResetLinkInvalid();
+
                 await _credentials.SetPasswordAsync(user.Id, hash, salt, _hasher.AlgorithmName, ct);
                 await _tokens.RevokePasswordLifecycleTokensAsync(user.Id, ct);
                 await transaction.StageAsync(AuditEvents.PasswordResetCompleted(user.Id), ct);

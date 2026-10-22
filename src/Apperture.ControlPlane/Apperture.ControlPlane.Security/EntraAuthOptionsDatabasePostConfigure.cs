@@ -1,5 +1,6 @@
 using Apperture.Core.Application.Services;
 using Apperture.Core.Security.Secrets.Abstractions;
+using Apperture.Persistence.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -24,15 +25,39 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EntraAuthOptionsDatabasePostConfigure> _logger;
     private readonly IEntraOptionsBuildHealth? _health;
+    private readonly MigrationCompletionState? _migrations;
 
+    /// <param name="migrations">
+    /// Where the host records that its startup migrations are complete. A host that registers none has no such moment to compare
+    /// with, and builds exactly as before.
+    /// </param>
     public EntraAuthOptionsDatabasePostConfigure(
         IServiceScopeFactory scopeFactory,
         ILogger<EntraAuthOptionsDatabasePostConfigure> logger,
-        IEntraOptionsBuildHealth? health = null)
+        IEntraOptionsBuildHealth? health = null,
+        MigrationCompletionState? migrations = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _health = health;
+        _migrations = migrations;
+    }
+
+    /// <summary>
+    /// Records how the build went. The options are built once and kept, so a build made before the host's migrations completed read
+    /// a registration store that may not have its schema or its rows yet, and what it reads is then frozen for the life of the
+    /// process: whatever it found, it is recorded as degraded, never as a complete reading. Real traffic arrives after the
+    /// migrations, so a correctly ordered host never records this.
+    /// </summary>
+    private void RecordBuild(EntraAuthOptions options, EntraOptionsBuildQuality quality, string? reasonCode = null)
+    {
+        if (_migrations is { IsComplete: false })
+        {
+            _health?.Record(options, EntraOptionsBuildQuality.Degraded, EntraOptionsBuildHealth.BuiltBeforeMigrationsComplete);
+            return;
+        }
+
+        _health?.Record(options, quality, reasonCode);
     }
 
     public void PostConfigure(string? name, EntraAuthOptions options)
@@ -43,7 +68,7 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
             var repo = scope.ServiceProvider.GetService<IEntraInstanceRegistrationRepository>();
             if (repo is null)
             {
-                _health?.Record(options, EntraOptionsBuildQuality.Complete);
+                RecordBuild(options, EntraOptionsBuildQuality.Complete);
                 return;
             }
 
@@ -68,17 +93,17 @@ public sealed class EntraAuthOptionsDatabasePostConfigure : IPostConfigureOption
                 _logger.LogWarning(
                     "The client secret of the active Entra registration '{RegistrationId}' could not be read from the secret store. The deployment secret stands in where the registration asks for it; the host's reading of its own sign-in is incomplete until it restarts.",
                     active!.Id);
-                _health?.Record(options, EntraOptionsBuildQuality.Degraded, EntraOptionsBuildHealth.ClientSecretUnavailable);
+                RecordBuild(options, EntraOptionsBuildQuality.Degraded, EntraOptionsBuildHealth.ClientSecretUnavailable);
             }
             else
             {
-                _health?.Record(options, EntraOptionsBuildQuality.Complete);
+                RecordBuild(options, EntraOptionsBuildQuality.Complete);
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not apply active Entra registration from the database; using configuration only.");
-            _health?.Record(options, EntraOptionsBuildQuality.Degraded, EntraOptionsBuildHealth.RegistrationUnreadable);
+            RecordBuild(options, EntraOptionsBuildQuality.Degraded, EntraOptionsBuildHealth.RegistrationUnreadable);
         }
     }
 }

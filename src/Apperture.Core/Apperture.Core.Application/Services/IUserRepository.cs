@@ -55,9 +55,34 @@ public interface IUserRepository
     ValueTask AddAsync(User user, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates an existing user (display name, break-glass eligibility, etc.).
+    /// Updates an existing user's profile and contact fields (display name, time zone, contact email, avatar). It never writes the
+    /// Recovery Access designation, which has one writer (<see cref="TrySetDesignationAsync"/>): a copy of a user read earlier must
+    /// not be able to set or clear it. The stored designation is read under a row lock in the writer's own transaction and
+    /// compared with the one on <paramref name="user"/>, so a change to an account that was designated or revoked since the caller
+    /// read it is refused, not applied to an account whose restrictions the caller did not check.
     /// </summary>
+    /// <exception cref="UserDesignationChangedException">The stored designation differs from <paramref name="user"/>'s; nothing was written.</exception>
     ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the user's stored Recovery Access designation and holds the user's row against a concurrent change to it until the
+    /// transaction ends (an update lock, so a designation or revocation waits, and so does a second writer that checks the same
+    /// way). Null when the user does not exist. A writer calls it immediately before a protected write that does not go through
+    /// <see cref="UpdateAsync"/> or <see cref="ChangeUsernameAsync"/>, in the transaction of that write.
+    /// </summary>
+    /// <remarks>The default reads without a lock: a store with no concurrent writers has nothing to wait for.</remarks>
+    async ValueTask<bool?> GetDesignationForUpdateAsync(UserId userId, CancellationToken cancellationToken = default) =>
+        (await GetByIdAsync(userId, cancellationToken).ConfigureAwait(false))?.IsBreakGlassEligible;
+
+    /// <summary>
+    /// Sets the Recovery Access designation of <paramref name="userId"/> to <paramref name="designated"/> only while the stored
+    /// value is <paramref name="expected"/>, in one statement. True when the row changed (or already held the requested value while
+    /// matching the expectation); false when the user is missing or the stored value was not the expected one, which the caller
+    /// treats as an invariant or concurrency failure of its own unit. The only writer of the designation: called by the Recovery
+    /// Access service inside its audited unit.
+    /// </summary>
+    ValueTask<bool> TrySetDesignationAsync(UserId userId, bool expected, bool designated, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 
     /// <summary>
     /// Updates the last authenticated timestamp for the identity link with the given source and external id.
@@ -136,12 +161,18 @@ public interface IUserRepository
     /// The result carries the username the transaction actually replaced, so callers that audit the change take the
     /// previous name from here rather than from an earlier, separate read.
     /// </summary>
+    /// <param name="expectedDesignation">
+    /// The Recovery Access designation the caller decided the rename on. The stored designation is read under the row lock the
+    /// rename takes, in the rename's own transaction, and a different one raises <see cref="UserDesignationChangedException"/> with
+    /// nothing written. An ordinary rename expects false; the Recovery Access canonicalization expects true.
+    /// </param>
     ValueTask<UsernameRenameResult> ChangeUsernameAsync(
         UserId userId,
         string expectedCurrentUsername,
         string newUsername,
         string retiredReason,
         string? newDisplayName = null,
+        bool expectedDesignation = false,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
 

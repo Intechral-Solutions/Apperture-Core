@@ -298,11 +298,7 @@ public sealed class AuthController : ControllerBase
             return ("user_not_found", Forbid());
 
         if (EmergencyAccessIdentity.IsSystemManaged(user))
-        {
-            return ("system_managed", Conflict(new LocalPasswordChangeErrorResponse(
-                "This account is system-managed. Use Emergency Access operator tooling to change the password.",
-                LocalPasswordChangeErrorCodes.NoCredential)));
-        }
+            return SystemManagedPasswordChangeRefusal();
 
         if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
         {
@@ -356,8 +352,20 @@ public sealed class AuthController : ControllerBase
                 LocalPasswordChangeErrorCodes.InvalidNewPassword)));
         }
 
-        return null;
+        // The last check before the write: the stored designation under a row lock, in this transaction. An account designated since
+        // the read above is refused like one that was designated all along, and a designation waits until the change has committed.
+        return await _userRepository.GetDesignationForUpdateAsync(userId, cancellationToken) switch
+        {
+            null => ("user_not_found", Forbid()),
+            true => SystemManagedPasswordChangeRefusal(),
+            _ => null,
+        };
     }
+
+    private (string Reason, IActionResult Response) SystemManagedPasswordChangeRefusal() =>
+        ("system_managed", Conflict(new LocalPasswordChangeErrorResponse(
+            "This account is system-managed. Use Emergency Access operator tooling to change the password.",
+            LocalPasswordChangeErrorCodes.NoCredential)));
 
     /// <summary>Records a refused password change (W3, never changes the response) and returns the response.</summary>
     private async Task<IActionResult> RefusePasswordChangeAsync(string userId, string reason, IActionResult response)

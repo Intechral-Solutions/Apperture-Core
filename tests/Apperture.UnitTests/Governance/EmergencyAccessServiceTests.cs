@@ -53,6 +53,59 @@ public sealed class EmergencyAccessServiceTests
     }
 
     [Fact]
+    public async Task Designation_is_written_only_through_the_conditional_setter_with_the_value_the_unit_read_and_the_previous_account_first()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        harness.Users.Seed(Admin("old-ra", designated: true, username: "oldglass"));
+        harness.Credentials.Seed("old-ra", disabled: false);
+
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        harness.Users.DesignationCalls.Should().Equal(
+            [("old-ra", true, false), ("admin-1", false, true)],
+            "the previous account is demoted first (the unique index allows one designee), each expecting the value the unit read");
+    }
+
+    [Fact]
+    public async Task Re_designating_the_designated_account_makes_no_conditional_write()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+        harness.Users.DesignationCalls.Clear();
+
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+
+        harness.Users.DesignationCalls.Should().BeEmpty("a request that changes nothing is not an invariant failure and writes nothing");
+    }
+
+    [Fact]
+    public async Task A_designation_that_finds_an_unexpected_stored_value_fails_the_unit_as_an_invariant_failure()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        harness.Users.RefuseNextDesignationChange = true;
+
+        var act = () => harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli).AsTask();
+
+        await act.Should().ThrowAsync<AuditInvariantException>();
+        harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeFalse("the designation was not applied");
+        harness.Recorder.Actions.Should().NotContain(AuditActionNames.RecoveryAccessDesignated, "no row for a change that was not made");
+    }
+
+    [Fact]
+    public async Task A_revocation_that_finds_an_unexpected_stored_value_fails_the_unit_as_an_invariant_failure()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+        harness.Users.RefuseNextDesignationChange = true;
+
+        var act = () => harness.Emergency.RevokeAsync(confirmFallback: true, Cli).AsTask();
+
+        await act.Should().ThrowAsync<AuditInvariantException>();
+        harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeTrue("the revocation was not applied");
+        harness.Recorder.Actions.Should().NotContain(AuditActionNames.RecoveryAccessRevoked);
+    }
+
+    [Fact]
     public async Task Re_designating_the_designated_canonical_account_changes_nothing_and_records_nothing()
     {
         var harness = Harness.WithAdmin("admin-1");
@@ -466,15 +519,40 @@ public sealed class EmergencyAccessServiceTests
         }
         public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default)
         {
-            _users[user.Id.Value] = user;
+            // As the repository: the designation is never written here.
+            var stored = _users[user.Id.Value];
+            _users[user.Id.Value] = user with { IsBreakGlassEligible = stored.IsBreakGlassEligible };
             return ValueTask.CompletedTask;
         }
+
+        /// <summary>Whether the next designation change reports that the stored value was not the expected one.</summary>
+        public bool RefuseNextDesignationChange { get; set; }
+
+        /// <summary>Every conditional designation call made, in order.</summary>
+        public List<(string UserId, bool Expected, bool Designated)> DesignationCalls { get; } = [];
+
+        public ValueTask<bool> TrySetDesignationAsync(UserId userId, bool expected, bool designated, CancellationToken cancellationToken = default)
+        {
+            DesignationCalls.Add((userId.Value, expected, designated));
+            if (RefuseNextDesignationChange)
+            {
+                RefuseNextDesignationChange = false;
+                return ValueTask.FromResult(false);
+            }
+
+            if (!_users.TryGetValue(userId.Value, out var user) || user.IsBreakGlassEligible != expected)
+                return ValueTask.FromResult(false);
+            _users[userId.Value] = user with { IsBreakGlassEligible = designated };
+            return ValueTask.FromResult(true);
+        }
+
         public ValueTask<UsernameRenameResult> ChangeUsernameAsync(
             UserId userId,
             string expectedCurrentUsername,
             string newUsername,
             string retiredReason,
             string? newDisplayName = null,
+            bool expectedDesignation = false,
             CancellationToken cancellationToken = default)
         {
             var user = _users[userId.Value];

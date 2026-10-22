@@ -17,37 +17,60 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
         return entity is null ? null : ToDomain(entity);
     }
 
-    public async ValueTask UpsertPendingAsync(
+    /// <inheritdoc />
+    public async ValueTask<bool> UpsertPendingAsync(
         UserId userId,
         byte[] protectedSecret,
         string protectorKeyId,
         DateTimeOffset startedAtUtc,
         CancellationToken cancellationToken = default)
     {
-        var entity = await _db.UserTotpCredentials.FirstOrDefaultAsync(e => e.UserId == userId.Value, cancellationToken);
-        if (entity is null)
+        // A pending write replaces a pending row or creates the first one; it never touches an enrolled row. Each step is one
+        // statement whose condition the database evaluates as it writes, so a check made earlier by the caller is not what protects
+        // an enrolment that completed in between. The loop only repeats when a concurrent first creation took the key.
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            _db.UserTotpCredentials.Add(new UserTotpCredentialEntity
+            var replaced = await _db.UserTotpCredentials
+                .Where(e => e.UserId == userId.Value && !e.IsEnrolled)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(e => e.ProtectedSecret, protectedSecret)
+                        .SetProperty(e => e.ProtectorKeyId, protectorKeyId)
+                        .SetProperty(e => e.LastUsedStep, (long?)null)
+                        .SetProperty(e => e.EnrolledAtUtc, (DateTimeOffset?)null)
+                        .SetProperty(e => e.LastVerifiedAtUtc, (DateTimeOffset?)null)
+                        .SetProperty(e => e.CreatedAtUtc, startedAtUtc),
+                    cancellationToken);
+            if (replaced == 1)
+                return true;
+
+            // No pending row. A row that exists now is enrolled: it stays, and nothing is written.
+            if (await _db.UserTotpCredentials.AsNoTracking().AnyAsync(e => e.UserId == userId.Value, cancellationToken))
+                return false;
+
+            var created = new UserTotpCredentialEntity
             {
                 UserId = userId.Value,
                 ProtectedSecret = protectedSecret,
                 ProtectorKeyId = protectorKeyId,
                 IsEnrolled = false,
                 CreatedAtUtc = startedAtUtc
-            });
-        }
-        else
-        {
-            entity.ProtectedSecret = protectedSecret;
-            entity.ProtectorKeyId = protectorKeyId;
-            entity.IsEnrolled = false;
-            entity.LastUsedStep = null;
-            entity.EnrolledAtUtc = null;
-            entity.LastVerifiedAtUtc = null;
-            entity.CreatedAtUtc = startedAtUtc;
+            };
+            _db.UserTotpCredentials.Add(created);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                return true;
+            }
+            catch (DbUpdateException ex) when (SqlUniqueKeyViolation.IsOnIndex(ex, "PK_UserTotpCredentials"))
+            {
+                // Another begin created the row first: decide again against what is committed now (pending: replace it;
+                // enrolled: leave it).
+                _db.Entry(created).State = EntityState.Detached;
+            }
         }
 
-        await _db.SaveChangesAsync(cancellationToken);
+        throw new InvalidOperationException("The pending authenticator enrollment could not be written.");
     }
 
     public async ValueTask MarkEnrolledAsync(UserId userId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default)

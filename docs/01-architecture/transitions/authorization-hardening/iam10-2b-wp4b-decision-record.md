@@ -5,7 +5,8 @@
 | Package | IAM-10.2b, work package 4B (Recovery Access, MFA, bootstrap writers, the emergency command line, F-1, D-6, R-2), on the verified foundation of [WP1](iam10-2b-wp1-review-record.md), [WP2](iam10-2b-wp2-review-record.md), [WP3](iam10-2b-wp3-record.md) and [WP4A](iam10-2b-wp4a-record.md). Design record only: no production code or test changed. |
 | Branch | `feat/iam-10.2b-administrator-viability`, from `873da13`. Not pushed, not merged. |
 | Status | The owner ruled on the WP4B design reconnaissance. The rulings below are ratified. Nothing here reopens I-VIABLE, I-FALLBACK, the two views, the WP3 safe post-state proof, the single global gate, C-13-R, C-14, E-1, E-2 or the audited-unit and refusal contracts. |
-| Implementation | Not started. The first package is WP4B-A, whose handoff is [iam10-2b-wp4b-a-handoff.md](iam10-2b-wp4b-a-handoff.md). |
+| Implementation | WP4B-A is implemented: [iam10-2b-wp4b-a-record.md](iam10-2b-wp4b-a-record.md) (handoff: [iam10-2b-wp4b-a-handoff.md](iam10-2b-wp4b-a-handoff.md)); its evidence is summarised in §12. WP4B-D, B and C are not started. |
+| Owner clarification (WP4B-A) | Exceptional recovery for RC1: supported procedures first; a controlled manual database intervention only as a documented last resort; no direct-repair logic, bypass flag or `--local-sign-in` override; automated offline recovery is a possible post-RC1 improvement. §3.6 is amended accordingly and supersedes any earlier wording here. No new owner decision. |
 
 ## 1. What the reconnaissance found, in one paragraph
 
@@ -97,13 +98,27 @@ The host refreshes its attestation about every 60 seconds. A reading is fresh wh
 
 ### 3.6 Outage consequence, and recovery
 
-If no host has a fresh attestation, **revoke, bare reset and designate may be unavailable** until trustworthy evidence is restored. Restoratives are never blocked and never fabricate evidence: provision, set-password, enrolment, regeneration of recovery codes, bootstrap restore and status. Recovery does not use direct database edits and does not use an operator's assertion of the configuration:
+If no host has a fresh attestation, **revoke, bare reset and designate may be unavailable** until trustworthy evidence is restored. This is an accepted operational limitation for RC1. Restoratives are never blocked and never fabricate evidence: provision, set-password, enrolment, regeneration of recovery codes, bootstrap restore and status, each where its own safety and operational prerequisites are met.
 
-1. Start or restart the Management Host. It writes its attestation at start (Local established, Entra Now not established).
-2. For a reducer that needs Entra Now, let the host serve one request that builds the options, so the reading becomes established (or degraded, which stays unknown until a restart that can read the registration).
-3. Run the command again.
+**Supported procedures.** The supported way to resolve an outage never edits the database and never uses an operator's assertion of the configuration (there is no `--local-sign-in` override and none is to be added). In this order:
+
+1. Use the supported restorative command-line operations.
+2. Repair the deployment configuration, or restore Management Host availability: start or restart the host. It writes its attestation at start (Local established, Entra Now not established). For a reducer that needs Entra Now, let the host serve one request that builds the options, so the reading becomes established (or degraded, which stays unknown until a restart that can read the registration).
+3. Verify that another administrator can sign in, and run the normal command line again.
 
 An operator-provided value of the configuration may be shown in the command's diagnostic output so an operator can compare it with the evidence. It is never an input of a decision.
+
+**Exceptional manual maintenance (a last resort, not a procedure of the product).** The owner prioritises secure, maintainable core functionality over automating rare emergency scenarios. If none of the supported procedures can resolve a situation, a **controlled manual database intervention** is permitted as an extraordinary last resort. It is **not** an ordinary application operation and must never be presented as equivalent to a supported command-line mutation: it bypasses the application's locking, validation and audit. The earlier statement of this record that recovery never involves database intervention is withdrawn for this reason; what remains true is that no supported command, flag or automated path edits the database or accepts an operator-asserted configuration. An exceptional intervention requires, before it is made:
+
+- an **offline maintenance window** (the Management Host and every other writer stopped);
+- a **verified database identity** (the server and database are the installation's, confirmed independently of the command line's own configuration);
+- a **recoverable backup**, restored and checked, taken immediately before;
+- an **assessment of administrator viability** before and after (who can sign in, through which method, under which configuration);
+- **independent review** of the proposed change by a second person before it is run;
+- **integrity verification** afterwards (the filtered unique designation index, the user and role rows, the credential and recovery-code rows, the username ledger), and
+- an **external incident record** that names the change, who made and who reviewed it, and the evidence above, because the application's audit table will not hold it.
+
+Nothing in WP4B implements direct database repair logic, a bypass flag or an automated offline recovery. **Automated offline incident recovery is a possible post-RC1 improvement and not a commitment of this plan.** The written procedure for the exceptional case is still to be produced before RC1 (see the WP4B-A record, §Documentation still needed).
 
 ### 3.7 Multiple hosts
 
@@ -264,3 +279,13 @@ These are design details the rulings leave to the work package and its review. N
 ## 11. Preserved
 
 I-VIABLE and I-FALLBACK in Now and Restart; the WP3 safe post-state proof; the global gate, its order and its busy mapping; C-13-R; C-14; E-1; E-2; the audited-unit, refusal and unknown-outcome contracts; the WP4A policy and its attribution; the legacy deployment-secret fallback (unchanged).
+
+## 12. WP4B-A evidence
+
+The implementation and its full evidence are in the [WP4B-A record](iam10-2b-wp4b-a-record.md) (§9 holds the commands, the numbers, the mutation table and the limits). In short:
+
+- **Builds:** clean, no incremental state, `--artifacts-path artifacts/wp4ba-final`, SDK 10.0.402; unit, integration and command-line host projects, 0 errors.
+- **Unit project:** 5,778 passed, 0 failed, 0 skipped (5,741 before). **Focused integration set** (the WP4A filter plus the five new classes, both isolation modes): 1,243 passed, 0 failed, 1 skipped (1,183 before); the skip is the first-administrator concurrency case, skipped on purpose and **not validated** (record §6). The five new classes on the final clean build: 62 passed, 1 skipped. Architecture tests: 38 passed. The full IntegrationTests suite and the Browser/UI suites were not run.
+- **Mutation checks:** 14 mutations of production source plus a baseline, each with unaffected controls in the same run, the SQL container shown running before and after, and the source restored byte-identically. All are caught; one (the invitation completion's recheck) first survived the SQL suite and is caught after one more case (record §9.4, M12 and M12b).
+- **Findings:** (1) pre-existing and not closed here: two concurrent first-administrator requests with different names both create an administrator, on both isolation modes, until the writer takes the global gate and rechecks under it (WP4B-D); (2) `UserManagementService` is serialised with a designation only once designation takes the gate (WP4B-C); (3) the ratified assumption that the web host starts last held in the real host, with no discrepancy.
+- **Tree hashes:** `src` `2e619c72714b9c9e349fc220b0a9caf69e64f178` and `tests/Apperture.UnitTests` `1d85eca6289fc31adcfa00b8d4469e83ac87fa89` throughout validation; `tests/Apperture.IntegrationTests` `7b1e1532…` (full focused run), `f4f1cdce…`, `454a16f4…` (test-only changes after it; the five new classes rerun on each clean rebuild). The commit's own tree is in its message.

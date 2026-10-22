@@ -47,6 +47,12 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
         string? password = null,
         CancellationToken cancellationToken = default)
     {
+        // An anonymous request that finds the installation already set up answers without entering the audited unit: one read, no
+        // lock, nothing to wait behind. The count is only a reason to answer early. It is never what allows a creation: that is
+        // decided again inside the unit, where the user is written.
+        if (await _userRepository.GetUserCountAsync(cancellationToken) > 0)
+            return FirstAdminBootstrapResult.AlreadyExists;
+
         // Chosen once, so a rerun after a confirmed rollback creates the same user.
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var setsPassword = source == IdentitySource.Local && !string.IsNullOrEmpty(password)

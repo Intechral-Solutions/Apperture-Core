@@ -49,7 +49,7 @@ public sealed class AccountProfileServiceTests
     public async Task Recovery_access_display_name_is_not_editable_and_cannot_be_changed()
     {
         var fixture = new Fixture();
-        await fixture.Users.UpdateAsync(new User(
+        await fixture.Users.AddAsync(new User(
             Owner,
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
@@ -70,7 +70,7 @@ public sealed class AccountProfileServiceTests
     public async Task Recovery_access_avatar_cannot_be_changed()
     {
         var fixture = new Fixture();
-        await fixture.Users.UpdateAsync(new User(
+        await fixture.Users.AddAsync(new User(
             Owner,
             EmergencyAccessIdentity.DisplayName,
             [new IdentityLink(IdentitySource.Local, EmergencyAccessIdentity.LocalUsername, null)],
@@ -81,6 +81,57 @@ public sealed class AccountProfileServiceTests
         var act = () => fixture.Service.SelectBuiltInAvatarAsync(Owner, "option-b").AsTask();
         var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
         ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+    }
+
+    [Fact]
+    public async Task A_display_name_change_read_before_a_designation_is_refused_with_the_established_refusal_and_writes_nothing()
+    {
+        var fixture = new Fixture();
+        // Recovery Access is designated between the service's read and its write.
+        fixture.Users.BeforeUpdate = users => users.SetStoredDesignation(Owner.Value, true);
+
+        var act = () => fixture.Service.UpdateDisplayNameAsync(Owner, "Renamed Operator").AsTask();
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        ex.Which.Message.Should().Be("Recovery Access is system-managed. Display name and avatar cannot be changed here.");
+        fixture.Users.Get(Owner.Value).DisplayName.Should().Be("Owner Person");
+        fixture.Users.Get(Owner.Value).IsBreakGlassEligible.Should().BeTrue("the generic update never clears a designation it did not make");
+        fixture.Audit.Events.Should().NotContain(e => e.Event.Action == AccountAuditActionNames.DisplayNameUpdated);
+    }
+
+    [Fact]
+    public async Task A_display_name_change_read_before_a_revocation_is_refused_as_stale_and_never_restores_the_designation()
+    {
+        var fixture = new Fixture();
+        fixture.Users.SetStoredDesignation(Owner.Value, true);
+        // The account is read as designated; it is revoked before the write. A copy that still says "designated" cannot be applied,
+        // and the revocation stays.
+        fixture.Users.BeforeUpdate = users => users.SetStoredDesignation(Owner.Value, false);
+        var read = await fixture.Users.GetByIdAsync(Owner);
+
+        var act = () => fixture.Users.UpdateAsync(read! with { DisplayName = "Late" }).AsTask();
+
+        var ex = await act.Should().ThrowAsync<UserDesignationChangedException>();
+        ex.Which.IsDesignated.Should().BeFalse();
+        fixture.Users.Get(Owner.Value).IsBreakGlassEligible.Should().BeFalse("the revocation is not restored by a stale copy");
+        fixture.Users.Get(Owner.Value).DisplayName.Should().Be("Owner Person");
+    }
+
+    [Fact]
+    public async Task A_time_zone_change_read_before_a_designation_is_refused_as_stale_and_the_change_may_be_repeated()
+    {
+        var fixture = new Fixture();
+        fixture.Users.BeforeUpdate = users => users.SetStoredDesignation(Owner.Value, true);
+
+        var act = () => fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("System", "System", "Europe/London")).AsTask();
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.StaleUpdate, "a time zone is allowed for Recovery Access, so the request is repeatable, not a restriction");
+
+        fixture.Users.BeforeUpdate = null;
+        var repeated = await fixture.Service.UpdatePreferencesAsync(Owner, new AccountPreferencesUpdate("System", "System", "Europe/London"));
+        repeated.DisplayTimeZoneId.Should().Be("Europe/London");
     }
 
     [Fact]

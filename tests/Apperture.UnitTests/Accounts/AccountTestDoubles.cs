@@ -55,10 +55,31 @@ public sealed class InMemoryUserRepository : IUserRepository
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>Runs at the start of each update, to play a designation or revocation that commits between a service's read and its write.</summary>
+    public Action<InMemoryUserRepository>? BeforeUpdate { get; set; }
+
+    /// <summary>Runs at the start of each locked designation read, to play a designation that commits just before a protected write.</summary>
+    public Action<InMemoryUserRepository>? BeforeDesignationCheck { get; set; }
+
+    public ValueTask<bool?> GetDesignationForUpdateAsync(UserId userId, CancellationToken cancellationToken = default)
+    {
+        BeforeDesignationCheck?.Invoke(this);
+        return ValueTask.FromResult<bool?>(_users.TryGetValue(userId.Value, out var user) ? user.IsBreakGlassEligible : null);
+    }
+
+    /// <summary>Sets the stored designation directly, as the Recovery Access service would in its own unit.</summary>
+    public void SetStoredDesignation(string userId, bool designated) =>
+        _users[userId] = _users[userId] with { IsBreakGlassEligible = designated };
+
     public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default)
     {
-        if (!_users.ContainsKey(user.Id.Value))
+        BeforeUpdate?.Invoke(this);
+        if (!_users.TryGetValue(user.Id.Value, out var stored))
             throw new InvalidOperationException($"User {user.Id.Value} not found.");
+
+        // As the repository: the designation is compared with the stored one and never written.
+        if (stored.IsBreakGlassEligible != user.IsBreakGlassEligible)
+            throw new UserDesignationChangedException(stored.IsBreakGlassEligible);
         _users[user.Id.Value] = user;
         return ValueTask.CompletedTask;
     }

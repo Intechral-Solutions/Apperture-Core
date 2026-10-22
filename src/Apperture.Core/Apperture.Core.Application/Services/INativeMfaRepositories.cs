@@ -8,7 +8,12 @@ public interface INativeTotpCredentialRepository
 {
     ValueTask<NativeTotpStoredCredential?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken = default);
 
-    ValueTask UpsertPendingAsync(
+    /// <summary>
+    /// Writes a pending (not yet enrolled) credential: replaces the pending one or creates the first. It never changes an enrolled
+    /// credential, however the call interleaves with an enrolment that completes: the condition is evaluated by the database as it
+    /// writes. True when the pending credential was written; false when an enrolled credential exists and nothing was changed.
+    /// </summary>
+    ValueTask<bool> UpsertPendingAsync(
         UserId userId,
         byte[] protectedSecret,
         string protectorKeyId,

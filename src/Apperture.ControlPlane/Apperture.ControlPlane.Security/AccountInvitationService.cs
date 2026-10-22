@@ -122,7 +122,7 @@ public sealed class AccountInvitationService : IAccountInvitationService
 
         var resent = await _tokenRows.FindLatestAsync(user.Id, AccountActionTokenPurpose.PasswordSetup, cancellationToken) is not null;
         if (!string.Equals(user.PendingEmailAddress, normalized, StringComparison.Ordinal))
-            await _users.UpdateAsync(user with { PendingEmailAddress = normalized }, cancellationToken);
+            await UpdateUserAsync(user with { PendingEmailAddress = normalized }, "Recovery Access cannot receive an onboarding invitation.", cancellationToken);
 
         var issued = await _tokens.IssueAsync(
             user.Id,
@@ -183,6 +183,12 @@ public sealed class AccountInvitationService : IAccountInvitationService
                 if (consumed is null || consumed.Id != link.Id)
                     throw SetupLinkInvalid();
 
+                // The password is a protected write: the stored designation under the row lock, in this transaction, immediately
+                // before it. A designation that committed since the check above is refused, and the consumption is rolled back.
+                var designationNow = await _users.GetDesignationForUpdateAsync(user.Id, ct) ?? throw SetupLinkInvalid();
+                if (designationNow)
+                    throw new AccountSecurityException(AccountSecurityErrorCodes.SystemManaged, "Recovery Access cannot use an onboarding invitation.");
+
                 await _credentials.SetPasswordAsync(user.Id, hash, salt, _hasher.AlgorithmName, ct);
                 await _tokens.RevokePasswordLifecycleTokensAsync(user.Id, ct);
                 await transaction.StageAsync(AuditEvents.PasswordSetupCompleted(user.Id), ct);
@@ -197,13 +203,14 @@ public sealed class AccountInvitationService : IAccountInvitationService
                         var alreadyVerified = user.HasVerifiedContactEmail
                             && string.Equals(user.EmailAddress, destination, StringComparison.Ordinal);
                         var replacing = user.HasVerifiedContactEmail && !alreadyVerified;
-                        await _users.UpdateAsync(
+                        await UpdateUserAsync(
                             user with
                             {
                                 EmailAddress = destination,
                                 EmailVerifiedAtUtc = alreadyVerified ? user.EmailVerifiedAtUtc : _time.GetUtcNow(),
                                 PendingEmailAddress = null
                             },
+                            "Recovery Access cannot use an onboarding invitation.",
                             ct);
                         if (!alreadyVerified)
                         {
@@ -234,6 +241,25 @@ public sealed class AccountInvitationService : IAccountInvitationService
             latest.DestinationEmail,
             LastDeliveryFailed: false,
             LastDeliveryFailure: null);
+    }
+
+    /// <summary>
+    /// The user write of every change here: the repository checks the stored designation under a row lock in this transaction. An
+    /// account designated since the check is refused with the refusal that account already has; one revoked since is refused as
+    /// stale, to be repeated. Nothing is written in either case.
+    /// </summary>
+    private async ValueTask UpdateUserAsync(User user, string designatedRefusal, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _users.UpdateAsync(user, cancellationToken);
+        }
+        catch (UserDesignationChangedException ex)
+        {
+            throw ex.IsDesignated
+                ? new AccountSecurityException(AccountSecurityErrorCodes.SystemManaged, designatedRefusal)
+                : new AccountSecurityException(AccountSecurityErrorCodes.StaleUpdate, "The account changed while this was being processed. Try again.");
+        }
     }
 
     private static AccountSecurityException SetupLinkInvalid() =>

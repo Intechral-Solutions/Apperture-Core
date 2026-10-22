@@ -284,6 +284,23 @@ public sealed class EntraIdentityAssociationServiceTests
     }
 
     [Fact]
+    public async Task Self_link_is_rejected_for_an_account_designated_between_the_read_and_the_write_and_adds_no_link()
+    {
+        var harness = new Harness();
+        harness.Repository.Seed(NewUser("usr-1", LocalLink("operator")));
+        // Read as an ordinary account; the stored designation, read under the row lock at the write, says otherwise.
+        harness.Repository.DesignatedAtLockedRead = true;
+
+        var outcome = await harness.Service.CompleteLinkAsync(new UserId("usr-1"), Assertion());
+
+        outcome.Succeeded.Should().BeFalse();
+        outcome.FailureCode.Should().Be(EntraLinkFailureCodes.EmergencyAccount, "the same refusal an account designated all along gets");
+        harness.Repository.AddedLinks.Should().BeEmpty();
+        harness.Repository.ProofCalls.Should().BeEmpty();
+        harness.Policy.AppliedUserIds.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Self_link_of_an_identity_owned_by_another_user_is_a_collision()
     {
         var harness = new Harness();
@@ -673,6 +690,12 @@ public sealed class EntraIdentityAssociationServiceTests
         public List<User> AddedUsers { get; } = [];
 
         public bool LocalCredentialDisableRequested => false;
+
+        /// <summary>The designation the store reports when it is read under the row lock, if a test plays one that committed after the user was read.</summary>
+        public bool? DesignatedAtLockedRead { get; set; }
+
+        public ValueTask<bool?> GetDesignationForUpdateAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(DesignatedAtLockedRead ?? _users.GetValueOrDefault(userId.Value)?.IsBreakGlassEligible);
 
         public void Seed(params User[] users)
         {

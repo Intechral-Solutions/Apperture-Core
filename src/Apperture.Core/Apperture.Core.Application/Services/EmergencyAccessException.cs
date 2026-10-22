@@ -27,4 +27,7 @@ public static class EmergencyAccessErrorCodes
     public const string RoleNotFound = "emergency.access.role_not_found";
     public const string ReservedUsername = "emergency.access.reserved_username";
     public const string UsernameConflict = "emergency.access.username_conflict";
+
+    /// <summary>The account's designation changed between a read and the write that depended on it; the request may be repeated.</summary>
+    public const string StaleUpdate = "emergency.access.stale_update";
 }

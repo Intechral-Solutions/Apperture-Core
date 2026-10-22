@@ -49,6 +49,46 @@ public sealed class NativeMfaServiceTests
     }
 
     [Fact]
+    public async Task Beginning_an_enrollment_over_an_enrolled_authenticator_is_refused_and_the_enrollment_stays()
+    {
+        var harness = await Harness.EnrolledAsync();
+        var stored = harness.Totp.LastProtectedSecret;
+
+        var act = () => harness.Mfa.BeginEnrollmentAsync(harness.UserId, "emergency").AsTask();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("already enrolled");
+        (await harness.Mfa.IsEnrolledAsync(harness.UserId)).Should().BeTrue();
+        harness.Totp.LastProtectedSecret.Should().BeSameAs(stored, "nothing was written");
+    }
+
+    [Fact]
+    public async Task A_pending_write_that_the_store_refuses_is_reported_as_already_enrolled_and_returns_no_secret()
+    {
+        // The advisory check passes (nothing is enrolled when it is made); the write finds an enrolment that completed in between.
+        var harness = Harness.Create();
+        harness.Totp.RefuseNextPendingWrite = true;
+
+        var act = () => harness.Mfa.BeginEnrollmentAsync(new UserId("usr-race"), "emergency").AsTask();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("already enrolled");
+        harness.Totp.LastProtectedSecret.Should().BeNull("the generated secret was not stored");
+        harness.Recorder.Operations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Beginning_an_enrollment_again_while_it_is_pending_replaces_the_pending_secret()
+    {
+        var harness = Harness.Create();
+        var userId = new UserId("usr-retry");
+
+        var first = await harness.Mfa.BeginEnrollmentAsync(userId, "emergency");
+        var second = await harness.Mfa.BeginEnrollmentAsync(userId, "emergency");
+
+        second.ManualEntryKey.Should().NotBe(first.ManualEntryKey);
+        (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Reset_removes_the_authenticator_with_its_row_and_an_empty_reset_records_nothing()
     {
         var harness = Harness.Create();
@@ -197,11 +237,23 @@ public sealed class NativeMfaServiceTests
         public ValueTask<NativeTotpStoredCredential?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_stored);
 
-        public ValueTask UpsertPendingAsync(UserId userId, byte[] protectedSecret, string protectorKeyId, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default)
+        /// <summary>Plays an enrolment that completes between the service's check and its pending write.</summary>
+        public bool RefuseNextPendingWrite { get; set; }
+
+        public ValueTask<bool> UpsertPendingAsync(UserId userId, byte[] protectedSecret, string protectorKeyId, DateTimeOffset startedAtUtc, CancellationToken cancellationToken = default)
         {
+            // As the repository: an enrolled credential is never replaced by a pending one.
+            if (RefuseNextPendingWrite)
+            {
+                RefuseNextPendingWrite = false;
+                return ValueTask.FromResult(false);
+            }
+
+            if (_stored is { IsEnrolled: true })
+                return ValueTask.FromResult(false);
             LastProtectedSecret = protectedSecret;
             _stored = new NativeTotpStoredCredential(userId, protectedSecret, protectorKeyId, false, null, startedAtUtc, null, null);
-            return ValueTask.CompletedTask;
+            return ValueTask.FromResult(true);
         }
 
         public ValueTask MarkEnrolledAsync(UserId userId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default)

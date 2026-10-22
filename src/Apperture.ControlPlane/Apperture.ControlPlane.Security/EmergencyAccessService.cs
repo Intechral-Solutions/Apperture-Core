@@ -355,10 +355,18 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         }
     }
 
+    /// <summary>
+    /// The only writer of the designation: a conditional set that changes the row only while it still holds the value this unit
+    /// read. A different stored value means another change to the designation committed in between, which this unit's decisions
+    /// were not made on, so the unit fails as an invariant failure and nothing it did is kept.
+    /// </summary>
     private async ValueTask SetDesignationAsync(User user, bool designated, CancellationToken cancellationToken)
     {
-        var updated = user with { IsBreakGlassEligible = designated };
-        await _users.UpdateAsync(updated, cancellationToken);
+        if (!await _users.TrySetDesignationAsync(user.Id, expected: user.IsBreakGlassEligible, designated, cancellationToken))
+        {
+            throw new AuditInvariantException(
+                "The Recovery Access designation changed during the operation; it was not applied.");
+        }
     }
 
     private async ValueTask EnsureCanTakeCanonicalUsernameAsync(User user, CancellationToken cancellationToken)

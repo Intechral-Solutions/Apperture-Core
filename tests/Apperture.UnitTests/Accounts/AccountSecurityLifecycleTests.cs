@@ -529,6 +529,96 @@ public sealed class AccountSecurityLifecycleTests
         return end < 0 ? rest : rest[..end];
     }
 
+    // ---- A designation that commits between a service's read and its write (the stored designation is rechecked at the write) ----
+
+    [Fact]
+    public async Task A_contact_request_is_refused_with_the_system_managed_refusal_when_the_account_is_designated_before_the_write()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Satisfied());
+        harness.Users.BeforeUpdate = users => users.SetStoredDesignation(harness.User.Id.Value, true);
+
+        var act = () => harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null).AsTask();
+
+        var ex = await act.Should().ThrowAsync<AccountSecurityException>();
+        ex.Which.Code.Should().Be(AccountSecurityErrorCodes.SystemManaged);
+        ex.Which.Message.Should().Be("Recovery Access does not use contact email.");
+        harness.Users.Get(harness.User.Id.Value).PendingEmailAddress.Should().BeNull();
+        harness.Users.Get(harness.User.Id.Value).IsBreakGlassEligible.Should().BeTrue("the designation made in between stays");
+        harness.Mail.Sent.Should().BeEmpty("no link is sent for a refused request");
+    }
+
+    [Fact]
+    public async Task A_contact_verification_is_refused_when_the_account_is_designated_before_the_write_and_changes_nothing()
+    {
+        var harness = Harness.LocalUser(accountVerification: StubRecentAccountVerification.Satisfied());
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        var token = harness.LastToken();
+        harness.Users.BeforeUpdate = users => users.SetStoredDesignation(harness.User.Id.Value, true);
+
+        var act = () => harness.Contact.VerifyAsync(token).AsTask();
+
+        var ex = await act.Should().ThrowAsync<AccountSecurityException>();
+        ex.Which.Code.Should().Be(AccountSecurityErrorCodes.SystemManaged);
+        var stored = harness.Users.Get(harness.User.Id.Value);
+        stored.HasVerifiedContactEmail.Should().BeFalse();
+        stored.EmailAddress.Should().BeNull();
+        stored.IsBreakGlassEligible.Should().BeTrue();
+        harness.Audit.Actions.Should().NotContain(AccountSecurityAuditActionNames.EmailVerified);
+    }
+
+    [Fact]
+    public async Task An_invitation_is_refused_when_the_account_is_designated_before_its_pending_address_is_written()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+        harness.Users.BeforeUpdate = users => users.SetStoredDesignation(harness.User.Id.Value, true);
+
+        var act = () => harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com").AsTask();
+
+        var ex = await act.Should().ThrowAsync<AccountSecurityException>();
+        ex.Which.Code.Should().Be(AccountSecurityErrorCodes.SystemManaged);
+        ex.Which.Message.Should().Be("Recovery Access cannot receive an onboarding invitation.");
+        harness.Users.Get(harness.User.Id.Value).PendingEmailAddress.Should().BeNull();
+        harness.Mail.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_invitation_completion_does_not_set_a_password_on_an_account_designated_before_the_write()
+    {
+        var harness = Harness.LocalUser(withCredential: false);
+        await harness.Invitations.SendSetupInvitationAsync(harness.User.Id, "invitee@example.com");
+        var token = harness.LastToken();
+        harness.Users.BeforeDesignationCheck = users => users.SetStoredDesignation(harness.User.Id.Value, true);
+
+        var act = () => harness.Invitations.CompletePasswordSetupAsync(token, "chosen-harbor-passphrase").AsTask();
+
+        var ex = await act.Should().ThrowAsync<AccountSecurityException>();
+        ex.Which.Code.Should().Be(AccountSecurityErrorCodes.SystemManaged);
+        ex.Which.Message.Should().Be("Recovery Access cannot use an onboarding invitation.");
+        harness.Credentials.Rows.Should().BeEmpty("the password is not set on the designated account");
+        harness.Audit.Actions.Should().NotContain(AccountSecurityAuditActionNames.PasswordSetupCompleted);
+    }
+
+    [Fact]
+    public async Task A_password_reset_completion_does_not_set_a_password_on_an_account_designated_before_the_write()
+    {
+        var harness = Harness.LocalUser(password: "old-harbor-passphrase", accountVerification: StubRecentAccountVerification.Satisfied());
+        await harness.Contact.RequestAsync(harness.User.Id, "user@example.com", null);
+        await harness.Contact.VerifyAsync(harness.LastToken());
+        harness.Mail.Sent.Clear();
+        await harness.Forgotten.RequestAsync("user@example.com");
+        var token = harness.LastToken();
+        var before = harness.Credentials.Rows[harness.User.Id.Value];
+        harness.Users.BeforeDesignationCheck = users => users.SetStoredDesignation(harness.User.Id.Value, true);
+
+        var act = () => harness.Forgotten.CompleteAsync(token, "new-harbor-passphrase").AsTask();
+
+        var ex = await act.Should().ThrowAsync<AccountSecurityException>();
+        ex.Which.Code.Should().Be(AccountSecurityErrorCodes.TokenInvalid, "the same refusal an account that was designated all along gets");
+        var after = harness.Credentials.Rows[harness.User.Id.Value];
+        after.PasswordHash.Should().Be(before.PasswordHash, "the password is unchanged");
+        harness.Audit.Actions.Should().NotContain(AccountSecurityAuditActionNames.PasswordResetCompleted);
+    }
+
     private sealed class Harness
     {
         public required User User { get; init; }

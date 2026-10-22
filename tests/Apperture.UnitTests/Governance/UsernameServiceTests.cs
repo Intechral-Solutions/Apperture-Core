@@ -146,6 +146,37 @@ public sealed class UsernameServiceTests
     }
 
     [Fact]
+    public async Task An_ordinary_rename_decided_on_a_copy_read_before_a_designation_is_refused_like_recovery_access_and_expects_no_designation()
+    {
+        var repo = new LedgerUserRepository { StoredDesignationAtRename = true };
+        await repo.AddAsync(NewLocalUser("u1", "alice"));
+
+        var act = async () => await new UsernameService(repo).RenameAsync(new UserId("u1"), "alice.smith");
+
+        var ex = await act.Should().ThrowAsync<EmergencyAccessException>();
+        ex.Which.Code.Should().Be(EmergencyAccessErrorCodes.UnsafeOperation);
+        ex.Which.Message.Should().Be("Recovery Access is system-managed. Its username cannot be changed through ordinary user administration.");
+        repo.ExpectedDesignations.Should().Equal(false);
+        (await repo.GetByIdAsync(new UserId("u1")))!.Username.Should().Be("alice", "nothing was renamed");
+    }
+
+    [Fact]
+    public async Task Recovery_access_canonicalization_expects_the_designation_and_a_revocation_in_between_is_a_concurrent_change()
+    {
+        var repo = new LedgerUserRepository();
+        await repo.AddAsync(NewLocalUser("u1", "pat.admin", recoveryAccess: true));
+        await new UsernameService(repo).ApplyRecoveryAccessIdentityAsync((await repo.GetByIdAsync(new UserId("u1")))!);
+        repo.ExpectedDesignations.Should().Equal(true);
+
+        var revoked = new LedgerUserRepository { StoredDesignationAtRename = false };
+        await revoked.AddAsync(NewLocalUser("u2", "sam.admin", recoveryAccess: true));
+        var act = async () => await new UsernameService(revoked).ApplyRecoveryAccessIdentityAsync((await revoked.GetByIdAsync(new UserId("u2")))!);
+
+        (await act.Should().ThrowAsync<UsernameException>()).Which.Code.Should().Be(UsernameErrorCodes.ConcurrentChange);
+        (await revoked.GetByIdAsync(new UserId("u2")))!.Username.Should().Be("sam.admin");
+    }
+
+    [Fact]
     public async Task Rename_to_the_current_name_is_a_no_op()
     {
         var repo = new LedgerUserRepository();
@@ -198,6 +229,12 @@ public sealed class UsernameServiceTests
         public int AddAttempts { get; private set; }
         public int ChangeCalls { get; private set; }
 
+        /// <summary>The designation the store holds when a rename reaches it, if a test plays one that changed after the caller's read.</summary>
+        public bool? StoredDesignationAtRename { get; set; }
+
+        /// <summary>The designation each rename said it was decided on.</summary>
+        public List<bool> ExpectedDesignations { get; } = [];
+
         public void Retire(string username) =>
             Ledger[username] = Ledger[username] with { RetiredAtUtc = DateTimeOffset.UtcNow, RetiredReason = UsernameRetiredReasons.Rename };
 
@@ -227,9 +264,16 @@ public sealed class UsernameServiceTests
             string newUsername,
             string retiredReason,
             string? newDisplayName = null,
+            bool expectedDesignation = false,
             CancellationToken cancellationToken = default)
         {
             ChangeCalls++;
+            ExpectedDesignations.Add(expectedDesignation);
+
+            // As the repository: the stored designation is compared with the one the caller decided on, before anything changes.
+            if (StoredDesignationAtRename is { } storedDesignation && storedDesignation != expectedDesignation)
+                throw new UserDesignationChangedException(storedDesignation);
+
             var user = _users[userId.Value];
             if (user.Username != expectedCurrentUsername)
                 throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "changed");

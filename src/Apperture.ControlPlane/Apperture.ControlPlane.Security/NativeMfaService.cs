@@ -76,7 +76,14 @@ public sealed class NativeMfaService : INativeMfaService
         var secret = Rfc6238Totp.GenerateSecret();
         var protectedSecret = await _protector.ProtectAsync(secret, TotpProtectorKeyId, cancellationToken);
         var now = _time.GetUtcNow();
-        await _totp.UpsertPendingAsync(userId, protectedSecret, TotpProtectorKeyId, now, cancellationToken);
+
+        // The check above is advisory: the write itself refuses to replace an enrolled credential, so an enrolment that completed
+        // since is never undone. The secret generated here was not stored and is not returned.
+        if (!await _totp.UpsertPendingAsync(userId, protectedSecret, TotpProtectorKeyId, now, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "An authenticator is already enrolled. Reset native MFA before enrolling again.");
+        }
 
         return new NativeMfaEnrollmentChallenge(
             userId,

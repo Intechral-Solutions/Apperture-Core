@@ -234,6 +234,12 @@ public sealed class EntraIdentityAssociationService : IEntraIdentityAssociationS
                     if (!EntraTokenClaims.TenantMatches(tokenTenantId, ResolveActiveTenantId(registration)))
                         return Refuse(AuditEvents.EntraTenantMismatch(tokenTenantId!, objectId!, initiatingUserId), EntraLinkFailureCodes.TenantMismatch);
 
+                    // The designation is decided again under a row lock in this transaction, so an account designated since the read
+                    // above is refused like one that was designated all along. This is the same refusal, made at the write; the
+                    // link addition and the proof stay outside the administrator-set gate (E-2) and are not widened.
+                    if (await _userRepository.GetDesignationForUpdateAsync(initiatingUserId, ct) == true)
+                        return Refuse(AuditEvents.EntraLinkRefused(initiatingUserId, key.TenantId!, objectId!, "emergency_account"), EntraLinkFailureCodes.EmergencyAccount);
+
                     var existing = await _userRepository.FindIdentityLinkAsync(key, ct);
                     if (existing is not null && existing.UserId.Value != initiatingUserId.Value)
                         return Refuse(AuditEvents.EntraLinkRefused(initiatingUserId, key.TenantId!, objectId!, "owned_by_other_user"), EntraLinkFailureCodes.Collision);

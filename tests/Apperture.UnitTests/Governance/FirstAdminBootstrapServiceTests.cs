@@ -74,6 +74,38 @@ public sealed class FirstAdminBootstrapServiceTests
         audit.Unit.Operations.Should().HaveCount(2).And.Contain(o => o.NoOp, "the refused attempt changed nothing");
     }
 
+    [Fact]
+    public async Task An_installation_that_is_already_set_up_answers_without_entering_the_audited_unit_or_reading_anything_else()
+    {
+        var users = new SequencedCountUserRepository(1);
+        var audit = new Apperture.UnitTests.Audit.AuditRecording();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.AlreadyExists);
+        audit.Unit.Operations.Should().BeEmpty("an anonymous request for a set-up installation must not queue behind a unit");
+        users.CountReads.Should().Be(1, "one inexpensive read, and nothing else");
+        users.Added.Should().BeEmpty();
+        audit.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_early_count_never_allows_a_creation_it_is_decided_again_where_the_user_is_written()
+    {
+        // The installation is empty when the early read is made and has an administrator by the time the unit looks.
+        var users = new SequencedCountUserRepository(0, 1);
+        var audit = new Apperture.UnitTests.Audit.AuditRecording();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.AlreadyExists);
+        users.Added.Should().BeEmpty("the early read of an empty installation is not authority to create");
+        audit.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        users.CountReads.Should().Be(2);
+    }
+
     [Theory]
     [InlineData("jane@contoso.com", UsernameErrorCodes.Invalid)]
     [InlineData("ab", UsernameErrorCodes.Invalid)]
@@ -94,6 +126,28 @@ public sealed class FirstAdminBootstrapServiceTests
         public List<User> Added { get; } = [];
 
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
+        public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
+        public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
+        public ValueTask AddAsync(User user, CancellationToken cancellationToken = default)
+        {
+            Added.Add(user);
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask UpdateAsync(User user, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask AddIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>Reports the given user counts in turn (the last one repeats), and records every read and every user added.</summary>
+    private sealed class SequencedCountUserRepository(params int[] counts) : IUserRepository
+    {
+        public List<User> Added { get; } = [];
+        public int CountReads { get; private set; }
+
+        public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(counts[Math.Min(CountReads++, counts.Length - 1)]);
         public ValueTask<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
         public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);

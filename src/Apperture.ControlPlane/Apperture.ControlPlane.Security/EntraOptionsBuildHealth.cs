@@ -48,6 +48,9 @@ public sealed class EntraOptionsBuildHealth : IEntraOptionsBuildHealth
     /// <summary>The active registration names a stored client secret and the secret store could not be read.</summary>
     public const string ClientSecretUnavailable = "client_secret_unavailable";
 
+    /// <summary>The options were built before the host's startup migrations completed, so what they read may be incomplete and is kept until a restart.</summary>
+    public const string BuiltBeforeMigrationsComplete = "built_before_ready";
+
     private sealed record Note(EntraOptionsBuildQuality Quality, string? Reason);
 
     private readonly ConditionalWeakTable<object, Note> _notes = new();

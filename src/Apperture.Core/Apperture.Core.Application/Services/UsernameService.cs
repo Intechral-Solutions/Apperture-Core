@@ -96,13 +96,25 @@ public sealed class UsernameService
         if (string.Equals(target, user.Username, StringComparison.Ordinal))
             return new UsernameRenameResult(UsernameChangeOutcome.Unchanged, user.Username, user.Username);
 
-        return await _users.ChangeUsernameAsync(
-            userId,
-            user.Username,
-            target,
-            UsernameRetiredReasons.Rename,
-            newDisplayName: null,
-            cancellationToken);
+        try
+        {
+            // Not designated when it was read, and the repository checks that again under the row lock in the rename's own
+            // transaction: a designation that committed since is refused like one that was there to begin with.
+            return await _users.ChangeUsernameAsync(
+                userId,
+                user.Username,
+                target,
+                UsernameRetiredReasons.Rename,
+                newDisplayName: null,
+                expectedDesignation: false,
+                cancellationToken);
+        }
+        catch (UserDesignationChangedException)
+        {
+            throw new EmergencyAccessException(
+                EmergencyAccessErrorCodes.UnsafeOperation,
+                "Recovery Access is system-managed. Its username cannot be changed through ordinary user administration.");
+        }
     }
 
     /// <summary>
@@ -117,12 +129,23 @@ public sealed class UsernameService
         if (!designated.IsBreakGlassEligible)
             throw new InvalidOperationException("Only the designated Recovery Access user can take the Recovery Access username.");
 
-        return (await _users.ChangeUsernameAsync(
-            designated.Id,
-            designated.Username,
-            UsernamePolicy.RecoveryAccessUsername,
-            UsernameRetiredReasons.Canonicalization,
-            EmergencyAccessIdentity.DisplayName,
-            cancellationToken)).Outcome;
+        try
+        {
+            return (await _users.ChangeUsernameAsync(
+                designated.Id,
+                designated.Username,
+                UsernamePolicy.RecoveryAccessUsername,
+                UsernameRetiredReasons.Canonicalization,
+                EmergencyAccessIdentity.DisplayName,
+                expectedDesignation: true,
+                cancellationToken)).Outcome;
+        }
+        catch (UserDesignationChangedException)
+        {
+            // Revoked between the caller's read and the rename: the account is no longer Recovery Access, so it must not take the name.
+            throw new UsernameException(
+                UsernameErrorCodes.ConcurrentChange,
+                "The user was changed by another operation. Reload and try again.");
+        }
     }
 }

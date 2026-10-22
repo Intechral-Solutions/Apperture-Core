@@ -116,10 +116,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Api + "ConfigAuthUiPolicyController.cs", Writes.PolicySave, 1, Class.GatedRaiser, "WP3", "chooser flags only: they cannot reduce either view, and a test pins that no viability input reads them"),
 
         // The designation flag and the posture inputs.
-        new(Security + "EmergencyAccessService.cs", Writes.DesignationFlagUpdate, 1, Class.Reducer, "WP4B", "designate (both invariants) and revoke (strict) write the flag"),
-        new(Security + "AccountContactService.cs", Writes.DesignationFlagUpdate, 2, Class.Finding, "WP4B", "F-1: a generic user update writes the flag from the record the caller holds"),
-        new(Security + "AccountInvitationService.cs", Writes.DesignationFlagUpdate, 2, Class.Finding, "WP4B", "F-1"),
-        new(Security + "AccountProfileService.cs", Writes.DesignationFlagUpdate, 4, Class.Finding, "WP4B", "F-1"),
+        new(Security + "EmergencyAccessService.cs", Writes.DesignationFlagUpdate, 1, Class.Reducer, "WP4B", "designate (both invariants) and revoke (strict) write the flag, through the one conditional setter"),
         new(Security + "NativeMfaService.cs", Writes.MfaReset, 2, Class.Reducer, "WP4B", "reset removes the TOTP credential and the recovery codes"),
         new(Security + "NativeMfaService.cs", Writes.MfaEnrol, 4, Class.GatedRaiser, "WP4B", "enrolment and recovery-code regeneration only add"),
         new(Security + "NativeMfaService.cs", Writes.MfaConsume, 1, Class.RecoveryCodeConsumption, "-", "C-14: non-refusable, no gate"),
@@ -200,7 +197,9 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         receivers.Length == 0
             ? 0
             : Regex.Matches(code, @"\b(?:" + string.Join("|", receivers.Select(Regex.Escape)) + @")\." + method + @"\(", RegexOptions.CultureInvariant).Count;
-    private static readonly Regex UserUpdateCall = R(@"\b(_users|_userRepository|userRepo|_userRepo)\.UpdateAsync\(");
+    // The designation has one writer, the conditional setter. The generic update no longer writes it, so a call of the generic update
+    // is not a writer of a viability input and is not counted here.
+    private static readonly Regex DesignationSetterCall = R(@"\b(_users|_userRepository|userRepo|_userRepo)\.TrySetDesignationAsync\(");
     private static readonly Regex MfaResetCall = R(@"_totp\.DeleteAsync\(|_recoveryCodes\.DeleteAllAsync\(");
     private static readonly Regex MfaEnrolCall = R(@"_totp\.(UpsertPendingAsync|MarkEnrolledAsync)\(|_recoveryCodes\.ReplaceAllAsync\(");
     private static readonly Regex MfaConsumeCall = R(@"_recoveryCodes\.MarkConsumedAsync\(");
@@ -247,7 +246,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             Add(file, Writes.PolicySave, CallsOn(code, policyRepositories, "SaveAsync"));
 
             if (code.Contains("IUserRepository", StringComparison.Ordinal))
-                Add(file, Writes.DesignationFlagUpdate, UserUpdateCall.Matches(code).Count);
+                Add(file, Writes.DesignationFlagUpdate, DesignationSetterCall.Matches(code).Count);
 
             Add(file, Writes.MfaReset, MfaResetCall.Matches(code).Count);
             Add(file, Writes.MfaEnrol, MfaEnrolCall.Matches(code).Count);
@@ -692,19 +691,135 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         MethodBody(repository, "CompleteEntraLinkProofAsync").Should().Contain("LastAuthenticatedAt = provenAt");
     }
 
-    // ---- F-1 ----
+    // ---- F-1: the designation has one writer ----
+
+    private const string UserRepositoryFile = "Apperture.Persistence/Apperture.Persistence.SqlServer/SqlUserRepository.cs";
 
     [Fact]
-    public void Finding_F1_remains_visible_until_the_package_that_resolves_it()
+    public void The_generic_user_update_never_writes_the_designation_and_checks_it_under_a_row_lock()
     {
-        var update = MethodBody(
-            StripComments(Source("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlUserRepository.cs")),
-            "UpdateAsync");
+        var code = StripComments(Source(UserRepositoryFile));
 
-        update.Should().Contain(
-            "entity.IsBreakGlassEligible = user.IsBreakGlassEligible",
-            "F-1: the generic update writes the designation flag from the caller's record; WP4B removes this line and adds a dedicated, gated writer, and this test then changes");
-        Inventory.Where(i => i.Class == Class.Finding).Should().OnlyContain(i => i.Package == "WP4B");
+        foreach (var method in new[] { "UpdateAsync", "UpdateCoreAsync" })
+        {
+            R(@"IsBreakGlassEligible\s*=[^=]").IsMatch(MethodBody(code, method))
+                .Should().BeFalse($"{method}: a copy of a user read earlier must not set or clear the designation");
+        }
+
+        var core = MethodBody(code, "UpdateCoreAsync");
+        var lockedRead = core.IndexOf("ReadDesignationUnderLockAsync(", StringComparison.Ordinal);
+        lockedRead.Should().BeGreaterThanOrEqualTo(0, "the stored designation is read under a row lock before anything is written");
+        core.IndexOf("UserDesignationChangedException", StringComparison.Ordinal).Should().BeGreaterThan(lockedRead, "a different stored designation is refused");
+        core.IndexOf("SaveChangesAsync(", StringComparison.Ordinal).Should().BeGreaterThan(lockedRead);
+        MethodBody(code, "ReadDesignationUnderLockAsync").Should().Contain("UPDLOCK", "the check holds the row against a concurrent designation or revocation");
+    }
+
+    [Fact]
+    public void The_conditional_designation_setter_has_one_production_caller_and_it_is_the_recovery_access_service()
+    {
+        var callers = ProductionSource()
+            .Select(s => (s.Relative, Count: Regex.Matches(StripComments(s.Text), @"\.TrySetDesignationAsync\(", RegexOptions.CultureInvariant).Count))
+            .Where(s => s.Count > 0)
+            .ToList();
+
+        callers.Should().BeEquivalentTo(
+            [(Security + "EmergencyAccessService.cs", 1)],
+            "the designation is written only by the Recovery Access service, in its own audited unit");
+
+        var code = StripComments(Source(Security + "EmergencyAccessService.cs"));
+        MethodBody(code, "SetDesignationAsync").Should().Contain("TrySetDesignationAsync(").And.Contain("AuditInvariantException");
+        Regex.Matches(code, @"\bSetDesignationAsync\(", RegexOptions.CultureInvariant).Count
+            .Should().Be(4, "the declaration, the demotion of the previous account, the designation and the revocation");
+
+        var setter = MethodBody(StripComments(Source(UserRepositoryFile)), "TrySetDesignationAsync");
+        setter.Should().Contain("e.IsBreakGlassEligible == expected", "the write is conditional on the stored value");
+    }
+
+    [Fact]
+    public void The_account_services_no_longer_carry_the_designation_and_reach_the_update_only_through_their_mapping()
+    {
+        Inventory.Should().NotContain(i => i.Class == Class.Finding, "F-1 is resolved: the generic update cannot write the designation");
+
+        foreach (var file in new[] { Security + "AccountContactService.cs", Security + "AccountInvitationService.cs", Security + "AccountProfileService.cs" })
+        {
+            var code = StripComments(Source(file));
+            Regex.Matches(code, @"_users\.UpdateAsync\(", RegexOptions.CultureInvariant).Count
+                .Should().Be(1, $"{file}: every user write goes through the one wrapper that maps a changed designation");
+            code.Should().Contain("catch (UserDesignationChangedException");
+            code.Should().NotContain("IsBreakGlassEligible =");
+        }
+    }
+
+    /// <summary>
+    /// A production file that decides a restriction on a copy of a user and then writes the user, a credential, a link or a name
+    /// must be named here with the recheck it makes at the write. A new such file fails until it is added with its recheck.
+    /// </summary>
+    private static readonly string[] StaleWriterFiles =
+    [
+        Security + "AccountContactService.cs",
+        Security + "AccountInvitationService.cs",
+        Security + "AccountProfileService.cs",
+        Security + "ForgottenPasswordService.cs",
+        Security + "EntraIdentityAssociationService.cs",
+        Security + "UserManagementService.cs", // under the global gate; closed once the designation takes the gate too (reducing-mutation integration)
+        Api + "AuthController.cs",
+        "Apperture.Core/Apperture.Core.Application/Services/UsernameService.cs",
+    ];
+
+    [Fact]
+    public void Every_writer_that_checks_the_system_managed_restriction_on_a_copy_is_named_with_its_recheck()
+    {
+        var protectedWrite = R(@"\.(UpdateAsync|SetPasswordAsync|ChangeUsernameAsync|AddIdentityLinkAsync|CompleteEntraLinkProofAsync)\(|\bUpdateUserAsync\(");
+        var found = ProductionSource()
+            .Where(s => !s.Relative.StartsWith("Apperture.Persistence/", StringComparison.Ordinal))
+            .Select(s => (s.Relative, Code: StripComments(s.Text)))
+            .Where(s => s.Code.Contains("IsSystemManaged(", StringComparison.Ordinal) && protectedWrite.IsMatch(s.Code))
+            .Select(s => s.Relative)
+            .Where(f => !f.EndsWith("EmergencyAccessIdentity.cs", StringComparison.Ordinal))
+            .ToList();
+
+        found.Should().BeEquivalentTo(StaleWriterFiles, "a writer that checks a restriction on a copy must recheck the stored designation at its write");
+    }
+
+    [Fact]
+    public void Each_stale_writer_rechecks_the_stored_designation_before_its_protected_write()
+    {
+        // Passwords and links are written through other repositories, so the recheck is the locked read of the user's designation,
+        // made in the same unit, immediately before the write it protects.
+        void Precedes(string file, string method, string recheck, string write)
+        {
+            var body = MethodBody(StripComments(Source(file)), method);
+            var at = body.IndexOf(recheck, StringComparison.Ordinal);
+            at.Should().BeGreaterThanOrEqualTo(0, $"{file} {method} must recheck with '{recheck}'");
+            body.IndexOf(write, at, StringComparison.Ordinal).Should().BeGreaterThan(at, $"{file} {method}: '{write}' must come after the recheck");
+        }
+
+        Precedes(Security + "AccountInvitationService.cs", "CompletePasswordSetupAsync", "GetDesignationForUpdateAsync(", ".SetPasswordAsync(");
+        Precedes(Security + "ForgottenPasswordService.cs", "CompleteAsync", "GetDesignationForUpdateAsync(", ".SetPasswordAsync(");
+        Precedes(Security + "EntraIdentityAssociationService.cs", "CompleteLinkAsync", "GetDesignationForUpdateAsync(", ".AddIdentityLinkAsync(");
+        Precedes(Security + "EntraIdentityAssociationService.cs", "CompleteLinkAsync", "GetDesignationForUpdateAsync(", ".CompleteEntraLinkProofAsync(");
+        Precedes(Api + "AuthController.cs", "ChangeLocalPassword", "CheckPasswordChangeAsync(", ".SetPasswordAsync(");
+        MethodBody(StripComments(Source(Api + "AuthController.cs")), "CheckPasswordChangeAsync").Should().Contain("GetDesignationForUpdateAsync(");
+
+        var username = StripComments(Source("Apperture.Core/Apperture.Core.Application/Services/UsernameService.cs"));
+        MethodBody(username, "RenameWithResultAsync").Should().Contain("expectedDesignation: false").And.Contain("catch (UserDesignationChangedException");
+        MethodBody(username, "ApplyRecoveryAccessIdentityAsync").Should().Contain("expectedDesignation: true");
+
+        var repository = MethodBody(StripComments(Source(UserRepositoryFile)), "ChangeUsernameCoreAsync");
+        var locked = repository.IndexOf("ReadDesignationUnderLockAsync(", StringComparison.Ordinal);
+        locked.Should().BeGreaterThanOrEqualTo(0);
+        repository.IndexOf("_db.Users.FirstOrDefaultAsync(", StringComparison.Ordinal).Should().BeGreaterThan(locked, "the rename holds the row before it reads it for update");
+    }
+
+    [Fact]
+    public void The_stale_writer_recheck_takes_no_gate()
+    {
+        foreach (var file in StaleWriterFiles.Where(f => !f.EndsWith("UserManagementService.cs", StringComparison.Ordinal)))
+        {
+            StripComments(Source(file)).Should().NotContainAny(
+                new[] { "IPlatformAdministratorSetGate", "IAdministratorViabilityCoordinator", "EnterAsync(", "EnterGateOnlyAsync(" },
+                $"{file}: the recheck is a row lock of its own; an ordinary profile or password change does not queue on the administrator-set gate");
+        }
     }
 
     // ---- Out of category ----
@@ -853,5 +968,135 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
         wp3.Should().HaveCount(5);
         wp3.Should().OnlyContain(i => i.Integrated, "WP3 integrated every registration and policy writer");
+    }
+
+    // ---- Gated, cannot reduce: the closed set of gate-only callers ----
+
+    /// <summary>
+    /// The methods that take the gate without reading viability state (<c>EnterGateOnlyAsync</c>): a writer proven unable to reduce, such
+    /// as one that only creates an account holding no administrator facts yet. The set is closed. Moving a writer here is a decision
+    /// of the package that integrates it, made by adding it with its reason; nothing else may call the entry.
+    /// </summary>
+    /// <remarks>Empty now: no production writer has been moved. The bootstrap writers are classified as gated raisers until their package integrates them.</remarks>
+    private static readonly IReadOnlyList<(string File, string Method)> GateOnlyCallers = [];
+
+    private const string GateOnlyEntry = ".EnterGateOnlyAsync(";
+
+    /// <summary>What a gate-only method may not do, and must do: the pin of the class.</summary>
+    private static List<string> GateOnlyViolations(string rawMethodBody)
+    {
+        var violations = new List<string>();
+        var code = StripComments(rawMethodBody);
+        if (!code.Contains(GateOnlyEntry, StringComparison.Ordinal))
+            violations.Add("does not take the gate through EnterGateOnlyAsync");
+
+        foreach (var read in new[]
+                 {
+                     "CaptureBeforeAsync(", "CaptureBeforeForRaiseAsync(", "VerifyAfterAsync(", "AssertRaiseOnlyAsync(", "PrepareAsync(",
+                     ".EnterAsync(", "IAdministratorViabilityService", "IDeploymentAuthenticationConfiguration", "ViabilityRefusal",
+                 })
+        {
+            if (code.Contains(read, StringComparison.Ordinal))
+                violations.Add($"reads or judges viability through {read}");
+        }
+
+        if (!Regex.IsMatch(rawMethodBody, @"^[ \t]*//[ \t]*Cannot reduce:[ \t]*\S", RegexOptions.Multiline | RegexOptions.CultureInvariant))
+            violations.Add("does not say in a comment (\"Cannot reduce: ...\") why it cannot reduce");
+        return violations;
+    }
+
+    [Fact]
+    public void Only_the_closed_set_of_gate_only_callers_takes_the_gate_without_reading_viability()
+    {
+        var callers = ProductionSource()
+            .Where(s => !s.Relative.EndsWith("AdministratorViability/AdministratorViabilityCoordinator.cs", StringComparison.Ordinal))
+            .Where(s => StripComments(s.Text).Contains(GateOnlyEntry, StringComparison.Ordinal))
+            .Select(s => s.Relative)
+            .Distinct()
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        callers.Should().BeEquivalentTo(GateOnlyCallers.Select(c => c.File).Distinct(), "the gate-only entry is closed to the writers this guard names");
+
+        foreach (var (file, method) in GateOnlyCallers)
+        {
+            GateOnlyViolations(MethodBody(Source(file), method)).Should().BeEmpty($"{file} {method}");
+            Inventory.Where(i => i.File == file).Should().NotContain(i => i.Class == Class.Reducer, $"{file} holds a reducer, so it cannot be gate-only");
+        }
+    }
+
+    [Fact]
+    public void The_gate_only_pin_fails_a_writer_that_reads_viability_skips_the_entry_or_gives_no_reason()
+    {
+        const string good = """
+            private async Task A()
+            {
+                // Cannot reduce: the account is new and holds no administrator role or credential before this change.
+                await Viability.EnterGateOnlyAsync(ct);
+                await _users.AddAsync(user, ct);
+            }
+            """;
+        GateOnlyViolations(good).Should().BeEmpty();
+
+        GateOnlyViolations(good.Replace("EnterGateOnlyAsync(", "EnterAsync(", StringComparison.Ordinal))
+            .Should().Contain(v => v.Contains("EnterGateOnlyAsync")).And.Contain(v => v.Contains(".EnterAsync("));
+        GateOnlyViolations(good.Replace("await _users", "await scope.VerifyAfterAsync(ct); await _users", StringComparison.Ordinal))
+            .Should().Contain(v => v.Contains("VerifyAfterAsync("));
+        GateOnlyViolations(good.Replace("await _users", "await Viability.PrepareAsync(ct); await _users", StringComparison.Ordinal))
+            .Should().Contain(v => v.Contains("PrepareAsync("));
+        GateOnlyViolations(good.Replace("Cannot reduce:", "Fine:", StringComparison.Ordinal))
+            .Should().Contain(v => v.Contains("why it cannot reduce"));
+        GateOnlyViolations(good.Replace("// Cannot reduce: the account is new and holds no administrator role or credential before this change.", "// Cannot reduce:", StringComparison.Ordinal))
+            .Should().Contain(v => v.Contains("why it cannot reduce"), "an empty reason is no reason");
+    }
+
+    [Fact]
+    public void The_gate_only_scope_offers_no_reading_and_the_coordinator_entry_reads_nothing()
+    {
+        var scope = typeof(Apperture.ControlPlane.Security.AdministratorViability.AdministratorGateOnlyScope);
+        scope.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+            .Should().BeEmpty("a scope that offered a capture or a verdict could be used to judge a reduction");
+
+        var entry = MethodBody(StripComments(Source(Security + "AdministratorViability/AdministratorViabilityCoordinator.cs")), "EnterGateOnlyAsync");
+        entry.Should().Contain("_gate.AcquireAsync(");
+        entry.Should().NotContainAny(new[] { "_reads", "_deployment", "ReadAsync(", "EnsureInitialized(" }, "no deployment configuration is read, so no Entra options are built");
+    }
+
+    // ---- Dormant interfaces stay dormant ----
+
+    [Fact]
+    public void The_bootstrap_recovery_service_has_one_caller_and_is_registered_only_as_the_stub_in_the_command_line()
+    {
+        var users = ProductionSource()
+            .Where(s => StripComments(s.Text).Contains("IBootstrapRecoveryService", StringComparison.Ordinal))
+            .Select(s => s.Relative)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        users.Should().BeEquivalentTo(
+            [
+                "Apperture.Bootstrap/Apperture.Bootstrap/IBootstrapRecoveryService.cs",
+                "Apperture.Bootstrap/Apperture.Bootstrap/ServiceCollectionExtensions.cs",
+                "Apperture.Bootstrap/Apperture.Bootstrap/Stubs/StubBootstrapRecoveryService.cs",
+                "Apperture.Cli/Apperture.Cli.Bootstrap/BootstrapCliService.cs",
+                "Apperture.ControlPlane/Apperture.ControlPlane.Security/RealBootstrapRecoveryService.cs",
+                "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
+            ],
+            "the real recovery service is registered in the host and has no production caller; integrating its role assignment adds none");
+
+        ProductionSource()
+            .Where(s => StripComments(s.Text).Contains("_recoveryService.", StringComparison.Ordinal))
+            .Select(s => s.Relative)
+            .Should().BeEquivalentTo(["Apperture.Cli/Apperture.Cli.Bootstrap/BootstrapCliService.cs"], "only the bootstrap command line calls the recovery service");
+
+        ProductionSource()
+            .Where(s => StripComments(s.Text).Contains("AddAppertureRecovery(", StringComparison.Ordinal))
+            .Select(s => s.Relative)
+            .Should().BeEquivalentTo(
+                [
+                    "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
+                    "Apperture.ControlPlane/Apperture.Management.Host/Program.cs",
+                ],
+                "the command line composition never registers the real recovery service");
     }
 }

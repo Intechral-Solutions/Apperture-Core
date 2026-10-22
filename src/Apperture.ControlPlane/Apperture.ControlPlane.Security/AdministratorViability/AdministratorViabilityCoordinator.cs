@@ -27,6 +27,35 @@ public interface IAdministratorViabilityCoordinator
     /// <exception cref="PlatformAdministratorSetBusyException">Another change to administrator access holds the gate past the bound.</exception>
     /// <exception cref="PlatformAdministratorSetGateException">The lock call failed for a reason that is not contention.</exception>
     ValueTask<AdministratorViabilityScope> EnterAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes the same gate, in the same place in the unit, for a writer that is proven unable to reduce administrator viability
+    /// and reads no viability state: one that only creates an account that holds no administrator facts yet, or restores the
+    /// administrator role to an account that does not hold it. It builds nothing and reads nothing: no deployment configuration, so
+    /// no Entra or OpenID Connect options, and no administrator facts. That is what lets startup paths use it before the database,
+    /// the secret store and the host's authentication wiring are ready (the first build of the running Entra options must happen on
+    /// real traffic, once the migration state is complete).
+    /// </summary>
+    /// <remarks>
+    /// The scope it returns has no way to capture or verify a state, so it cannot be used to judge a reduction; a writer that can
+    /// reduce takes <see cref="EnterAsync"/> and the shared guard. The set of callers is closed: the writer guard names each one,
+    /// pins that it calls nothing that reads viability, and requires it to say why it cannot reduce. There is no parameter that
+    /// switches the checks off.
+    /// </remarks>
+    /// <exception cref="PlatformAdministratorSetBusyException">Another change to administrator access holds the gate past the bound.</exception>
+    /// <exception cref="PlatformAdministratorSetGateException">The lock call failed for a reason that is not contention.</exception>
+    ValueTask<AdministratorGateOnlyScope> EnterGateOnlyAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A hold on the global administrator-set gate by a writer that cannot reduce (<see cref="IAdministratorViabilityCoordinator.EnterGateOnlyAsync"/>).
+/// It exists to show that the gate is held; it carries no reading and offers none, by design.
+/// </summary>
+public sealed class AdministratorGateOnlyScope
+{
+    internal AdministratorGateOnlyScope()
+    {
+    }
 }
 
 /// <summary>
@@ -132,5 +161,14 @@ public sealed class AdministratorViabilityCoordinator : IAdministratorViabilityC
     {
         await _gate.AcquireAsync(cancellationToken).ConfigureAwait(false);
         return new AdministratorViabilityScope(_reads);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AdministratorGateOnlyScope> EnterGateOnlyAsync(CancellationToken cancellationToken = default)
+    {
+        // The gate and nothing else: no deployment configuration is read, so no Entra options are built, and no administrator
+        // fact is read.
+        await _gate.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        return new AdministratorGateOnlyScope();
     }
 }
