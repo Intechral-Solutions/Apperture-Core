@@ -120,8 +120,8 @@
                      ConfirmLabel="Remove photo"
                      CancelLabel="Keep photo"
                      Emphasis="ConfirmActionEmphasis.Destructive"
-                     IsBusy="_busy"
                      OnConfirm="RemovePhotoAsync"
+                     OnConfirmed="() => _confirmRemoveOpen = false"
                      OnCancel="() => _confirmRemoveOpen = false">
     Your stored photo will be deleted and your avatar returns to the default illustration. You can
     upload a new photo at any time.
@@ -259,7 +259,6 @@
         {
             var avatar = await Client.ResetAvatarAsync();
             await Avatars.ApplyAsync(avatar);
-            _confirmRemoveOpen = false;
             Toasts.Show(ToastSeverity.Success, "Profile photo removed.");
             await OnChanged.InvokeAsync();
         }
