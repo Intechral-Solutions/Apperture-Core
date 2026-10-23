@@ -11,6 +11,8 @@ using Apperture.Core.Domain.Scheduling;
 using Apperture.Core.Domain.Workflow;
 using Apperture.RuntimePlane.Abstractions;
 using Apperture.Shared.Kernel;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apperture.RuntimePlane.Dispatch.SqlServer;
 
@@ -31,6 +33,7 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
     private readonly IAuditService _audit;
     private readonly ISchedulerHostIdentity _hostIdentity;
     private readonly ISchedulerClaimOptions _claimOptions;
+    private readonly ILogger<ScheduleDispatchRunner> _logger;
 
     public ScheduleDispatchRunner(
         IScheduleEvaluator evaluator,
@@ -43,7 +46,8 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         IProcedureRegistryService procedures,
         IAuditService audit,
         ISchedulerHostIdentity hostIdentity,
-        ISchedulerClaimOptions claimOptions)
+        ISchedulerClaimOptions claimOptions,
+        ILogger<ScheduleDispatchRunner>? logger = null)
     {
         _evaluator = evaluator;
         _repo = repo;
@@ -56,7 +60,19 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
         _audit = audit;
         _hostIdentity = hostIdentity;
         _claimOptions = claimOptions;
+        _logger = logger ?? NullLogger<ScheduleDispatchRunner>.Instance;
     }
+
+    /// <summary>
+    /// The scheduler's audit rows are best-effort: a dispatch that has happened is not undone because its row could not be
+    /// written. The failure is not silent: it is logged with the schedule and the fire it belongs to.
+    /// </summary>
+    private void LogAuditAppendFailed(Exception exception, ScheduleFireCandidate candidate) =>
+        _logger.LogWarning(
+            exception,
+            "A scheduler audit row could not be recorded for schedule {ScheduleId}, fire {FireUtc:O}. The dispatch itself is not affected.",
+            candidate.ScheduleId,
+            candidate.FireTimeUtc);
 
     public async ValueTask<ScheduleDispatchCycleResult> RunCycleAsync(RuntimePlaneId planeId, DateTimeOffset asOfUtc, CancellationToken ct = default)
     {
@@ -204,13 +220,13 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                         Resource: null,
                         Outcome: "recovered",
                         Timestamp: DateTimeOffset.UtcNow,
-                        new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                        new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                         Details: $"schedule:{candidate.ScheduleId};fire={candidate.FireTimeUtc:O};recovered by host {hostId}",
                         ScheduleId: candidate.ScheduleId,
                         ResourceContextId: recoveredDefinition?.ResourceContextId?.Value
                     ), ct);
                 }
-                catch { /* best-effort audit */ }
+                catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
             }
         }
 
@@ -269,13 +285,13 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Resource: null,
                     Outcome: "blocked",
                     Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                     Details: $"schedule:{candidate.ScheduleId};Workflow {workflowId.Value} not executable (module disabled or unavailable)",
                     ScheduleId: candidate.ScheduleId,
                     ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
-            catch { /* best-effort audit */ }
+            catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
             return CycleCandidateOutcome.Claimed;
         }
 
@@ -304,13 +320,13 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Resource: null,
                     Outcome: "failed",
                     Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                     Details: $"schedule:{candidate.ScheduleId};Workflow start dispatch returned null",
                     ScheduleId: candidate.ScheduleId,
                     ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
-            catch { /* best-effort audit */ }
+            catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
             return CycleCandidateOutcome.Claimed;
         }
 
@@ -324,14 +340,14 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Resource: null,
                 Outcome: "success",
                 Timestamp: DateTimeOffset.UtcNow,
-                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                 Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
                 ScheduleId: candidate.ScheduleId,
                 RunId: result.RunId.Value,
                 ResourceContextId: definition.ResourceContextId?.Value
             ), ct);
         }
-        catch { /* best-effort audit */ }
+        catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
 
         var now = DateTimeOffset.UtcNow;
         await _repo.UpdateStateAsync(candidate.AssignmentId, new ScheduleStateUpdate(
@@ -373,13 +389,13 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Resource: null,
                     Outcome: "blocked",
                     Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                     Details: $"schedule:{candidate.ScheduleId};Operation {operationId.Value} not executable (module disabled or unavailable)",
                     ScheduleId: candidate.ScheduleId,
                     ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
-            catch { /* best-effort audit */ }
+            catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
             return CycleCandidateOutcome.Claimed;
         }
 
@@ -407,13 +423,13 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Resource: null,
                     Outcome: "failed",
                     Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                     Details: $"schedule:{candidate.ScheduleId};Operation start dispatch returned null",
                     ScheduleId: candidate.ScheduleId,
                     ResourceContextId: definition.ResourceContextId?.Value
                 ), ct);
             }
-            catch { /* best-effort audit */ }
+            catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
             return CycleCandidateOutcome.Claimed;
         }
 
@@ -427,14 +443,14 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Resource: null,
                 Outcome: "success",
                 Timestamp: DateTimeOffset.UtcNow,
-                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                 Details: $"schedule:{candidate.ScheduleId};RunId={result.RunId.Value}",
                 ScheduleId: candidate.ScheduleId,
                 RunId: result.RunId.Value,
                 ResourceContextId: definition.ResourceContextId?.Value
             ), ct);
         }
-        catch { /* best-effort audit */ }
+        catch (Exception ex) { LogAuditAppendFailed(ex, candidate); }
 
         var now = DateTimeOffset.UtcNow;
         await _repo.UpdateStateAsync(candidate.AssignmentId, new ScheduleStateUpdate(
@@ -489,15 +505,16 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Resource: null,
                 Outcome: "blocked",
                 Timestamp: DateTimeOffset.UtcNow,
-                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                 Details: $"schedule:{candidate.ScheduleId};{reason}",
                 ScheduleId: candidate.ScheduleId,
                 ResourceContextId: resourceContextId
             ), ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             // best-effort audit
+            LogAuditAppendFailed(ex, candidate);
         }
     }
 
@@ -550,15 +567,16 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                     Resource: null,
                     Outcome: "warning",
                     Timestamp: DateTimeOffset.UtcNow,
-                    new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                    new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                     Details: $"schedule:{candidate.ScheduleId};legacy schedule has no IntegrationId; dispatch is temporarily allowed for backward compatibility.",
                     ScheduleId: candidate.ScheduleId,
                     ResourceContextId: resourceContextId
                 ), ct);
             }
-            catch
+            catch (Exception ex)
             {
                 // best-effort audit
+                LogAuditAppendFailed(ex, candidate);
             }
             return true;
         }
@@ -580,15 +598,16 @@ public sealed class ScheduleDispatchRunner : IScheduleDispatchRunner
                 Resource: null,
                 Outcome: "blocked",
                 Timestamp: DateTimeOffset.UtcNow,
-                new CorrelationId($"schedule:{candidate.ScheduleId}:{candidate.FireTimeUtc:O}"),
+                new CorrelationId(ScheduleFireCorrelation.ForAudit(candidate.ScheduleId, candidate.FireTimeUtc)),
                 Details: $"schedule:{candidate.ScheduleId};{reason}",
                 ScheduleId: candidate.ScheduleId,
                 ResourceContextId: resourceContextId
             ), ct);
         }
-        catch
+        catch (Exception ex)
         {
             // best-effort audit
+            LogAuditAppendFailed(ex, candidate);
         }
 
         return false;

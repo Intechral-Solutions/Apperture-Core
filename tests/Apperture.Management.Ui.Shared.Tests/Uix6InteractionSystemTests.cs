@@ -162,6 +162,89 @@ public sealed class Uix6InteractionSystemTests
         offenders.Should().BeEmpty("UIX-6 replaced native window.confirm with ConfirmActionDialog");
     }
 
+    [Fact]
+    public void Every_ConfirmActionDialog_usage_passes_only_parameters_the_dialog_declares()
+    {
+        // Blazor rejects an argument the component does not declare, at render time. AvatarPicker passed IsBusy (the dialog keeps its
+        // own busy state), so /account/profile threw on every load. Compile-time checks do not catch it; this does.
+        var declared = System.Text.RegularExpressions.Regex
+            .Matches(ReadComponent("Organisms/ConfirmActionDialog.razor"), @"\[Parameter\][^;{]*?\s(\w+)\s*\{")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        declared.Should().Contain(["IsOpen", "OnConfirm", "OnCancel"], "the parameter list was read from the component");
+
+        var uiRoot = Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
+        var offenders = new List<string>();
+        var usages = 0;
+        foreach (var file in Directory.EnumerateFiles(uiRoot, "*.razor", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(file);
+            var from = 0;
+            while ((from = text.IndexOf("<ConfirmActionDialog", from, StringComparison.Ordinal)) >= 0)
+            {
+                from += "<ConfirmActionDialog".Length;
+                usages++;
+                foreach (var name in TopLevelAttributeNames(text, from))
+                {
+                    if (!name.StartsWith('@') && !declared.Contains(name))
+                        offenders.Add($"{Path.GetRelativePath(uiRoot, file)}: {name}");
+                }
+            }
+        }
+
+        usages.Should().BeGreaterThan(5, "the scan found the dialog's callers");
+        offenders.Should().BeEmpty("a ConfirmActionDialog argument it does not declare throws while the page renders");
+    }
+
+    /// <summary>The attribute names of the start tag that begins at <paramref name="index"/>, ignoring what is inside quotes.</summary>
+    private static IEnumerable<string> TopLevelAttributeNames(string text, int index)
+    {
+        var quote = '\0';
+        var depth = 0;
+        var name = new System.Text.StringBuilder();
+        for (var i = index; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (quote != '\0')
+            {
+                if (c == quote)
+                    quote = '\0';
+                continue;
+            }
+
+            if (c == '"' || c == '\'')
+            {
+                quote = c;
+                continue;
+            }
+
+            if (c == '(')
+                depth++;
+            else if (c == ')')
+                depth--;
+
+            if (depth > 0)
+                continue;
+
+            if (c == '>')
+                yield break;
+
+            if (c == '=' && name.Length > 0)
+            {
+                yield return name.ToString();
+                name.Clear();
+            }
+            else if (char.IsLetterOrDigit(c) || c is '@' or ':' or '.' or '-' or '_')
+            {
+                name.Append(c);
+            }
+            else
+            {
+                name.Clear();
+            }
+        }
+    }
+
     // ---------- Technical detail migrations ----------
 
     [Theory]
