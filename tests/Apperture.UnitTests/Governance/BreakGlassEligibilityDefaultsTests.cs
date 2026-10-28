@@ -10,6 +10,9 @@ namespace Apperture.UnitTests.Governance;
 
 public sealed class BreakGlassEligibilityDefaultsTests
 {
+    private static Apperture.ControlPlane.Security.AdministratorViability.IAdministratorViabilityCoordinator NewViability() =>
+        Apperture.UnitTests.AdministratorViability.FakeViability.Inert();
+
     [Fact]
     public async Task FirstAdminBootstrapService_never_creates_break_glass_eligible_user()
     {
@@ -22,7 +25,7 @@ public sealed class BreakGlassEligibilityDefaultsTests
             true);
         var roleRepo = new StubRoleRepository(role);
 
-        var service = new FirstAdminBootstrapService(userRepo, roleRepo, auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
+        var service = new FirstAdminBootstrapService(userRepo, roleRepo, auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: NewViability());
         var result = await service.TryCreateFirstAdminAsync(
             "Admin",
             IdentitySource.Local,

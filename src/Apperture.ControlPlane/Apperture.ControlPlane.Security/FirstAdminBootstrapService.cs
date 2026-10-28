@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
@@ -13,6 +14,9 @@ namespace Apperture.ControlPlane.Security;
 /// AUD-1.2: the bootstrap request is anonymous. Every check (no user yet, the role, the identity) is read inside one audited
 /// unit of work, and the user, its link, its role, its credential and the created row commit together. A refusal changes
 /// nothing; the caller records it. Hardening the first-administrator window itself is OPS-1.4.
+/// IAM-10.2b WP4B-D (M-P1): the unit's operation lock is per operation, so it never serialised two requests. The decision "no user
+/// exists yet" is therefore made under the global administrator-set gate, taken first in the unit, so two concurrent requests are
+/// decided one after the other and the second finds the committed state of the first.
 /// </remarks>
 public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
 {
@@ -21,23 +25,29 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
     private readonly ILocalCredentialRepository? _localCredentialRepository;
     private readonly ILocalPasswordHasher? _passwordHasher;
     private readonly IAuditedUnitOfWork? _auditedUnitOfWork;
+    private readonly IAdministratorViabilityCoordinator? _viability;
 
     public FirstAdminBootstrapService(
         IUserRepository userRepository,
         IRoleRepository roleRepository,
         ILocalCredentialRepository? localCredentialRepository = null,
         ILocalPasswordHasher? passwordHasher = null,
-        IAuditedUnitOfWork? auditedUnitOfWork = null)
+        IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAdministratorViabilityCoordinator? viability = null)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
         _localCredentialRepository = localCredentialRepository;
         _passwordHasher = passwordHasher;
         _auditedUnitOfWork = auditedUnitOfWork;
+        _viability = viability;
     }
 
     private IAuditedUnitOfWork Unit =>
         _auditedUnitOfWork ?? throw new InvalidOperationException("First-administrator bootstrap requires the audited unit of work.");
+
+    private IAdministratorViabilityCoordinator Viability =>
+        _viability ?? throw new InvalidOperationException("First-administrator bootstrap requires the administrator viability coordinator.");
 
     /// <inheritdoc />
     public async Task<FirstAdminBootstrapResult> TryCreateFirstAdminAsync(
@@ -49,7 +59,7 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
     {
         // An anonymous request that finds the installation already set up answers without entering the audited unit: one read, no
         // lock, nothing to wait behind. The count is only a reason to answer early. It is never what allows a creation: that is
-        // decided again inside the unit, where the user is written.
+        // decided again inside the unit, where the user is written, and under the gate.
         if (await _userRepository.GetUserCountAsync(cancellationToken) > 0)
             return FirstAdminBootstrapResult.AlreadyExists;
 
@@ -67,6 +77,13 @@ public sealed class FirstAdminBootstrapService : IFirstAdminBootstrapService
                     transaction.DeclareNoOp();
                     return result;
                 }
+
+                // Cannot reduce: the only account this writes is a new one, created only when no account exists at all, so it holds
+                // no administrator role, credential or link before the change and nobody's viability is taken away.
+                // The gate is the first lock after the operation lock, held until the unit ends, and it is taken again by every
+                // attempt of the unit. Every read below is issued after it is held, so under both isolation modes the count
+                // observes whatever the previous holder committed.
+                await Viability.EnterGateOnlyAsync(ct);
 
                 var count = await _userRepository.GetUserCountAsync(ct);
                 if (count > 0)

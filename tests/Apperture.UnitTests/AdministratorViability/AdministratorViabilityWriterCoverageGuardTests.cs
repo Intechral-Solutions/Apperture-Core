@@ -66,7 +66,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     /// <summary>The packages whose writers are integrated. Moving a package here is what makes the method-level checks apply to it.</summary>
-    private static readonly string[] IntegratedPackages = ["WP2", "WP3", "WP4A"];
+    private static readonly string[] IntegratedPackages = ["WP2", "WP3", "WP4A", "WP4B-D"];
 
     private sealed record Classified(string File, Writes Kind, int Count, Class Class, string Package, string Why)
     {
@@ -89,10 +89,10 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "UserProvisioningService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP2", "the initial role of a provisioned person"),
         new(Security + "SqlRoleProvider.cs", Writes.RoleAssign, 1, Class.OutOfCategory, "-", "the role provider adapter, which nothing in production calls (the role writer guard pins that)"),
         new(Security + "SqlRoleProvider.cs", Writes.RoleRemove, 1, Class.OutOfCategory, "-", "as above"),
-        new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B", "startup configuration assigns the administrator role"),
-        new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.UserCreatedWithRoleIds, 2, Class.GatedRaiser, "WP4B", "startup configuration creates the first administrator"),
-        new(Security + "RealBootstrapRecoveryService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B", "bootstrap recovery restores the administrator role"),
-        new(Security + "FirstAdminBootstrapService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B", "first administrator setup"),
+        new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B-D", "startup configuration assigns the administrator role"),
+        new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.UserCreatedWithRoleIds, 2, Class.GatedRaiser, "WP4B-D", "startup configuration creates the first administrator"),
+        new(Security + "RealBootstrapRecoveryService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B-D", "bootstrap recovery restores the administrator role"),
+        new(Security + "FirstAdminBootstrapService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B-D", "first administrator setup"),
         new(Security + "EmergencyAccessService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B", "Recovery Access provisioning"),
         new(Security + "DevTestUserBootstrapHostedService.cs", Writes.RoleAssign, 1, Class.ExceptionE1, "-", "development-only bootstrap"),
         new(Security + "DevTestUserBootstrapHostedService.cs", Writes.UserCreatedWithRoleIds, 1, Class.ExceptionE1, "-", "development-only bootstrap"),
@@ -428,6 +428,8 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
                     "Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/AdministratorViabilityCoordinator.cs",
                     "Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/AdministratorRoleGate.cs",
                     "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
+                    // Resolves the coordinator from its scope and passes it to the integrated static writer; it writes nothing itself.
+                    "Apperture.ControlPlane/Apperture.ControlPlane.Security/BootstrapPlatformAdminAssignmentHostedService.cs",
                 ])
                 .Distinct(),
             "an unclassified file that takes the coordinator would be a writer the inventory does not know");
@@ -500,7 +502,26 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         // are not an input of administrator viability, so this change cannot reduce either set.
         new(Api + "ConfigAuthUiPolicyController.cs", "Patch", Writes.PolicySave,
             [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "GetAsync(", "DeclareNoOp()", "_policyRepository.SaveAsync(", "StageAsync("]),
+
+        // WP4B-D. The bootstrap writers take the gate through the gate-only entry (they can only add an administrator), first in
+        // their unit and before the read that decides. The first administrator answers early without the gate or the unit; inside
+        // the unit the gate comes before the count that decides, the identity lookup and the write.
+        new(Security + "FirstAdminBootstrapService.cs", "TryCreateFirstAdminAsync", Writes.UserCreatedWithRoleIds,
+            ["GetUserCountAsync(", "Unit.ExecuteAsync(", TakeGateOnly, "GetUserCountAsync(", "GetAsync(", "GetByIdentityLinkAsync(", "new User(", "AddAsync(", "StageAsync("]),
+
+        // The configured administrator: one unit per principal; the gate before the lookup that decides between creating a user
+        // and assigning the role, and before either write.
+        new(Security + "BootstrapPlatformAdminAssignment.cs", "ExecuteAsync", Writes.RoleAssign,
+            ["unit.ExecuteAsync(", TakeGateOnly, "GetByIdentityLinkAsync(", "CreateAsync(", "GetForUserAsync(", ".AssignToUserAsync(", "StageAsync("]),
+        new(Security + "BootstrapPlatformAdminAssignment.cs", "CreateAsync", Writes.UserCreatedWithRoleIds,
+            ["new User("]),
+
+        // The recovery restore: the gate before the target is read, then the assignment and its row.
+        new(Security + "RealBootstrapRecoveryService.cs", "ExecuteRecoveryAsync", Writes.RoleAssign,
+            ["ExecuteAsync<UserId?>(", TakeGateOnly, "ResolveTargetUserAsync(", "DeclareNoOp()", ".AssignToUserAsync(", "StageAsync("]),
     ];
+
+    private const string TakeGateOnly = ".EnterGateOnlyAsync(";
 
     private const string PrepareOptions = "Viability.PrepareAsync(";
     private const string DecideApplied = "DecideAppliedChangeAsync(";
@@ -554,6 +575,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Writes.RegistrationDelete => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "DeleteAsync"),
         Writes.RegistrationActivate => RegistrationActivateCall.Matches(code).Count,
         Writes.PolicySave => CallsOn(code, NamesHolding(fileCode, "IInstanceAuthUiPolicyRepository"), "SaveAsync"),
+        Writes.UserCreatedWithRoleIds => NewUser.Matches(code).Count(m => !IsEmpty(RoleIdsArgument(code, m.Index + m.Length))),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 
@@ -977,8 +999,17 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     /// as one that only creates an account holding no administrator facts yet. The set is closed. Moving a writer here is a decision
     /// of the package that integrates it, made by adding it with its reason; nothing else may call the entry.
     /// </summary>
-    /// <remarks>Empty now: no production writer has been moved. The bootstrap writers are classified as gated raisers until their package integrates them.</remarks>
-    private static readonly IReadOnlyList<(string File, string Method)> GateOnlyCallers = [];
+    /// <remarks>
+    /// WP4B-D moved the three system bootstrap writers here: the first administrator, the configured administrator and the bootstrap
+    /// recovery restore. Each creates an account that holds no administrator facts or gives the administrator role to an account that
+    /// does not hold it, so none can reduce; Recovery Access provisioning is a gated raiser of WP4B-C and is not in this set.
+    /// </remarks>
+    private static readonly IReadOnlyList<(string File, string Method)> GateOnlyCallers =
+    [
+        (Security + "FirstAdminBootstrapService.cs", "TryCreateFirstAdminAsync"),
+        (Security + "BootstrapPlatformAdminAssignment.cs", "ExecuteAsync"),
+        (Security + "RealBootstrapRecoveryService.cs", "ExecuteRecoveryAsync"),
+    ];
 
     private const string GateOnlyEntry = ".EnterGateOnlyAsync(";
 
@@ -1048,6 +1079,23 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             .Should().Contain(v => v.Contains("why it cannot reduce"));
         GateOnlyViolations(good.Replace("// Cannot reduce: the account is new and holds no administrator role or credential before this change.", "// Cannot reduce:", StringComparison.Ordinal))
             .Should().Contain(v => v.Contains("why it cannot reduce"), "an empty reason is no reason");
+    }
+
+    [Fact]
+    public void The_first_administrator_answers_early_outside_the_unit_and_the_gate_and_decides_again_under_the_gate()
+    {
+        var body = MethodBody(StripComments(Source(Security + "FirstAdminBootstrapService.cs")), "TryCreateFirstAdminAsync");
+        var unit = body.IndexOf("Unit.ExecuteAsync(", StringComparison.Ordinal);
+        unit.Should().BeGreaterThan(0);
+
+        var early = body[..unit];
+        early.Should().Contain("GetUserCountAsync(").And.Contain("AlreadyExists", "an installation that is already set up is answered with one read");
+        early.Should().NotContain("Viability", "an anonymous caller must not queue on the global gate once a user exists");
+
+        var inUnit = body[unit..];
+        inUnit.IndexOf(GateOnlyEntry, StringComparison.Ordinal).Should().BeGreaterThan(0);
+        inUnit.IndexOf(GateOnlyEntry, StringComparison.Ordinal).Should().BeLessThan(inUnit.IndexOf("GetUserCountAsync(", StringComparison.Ordinal),
+            "the count that decides is read only after the gate is held");
     }
 
     [Fact]

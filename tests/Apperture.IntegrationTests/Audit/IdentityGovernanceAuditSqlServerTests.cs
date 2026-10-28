@@ -343,7 +343,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "configured.admin" } },
         };
         Task ApplyAsync(AppertureDbContext db) => BootstrapPlatformAdminAssignment.ExecuteAsync(
-            options, new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance), new SqlRoleRepository(db), null, NewUnit(db, null));
+            options, new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance), new SqlRoleRepository(db), null, NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db));
 
         var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
         await using (var db = _db.NewDb(failAudit))
@@ -381,7 +382,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             new SqlRoleRepository(db),
             new SqlLocalCredentialRepository(db),
             new LocalPasswordHasher(),
-            NewUnit(db, null));
+            NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db));
 
     // ---- M6 per service (gate §22 AUD-1.2): the remaining audit-failure and lost-acknowledgement paths ----
 
@@ -573,6 +575,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             .AddSingleton<IRoleRepository>(new SqlRoleRepository(db))
             .AddSingleton<IAuditedUnitOfWork>(NewUnit(db, null))
             .AddSingleton<IAuditEventWriter>(new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null))
+            .AddSingleton<Apperture.ControlPlane.Security.AdministratorViability.IAdministratorViabilityCoordinator>(RoleAuthorityWorld.Viability(db))
             .BuildServiceProvider();
         return new RealBootstrapRecoveryService(new AuthorizedRecovery(), new NoBootstrapAudit(), services.GetRequiredService<IServiceScopeFactory>());
     }

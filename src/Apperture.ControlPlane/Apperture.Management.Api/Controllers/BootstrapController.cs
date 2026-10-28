@@ -1,4 +1,5 @@
 using Apperture.Core.Application;
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
@@ -91,6 +92,17 @@ public sealed class BootstrapController : ControllerBase
                 BootstrapErrorCodes.InvalidRequest,
                 setupStatus.Initialized));
         }
+        catch (PlatformAdministratorSetBusyException)
+        {
+            // Transient contention (IAM-10.2b WP4B-D): another change holds the serialisation of administrator creation. It is not
+            // a refusal of this request, changed nothing and records nothing, and it is not "already initialized", which is a
+            // different, permanent answer with a different code. The wording is neutral on purpose: an anonymous caller is not
+            // told what the other change is. Any other failure of the gate, and a cancellation, are not mapped.
+            return Conflict(new BootstrapErrorResponse(
+                "The setup request could not be processed right now. Try again in a moment.",
+                BootstrapErrorCodes.Busy,
+                setupStatus.Initialized));
+        }
 
         return result.Kind switch
         {
@@ -146,6 +158,9 @@ public static class BootstrapErrorCodes
     public const string DuplicateIdentityLink = "bootstrap.duplicate_identity_link";
     public const string RoleNotFound = "bootstrap.role_not_found";
     public const string Unexpected = "bootstrap.unexpected";
+
+    /// <summary>Transient contention: retry. Not a refusal and not "already initialized".</summary>
+    public const string Busy = "bootstrap.busy";
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using Apperture.Core.Application.Services;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Domain.Identity;
 using Apperture.ControlPlane.Security;
 using Apperture.Shared.Kernel;
@@ -9,6 +10,8 @@ namespace Apperture.UnitTests.Governance;
 
 public sealed class FirstAdminBootstrapServiceTests
 {
+    private static Apperture.ControlPlane.Security.AdministratorViability.IAdministratorViabilityCoordinator NewViability() => FakeViability.Inert();
+
     [Theory]
     [InlineData(0, false, true)]
     [InlineData(1, true, false)]
@@ -32,7 +35,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_rejects_the_reserved_recovery_username(string username)
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: NewViability());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
 
@@ -44,7 +47,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_assigns_the_normalized_sign_in_name_as_username_and_local_link()
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: NewViability());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "  Admin  ", "unique-local-passphrase");
 
@@ -60,7 +63,7 @@ public sealed class FirstAdminBootstrapServiceTests
     {
         var users = new CapturingUserRepository();
         var audit = new Apperture.UnitTests.Audit.AuditRecording();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit, viability: NewViability());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", password: null);
         var reserved = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "breakglass", password: null);
@@ -79,7 +82,7 @@ public sealed class FirstAdminBootstrapServiceTests
     {
         var users = new SequencedCountUserRepository(1);
         var audit = new Apperture.UnitTests.Audit.AuditRecording();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit, viability: NewViability());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
 
@@ -96,7 +99,7 @@ public sealed class FirstAdminBootstrapServiceTests
         // The installation is empty when the early read is made and has an administrator by the time the unit looks.
         var users = new SequencedCountUserRepository(0, 1);
         var audit = new Apperture.UnitTests.Audit.AuditRecording();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit);
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit, viability: NewViability());
 
         var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
 
@@ -106,6 +109,89 @@ public sealed class FirstAdminBootstrapServiceTests
         users.CountReads.Should().Be(2);
     }
 
+    [Fact]
+    public async Task The_gate_is_taken_after_the_early_answer_and_before_the_decisive_count_read()
+    {
+        var gate = new RecordingGate();
+        var gateHeldAtEachCountRead = new List<int>();
+        var users = new SequencedCountUserRepository(0) { OnCountRead = _ => gateHeldAtEachCountRead.Add(gate.Acquired) };
+        var service = new FirstAdminBootstrapService(
+            users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: FakeViability.Scripted(gate));
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.Success);
+        gateHeldAtEachCountRead.Should().Equal([0, 1], "the early answer takes no lock; the read that decides is made with the gate held");
+        gate.Acquired.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task An_installation_that_is_already_set_up_never_touches_the_gate()
+    {
+        var gate = new RecordingGate();
+        var users = new SequencedCountUserRepository(1);
+        var service = new FirstAdminBootstrapService(
+            users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: FakeViability.Scripted(gate));
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.AlreadyExists);
+        gate.Acquired.Should().Be(0, "an anonymous caller must not queue on the global gate once the installation is set up");
+    }
+
+    [Fact]
+    public async Task A_refusal_decided_under_the_gate_still_declares_the_attempt_a_no_op()
+    {
+        var gate = new RecordingGate();
+        var users = new SequencedCountUserRepository(0, 1);
+        var audit = new Apperture.UnitTests.Audit.AuditRecording();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit, viability: FakeViability.Scripted(gate));
+
+        var result = await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        result.Kind.Should().Be(FirstAdminBootstrapResultKind.AlreadyExists, "the competing request committed first");
+        gate.Acquired.Should().Be(1);
+        audit.Unit.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        users.Added.Should().BeEmpty();
+        audit.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_busy_gate_is_contention_nothing_is_read_or_written_in_the_unit_and_no_row_is_recorded()
+    {
+        var busy = new Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetBusyException(
+            Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetLockOutcome.TimedOut);
+        var gate = new RecordingGate { Fail = busy };
+        var users = new SequencedCountUserRepository(0);
+        var audit = new Apperture.UnitTests.Audit.AuditRecording();
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: audit, viability: FakeViability.Scripted(gate));
+
+        var act = async () => await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        (await act.Should().ThrowAsync<Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetBusyException>()).Which.Should().BeSameAs(busy);
+        users.CountReads.Should().Be(1, "only the early answer was read: the decisive read waits for the gate");
+        users.Added.Should().BeEmpty();
+        audit.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_gate_that_failed_for_a_reason_other_than_contention_is_not_hidden_and_a_missing_coordinator_fails_closed()
+    {
+        var failing = new RecordingGate { Fail = new Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetGateException(-999) };
+        var users = new SequencedCountUserRepository(0);
+        var withFailingGate = new FirstAdminBootstrapService(
+            users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: FakeViability.Scripted(failing));
+        var withoutCoordinator = new FirstAdminBootstrapService(
+            users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
+
+        var failed = async () => await withFailingGate.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+        var unguarded = async () => await withoutCoordinator.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, "admin", "unique-local-passphrase");
+
+        await failed.Should().ThrowAsync<Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetGateException>();
+        await unguarded.Should().ThrowAsync<InvalidOperationException>("an unserialised first administrator is the defect this closes");
+        users.Added.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("jane@contoso.com", UsernameErrorCodes.Invalid)]
     [InlineData("ab", UsernameErrorCodes.Invalid)]
@@ -113,7 +199,7 @@ public sealed class FirstAdminBootstrapServiceTests
     public async Task TryCreateFirstAdminAsync_refuses_a_name_that_fails_the_username_policy(string username, string code)
     {
         var users = new CapturingUserRepository();
-        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording());
+        var service = new FirstAdminBootstrapService(users, new PresentRoleRepository(), auditedUnitOfWork: new Apperture.UnitTests.Audit.AuditRecording(), viability: NewViability());
 
         var act = async () => await service.TryCreateFirstAdminAsync("First admin", IdentitySource.Local, username, "unique-local-passphrase");
 
@@ -146,8 +232,15 @@ public sealed class FirstAdminBootstrapServiceTests
         public List<User> Added { get; } = [];
         public int CountReads { get; private set; }
 
-        public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(counts[Math.Min(CountReads++, counts.Length - 1)]);
+        /// <summary>Called with the number of the read (from 1) each time the count is read.</summary>
+        public Action<int>? OnCountRead { get; init; }
+
+        public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default)
+        {
+            var count = counts[Math.Min(CountReads++, counts.Length - 1)];
+            OnCountRead?.Invoke(CountReads);
+            return ValueTask.FromResult(count);
+        }
         public ValueTask<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);
         public ValueTask<(IReadOnlyList<User> Page, int TotalCount)> GetPageAsync(int skip, int take, CancellationToken cancellationToken = default) => ValueTask.FromResult<(IReadOnlyList<User>, int)>(([], 0));
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) => ValueTask.FromResult<User?>(null);

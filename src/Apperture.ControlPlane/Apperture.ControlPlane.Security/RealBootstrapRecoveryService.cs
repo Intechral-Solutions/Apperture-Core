@@ -1,5 +1,6 @@
 using Apperture.Bootstrap;
 using Apperture.Bootstrap.Models;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
@@ -66,14 +67,22 @@ public sealed class RealBootstrapRecoveryService : IBootstrapRecoveryService
         var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var roleRepository = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
         var unit = scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>();
+        var viability = scope.ServiceProvider.GetRequiredService<IAdministratorViabilityCoordinator>();
         var platformAdminRoleId = new RoleId(BootstrapConstants.PlatformAdminRoleId);
 
         // AUD-1.2: the target is resolved and the role assigned in one unit with its row, as the recovery tool. A target
         // that already holds the role changes nothing and writes no row (D7).
+        // IAM-10.2b WP4B-D: the unit takes the global administrator-set gate before it reads the target, so the decision "the target
+        // does not hold the role yet" is made against what the previous holder committed.
         var targetUserId = await unit.ExecuteAsync<UserId?>(
             new AuditedOperation(AuditActionNames.RestorePlatformAccessExecuted, AuditActor.RecoveryTool),
             async (transaction, ct) =>
             {
+                // Cannot reduce: it only gives the administrator role to an account that does not hold it (an account that already
+                // holds it is declared a no-op below), so nobody's viability is taken away. The gate is the first lock after the
+                // operation lock and is taken again by every attempt.
+                await viability.EnterGateOnlyAsync(ct).ConfigureAwait(false);
+
                 var target = await ResolveTargetUserAsync(request, userRepository, ct).ConfigureAwait(false);
                 if (target is null || target.AssignedRoleIds.Contains(platformAdminRoleId))
                 {
