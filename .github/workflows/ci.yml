@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # SA password for the ephemeral SQL Server service only (not a production secret).
     # MSSQL_* enables SqlServerTestConfiguration (other integration tests); keep password identical to the service.
     env:
@@ -92,7 +92,7 @@ jobs:
   # I-2 / SEC-1B4: the opt-in Playwright suite is a blocking gate, not part of `dotnet test Apperture.slnx`.
   browser-security:
     name: browser-security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       APPERTURE_CI_MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
