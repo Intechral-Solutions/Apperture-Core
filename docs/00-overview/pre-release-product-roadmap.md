@@ -100,6 +100,27 @@ targets; they remain architectural goals. Full definition: gate section 2.
 functional browser smoke, accessibility baseline, upgrade test, the outstanding SEC-1 and IAM operator smoke runbooks,
 a whole-product security review, and documentation regeneration. This is what Track 9 below now means.
 
+### Development loop (DEV-1, cross-cutting)
+
+**DEV-1** is a bounded workstream for the cost, speed and honesty of the development loop, opened after the
+[2026-10-29 development-loop audit](../audits/dev-loop-audit-2026-10-29.md) (verdict: fit for RC1, optimizations
+recommended). It is **not a track, an epic or an RC1 gate**, it adds no dependency to any epic above, and completing it
+satisfies no RC1 requirement. RCV-1 still owns release-candidate test assurance and OPS-1 still owns operational
+deployment protections. Plan, finding map, sequence and owner decisions:
+[`dev1-development-loop-plan.md`](../01-architecture/transitions/dev-loop/dev1-development-loop-plan.md).
+
+| Package | Outcome | State |
+| ------- | ------- | ----- |
+| DEV-1.0 | Audit acceptance, provenance and backups | **Delivered** (2026-10-29) |
+| DEV-1.1 | Test evidence integrity and environment separation (honest SQL outcomes) | Recommended; precedes WP4B-C; starts on instruction |
+| DEV-1.2 | Local feedback performance and deterministic tests | Recommended; precedes WP4B-C; starts on instruction |
+| DEV-1.3 | Reproducible validation harness and validation tiers | Recommended; adopted at the WP4B-C boundary |
+| DEV-1.4 | SQL fixture and retry efficiency | Recommended; measurement first |
+| DEV-1.5 | CI diagnostics and reliability | Recommended; some items need owner rulings |
+| DEV-1.6 | Longer-term test and infrastructure improvements | Later; by trigger |
+
+No DEV-1 package blocks IAM-10.2b WP4B-C. Each starts only on an explicit owner instruction.
+
 ### Data, query and search (post-RC1)
 
 | Body | Kind | Depends on |
@@ -672,6 +693,7 @@ end: the identity, audit and authorization epics run first. The RC1 exit criteri
 | --- | ---- |
 | [`roadmap.md`](roadmap.md) | Stage overview |
 | [`rc1-program-gate.md`](../01-architecture/rc1-program-gate.md) | RC1 program contract: decisions, deferrals, epic sequence |
+| [`dev1-development-loop-plan.md`](../01-architecture/transitions/dev-loop/dev1-development-loop-plan.md) | DEV-1 development-loop improvement plan (cross-cutting; not an RC1 gate) |
 | [`pfb1-product-foundation-baseline-audit.md`](../audits/pfb1-product-foundation-baseline-audit.md) | Foundation baseline + next-track recommendation |
 | [`stabilization-closure-check.md`](../audits/stabilization-closure-check.md) | S1–S13 closed |
 | SWM ADRs under `docs/02-decisions/` | Scheduling & worker foundation closed |
