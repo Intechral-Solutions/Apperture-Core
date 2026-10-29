@@ -49,7 +49,7 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
     /// <inheritdoc />
     public async ValueTask<EffectiveSignInConfiguration> ReadAsync(CancellationToken cancellationToken = default)
     {
-        var reading = _deployment.Read();
+        var reading = await _deployment.ReadAsync(cancellationToken).ConfigureAwait(false);
         var active = await _registrations.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         var reasons = new List<string>(reading.Reasons);
         var entraTrust = reading.EntraTrust;
@@ -123,7 +123,7 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
             }
         }
 
-        return new EffectiveSignInConfiguration(now, restart, new ConfigurationTrust(reading.LocalTrust, entraTrust, reasons));
+        return new EffectiveSignInConfiguration(now, restart, new ConfigurationTrust(reading.LocalTrust, entraTrust, reasons, reading.Evidence));
     }
 
     private static SignInAvailability ReadNow(RunningAuthenticationReading running, EntraInstanceRegistration? active)

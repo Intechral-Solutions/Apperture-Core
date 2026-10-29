@@ -201,10 +201,28 @@ internal static class AuditDetailSchemas
 
     // ---- Recovery Access administration ----
 
+    /// <summary>
+    /// The class of configuration evidence a viability decision used (attested, not_required or unavailable). It is the only
+    /// configuration detail an event carries: no host id, fingerprint, tenant, option value or secret enters an event.
+    /// </summary>
+    private static AuditFieldDefinition ConfigurationEvidenceField() =>
+        EnumField(
+            Apperture.Core.Application.AdministratorViability.ConfigurationEvidenceNames.AuditDetailName,
+            required: false,
+            [.. Apperture.Core.Application.AdministratorViability.ConfigurationEvidenceNames.All]);
+
     internal static readonly AuditDetailSchema RecoveryAccessDesignated = new(
     [
         IdField("userId"),
         IdField("previousUserId", required: false),
+        ConfigurationEvidenceField(),
+    ]);
+
+    /// <summary>A change that can reduce administrator viability and names the evidence it used.</summary>
+    internal static readonly AuditDetailSchema UserWithConfigurationEvidence = new(
+    [
+        IdField("userId"),
+        ConfigurationEvidenceField(),
     ]);
 
     internal static readonly AuditDetailSchema RecoveryAccessProvisioned = new(

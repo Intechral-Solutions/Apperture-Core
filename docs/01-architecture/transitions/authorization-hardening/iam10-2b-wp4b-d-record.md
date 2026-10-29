@@ -73,6 +73,8 @@ Unit tests (12 new, plus fakes updated): gate before the decisive read, never to
 4. The gate-only proof is by construction (a new or role-lacking account). WP4B-C must still address `UserManagementService` serialisation with a designation (L-P3) and `MarkEnrolledAsync` (L-P2).
 5. The first-administrator HTTP endpoint is validated through the service on real SQL; no new Management Host HTTP test sends two simultaneous anonymous POSTs, since the existing host harness suite (`ManagementHostBootstrapHttpTests`) is part of the run and unchanged.
 
+6. **L-D1 (carried from the independent review; owner OPS-1.4).** Anonymous invalid first-administrator requests whose invalidity is only found inside the unit (username and password policy) take the global gate before being refused, so they can briefly contend with administrator changes. The requirement and its regression conditions are recorded under OPS-1.4 in the [program plan](../../../audits/rc1-architecture-audit-and-program-plan.md). Not changed here.
+
 ## 8. Validation
 
 | Run | Result |

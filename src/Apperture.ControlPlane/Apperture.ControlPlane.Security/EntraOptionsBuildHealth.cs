@@ -37,6 +37,19 @@ public interface IEntraOptionsBuildHealth
 
     /// <summary>Records for <paramref name="to"/> whatever was recorded for <paramref name="from"/>, when it derives from it.</summary>
     void Carry(object from, object to);
+
+    /// <summary>
+    /// True once the running OpenID Connect handler's options have been built in this process: the framework builds them when the
+    /// authentication middleware first handles a request, so it is the mark that real traffic has reached the host. It lets the
+    /// Management Host's attestation say "not established" without asking for the options, which would build them. A reader that
+    /// records nothing answers false.
+    /// </summary>
+    bool OpenIdConnectOptionsBuilt => false;
+
+    /// <summary>Notes that the running OpenID Connect handler's options were built. A reader that records nothing ignores it.</summary>
+    void NoteOpenIdConnectOptionsBuilt()
+    {
+    }
 }
 
 /// <inheritdoc cref="IEntraOptionsBuildHealth" />
@@ -54,6 +67,13 @@ public sealed class EntraOptionsBuildHealth : IEntraOptionsBuildHealth
     private sealed record Note(EntraOptionsBuildQuality Quality, string? Reason);
 
     private readonly ConditionalWeakTable<object, Note> _notes = new();
+    private volatile bool _openIdConnectOptionsBuilt;
+
+    /// <inheritdoc />
+    public bool OpenIdConnectOptionsBuilt => _openIdConnectOptionsBuilt;
+
+    /// <inheritdoc />
+    public void NoteOpenIdConnectOptionsBuilt() => _openIdConnectOptionsBuilt = true;
 
     /// <inheritdoc />
     public void Record(object options, EntraOptionsBuildQuality quality, string? reasonCode = null)

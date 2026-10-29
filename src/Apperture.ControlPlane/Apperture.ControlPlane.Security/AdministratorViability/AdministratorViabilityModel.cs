@@ -36,10 +36,17 @@ public enum ConfigurationTrustLevel
 /// <param name="Local">Whether Local sign-in is enabled for the installation.</param>
 /// <param name="Entra">Whether the Entra options, including the client secret the active registration needs, are known.</param>
 /// <param name="Reasons">Plain-language reasons for anything not trusted, for the operator.</param>
+/// <param name="Evidence">
+/// The class of evidence the reading came from when it came from the Management Host's attestation (<see cref="ConfigurationEvidence.Attested"/>,
+/// or <see cref="ConfigurationEvidence.Unavailable"/> when no attestation could be trusted), or null when the reader is the host
+/// itself, which reads its own options and attests nothing. It describes where the reading came from. It is not a verdict: whether
+/// an operation needed the input is the operation's to say.
+/// </param>
 public sealed record ConfigurationTrust(
     ConfigurationTrustLevel Local,
     ConfigurationTrustLevel Entra,
-    IReadOnlyList<string> Reasons)
+    IReadOnlyList<string> Reasons,
+    ConfigurationEvidence? Evidence = null)
 {
     /// <summary>Everything is established.</summary>
     public static ConfigurationTrust Full { get; } = new(ConfigurationTrustLevel.Trusted, ConfigurationTrustLevel.Trusted, []);

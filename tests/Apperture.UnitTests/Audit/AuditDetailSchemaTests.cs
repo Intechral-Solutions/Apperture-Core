@@ -88,6 +88,9 @@ public sealed class AuditDetailSchemaTests
             // SEC-2.1: a point in time (the Timestamp field kind): when the acknowledged attention incident started, read from its
             // persisted row. It is a date, not text, so it cannot carry a credential, a secret or a search value.
             typeof(DateTimeOffset),
+            // IAM-10.2b: the class of configuration evidence a viability decision used (a closed enum of three, recorded as its fixed
+            // snake_case name). It names no host, database, tenant or option value.
+            typeof(Apperture.Core.Application.AdministratorViability.ConfigurationEvidence),
         };
         var parameters = producers.SelectMany(m => m.GetParameters()).ToList();
         parameters.Select(p => p.ParameterType).Should().OnlyContain(t => allowed.Contains(t) || Nullable.GetUnderlyingType(t) != null && allowed.Contains(Nullable.GetUnderlyingType(t)),

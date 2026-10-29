@@ -70,6 +70,7 @@ public class AppertureDbContext : DbContext
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
     public DbSet<EntraRegistrationDiagnosticsEntity> EntraRegistrationDiagnostics => Set<EntraRegistrationDiagnosticsEntity>();
+    public DbSet<HostConfigurationAttestationEntity> HostConfigurationAttestations => Set<HostConfigurationAttestationEntity>();
     public DbSet<EntraAccessRequestEntity> EntraAccessRequests => Set<EntraAccessRequestEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
@@ -1022,6 +1023,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.LastOpenIdValidationDetail).HasMaxLength(4000);
             e.Property(x => x.LastDirectoryDiscoverySummary).HasMaxLength(512);
             e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
+        });
+
+        // The Management Host's dated reading of its own sign-in configuration, for the emergency command line (one row per host).
+        // Written only by SqlHostConfigurationAttestationStore, with SQL that stamps the times from the database's clock.
+        modelBuilder.Entity<HostConfigurationAttestationEntity>(e =>
+        {
+            e.ToTable("HostConfigurationAttestations");
+            e.HasKey(x => x.HostId);
+            e.Property(x => x.HostId).HasMaxLength(64);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.ProcessInstanceId).HasMaxLength(64);
+            e.Property(x => x.DatabaseFingerprint).HasMaxLength(64);
         });
 
         modelBuilder.Entity<EntraAccessRequestEntity>(e =>

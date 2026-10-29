@@ -40,11 +40,14 @@ public sealed class AdministratorViabilityRegistrationTests
     }
 
     [Fact]
-    public void The_emergency_command_line_registers_the_gate_the_registration_repository_and_its_own_configuration_reader()
+    public void The_emergency_command_line_registers_the_gate_the_registration_repository_and_the_attestation_reader()
     {
         var services = new ServiceCollection().AddAppertureEmergencyOperatorServices();
 
-        AssertRegistered(services, typeof(ConfiguredDeploymentAuthenticationConfiguration));
+        // The command line is another process and reads the Management Host's attestation from the database, and nothing else.
+        AssertRegistered(services, typeof(AttestedDeploymentAuthenticationConfiguration));
+        services.Where(d => d.ServiceType == typeof(Apperture.Core.Application.AdministratorViability.IHostConfigurationAttestationStore))
+            .Should().ContainSingle().Which.ImplementationType.Should().Be(typeof(Apperture.Persistence.SqlServer.SqlHostConfigurationAttestationStore));
         services.Where(d => d.ServiceType == typeof(IEntraInstanceRegistrationRepository)).Should().ContainSingle(
             "the provider reads the persisted registration, which the command line did not need before");
     }

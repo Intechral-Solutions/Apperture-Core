@@ -233,7 +233,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
         services.AddScoped<IEntraInstanceRegistrationRepository, SqlEntraInstanceRegistrationRepository>();
-        services.AddAdministratorViability<ConfiguredDeploymentAuthenticationConfiguration>();
+        // The command line is another process and cannot observe the Management Host: it reads the attestation the host wrote to the
+        // database, and nothing else (its own appsettings.json and environment name no installation).
+        services.AddAdministratorViability<AttestedDeploymentAuthenticationConfiguration>();
         return services;
     }
 
@@ -247,6 +249,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlatformAdministratorSetGate, SqlPlatformAdministratorSetGate>();
         services.AddScoped<IAdministratorFactsReader, SqlAdministratorFactsReader>();
         services.AddScoped<IDeploymentAuthenticationConfiguration, TDeployment>();
+        services.AddScoped<IHostConfigurationAttestationStore, SqlHostConfigurationAttestationStore>();
         services.AddScoped<IEffectiveSignInConfigurationProvider, EffectiveSignInConfigurationProvider>();
         services.AddScoped<IAdministratorViabilityService, AdministratorViabilityService>();
         services.AddScoped<IAdministratorViabilityCoordinator, AdministratorViabilityCoordinator>();

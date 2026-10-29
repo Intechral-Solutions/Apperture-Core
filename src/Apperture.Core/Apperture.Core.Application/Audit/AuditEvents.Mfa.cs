@@ -1,3 +1,4 @@
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Domain.Identity;
 
 namespace Apperture.Core.Application.Audit;
@@ -34,10 +35,12 @@ public static partial class AuditEvents
             ("remaining", remaining));
 
     /// <summary>The user's authenticator and recovery codes were removed.</summary>
-    public static AuditEvent MfaReset(UserId user) =>
+    /// <param name="configurationEvidence">The class of configuration evidence the decision used, when the operation records it.</param>
+    public static AuditEvent MfaReset(UserId user, ConfigurationEvidence? configurationEvidence = null) =>
         Event(
             AuditActionNames.MfaReset,
             Target(AuditTargetTypes.User, user.Value),
             AuditOutcomeCodes.Succeeded,
-            ("userId", user.Value));
+            ("userId", user.Value),
+            (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence?.ToAuditValue()));
 }

@@ -672,6 +672,51 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.ToTable("EntraRegistrationDiagnostics", (string)null);
                 });
 
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.HostConfigurationAttestationEntity", b =>
+                {
+                    b.Property<string>("HostId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("ClaimedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DatabaseFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProcessInstanceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("ProcessStartedUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTime>("RefreshedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime?>("StoppedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("HostId");
+
+                    b.ToTable("HostConfigurationAttestations", (string)null);
+                });
+
             modelBuilder.Entity("Apperture.Persistence.SqlServer.IdentityLinkEntity", b =>
                 {
                     b.Property<string>("Id")

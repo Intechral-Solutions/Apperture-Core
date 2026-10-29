@@ -1,3 +1,4 @@
+using Apperture.Core.Application.AdministratorViability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -30,6 +31,10 @@ public sealed record RunningAuthenticationReading(
 /// the reader cannot see them, so a missing secret proves nothing.
 /// </param>
 /// <param name="Running">The running host's options, or null when the reader is not a running host.</param>
+/// <param name="Evidence">
+/// Where the reading came from when it is not the host's own: <see cref="ConfigurationEvidence.Attested"/> for a fresh, consistent
+/// attestation, <see cref="ConfigurationEvidence.Unavailable"/> when none could be trusted. Null for a reader that is the host.
+/// </param>
 public sealed record DeploymentAuthenticationReading(
     ConfigurationTrustLevel LocalTrust,
     ConfigurationTrustLevel EntraTrust,
@@ -37,7 +42,8 @@ public sealed record DeploymentAuthenticationReading(
     bool LocalSignInEnabled,
     EntraAuthOptions EntraBase,
     bool AuthoritativeAboutSecrets,
-    RunningAuthenticationReading? Running);
+    RunningAuthenticationReading? Running,
+    ConfigurationEvidence? Evidence = null);
 
 /// <summary>
 /// Where the administrator-viability evaluation reads the deployment's authentication configuration (ruling D-6). The Management
@@ -48,6 +54,14 @@ public interface IDeploymentAuthenticationConfiguration
 {
     /// <summary>Reads the configuration now.</summary>
     DeploymentAuthenticationReading Read();
+
+    /// <summary>
+    /// Reads the configuration now, asynchronously. A reader whose evidence lives in the database (the emergency command line reads
+    /// the Management Host's attestation) can only be read this way, and the evaluation asks this way, after the administrator-set
+    /// gate is held and inside the caller's unit. A reader with nothing to wait for answers with <see cref="Read"/>.
+    /// </summary>
+    ValueTask<DeploymentAuthenticationReading> ReadAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(Read());
 
     /// <summary>
     /// Builds, if they are not built yet, whatever a reading is made from. A reading made for the first time builds the running

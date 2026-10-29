@@ -1,3 +1,4 @@
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Domain.Identity;
 
 namespace Apperture.Core.Application.Audit;
@@ -7,13 +8,15 @@ namespace Apperture.Core.Application.Audit;
 public static partial class AuditEvents
 {
     /// <summary>A user was designated as the Recovery Access account, replacing <paramref name="previous"/> if any.</summary>
-    public static AuditEvent RecoveryAccessDesignated(UserId user, UserId? previous) =>
+    /// <param name="configurationEvidence">The class of configuration evidence the decision used, when the operation records it.</param>
+    public static AuditEvent RecoveryAccessDesignated(UserId user, UserId? previous, ConfigurationEvidence? configurationEvidence = null) =>
         Event(
             AuditActionNames.RecoveryAccessDesignated,
             Target(AuditTargetTypes.User, user.Value),
             AuditOutcomeCodes.Succeeded,
             ("userId", user.Value),
-            ("previousUserId", previous?.Value));
+            ("previousUserId", previous?.Value),
+            (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence?.ToAuditValue()));
 
     /// <summary>The Recovery Access account was created and designated.</summary>
     public static AuditEvent RecoveryAccessProvisioned(UserId user, string username) =>
@@ -25,10 +28,12 @@ public static partial class AuditEvents
             ("username", username));
 
     /// <summary>The Recovery Access designation was removed; the installation returns to last-administrator protection.</summary>
-    public static AuditEvent RecoveryAccessRevoked(UserId user) =>
+    /// <param name="configurationEvidence">The class of configuration evidence the decision used, when the operation records it.</param>
+    public static AuditEvent RecoveryAccessRevoked(UserId user, ConfigurationEvidence? configurationEvidence = null) =>
         Event(
             AuditActionNames.RecoveryAccessRevoked,
             Target(AuditTargetTypes.User, user.Value),
             AuditOutcomeCodes.Succeeded,
-            ("userId", user.Value));
+            ("userId", user.Value),
+            (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence?.ToAuditValue()));
 }

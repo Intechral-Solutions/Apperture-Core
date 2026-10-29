@@ -49,6 +49,10 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
         // The handler holds what it was built from. If those Entra options were built while the registration or its secret could
         // not be read, say so against the handler's options too (R-1): the framework keeps them until it rebuilds them.
         _health?.Carry(e, options);
+
+        // The handler's options exist from here on: real traffic has reached the host. The attestation reads this mark instead of
+        // asking for the options, which would build them.
+        _health?.NoteOpenIdConnectOptionsBuilt();
         if (!EntraRuntimeState.IsUsable(e))
         {
             // The OIDC scheme is always registered so it can be activated consistently (e.g. DB overlay + restart).
