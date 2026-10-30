@@ -26,8 +26,7 @@ namespace Apperture.IntegrationTests;
 /// Each test uses its own throwaway catalog. Rows are inserted with only the actor columns meaningful: every other
 /// required column gets a type-appropriate filler, and the target tables' foreign-key and check constraints are disabled
 /// in that catalog only. The identity tables keep all their constraints. Without a reachable SQL endpoint the tests
-/// return early and write "NOT EXECUTED"; <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> turns that into a failure
-/// (see <see cref="SqlTestExecution"/>).
+/// fail (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class HistoricalActorNormalizationSqlServerTests
@@ -82,10 +81,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
         UserA, "ann", SharedOid, EveOid, Finn, GusName, IvyJon,
     ];
 
-    private readonly ITestOutputHelper _output;
-
-    public HistoricalActorNormalizationSqlServerTests(ITestOutputHelper output) => _output = output;
-
     // -------------------------------------------------------------------------------------------------------------
     // Full corpus
     // -------------------------------------------------------------------------------------------------------------
@@ -94,8 +89,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task Every_approved_column_is_normalized_by_the_gate_rules_and_counted_in_rows()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aCorpus_");
-        if (scratch is null)
-            return;
         var identityBefore = await IdentitySnapshotAsync(scratch.ConnectionString);
 
         HistoricalActorNormalizationReport report;
@@ -114,8 +107,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task A_second_run_changes_nothing_and_reports_the_normalized_state()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aRerun_");
-        if (scratch is null)
-            return;
 
         await using (var db = scratch.NewDb())
             await HistoricalActorNormalization.RunAsync(db, NullLogger.Instance);
@@ -136,8 +127,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task Legacy_values_written_again_after_a_rollback_are_normalized_by_the_next_run()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aReforward_");
-        if (scratch is null)
-            return;
         await using (var db = scratch.NewDb())
             await HistoricalActorNormalization.RunAsync(db, NullLogger.Instance);
 
@@ -162,8 +151,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task An_interrupted_run_converges_to_the_same_result_as_an_uninterrupted_one()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aInterrupt_");
-        if (scratch is null)
-            return;
 
         var completed = 0;
         var interrupted = async () =>
@@ -210,8 +197,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task A_normalization_failure_fails_host_startup_keeps_committed_progress_and_converges_after_repair()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aFailClosed_", corpus: false);
-        if (scratch is null)
-            return;
 
         var early = HistoricalActorNormalization.Columns.Take(4).ToList();
         var broken = HistoricalActorNormalization.Columns[4];
@@ -260,8 +245,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task A_user_id_that_is_another_users_grandfathered_username_is_left_verbatim_as_ambiguous()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aCollision_", corpus: false);
-        if (scratch is null)
-            return;
         var column = new HistoricalActorColumn("AttentionIncidents", "AcknowledgedBy");
         await scratch.InsertActorRowAsync(column.Table, new Dictionary<string, string?> { [column.Column] = UserA });
 
@@ -278,8 +261,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task Entra_object_ids_resolve_only_with_exactly_one_link_and_never_by_guessing_a_tenant()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aEntra_", corpus: false);
-        if (scratch is null)
-            return;
         var column = new HistoricalActorColumn("PlatformSettingValues", "UpdatedByPrincipalId");
         foreach (var value in new[] { ErinOid, SharedOid, EveOid, UnknownOid })
             await scratch.InsertActorRowAsync(column.Table, new Dictionary<string, string?> { [column.Column] = value });
@@ -299,8 +280,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task A_preview_counts_without_changing_anything()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aPreview_");
-        if (scratch is null)
-            return;
         var before = await AllActorValuesAsync(scratch.ConnectionString);
 
         HistoricalActorNormalizationReport preview;
@@ -316,8 +295,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     public async Task The_management_host_normalizes_historical_actors_when_it_starts()
     {
         await using var scratch = await CreateSeededAsync("Apperture_Iam92aStartup_", corpus: false);
-        if (scratch is null)
-            return;
         var column = new HistoricalActorColumn("NotificationSubscriptions", "UpdatedByActorId");
         await scratch.InsertActorRowAsync(column.Table, new Dictionary<string, string?> { [column.Column] = "pat.old" });
 
@@ -419,22 +396,13 @@ public sealed class HistoricalActorNormalizationSqlServerTests
 
     private sealed record CorpusRow(string Table, IReadOnlyDictionary<string, string?> Values);
 
-    private async Task<ScratchDatabase?> CreateSeededAsync(string prefix, bool corpus = true)
+    private static async Task<ScratchDatabase> CreateSeededAsync(string prefix, bool corpus = true)
     {
-        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (baseConnectionString is null)
-            return Announce("no SQL Server endpoint is configured");
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = prefix + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return NotExecuted("the SQL Server endpoint is unreachable: " + ex.Message);
-        }
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         var scratch = new ScratchDatabase(baseConnectionString, catalog, connectionString);
         await using (var db = scratch.NewDb())
@@ -534,20 +502,6 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     // -------------------------------------------------------------------------------------------------------------
     // SQL helpers
     // -------------------------------------------------------------------------------------------------------------
-
-    /// <summary>Declares the skip (throws when SQL Server proof is required) and also writes it to this test's output.</summary>
-    private ScratchDatabase? NotExecuted(string reason)
-    {
-        SqlTestExecution.NotExecuted(reason);
-        return Announce(reason);
-    }
-
-    /// <summary>Writes a skip that <see cref="SqlTestExecution"/> has already declared to this test's output.</summary>
-    private ScratchDatabase? Announce(string reason)
-    {
-        _output.WriteLine("NOT EXECUTED (soft skip): " + reason);
-        return null;
-    }
 
     private static async Task<List<string?>> ColumnValuesAsync(string connectionString, HistoricalActorColumn column)
     {

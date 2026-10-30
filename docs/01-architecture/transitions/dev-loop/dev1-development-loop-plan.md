@@ -117,10 +117,11 @@ Counts in the audit (for example 46 soft-skipping tests) were taken at `6e3ab57`
 
 ### DEV-1.1 Test evidence integrity and environment separation
 
-- **Scope.** F1: set `APPERTURE_REQUIRE_SQL_TESTS=1` in both CI jobs; route the remaining soft-skipping guards through the existing require-SQL helpers; remove the LocalDB fallbacks; make the scratch-database helper honour the switch; add a source guard so a new soft-skip fails. F15: catalog allow-list (`Apperture_` prefix, never the bare `Apperture` catalog; governance catalogs must end in `Tests`), refuse port 14333 without an opt-in, fix the `.env` overwrite in `scripts/dev/lib/DevDockerSql.ps1`, delete inert paths, correct READMEs. F14 honesty part: DPAPI early returns, the unawaited leak assertion, the no-op governance launch test, OR-assertions that accept a 500, the tautological marker and constants, Scheduling zone returns.
+- **Policy decision (owner, 2026-10-30, supersedes the F1 wording below and the "require mode" wording in this package's acceptance).** SQL-dependent tests **fail whenever their intended SQL execution cannot occur. Optional SQL mode is retired. A test may never report Passed solely because SQL was unavailable.** `APPERTURE_REQUIRE_SQL_TESTS` is therefore retired too: it is no longer read, setting it changes nothing, and DEV-1.1C must **not** add it to `ci.yml`. The evidence mode is the only mode. Two independent defences enforce it: the source guard `SqlSoftSkipGuardTests` (cheap, lexical, not exhaustive) and the run-level proof `scripts/dev/Test-SqlExecutionHonesty.ps1`, which runs the IntegrationTests assembly against an unreachable server and refuses any Passed test not on the reviewed non-SQL allow-list (`tests/Apperture.IntegrationTests/SqlExecutionHonesty/`). Delivered by DEV-1.1B (`ad3bafc`, which introduced the interim required/optional switch) and DEV-1.1B-R (which retired it after the independent review's M-1 and M-2). Developer description: `tests/README.md`.
+- **Scope.** F1: ~~set `APPERTURE_REQUIRE_SQL_TESTS=1` in both CI jobs~~ (superseded: there is no switch; strict behaviour is unconditional); route the remaining soft-skipping guards through the existing require-SQL helpers (done: they now fail, and `SqlServerScratchDatabase.CreateAsync` never returns null); remove the LocalDB fallbacks (done); add a source guard so a new soft-skip fails (done, plus the run-level proof). F15: catalog allow-list (`Apperture_` prefix, never the bare `Apperture` catalog; governance catalogs must end in `Tests`), refuse port 14333 without an opt-in, fix the `.env` overwrite in `scripts/dev/lib/DevDockerSql.ps1`, delete inert paths, correct READMEs. F14 honesty part: DPAPI early returns, the unawaited leak assertion, the no-op governance launch test, OR-assertions that accept a 500, the tautological marker and constants, Scheduling zone returns.
 - **Prerequisites.** None technical. Owner consent for the `ci.yml` change. A re-count of soft-skip sites on the chosen base.
 - **Acceptance** (audit K rows 1, 14, 15, with section 8 below).
-  - With the SQL target unreachable and require mode on, every recounted soft-skip test fails with the configuration message and none reports Passed.
+  - With the SQL target unreachable, every recounted soft-skip test fails with the configuration message and none reports Passed; `Test-SqlExecutionHonesty.ps1` verifies this for the whole assembly (the passes are exactly the reviewed non-SQL allow-list).
   - With SQL present, the pass count equals the baseline, none of those classes is skipped, and no `SqlServerTests` case runs under 100 ms.
   - Four configuration tests pass: bare `Apperture` refused; governance catalog needs the `Tests` suffix; port 14333 refused without opt-in and accepted with; the `.env` merge keeps both keys.
   - One `SqlServerTests` class still creates catalogs on the test container (positive control).
@@ -227,14 +228,14 @@ The IAM branch is local-only and carries unmerged work. DEV-1 work must not ride
 Every package keeps the audit's section K proof for its findings, as summarised in section 5. Common rules:
 
 - Instruments: `Compare-Trx` over a baseline and a candidate TRX once it exists (before then, per-class counts); the mutation harness re-applied to the retained WP4B mutations; the SQL execution proof (catalog start-ups in the server log, per-catalog markers); a deliberate break of the protected property.
-- **Hidden skips** after any change: flag `SqlServerTests` cases under 100 ms, report skipped and not-executed lists, compare per-class counts; require mode turns a silent pass into a failure; the per-run catalog count from the server log stays within the predicted range.
+- **Hidden skips** after any change: flag `SqlServerTests` cases under 100 ms, report skipped and not-executed lists, compare per-class counts; there is no skip to hide behind (the policy decision in section 5 retired optional mode); the per-run catalog count from the server log stays within the predicted range.
 - **Unreachable SQL is simulated with an unreachable connection string, not by stopping the shared test container.**
 - Nothing is removed from the required CI gates, and the audit's rejected options stay rejected: a test-impact-analysis service, enforced selective runs in CI, an orchestration platform, and anything that lets a change reach `master` with less than the full IntegrationTests project (audit E.9).
 
 ## 9. Unresolved owner decisions
 
 1. **Start and order.** Which DEV-1 package starts next, and whether DEV-1.1 and DEV-1.2 precede WP4B-C (recommended: yes, in that order).
-2. **`ci.yml` consent.** `APPERTURE_REQUIRE_SQL_TESTS=1` (F1) and the diagnostics edits (F9) change a required check's workflow.
+2. **`ci.yml` consent.** Running `scripts/dev/Test-SqlExecutionHonesty.ps1` as a required check (F1; the variable `APPERTURE_REQUIRE_SQL_TESTS=1` it once named is retired and must not be added) and the diagnostics edits (F9) change a required check's workflow.
 3. **Destructive local cleanup.** Deleting in-place `bin`/`obj`, the 56 stray trees and old `artifacts/` build folders (F3, F16). Needs the stack stopped, VS Code closed, and a tier chosen. Nothing was cleaned in DEV-1.0.
 4. **CI on the feature branch (F11).** Requires pushing a branch that has none, with cost and exposure implications.
 5. **Validation protocol change (F7).** Adopt the new build flags and review protocol at a named package boundary, with the security owner's agreement.
@@ -255,7 +256,7 @@ Slices, each its own commit: **A** separation guard (F15: allow-list, port refus
 Acceptance tests, in addition to those listed in section 5:
 
 1. Recount: the list of soft-skip sites on the base commit is recorded before any change.
-2. Unreachable-target run in require mode: all recounted tests fail with the configuration message; zero Passed among them.
+2. Unreachable-target run (the honesty check): all recounted tests fail with the configuration message; zero Passed among them.
 3. Reachable run: unchanged pass count, nothing skipped in those classes, no case under 100 ms.
 4. The four configuration tests and the positive-control class pass.
 5. Mutation: re-introducing each removed early return, LocalDB fallback or allow-list hole makes the guard or a test fail; record each.

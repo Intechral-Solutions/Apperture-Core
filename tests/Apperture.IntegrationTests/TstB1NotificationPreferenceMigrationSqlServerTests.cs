@@ -24,7 +24,7 @@ namespace Apperture.IntegrationTests;
 /// nothing yet consults the new preference rows, so deletion is deferred to phase P2.
 /// </summary>
 /// <remarks>
-/// Each run builds its own throwaway catalog. Without a reachable SQL endpoint it returns early in optional mode and fails when APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
+/// Each run builds its own throwaway catalog. Without a reachable SQL endpoint it fails (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
@@ -42,22 +42,12 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
     [Fact]
     public async Task TstB1_adds_toast_column_and_preferences_table_and_seeds_builtin_defaults()
     {
-        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (baseConnectionString is null)
-            return;
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = "Apperture_TstB1SchemaMigration_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
 
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-        }
-        catch (InvalidOperationException)
-        {
-            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
-            return;
-        }
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         try
         {
@@ -69,10 +59,7 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
             await using (var preDb = NewDb(connectionString))
             {
                 if (!await preDb.Database.CanConnectAsync())
-                {
-                    SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
-                    return;
-                }
+                    throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
 
                 await preDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreTstB1Migration);
 
@@ -152,22 +139,12 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
     [Fact]
     public async Task TstB1_converts_matching_legacy_override_to_preferences_without_deleting_it_and_leaves_non_matching_overrides_untouched()
     {
-        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (baseConnectionString is null)
-            return;
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = "Apperture_TstB1LegacyMigration_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
 
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-        }
-        catch (InvalidOperationException)
-        {
-            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
-            return;
-        }
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         const string matchingUserId = "tstb1-user-matching";
         const string teamOverrideUserId = "tstb1-user-team-override";
@@ -184,10 +161,7 @@ public sealed class TstB1NotificationPreferenceMigrationSqlServerTests
             await using (var preDb = NewDb(connectionString))
             {
                 if (!await preDb.Database.CanConnectAsync())
-                {
-                    SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
-                    return;
-                }
+                    throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
 
                 await preDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreTstB1Migration);
 

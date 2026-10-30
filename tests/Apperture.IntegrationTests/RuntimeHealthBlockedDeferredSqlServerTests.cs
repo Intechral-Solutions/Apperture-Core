@@ -27,12 +27,7 @@ public sealed class RuntimeHealthBlockedDeferredSqlServerTests
     [Fact]
     public async Task GetSnapshotAsync_WhenBlockedDeferredWorkSeeded_SurfacesInDiagnostics()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-        {
-            throw new InvalidOperationException(
-                SqlServerTestConfiguration.DescribeActiveConfiguration());
-        }
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);

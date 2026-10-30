@@ -55,16 +55,30 @@ the server port 14333 is reserved for the development SQL server. …
 
 **Do not** rely on `MSSQL_SA_PASSWORD` alone unless SQL is actually listening on `localhost:1433`. A stale `apperture-test-sql` Docker container on 1433 (from ad-hoc test runs) may have a **different** password than the dev SQL.
 
-### Required and optional SQL mode (`APPERTURE_REQUIRE_SQL_TESTS`)
+### A SQL test that cannot run against SQL Server fails (no optional mode)
 
-Most SQL Server tests already fail when SQL Server is not reachable (the audit suites through `AuditSqlScratch`, `SqlServerScratchDatabase.CreateRequiredAsync`, `RequireConnectionString`, the governance and bootstrap fixtures). A group of older ones, and the three IAM classes that read the switch directly, returned early instead. `SqlTestExecution` is now the one place that decides what such a test does:
+**Policy (DEV-1.1B-R): SQL-dependent tests fail whenever their intended SQL execution cannot occur. A test never reports Passed solely because SQL was unavailable.** There is no optional mode, no skip and no switch. Running the integration tests on a machine with no test SQL Server produces failures for every SQL test, and that is the correct, honest result.
 
-| Mode | Set by | A SQL test that cannot run against SQL Server |
-|------|--------|-----------------------------------------------|
-| **Required** | `APPERTURE_REQUIRE_SQL_TESTS=1` in the **process environment** (exactly `1`; not read from `.env`) | **Fails** with `SqlTestExecutionRequiredException: SQL Server proof is required (APPERTURE_REQUIRE_SQL_TESTS=1) but this test could not run against SQL Server: …`. That type is deliberately not an `InvalidOperationException`, which older helpers catch to mean "unreachable", so no helper can turn the failure back into a skip. `SqlServerScratchDatabase.CreateAsync` and `EnsureTestDatabaseExists` follow the same rule. |
-| **Optional** (variable unset) | the default | The test returns early after announcing `NOT EXECUTED (soft skip): …` on standard error, and `SqlTestExecution.NotExecutedCount` counts it. **xunit 2 has no dynamic skip, so the run reports that test as Passed.** It is not evidence of anything. |
+Every helper that cannot reach or prepare SQL Server throws `SqlTestUnavailableException` (built by `SqlTestExecution.Unavailable`): `SqlServerTestConfiguration.RequireConnectionString()`, `EnsureTestDatabaseExists`, `SqlServerScratchDatabase.CreateAsync` (which never returns null), `AuditSqlScratch.CreateAsync` and the Management Host fixtures. The type is deliberately not an `InvalidOperationException`, which older helpers catch to mean "unreachable", so no helper can turn the failure back into a return. A target refused by `SqlTestTargetGuard`, a failed migration and a failed connection fail as themselves.
 
-Use required mode for any run that is offered as proof (CI, a closure run, a review). Optional mode exists only so a developer without a test SQL Server can run a subset of the suite; do not quote its pass counts for the SQL classes. A test may skip only by returning through `SqlTestExecution.NotExecuted`; `SqlSoftSkipGuardTests` fails on any other silent early return from an unavailable SQL Server, on a LocalDB connection literal and on a private read of the switch.
+**`APPERTURE_REQUIRE_SQL_TESTS` is retired.** It is not read anywhere and setting it to any value changes nothing (`The_retired_require_switch_cannot_turn_the_failure_off`). It was introduced as the way to make a skip fail; there is no skip left. It can be deleted from any script or workflow that still sets it; DEV-1.1C should not add it to `ci.yml`.
+
+Two independent defences keep the policy true:
+
+| Defence | What it does | What it cannot do |
+|---------|--------------|-------------------|
+| `SqlSoftSkipGuardTests` (runs with the ordinary suite, about a second) | Reads test source and refuses the shapes of a silent exit: a call to the null-returning `GetConnectionString()`/`GetGovernanceConnectionString()` (use `RequireConnectionString()`), an availability condition (`CanConnect*`, `SqlAvailable`, ...) with no `throw`, a broad catch that swallows SQL setup, skip vocabulary (`NotExecuted`, `Try*Async` acquisition helpers), a LocalDB literal, a read of the retired switch. | It is lexical and not exhaustive. A shape it does not recognise passes it. |
+| `scripts/dev/Test-SqlExecutionHonesty.ps1` (about a minute) | Runs the whole assembly against an unreachable server, with your own SQL configuration removed from the environment (and `.env` not read). Every test that **passes** must be on `SqlExecutionHonesty/approved-non-sql-passes.tsv`; every test on `required-unavailable-failures.tsv` must **fail** with a message that says SQL Server was unavailable; discovery, execution and the TRX must agree. Evidence: `sql-honesty-report.json`. | It proves nothing about a test that passes for a reason the list explains wrongly; the list is reviewed by people. |
+
+Run the honesty check (from the repository root; keep `-ArtifactsPath` inside the repository) after changing SQL test code, helpers or fixtures:
+
+```powershell
+pwsh scripts/dev/Test-SqlExecutionHonesty.ps1                 # builds, runs, writes artifacts/sql-execution-honesty/<utc>/
+pwsh scripts/dev/Test-SqlExecutionHonesty.ps1 -NoBuild        # reuse an existing Debug build
+pwsh scripts/dev/Test-SqlExecutionHonesty.ps1 -Record         # list what passed and failed, to review a list change (not proof)
+```
+
+Changing either list is deliberate: `AllowListFingerprintTests` pins each file's SHA-256, so an edit needs a second edit in test source. A new test belongs on the allow-list only if it needs no SQL Server to pass. In a git worktree one allow-listed source pin (`IntegrationTestSecretProtectorTests.Factory_replaces...`) may fail because `.git` is a file there; the check tolerates exactly that one, declared with `requires-git-directory`, and requires it to pass in a normal clone.
 
 ### CI / docker-compose path
 

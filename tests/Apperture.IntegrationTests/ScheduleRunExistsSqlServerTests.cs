@@ -9,29 +9,17 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SWM-2: proves RunExistsAsync EF predicate translates on SQL Server (regression for .UtcDateTime).
-/// Without a reachable test SQL endpoint the test returns early in optional mode and fails when
-/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
+/// Without a reachable test SQL endpoint the test fails (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class ScheduleRunExistsSqlServerTests
 {
     private static readonly DateTimeOffset FireUtc = new(2026, 7, 14, 16, 5, 0, TimeSpan.Zero);
 
-    private static async Task<AppertureDbContext?> TryCreateMigratedDbAsync()
+    private static async Task<AppertureDbContext> CreateMigratedDbAsync()
     {
-        var cs = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (cs is null)
-            return null;
-
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
-        }
-        catch (InvalidOperationException)
-        {
-            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
-            return null;
-        }
+        var cs = SqlServerTestConfiguration.RequireConnectionString();
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
 
         var options = new DbContextOptionsBuilder<AppertureDbContext>()
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
@@ -42,8 +30,7 @@ public sealed class ScheduleRunExistsSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
-            SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
-            return null;
+            throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
         }
 
         await AppertureDatabaseMigrator.MigrateAsync(db);
@@ -53,9 +40,7 @@ public sealed class ScheduleRunExistsSqlServerTests
     [Fact]
     public async Task RunExistsAsync_translates_on_sql_server_and_detects_duplicates()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return; // optional mode only: TryCreateMigratedDbAsync has declared it (SqlTestExecution.NotExecuted)
+        await using var db = await CreateMigratedDbAsync();
 
         var scheduleId = "swm2-" + Guid.NewGuid().ToString("N")[..12];
         db.ScheduleRuns.Add(new ScheduleRunEntity

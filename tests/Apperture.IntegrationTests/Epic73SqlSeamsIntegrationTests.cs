@@ -36,13 +36,7 @@ public sealed class Epic73SqlSeamsIntegrationTests
 {
     private static string RequireConnectionString()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
-        if (cs is null)
-        {
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
-        }
-
-        return cs;
+        return SqlServerTestConfiguration.RequireConnectionString();
     }
 
     [Fact]

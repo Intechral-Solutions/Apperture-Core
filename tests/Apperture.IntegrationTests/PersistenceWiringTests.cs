@@ -8,8 +8,7 @@ namespace Apperture.IntegrationTests;
 /// <summary>
 /// Basic persistence wiring tests. Verifies AddApperturePersistence registers DbContext correctly.
 /// The wiring assertions need no database. The connectivity assertion runs against the configured test SQL Server only (never an
-/// implicit LocalDB): without one it returns early in optional mode and fails when APPERTURE_REQUIRE_SQL_TESTS=1
-/// (see <see cref="SqlTestExecution"/>).
+/// implicit LocalDB): without one it fails (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class PersistenceWiringTests
@@ -23,9 +22,7 @@ public sealed class PersistenceWiringTests
         using (var wiringScope = wiringProvider.CreateScope())
             wiringScope.ServiceProvider.GetRequiredService<AppertureDbContext>().Should().NotBeNull();
 
-        var connectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (connectionString is null)
-            return;
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
         var services = new ServiceCollection();

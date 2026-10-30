@@ -109,7 +109,7 @@ dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj -
 
 **Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works only if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` yourself and ensure the instance is running; there is no implicit LocalDB fallback.
 
-If no configured SQL target is reachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass), and `BootstrapHttpFixture` fails its collection with the same message. `APPERTURE_REQUIRE_SQL_TESTS` does not change this: these fixtures never skipped.
+If no configured SQL target is reachable, `ManagementHostGovernanceFixture` and `BootstrapHttpFixture` throw `SqlTestUnavailableException` from `InitializeAsync`, so every test of the collection fails with a message explaining the requirement (no silent pass, and no availability flag for a test to skip on). There is no optional mode and no switch: see "A SQL test that cannot run against SQL Server fails" in `tests/README.md`.
 
 If SFTP is unreachable, Epic 59A tests fail fast with a message describing required `APPERTURE_TEST_SFTP_*` settings.
 

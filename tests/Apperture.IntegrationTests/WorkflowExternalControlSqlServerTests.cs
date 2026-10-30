@@ -24,9 +24,7 @@ public sealed class WorkflowExternalControlSqlServerTests
     [Fact]
     public async Task RequestParkAsync_ConcurrentCalls_OneInsertOneIdempotent_NoException()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         // The acting user must exist: the recorder reads the actor's username in the transaction it records the row in.
         var principal = new MutablePrincipalContext();

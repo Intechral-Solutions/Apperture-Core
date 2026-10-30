@@ -22,12 +22,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_ReturnsOrderedEntries_NewestFirst()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-        {
-            throw new InvalidOperationException(
-                SqlServerTestConfiguration.DescribeActiveConfiguration());
-        }
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -74,9 +69,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithActionPrefix_ReturnsFiltered()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -120,9 +113,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithRunIdFilter_ReturnsMatching()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -165,9 +156,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task GetById_ReturnsDetailWithRefs()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -216,9 +205,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithOutcomeFilter_ReturnsMatching_DBBacked()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -259,9 +246,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithOutcomeFilter_ExcludesNullOutcomeRows()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -300,9 +285,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithModuleIdFilter_ReturnsMatching_DBBacked()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -341,9 +324,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Query_WithScheduleIdFilter_ReturnsMatching_DBBacked()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -386,9 +367,7 @@ public sealed class AuditTimelineSqlServerTests
     [Fact]
     public async Task Migration_Backfill_PopulatesFirstClassFieldsFromDetails()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         // AUD-1.1: the integrity guard refuses any UPDATE of evidence columns, so the Epic 37 backfill can no longer be
         // replayed on a current database (it never should be). Instead, rows are written at the schema before Epic 37 and

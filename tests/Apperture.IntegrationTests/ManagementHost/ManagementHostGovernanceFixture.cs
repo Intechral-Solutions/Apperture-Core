@@ -40,16 +40,12 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // No implicit fallback (such as a local LocalDB): when no configured target is reachable, SqlAvailable stays false and every
-        // test of the collection fails with the configuration message (AssertSqlAvailable), whatever APPERTURE_REQUIRE_SQL_TESTS says.
-        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString();
-        if (ConnectionString is null)
-        {
-            SqlAvailable = false;
-            return;
-        }
+        // No implicit fallback (such as a local LocalDB) and no flag to test: when no configured target is reachable the fixture
+        // throws, and so does every test of the collection, with the configuration message. A refusal, a catalog name the helper
+        // will not accept and a failure while creating the catalog propagate as themselves.
+        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
+            ?? throw SqlTestExecution.Unavailable(SqlServerTestConfiguration.DescribeConnectionFailure());
 
-        // Outside the catch below, which turns any failure into "SQL unavailable" and skips the suite: a refusal must fail it.
         SqlTestTargetGuard.EnsureDisposableTarget(ConnectionString, "create the governance test catalog", requireTestsSuffix: true);
 
         try
@@ -63,12 +59,12 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
                 await EnsureTargetDatabaseExistsAsync(ConnectionString, probe).ConfigureAwait(false);
             }
         }
-        catch
+        catch (SqlException ex)
         {
-            SqlAvailable = false;
-            return;
+            throw SqlTestExecution.Unavailable(SqlServerTestConfiguration.DescribeConnectionFailure(), ex);
         }
 
+        // Always true once the fixture has initialised; the per-test assertions on it are kept as an invariant.
         SqlAvailable = true;
         Factory = new ManagementHostWebApplicationFactory(ConnectionString);
 

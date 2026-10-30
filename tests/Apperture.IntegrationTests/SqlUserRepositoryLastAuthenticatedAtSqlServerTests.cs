@@ -14,55 +14,42 @@ namespace Apperture.IntegrationTests;
 /// <summary>
 /// SQL Server evidence that concurrent <see cref="SqlUserRepository.UpdateLastAuthenticatedAtAsync"/>
 /// and user resolution do not fail requests due to optimistic concurrency on identity links.
-/// It runs against the configured test SQL Server only (never an implicit LocalDB). Without one it returns early in optional mode
-/// and fails when APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
+/// It runs against the configured test SQL Server only (never an implicit LocalDB). Without one it fails (see
+/// <see cref="SqlTestExecution"/>); a refused target or a migration failure fails it too, because nothing here catches them.
 /// </summary>
 public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
 {
-    private static async Task<(AppertureDbContext Db, DbContextOptions<AppertureDbContext> Options)?> TryCreateMigratedDbAsync()
+    private static async Task<(AppertureDbContext Db, DbContextOptions<AppertureDbContext> Options)> CreateMigratedDbAsync()
     {
-        var connectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (connectionString is null)
-            return null;
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
-        AppertureDbContext? db = null;
+        var options = new DbContextOptionsBuilder<AppertureDbContext>()
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+            .UseSqlServer(connectionString)
+            .Options;
+
+        var db = new AppertureDbContext(options);
         try
         {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-
-            var options = new DbContextOptionsBuilder<AppertureDbContext>()
-                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
-                .UseSqlServer(connectionString)
-                .Options;
-
-            db = new AppertureDbContext(options);
             if (!await db.Database.CanConnectAsync())
-            {
-                await db.DisposeAsync();
-                SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
-                return null;
-            }
+                throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
 
             await AppertureDatabaseMigrator.MigrateAsync(db);
-            return (db, options);
         }
-        catch (Exception ex) when (ex is not SqlTestExecutionRequiredException and not SqlTestTargetRefusedException)
+        catch
         {
-            if (db is not null)
-                await db.DisposeAsync();
-            SqlTestExecution.NotExecuted("the test SQL Server could not prepare the catalog (" + ex.GetType().Name + ")", ex);
-            return null;
+            await db.DisposeAsync();
+            throw;
         }
+
+        return (db, options);
     }
 
     [Fact]
     public async Task UpdateLastAuthenticatedAtAsync_parallel_calls_do_not_throw()
     {
-        var context = await TryCreateMigratedDbAsync();
-        if (context is null)
-            return;
-
-        var (db, options) = context.Value;
+        var (db, options) = await CreateMigratedDbAsync();
         await using (db)
         {
             var externalId = $"last-auth-{Guid.NewGuid():N}";
@@ -90,11 +77,7 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
     [Fact]
     public async Task ResolveUserIdAsync_parallel_calls_do_not_throw()
     {
-        var context = await TryCreateMigratedDbAsync();
-        if (context is null)
-            return;
-
-        var (db, options) = context.Value;
+        var (db, options) = await CreateMigratedDbAsync();
         await using (db)
         {
             var externalId = $"resolve-{Guid.NewGuid():N}";
@@ -126,11 +109,8 @@ public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
     [Fact]
     public async Task UpdateLastAuthenticatedAtAsync_throttles_writes_within_interval()
     {
-        var context = await TryCreateMigratedDbAsync();
-        if (context is null)
-            return;
-
-        await using var db = context.Value.Db;
+        var (db, _) = await CreateMigratedDbAsync();
+        await using var _db = db;
 
         var externalId = $"throttle-{Guid.NewGuid():N}";
         var userId = $"user-{Guid.NewGuid():N}"[..24];

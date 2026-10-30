@@ -5,8 +5,8 @@ namespace Apperture.SqlTestTargets;
 
 /// <summary>
 /// Thrown when test infrastructure is pointed at a SQL target that is not a disposable test target. Deliberately not an
-/// <see cref="InvalidOperationException"/>: older SQL tests catch that type to soft-skip an unreachable server, and a refusal must
-/// never be reported as a skipped (passing) test.
+/// <see cref="InvalidOperationException"/>: older helpers catch that type to mean "unreachable", and a refusal must never be
+/// swallowed into a passing test.
 /// </summary>
 public sealed class SqlTestTargetRefusedException : Exception
 {

@@ -31,7 +31,7 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
 
     public async Task DisposeAsync()
     {
-        if (_integrations.Count == 0 || !_fixture.SqlAvailable)
+        if (_integrations.Count == 0)
             return;
         await using var connection = await OpenAsync();
         foreach (var id in _integrations)

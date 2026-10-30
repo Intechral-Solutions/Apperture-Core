@@ -33,7 +33,7 @@ public sealed class ManagementHostConnectionSecretFieldsHttpTests : IAsyncLifeti
 
     public async Task DisposeAsync()
     {
-        if (_connections.Count == 0 || !_fixture.SqlAvailable)
+        if (_connections.Count == 0)
             return;
         await using var connection = await OpenAsync();
         foreach (var id in _connections)

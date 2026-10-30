@@ -72,13 +72,8 @@ public static class SqlServerTestConfiguration
         }
         catch (SqlException ex)
         {
-            // Older soft-skipping helpers catch InvalidOperationException to mean "unreachable"; in required mode the failure
-            // must be a type they cannot catch (see SqlTestExecution).
-            throw SqlTestExecution.Required
-                ? new SqlTestExecutionRequiredException(
-                    $"SQL Server proof is required ({SqlTestExecution.RequireVariable}=1) but the test SQL Server could not be reached. " + DescribeConnectionFailure(),
-                    ex)
-                : new InvalidOperationException(DescribeConnectionFailure(), ex);
+            // Not an InvalidOperationException: older helpers catch that type to mean "unreachable" (see SqlTestExecution).
+            throw SqlTestExecution.Unavailable(DescribeConnectionFailure(), ex);
         }
 
         using var cmd = conn.CreateCommand();
@@ -108,18 +103,32 @@ public static class SqlServerTestConfiguration
             allowGovernanceOverride: true,
             requireReachable: !_skipReachabilityProbeForTests);
 
-    /// <summary>Returns a reachable connection string or throws with configuration guidance.</summary>
+    /// <summary>
+    /// Returns a reachable connection string or throws <see cref="SqlTestUnavailableException"/> with configuration guidance. This is
+    /// the way a SQL test obtains its server; <see cref="GetConnectionString"/> returns null instead and is for the helpers and
+    /// the configuration tests only (<c>SqlSoftSkipGuardTests</c> refuses it anywhere else).
+    /// </summary>
     public static string RequireConnectionString()
     {
         var connectionString = ResolveConnectionString(
             DefaultIntegrationDatabase,
             allowGovernanceOverride: false,
-            requireReachable: true);
+            requireReachable: !_skipReachabilityProbeForTests);
         if (connectionString is null)
-            throw new InvalidOperationException(DescribeConnectionFailure());
+            throw SqlTestExecution.Unavailable(DescribeConnectionFailure());
 
         return connectionString;
     }
+
+    /// <summary>
+    /// When exactly <c>1</c> in the process environment, SQL is resolved from the process environment alone: no <c>.env</c>, no
+    /// runtime endpoint file. <c>scripts/dev/Test-SqlExecutionHonesty.ps1</c> sets it so that its unreachable target cannot be
+    /// replaced by a developer's own configuration. It only removes sources, so it can make a run fail but never pass.
+    /// </summary>
+    public const string ProcessEnvironmentOnlyVariable = "APPERTURE_TEST_SQL_PROCESS_ENV_ONLY";
+
+    private static bool ProcessEnvironmentOnly =>
+        Environment.GetEnvironmentVariable(ProcessEnvironmentOnlyVariable) == "1";
 
     private static bool _skipReachabilityProbeForTests;
     private static bool _ignoreRuntimeEndpointFilesForTests;
@@ -281,7 +290,7 @@ public static class SqlServerTestConfiguration
             yield return (DefaultConnectionStringVariable, defaultConnection.Trim());
 
         // Aspire / Manage.ps1 sometimes publish the live endpoint here after AppHost start.
-        var aspireEndpoint = _ignoreRuntimeEndpointFilesForTests ? null : TryReadAspireSqlEndpointFromRuntimeFiles();
+        var aspireEndpoint = _ignoreRuntimeEndpointFilesForTests || ProcessEnvironmentOnly ? null : TryReadAspireSqlEndpointFromRuntimeFiles();
         if (!string.IsNullOrWhiteSpace(aspireEndpoint))
             yield return ("aspire-runtime-endpoint", aspireEndpoint);
 
@@ -432,6 +441,9 @@ public static class SqlServerTestConfiguration
             return;
 
         _envLoaded = true;
+
+        if (ProcessEnvironmentOnly)
+            return;
 
         var envPath = _envFilePathOverrideForTests ?? FindRepoRootEnv();
         if (envPath is null || !File.Exists(envPath))

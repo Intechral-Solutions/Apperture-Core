@@ -10,27 +10,16 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SDK-3A: SQL round-trip for platform-owned operation groups/items.
-/// Without a reachable APPERTURE_TEST_SQL_* endpoint the SQL tests return early in optional mode and fail when
-/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
+/// Without a reachable APPERTURE_TEST_SQL_* endpoint every test here fails (see <see cref="SqlTestExecution"/>). The service-wiring
+/// test, which needs no SQL, is <see cref="OperationItemizationWiringTests"/>.
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class OperationItemizationSqlServerTests
 {
-    private static async Task<AppertureDbContext?> TryCreateMigratedDbAsync()
+    private static async Task<AppertureDbContext> CreateMigratedDbAsync()
     {
-        var cs = SqlTestExecution.ConnectionStringOrNotExecuted();
-        if (cs is null)
-            return null;
-
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
-        }
-        catch (InvalidOperationException)
-        {
-            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
-            return null;
-        }
+        var cs = SqlServerTestConfiguration.RequireConnectionString();
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
 
         var options = new DbContextOptionsBuilder<AppertureDbContext>()
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
@@ -41,8 +30,7 @@ public sealed class OperationItemizationSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
-            SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
-            return null;
+            throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
         }
 
         await AppertureDatabaseMigrator.MigrateAsync(db);
@@ -52,9 +40,7 @@ public sealed class OperationItemizationSqlServerTests
     [Fact]
     public async Task Sql_store_persists_group_items_and_run_queries()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return; // optional mode only: TryCreateMigratedDbAsync has declared it (SqlTestExecution.NotExecuted)
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore store = new SqlOperationItemStore(db);
         var runId = "sdk3a-" + Guid.NewGuid().ToString("N")[..12];
@@ -119,9 +105,7 @@ public sealed class OperationItemizationSqlServerTests
     [Fact]
     public async Task Sql_store_QueryItems_filters_and_GetRunSummary()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return;
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore store = new SqlOperationItemStore(db);
         var runId = "sdk3b-" + Guid.NewGuid().ToString("N")[..12];
@@ -152,31 +136,9 @@ public sealed class OperationItemizationSqlServerTests
     }
 
     [Fact]
-    public async Task AddOperationItemizationPersistence_registers_Sql_store()
-    {
-        // A wiring test: it resolves the registered stores and never opens a connection, so it needs no SQL Server.
-        var cs = SqlTestExecution.NonConnectingConnectionString;
-
-        var services = new ServiceCollection();
-        services.AddApperturePersistence(cs);
-        services.AddOperationItemizationPersistence();
-        await using var provider = services.BuildServiceProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IOperationItemStore>();
-        store.Should().BeOfType<SqlOperationItemStore>();
-        scope.ServiceProvider.GetRequiredService<IOperationItemRetryAttemptStore>()
-            .Should().BeOfType<SqlOperationItemRetryAttemptStore>();
-        scope.ServiceProvider.GetRequiredService<IOperationItemRetryReconciliationService>()
-            .Should().BeOfType<OperationItemRetryReconciliationService>();
-    }
-
-    [Fact]
     public async Task Sql_retry_attempt_store_persists_and_idempotency_replays()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return;
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore items = new SqlOperationItemStore(db);
         IOperationItemRetryAttemptStore attempts = new SqlOperationItemRetryAttemptStore(db);
