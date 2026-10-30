@@ -23,9 +23,13 @@ namespace Apperture.IntegrationTests;
 /// <item><b>availability-condition-without-throw</b>: an <c>if</c> whose condition mentions SQL availability
 /// (<c>CanConnect</c>, <c>CanConnectAsync</c> in any spelling, <c>SqlAvailable</c>, <c>Reachable</c>, or a variable assigned from
 /// one) must throw in a branch. It may not return, or wrap the test body, and carry on.</item>
-/// <item><b>swallowing-catch</b>: a broad catch (bare, <c>Exception</c>, <c>InvalidOperationException</c>, <c>SqlException</c>,
-/// <c>DbException</c>) that does not throw, around SQL setup code or ending in a bare return. A best-effort <c>DROP DATABASE</c>
-/// cleanup is the one allowed swallow.</item>
+/// <item><b>swallowing-catch</b>: a broad catch (bare, <c>Exception</c>, <c>SystemException</c>, <c>InvalidOperationException</c>,
+/// <c>SqlException</c>, <c>ExternalException</c>, <c>DbException</c>) that does not throw, around SQL setup code or ending in a bare
+/// return. A best-effort <c>DROP DATABASE</c> cleanup is the one allowed swallow, and a catch that asserts on the exception it
+/// expects, or stores it (<c>captured = ex</c>, <c>errors.Add(ex)</c>) for an assertion later in the same block, is a test of a failure
+/// and not a swallow, unless it also returns. Lexical only: it cannot tell that a test which catches broadly and falls through asserts
+/// nothing about the work it wrapped, nor see a failure swallowed after a successful connection; the run-level check sees the former
+/// only when SQL is unreachable.</item>
 /// <item><b>skip-vocabulary</b>: a member or call named <c>NotExecuted</c>, <c>SoftSkip*</c>, <c>ConnectionStringOrNotExecuted</c> or
 /// <c>Try{Create,Connect,Open,Seed,Migrate,Prepare,Acquire}*</c>, the names a soft-skip helper takes.</item>
 /// <item><b>localdb-literal</b>: <c>(localdb)</c> or <c>mssqllocaldb</c> outside the target guard and its tests.</item>
@@ -330,6 +334,81 @@ public sealed class SqlSoftSkipGuardTests
             SqlSoftSkipScanner.CatchRule
         },
         {
+            "N2a catch SystemException around the work under test and return",
+            """
+            class T { async Task A(Db db) {
+                try { await db.Store.WriteAsync(Row()); }
+                catch (SystemException) { return; }
+                (await db.Store.ReadAsync()).Should().NotBeEmpty();
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2b catch System.SystemException (qualified) and return",
+            """
+            class T { async Task A(Db db) {
+                try { await db.Store.WriteAsync(Row()); }
+                catch (System.SystemException ex) { Log(ex); return; }
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2c catch ExternalException and return",
+            """
+            class T { async Task A(Db db) {
+                try { await db.Store.WriteAsync(Row()); }
+                catch (ExternalException) { return; }
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2d catch SystemException with a filter and return",
+            """
+            class T { async Task A(Db db) {
+                try { await db.Store.WriteAsync(Row()); }
+                catch (SystemException ex) when (ex is not TimeoutException) { return; }
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2e catch SystemException around SQL setup and carry on",
+            """
+            class T { async Task A() {
+                try { await SqlServerScratchDatabase.CreateAsync("x"); }
+                catch (SystemException) { }
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2f catch ExternalException around SQL setup and store the exception that nothing asserts on",
+            """
+            class T { void A(string cs) {
+                Exception? last = null;
+                try { SqlServerTestConfiguration.EnsureTestDatabaseExists(cs); }
+                catch (ExternalException ex) { last = ex; }
+                Console.WriteLine("done");
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
+            "N2g the exception is stored and asserted on, but the catch still returns",
+            """
+            class T { async Task A(Db db) {
+                Exception? captured = null;
+                try { await db.Store.WriteAsync(Row()); }
+                catch (SystemException ex) { captured = ex; return; }
+                captured.Should().BeNull();
+            } }
+            """,
+            SqlSoftSkipScanner.CatchRule
+        },
+        {
             "Try* acquisition helper",
             """
             class T { async Task A() {
@@ -451,6 +530,46 @@ public sealed class SqlSoftSkipGuardTests
             """
         },
         {
+            "N2 control: SystemException captured around SQL setup and asserted on afterwards",
+            """
+            class T { async Task A() {
+                Exception? captured = null;
+                try { await SqlServerScratchDatabase.CreateAsync("x"); }
+                catch (SystemException ex) { captured = ex; }
+                captured.Should().BeNull();
+            } }
+            """
+        },
+        {
+            "N2 control: ExternalException added to a list that the test asserts on",
+            """
+            class T { void A(string cs) {
+                var errors = new List<Exception>();
+                try { SqlServerTestConfiguration.EnsureTestDatabaseExists(cs); }
+                catch (ExternalException ex) { errors.Add(ex); }
+                Assert.Empty(errors);
+            } }
+            """
+        },
+        {
+            "N2 control: a catch of SystemException that asserts on the exception it expects",
+            """
+            class T { async Task A(Db db) {
+                try { await db.Store.WriteAsync(Row()); }
+                catch (SystemException ex) { ex.Message.Should().Contain("deadlock victim"); }
+            } }
+            """
+        },
+        {
+            "N2 control: SystemException caught around non-SQL work and not a bare return",
+            """
+            class T { int A() {
+                try { return Parse(); }
+                catch (SystemException) { return -1; }
+            } }
+            """
+        },
+        {
             "an unrelated null check that returns",
             """
             class T { void A() { var x = Lookup(); if (x is null) return; } }
@@ -503,7 +622,7 @@ internal static class SqlSoftSkipScanner
     // pairs it with ?? throw, which rule 1 checks for them like any other caller.
     private static readonly string[] GetterOwners = ["SqlServerTestConfiguration.cs", "SqlServerTestConfigurationTests.cs"];
     private static readonly string[] LocalDbOwners = ["SqlTestTargetGuard.cs", "SqlTestTargetGuardTests.cs", "SqlSoftSkipGuardTests.cs"];
-    private static readonly string[] RetiredSwitchOwners = ["SqlServerTestConfigurationTests.cs", "SqlSoftSkipGuardTests.cs"];
+    private static readonly string[] RetiredSwitchOwners = ["SqlServerTestConfigurationTests.cs", "SqlSoftSkipGuardTests.cs", "SqlHonestyCiGuardTests.cs"];
 
     // The null-returning getters, but not EF's db.Database.GetConnectionString().
     private static readonly Regex Getter = new(
@@ -542,6 +661,10 @@ internal static class SqlSoftSkipScanner
     [
         "Exception", "System.Exception", "InvalidOperationException", "System.InvalidOperationException",
         "SqlException", "Microsoft.Data.SqlClient.SqlException", "DbException", "System.Data.Common.DbException",
+
+        // The base classes of the above: SqlException and InvalidOperationException derive from SystemException, DbException from
+        // ExternalException. A catch of either swallows a live-SQL failure just as well.
+        "SystemException", "System.SystemException", "ExternalException", "System.Runtime.InteropServices.ExternalException",
 
         // The failures this suite throws on purpose. Catching one and carrying on is exactly a soft skip.
         "SqlTestUnavailableException", "SqlTestTargetRefusedException",
@@ -697,8 +820,11 @@ internal static class SqlSoftSkipScanner
                     stats.BroadCatches++;
                     if (cleanup)
                         stats.CleanupCatches++;
-                    else if (!ThrowWord.IsMatch(body) && (touchesSql || ReturnNothing.IsMatch(body)))
+                    else if (!ThrowWord.IsMatch(body) && (touchesSql || ReturnNothing.IsMatch(body))
+                             && !(ExceptionIsAsserted(code, type, body, catchClose) && !ReturnNothing.IsMatch(body)))
+                    {
                         findings.Add(new Finding(path, LineOf(code, header.Index), CatchRule));
+                    }
                 }
 
                 position = catchClose + 1;
@@ -708,6 +834,43 @@ internal static class SqlSoftSkipScanner
 
     private static bool IsBroad(string catchType) =>
         catchType.Length == 0 || BroadCatchTypes.Contains(catchType.Split(' ')[0]);
+
+    /// <summary>
+    /// A test that expects a failure catches it to look at it: the catch asserts on the exception itself, or stores it
+    /// (<c>captured = ex;</c>, <c>errors.Add(ex);</c>) and the rest of the enclosing block asserts on what was stored. That is not a silent
+    /// swallow. A catch that merely stores the exception and never asserts on it still is.
+    /// </summary>
+    private static bool ExceptionIsAsserted(string code, string catchType, string body, int catchClose)
+    {
+        var words = catchType.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2)
+            return false;
+
+        var variable = Regex.Escape(words[1]);
+        if (Regex.IsMatch(body, $@"\b{variable}\b[^;]*?\.\s*Should\s*\(|\bAssert\.\w+\s*\([^;]*\b{variable}\b"))
+            return true;
+
+        var stored = Regex.Match(body, $@"(?<t>[A-Za-z_][\w.]*)\s*=\s*{variable}\b|(?<t>[A-Za-z_][\w.]*)\s*\.\s*(?:Add|Enqueue|Push)\s*\(\s*{variable}\b");
+        if (!stored.Success)
+            return false;
+
+        var target = Regex.Escape(stored.Groups["t"].Value);
+        var depth = 0;
+        var end = code.Length;
+        for (var i = catchClose + 1; i < code.Length; i++)
+        {
+            if (code[i] == '{')
+                depth++;
+            else if (code[i] == '}' && depth-- == 0)
+            {
+                end = i;
+                break;
+            }
+        }
+
+        var rest = code[(catchClose + 1)..end];
+        return Regex.IsMatch(rest, $@"\b{target}\b[^;]*?\.\s*Should\s*\(|\bAssert\.\w+\s*\([^;]*\b{target}\b");
+    }
 
     /// <summary>The block or single statement that starts at <paramref name="index"/>, after an if header or an else.</summary>
     private static string Branch(string code, int index, out int end)

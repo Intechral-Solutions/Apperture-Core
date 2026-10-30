@@ -14,10 +14,18 @@ namespace Apperture.IntegrationTests.SqlExecutionHonesty;
 /// </summary>
 public sealed class AllowListFingerprintTests
 {
-    // Reviewed on 2026-10-30 (DEV-1.1B-R). To change a list: edit it, run the honesty check in -Record mode, review every added
-    // identity (is it really a test that needs no SQL Server?), then replace the value below with the "actual" shown by the failing test.
-    private const string AllowListFingerprint = "ADDB44997C818AD7005CF795EF7718B1DCCFA9BE760869B04C6B3B1353409EC5";
+    // Reviewed on 2026-10-30 (DEV-1.1B-R; DEV-1.1C added 22 identities: the source-guard controls and these pin tests). To change a
+    // list: edit it, run the honesty check in -Record mode, review every added identity (is it really a test that needs no SQL
+    // Server?), then replace the value below with the "actual" shown by the failing test.
+    private const string AllowListFingerprint = "42ACB9AC2BAE00A6A132577877FA675E4D3B1BCD337C1E5E3FF24D4F9FEB44EA";
     private const string MustFailFingerprint = "17D8A73D2409E78F5BEEA5CE9A64AA8ECED7B3C826799F8D1F26E940E42573E3";
+
+    // Reviewed on 2026-10-30 (DEV-1.1C). The honesty script is the mechanism that refuses a false pass, so a change to it is as
+    // consequential as a change to a list: removing one enforcement line made ten false passes produce a successful verdict. This pin
+    // is a safeguard against an accidental or unreviewed regression, not a substitute for reviewing a change to the script and this
+    // value together. To change the script: edit it, run its tests (UnitTests SqlExecutionHonestyScriptTests), then replace the value
+    // below with the "actual" shown by the failing test.
+    private const string ScriptFingerprint = "C68A82A1B5C321794B62C379A4ABF9FBE2C749D7A5588463AC701FAC13A4E0D2";
 
     private static readonly string[] Categories =
     [
@@ -62,6 +70,40 @@ public sealed class AllowListFingerprintTests
         mustFail.Should().Be(MustFailFingerprint,
             "required-unavailable-failures.tsv changed. Review the change, then update MustFailFingerprint to this actual value");
     }
+
+    [Fact]
+    public void The_honesty_script_matches_its_reviewed_fingerprint()
+    {
+        Fingerprint(ScriptPath()).Should().Be(ScriptFingerprint,
+            "scripts/dev/Test-SqlExecutionHonesty.ps1 changed. It is the mechanism that refuses a false pass: review the change together with its tests, then update ScriptFingerprint to this actual value");
+    }
+
+    [Theory]
+    [MemberData(nameof(DecisiveLines))]
+    public void Removing_or_weakening_a_decisive_line_of_the_script_changes_its_fingerprint(string name, string original, string replacement)
+    {
+        var text = File.ReadAllText(ScriptPath()).Replace("\r\n", "\n", StringComparison.Ordinal);
+        text.Should().Contain(original, $"{name}: the decisive line must be present in the script for the control to mean anything");
+
+        var mutated = text.Replace(original, replacement, StringComparison.Ordinal);
+
+        mutated.Should().NotBe(text);
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(mutated))).Should().NotBe(ScriptFingerprint, $"{name} must be detected by the pin");
+    }
+
+    public static TheoryData<string, string, string> DecisiveLines() => new()
+    {
+        { "the unexpected-pass violation is removed", "if ($unexpectedPasses.Count -gt 0) { Add-Violation", "if ($false) { Add-Violation" },
+        { "the unexpected-pass collection is removed", "if (-not $allowIds.ContainsKey($name)) { $unexpectedPasses.Add($name) }", "if ($false) { $unexpectedPasses.Add($name) }" },
+        { "the must-fail violation is removed", "if ($mustFailViolations.Count -gt 0) { Add-Violation", "if ($false) { Add-Violation" },
+        { "the dirty-tree violation is removed", "if ($changed.Count -gt 0) { Add-Violation", "if ($false) { Add-Violation" },
+        { "the stale-build violation is removed", "elseif ($assemblyWritten -lt $newestInput) {", "elseif ($false) {" },
+        { "the exit-code check of the test run is weakened", "if ($exit -ne 1) { Add-Violation", "if ($exit -eq 99) { Add-Violation" },
+        { "Record mode exits 0", "'RECORDED' { $ExitRecorded }", "'RECORDED' { $ExitPass }" },
+        { "the CI refusal of Record is removed", "if ($inCi -and $Record) {", "if ($false) {" },
+        { "the fresh-output cleanup is removed", "Remove-Item -LiteralPath $owned -Force", "$null = $owned" },
+        { "the TRX age check is removed", "elseif ([System.IO.File]::GetLastWriteTimeUtc($trxPath) -lt $runStart.AddSeconds(-2)) {", "elseif ($false) {" },
+    };
 
     [Fact]
     public void A_test_in_a_SQL_named_class_may_be_allow_listed_only_for_the_four_reviewed_reasons()
@@ -120,12 +162,16 @@ public sealed class AllowListFingerprintTests
 
     private static string MustFailPath => Path.Combine(ListDirectory(), "required-unavailable-failures.tsv");
 
-    private static string ListDirectory()
+    private static string ListDirectory() => Path.Combine(RepoRoot(), "tests", "Apperture.IntegrationTests", "SqlExecutionHonesty");
+
+    private static string ScriptPath() => Path.Combine(RepoRoot(), "scripts", "dev", "Test-SqlExecutionHonesty.ps1");
+
+    private static string RepoRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
             if (File.Exists(Path.Combine(dir.FullName, "Apperture.slnx")))
-                return Path.Combine(dir.FullName, "tests", "Apperture.IntegrationTests", "SqlExecutionHonesty");
+                return dir.FullName;
         }
 
         throw new InvalidOperationException("Repository root (Apperture.slnx) not found above " + AppContext.BaseDirectory);
