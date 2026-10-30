@@ -21,7 +21,7 @@ public sealed class ManagementHostReliabilitySmokeTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
     }
 
     private static void AssertNoServerError(HttpResponseMessage response, string label)

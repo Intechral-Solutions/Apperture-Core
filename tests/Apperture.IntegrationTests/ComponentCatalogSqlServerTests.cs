@@ -22,9 +22,7 @@ public sealed class ComponentCatalogSqlServerTests
     [Fact]
     public async Task NotificationDefinitionStore_OriginsFilter_TranslatesToSql_AndSelectsByOriginNotScope()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -100,9 +98,7 @@ public sealed class ComponentCatalogSqlServerTests
     [Fact]
     public async Task ConnectionRepository_ConnectorFilter_TranslatesToSql_AndKeepsScopeContainment()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 

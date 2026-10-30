@@ -51,7 +51,8 @@ Prerequisites
 - The test SQL Server the integration tests use (`apperture-test-sql`). The connection string comes from
   `APPERTURE_TEST_SQL_CONNECTION_STRING` or the repo-root `.env` (see [../README.md](../README.md)). The harness
   owns one database, `Apperture_BrowserTests`, which it **drops and recreates on every run**. It never touches
-  any other database.
+  any other database, and before it drops anything it refuses a server that is not a disposable test server
+  (notably the Aspire dev SQL on host port 14333); see [../README.md](../README.md), "Test SQL target safety".
 - Browsers: Chromium, Firefox and WebKit are downloaded to the per-user Playwright cache
   (`%LOCALAPPDATA%\ms-playwright`, never the repo) **the first time an engine is used at run time**, so the first
   run needs internet. To fetch them up front (or for an offline machine):

@@ -20,7 +20,7 @@ public sealed class ResourceOwnershipMutationGateSqlServerTests
     [Fact]
     public async Task Gate_blocks_a_second_holder_until_the_first_transaction_commits()
     {
-        await using var fixture = await SqlServerScratchDatabase.CreateRequiredAsync("Apperture_Gate_");
+        await using var fixture = await SqlServerScratchDatabase.CreateAsync("Apperture_Gate_");
 
         var firstAcquired = new TaskCompletionSource();
         var releaseFirst = new TaskCompletionSource();
@@ -61,7 +61,7 @@ public sealed class ResourceOwnershipMutationGateSqlServerTests
     [Fact]
     public async Task Gate_timeout_surfaces_as_a_human_readable_busy_conflict()
     {
-        await using var fixture = await SqlServerScratchDatabase.CreateRequiredAsync("Apperture_GateBusy_");
+        await using var fixture = await SqlServerScratchDatabase.CreateAsync("Apperture_GateBusy_");
 
         var firstAcquired = new TaskCompletionSource();
         var releaseFirst = new TaskCompletionSource();
@@ -97,7 +97,7 @@ public sealed class ResourceOwnershipMutationGateSqlServerTests
     [Fact]
     public async Task Gate_refuses_to_acquire_outside_a_transaction()
     {
-        await using var fixture = await SqlServerScratchDatabase.CreateRequiredAsync("Apperture_GateNoTx_");
+        await using var fixture = await SqlServerScratchDatabase.CreateAsync("Apperture_GateNoTx_");
 
         await using var db = fixture.NewDb();
         var act = async () => await new SqlResourceOwnershipMutationGate(db).AcquireAsync();

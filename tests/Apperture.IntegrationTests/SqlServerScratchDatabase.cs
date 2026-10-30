@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -12,9 +13,9 @@ namespace Apperture.IntegrationTests;
 /// — each test gets its own catalog rather than sharing the integration database.
 /// </summary>
 /// <remarks>
-/// <see cref="CreateAsync"/> returns <see langword="null"/> when no SQL Server endpoint is configured or
-/// reachable; callers soft-skip in that case rather than failing the run in environments without SQL
-/// Server (see <see cref="SqlServerTestConfiguration"/>).
+/// <see cref="CreateAsync"/> never hands a caller a skip to pass on: without a reachable SQL Server, or when the catalog cannot
+/// be created, connected to or migrated, it throws (<see cref="SqlTestUnavailableException"/> for unavailability, the original
+/// exception for a migration failure, <c>SqlTestTargetRefusedException</c> for a refused target) and drops the catalog it made.
 /// </remarks>
 public sealed class SqlServerScratchDatabase : IAsyncDisposable
 {
@@ -29,55 +30,34 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
 
     /// <summary>
     /// Creates and migrates a new throwaway catalog named <paramref name="catalogPrefix"/> plus a random
-    /// suffix. Returns <see langword="null"/> (soft-skip) when no SQL Server endpoint is reachable.
+    /// suffix. Throws when SQL Server cannot be used; it never returns null and never skips.
     /// </summary>
-    public static async Task<SqlServerScratchDatabase?> CreateAsync(string catalogPrefix)
+    public static async Task<SqlServerScratchDatabase> CreateAsync(string catalogPrefix)
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (baseConnectionString is null)
-            return null; // soft-skip: no reachable SQL endpoint configured
+        // Throws SqlTestUnavailableException with configuration guidance when no SQL Server is reachable.
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = catalogPrefix + Guid.NewGuid().ToString("N")[..12];
-
-        try
-        {
-            var creationConnectionString =
-                new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(creationConnectionString);
-        }
-        catch (InvalidOperationException)
-        {
-            return null; // soft-skip: endpoint unreachable
-        }
+        var creationConnectionString =
+            new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(creationConnectionString);
 
         var scratch = new SqlServerScratchDatabase(baseConnectionString, catalog);
-
-        await using (var db = scratch.NewDb())
+        try
         {
+            await using var db = scratch.NewDb();
             if (!await db.Database.CanConnectAsync())
-            {
-                await scratch.DisposeAsync();
-                return null; // soft-skip
-            }
+                throw SqlTestExecution.Unavailable("the scratch catalog was created but cannot be connected to");
 
             await db.Database.MigrateAsync();
         }
+        catch
+        {
+            await scratch.DisposeAsync();
+            throw;
+        }
 
         return scratch;
-    }
-
-    /// <summary>
-    /// Like <see cref="CreateAsync"/>, but never soft-skips: without a reachable SQL Server it throws with configuration guidance
-    /// (<see cref="SqlServerTestConfiguration.RequireConnectionString"/>, as <c>AuditSqlScratch</c> does), so a test that proves
-    /// behavior of the server cannot pass without having run against one.
-    /// </summary>
-    public static async Task<SqlServerScratchDatabase> CreateRequiredAsync(string catalogPrefix)
-    {
-        // Throws with configuration guidance when no SQL Server is reachable.
-        _ = SqlServerTestConfiguration.RequireConnectionString();
-        var scratch = await CreateAsync(catalogPrefix);
-        return scratch ?? throw new InvalidOperationException(
-            "The SQL Server test catalog could not be created or migrated. " + SqlServerTestConfiguration.DescribeActiveConfiguration());
     }
 
     /// <summary>Opens a fresh <see cref="AppertureDbContext"/> against this scratch catalog.</summary>
@@ -93,6 +73,9 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
     /// <summary>Best-effort drop of the scratch catalog. A leftover throwaway catalog must not fail a test run.</summary>
     public async ValueTask DisposeAsync()
     {
+        // The catalog was validated when it was created; a drop is validated again, outside the best-effort catch below.
+        SqlTestTargetGuard.EnsureDisposableCatalogOnServer(_baseConnectionString, _catalog, "drop a test catalog");
+
         try
         {
             var master = new SqlConnectionStringBuilder(_baseConnectionString) { InitialCatalog = "master" }.ConnectionString;

@@ -33,7 +33,7 @@ public sealed class ManagementHostConnectionSecretFieldsHttpTests : IAsyncLifeti
 
     public async Task DisposeAsync()
     {
-        if (_connections.Count == 0 || !_fixture.SqlAvailable)
+        if (_connections.Count == 0)
             return;
         await using var connection = await OpenAsync();
         foreach (var id in _connections)
@@ -56,7 +56,7 @@ public sealed class ManagementHostConnectionSecretFieldsHttpTests : IAsyncLifeti
     private void AssertSqlAvailable() =>
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
             $"Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
 
     private async Task<SqlConnection> OpenAsync()

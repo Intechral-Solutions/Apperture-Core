@@ -19,8 +19,11 @@ public sealed class BootstrapHttpFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // No implicit fallback (such as a local LocalDB): without a reachable configured target the fixture fails, and so does every
+        // test of the collection, with the configuration message.
         var baseCs = SqlServerTestConfiguration.GetGovernanceConnectionString()
-            ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
+            ?? throw SqlTestExecution.Unavailable(
+                "These tests require a reachable test SQL Server. " + SqlServerTestConfiguration.DescribeActiveConfiguration());
         var builder = new SqlConnectionStringBuilder(baseCs) { InitialCatalog = DatabaseName };
         ConnectionString = builder.ConnectionString;
 

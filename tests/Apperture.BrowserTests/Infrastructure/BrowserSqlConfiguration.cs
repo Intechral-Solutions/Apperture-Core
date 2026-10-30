@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,12 +30,27 @@ public static class BrowserSqlConfiguration
                 "(see tests/README.md, 'Integration test SQL').");
         }
 
+        return ScratchConnectionStringFor(baseConnection);
+    }
+
+    /// <summary>
+    /// The harness database on the server a base connection string names, refused (see <see cref="SqlTestTargetGuard"/>) unless
+    /// that is a disposable test server. The base string's own catalog is replaced, so it is never judged; the replacement is a
+    /// constant that <see cref="RecreateScratchDatabaseAsync"/> checks again before it drops anything.
+    /// </summary>
+    internal static string ScratchConnectionStringFor(string baseConnection)
+    {
+        SqlTestTargetGuard.EnsureServerAllowed(baseConnection, "use the browser harness database");
+
         return new SqlConnectionStringBuilder(baseConnection) { InitialCatalog = ScratchDatabaseName }.ConnectionString;
     }
 
     /// <summary>Drops (if present) and recreates the harness database so every run starts from an empty schema.</summary>
     public static async Task RecreateScratchDatabaseAsync(string scratchConnectionString)
     {
+        // Before anything connects or drops: only the harness's own disposable catalog on a disposable test server.
+        SqlTestTargetGuard.EnsureDisposableTarget(scratchConnectionString, "recreate the browser harness database");
+
         var master = new SqlConnectionStringBuilder(scratchConnectionString) { InitialCatalog = "master" }.ConnectionString;
         await using var connection = new SqlConnection(master);
         try

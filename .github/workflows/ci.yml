@@ -83,6 +83,25 @@ jobs:
       - name: Build
         run: dotnet build Apperture.slnx -c Release --no-restore
 
+      # Proof that no SQL Server test can pass without SQL Server: runs the IntegrationTests assembly of the Release build above against
+      # an unreachable target, with every APPERTURE_*/MSSQL_* variable removed from the test process, so it uses no live credential.
+      # It reuses that build (-NoBuild) and refuses a result whose binary is older than the source or whose tree is not HEAD.
+      # No -Record: that mode never passes. Pinned by SqlHonestyCiGuardTests.
+      - name: SQL execution honesty
+        id: sql-honesty
+        shell: pwsh
+        timeout-minutes: 10
+        run: ./scripts/dev/Test-SqlExecutionHonesty.ps1 -Configuration Release -NoBuild -OutputDirectory artifacts/sql-execution-honesty
+
+      # The JSON report only (a few kilobytes): no logs, TRX or binaries.
+      - name: Upload SQL execution honesty report
+        if: failure() && steps.sql-honesty.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-execution-honesty-report
+          path: artifacts/sql-execution-honesty/sql-honesty-report.json
+          if-no-files-found: ignore
+
       - name: Test
         env:
           APPERTURE_TEST_SQL: ${{ format('Server=127.0.0.1,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}

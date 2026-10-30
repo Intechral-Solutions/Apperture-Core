@@ -10,25 +10,16 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SDK-3A: SQL round-trip for platform-owned operation groups/items.
-/// Soft-skips when no reachable APPERTURE_TEST_SQL_* endpoint is configured.
+/// Without a reachable APPERTURE_TEST_SQL_* endpoint every test here fails (see <see cref="SqlTestExecution"/>). The service-wiring
+/// test, which needs no SQL, is <see cref="OperationItemizationWiringTests"/>.
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class OperationItemizationSqlServerTests
 {
-    private static async Task<AppertureDbContext?> TryCreateMigratedDbAsync()
+    private static async Task<AppertureDbContext> CreateMigratedDbAsync()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
-        if (cs is null)
-            return null;
-
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
+        var cs = SqlServerTestConfiguration.RequireConnectionString();
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
 
         var options = new DbContextOptionsBuilder<AppertureDbContext>()
             .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
@@ -39,7 +30,7 @@ public sealed class OperationItemizationSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
-            return null;
+            throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
         }
 
         await AppertureDatabaseMigrator.MigrateAsync(db);
@@ -49,9 +40,7 @@ public sealed class OperationItemizationSqlServerTests
     [Fact]
     public async Task Sql_store_persists_group_items_and_run_queries()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return; // soft-skip: unavailable SQL endpoint
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore store = new SqlOperationItemStore(db);
         var runId = "sdk3a-" + Guid.NewGuid().ToString("N")[..12];
@@ -116,9 +105,7 @@ public sealed class OperationItemizationSqlServerTests
     [Fact]
     public async Task Sql_store_QueryItems_filters_and_GetRunSummary()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return;
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore store = new SqlOperationItemStore(db);
         var runId = "sdk3b-" + Guid.NewGuid().ToString("N")[..12];
@@ -149,31 +136,9 @@ public sealed class OperationItemizationSqlServerTests
     }
 
     [Fact]
-    public async Task AddOperationItemizationPersistence_registers_Sql_store()
-    {
-        var cs = SqlServerTestConfiguration.GetConnectionString()
-                 ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture_IntegrationTests;Trusted_Connection=True;";
-
-        var services = new ServiceCollection();
-        services.AddApperturePersistence(cs);
-        services.AddOperationItemizationPersistence();
-        await using var provider = services.BuildServiceProvider();
-        await using var scope = provider.CreateAsyncScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IOperationItemStore>();
-        store.Should().BeOfType<SqlOperationItemStore>();
-        scope.ServiceProvider.GetRequiredService<IOperationItemRetryAttemptStore>()
-            .Should().BeOfType<SqlOperationItemRetryAttemptStore>();
-        scope.ServiceProvider.GetRequiredService<IOperationItemRetryReconciliationService>()
-            .Should().BeOfType<OperationItemRetryReconciliationService>();
-    }
-
-    [Fact]
     public async Task Sql_retry_attempt_store_persists_and_idempotency_replays()
     {
-        await using var db = await TryCreateMigratedDbAsync();
-        if (db is null)
-            return;
+        await using var db = await CreateMigratedDbAsync();
 
         IOperationItemStore items = new SqlOperationItemStore(db);
         IOperationItemRetryAttemptStore attempts = new SqlOperationItemRetryAttemptStore(db);

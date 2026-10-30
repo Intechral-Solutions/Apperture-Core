@@ -34,7 +34,7 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
             $"Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
     }
 

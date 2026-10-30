@@ -1,6 +1,7 @@
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,8 +40,13 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // No implicit fallback (such as a local LocalDB) and no flag to test: when no configured target is reachable the fixture
+        // throws, and so does every test of the collection, with the configuration message. A refusal, a catalog name the helper
+        // will not accept and a failure while creating the catalog propagate as themselves.
         ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
-            ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
+            ?? throw SqlTestExecution.Unavailable(SqlServerTestConfiguration.DescribeConnectionFailure());
+
+        SqlTestTargetGuard.EnsureDisposableTarget(ConnectionString, "create the governance test catalog", requireTestsSuffix: true);
 
         try
         {
@@ -53,12 +59,12 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
                 await EnsureTargetDatabaseExistsAsync(ConnectionString, probe).ConfigureAwait(false);
             }
         }
-        catch
+        catch (SqlException ex)
         {
-            SqlAvailable = false;
-            return;
+            throw SqlTestExecution.Unavailable(SqlServerTestConfiguration.DescribeConnectionFailure(), ex);
         }
 
+        // Always true once the fixture has initialised; the per-test assertions on it are kept as an invariant.
         SqlAvailable = true;
         Factory = new ManagementHostWebApplicationFactory(ConnectionString);
 

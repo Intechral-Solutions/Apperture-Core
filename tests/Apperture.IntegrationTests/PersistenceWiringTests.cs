@@ -7,27 +7,32 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// Basic persistence wiring tests. Verifies AddApperturePersistence registers DbContext correctly.
-/// Requires LocalDB or SQL Server with Apperture database. Skips if connection fails.
+/// The wiring assertions need no database. The connectivity assertion runs against the configured test SQL Server only (never an
+/// implicit LocalDB): without one it fails (see <see cref="SqlTestExecution"/>).
 /// </summary>
+[Collection(SqlServerIntegrationCollection.Name)]
 public sealed class PersistenceWiringTests
 {
-    private const string LocalDbConnectionString =
-        "Server=(localdb)\\mssqllocaldb;Database=Apperture_IntegrationTests;Trusted_Connection=True;";
-
     [Fact]
     public async Task AddApperturePersistence_registers_DbContext_resolvable()
     {
-        var services = new ServiceCollection();
-        services.AddApperturePersistence(LocalDbConnectionString);
-        var provider = services.BuildServiceProvider();
+        var wiring = new ServiceCollection();
+        wiring.AddApperturePersistence(SqlTestExecution.NonConnectingConnectionString);
+        using (var wiringProvider = wiring.BuildServiceProvider())
+        using (var wiringScope = wiringProvider.CreateScope())
+            wiringScope.ServiceProvider.GetRequiredService<AppertureDbContext>().Should().NotBeNull();
 
-        var scope = provider.CreateScope();
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
+
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+        var services = new ServiceCollection();
+        services.AddApperturePersistence(connectionString);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
 
         db.Should().NotBeNull();
         var canConnect = await db.Database.CanConnectAsync();
-        if (!canConnect)
-            return; // Skip when LocalDB/SQL Server unavailable (e.g. CI without database)
         canConnect.Should().BeTrue("DbContext should be able to connect with valid connection string");
     }
 
@@ -35,7 +40,7 @@ public sealed class PersistenceWiringTests
     public void AddApperturePersistence_with_factory_resolves_DbContext()
     {
         var services = new ServiceCollection();
-        services.AddApperturePersistence(_ => LocalDbConnectionString);
+        services.AddApperturePersistence(_ => SqlTestExecution.NonConnectingConnectionString);
         var provider = services.BuildServiceProvider();
 
         var scope = provider.CreateScope();

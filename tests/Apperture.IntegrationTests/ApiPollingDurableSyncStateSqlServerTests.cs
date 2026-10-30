@@ -9,32 +9,22 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SDK-5B: SQL round-trip for Sample.ApiPolling durable last-seen / watermark state.
-/// Soft-skips when no reachable APPERTURE_TEST_SQL_* endpoint is configured.
+/// Without a reachable APPERTURE_TEST_SQL_* endpoint the tests fail (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class ApiPollingDurableSyncStateSqlServerTests
 {
-    private static async Task<(IDbContextFactory<SampleApiPollingDbContext> Factory, SampleApiPollingDbContext Db)?> TryCreateAsync()
+    private static async Task<(IDbContextFactory<SampleApiPollingDbContext> Factory, SampleApiPollingDbContext Db)> CreateAsync()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
-        if (cs is null)
-            return null;
-
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
+        var cs = SqlServerTestConfiguration.RequireConnectionString();
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(cs);
 
         var factory = new ConnectionStringDbContextFactory(cs);
         var db = factory.CreateDbContext();
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
-            return null;
+            throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
         }
 
         await db.Database.MigrateAsync();
@@ -44,11 +34,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
     [Fact]
     public async Task Sql_store_round_trips_last_seen_scoped_by_integration_and_reset()
     {
-        var created = await TryCreateAsync();
-        if (created is null)
-            return; // soft-skip: unavailable SQL endpoint
-
-        var (factory, db) = created.Value;
+        var (factory, db) = await CreateAsync();
         await using (db)
         {
             IApiPollingDurableLastSeenStore store = new SqlApiPollingDurableLastSeenStore(factory);
@@ -101,11 +87,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
     [Fact]
     public async Task Sql_known_records_store_hash_not_unbounded_payload()
     {
-        var created = await TryCreateAsync();
-        if (created is null)
-            return; // soft-skip
-
-        var (factory, db) = created.Value;
+        var (factory, db) = await CreateAsync();
         await using (db)
         {
             var store = new SqlApiPollingDurableLastSeenStore(factory);

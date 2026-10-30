@@ -1,3 +1,4 @@
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 
 namespace Apperture.IntegrationTests;
@@ -6,6 +7,11 @@ namespace Apperture.IntegrationTests;
 /// Resolves SQL Server connection strings for integration tests without implicitly assuming
 /// <c>localhost:1433</c>. Supports Aspire dynamic ports via explicit or injected connection strings.
 /// </summary>
+/// <remarks>
+/// Every candidate is checked by <see cref="SqlTestTargetGuard"/> before anything connects to it, and a refusal is thrown (as
+/// <see cref="SqlTestTargetRefusedException"/>) rather than skipped to the next candidate or reported as an unreachable server:
+/// the development SQL server must never be reached by falling through from an unreachable test server.
+/// </remarks>
 public static class SqlServerTestConfiguration
 {
     /// <summary>Primary explicit integration-test connection string (any SQL Server; catalog may be overridden).</summary>
@@ -51,6 +57,9 @@ public static class SqlServerTestConfiguration
     /// </summary>
     public static void EnsureTestDatabaseExists(string connectionString)
     {
+        // Before anything connects: only a disposable catalog on a disposable test server may be created.
+        SqlTestTargetGuard.EnsureDisposableTarget(connectionString, "create a test catalog");
+
         RecordConnectionMetadata(connectionString);
         var builder = new SqlConnectionStringBuilder(connectionString);
         var database = builder.InitialCatalog;
@@ -63,7 +72,8 @@ public static class SqlServerTestConfiguration
         }
         catch (SqlException ex)
         {
-            throw new InvalidOperationException(DescribeConnectionFailure(), ex);
+            // Not an InvalidOperationException: older helpers catch that type to mean "unreachable" (see SqlTestExecution).
+            throw SqlTestExecution.Unavailable(DescribeConnectionFailure(), ex);
         }
 
         using var cmd = conn.CreateCommand();
@@ -93,20 +103,38 @@ public static class SqlServerTestConfiguration
             allowGovernanceOverride: true,
             requireReachable: !_skipReachabilityProbeForTests);
 
-    /// <summary>Returns a reachable connection string or throws with configuration guidance.</summary>
+    /// <summary>
+    /// Returns a reachable connection string or throws <see cref="SqlTestUnavailableException"/> with configuration guidance. This is
+    /// the way a SQL test obtains its server; <see cref="GetConnectionString"/> returns null instead and is for the helpers and
+    /// the configuration tests only (<c>SqlSoftSkipGuardTests</c> refuses it anywhere else).
+    /// </summary>
     public static string RequireConnectionString()
     {
         var connectionString = ResolveConnectionString(
             DefaultIntegrationDatabase,
             allowGovernanceOverride: false,
-            requireReachable: true);
+            requireReachable: !_skipReachabilityProbeForTests);
         if (connectionString is null)
-            throw new InvalidOperationException(DescribeConnectionFailure());
+            throw SqlTestExecution.Unavailable(DescribeConnectionFailure());
 
         return connectionString;
     }
 
+    /// <summary>
+    /// When exactly <c>1</c> in the process environment, SQL is resolved from the process environment alone: no <c>.env</c>, no
+    /// runtime endpoint file. <c>scripts/dev/Test-SqlExecutionHonesty.ps1</c> sets it so that its unreachable target cannot be
+    /// replaced by a developer's own configuration. It only removes sources, so it can make a run fail but never pass.
+    /// </summary>
+    public const string ProcessEnvironmentOnlyVariable = "APPERTURE_TEST_SQL_PROCESS_ENV_ONLY";
+
+    private static bool ProcessEnvironmentOnly =>
+        Environment.GetEnvironmentVariable(ProcessEnvironmentOnlyVariable) == "1";
+
     private static bool _skipReachabilityProbeForTests;
+    private static bool _ignoreRuntimeEndpointFilesForTests;
+
+    /// <summary>Test-only: do not read an Aspire endpoint from the checkout's runtime files, so "nothing configured" is reproducible.</summary>
+    internal static void SetIgnoreRuntimeEndpointFilesForTests(bool ignore) => _ignoreRuntimeEndpointFilesForTests = ignore;
 
     /// <summary>Test-only: prefer configured order without probing TCP (preference unit tests).</summary>
     internal static void SetSkipReachabilityProbeForTests(bool skip) => _skipReachabilityProbeForTests = skip;
@@ -214,14 +242,20 @@ public static class SqlServerTestConfiguration
             firstConfigured ??= candidate.ConnectionString;
             firstSource ??= candidate.Source;
 
-            if (requireReachable && !TryOpenMaster(candidate.ConnectionString, out _))
-                continue;
+            // Refuse before the reachability probe (or anything else) connects. A refusal is thrown, never skipped: falling
+            // through from an unreachable test server to a development server is exactly what this prevents.
+            SqlTestTargetGuard.EnsureServerAllowed(candidate.ConnectionString, "resolve a test SQL target");
 
-            LastResolutionSource = candidate.Source;
             // Governance harness supplies a full connection string including catalog — do not rewrite.
             var resolved = candidate.Source == GovernanceConnectionStringVariable
                 ? candidate.ConnectionString
                 : WithDatabase(candidate.ConnectionString, targetDatabase);
+            SqlTestTargetGuard.EnsureDisposableTarget(resolved, "resolve a test SQL target", requireTestsSuffix: allowGovernanceOverride);
+
+            if (requireReachable && !TryOpenMaster(candidate.ConnectionString, out _))
+                continue;
+
+            LastResolutionSource = candidate.Source;
             RecordConnectionMetadata(resolved);
             return resolved;
         }
@@ -256,7 +290,7 @@ public static class SqlServerTestConfiguration
             yield return (DefaultConnectionStringVariable, defaultConnection.Trim());
 
         // Aspire / Manage.ps1 sometimes publish the live endpoint here after AppHost start.
-        var aspireEndpoint = TryReadAspireSqlEndpointFromRuntimeFiles();
+        var aspireEndpoint = _ignoreRuntimeEndpointFilesForTests || ProcessEnvironmentOnly ? null : TryReadAspireSqlEndpointFromRuntimeFiles();
         if (!string.IsNullOrWhiteSpace(aspireEndpoint))
             yield return ("aspire-runtime-endpoint", aspireEndpoint);
 
@@ -407,6 +441,9 @@ public static class SqlServerTestConfiguration
             return;
 
         _envLoaded = true;
+
+        if (ProcessEnvironmentOnly)
+            return;
 
         var envPath = _envFilePathOverrideForTests ?? FindRepoRootEnv();
         if (envPath is null || !File.Exists(envPath))
