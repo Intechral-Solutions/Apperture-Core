@@ -182,7 +182,7 @@ public sealed class AuthorizationRemovalHostHttpTests
         await ApplyThePlanAsync(schedulerRole);
 
         (await GetStatusAsync(scheduler, "/api/operational-teams")).Should().Be(HttpStatusCode.OK, "the step granted the schedule.manage holder the new permission");
-        (await GetStatusAsync(scheduler, "/api/schedules")).Should().NotBe(HttpStatusCode.Forbidden, "schedule.manage keeps what it always allowed");
+        (await GetStatusAsync(scheduler, "/api/schedules")).Should().Be(HttpStatusCode.OK, "schedule.manage keeps what it always allowed");
     }
 
     // ---------------------------------------------------------------------------------------------------------------
