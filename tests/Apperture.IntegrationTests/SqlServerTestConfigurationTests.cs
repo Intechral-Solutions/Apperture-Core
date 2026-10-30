@@ -331,6 +331,37 @@ public sealed class SqlServerTestConfigurationTests
         await act.Should().ThrowAsync<SqlTestTargetRefusedException>();
     }
 
+    [Theory]
+    [InlineData("Forbidden_")]
+    [InlineData("Apperture")]
+    [InlineData("Apperture-")]
+    [InlineData("Apperture_x]; DROP DATABASE master; --")]
+    public async Task A_soft_skipping_scratch_helper_does_not_swallow_a_refused_catalog_on_an_accepted_server(string catalogPrefix)
+    {
+        using var _ = new EnvScope(_saved);
+        // The server is accepted (a test port, not the development one) but unreachable, so the resolver hands it back and only the
+        // catalog rule inside CreateAsync's try block can refuse. That refusal must not be mistaken for the unreachable-server
+        // soft skip (null) by a catch that is wider than InvalidOperationException.
+        Set(ExplicitCs: UnroutableTestSql, Default: null, Password: null);
+
+        var act = () => SqlServerScratchDatabase.CreateAsync(catalogPrefix);
+
+        await act.Should().ThrowAsync<SqlTestTargetRefusedException>();
+    }
+
+    [Fact]
+    public async Task A_soft_skipping_scratch_helper_still_reports_an_unreachable_accepted_server_as_not_created()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: UnroutableTestSql, Default: null, Password: null);
+
+        // Positive control for the test above: with a valid prefix the same unreachable server gives the soft-skip null, so the
+        // refusal there came from the catalog rule and not from the server.
+        var created = await SqlServerScratchDatabase.CreateAsync("Apperture_ScratchProbe");
+
+        created.Should().BeNull();
+    }
+
     private static void Set(
         string? ExplicitCs = "",
         string? Default = "",

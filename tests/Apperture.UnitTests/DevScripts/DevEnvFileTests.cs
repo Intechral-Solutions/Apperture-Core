@@ -158,6 +158,51 @@ public sealed class DevEnvFileTests : IClassFixture<DevEnvFileTests.Scenarios>
         _scenarios.EnvFiles(id).Should().Equal(".env");
     }
 
+    // ---- an assignment that already means the requested value is left byte for byte as written -----------------------------
+
+    [Theory]
+    [InlineData("same-double-quoted")]
+    [InlineData("same-single-quoted")]
+    [InlineData("same-padded-after-equals")]
+    [InlineData("same-trailing-spaces")]
+    [InlineData("same-inline-comment")]
+    [InlineData("same-raw-value-with-comment-marker")]
+    public void Setting_a_value_the_reader_already_reads_leaves_the_file_untouched(string id)
+    {
+        var run = _scenarios.Run(id);
+
+        run.Failed.Should().BeFalse(run.Output);
+        run.Output.Should().Contain("RESULT:unchanged");
+        _scenarios.Bytes(id).Should().Equal(Scenarios.InitialBytes(id));
+        File.GetLastWriteTimeUtc(_scenarios.EnvPath(id)).Should().Be(Past);
+    }
+
+    [Theory]
+    [InlineData("differs-double-quoted", "MSSQL_SA_PASSWORD=" + NewPassword)]
+    [InlineData("differs-inline-comment", "MSSQL_SA_PASSWORD=" + NewPassword)]
+    [InlineData("differs-quoted-inside-comment", "MSSQL_SA_PASSWORD=" + NewPassword)]
+    public void Setting_a_value_the_reader_reads_differently_still_updates_the_line(string id, string expectedLine)
+    {
+        var run = _scenarios.Run(id);
+
+        run.Failed.Should().BeFalse(run.Output);
+        run.Output.Should().Contain("RESULT:updated");
+        _scenarios.Text(id).Should().Be("A=1\n" + expectedLine + "\nB=2\n");
+    }
+
+    // ---- a relative path means the PowerShell location, not the process directory --------------------------------------------
+
+    [Fact]
+    public void A_relative_path_is_resolved_against_the_powershell_location_not_the_process_directory()
+    {
+        var run = _scenarios.Run("relative-path");
+
+        run.Failed.Should().BeFalse(run.Output);
+        run.Output.Should().Contain("RESULT:updated");
+        File.ReadAllText(Path.Combine(_scenarios.Dir("relative-path"), "ps-location", ".env")).Should().Be($"MSSQL_SA_PASSWORD={NewPassword}\n");
+        File.ReadAllText(Path.Combine(_scenarios.Dir("relative-path"), "process-dir", ".env")).Should().Be($"MSSQL_SA_PASSWORD={OldPassword}\n");
+    }
+
     // ---- refusals: a file that is unsafe to update is left exactly as it was -------------------------------------------------
 
     [Theory]
@@ -242,7 +287,20 @@ public sealed class DevEnvFileTests : IClassFixture<DevEnvFileTests.Scenarios>
             Set("refuse-key-digit", "1BAD", "v"),
             Set("refuse-key-equals", "A=B", "v"),
             new("set-added", "set", Utf8.GetBytes("A=1\n"), Key: "B", Value: "secret-value-xyz"),
+            SetSame("same-double-quoted", $"MSSQL_SA_PASSWORD=\"{NewPassword}\"\n"),
+            SetSame("same-single-quoted", $"MSSQL_SA_PASSWORD='{NewPassword}'\n"),
+            SetSame("same-padded-after-equals", $"MSSQL_SA_PASSWORD= {NewPassword}\n"),
+            SetSame("same-trailing-spaces", $"MSSQL_SA_PASSWORD={NewPassword}   \n"),
+            SetSame("same-inline-comment", $"MSSQL_SA_PASSWORD={NewPassword} # rotated by hand\n"),
+            new("same-raw-value-with-comment-marker", "set", Utf8.GetBytes("MSSQL_SA_PASSWORD=ab #cd\n"), Key: "MSSQL_SA_PASSWORD", Value: "ab #cd", PastWrite: true),
+            new("differs-double-quoted", "set", Utf8.GetBytes($"A=1\nMSSQL_SA_PASSWORD=\"{OldPassword}\"\nB=2\n"), Key: "MSSQL_SA_PASSWORD"),
+            new("differs-inline-comment", "set", Utf8.GetBytes($"A=1\nMSSQL_SA_PASSWORD={OldPassword} # rotated by hand\nB=2\n"), Key: "MSSQL_SA_PASSWORD"),
+            new("differs-quoted-inside-comment", "set", Utf8.GetBytes($"A=1\nMSSQL_SA_PASSWORD='{OldPassword}' # {NewPassword}\nB=2\n"), Key: "MSSQL_SA_PASSWORD"),
+            new("relative-path", "relative", null, Key: "MSSQL_SA_PASSWORD"),
         ];
+
+        private static Definition SetSame(string id, string initial) =>
+            new(id, "set", Utf8.GetBytes(initial), Key: "MSSQL_SA_PASSWORD", PastWrite: true);
 
         private static Definition Sync(string id, string initial) => new(id, "sync", Utf8.GetBytes(initial));
 
@@ -389,6 +447,26 @@ public sealed class DevEnvFileTests : IClassFixture<DevEnvFileTests.Scenarios>
                 try {
                     $output = & {
                         $envPath = Join-Path $item.dir '.env'
+                        if ($item.mode -eq 'relative') {
+                            # The PowerShell location and the .NET process directory deliberately differ.
+                            $here = Join-Path $item.dir 'ps-location'
+                            $there = Join-Path $item.dir 'process-dir'
+                            New-Item -ItemType Directory -Force -Path $here, $there | Out-Null
+                            [System.IO.File]::WriteAllText((Join-Path $here '.env'), "$($item.key)=Old-Pw-Marker-3b9d!`n")
+                            [System.IO.File]::WriteAllText((Join-Path $there '.env'), "$($item.key)=Old-Pw-Marker-3b9d!`n")
+                            $savedDirectory = [System.Environment]::CurrentDirectory
+                            Push-Location -LiteralPath $here
+                            try {
+                                [System.Environment]::CurrentDirectory = $there
+                                $r = Set-DevEnvFileValue -Path '.env' -Key $item.key -Value $item.value
+                                "RESULT:$r"
+                            }
+                            finally {
+                                [System.Environment]::CurrentDirectory = $savedDirectory
+                                Pop-Location
+                            }
+                            return
+                        }
                         if ($item.mode -eq 'set') {
                             $r = Set-DevEnvFileValue -Path $envPath -Key $item.key -Value $item.value
                             "RESULT:$r"

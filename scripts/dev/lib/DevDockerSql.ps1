@@ -1,6 +1,33 @@
 # Docker SQL and User Secrets sync for native dev mode.
 Set-StrictMode -Version Latest
 
+function Get-DevEnvEffectiveValue {
+    <#
+    .SYNOPSIS
+        The value the test configuration reader sees for the text after the "=" of an env line.
+    .DESCRIPTION
+        Mirrors TryParseEnvLine and UnquoteEnvValue in tests/Apperture.IntegrationTests/SqlServerTestConfiguration.cs: surrounding
+        whitespace is dropped, an inline comment starts at the first " #" (not at the first character), and one pair of matching
+        single or double quotes is removed. It exists only so an assignment that already means the requested value is left alone;
+        keep it in step with that reader. Limitation shared with the reader: a value that itself contains " #" cannot be
+        written back, because the reader would cut it there.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Rest)
+
+    $raw = $Rest.Trim()
+    if ($raw.Length -eq 0) { return $raw }
+
+    $commentIndex = $raw.IndexOf(' #', [System.StringComparison]::Ordinal)
+    if ($commentIndex -gt 0) { $raw = $raw.Substring(0, $commentIndex).TrimEnd() }
+
+    if ($raw.Length -ge 2 -and (($raw[0] -eq '"' -and $raw[$raw.Length - 1] -eq '"') -or ($raw[0] -eq "'" -and $raw[$raw.Length - 1] -eq "'"))) {
+        return $raw.Substring(1, $raw.Length - 2)
+    }
+
+    return $raw
+}
+
 function Set-DevEnvFileValue {
     <#
     .SYNOPSIS
@@ -10,7 +37,9 @@ function Set-DevEnvFileValue {
         never be rewritten wholesale. Only active assignments of exactly KEY are changed (an optional leading "export" and
         indentation are kept; comments, look-alike names and every other line are not touched). If KEY is missing it is appended.
         Line endings (including mixed ones), the UTF-8 byte order mark and a missing final newline are preserved. When the value
-        is already current the file is not rewritten at all. A changed file is written to a temporary sibling and swapped in, so
+        is already current the file is not rewritten at all, and "current" means what the test configuration reader would read
+        (see Get-DevEnvEffectiveValue): a quoted, padded or inline-commented form of the same value is left exactly as written.
+        A relative Path is resolved against the PowerShell location. A changed file is written to a temporary sibling and swapped in, so
         an interrupted run cannot leave a half-written file.
 
         A file that cannot be updated safely is refused and left exactly as it was: invalid UTF-8, a NUL byte (UTF-16 or binary),
@@ -35,7 +64,8 @@ function Set-DevEnvFileValue {
         throw "Refusing to update env file: '$Path' is a directory."
     }
 
-    $full = [System.IO.Path]::GetFullPath($Path)
+    # Not [System.IO.Path]::GetFullPath: that resolves against the process directory, which Set-Location does not change.
+    $full = $PSCmdlet.GetUnresolvedProviderPathFromPSPath($Path)
 
     if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
         $plainUtf8 = New-Object System.Text.UTF8Encoding($false)
@@ -66,7 +96,8 @@ function Set-DevEnvFileValue {
         $match = [regex]::Match($parts[$i], $pattern)
         if (-not $match.Success) { continue }
         $found++
-        if ($match.Groups['rest'].Value -ceq $Value) { continue }
+        $rest = $match.Groups['rest'].Value
+        if ($rest -ceq $Value -or (Get-DevEnvEffectiveValue -Rest $rest) -ceq $Value) { continue }
         $parts[$i] = $match.Groups['lead'].Value + $Key + $match.Groups['eq'].Value + $Value
         $changed = $true
     }
