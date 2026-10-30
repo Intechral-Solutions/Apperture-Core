@@ -25,7 +25,9 @@
 
     Changing either list, or this script, is a reviewed act: SqlExecutionHonesty/AllowListFingerprintTests pins the SHA-256 of each file,
     so an edit must be accompanied by an edit of the pin in test source. The pin is a safeguard against an accidental regression, not a
-    substitute for review of a change to both the script and its pin.
+    substitute for review of a change to both the script and its pin. A script cannot certify its own integrity: a weakened copy can
+    return PASS for its own run. What rejects an unreviewed change is the ordinary required Test step, which runs the pin tests; this
+    script's own scenarios (UnitTests SqlExecutionHonestyScriptTests) show that it refuses the false-pass conditions it is meant to.
 
     EXIT CODES (the contract a gate can rely on)
       0  PASS      authoritative: every check held and the source/build provenance is established.
@@ -39,12 +41,14 @@
       * built-by-script (no -NoBuild): this script ran dotnet build and it succeeded. MSBuild's own up-to-date check is the claim that
         the output corresponds to the inputs;
       * reused-existing-build (-NoBuild): the tracked tree must equal HEAD, no untracked file that the build would compile may exist,
-        and the test assembly must be newer than every tracked build input (source, project, props, resource and config files). A
-        source change, a checkout of another commit, or an old build all make the binary older than a source file, and the run fails.
+        and the test assembly must be newer than every tracked build input (source, project, props, resource and config files). An edit
+        to a source file, or a checkout that rewrites one, makes that file newer than the binary, and the run fails.
     Both modes record HEAD and its tree, the assembly path, SHA-256 and write time, the configuration, the SDK version, and an identity
-    string. The limit that remains: timestamps are not cryptographic, so a deliberately back-dated file, or a build made from a dirty
-    tree that was reverted afterwards with older timestamps, can defeat the check. In CI the checkout is fresh and the runner is
-    ephemeral, so the Build step is the only writer of the binary.
+    string. The limits that remain: timestamps are not cryptographic, so a deliberately back-dated file, or a build made from a dirty
+    tree that was reverted afterwards with older timestamps, can defeat the check; and a modification time cannot see a deletion, so a
+    commit made after the build that only deletes tracked files leaves the binary newer than every remaining input, and a stale binary
+    can PASS with a report that names the new HEAD. In CI the checkout is fresh and the runner is ephemeral, so the Build step is the
+    only writer of the binary and neither limit is reachable there. For authoritative local evidence omit -NoBuild.
 .PARAMETER Configuration
     Build configuration, Debug by default.
 .PARAMETER ArtifactsPath

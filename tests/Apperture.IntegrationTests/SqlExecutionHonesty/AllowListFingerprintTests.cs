@@ -23,9 +23,10 @@ public sealed class AllowListFingerprintTests
     // Reviewed on 2026-10-30 (DEV-1.1C). The honesty script is the mechanism that refuses a false pass, so a change to it is as
     // consequential as a change to a list: removing one enforcement line made ten false passes produce a successful verdict. This pin
     // is a safeguard against an accidental or unreviewed regression, not a substitute for reviewing a change to the script and this
-    // value together. To change the script: edit it, run its tests (UnitTests SqlExecutionHonestyScriptTests), then replace the value
-    // below with the "actual" shown by the failing test.
-    private const string ScriptFingerprint = "C68A82A1B5C321794B62C379A4ABF9FBE2C749D7A5588463AC701FAC13A4E0D2";
+    // value together. The script cannot certify itself (a weakened copy can pass its own run); the required Test step, which runs
+    // this class, is what rejects a script that no longer matches. To change the script: edit it, run its tests (UnitTests
+    // SqlExecutionHonestyScriptTests), then replace the value below with the "actual" shown by the failing test.
+    private const string ScriptFingerprint = "A75F53F6275EE66FD1070CEBA878BB3BDF2BB1898C64B8763841FA3AAE03E513";
 
     private static readonly string[] Categories =
     [

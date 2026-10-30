@@ -32,6 +32,23 @@ public sealed class SqlHonestyCiGuardTests
         SqlHonestyCiInvocation.Verify(weakened).Should().NotBeEmpty($"'{name}' must be detected");
     }
 
+    /// <summary>
+    /// DEV-1.1C-LC1: edits that leave the honesty step's first line intact (or never touch the step at all) but can mask a failing
+    /// honesty run or skip the required job. Each must be reported by the intended assertion, not by an incidental one.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Bypasses))]
+    public void Each_failure_masking_bypass_is_reported_by_the_intended_assertion(string name, Func<string, string> bypass, string expected)
+    {
+        var original = Workflow();
+        var changed = bypass(original);
+
+        changed.Should().NotBe(original, $"the bypass '{name}' must change the workflow");
+        SqlHonestyCiInvocation.Verify(original).Should().BeEmpty("the approved workflow is the control");
+        SqlHonestyCiInvocation.Verify(changed).Should().Contain(p => p.Contains(expected, StringComparison.Ordinal),
+            $"'{name}' must be reported with '{expected}'");
+    }
+
     [Fact]
     public void A_comment_that_mentions_a_forbidden_flag_is_not_a_violation_and_a_commented_out_step_is_not_a_step()
     {
@@ -70,6 +87,43 @@ public sealed class SqlHonestyCiGuardTests
         { "the ordinary tests no longer run against the CI SQL service", y => y.Replace("APPERTURE_TEST_SQL: ${{", "APPERTURE_UNUSED: ${{", StringComparison.Ordinal) },
         { "the ordinary test step is removed", y => RemoveStep(y, "Test") },
         { "the Release build is removed", y => RemoveStep(y, "Build") },
+    };
+
+    private const string Honesty = "./scripts/dev/Test-SqlExecutionHonesty.ps1 -Configuration Release -NoBuild -OutputDirectory artifacts/sql-execution-honesty";
+    private const string RunLine = "        run: " + Honesty + "\n";
+    private const string RequiredJobRunsOn = "\n  build-and-test:\n    runs-on: ubuntu-24.04\n";
+    private const string BrowserJobTimeout = "    timeout-minutes: 60\n";
+
+    public static TheoryData<string, Func<string, string>, string> Bypasses() => new()
+    {
+        // V1: the run command changes although its first line is the approved one.
+        { "V1 continuation line '; exit 0'", y => y.Replace(RunLine, RunLine + "          ; exit 0\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 continuation that resets the exit code", y => y.Replace(RunLine, RunLine + "          ; $global:LASTEXITCODE = 0\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 continuation with a trailing -ErrorAction argument", y => y.Replace(RunLine, RunLine + "            -ErrorAction SilentlyContinue\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 literal block scalar", y => y.Replace(RunLine, "        run: |\n          " + Honesty + "\n          exit 0\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 folded block scalar", y => y.Replace(RunLine, "        run: >-\n          " + Honesty + "\n          ; exit 0\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 quoted scalar", y => y.Replace(RunLine, "        run: \"" + Honesty + "; exit 0\"\n", StringComparison.Ordinal), "honesty step must run exactly" },
+        { "V1 a second run key", y => y.Replace(RunLine, RunLine + "        run: exit 0\n", StringComparison.Ordinal), "honesty step must be exactly" },
+        { "V1 continuation on the Test step", y => y.Replace("--verbosity normal\n", "--verbosity normal\n          ; exit 0\n", StringComparison.Ordinal), "continuing its run command" },
+        { "V1 continuation on the Build step", y => y.Replace("        run: dotnet build Apperture.slnx -c Release --no-restore\n", "        run: dotnet build Apperture.slnx -c Release --no-restore\n          ; exit 0\n", StringComparison.Ordinal), "continuing its run command" },
+
+        // V2: failure is let through at job level or by another step.
+        { "V2 job-level continue-on-error on build-and-test", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    continue-on-error: true\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'continue-on-error:'" },
+        { "V2 job-level continue-on-error as an expression", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    continue-on-error: ${{ true }}\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'continue-on-error:'" },
+        { "V2 job-level continue-on-error on browser-security", y => y.Replace(BrowserJobTimeout, BrowserJobTimeout + "    continue-on-error: true\n", StringComparison.Ordinal), "job browser-security must not have a job-level 'continue-on-error:'" },
+        { "V2 strategy with an experimental matrix entry", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    strategy:\n      fail-fast: false\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'strategy:'" },
+        { "V2 continue-on-error on the Test step", y => y.Replace("      - name: Test\n", "      - name: Test\n        continue-on-error: true\n", StringComparison.Ordinal), "step 'Test' must not set continue-on-error" },
+        { "V2 continue-on-error on the Build step", y => y.Replace("        run: dotnet build Apperture.slnx -c Release --no-restore\n", "        run: dotnet build Apperture.slnx -c Release --no-restore\n        continue-on-error: true\n", StringComparison.Ordinal), "step 'Build' must not set continue-on-error" },
+
+        // V3: the required job is skipped (a skipped job is reported as success on a required check).
+        { "V3 job-level if: false on build-and-test", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    if: false\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'if:'" },
+        { "V3 job-level if: expression on build-and-test", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    if: ${{ github.event_name == 'never' }}\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'if:'" },
+        { "V3 job-level if: placed after the steps", y => y.Replace("\n  # Stable check name", "    if: false\n\n  # Stable check name", StringComparison.Ordinal), "job build-and-test must not have a job-level 'if:'" },
+        { "V3 job-level if: false on browser-security", y => y.Replace(BrowserJobTimeout, BrowserJobTimeout + "    if: false\n", StringComparison.Ordinal), "job browser-security must not have a job-level 'if:'" },
+        { "V3 the Test step is made conditional", y => y.Replace("      - name: Test\n", "      - name: Test\n        if: false\n", StringComparison.Ordinal), "step 'Test' must not be conditional" },
+
+        // Workflow-level settings that change how every job runs.
+        { "a workflow-level defaults.run.shell", y => y.Replace("\njobs:\n", "\ndefaults:\n  run:\n    shell: bash -e {0}\njobs:\n", StringComparison.Ordinal), "top-level 'defaults:'" },
     };
 
     private static string RemoveStep(string yaml, string name)
@@ -165,7 +219,25 @@ internal static class SqlHonestyCiInvocation
         if (text.Contains("APPERTURE_REQUIRE_SQL_TESTS", StringComparison.Ordinal))
             problems.Add("the retired APPERTURE_REQUIRE_SQL_TESTS switch is set");
 
+        // Workflow and job keys that can skip, soften or re-shape a required check are refused by allow-list, not by looking for known bad
+        // keys: an `if:`, `continue-on-error`, `strategy`, `defaults` or anything not listed here fails until this guard is reviewed.
+        foreach (var key in TopLevelKeys(text).Where(k => !AllowedWorkflowKeys.Contains(k)))
+            problems.Add($"the workflow must not have a top-level '{key}:' key (allowed: {string.Join(", ", AllowedWorkflowKeys)})");
+
         var jobs = SplitJobs(text);
+        foreach (var (jobId, allowed) in AllowedJobKeys)
+        {
+            if (!jobs.TryGetValue(jobId, out var job))
+                continue;
+            foreach (var key in JobKeys(job).Where(k => !allowed.Contains(k)))
+            {
+                var why = key is "if" or "continue-on-error"
+                    ? " (it can skip the required check or let it pass on failure)"
+                    : string.Empty;
+                problems.Add($"job {jobId} must not have a job-level '{key}:' key{why} (allowed: {string.Join(", ", allowed)})");
+            }
+        }
+
         if (!jobs.TryGetValue("build-and-test", out var required))
             return [.. problems, "the required job id build-and-test is missing"];
 
@@ -183,8 +255,19 @@ internal static class SqlHonestyCiInvocation
         var honesty = steps.FindIndex(s => s.Name == "SQL execution honesty");
         var upload = steps.FindIndex(s => s.Name == "Upload SQL execution honesty report");
 
+        // No step of the required job may let a failure pass, and only the report upload may be conditional.
+        foreach (var s in steps)
+        {
+            if (Regex.IsMatch(s.Text, @"^\s+continue-on-error:", RegexOptions.Multiline))
+                problems.Add($"step '{s.Name}' must not set continue-on-error");
+            if (s.Name != "Upload SQL execution honesty report" && Regex.IsMatch(s.Text, @"^        if:", RegexOptions.Multiline))
+                problems.Add($"step '{s.Name}' must not be conditional (only the report upload is)");
+        }
+
         if (build < 0)
             problems.Add("the Release build step is missing");
+        else
+            problems.AddRange(SingleLineRun(steps[build], BuildRun));
         if (test < 0)
             problems.Add("the ordinary dotnet test Apperture.slnx step is missing");
         else
@@ -194,6 +277,7 @@ internal static class SqlHonestyCiInvocation
                 problems.Add("the ordinary test step must stay a Release --no-build run of the solution");
             if (!testStep.Contains("APPERTURE_TEST_SQL:", StringComparison.Ordinal))
                 problems.Add("the ordinary test step must keep running against the CI SQL service (APPERTURE_TEST_SQL)");
+            problems.AddRange(SingleLineRun(steps[test], TestRun));
         }
 
         if (honesty < 0)
@@ -206,6 +290,12 @@ internal static class SqlHonestyCiInvocation
             problems.Add("the honesty step must run after the Release build");
         if (test >= 0 && honesty > test)
             problems.Add("the honesty step must run before the ordinary tests");
+
+        // The whole step, not its first line: a YAML continuation line, a block scalar or an extra key changes what is run, so the
+        // step must be exactly these lines (comments and blank lines aside). Anything else, even harmless, fails until reviewed.
+        if (!EffectiveLines(steps[honesty].Text).SequenceEqual(HonestyStep))
+            problems.Add("the honesty step must be exactly these lines, with no continuation line, block scalar or extra key: "
+                + string.Join(" | ", HonestyStep.Select(l => l.Trim())));
 
         var step = steps[honesty].Text;
         var run = Regex.Match(step, @"^        run: (?<c>.*)$", RegexOptions.Multiline);
@@ -236,9 +326,71 @@ internal static class SqlHonestyCiInvocation
                 problems.Add("the report upload must upload only sql-honesty-report.json (no logs, TRX or binaries)");
             if (uploadStep.Contains("continue-on-error", StringComparison.Ordinal))
                 problems.Add("the report upload must not hide failures");
+            if (!EffectiveLines(uploadStep).SequenceEqual(UploadStep))
+                problems.Add("the report upload step must be exactly: " + string.Join(" | ", UploadStep.Select(l => l.Trim())));
         }
 
         return problems;
+    }
+
+    // The effective text of the approved steps. A plain-scalar `run:` that continues on a deeper-indented line, `run: |`, `run: >-`,
+    // a duplicate key or an added key all differ from these lines.
+    private static readonly string[] HonestyStep =
+    [
+        "      - name: SQL execution honesty",
+        "        id: sql-honesty",
+        "        shell: pwsh",
+        "        timeout-minutes: 10",
+        "        run: " + Command,
+    ];
+
+    private static readonly string[] UploadStep =
+    [
+        "      - name: Upload SQL execution honesty report",
+        "        if: failure() && steps.sql-honesty.outcome == 'failure'",
+        "        uses: actions/upload-artifact@v4",
+        "        with:",
+        "          name: sql-execution-honesty-report",
+        "          path: artifacts/sql-execution-honesty/sql-honesty-report.json",
+        "          if-no-files-found: ignore",
+    ];
+
+    private const string BuildRun = "dotnet build Apperture.slnx -c Release --no-restore";
+    private const string TestRun = "dotnet test Apperture.slnx -c Release --no-build --verbosity normal";
+
+    private static readonly string[] AllowedWorkflowKeys = ["name", "on", "jobs"];
+
+    // Both required checks. A job-level `if:` skips the job (reported as success on a required check), `continue-on-error` lets it
+    // pass on failure, `strategy`/`needs`/`container`/`defaults` change how it runs; none is needed by the approved workflow.
+    private static readonly (string JobId, string[] Allowed)[] AllowedJobKeys =
+    [
+        ("build-and-test", ["runs-on", "env", "services", "steps"]),
+        ("browser-security", ["name", "runs-on", "timeout-minutes", "env", "services", "steps"]),
+    ];
+
+    private static IEnumerable<string> EffectiveLines(string stepText) =>
+        stepText.Split('\n').Select(l => l.TrimEnd()).Where(l => l.Length > 0);
+
+    private static IEnumerable<string> TopLevelKeys(string text) =>
+        Regex.Matches(text, @"^(?<k>[^\s#][^:\r\n]*):", RegexOptions.Multiline).Select(m => m.Groups["k"].Value);
+
+    // Keys at the job's own indentation (four spaces), after its id line.
+    private static IEnumerable<string> JobKeys(string job) =>
+        Regex.Matches(job, @"^    (?<k>[A-Za-z][\w-]*):", RegexOptions.Multiline).Select(m => m.Groups["k"].Value);
+
+    /// <summary>The step's one <c>run:</c> must be exactly this command, on one line, with nothing continuing it.</summary>
+    private static IEnumerable<string> SingleLineRun((string Name, string Text) step, string command)
+    {
+        var lines = EffectiveLines(step.Text).ToList();
+        var runs = lines.Select((l, i) => (l, i)).Where(x => x.l.StartsWith("        run:", StringComparison.Ordinal)).ToList();
+        if (runs.Count != 1 || runs[0].l != "        run: " + command)
+        {
+            yield return $"step '{step.Name}' must have exactly one run: {command}";
+            yield break;
+        }
+
+        if (runs[0].i + 1 < lines.Count && lines[runs[0].i + 1].TakeWhile(c => c == ' ').Count() > 8)
+            yield return $"step '{step.Name}' has a line continuing its run command";
     }
 
     private static string StripComments(string yaml) =>
