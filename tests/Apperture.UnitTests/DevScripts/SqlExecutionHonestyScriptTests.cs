@@ -389,9 +389,13 @@ public sealed class SqlExecutionHonestyScriptTests : IClassFixture<SqlExecutionH
         {
             try
             {
+                // git writes its object files read-only, which Windows will not delete.
+                foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+                    File.SetAttributes(file, FileAttributes.Normal);
+
                 Directory.Delete(_root, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // best effort; the folder is in the OS temp directory
             }

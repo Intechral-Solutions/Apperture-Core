@@ -237,7 +237,7 @@ Every package keeps the audit's section K proof for its findings, as summarised 
 ## 9. Unresolved owner decisions
 
 1. **Start and order.** Which DEV-1 package starts next, and whether DEV-1.1 and DEV-1.2 precede WP4B-C (recommended: yes, in that order).
-2. **`ci.yml` consent.** Running `scripts/dev/Test-SqlExecutionHonesty.ps1` as a required check (F1; the variable `APPERTURE_REQUIRE_SQL_TESTS=1` it once named is retired and must not be added) and the diagnostics edits (F9) change a required check's workflow.
+2. **`ci.yml` consent.** Running `scripts/dev/Test-SqlExecutionHonesty.ps1` as a required check (F1; the variable `APPERTURE_REQUIRE_SQL_TESTS=1` it once named is retired and must not be added) and the diagnostics edits (F9) change a required check's workflow. **Given for the honesty step (owner, 2026-10-30; delivered as DEV-1.1C, local and unpublished).** The F9 diagnostics edits still need their own consent.
 3. **Destructive local cleanup.** Deleting in-place `bin`/`obj`, the 56 stray trees and old `artifacts/` build folders (F3, F16). Needs the stack stopped, VS Code closed, and a tier chosen. Nothing was cleaned in DEV-1.0.
 4. **CI on the feature branch (F11).** Requires pushing a branch that has none, with cost and exposure implications.
 5. **Validation protocol change (F7).** Adopt the new build flags and review protocol at a named package boundary, with the security owner's agreement.
