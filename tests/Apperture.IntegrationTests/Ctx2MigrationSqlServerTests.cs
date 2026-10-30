@@ -17,9 +17,9 @@ public sealed class Ctx2MigrationSqlServerTests
     [Fact]
     public async Task Ctx2_leaves_existing_history_null_and_adds_no_foreign_keys()
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return; // soft-skip: no reachable SQL endpoint configured
+            return;
 
         var catalog = "Apperture_Ctx2Migration_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -30,7 +30,8 @@ public sealed class Ctx2MigrationSqlServerTests
         }
         catch (InvalidOperationException)
         {
-            return; // soft-skip
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
+            return;
         }
 
         try
@@ -38,7 +39,10 @@ public sealed class Ctx2MigrationSqlServerTests
             await using (var db = NewDb(connectionString))
             {
                 if (!await db.Database.CanConnectAsync())
-                    return; // soft-skip
+                {
+                    SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
+                    return;
+                }
 
                 // Migrate to latest (includes CTX-1 + CTX-2) against an empty database, then insert
                 // a pre-CTX-2-shaped run row directly, proving the migration itself never touches it.

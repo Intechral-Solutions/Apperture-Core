@@ -72,7 +72,13 @@ public static class SqlServerTestConfiguration
         }
         catch (SqlException ex)
         {
-            throw new InvalidOperationException(DescribeConnectionFailure(), ex);
+            // Older soft-skipping helpers catch InvalidOperationException to mean "unreachable"; in required mode the failure
+            // must be a type they cannot catch (see SqlTestExecution).
+            throw SqlTestExecution.Required
+                ? new SqlTestExecutionRequiredException(
+                    $"SQL Server proof is required ({SqlTestExecution.RequireVariable}=1) but the test SQL Server could not be reached. " + DescribeConnectionFailure(),
+                    ex)
+                : new InvalidOperationException(DescribeConnectionFailure(), ex);
         }
 
         using var cmd = conn.CreateCommand();
@@ -116,6 +122,10 @@ public static class SqlServerTestConfiguration
     }
 
     private static bool _skipReachabilityProbeForTests;
+    private static bool _ignoreRuntimeEndpointFilesForTests;
+
+    /// <summary>Test-only: do not read an Aspire endpoint from the checkout's runtime files, so "nothing configured" is reproducible.</summary>
+    internal static void SetIgnoreRuntimeEndpointFilesForTests(bool ignore) => _ignoreRuntimeEndpointFilesForTests = ignore;
 
     /// <summary>Test-only: prefer configured order without probing TCP (preference unit tests).</summary>
     internal static void SetSkipReachabilityProbeForTests(bool skip) => _skipReachabilityProbeForTests = skip;
@@ -271,7 +281,7 @@ public static class SqlServerTestConfiguration
             yield return (DefaultConnectionStringVariable, defaultConnection.Trim());
 
         // Aspire / Manage.ps1 sometimes publish the live endpoint here after AppHost start.
-        var aspireEndpoint = TryReadAspireSqlEndpointFromRuntimeFiles();
+        var aspireEndpoint = _ignoreRuntimeEndpointFilesForTests ? null : TryReadAspireSqlEndpointFromRuntimeFiles();
         if (!string.IsNullOrWhiteSpace(aspireEndpoint))
             yield return ("aspire-runtime-endpoint", aspireEndpoint);
 

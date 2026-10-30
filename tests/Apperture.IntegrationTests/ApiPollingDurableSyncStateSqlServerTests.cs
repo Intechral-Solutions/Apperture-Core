@@ -9,14 +9,15 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SDK-5B: SQL round-trip for Sample.ApiPolling durable last-seen / watermark state.
-/// Soft-skips when no reachable APPERTURE_TEST_SQL_* endpoint is configured.
+/// Without a reachable APPERTURE_TEST_SQL_* endpoint the tests return early in optional mode and fail when
+/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class ApiPollingDurableSyncStateSqlServerTests
 {
     private static async Task<(IDbContextFactory<SampleApiPollingDbContext> Factory, SampleApiPollingDbContext Db)?> TryCreateAsync()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
+        var cs = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (cs is null)
             return null;
 
@@ -26,6 +27,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
         }
         catch (InvalidOperationException)
         {
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
             return null;
         }
 
@@ -34,6 +36,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
+            SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
             return null;
         }
 
@@ -46,7 +49,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
     {
         var created = await TryCreateAsync();
         if (created is null)
-            return; // soft-skip: unavailable SQL endpoint
+            return; // optional mode only: TryCreateAsync has declared it (SqlTestExecution.NotExecuted)
 
         var (factory, db) = created.Value;
         await using (db)
@@ -103,7 +106,7 @@ public sealed class ApiPollingDurableSyncStateSqlServerTests
     {
         var created = await TryCreateAsync();
         if (created is null)
-            return; // soft-skip
+            return; // optional mode only: TryCreateAsync has declared it (SqlTestExecution.NotExecuted)
 
         var (factory, db) = created.Value;
         await using (db)

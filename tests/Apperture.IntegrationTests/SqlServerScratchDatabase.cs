@@ -14,8 +14,9 @@ namespace Apperture.IntegrationTests;
 /// </summary>
 /// <remarks>
 /// <see cref="CreateAsync"/> returns <see langword="null"/> when no SQL Server endpoint is configured or
-/// reachable; callers soft-skip in that case rather than failing the run in environments without SQL
-/// Server (see <see cref="SqlServerTestConfiguration"/>).
+/// reachable and <c>APPERTURE_REQUIRE_SQL_TESTS</c> is not <c>1</c> (optional mode: the skip is announced through
+/// <see cref="SqlTestExecution.NotExecuted"/>); with the variable set it throws instead, so it can never hand a caller a skip
+/// to pass on. <see cref="CreateRequiredAsync"/> throws in both modes.
 /// </remarks>
 public sealed class SqlServerScratchDatabase : IAsyncDisposable
 {
@@ -30,13 +31,14 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
 
     /// <summary>
     /// Creates and migrates a new throwaway catalog named <paramref name="catalogPrefix"/> plus a random
-    /// suffix. Returns <see langword="null"/> (soft-skip) when no SQL Server endpoint is reachable.
+    /// suffix. When no SQL Server endpoint is reachable, returns <see langword="null"/> in optional mode and throws
+    /// <see cref="SqlTestExecutionRequiredException"/> when <c>APPERTURE_REQUIRE_SQL_TESTS=1</c>.
     /// </summary>
     public static async Task<SqlServerScratchDatabase?> CreateAsync(string catalogPrefix)
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return null; // soft-skip: no reachable SQL endpoint configured
+            return null;
 
         var catalog = catalogPrefix + Guid.NewGuid().ToString("N")[..12];
 
@@ -48,7 +50,8 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
         }
         catch (InvalidOperationException)
         {
-            return null; // soft-skip: endpoint unreachable
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create a scratch catalog");
+            return null;
         }
 
         var scratch = new SqlServerScratchDatabase(baseConnectionString, catalog);
@@ -58,7 +61,8 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
             if (!await db.Database.CanConnectAsync())
             {
                 await scratch.DisposeAsync();
-                return null; // soft-skip
+                SqlTestExecution.NotExecuted("the scratch catalog was created but cannot be connected to");
+                return null;
             }
 
             await db.Database.MigrateAsync();

@@ -28,7 +28,7 @@ Tests create their own databases on the selected server (`EnsureTestDatabaseExis
 
 Test infrastructure creates, migrates, seeds and drops catalogs. Before it does, `SqlTestTargetGuard` checks the target. It is one source file, shared by the integration and browser test projects. A target that fails is **refused with an error that names the data source and the catalog and never a credential**. A refusal is a test failure; it is never reported as a skipped or passing test, and resolution never falls through from an unreachable test server to a development server.
 
-**Approved disposable targets:** the `apperture-test-sql` container at `127.0.0.1,1433`; CI's SQL service; an ad-hoc container from `scripts/dev/maintenance/start-adhoc-test-sql.ps1` (dynamic port); LocalDB, which a few older tests still fall back to.
+**Approved disposable targets:** the `apperture-test-sql` container at `127.0.0.1,1433`; CI's SQL service; an ad-hoc container from `scripts/dev/maintenance/start-adhoc-test-sql.ps1` (dynamic port); LocalDB, only when you point a connection string at it yourself. No test falls back to LocalDB on its own any more: an unconfigured or unreachable target is a failure (or, in optional mode, an announced skip), never a run against whatever LocalDB happens to be installed.
 
 **Never a test target:** the Aspire dev SQL container (host port **14333**, database `Apperture`).
 
@@ -54,6 +54,17 @@ the server port 14333 is reserved for the development SQL server. …
 **`.env`:** `scripts/dev/lib/DevDockerSql.ps1` (`Sync-DevEnvFromUserSecrets`, used by native `Manage.ps1` dev start and restart) changes only the `MSSQL_SA_PASSWORD` line of the repo-root `.env` and leaves every other setting, comment, blank line, line ending and byte order mark as it was, so your `APPERTURE_TEST_SQL_CONNECTION_STRING` survives. An unchanged password does not touch the file. It refuses, and leaves the file untouched, if the file is not UTF-8 or contains a NUL byte. It never prints a value.
 
 **Do not** rely on `MSSQL_SA_PASSWORD` alone unless SQL is actually listening on `localhost:1433`. A stale `apperture-test-sql` Docker container on 1433 (from ad-hoc test runs) may have a **different** password than the dev SQL.
+
+### Required and optional SQL mode (`APPERTURE_REQUIRE_SQL_TESTS`)
+
+Most SQL Server tests already fail when SQL Server is not reachable (the audit suites through `AuditSqlScratch`, `SqlServerScratchDatabase.CreateRequiredAsync`, `RequireConnectionString`, the governance and bootstrap fixtures). A group of older ones, and the three IAM classes that read the switch directly, returned early instead. `SqlTestExecution` is now the one place that decides what such a test does:
+
+| Mode | Set by | A SQL test that cannot run against SQL Server |
+|------|--------|-----------------------------------------------|
+| **Required** | `APPERTURE_REQUIRE_SQL_TESTS=1` in the **process environment** (exactly `1`; not read from `.env`) | **Fails** with `SqlTestExecutionRequiredException: SQL Server proof is required (APPERTURE_REQUIRE_SQL_TESTS=1) but this test could not run against SQL Server: …`. That type is deliberately not an `InvalidOperationException`, which older helpers catch to mean "unreachable", so no helper can turn the failure back into a skip. `SqlServerScratchDatabase.CreateAsync` and `EnsureTestDatabaseExists` follow the same rule. |
+| **Optional** (variable unset) | the default | The test returns early after announcing `NOT EXECUTED (soft skip): …` on standard error, and `SqlTestExecution.NotExecutedCount` counts it. **xunit 2 has no dynamic skip, so the run reports that test as Passed.** It is not evidence of anything. |
+
+Use required mode for any run that is offered as proof (CI, a closure run, a review). Optional mode exists only so a developer without a test SQL Server can run a subset of the suite; do not quote its pass counts for the SQL classes. A test may skip only by returning through `SqlTestExecution.NotExecuted`; `SqlSoftSkipGuardTests` fails on any other silent early return from an unavailable SQL Server, on a LocalDB connection literal and on a private read of the switch.
 
 ### CI / docker-compose path
 

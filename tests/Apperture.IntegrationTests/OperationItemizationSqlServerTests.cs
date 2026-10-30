@@ -10,14 +10,15 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SDK-3A: SQL round-trip for platform-owned operation groups/items.
-/// Soft-skips when no reachable APPERTURE_TEST_SQL_* endpoint is configured.
+/// Without a reachable APPERTURE_TEST_SQL_* endpoint the SQL tests return early in optional mode and fail when
+/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class OperationItemizationSqlServerTests
 {
     private static async Task<AppertureDbContext?> TryCreateMigratedDbAsync()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
+        var cs = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (cs is null)
             return null;
 
@@ -27,6 +28,7 @@ public sealed class OperationItemizationSqlServerTests
         }
         catch (InvalidOperationException)
         {
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
             return null;
         }
 
@@ -39,6 +41,7 @@ public sealed class OperationItemizationSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
+            SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
             return null;
         }
 
@@ -51,7 +54,7 @@ public sealed class OperationItemizationSqlServerTests
     {
         await using var db = await TryCreateMigratedDbAsync();
         if (db is null)
-            return; // soft-skip: unavailable SQL endpoint
+            return; // optional mode only: TryCreateMigratedDbAsync has declared it (SqlTestExecution.NotExecuted)
 
         IOperationItemStore store = new SqlOperationItemStore(db);
         var runId = "sdk3a-" + Guid.NewGuid().ToString("N")[..12];
@@ -151,8 +154,8 @@ public sealed class OperationItemizationSqlServerTests
     [Fact]
     public async Task AddOperationItemizationPersistence_registers_Sql_store()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString()
-                 ?? "Server=(localdb)\\mssqllocaldb;Database=Apperture_IntegrationTests;Trusted_Connection=True;";
+        // A wiring test: it resolves the registered stores and never opens a connection, so it needs no SQL Server.
+        var cs = SqlTestExecution.NonConnectingConnectionString;
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(cs);

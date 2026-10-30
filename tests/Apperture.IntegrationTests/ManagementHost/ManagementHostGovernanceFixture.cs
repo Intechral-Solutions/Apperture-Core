@@ -40,8 +40,14 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
-            ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
+        // No implicit fallback (such as a local LocalDB): when no configured target is reachable, SqlAvailable stays false and every
+        // test of the collection fails with the configuration message (AssertSqlAvailable), whatever APPERTURE_REQUIRE_SQL_TESTS says.
+        ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString();
+        if (ConnectionString is null)
+        {
+            SqlAvailable = false;
+            return;
+        }
 
         // Outside the catch below, which turns any failure into "SQL unavailable" and skips the suite: a refusal must fail it.
         SqlTestTargetGuard.EnsureDisposableTarget(ConnectionString, "create the governance test catalog", requireTestsSuffix: true);

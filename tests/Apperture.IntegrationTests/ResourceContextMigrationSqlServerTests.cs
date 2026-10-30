@@ -19,7 +19,8 @@ namespace Apperture.IntegrationTests;
 /// <remarks>
 /// Each run builds its own throwaway catalog so the populated pre-migration state is genuine rather
 /// than whatever a shared test database happens to hold, and so the drop at the end cannot disturb the
-/// shared integration database. Soft-skips when no reachable SQL endpoint is configured.
+/// shared integration database. Without a reachable SQL endpoint it returns early in optional mode and fails when
+/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class ResourceContextMigrationSqlServerTests
@@ -32,9 +33,9 @@ public sealed class ResourceContextMigrationSqlServerTests
     [Fact]
     public async Task Ctx1_seeds_shared_and_backfills_every_existing_context_owned_resource()
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return; // soft-skip: no reachable SQL endpoint configured
+            return;
 
         var catalog = "Apperture_Ctx1Migration_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -45,7 +46,8 @@ public sealed class ResourceContextMigrationSqlServerTests
         }
         catch (InvalidOperationException)
         {
-            return; // soft-skip: endpoint unreachable
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
+            return;
         }
 
         try
@@ -56,7 +58,10 @@ public sealed class ResourceContextMigrationSqlServerTests
             await using (var preDb = NewDb(connectionString))
             {
                 if (!await preDb.Database.CanConnectAsync())
-                    return; // soft-skip
+                {
+                    SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
+                    return;
+                }
 
                 await preDb.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreCtx1Migration);
 

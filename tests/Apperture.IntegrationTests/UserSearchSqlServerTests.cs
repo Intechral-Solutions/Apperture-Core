@@ -14,8 +14,8 @@ namespace Apperture.IntegrationTests;
 /// and the fields search deliberately does not read (email, user id).
 /// </summary>
 /// <remarks>
-/// Soft-skips without a reachable SQL endpoint, like the rest of the SQL suite; set
-/// <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> to make an absent server a failure.
+/// Without a reachable SQL endpoint the tests return early in optional mode; <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> makes an absent
+/// server a failure (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class UserSearchSqlServerTests
@@ -43,11 +43,10 @@ public sealed class UserSearchSqlServerTests
 
     private async Task<(SqlServerScratchDatabase Scratch, SqlUserRepository Repo, AppertureDbContext Db)?> SeedAsync(params UserEntity[] extra)
     {
+        // Throws when APPERTURE_REQUIRE_SQL_TESTS=1 and no endpoint is reachable; otherwise null is the announced skip.
         var scratch = await SqlServerScratchDatabase.CreateAsync("Apperture_Iam93Search_");
         if (scratch is null)
         {
-            if (Environment.GetEnvironmentVariable("APPERTURE_REQUIRE_SQL_TESTS") == "1")
-                throw new InvalidOperationException("SQL Server proof is required but no endpoint is reachable.");
             _output.WriteLine("NOT EXECUTED (soft skip): no SQL Server endpoint is reachable");
             return null;
         }

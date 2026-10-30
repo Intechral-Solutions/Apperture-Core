@@ -149,6 +149,8 @@ public sealed class SqlServerTestConfigurationTests
         "Server=203.0.113.8,14333;User Id=sa;Password=" + Secret + ";TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture;";
     private const string UnroutableTestSql =
         "Server=203.0.113.7,1433;User Id=sa;Password=" + Secret + ";TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture;";
+    private const string UnroutableTestSqlWithCatalog =
+        "Server=203.0.113.7,1433;User Id=sa;Password=" + Secret + ";TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture_RequiredProbe;";
 
     [Fact]
     public void GetConnectionString_refuses_the_development_sql_port_from_the_explicit_variable()
@@ -357,9 +359,147 @@ public sealed class SqlServerTestConfigurationTests
 
         // Positive control for the test above: with a valid prefix the same unreachable server gives the soft-skip null, so the
         // refusal there came from the catalog rule and not from the server.
+        var before = SqlTestExecution.NotExecutedCount;
         var created = await SqlServerScratchDatabase.CreateAsync("Apperture_ScratchProbe");
 
         created.Should().BeNull();
+        SqlTestExecution.NotExecutedCount.Should().BeGreaterThan(before, "an optional-mode skip is announced, not silent");
+    }
+
+    // ---- APPERTURE_REQUIRE_SQL_TESTS: a SQL test that cannot run fails, and no helper can turn that back into a skip ------------
+
+    [Fact]
+    public void In_required_mode_NotExecuted_throws_a_type_the_unreachable_server_catches_cannot_swallow()
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, "1");
+
+        var act = () => SqlTestExecution.NotExecuted("no endpoint");
+
+        var thrown = act.Should().Throw<SqlTestExecutionRequiredException>().Which;
+        thrown.Should().NotBeAssignableTo<InvalidOperationException>("older helpers catch InvalidOperationException to mean unreachable");
+        thrown.Message.Should().Contain("no endpoint").And.Contain(SqlTestExecution.RequireVariable);
+    }
+
+    [Fact]
+    public void In_optional_mode_NotExecuted_announces_the_skip_and_returns()
+    {
+        using var _ = new EnvScope(_saved);
+        var before = SqlTestExecution.NotExecutedCount;
+
+        SqlTestExecution.NotExecuted("unit-test-reason-5d2f");
+
+        SqlTestExecution.NotExecutedCount.Should().Be(before + 1);
+        SqlTestExecution.NotExecutedReasons.Should().Contain("unit-test-reason-5d2f");
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData("yes")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    public void Only_the_exact_value_1_makes_SQL_tests_required(string value)
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, value);
+
+        SqlTestExecution.Required.Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_require_switch_is_read_from_the_process_environment_and_not_from_the_env_file()
+    {
+        using var _ = new EnvScope(_saved);
+        // An explicit candidate ends the resolution at once (the probe is off), so nothing else is consulted or contacted.
+        Set(ExplicitCs: UnroutableTestSql, Default: null, Password: null);
+        var envFile = Path.Combine(Path.GetTempPath(), "apperture-env-require-" + Guid.NewGuid().ToString("N") + ".env");
+        File.WriteAllText(envFile, $"{SqlTestExecution.RequireVariable}=1\n");
+        SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(envFile);
+        SqlServerTestConfiguration.ResetEnvLoadForTests();
+
+        try
+        {
+            // Resolving loads the supported keys from the env file; the switch is not one of them.
+            GC.KeepAlive(SqlServerTestConfiguration.GetConnectionString());
+
+            SqlTestExecution.Required.Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(envFile);
+        }
+    }
+
+    [Fact]
+    public void EnsureTestDatabaseExists_reports_an_unreachable_server_as_InvalidOperationException_in_optional_mode()
+    {
+        using var _ = new EnvScope(_saved);
+
+        var act = () => SqlServerTestConfiguration.EnsureTestDatabaseExists(UnroutableTestSqlWithCatalog);
+
+        act.Should().Throw<InvalidOperationException>().Which.Should().NotBeOfType<SqlTestExecutionRequiredException>();
+    }
+
+    [Fact]
+    public void EnsureTestDatabaseExists_reports_an_unreachable_server_as_a_required_failure_that_InvalidOperationException_catches_miss()
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, "1");
+
+        var act = () => SqlServerTestConfiguration.EnsureTestDatabaseExists(UnroutableTestSqlWithCatalog);
+
+        act.Should().Throw<SqlTestExecutionRequiredException>().Which.Should().NotBeAssignableTo<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void With_no_endpoint_configured_ConnectionStringOrNotExecuted_announces_the_skip_in_optional_mode()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: null, Default: null, Password: null);
+        var before = SqlTestExecution.NotExecutedCount;
+
+        var connectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
+
+        connectionString.Should().BeNull();
+        SqlTestExecution.NotExecutedCount.Should().Be(before + 1, "a null that is not announced would be a silent skip");
+    }
+
+    [Fact]
+    public void With_no_endpoint_configured_ConnectionStringOrNotExecuted_fails_in_required_mode()
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, "1");
+        Set(ExplicitCs: null, Default: null, Password: null);
+
+        var act = () => SqlTestExecution.ConnectionStringOrNotExecuted();
+
+        act.Should().Throw<SqlTestExecutionRequiredException>().Which.Message.Should().Contain("not configured");
+    }
+
+    [Fact]
+    public async Task In_required_mode_the_scratch_helper_fails_when_no_endpoint_is_configured_instead_of_returning_null()
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, "1");
+        Set(ExplicitCs: null, Default: null, Password: null);
+
+        var act = () => SqlServerScratchDatabase.CreateAsync("Apperture_ScratchProbe");
+
+        await act.Should().ThrowAsync<SqlTestExecutionRequiredException>();
+    }
+
+    [Fact]
+    public async Task In_required_mode_the_scratch_helper_fails_on_an_unreachable_server_instead_of_returning_null()
+    {
+        using var _ = new EnvScope(_saved);
+        Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, "1");
+        Set(ExplicitCs: UnroutableTestSql, Default: null, Password: null);
+
+        var act = () => SqlServerScratchDatabase.CreateAsync("Apperture_ScratchProbe");
+
+        await act.Should().ThrowAsync<SqlTestExecutionRequiredException>();
     }
 
     private static void Set(
@@ -388,6 +528,7 @@ public sealed class SqlServerTestConfigurationTests
             SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(_isolatedEnvFile);
             SqlServerTestConfiguration.ResetEnvLoadForTests();
             SqlServerTestConfiguration.SetSkipReachabilityProbeForTests(true);
+            SqlServerTestConfiguration.SetIgnoreRuntimeEndpointFilesForTests(true);
 
             Save(SqlServerTestConfiguration.ExplicitConnectionStringVariable);
             Save(SqlServerTestConfiguration.DefaultConnectionStringVariable);
@@ -397,6 +538,9 @@ public sealed class SqlServerTestConfigurationTests
             Save("MSSQL_TEST_DATABASE");
             Save(SqlTestTargetGuard.ProtectedTargetOptInVariable);
             Environment.SetEnvironmentVariable(SqlTestTargetGuard.ProtectedTargetOptInVariable, null);
+            // These cases assert both modes, so none may depend on the mode the surrounding run (for example CI) was started in.
+            Save(SqlTestExecution.RequireVariable);
+            Environment.SetEnvironmentVariable(SqlTestExecution.RequireVariable, null);
         }
 
         private void Save(string key) => _saved[key] = Environment.GetEnvironmentVariable(key);
@@ -408,6 +552,7 @@ public sealed class SqlServerTestConfigurationTests
             SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(null);
             SqlServerTestConfiguration.ResetEnvLoadForTests();
             SqlServerTestConfiguration.SetSkipReachabilityProbeForTests(false);
+            SqlServerTestConfiguration.SetIgnoreRuntimeEndpointFilesForTests(false);
             if (File.Exists(_isolatedEnvFile))
                 File.Delete(_isolatedEnvFile);
         }

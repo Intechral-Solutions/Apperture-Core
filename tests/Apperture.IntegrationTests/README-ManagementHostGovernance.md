@@ -107,9 +107,9 @@ $env:APPERTURE_TEST_SFTP_PASSWORD = "AppertureSftp59a!"
 dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Sftp"
 ```
 
-**Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` and ensure the instance is running.
+**Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works only if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` yourself and ensure the instance is running; there is no implicit LocalDB fallback.
 
-If SQL is unreachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass).
+If no configured SQL target is reachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass), and `BootstrapHttpFixture` fails its collection with the same message. `APPERTURE_REQUIRE_SQL_TESTS` does not change this: these fixtures never skipped.
 
 If SFTP is unreachable, Epic 59A tests fail fast with a message describing required `APPERTURE_TEST_SFTP_*` settings.
 

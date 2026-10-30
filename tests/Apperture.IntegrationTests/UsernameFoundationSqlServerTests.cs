@@ -602,9 +602,9 @@ public sealed class UsernameFoundationSqlServerTests
 
     private async Task<Scratch?> CreateEmptyAsync(string prefix)
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return NotExecuted("no SQL Server endpoint is configured");
+            return Announce("no SQL Server endpoint is configured");
 
         var catalog = prefix + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -620,10 +620,16 @@ public sealed class UsernameFoundationSqlServerTests
         return new Scratch(baseConnectionString, catalog, connectionString);
     }
 
+    /// <summary>Declares the skip (throws when SQL Server proof is required) and also writes it to this test's output.</summary>
     private Scratch? NotExecuted(string reason)
     {
-        if (Environment.GetEnvironmentVariable("APPERTURE_REQUIRE_SQL_TESTS") == "1")
-            throw new InvalidOperationException("SQL Server proof is required but " + reason + ".");
+        SqlTestExecution.NotExecuted(reason);
+        return Announce(reason);
+    }
+
+    /// <summary>Writes a skip that <see cref="SqlTestExecution"/> has already declared to this test's output.</summary>
+    private Scratch? Announce(string reason)
+    {
         _output.WriteLine("NOT EXECUTED (soft skip): " + reason);
         return null;
     }

@@ -26,7 +26,8 @@ namespace Apperture.IntegrationTests;
 /// Each test uses its own throwaway catalog. Rows are inserted with only the actor columns meaningful: every other
 /// required column gets a type-appropriate filler, and the target tables' foreign-key and check constraints are disabled
 /// in that catalog only. The identity tables keep all their constraints. Without a reachable SQL endpoint the tests
-/// return early and write "NOT EXECUTED"; <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> turns that into a failure.
+/// return early and write "NOT EXECUTED"; <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> turns that into a failure
+/// (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class HistoricalActorNormalizationSqlServerTests
@@ -420,9 +421,9 @@ public sealed class HistoricalActorNormalizationSqlServerTests
 
     private async Task<ScratchDatabase?> CreateSeededAsync(string prefix, bool corpus = true)
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return NotExecuted("no SQL Server endpoint is configured");
+            return Announce("no SQL Server endpoint is configured");
 
         var catalog = prefix + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -534,10 +535,16 @@ public sealed class HistoricalActorNormalizationSqlServerTests
     // SQL helpers
     // -------------------------------------------------------------------------------------------------------------
 
+    /// <summary>Declares the skip (throws when SQL Server proof is required) and also writes it to this test's output.</summary>
     private ScratchDatabase? NotExecuted(string reason)
     {
-        if (Environment.GetEnvironmentVariable("APPERTURE_REQUIRE_SQL_TESTS") == "1")
-            throw new InvalidOperationException("SQL Server proof is required but " + reason + ".");
+        SqlTestExecution.NotExecuted(reason);
+        return Announce(reason);
+    }
+
+    /// <summary>Writes a skip that <see cref="SqlTestExecution"/> has already declared to this test's output.</summary>
+    private ScratchDatabase? Announce(string reason)
+    {
         _output.WriteLine("NOT EXECUTED (soft skip): " + reason);
         return null;
     }

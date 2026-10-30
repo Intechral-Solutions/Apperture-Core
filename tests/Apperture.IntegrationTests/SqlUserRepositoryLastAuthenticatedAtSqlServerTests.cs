@@ -2,6 +2,7 @@ using Apperture.ControlPlane.Security;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using Apperture.Shared.Kernel;
+using Apperture.SqlTestTargets;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -13,52 +14,45 @@ namespace Apperture.IntegrationTests;
 /// <summary>
 /// SQL Server evidence that concurrent <see cref="SqlUserRepository.UpdateLastAuthenticatedAtAsync"/>
 /// and user resolution do not fail requests due to optimistic concurrency on identity links.
-/// Skips when SQL Server / LocalDB is unavailable.
+/// It runs against the configured test SQL Server only (never an implicit LocalDB). Without one it returns early in optional mode
+/// and fails when APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
 /// </summary>
 public sealed class SqlUserRepositoryLastAuthenticatedAtSqlServerTests
 {
-    private const string LocalDbConnectionString =
-        "Server=(localdb)\\mssqllocaldb;Database=Apperture_IntegrationTests;Trusted_Connection=True;";
-
     private static async Task<(AppertureDbContext Db, DbContextOptions<AppertureDbContext> Options)?> TryCreateMigratedDbAsync()
     {
-        var configured = SqlServerTestConfiguration.GetConnectionString();
-        var candidates = new List<string>();
-        if (configured is not null)
-            candidates.Add(configured);
-        candidates.Add(LocalDbConnectionString);
+        var connectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
+        if (connectionString is null)
+            return null;
 
-        foreach (var connectionString in candidates)
+        AppertureDbContext? db = null;
+        try
         {
-            AppertureDbContext? db = null;
-            try
+            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
+            var options = new DbContextOptionsBuilder<AppertureDbContext>()
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+                .UseSqlServer(connectionString)
+                .Options;
+
+            db = new AppertureDbContext(options);
+            if (!await db.Database.CanConnectAsync())
             {
-                if (connectionString == configured)
-                    SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-
-                var options = new DbContextOptionsBuilder<AppertureDbContext>()
-                    .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
-                    .UseSqlServer(connectionString)
-                    .Options;
-
-                db = new AppertureDbContext(options);
-                if (!await db.Database.CanConnectAsync())
-                {
-                    await db.DisposeAsync();
-                    continue;
-                }
-
-                await AppertureDatabaseMigrator.MigrateAsync(db);
-                return (db, options);
+                await db.DisposeAsync();
+                SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
+                return null;
             }
-            catch
-            {
-                if (db is not null)
-                    await db.DisposeAsync();
-            }
+
+            await AppertureDatabaseMigrator.MigrateAsync(db);
+            return (db, options);
         }
-
-        return null;
+        catch (Exception ex) when (ex is not SqlTestExecutionRequiredException and not SqlTestTargetRefusedException)
+        {
+            if (db is not null)
+                await db.DisposeAsync();
+            SqlTestExecution.NotExecuted("the test SQL Server could not prepare the catalog (" + ex.GetType().Name + ")", ex);
+            return null;
+        }
     }
 
     [Fact]

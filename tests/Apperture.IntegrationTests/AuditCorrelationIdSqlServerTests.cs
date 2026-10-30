@@ -18,9 +18,9 @@ public sealed class AuditCorrelationIdSqlServerTests
     [Fact]
     public async Task CorrelationId_round_trips_through_append_and_query()
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return; // soft-skip
+            return;
 
         var catalog = "Apperture_AuditCorrelation_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -31,14 +31,18 @@ public sealed class AuditCorrelationIdSqlServerTests
         }
         catch (InvalidOperationException)
         {
-            return; // soft-skip
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
+            return;
         }
 
         try
         {
             await using var db = NewDb(connectionString);
             if (!await db.Database.CanConnectAsync())
-                return; // soft-skip
+            {
+                SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
+                return;
+            }
             await db.Database.MigrateAsync();
 
             var service = new SqlAuditService(db);
@@ -80,9 +84,9 @@ public sealed class AuditCorrelationIdSqlServerTests
     [Fact]
     public async Task Null_correlation_id_does_not_throw_and_reads_back_null()
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
+        var baseConnectionString = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (baseConnectionString is null)
-            return; // soft-skip
+            return;
 
         var catalog = "Apperture_AuditCorrelationNull_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
@@ -93,14 +97,18 @@ public sealed class AuditCorrelationIdSqlServerTests
         }
         catch (InvalidOperationException)
         {
-            return; // soft-skip
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
+            return;
         }
 
         try
         {
             await using var db = NewDb(connectionString);
             if (!await db.Database.CanConnectAsync())
-                return; // soft-skip
+            {
+                SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
+                return;
+            }
             await db.Database.MigrateAsync();
 
             var service = new SqlAuditService(db);

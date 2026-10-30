@@ -9,7 +9,8 @@ namespace Apperture.IntegrationTests;
 
 /// <summary>
 /// SWM-2: proves RunExistsAsync EF predicate translates on SQL Server (regression for .UtcDateTime).
-/// Skips when no reachable test SQL endpoint is configured.
+/// Without a reachable test SQL endpoint the test returns early in optional mode and fails when
+/// APPERTURE_REQUIRE_SQL_TESTS=1 (see <see cref="SqlTestExecution"/>).
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class ScheduleRunExistsSqlServerTests
@@ -18,7 +19,7 @@ public sealed class ScheduleRunExistsSqlServerTests
 
     private static async Task<AppertureDbContext?> TryCreateMigratedDbAsync()
     {
-        var cs = SqlServerTestConfiguration.GetConnectionString();
+        var cs = SqlTestExecution.ConnectionStringOrNotExecuted();
         if (cs is null)
             return null;
 
@@ -28,6 +29,7 @@ public sealed class ScheduleRunExistsSqlServerTests
         }
         catch (InvalidOperationException)
         {
+            SqlTestExecution.NotExecuted("the test SQL Server could not be reached to create the catalog");
             return null;
         }
 
@@ -40,6 +42,7 @@ public sealed class ScheduleRunExistsSqlServerTests
         if (!await db.Database.CanConnectAsync())
         {
             await db.DisposeAsync();
+            SqlTestExecution.NotExecuted("the test catalog was created but cannot be connected to");
             return null;
         }
 
@@ -52,7 +55,7 @@ public sealed class ScheduleRunExistsSqlServerTests
     {
         await using var db = await TryCreateMigratedDbAsync();
         if (db is null)
-            return; // soft-skip: stale/unavailable APPERTURE_TEST_SQL_* endpoints
+            return; // optional mode only: TryCreateMigratedDbAsync has declared it (SqlTestExecution.NotExecuted)
 
         var scheduleId = "swm2-" + Guid.NewGuid().ToString("N")[..12];
         db.ScheduleRuns.Add(new ScheduleRunEntity
