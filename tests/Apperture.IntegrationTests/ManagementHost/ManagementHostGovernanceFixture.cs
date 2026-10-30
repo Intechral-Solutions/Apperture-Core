@@ -1,6 +1,7 @@
 using Apperture.Core.Domain.ResourceContexts;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +42,9 @@ public sealed class ManagementHostGovernanceFixture : IAsyncLifetime
     {
         ConnectionString = SqlServerTestConfiguration.GetGovernanceConnectionString()
             ?? ManagementGovernanceTestConstants.DefaultLocalDbConnectionString;
+
+        // Outside the catch below, which turns any failure into "SQL unavailable" and skips the suite: a refusal must fail it.
+        SqlTestTargetGuard.EnsureDisposableTarget(ConnectionString, "create the governance test catalog", requireTestsSuffix: true);
 
         try
         {

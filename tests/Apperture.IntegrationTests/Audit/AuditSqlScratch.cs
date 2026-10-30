@@ -1,5 +1,6 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Audit;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -137,6 +138,9 @@ public sealed class AuditSqlScratch : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // The catalog was validated when it was created; a drop is validated again, outside the best-effort catch below.
+        SqlTestTargetGuard.EnsureDisposableCatalogOnServer(_baseConnectionString, Catalog, "drop a test catalog");
+
         SqlConnection.ClearAllPools();
         try
         {

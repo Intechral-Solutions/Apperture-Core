@@ -1,4 +1,5 @@
 using Apperture.Persistence.SqlServer;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -93,6 +94,9 @@ public sealed class SqlServerScratchDatabase : IAsyncDisposable
     /// <summary>Best-effort drop of the scratch catalog. A leftover throwaway catalog must not fail a test run.</summary>
     public async ValueTask DisposeAsync()
     {
+        // The catalog was validated when it was created; a drop is validated again, outside the best-effort catch below.
+        SqlTestTargetGuard.EnsureDisposableCatalogOnServer(_baseConnectionString, _catalog, "drop a test catalog");
+
         try
         {
             var master = new SqlConnectionStringBuilder(_baseConnectionString) { InitialCatalog = "master" }.ConnectionString;

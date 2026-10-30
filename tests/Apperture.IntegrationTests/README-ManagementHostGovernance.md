@@ -6,6 +6,8 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 
 Resolution is centralized in [`SqlServerTestConfiguration.cs`](../SqlServerTestConfiguration.cs).
 
+Every candidate is checked by `SqlTestTargetGuard` before anything connects to it: the Aspire dev SQL (host port 14333) and the bare `Apperture` catalog are refused, and a governance catalog must end in `Tests`. A refusal fails the test with a message naming the target; it is not skipped. See [Test SQL target safety](../../README.md#test-sql-target-safety).
+
 **General SqlServer integration tests** (`AuditTimelineSqlServerTests`, `Epic73SqlSeamsIntegrationTests`, etc.):
 
 | Priority | Variable | Purpose |

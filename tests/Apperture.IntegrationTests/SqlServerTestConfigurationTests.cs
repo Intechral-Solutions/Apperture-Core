@@ -1,3 +1,4 @@
+using Apperture.SqlTestTargets;
 using FluentAssertions;
 using Xunit;
 
@@ -138,6 +139,198 @@ public sealed class SqlServerTestConfigurationTests
         summary.Should().NotContain("Password=");
     }
 
+    // ---- disposable-target separation (the development SQL port and the development catalog) ----------------------------
+    // None of these may reach a real server, even while the guard is being weakened on purpose: every address is unroutable
+    // (203.0.113.0/24 is reserved for documentation), the port is what the guard recognises, and every connection string carries
+    // Connect Timeout=1. The live development SQL server on 127.0.0.1,14333 is never named in a case that could connect.
+
+    private const string Secret = "S3cret!Pw-Marker";
+    private const string DevelopmentSql =
+        "Server=203.0.113.8,14333;User Id=sa;Password=" + Secret + ";TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture;";
+    private const string UnroutableTestSql =
+        "Server=203.0.113.7,1433;User Id=sa;Password=" + Secret + ";TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture;";
+
+    [Fact]
+    public void GetConnectionString_refuses_the_development_sql_port_from_the_explicit_variable()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: DevelopmentSql, Default: null, Password: null);
+
+        var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+        var message = act.Should().Throw<SqlTestTargetRefusedException>().Which.Message;
+        message.Should().Contain("203.0.113.8,14333").And.Contain("reserved for the development SQL server").And.NotContain(Secret);
+    }
+
+    [Fact]
+    public void GetConnectionString_refuses_an_unparseable_value_instead_of_failing_inside_the_parser()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: "this is not a connection string", Default: null, Password: null);
+
+        var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("unparseable");
+    }
+
+    [Fact]
+    public void GetConnectionString_refuses_the_development_sql_port_when_it_arrives_as_the_aspire_default_connection()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: null, Default: DevelopmentSql, Password: null);
+
+        var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("14333");
+    }
+
+    [Fact]
+    public void GetConnectionString_refuses_the_development_sql_port_from_the_legacy_server_variable()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: null, Default: null, Password: "legacy-pass");
+        Environment.SetEnvironmentVariable("MSSQL_TEST_SERVER", "tcp:203.0.113.8,14333");
+
+        var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("14333");
+    }
+
+    [Fact]
+    public void An_unreachable_test_server_never_falls_through_to_the_development_sql_port()
+    {
+        using var _ = new EnvScope(_saved);
+        SqlServerTestConfiguration.SetSkipReachabilityProbeForTests(false);
+        Set(ExplicitCs: UnroutableTestSql, Default: DevelopmentSql, Password: null);
+
+        // The explicit target fails its 3 s probe; the next candidate is the development server and must be refused, not used.
+        var act = () => SqlServerTestConfiguration.RequireConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("14333");
+    }
+
+    [Fact]
+    public void The_explicit_opt_in_lets_the_development_sql_port_through_the_resolver()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: DevelopmentSql, Default: null, Password: null);
+        Environment.SetEnvironmentVariable(SqlTestTargetGuard.ProtectedTargetOptInVariable, "1");
+
+        var cs = SqlServerTestConfiguration.GetConnectionString();
+
+        cs.Should().NotBeNull().And.Contain("14333").And.Contain("Apperture_IntegrationTests");
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData("yes")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    public void Only_the_exact_value_1_counts_as_the_opt_in(string value)
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: DevelopmentSql, Default: null, Password: null);
+        Environment.SetEnvironmentVariable(SqlTestTargetGuard.ProtectedTargetOptInVariable, value);
+
+        var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>();
+    }
+
+    [Fact]
+    public void The_opt_in_is_read_from_the_process_environment_and_not_from_the_env_file()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: null, Default: null, Password: null);
+        var envFile = Path.Combine(Path.GetTempPath(), "apperture-env-optin-" + Guid.NewGuid().ToString("N") + ".env");
+        File.WriteAllText(
+            envFile,
+            $"APPERTURE_TEST_SQL_CONNECTION_STRING={DevelopmentSql}\n{SqlTestTargetGuard.ProtectedTargetOptInVariable}=1\n");
+        SqlServerTestConfiguration.SetEnvFilePathOverrideForTests(envFile);
+        SqlServerTestConfiguration.ResetEnvLoadForTests();
+
+        try
+        {
+            var act = () => SqlServerTestConfiguration.GetConnectionString();
+
+            act.Should().Throw<SqlTestTargetRefusedException>();
+        }
+        finally
+        {
+            File.Delete(envFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("Apperture")]
+    [InlineData("Apperture_ManagementGovernance")]
+    [InlineData("master")]
+    public void GetGovernanceConnectionString_refuses_a_catalog_that_does_not_end_in_Tests(string catalog)
+    {
+        using var _ = new EnvScope(_saved);
+        Set(
+            Governance: $"Server=ci,1433;User Id=sa;Password={Secret};TrustServerCertificate=True;Initial Catalog={catalog};",
+            ExplicitCs: null,
+            Default: null,
+            Password: null);
+
+        var act = () => SqlServerTestConfiguration.GetGovernanceConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain($"database={catalog}").And.NotContain(Secret);
+    }
+
+    [Fact]
+    public void GetGovernanceConnectionString_refuses_the_development_sql_port_in_the_ci_variable()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(
+            Governance: "Server=203.0.113.8,14333;User Id=sa;Password=x;TrustServerCertificate=True;Initial Catalog=Apperture_ManagementGovernanceTests;",
+            ExplicitCs: null,
+            Default: null,
+            Password: null);
+
+        var act = () => SqlServerTestConfiguration.GetGovernanceConnectionString();
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("14333");
+    }
+
+    [Fact]
+    public void EnsureTestDatabaseExists_refuses_the_development_sql_port_before_it_connects()
+    {
+        using var _ = new EnvScope(_saved);
+        var connectionString =
+            $"Server=203.0.113.7,14333;User Id=sa;Password={Secret};TrustServerCertificate=True;Connect Timeout=1;Initial Catalog=Apperture_Probe;";
+
+        var act = () => SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
+
+        // Had the guard not run first, this would have failed as an InvalidOperationException from the unreachable connect.
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("14333");
+    }
+
+    [Fact]
+    public void EnsureTestDatabaseExists_refuses_the_bare_development_catalog_before_it_connects()
+    {
+        using var _ = new EnvScope(_saved);
+
+        var act = () => SqlServerTestConfiguration.EnsureTestDatabaseExists(UnroutableTestSql);
+
+        act.Should().Throw<SqlTestTargetRefusedException>().Which.Message.Should().Contain("database=Apperture]");
+    }
+
+    [Fact]
+    public async Task A_soft_skipping_scratch_helper_does_not_swallow_a_refused_target()
+    {
+        using var _ = new EnvScope(_saved);
+        Set(ExplicitCs: DevelopmentSql, Default: null, Password: null);
+
+        // CreateAsync catches InvalidOperationException (an unreachable server) and returns null so the caller can skip.
+        var act = () => SqlServerScratchDatabase.CreateAsync("Apperture_Probe");
+
+        await act.Should().ThrowAsync<SqlTestTargetRefusedException>();
+    }
+
     private static void Set(
         string? ExplicitCs = "",
         string? Default = "",
@@ -171,6 +364,8 @@ public sealed class SqlServerTestConfigurationTests
             Save("MSSQL_SA_PASSWORD");
             Save("MSSQL_TEST_SERVER");
             Save("MSSQL_TEST_DATABASE");
+            Save(SqlTestTargetGuard.ProtectedTargetOptInVariable);
+            Environment.SetEnvironmentVariable(SqlTestTargetGuard.ProtectedTargetOptInVariable, null);
         }
 
         private void Save(string key) => _saved[key] = Environment.GetEnvironmentVariable(key);

@@ -1,6 +1,107 @@
 # Docker SQL and User Secrets sync for native dev mode.
 Set-StrictMode -Version Latest
 
+function Set-DevEnvFileValue {
+    <#
+    .SYNOPSIS
+        Sets one KEY=value assignment in an env file and leaves every other byte of the file as it was.
+    .DESCRIPTION
+        The repo-root .env also carries the test SQL settings (APPERTURE_TEST_SQL_CONNECTION_STRING and friends), so it must
+        never be rewritten wholesale. Only active assignments of exactly KEY are changed (an optional leading "export" and
+        indentation are kept; comments, look-alike names and every other line are not touched). If KEY is missing it is appended.
+        Line endings (including mixed ones), the UTF-8 byte order mark and a missing final newline are preserved. When the value
+        is already current the file is not rewritten at all. A changed file is written to a temporary sibling and swapped in, so
+        an interrupted run cannot leave a half-written file.
+
+        A file that cannot be updated safely is refused and left exactly as it was: invalid UTF-8, a NUL byte (UTF-16 or binary),
+        a directory, an invalid KEY, or a value containing a line break. The value is never written to any output.
+    .OUTPUTS
+        'created', 'added', 'updated' or 'unchanged'.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Value
+    )
+
+    if ($Key -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+        throw "Refusing to update env file '$Path': '$Key' is not a valid variable name."
+    }
+    if ($Value -match '[\r\n]' -or $Value.IndexOf([char]0) -ge 0) {
+        throw "Refusing to update env file '$Path': the value for $Key contains a line break or NUL character."
+    }
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        throw "Refusing to update env file: '$Path' is a directory."
+    }
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+
+    if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        $plainUtf8 = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($full, "$Key=$Value" + [Environment]::NewLine, $plainUtf8)
+        return 'created'
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($full)
+    $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    if ([Array]::IndexOf($bytes, [byte]0) -ge 0) {
+        throw "Refusing to update env file '$full': it contains a NUL byte (UTF-16 or binary), so it was left untouched."
+    }
+    $offset = if ($hasBom) { 3 } else { 0 }
+    $strictUtf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    try {
+        $text = $strictUtf8.GetString($bytes, $offset, $bytes.Length - $offset)
+    }
+    catch {
+        throw "Refusing to update env file '$full': it is not valid UTF-8, so it was left untouched."
+    }
+
+    # Split on line endings, keeping each separator, so the file is reassembled byte for byte.
+    $parts = [regex]::Split($text, '(\r\n|\n|\r)')
+    $pattern = '^(?<lead>\s*(?:export\s+)?)' + [regex]::Escape($Key) + '(?<eq>\s*=)(?<rest>.*)$'
+    $found = 0
+    $changed = $false
+    for ($i = 0; $i -lt $parts.Length; $i += 2) {
+        $match = [regex]::Match($parts[$i], $pattern)
+        if (-not $match.Success) { continue }
+        $found++
+        if ($match.Groups['rest'].Value -ceq $Value) { continue }
+        $parts[$i] = $match.Groups['lead'].Value + $Key + $match.Groups['eq'].Value + $Value
+        $changed = $true
+    }
+
+    if ($found -gt 0) {
+        if (-not $changed) { return 'unchanged' }
+        $newText = -join $parts
+        $status = 'updated'
+    }
+    else {
+        $newline = if ($parts.Length -gt 1) { $parts[1] } else { [Environment]::NewLine }
+        $lastLine = $parts[$parts.Length - 1]
+        $newText = $text
+        if ($lastLine.Length -gt 0) { $newText += $newline }
+        $newText += "$Key=$Value" + $newline
+        $status = 'added'
+    }
+
+    $encoding = New-Object System.Text.UTF8Encoding($hasBom)
+    $body = $encoding.GetBytes($newText)
+    $output = if ($hasBom) { [byte[]]($encoding.GetPreamble() + $body) } else { $body }
+
+    $temp = $full + '.tmp-' + [guid]::NewGuid().ToString('N')
+    try {
+        [System.IO.File]::WriteAllBytes($temp, $output)
+        # [NullString]::Value, not $null: PowerShell turns $null into "" for a .NET string argument, which Replace rejects.
+        [System.IO.File]::Replace($temp, $full, [NullString]::Value)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+    }
+
+    return $status
+}
+
 function Sync-DevEnvFromUserSecrets {
     param(
         [Parameter(Mandatory)][string]$RepoRoot,
@@ -30,8 +131,9 @@ function Sync-DevEnvFromUserSecrets {
         throw 'SqlServer:Password not found in User Secrets.'
     }
 
-    [System.IO.File]::WriteAllText($envPath, "MSSQL_SA_PASSWORD=$password")
-    Write-Host 'Synced .env from User Secrets (SqlServer:Password -> MSSQL_SA_PASSWORD)' -ForegroundColor Green
+    # Change only MSSQL_SA_PASSWORD. The repo-root .env also holds the test SQL settings, which a wholesale rewrite would delete.
+    $result = Set-DevEnvFileValue -Path $envPath -Key 'MSSQL_SA_PASSWORD' -Value $password
+    Write-Host "Synced .env from User Secrets (SqlServer:Password -> MSSQL_SA_PASSWORD: $result; other settings left as they were)" -ForegroundColor Green
     return $password
 }
 

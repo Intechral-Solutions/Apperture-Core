@@ -1,3 +1,4 @@
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 
 namespace Apperture.IntegrationTests;
@@ -6,6 +7,11 @@ namespace Apperture.IntegrationTests;
 /// Resolves SQL Server connection strings for integration tests without implicitly assuming
 /// <c>localhost:1433</c>. Supports Aspire dynamic ports via explicit or injected connection strings.
 /// </summary>
+/// <remarks>
+/// Every candidate is checked by <see cref="SqlTestTargetGuard"/> before anything connects to it, and a refusal is thrown (as
+/// <see cref="SqlTestTargetRefusedException"/>) rather than skipped to the next candidate or reported as an unreachable server:
+/// the development SQL server must never be reached by falling through from an unreachable test server.
+/// </remarks>
 public static class SqlServerTestConfiguration
 {
     /// <summary>Primary explicit integration-test connection string (any SQL Server; catalog may be overridden).</summary>
@@ -51,6 +57,9 @@ public static class SqlServerTestConfiguration
     /// </summary>
     public static void EnsureTestDatabaseExists(string connectionString)
     {
+        // Before anything connects: only a disposable catalog on a disposable test server may be created.
+        SqlTestTargetGuard.EnsureDisposableTarget(connectionString, "create a test catalog");
+
         RecordConnectionMetadata(connectionString);
         var builder = new SqlConnectionStringBuilder(connectionString);
         var database = builder.InitialCatalog;
@@ -214,14 +223,20 @@ public static class SqlServerTestConfiguration
             firstConfigured ??= candidate.ConnectionString;
             firstSource ??= candidate.Source;
 
-            if (requireReachable && !TryOpenMaster(candidate.ConnectionString, out _))
-                continue;
+            // Refuse before the reachability probe (or anything else) connects. A refusal is thrown, never skipped: falling
+            // through from an unreachable test server to a development server is exactly what this prevents.
+            SqlTestTargetGuard.EnsureServerAllowed(candidate.ConnectionString, "resolve a test SQL target");
 
-            LastResolutionSource = candidate.Source;
             // Governance harness supplies a full connection string including catalog — do not rewrite.
             var resolved = candidate.Source == GovernanceConnectionStringVariable
                 ? candidate.ConnectionString
                 : WithDatabase(candidate.ConnectionString, targetDatabase);
+            SqlTestTargetGuard.EnsureDisposableTarget(resolved, "resolve a test SQL target", requireTestsSuffix: allowGovernanceOverride);
+
+            if (requireReachable && !TryOpenMaster(candidate.ConnectionString, out _))
+                continue;
+
+            LastResolutionSource = candidate.Source;
             RecordConnectionMetadata(resolved);
             return resolved;
         }

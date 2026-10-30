@@ -13,8 +13,8 @@
 
 Integration tests **do not** use connections defined in the Management UI. They resolve SQL independently via `SqlServerTestConfiguration` with this precedence:
 
-1. **`APPERTURE_TEST_SQL_CONNECTION_STRING`** — preferred for local dev (copy Aspire SQL endpoint here)
-2. **`ConnectionStrings__DefaultConnection`** — Aspire-injected default when exported to the test process
+1. **`APPERTURE_TEST_SQL_CONNECTION_STRING`** — preferred for local dev: the disposable test SQL server (normally the `apperture-test-sql` container at `127.0.0.1,1433`), **not** the Aspire dev SQL (see [Test SQL target safety](#test-sql-target-safety))
+2. **`ConnectionStrings__DefaultConnection`** — Aspire-injected default when exported to the test process (refused when it points at the Aspire dev SQL on host port 14333)
 3. **Legacy `MSSQL_SA_PASSWORD` + `MSSQL_TEST_SERVER`** — defaults to **`localhost,1433`** when server is unset
 
 Governance HTTP tests (`ManagementHostGovernanceHttpTests`) use `SqlServerTestConfiguration.GetGovernanceConnectionString()`:
@@ -24,17 +24,36 @@ Governance HTTP tests (`ManagementHostGovernanceHttpTests`) use `SqlServerTestCo
 
 Tests create their own databases on the selected server (`EnsureTestDatabaseExists`); they do **not** require a container named `apperture-test-sql`.
 
-### Aspire dev SQL (dynamic port)
+### Test SQL target safety
 
-When AppHost exposes SQL on a dynamic host port (e.g. `127.0.0.1,58361`), set in repo-root `.env`:
+Test infrastructure creates, migrates, seeds and drops catalogs. Before it does, `SqlTestTargetGuard` checks the target. It is one source file, shared by the integration and browser test projects. A target that fails is **refused with an error that names the data source and the catalog and never a credential**. A refusal is a test failure; it is never reported as a skipped or passing test, and resolution never falls through from an unreachable test server to a development server.
 
-```env
-APPERTURE_TEST_SQL_CONNECTION_STRING=Server=127.0.0.1,58361;User Id=sa;Password=<your-aspire-sa-password>;TrustServerCertificate=True;Initial Catalog=Apperture;
+**Approved disposable targets:** the `apperture-test-sql` container at `127.0.0.1,1433`; CI's SQL service; an ad-hoc container from `scripts/dev/maintenance/start-adhoc-test-sql.ps1` (dynamic port); LocalDB, which a few older tests still fall back to.
+
+**Never a test target:** the Aspire dev SQL container (host port **14333**, database `Apperture`).
+
+| Rule | Detail |
+|------|--------|
+| Disposable catalogs only | A catalog being created or dropped must be named `Apperture_` plus a suffix of ASCII letters, digits and underscore (`Apperture_IntegrationTests`, or a random `Apperture_Aud14Vfy…`). The bare development database `Apperture` is never a test catalog, in any spelling or quoting. A connection string may still *default* to `Initial Catalog=Apperture` (CI's does); the helpers replace it with the test catalog, and only the catalog actually created or dropped is judged. |
+| Governance catalogs | The catalog behind `APPERTURE_TEST_SQL`, and the governance and bootstrap fixtures, must also end in `Tests`. |
+| Development SQL port | Port 14333 is refused whatever the host name, `tcp:` prefix, keyword alias (`Server`, `Data Source`, `Addr`, `Address`, `Network Address`) or zero padding. A failover partner is checked too. |
+| Unplaceable targets | Refused: an unparseable string, an empty or malformed address, a port that is not a number from 1 to 65535, a named instance without a port (SQL Browser chooses the port, so it cannot be checked) and the `np:`, `lpc:` and `via:` protocols. |
+| Exceptional use | Set `APPERTURE_ALLOW_PROTECTED_SQL_TEST_TARGET=1` in the **process environment** (deliberately not read from `.env`, so it cannot become a permanent setting). It lets the port-14333, named-instance and non-TCP refusals through for that run. It never relaxes the catalog rules. |
+
+The guard runs in `SqlServerTestConfiguration` (every candidate before anything connects, then the resulting catalog), `EnsureTestDatabaseExists`, both scratch-catalog helpers' drop, the governance fixture and the browser harness's `BrowserSqlConfiguration`. `SqlTestTargetGuardCoverageTests` pins that each is in front of its `CREATE`/`DROP DATABASE`.
+
+It does not see through a client-side SQL alias or a tunnel or port mapping that publishes the dev server on another port: point tests at the test SQL server, never at the dev one.
+
+A refusal reads like this (the connection string's user and password are never printed):
+
+```text
+Refusing to create a test catalog. SQL target [data source=127.0.0.1,14333; database=Apperture_IntegrationTests] is not allowed:
+the server port 14333 is reserved for the development SQL server. …
 ```
 
-Or export Aspire's `ConnectionStrings__DefaultConnection` before `dotnet test`.
+**`.env`:** `scripts/dev/lib/DevDockerSql.ps1` (`Sync-DevEnvFromUserSecrets`, used by native `Manage.ps1` dev start and restart) changes only the `MSSQL_SA_PASSWORD` line of the repo-root `.env` and leaves every other setting, comment, blank line, line ending and byte order mark as it was, so your `APPERTURE_TEST_SQL_CONNECTION_STRING` survives. An unchanged password does not touch the file. It refuses, and leaves the file untouched, if the file is not UTF-8 or contains a NUL byte. It never prints a value.
 
-**Do not** rely on `MSSQL_SA_PASSWORD` alone unless SQL is actually listening on `localhost:1433`. A stale `apperture-test-sql` Docker container on 1433 (from ad-hoc test runs) may have a **different** password than Aspire.
+**Do not** rely on `MSSQL_SA_PASSWORD` alone unless SQL is actually listening on `localhost:1433`. A stale `apperture-test-sql` Docker container on 1433 (from ad-hoc test runs) may have a **different** password than the dev SQL.
 
 ### CI / docker-compose path
 

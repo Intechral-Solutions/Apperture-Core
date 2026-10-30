@@ -78,7 +78,7 @@ The root [docker-compose.yml](../docker-compose.yml) uses Compose `include` to p
 
 ## Dev environment: SQL Server (script path)
 
-The script-based dev stack includes SQL Server for EF Core. **User Secrets are the single source of truth** for the SQL password on this path; `.env` is generated from User Secrets for Docker Compose.
+The script-based dev stack includes SQL Server for EF Core. **User Secrets are the single source of truth** for the SQL password on this path; the `MSSQL_SA_PASSWORD` line of `.env` is kept in step with it for Docker Compose. Every other setting in `.env` (for example the test SQL connection strings) is left as it is.
 
 ### Quick start (script path)
 
@@ -86,7 +86,7 @@ The script-based dev stack includes SQL Server for EF Core. **User Secrets are t
 .\scripts\Manage.ps1 -Area dev -Command start
 ```
 
-This syncs User Secrets to `.env`, starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost. Use `-Build` to build before start. Use `-Mode aspire` for AppHost orchestration instead.
+This syncs the SQL password from User Secrets to `.env` (only `MSSQL_SA_PASSWORD`), starts SQL Server (Docker), and launches the API (Management.Host), UI, and WorkerHost. Use `-Build` to build before start. Use `-Mode aspire` for AppHost orchestration instead.
 
 Management does **not** start/stop/restart WorkerHost via Recovery APIs (`runtime-worker/start` is quarantined — 410). Prefer AppHost or Manage.ps1. See [Worker-Hosting-Guidance-v1.md](../docs/03-operations/Worker-Hosting-Guidance-v1.md).
 
@@ -109,7 +109,7 @@ Management does **not** start/stop/restart WorkerHost via Recovery APIs (`runtim
 ### How it works
 
 - **User Secrets** stores `SqlServer:Password`. The .NET app reads it via Configuration.
-- **Manage.ps1** native start syncs secrets to `.env`, runs `docker compose up -d`, then starts Management.Host, the UI Server, and WorkerHost.
+- **Manage.ps1** native start syncs the password to `.env` (the `MSSQL_SA_PASSWORD` line only), runs `docker compose up -d`, then starts Management.Host, the UI Server, and WorkerHost.
 
 ### Stopping
 

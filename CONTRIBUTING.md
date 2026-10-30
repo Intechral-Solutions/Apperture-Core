@@ -82,7 +82,8 @@ Requires Docker for the Aspire-managed SQL Server container.
    see the incident below. Manual/one-off SQL Server containers (integration-test debugging, etc.) must
    use a dynamically allocated port instead: `.\scripts\dev\maintenance\start-adhoc-test-sql.ps1`. The
    committed integration-test paths (CI, `SqlServerTestConfiguration`) already don't hardcode 14333 —
-   they use Aspire's own dynamic port, a CI-ephemeral port, or 1433 via docker-compose.
+   they use a CI-ephemeral port, a dynamically allocated ad-hoc port, or 1433 via docker-compose — and they now
+   **refuse** 14333 as a test target (tests create and drop catalogs). See `tests/README.md`, "Test SQL target safety".
 
    **Startup safeguard.** AppHost registers a health check (`SqlDevPortGuard` in
    `Apperture.AppHost.Diagnostics`) that verifies — via `docker ps --filter volume=apperture-aspire-sql`
