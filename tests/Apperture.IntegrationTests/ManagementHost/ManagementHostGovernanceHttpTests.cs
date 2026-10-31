@@ -1016,6 +1016,9 @@ public sealed class ManagementHostGovernanceHttpTests
                     .Select(i => (Code: i.GetProperty("code").GetString(), Severity: i.GetProperty("severity").GetString()))
                     .ToList();
                 issues.Should().Contain(("binding_cross_context", "Blocking"));
+                issues.Where(i => i.Severity == "Blocking").Select(i => i.Code).Should().Equal(
+                    ["binding_cross_context"],
+                    "the cross-context binding must be the only blocker, so the refusal below is caused by it");
                 issues.Select(i => i.Code).Should().NotContain("integration_not_active", "the integration is Active, not inactive");
             }
 
