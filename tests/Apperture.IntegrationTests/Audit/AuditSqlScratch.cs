@@ -29,7 +29,11 @@ public sealed class AuditSqlScratch : IAsyncDisposable
     public string Catalog { get; }
     public string ConnectionString { get; }
 
-    /// <summary>The marker every test writes to its output once it has run against SQL Server.</summary>
+    /// <summary>
+    /// A line for the test output that names the scratch catalog. It is built from the catalog name alone, so it is a diagnostic,
+    /// not evidence that any SQL ran, and no test may assert on it. SQL execution is shown by each test's assertions on database
+    /// state and, for a whole run, by <c>scripts/dev/Test-SqlExecutionHonesty.ps1</c>.
+    /// </summary>
     public string ExecutionMarker => $"EXECUTED against SQL Server catalog {Catalog}";
 
     public static async Task<AuditSqlScratch> CreateAsync(string prefix)
