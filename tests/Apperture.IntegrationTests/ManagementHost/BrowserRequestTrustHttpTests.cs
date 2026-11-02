@@ -174,7 +174,12 @@ public sealed class BrowserRequestTrustHttpTests
             if (fetchSite is not null)
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Fetch-Site", fetchSite);
             var response = await client.GetAsync(path);
-            response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden, $"Sec-Fetch-Site={fetchSite ?? "(absent)"} is not a cross-site navigation");
+            // Reaching the endpoint means its own answer for an anonymous caller (ManagementAuthEndpoints): 409 when
+            // Microsoft sign-in is not usable on this host (the test host), 401 when it is usable but no session
+            // identifies a user. Not 403 (Rule N), and certainly not a 5xx or an unrelated 2xx/3xx/404.
+            response.StatusCode.Should().BeOneOf(
+                [HttpStatusCode.Conflict, HttpStatusCode.Unauthorized],
+                $"Sec-Fetch-Site={fetchSite ?? "(absent)"} is not a cross-site navigation, so the request must reach the endpoint's own handler");
             (await response.Content.ReadAsStringAsync()).Should().NotContain(BrowserRequestTrustRejection);
         }
     }
@@ -188,7 +193,12 @@ public sealed class BrowserRequestTrustHttpTests
 
         var response = await client.GetAsync("/signin");
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        // The anonymous entry point answers for itself (ManagementAuthEndpoints.SignInAsync): 401 when Microsoft sign-in
+        // is not usable on this host (the test host), a 302 challenge to the identity provider when it is. "Open" means
+        // the request reaches that handler: not the Rule N 403, and not a 5xx or any other status.
+        response.StatusCode.Should().BeOneOf(
+            [HttpStatusCode.Unauthorized, HttpStatusCode.Redirect],
+            "a cross-site navigation to the anonymous sign-in entry point must reach the endpoint's own handler");
         (await response.Content.ReadAsStringAsync()).Should().NotContain(BrowserRequestTrustRejection);
     }
 

@@ -103,7 +103,7 @@ public sealed class SchedulesControllerTests
         dto.StatusReasons!.Should().Contain(r => r.Code == "not_due_yet" || r.Code == "catch_up_policy");
     }
 
-    [Fact]
+    [IanaTimeZoneFact]
     public async Task Create_WithBlankTimeZone_UsesCreateDefaults()
     {
         var scheduleGovernance = new StubScheduleGovernanceService(canManage: true);
@@ -121,9 +121,6 @@ public sealed class SchedulesControllerTests
             null,
             "local",
             IntegrationId: "integration-test-01");
-
-        if (!ScheduleTimeZoneResolver.TryFind("America/Los_Angeles", out _))
-            return;
 
         var result = await controller.Create(body, CancellationToken.None);
 

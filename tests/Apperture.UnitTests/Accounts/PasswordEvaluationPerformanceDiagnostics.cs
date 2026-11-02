@@ -171,7 +171,12 @@ public sealed class PasswordEvaluationDesktopTimingDiagnostics
 
     public PasswordEvaluationDesktopTimingDiagnostics(ITestOutputHelper output) => _output = output;
 
-    [Fact]
+    /// <summary>
+    /// A measurement, not a regression test: it writes the observed timings to the test output and asserts nothing about them, so it
+    /// is skipped unless APPERTURE_PASSWORD_TIMING_DIAGNOSTICS=1. Timing correctness is not asserted because wall-clock thresholds
+    /// would be fragile across hosts; the evaluator's behaviour is covered by the password policy tests.
+    /// </summary>
+    [OptInDiagnosticFact("APPERTURE_PASSWORD_TIMING_DIAGNOSTICS")]
     public void Records_desktop_zxcvbn_timings_for_representative_passwords()
     {
         var evaluator = PasswordPolicyEvaluator.Instance;

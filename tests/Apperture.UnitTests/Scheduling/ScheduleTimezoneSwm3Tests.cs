@@ -30,14 +30,16 @@ public sealed class ScheduleTimezoneSwm3Tests
     }
 
     [Fact]
-    public void TryFind_Accepts_Utc_And_Iana_When_Host_Supports()
+    public void TryFind_Accepts_Utc()
     {
         ScheduleTimeZoneResolver.TryFind("UTC", out var utc).Should().BeTrue();
         utc.Should().Be(TimeZoneInfo.Utc);
+    }
 
-        if (!TryLosAngeles(out var la))
-            return;
-
+    [IanaTimeZoneFact]
+    public void TryFind_Accepts_Iana_When_Host_Supports()
+    {
+        TryLosAngeles(out var la).Should().BeTrue();
         la.Id.Should().Be("America/Los_Angeles");
     }
 
@@ -112,12 +114,9 @@ public sealed class ScheduleTimezoneSwm3Tests
         update.Errors.Should().Contain(e => e.Contains("time zone", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [IanaTimeZoneFact]
     public void ExpectedFireCollector_Noon_Local_Maps_To_Utc_In_Named_Zone()
     {
-        if (!TryLosAngeles(out _))
-            return;
-
         var schedule = new ScheduleDefinition(
             new ScheduleId("s1"),
             "Noon LA",
@@ -140,14 +139,11 @@ public sealed class ScheduleTimezoneSwm3Tests
             .Which.Should().Be(new DateTime(2025, 6, 15, 19, 0, 0, DateTimeKind.Utc));
     }
 
-    [Fact]
+    [IanaTimeZoneFact]
     public void ExpectedFireCollector_SpringForward_Adjusts_Invalid_Local_Cron_Time()
     {
         // Cronos: 2:30 America/Los_Angeles on spring-forward day is adjusted to the next valid
         // local time (03:00 PDT = 10:00 UTC on 2025-03-09), not skipped entirely.
-        if (!TryLosAngeles(out _))
-            return;
-
         var schedule = new ScheduleDefinition(
             new ScheduleId("s1"),
             "Spring gap",
@@ -170,13 +166,10 @@ public sealed class ScheduleTimezoneSwm3Tests
             .Which.Should().Be(new DateTime(2025, 3, 9, 10, 0, 0, DateTimeKind.Utc));
     }
 
-    [Fact]
+    [IanaTimeZoneFact]
     public void ExpectedFireCollector_FallBack_Emits_Single_Ambiguous_Occurrence()
     {
         // Cronos picks one occurrence in the fall-back overlap (1:30 first pass = 08:30 UTC on 2025-11-02).
-        if (!TryLosAngeles(out _))
-            return;
-
         var schedule = new ScheduleDefinition(
             new ScheduleId("s1"),
             "Fall overlap",
@@ -199,12 +192,9 @@ public sealed class ScheduleTimezoneSwm3Tests
             .Which.Should().Be(new DateTime(2025, 11, 2, 8, 30, 0, DateTimeKind.Utc));
     }
 
-    [Fact]
+    [IanaTimeZoneFact]
     public async Task Evaluator_Named_Timezone_Produces_Normalized_Utc_Fire()
     {
-        if (!TryLosAngeles(out _))
-            return;
-
         await using var db = NewDb();
         db.ScheduleDefinitions.Add(new ScheduleDefinitionEntity
         {

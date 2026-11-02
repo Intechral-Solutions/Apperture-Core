@@ -5,7 +5,6 @@
 # assembly: Apperture.IntegrationTests.dll
 # minimum-discovered: 2500
 # minimum-failed: 2000
-Apperture.IntegrationTests.Audit.AuditClassificationBenchmark.One_million_unclassified_rows_are_classified_at_startup_with_readiness_withheld_until_done	conditional-diagnostic	benchmark-not-requested	Opt-in benchmark: returns without touching SQL unless APPERTURE_AUDIT_BENCHMARK=1, which this check removes from the environment. Not SQL evidence
 Apperture.IntegrationTests.Audit.ConnectionSecretOwnershipInventorySqlServerTests.The_script_has_no_statement_that_writes_creates_or_executes_and_never_reads_the_payload	static-script-text	-	Reads the text of a read-only inventory SQL script and asserts what it does not contain; never connects
 Apperture.IntegrationTests.Audit.SettingSecretOwnershipInventorySqlServerTests.The_script_has_no_statement_that_writes_creates_or_executes_and_never_reads_the_payload	static-script-text	-	Reads the text of a read-only inventory SQL script and asserts what it does not contain; never connects
 Apperture.IntegrationTests.Audit.SettingSecretOwnershipInventorySqlServerTests.The_script_names_no_database_and_no_installation	static-script-text	-	Reads the text of a read-only inventory SQL script and asserts what it does not contain; never connects

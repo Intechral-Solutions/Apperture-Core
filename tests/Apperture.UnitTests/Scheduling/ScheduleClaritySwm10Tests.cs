@@ -7,12 +7,9 @@ namespace Apperture.UnitTests.Scheduling;
 /// <summary>SWM-10: next-fire projection and readiness classification (compute-only).</summary>
 public sealed class ScheduleClaritySwm10Tests
 {
-    [Fact]
+    [IanaTimeZoneFact]
     public void NextFire_Respects_Schedule_Timezone_When_Host_Supports_Iana()
     {
-        if (!ScheduleTimeZoneResolver.TryFind("America/Los_Angeles", out _))
-            return;
-
         // 2025-06-15 10:00 America/Los_Angeles = 17:00 UTC (PDT, UTC-7)
         var asOf = new DateTimeOffset(2025, 6, 15, 16, 30, 0, TimeSpan.Zero);
         var next = ScheduleNextFireCalculator.TryComputeNextFireUtc(

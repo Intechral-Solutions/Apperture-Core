@@ -6,39 +6,27 @@ namespace Apperture.UnitTests.Governance;
 
 /// <summary>
 /// Epic 40: Authorization management UI truthfulness tests.
-/// Verifies governance DTOs, replace-all semantics constants, and effective-access scope.
+/// Verifies governance DTOs and the system-role notice. The replace-all role-edit notice and the role-derived access
+/// limitation notice are asserted against the rendered pages in Management.Ui.Client.Tests (Epic40GovernanceNoticeUiTests).
 /// </summary>
 public sealed class Epic40GovernanceUiTests
 {
-    [Fact]
-    public void RoleEditReplaceAllSemantics_MessageContainsReplaceAndRevoke()
-    {
-        const string expectedMessage = "Saving replaces the role's entire permission set with the selections below. Permissions not selected will be revoked. Changes apply to the role as currently loaded.";
-        expectedMessage.Should().Contain("replaces", "UI must make replace-all explicit");
-        expectedMessage.Should().Contain("revoked", "UI must make revocation-by-omission explicit");
-        expectedMessage.Should().Contain("currently loaded", "UI must signal load-as-of-edit semantics");
-    }
-
-    [Fact]
-    public void EffectiveAccessLimitationMessage_DoesNotOverclaim()
-    {
-        const string expectedMessage = "This page shows merged permissions from assigned roles only. It is not a complete effective-access model: direct user grants, scope containment, and service principals are excluded.";
-        expectedMessage.Should().Contain("merged permissions", "must state merged source");
-        expectedMessage.Should().Contain("assigned roles", "must state role-derived");
-        expectedMessage.Should().Contain("not a complete effective-access model", "must not overclaim");
-        expectedMessage.Should().Contain("direct user grants", "must exclude unsupported");
-        expectedMessage.Should().Contain("scope containment", "must exclude unsupported");
-        expectedMessage.Should().Contain("service principals", "must exclude unsupported");
-    }
-
     [Fact]
     public void SystemRoleReadOnlyNotice_ExplainsNonEditability()
     {
         var detail = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages/Governance/RoleDetail.razor"));
         const string expectedNotice = "This built-in role cannot be changed or deleted.";
         detail.Should().Contain(expectedNotice);
-        expectedNotice.Should().Contain("cannot be changed");
-        expectedNotice.Should().Contain("deleted");
+
+        // The sentence also lives in a code-behind constant used for toasts and errors, so the check above passes even when the
+        // notice markup is gone. Read the notice element itself.
+        var marker = detail.IndexOf("id=\"role-system-notice\"", StringComparison.Ordinal);
+        marker.Should().BeGreaterThanOrEqualTo(0, "the read-only notice element must exist in the markup");
+        var start = detail.IndexOf('>', marker) + 1;
+        var element = detail[start..detail.IndexOf("</div>", start, StringComparison.Ordinal)];
+        element.Should().Contain(expectedNotice);
+        element.Should().Contain("cannot be changed");
+        element.Should().Contain("deleted");
     }
 
     [Fact]
