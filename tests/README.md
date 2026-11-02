@@ -92,6 +92,37 @@ The script's own contract (exit codes, provenance, fresh outputs, credential iso
 
 **In CI.** The required `build-and-test` job runs `./scripts/dev/Test-SqlExecutionHonesty.ps1 -Configuration Release -NoBuild -OutputDirectory artifacts/sql-execution-honesty` after the Release build and before the `Test` step. The step has no environment of its own and the script removes every `APPERTURE_*`, `MSSQL_*` and `ConnectionStrings__*` variable from the test process, so it never sees the CI SQL credentials. Only `sql-honesty-report.json` is uploaded, and only when that step fails. `SqlHonestyCiGuardTests` pins the invocation, its position, the absence of `-Record`, and the unchanged required check names (`build-and-test`, `browser-security`). It reads the workflow as text and fails closed: the honesty and upload steps must be exactly their approved lines (so a YAML continuation line, a block scalar or an extra key fails), the Build and Test steps must keep their single-line `run:` commands, no step of `build-and-test` may set `continue-on-error` and only the upload may be conditional, and the workflow and both required jobs may carry only the listed keys (a job-level `if:`, `continue-on-error`, `strategy` or workflow-level `defaults:` fails until the guard is reviewed). Inline `# comments` on those lines and re-indentation also fail; that is intentional.
 
+### Opt-in diagnostics
+
+Two tests are measurements, not regression tests. They are off in an ordinary run (`dotnet test Apperture.slnx`, CI, the honesty check) and run only when you ask for them. Neither one ever reports Passed without having done its work.
+
+| Diagnostic | Enable with | In an ordinary report | Run it |
+|------------|-------------|-----------------------|--------|
+| Password evaluation timings (`PasswordEvaluationDesktopTimingDiagnostics`, UnitTests) | `APPERTURE_PASSWORD_TIMING_DIAGNOSTICS=1` | **Skipped**, with the variable named in the reason | see below |
+| Audit classification benchmark (`AuditClassificationBenchmark`, IntegrationTests): one million unclassified audit rows classified by the real startup step while the `migrations` readiness check is polled | `APPERTURE_AUDIT_BENCHMARK=1` (optionally `APPERTURE_AUDIT_BENCHMARK_ROWS`, default 1,000,000) | **Absent**: it is not discovered, so it is neither Passed nor Skipped | see below |
+
+Only the exact value `1` enables either one. `0`, `true`, an empty value or anything else leaves it off.
+
+```powershell
+# Password evaluation timings: writes 15 timings to the test output and asserts nothing
+$env:APPERTURE_PASSWORD_TIMING_DIAGNOSTICS = "1"
+dotnet test tests/Apperture.UnitTests/Apperture.UnitTests.csproj --filter "FullyQualifiedName~PasswordEvaluationDesktopTimingDiagnostics" --logger "console;verbosity=detailed"
+Remove-Item Env:APPERTURE_PASSWORD_TIMING_DIAGNOSTICS
+
+# Audit classification benchmark: needs the approved test SQL target (see "Test SQL target safety")
+$env:APPERTURE_TEST_SQL_CONNECTION_STRING = "Server=127.0.0.1,1433;User Id=sa;Password=...;TrustServerCertificate=True;Initial Catalog=Apperture;"
+$env:APPERTURE_AUDIT_BENCHMARK = "1"
+# $env:APPERTURE_AUDIT_BENCHMARK_ROWS = "1000000"   # optional
+dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~AuditClassificationBenchmark" --logger "console;verbosity=detailed"
+Remove-Item Env:APPERTURE_AUDIT_BENCHMARK
+```
+
+- **Set the variable in the same shell as the command.** A name filter on its own matches nothing when the variable is unset (`No test matches the given testcase filter`, exit code 0), because the benchmark is not discovered.
+- **The timings are not assertions.** There is no threshold: wall-clock limits would fail on slow hosts and prove nothing about correctness. Read the printed numbers; the evaluator's behaviour is covered by the ordinary password tests.
+- **The benchmark is a real SQL test once requested.** It seeds the rows, runs `PersistenceMigrationHostedService`, polls readiness, and asserts that no row is left unclassified, that the check ends Healthy and began Unhealthy, and that a second start finds nothing to do. With the variable set and no reachable test SQL it fails like every other SQL test, and it uses the same protected scratch catalogs (`Apperture_Aud11Bench_…`) and the same target guard, so the Aspire dev SQL (port 14333) is refused. With a very small `APPERTURE_AUDIT_BENCHMARK_ROWS` the work can finish before the first readiness poll and the "began Unhealthy" assertion fails; that assertion is the measurement, so use a large enough count rather than expecting the test to bend.
+- **The SQL execution marker is not proof.** The `EXECUTED against ...` line a SQL test writes (`AuditSqlScratch.ExecutionMarker`) is a diagnostic for the person reading the log. What shows a test really ran against SQL Server is its assertions on database state, and across the whole assembly `scripts/dev/Test-SqlExecutionHonesty.ps1`.
+- **Why the benchmark is not skipped.** The honesty check treats any Skipped result in the IntegrationTests assembly as a violation, and an allow-listed test that is no longer discovered as one too, so neither a Skip nor a "passes when off" entry can describe it. `OptInBenchmarkFactAttribute` keeps it undiscovered unless requested, and the honesty check (which removes every `APPERTURE_*` variable from its test process) never discovers it.
+
 ### CI / docker-compose path
 
 ```powershell

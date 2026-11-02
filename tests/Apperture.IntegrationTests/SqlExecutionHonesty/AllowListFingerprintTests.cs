@@ -17,7 +17,15 @@ public sealed class AllowListFingerprintTests
     // Reviewed on 2026-10-30 (DEV-1.1B-R; DEV-1.1C added 22 identities: the source-guard controls and these pin tests). To change a
     // list: edit it, run the honesty check in -Record mode, review every added identity (is it really a test that needs no SQL
     // Server?), then replace the value below with the "actual" shown by the failing test.
-    private const string AllowListFingerprint = "42ACB9AC2BAE00A6A132577877FA675E4D3B1BCD337C1E5E3FF24D4F9FEB44EA";
+    //
+    // Reviewed on 2026-11-01 (DEV-1.1D-C2), a deliberate classification change and not a hash refresh: the one entry for
+    // AuditClassificationBenchmark (category conditional-diagnostic, condition benchmark-not-requested) was removed, and with it
+    // that category, that condition and their count assertions, which had no other consumer. The benchmark no longer reports Passed
+    // when it is not requested: it is not discovered at all unless APPERTURE_AUDIT_BENCHMARK=1 (OptInBenchmarkFactAttribute), so
+    // it has no business on a list of tests that may pass without SQL. If it were discovered in this check it would run and fail
+    // against the unreachable server, which the check does not treat as a violation (it refuses false passes, not extra honest
+    // failures); only a pass without SQL would be refused. 228 entries became 227; nothing was added.
+    private const string AllowListFingerprint = "8798D5A935D70999A2D780B4C1D8FBD2F6C5ACA785C3F371BBEAA4BCE714442E";
     private const string MustFailFingerprint = "17D8A73D2409E78F5BEEA5CE9A64AA8ECED7B3C826799F8D1F26E940E42573E3";
 
     // Reviewed on 2026-10-30 (DEV-1.1C). The honesty script is the mechanism that refuses a false pass, so a change to it is as
@@ -31,11 +39,11 @@ public sealed class AllowListFingerprintTests
     private static readonly string[] Categories =
     [
         "guard-unit", "config-unit", "source-scan", "unit", "static-script-text", "unreachable-by-design", "wiring",
-        "conditional-diagnostic", "honesty-list",
+        "honesty-list",
     ];
 
     private static readonly string[] MustFailCategories = ["former-soft-skip", "former-localdb-fallback", "scratch-create"];
-    private static readonly string[] Conditions = ["-", "requires-git-directory", "benchmark-not-requested"];
+    private static readonly string[] Conditions = ["-", "requires-git-directory"];
 
     [Fact]
     public void Both_lists_are_well_formed()
@@ -123,8 +131,6 @@ public sealed class AllowListFingerprintTests
         var entries = Read(AllowListPath);
 
         entries.Count(e => e.Condition == "requires-git-directory").Should().Be(1, "one source pin needs a .git directory");
-        entries.Count(e => e.Condition == "benchmark-not-requested").Should().Be(1, "one opt-in benchmark gate");
-        entries.Count(e => e.Category == "conditional-diagnostic").Should().Be(1);
         entries.Count(e => e.Category == "unreachable-by-design").Should().Be(1);
     }
 
