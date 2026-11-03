@@ -37,21 +37,49 @@ public sealed class ConnectionToolInvocationTests
     /// The recorder's single-row writer: <see cref="WriteAsync"/> carries the required event (W2), <see cref="TryWriteAsync"/> the
     /// best-effort attempts (W3). Each remembers the actor it was asked to record.
     /// </summary>
+    /// <remarks>
+    /// Thread-safe: the concurrency tests complete several requests at once (they continue on different threads once the gate
+    /// opens), and an unsynchronised <see cref="List{T}"/> loses an add. All writes and reads go through one lock, a write adds the
+    /// event and its actor together so the two stay aligned, and the readers return snapshots, so an assertion never enumerates a
+    /// list that another thread is still changing. Arrival order is the order the lock was taken.
+    /// </remarks>
     private sealed class AuditSink : IAuditEventWriter
     {
-        public List<AuditEvent> Required { get; } = [];
-        public List<AuditEvent> Attempts { get; } = [];
-        public List<AuditActor> Actors { get; } = [];
+        private readonly object _gate = new();
+        private readonly List<AuditEvent> _required = [];
+        private readonly List<AuditEvent> _attempts = [];
+        private readonly List<AuditActor> _actors = [];
+
+        public IReadOnlyList<AuditEvent> Required => Snapshot(_required);
+        public IReadOnlyList<AuditEvent> Attempts => Snapshot(_attempts);
+        public IReadOnlyList<AuditActor> Actors => Snapshot(_actors);
         public bool ThrowOnWrite { get; set; }
 
-        public IReadOnlyList<AuditEvent> All => [.. Required, .. Attempts];
+        public IReadOnlyList<AuditEvent> All
+        {
+            get
+            {
+                lock (_gate)
+                    return [.. _required, .. _attempts];
+            }
+        }
+
+        private IReadOnlyList<T> Snapshot<T>(List<T> source)
+        {
+            lock (_gate)
+                return [.. source];
+        }
 
         public Task WriteAsync(AuditEvent auditEvent, AuditActor actor, CancellationToken cancellationToken = default)
         {
             if (ThrowOnWrite)
                 throw new InvalidOperationException("Simulated audit sink failure.");
-            Required.Add(auditEvent);
-            Actors.Add(actor);
+            lock (_gate)
+            {
+                _required.Add(auditEvent);
+                _actors.Add(actor);
+            }
+
             return Task.CompletedTask;
         }
 
@@ -59,8 +87,12 @@ public sealed class ConnectionToolInvocationTests
         {
             if (ThrowOnWrite)
                 throw new InvalidOperationException("Simulated audit sink failure.");
-            Attempts.Add(auditEvent);
-            Actors.Add(actor);
+            lock (_gate)
+            {
+                _attempts.Add(auditEvent);
+                _actors.Add(actor);
+            }
+
             return Task.FromResult(true);
         }
     }
@@ -311,6 +343,9 @@ public sealed class ConnectionToolInvocationTests
 
     // ---- I2: bounded concurrency ------------------------------------------------------------------------
 
+    /// <summary>Upper bound for a request that must be refused at once; see the first use.</summary>
+    private static readonly TimeSpan RefusalBound = TimeSpan.FromSeconds(30);
+
     private sealed class GatedBrowser(ConnectorDefinitionId connector, Task gate) : ISqlStructureBrowser
     {
         public int Started;
@@ -343,7 +378,9 @@ public sealed class ConnectionToolInvocationTests
         var first = rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask();
         var second = rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask();
         limiter.Running("conn-1").Should().Be(2);
-        var third = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1"));
+        // The bound is only for a limiter that wrongly admits this request: it would then wait for the gate that this test opens
+        // later, and the run would hang instead of failing. It is never waited in a passing run (the refusal is immediate).
+        var third = async () => await rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask().WaitAsync(RefusalBound);
 
         await third.Should().ThrowAsync<ConnectionToolBusyException>();
         browser.Started.Should().Be(2, "the refused request never reached the provider");
@@ -377,7 +414,7 @@ public sealed class ConnectionToolInvocationTests
         var controller = new ConnectionToolsController(rig.Sut) { ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() } };
 
         var inFlight = rig.Sut.ListSqlSchemasAsync(new ConnectionId("conn-1")).AsTask();
-        var refused = await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None);
+        var refused = await controller.SqlSchemas("conn-1", new SqlSchemasRequestDto(), CancellationToken.None).WaitAsync(RefusalBound);
 
         refused.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(429);
         controller.Response.Headers.RetryAfter.ToString().Should().Be("2");
