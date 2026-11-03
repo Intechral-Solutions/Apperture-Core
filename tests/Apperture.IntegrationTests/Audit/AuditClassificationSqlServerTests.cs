@@ -101,22 +101,27 @@ public sealed class AuditClassificationSqlServerTests
     }
 
     [Fact]
-    public async Task A_rerun_changes_zero_rows_and_a_run_with_nothing_to_classify_takes_under_a_second()
+    public async Task A_rerun_changes_zero_rows_and_a_run_with_nothing_to_classify_is_one_seek_and_nothing_else()
     {
         await using var db = await SeedAsync();
         await using (var ctx = db.NewDb())
             await AuditClassification.RunAsync(ctx, NullLogger.Instance);
         var after = await db.RowsAsync("SELECT * FROM AuditLogs ORDER BY Id;");
 
-        await using (var ctx = db.NewDb())
+        // "Cheap" is the work done, not the time it took (a time bound passes vacuously on a slow server and flakes on a loaded
+        // one): a pass with nothing to classify asks the one question "is any row unclassified" and stops, before it takes the
+        // classification lock, creates its batch table, loads the classifier or reads a batch.
+        var log = new ConnectionSecretOwnershipSupport.CommandLog();
+        await using (var ctx = db.NewDb(log))
         {
-            var stopwatch = Stopwatch.StartNew();
             var rerun = await AuditClassification.RunAsync(ctx, NullLogger.Instance);
-            stopwatch.Stop();
             rerun.Read.Should().Be(0);
             rerun.Completed.Should().Be(0);
-            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
-            _output.WriteLine($"Empty classification pass: {stopwatch.Elapsed.TotalMilliseconds:F1} ms");
+            rerun.Batches.Should().Be(0);
+            rerun.LockAcquired.Should().BeFalse("the pass ended before it asked for the classification lock");
+            log.Commands.Should().ContainSingle("the only statement of the pass is the unclassified-row probe")
+                .Which.Should().Contain("ClassificationState", "that statement is the probe for an unclassified row");
+            _output.WriteLine($"Empty classification pass: {rerun.Duration.TotalMilliseconds:F1} ms (reported, not asserted)");
         }
 
         (await db.RowsAsync("SELECT * FROM AuditLogs ORDER BY Id;")).Should().BeEquivalentTo(after, o => o.WithStrictOrdering());
