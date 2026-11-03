@@ -70,14 +70,16 @@ public sealed class UsersListUiTests : GovernancePageTestBase
     }
 
     [Fact]
-    public void Searching_asks_the_server_for_the_trimmed_query_from_the_first_page()
+    public async Task Searching_asks_the_server_for_the_trimmed_query_from_the_first_page()
     {
         ListReturns(Row(AliceId, "alice", "Alice Example"));
         var cut = RenderList();
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(1));
 
-        cut.Find("input#users-search").Input("  ali  ");
-        cut.Find("form[role='search']").Submit();
+        // The synchronous Input/Submit/Click helpers return at the handler's first pending await; the Async ones return when the
+        // handler has finished and rendered, so what follows is checked against the settled page, not a moment in the middle.
+        await cut.Find("input#users-search").InputAsync("  ali  ");
+        await cut.Find("form[role='search']").SubmitAsync();
 
         Client.Verify(c => c.GetUserPageAsync(0, 20, It.IsAny<CancellationToken>(), "ali"), Times.Once);
     }
@@ -100,32 +102,32 @@ public sealed class UsersListUiTests : GovernancePageTestBase
     }
 
     [Fact]
-    public void Clearing_the_search_returns_to_the_unfiltered_list()
+    public async Task Clearing_the_search_returns_to_the_unfiltered_list()
     {
         ListReturns(Row(AliceId, "alice", "Alice Example"));
         var cut = RenderList();
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(1));
-        cut.Find("input#users-search").Input("ali");
-        cut.Find("form[role='search']").Submit();
+        await cut.Find("input#users-search").InputAsync("ali");
+        await cut.Find("form[role='search']").SubmitAsync();
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Clear").Click();
+        await cut.FindAll("button").Single(b => b.TextContent.Trim() == "Clear").ClickAsync();
 
         Client.Verify(c => c.GetUserPageAsync(0, 20, It.IsAny<CancellationToken>(), null), Times.AtLeast(2));
         cut.Find("input#users-search").GetAttribute("value").Should().BeNullOrEmpty();
     }
 
     [Fact]
-    public void Paging_keeps_the_search_and_moves_by_the_page_size()
+    public async Task Paging_keeps_the_search_and_moves_by_the_page_size()
     {
         var rows = Enumerable.Range(0, 20).Select(i => Row($"{i:x24}", $"user{i:00}", $"User {i}")).ToArray();
         Client.Setup(c => c.GetUserPageAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), It.IsAny<string?>()))
             .ReturnsAsync(new UserListResponse(rows, 45));
         var cut = RenderList();
         cut.WaitForAssertion(() => cut.FindAll("tbody tr").Should().HaveCount(20));
-        cut.Find("input#users-search").Input("user");
-        cut.Find("form[role='search']").Submit();
+        await cut.Find("input#users-search").InputAsync("user");
+        await cut.Find("form[role='search']").SubmitAsync();
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Next").Click();
+        await cut.FindAll("button").Single(b => b.TextContent.Trim() == "Next").ClickAsync();
 
         Client.Verify(c => c.GetUserPageAsync(20, 20, It.IsAny<CancellationToken>(), "user"), Times.Once);
     }

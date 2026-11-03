@@ -128,18 +128,24 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         Field(cut).Input("alice.renamed");
         RenameForm(cut).Submit();
 
-        cut.WaitForAssertion(() => RenameForm(cut).GetAttribute("aria-busy").Should().Be("true"));
-        Field(cut).HasAttribute("disabled").Should().BeTrue("the field is locked while the change is pending");
-        RenameForm(cut).TextContent.Should().Contain("Renaming");
+        // The busy marker, the locked field and the "Renaming" label are set at different points of the handler, so all three are waited for.
+        cut.WaitForAssertion(() =>
+        {
+            RenameForm(cut).GetAttribute("aria-busy").Should().Be("true");
+            Field(cut).HasAttribute("disabled").Should().BeTrue("the field is locked while the change is pending");
+            RenameForm(cut).TextContent.Should().Contain("Renaming");
+        });
         VisibleText(cut.Find(".ui-page-header .ui-user-ref--rich")).Should().Be("Alice Example (alice)", "nothing is changed optimistically");
         cut.FindAll(".ui-metadata-grid").Should().NotBeEmpty("content stays visible while pending");
 
         RenameForm(cut).Submit();
-        Client.Verify(c => c.RenameUserAsync(AliceId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
 
         Client.Setup(c => c.GetUserAsync(AliceId, It.IsAny<CancellationToken>())).ReturnsAsync(Alice("alice.renamed"));
         gate.SetResult(new RenameUsernameResponse(AliceId, "alice.renamed", "assigned"));
         cut.WaitForAssertion(() => RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse());
+        // Counted once everything has finished: a second request that the resubmit started late would still be seen here, where a
+        // check made straight after the Submit would pass before it was sent.
+        Client.Verify(c => c.RenameUserAsync(AliceId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         await Task.CompletedTask;
     }
 
@@ -173,6 +179,8 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         Field(cut).Input("bob.taken");
         RenameForm(cut).Submit();
         cut.WaitForAssertion(() => cut.Find("#rename-username-hint").TextContent.Should().Contain("another user"));
+        // The field is locked until the failed attempt has released its pending state, and a locked field takes no input.
+        cut.WaitForAssertion(() => RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse());
 
         Field(cut).Input("bob.free");
 
@@ -239,15 +247,20 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         hint.Should().Contain("may or may not have changed").And.Contain("Refresh this page to confirm");
         hint.Should().NotContainAny("was not changed", "Could not change", "failed", "Try again.", "not applied");
 
-        RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse("the pending state is released");
-        Field(cut).HasAttribute("disabled").Should().BeFalse();
-        Field(cut).GetAttribute("value").Should().Be("alice.renamed", "the typed value is kept");
-        RenameButton(cut).TextContent.Should().Contain("Change username").And.NotContain("Renaming");
-        RenameButton(cut).HasAttribute("disabled").Should().BeFalse("the button is usable again");
+        // The message is set before the handler's finally block releases the pending state and the button (the button is released
+        // through an await), so the release is waited for rather than assumed to have happened with the message.
+        cut.WaitForAssertion(() =>
+        {
+            RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse("the pending state is released");
+            Field(cut).HasAttribute("disabled").Should().BeFalse();
+            Field(cut).GetAttribute("value").Should().Be("alice.renamed", "the typed value is kept");
+            RenameButton(cut).TextContent.Should().Contain("Change username").And.NotContain("Renaming");
+            RenameButton(cut).HasAttribute("disabled").Should().BeFalse("the button is usable again");
+        });
         VisibleText(cut.Find(".ui-page-header .ui-user-ref--rich")).Should().Be("Alice Example (alice)", "nothing changed on the page");
 
         RenameForm(cut).Submit();
-        Client.Verify(c => c.RenameUserAsync(AliceId, "alice.renamed", It.IsAny<CancellationToken>()), Times.Exactly(2));
+        cut.WaitForAssertion(() => Client.Verify(c => c.RenameUserAsync(AliceId, "alice.renamed", It.IsAny<CancellationToken>()), Times.Exactly(2)));
     }
 
     [Fact]
@@ -260,6 +273,9 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         Field(cut).Input("alice.renamed");
 
         // A defect is not swallowed into a friendly message: the framework reports it (bUnit rethrows it from the event).
+        // Deliberately synchronous: the page does not render again after a handler that faults, so the DOM can show the released
+        // state only when the defect is raised before the handler's first pending await, which is what this test covers. A pending
+        // await ahead of it would leave the DOM stale for a reason that is not a race, so no wait could make the check reliable.
         var act = () => RenameForm(cut).Submit();
         act.Should().Throw<ArgumentException>().WithMessage("*a defect*");
 
@@ -281,7 +297,8 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         RenameForm(cut).Submit();
 
         cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t => t.Message.Contains("Username changed to alice.renamed")));
-        RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse();
+        // The toast comes first; the failing reload and the release of the pending state follow it.
+        cut.WaitForAssertion(() => RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse());
         cut.FindAll("#rename-username-hint").Should().AllSatisfy(h => h.TextContent.Should().NotContain("not confirmed"));
     }
 
@@ -292,11 +309,22 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
 
     private void StartAlicePendingRename(IRenderedComponent<UserDetail> cut, TaskCompletionSource<RenameUsernameResponse> gate)
     {
-        Client.Setup(c => c.RenameUserAsync(AliceId, "alice.renamed", It.IsAny<CancellationToken>())).Returns(gate.Task);
+        var sent = new TaskCompletionSource();
+        Client.Setup(c => c.RenameUserAsync(AliceId, "alice.renamed", It.IsAny<CancellationToken>()))
+            .Callback(() => sent.TrySetResult()).Returns(gate.Task);
         Field(cut).Input("alice.renamed");
         RenameForm(cut).Submit();
         cut.WaitForAssertion(() => RenameForm(cut).GetAttribute("aria-busy").Should().Be("true"));
+        AwaitRequestSent(sent);
     }
+
+    /// <summary>
+    /// Pending means in flight: the form is busy and the request has actually been sent. The request is sent after an await, so the
+    /// busy marker alone does not mean the gate is holding anything yet; the mock's own signal says so (a bUnit wait cannot, because
+    /// a call to the mock renders nothing for it to react to).
+    /// </summary>
+    private static void AwaitRequestSent(TaskCompletionSource sent) =>
+        sent.Task.Wait(TimeSpan.FromSeconds(30)).Should().BeTrue("the rename request is sent");
 
     private void NavigateToBob(IRenderedComponent<UserDetail> cut)
     {
@@ -446,10 +474,20 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         var newer = new TaskCompletionSource<RenameUsernameResponse>();
         StartAlicePendingRename(cut, older);
         NavigateToBob(cut);
-        Client.Setup(c => c.RenameUserAsync(BobId, "bob.renamed", It.IsAny<CancellationToken>())).Returns(newer.Task);
+        var newerSent = new TaskCompletionSource();
+        Client.Setup(c => c.RenameUserAsync(BobId, "bob.renamed", It.IsAny<CancellationToken>()))
+            .Callback(() => newerSent.TrySetResult()).Returns(newer.Task);
         Field(cut).Input("bob.renamed");
         RenameForm(cut).Submit();
-        cut.WaitForAssertion(() => RenameForm(cut).GetAttribute("aria-busy").Should().Be("true"));
+        // The newer rename is fully pending (busy, locked, labelled, request sent) before the older one is allowed to finish, so
+        // what follows checks that the older one leaves it alone rather than racing the newer one's setup.
+        cut.WaitForAssertion(() =>
+        {
+            RenameForm(cut).GetAttribute("aria-busy").Should().Be("true");
+            Field(cut).HasAttribute("disabled").Should().BeTrue();
+            RenameButton(cut).TextContent.Should().Contain("Renaming");
+        });
+        AwaitRequestSent(newerSent);
 
         if (olderFails)
             older.SetException(new TaskCanceledException("timeout", new TimeoutException()));
@@ -461,12 +499,13 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         Field(cut).HasAttribute("disabled").Should().BeTrue();
         RenameButton(cut).TextContent.Should().Contain("Renaming");
         RenameForm(cut).Submit();
-        Client.Verify(c => c.RenameUserAsync(BobId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once, "still cannot be submitted twice");
 
         Client.Setup(c => c.GetUserAsync(BobId, It.IsAny<CancellationToken>())).ReturnsAsync(Bob("bob.renamed"));
         newer.SetResult(new RenameUsernameResponse(BobId, "bob.renamed", "assigned"));
         cut.WaitForAssertion(() => RenameForm(cut).HasAttribute("aria-busy").Should().BeFalse());
         VisibleText(cut.Find(".ui-page-header .ui-user-ref--rich")).Should().Be("Bob Builder (bob.renamed)");
+        // Counted once everything has finished, so a second request started late by the resubmit would still be seen.
+        Client.Verify(c => c.RenameUserAsync(BobId, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once, "still cannot be submitted twice");
     }
 
     [Fact]
