@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Apperture.Persistence.SqlServer.Audit;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
@@ -101,7 +103,7 @@ public sealed class AuditClassificationSqlServerTests
     }
 
     [Fact]
-    public async Task A_rerun_changes_zero_rows_and_a_run_with_nothing_to_classify_is_one_seek_and_nothing_else()
+    public async Task A_rerun_changes_zero_rows_and_a_run_with_nothing_to_classify_is_one_probe_statement_and_nothing_else()
     {
         await using var db = await SeedAsync();
         await using (var ctx = db.NewDb())
@@ -110,16 +112,29 @@ public sealed class AuditClassificationSqlServerTests
 
         // "Cheap" is the work done, not the time it took (a time bound passes vacuously on a slow server and flakes on a loaded
         // one): a pass with nothing to classify asks the one question "is any row unclassified" and stops, before it takes the
-        // classification lock, creates its batch table, loads the classifier or reads a batch.
+        // classification lock, creates its batch table, loads the classifier or reads a batch. The step does most of its work on
+        // the connection directly, below Entity Framework, so the statements are counted by the connection itself (every command
+        // it executes, however it was created); the interceptor only identifies the one statement that is allowed.
         var log = new ConnectionSecretOwnershipSupport.CommandLog();
         await using (var ctx = db.NewDb(log))
         {
+            // Opened here and kept open: the connection's statistics are gone once it is closed, and Entity Framework closes a connection
+            // it opened itself after each command.
+            await ctx.Database.OpenConnectionAsync();
+            var connection = (SqlConnection)ctx.Database.GetDbConnection();
+            connection.StatisticsEnabled = true;
+            connection.ResetStatistics();
+
             var rerun = await AuditClassification.RunAsync(ctx, NullLogger.Instance);
+
             rerun.Read.Should().Be(0);
             rerun.Completed.Should().Be(0);
             rerun.Batches.Should().Be(0);
             rerun.LockAcquired.Should().BeFalse("the pass ended before it asked for the classification lock");
-            log.Commands.Should().ContainSingle("the only statement of the pass is the unclassified-row probe")
+            var statistics = connection.RetrieveStatistics();
+            ((long)statistics["UnpreparedExecs"] + (long)statistics["PreparedExecs"]).Should().Be(1,
+                "the pass executed the probe and nothing else on its connection: no lock, no batch table, no classifier load, no batch read");
+            log.Commands.Should().ContainSingle("the one statement is the one Entity Framework issued")
                 .Which.Should().Contain("ClassificationState", "that statement is the probe for an unclassified row");
             _output.WriteLine($"Empty classification pass: {rerun.Duration.TotalMilliseconds:F1} ms (reported, not asserted)");
         }

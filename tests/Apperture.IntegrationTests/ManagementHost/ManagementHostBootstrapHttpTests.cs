@@ -97,13 +97,18 @@ public sealed class ManagementHostBootstrapHttpTests
         AssertSqlAvailable();
         var client = _fixture.Factory!.CreateClient();
         await EnsureInitializedAsync(client);
+
+        // The catalog keeps its audit rows between tests and runs (A04 leaves the same kind of row), so only a row written by this
+        // attempt counts: the query starts at the moment of the attempt.
+        var attemptedAtUtc = DateTimeOffset.UtcNow;
         _ = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
             new FirstAdminRequest("Audit Retry", "Local", "audit-retry-admin", "unique-local-passphrase"));
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-        var page = await audit.QueryAsync(new AuditQuery(FilterByActionPrefix: "bootstrap.first_admin"), CancellationToken.None);
+        var page = await audit.QueryAsync(
+            new AuditQuery(FilterByActionPrefix: "bootstrap.first_admin", FromUtc: attemptedAtUtc), CancellationToken.None);
         page.Items.Select(r => r.Action).Should().Contain("bootstrap.first_admin.rejected_already_initialized");
     }
 
@@ -135,7 +140,7 @@ public sealed class ManagementHostBootstrapHttpTests
         db.UserRoles.RemoveRange(db.UserRoles);
         db.IdentityLinks.RemoveRange(db.IdentityLinks);
         db.LocalCredentials.RemoveRange(db.LocalCredentials);
-        // Recovery Access tests in this collection enroll an authenticator.
+        // The users' authenticator rows go too, or the user rows below could not be removed.
         db.UserMfaRecoveryCodes.RemoveRange(db.UserMfaRecoveryCodes);
         db.UserTotpCredentials.RemoveRange(db.UserTotpCredentials);
         // Test-only reset: the product never deletes users, so the ledger restricts it.

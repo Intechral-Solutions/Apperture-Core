@@ -128,7 +128,8 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         Field(cut).Input("alice.renamed");
         RenameForm(cut).Submit();
 
-        // The busy marker, the locked field and the "Renaming" label are set at different points of the handler, so all three are waited for.
+        // The busy marker and the locked field come from the same pending state; the "Renaming" label is set later, through the button
+        // (an await), so all three are waited for.
         cut.WaitForAssertion(() =>
         {
             RenameForm(cut).GetAttribute("aria-busy").Should().Be("true");
@@ -319,9 +320,10 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
     }
 
     /// <summary>
-    /// Pending means in flight: the form is busy and the request has actually been sent. The request is sent after an await, so the
-    /// busy marker alone does not mean the gate is holding anything yet; the mock's own signal says so (a bUnit wait cannot, because
-    /// a call to the mock renders nothing for it to react to).
+    /// Pending means in flight: the form is busy and the request has actually been sent. The request is sent after an await (one
+    /// that normally finishes at once, so the unmodified page sends it inside the Submit), so the busy marker alone does not
+    /// guarantee the gate is holding anything yet; the mock's own signal does (a bUnit wait cannot, because a call to the mock
+    /// renders nothing for it to react to).
     /// </summary>
     private static void AwaitRequestSent(TaskCompletionSource sent) =>
         sent.Task.Wait(TimeSpan.FromSeconds(30)).Should().BeTrue("the rename request is sent");
@@ -467,7 +469,7 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void An_older_rename_finishing_never_clears_a_newer_renames_pending_state(bool olderFails)
+    public async Task An_older_rename_finishing_never_clears_a_newer_renames_pending_state(bool olderFails)
     {
         var cut = RenderDetail();
         var older = new TaskCompletionSource<RenameUsernameResponse>();
@@ -494,6 +496,9 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
         else
             older.SetResult(new RenameUsernameResponse(AliceId, "alice.renamed", "assigned"));
         cut.WaitForAssertion(() => Toasts.Toasts.Should().Contain(t => t.Message.Contains("Alice Example")));
+        // The toast is the older handler's last visible effect, not its end: its finally block and the render after it come later.
+        // This is a check that something did NOT happen (the older one clearing the newer one), so it is made after they have run.
+        await SettleRendererAsync();
 
         RenameForm(cut).GetAttribute("aria-busy").Should().Be("true", "the newer rename is still pending");
         Field(cut).HasAttribute("disabled").Should().BeTrue();
@@ -528,6 +533,16 @@ public sealed class UserDetailUiTests : GovernancePageTestBase
     /// does not run it. Dispatching behind it and waiting is what proves it has run (an absence assertion needs this).
     /// </summary>
     private Task FlushRendererQueueAsync() => Renderer.Dispatcher.InvokeAsync(() => Task.CompletedTask);
+
+    /// <summary>
+    /// Two flushes: the first runs the continuation that was already queued, the second the render that the continuation's
+    /// completion queued behind it. Enough for a handler with no pending await left, which is what a stale operation's is.
+    /// </summary>
+    private async Task SettleRendererAsync()
+    {
+        await FlushRendererQueueAsync();
+        await FlushRendererQueueAsync();
+    }
 
     [Fact]
     public async Task A_cancellation_arriving_after_the_page_is_gone_is_ignored()
