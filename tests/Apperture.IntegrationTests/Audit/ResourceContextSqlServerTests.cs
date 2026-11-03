@@ -273,7 +273,11 @@ public sealed class ResourceContextSqlServerTests : IClassFixture<AuditIsolation
             await using var db = scratch.NewDb();
             await Service(db, principal, NewUnit(db, principal)).ArchiveAsync(new ResourceContextId(active.Id), CancellationToken.None);
         });
-        (await Task.WhenAny(archive, Task.Delay(TimeSpan.FromSeconds(2)))).Should().NotBeSameAs(archive, "archive waits for the gate");
+        // Observed, not timed: the server lists the archive as waiting for the application lock, and this fails if the archive
+        // finishes first (an archive that did not wait did not take the gate). A fixed delay here would pass on a slow server
+        // whether or not the archive was waiting.
+        await OwnershipGateRace.WaitForWaitersAsync(scratch, 1, archive);
+        archive.IsCompleted.Should().BeFalse("archive waits for the gate");
 
         await moverTransaction.CommitAsync();
         await archive;

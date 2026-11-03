@@ -562,41 +562,38 @@ public sealed partial class IntegrationSettingSecretDispositionSqlServerTests : 
             var secret = await CreateSecretAsync(scratch, SettingSecretName(CredentialKey));
             var connectionId = "conn-" + NewSuffix();
 
-            // Warm the model and the connection pool, so that a scan that has not finished is waiting on the writer and not starting.
+            // Warm the model and the connection pool, so that the scan below reaches the writer's lock quickly. The assertions do not
+            // depend on this: nothing here is decided by how long anything takes.
             await using (var warm = scratch.NewDb())
                 await new IntegrationSettingSecretInventory(warm).FindSurvivingReferencesAsync(NewIntegrationId(), [secret]);
 
-            await using var writer = new SqlConnection(scratch.ConnectionString);
-            await writer.OpenAsync();
-            await using var transaction = (SqlTransaction)await writer.BeginTransactionAsync();
-            await using (var insert = writer.CreateCommand())
-            {
-                insert.Transaction = transaction;
-                insert.CommandText = "INSERT INTO [Connections] ([Id], [ConnectorDefinitionId], [Name], [ConfigJson], [SecretRefsJson], [ResourceContextId], [State], [LastVerificationStatus]) "
-                    + "VALUES (@id, N'platform.sql', N'In flight', N'{}', @refs, N'shared', 0, 0);";
-                insert.Parameters.AddWithValue("@id", connectionId);
-                insert.Parameters.AddWithValue("@refs", JsonSerializer.Serialize(new Dictionary<string, string> { ["Password"] = secret.ToString("D") }));
-                await insert.ExecuteNonQueryAsync();
-            }
+            await using var writer = await LockedRowHolder.BeginAsync(scratch.ConnectionString);
+            await writer.ExecuteAsync(
+                "INSERT INTO [Connections] ([Id], [ConnectorDefinitionId], [Name], [ConfigJson], [SecretRefsJson], [ResourceContextId], [State], [LastVerificationStatus]) "
+                    + "VALUES (@id, N'platform.sql', N'In flight', N'{}', @refs, N'shared', 0, 0);",
+                ("@id", connectionId),
+                ("@refs", JsonSerializer.Serialize(new Dictionary<string, string> { ["Password"] = secret.ToString("D") })));
 
             var scan = Task.Run(async () =>
             {
                 await using var db = scratch.NewDb();
                 return await new IntegrationSettingSecretInventory(db).FindSurvivingReferencesAsync(NewIntegrationId(), [secret]);
             });
-            var finishedWhileWriterOpen = await Task.WhenAny(scan, Task.Delay(TimeSpan.FromSeconds(4))) == scan;
 
+            // Both outcomes are observed, not timed. A snapshot read finishes while the writer is still open (the bound only keeps
+            // a hung scan from hanging the run). A locking read is seen waiting on the writer's key by the server itself, which
+            // fails if the scan finishes first; only then is it asserted to be unfinished.
             if (rcsi)
             {
-                finishedWhileWriterOpen.Should().BeTrue("snapshot reads do not wait for a writer");
-                (await scan).Should().BeEmpty("the uncommitted reference is invisible to a snapshot read");
+                (await scan.WaitAsync(TimeSpan.FromSeconds(60))).Should().BeEmpty("the uncommitted reference is invisible to a snapshot read, and the read does not wait for the writer");
             }
             else
             {
-                finishedWhileWriterOpen.Should().BeFalse("a locking read waits for the writer's lock");
+                await writer.WaitUntilBlockedAsync(scratch, "Connections", scan);
+                scan.IsCompleted.Should().BeFalse("a locking read waits for the writer's lock");
             }
 
-            await transaction.CommitAsync();
+            await writer.CommitAsync();
             var afterCommit = await scan;
             if (!rcsi)
                 afterCommit.Should().ContainKey(secret, "once the writer committed, the waiting scan reads its reference");

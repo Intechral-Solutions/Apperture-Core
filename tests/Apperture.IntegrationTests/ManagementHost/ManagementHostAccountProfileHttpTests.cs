@@ -75,7 +75,7 @@ public sealed class ManagementHostAccountProfileHttpTests
     public async Task An_authenticated_but_unlinked_principal_is_forbidden_rather_than_served()
     {
         AssertSqlAvailable();
-        await EnsureFirstAdminAsync();
+        await EnsurePlatformAdminAsync();
 
         var client = _fixture.Factory!.CreateClient();
         client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, $"unlinked-{Guid.NewGuid():N}");
@@ -560,11 +560,9 @@ public sealed class ManagementHostAccountProfileHttpTests
         var target = preferences[0];
         var originalToastEnabled = target.ToastEnabled;
 
-        // Every test in this class authenticates as the same first-admin user (see
-        // CreateAuthenticatedClientAsync), so an explicit toast preference row for this definition may
-        // already exist from another test's own round trip. Capture its current shape before writing
-        // email, so "toast untouched" can be asserted against a real baseline rather than assumed absent
-        // -- mirroring the approach the toast round-trip test uses for the email side.
+        // Capture the toast preference row's current shape before writing email, so "toast untouched" is
+        // asserted against a real baseline rather than assumed absent (the user is this test's own, so it
+        // is normally absent) -- mirroring the approach the toast round-trip test uses for the email side.
         (string Id, DateTimeOffset UpdatedAtUtc)? baselineToastRow;
         await using (var baselineScope = _fixture.Factory!.Services.CreateAsyncScope())
         {
@@ -666,10 +664,9 @@ public sealed class ManagementHostAccountProfileHttpTests
         var target = preferences[0];
         var originalEmailEnabled = target.EmailEnabled;
 
-        // Every test in this class authenticates as the same first-admin user (see
-        // CreateAuthenticatedClientAsync), so an explicit email preference row for this definition may
-        // already exist from another test's own round trip. Capture its current shape before writing
-        // toast, so "email untouched" can be asserted against a real baseline rather than assumed absent.
+        // Capture the email preference row's current shape before writing toast, so "email untouched" is
+        // asserted against a real baseline rather than assumed absent (the user is this test's own, so it
+        // is normally absent).
         (string Id, DateTimeOffset UpdatedAtUtc)? baselineEmailRow;
         (string Id, DateTimeOffset UpdatedAtUtc)? baselineSelfSubscription;
         await using (var baselineScope = _fixture.Factory!.Services.CreateAsyncScope())
@@ -896,52 +893,42 @@ public sealed class ManagementHostAccountProfileHttpTests
         return avatar!;
     }
 
-    private async Task EnsureFirstAdminAsync()
-    {
-        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        if (await db.Users.AnyAsync())
-            return;
+    // The catalog is shared with the other BootstrapHttp classes, whose tests need a platform administrator in it and add their own
+    // ordinary users after one exists: an ordinary user must never be the first user of the catalog, because that closes the
+    // first-administrator bootstrap for good. This class does what they do, before it adds a user of its own.
+    private async Task EnsurePlatformAdminAsync() =>
+        _ = await BootstrapHttpPlatformAdmin.EnsureLocalExternalIdAsync(_fixture.Factory!);
 
-        var client = _fixture.Factory.CreateClient();
-        var response = await client.PostAsJsonAsync(
-            "/api/bootstrap/first-admin",
-            new FirstAdminRequest(
-                "Account Test Admin",
-                "Local",
-                $"acct-admin-{Guid.NewGuid():N}"[..16],
-                "unique-local-passphrase"));
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
-    }
-
+    /// <summary>
+    /// Signs in as a user this call creates, never as one that happens to be in the catalog: the catalog is shared with other
+    /// classes and is not reset, so "the first local user" can be another test's user. Each test therefore owns its identity (and
+    /// the avatar, preference and profile rows hanging off it), whatever else the catalog holds and in whatever order tests run.
+    /// </summary>
     private async Task<(HttpClient Client, string Username, string UserId)> CreateAuthenticatedClientAsync()
     {
-        await EnsureFirstAdminAsync();
+        var owned = await CreateLinkedUserAsync("owned", "Profile Test Operator");
 
-        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        var link = await db.IdentityLinks.AsNoTracking()
-            .Where(l => l.Source == (int)IdentitySource.Local)
-            .OrderBy(l => l.ExternalId)
-            .FirstAsync();
-
-        var client = _fixture.Factory.CreateClient();
-        client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, link.ExternalId);
-        return (client, link.ExternalId, link.UserId);
+        var client = _fixture.Factory!.CreateClient();
+        client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, owned.ExternalId);
+        return (client, owned.ExternalId, owned.UserId);
     }
 
     /// <summary>
     /// Creates a second linked user so cross-account isolation can be asserted against a real record
     /// rather than a fabricated id.
     /// </summary>
-    private async Task<(string UserId, string ExternalId, string DisplayName)> CreateSecondUserAsync()
+    private Task<(string UserId, string ExternalId, string DisplayName)> CreateSecondUserAsync() =>
+        CreateLinkedUserAsync("second", "Second Operator");
+
+    private async Task<(string UserId, string ExternalId, string DisplayName)> CreateLinkedUserAsync(string tag, string displayName)
     {
+        await EnsurePlatformAdminAsync();
+
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
 
         var userId = $"usr_{Guid.NewGuid():N}"[..24];
-        var externalId = $"second-{Guid.NewGuid():N}"[..24];
-        const string displayName = "Second Operator";
+        var externalId = $"{tag}-{Guid.NewGuid():N}"[..24];
 
         db.AddUsersWithCurrentUsernames(new UserEntity { Id = userId, Username = externalId, DisplayName = displayName, IsBreakGlassEligible = false });
         db.IdentityLinks.Add(new IdentityLinkEntity

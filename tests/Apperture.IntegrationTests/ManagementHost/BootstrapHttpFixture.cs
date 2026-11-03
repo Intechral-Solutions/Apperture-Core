@@ -9,9 +9,10 @@ namespace Apperture.IntegrationTests.ManagementHost;
 /// <summary>
 /// Isolated SQL database for bootstrap HTTP tests (no governance user seed).
 /// </summary>
-public sealed class BootstrapHttpFixture : IAsyncLifetime
+public class BootstrapHttpFixture : IAsyncLifetime
 {
-    private const string DatabaseName = "Apperture_BootstrapHttpTests";
+    /// <summary>The catalog this fixture owns. A subclass names its own catalog to get its own isolated state.</summary>
+    protected virtual string DatabaseName => "Apperture_BootstrapHttpTests";
 
     public string? ConnectionString { get; private set; }
 
