@@ -75,7 +75,7 @@ public sealed class ManagementHostAccountProfileHttpTests
     public async Task An_authenticated_but_unlinked_principal_is_forbidden_rather_than_served()
     {
         AssertSqlAvailable();
-        await EnsureFirstAdminAsync();
+        await EnsurePlatformAdminAsync();
 
         var client = _fixture.Factory!.CreateClient();
         client.DefaultRequestHeaders.Add(ManagementTestAuthHandler.HeaderName, $"unlinked-{Guid.NewGuid():N}");
@@ -893,23 +893,11 @@ public sealed class ManagementHostAccountProfileHttpTests
         return avatar!;
     }
 
-    private async Task EnsureFirstAdminAsync()
-    {
-        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
-        if (await db.Users.AnyAsync())
-            return;
-
-        var client = _fixture.Factory.CreateClient();
-        var response = await client.PostAsJsonAsync(
-            "/api/bootstrap/first-admin",
-            new FirstAdminRequest(
-                "Account Test Admin",
-                "Local",
-                $"acct-admin-{Guid.NewGuid():N}"[..16],
-                "unique-local-passphrase"));
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Conflict);
-    }
+    // The catalog is shared with the other BootstrapHttp classes, whose tests need a platform administrator in it and add their own
+    // ordinary users after one exists: an ordinary user must never be the first user of the catalog, because that closes the
+    // first-administrator bootstrap for good. This class does what they do, before it adds a user of its own.
+    private async Task EnsurePlatformAdminAsync() =>
+        _ = await BootstrapHttpPlatformAdmin.EnsureLocalExternalIdAsync(_fixture.Factory!);
 
     /// <summary>
     /// Signs in as a user this call creates, never as one that happens to be in the catalog: the catalog is shared with other
@@ -934,6 +922,8 @@ public sealed class ManagementHostAccountProfileHttpTests
 
     private async Task<(string UserId, string ExternalId, string DisplayName)> CreateLinkedUserAsync(string tag, string displayName)
     {
+        await EnsurePlatformAdminAsync();
+
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
 
