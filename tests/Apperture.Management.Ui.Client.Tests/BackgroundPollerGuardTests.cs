@@ -9,14 +9,7 @@ namespace Apperture.Management.Ui.Client.Tests;
 /// </summary>
 public sealed class BackgroundPollerGuardTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string Source(string relative) =>
         File.ReadAllText(Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar)));
@@ -24,10 +17,7 @@ public sealed class BackgroundPollerGuardTests
     [Fact]
     public void Timer_driven_api_callers_are_the_known_set_and_open_a_background_scope()
     {
-        var root = Path.Combine(RepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
-        var timerFiles = Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+        var timerFiles = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".cs", ".razor"], includeMigrations: true, SourceTree.Floor.UiClientSource)
             .Where(f =>
             {
                 var text = File.ReadAllText(f);

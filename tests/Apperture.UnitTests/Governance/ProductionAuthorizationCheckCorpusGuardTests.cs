@@ -13,25 +13,14 @@ namespace Apperture.UnitTests.Governance;
 /// </summary>
 public sealed class ProductionAuthorizationCheckCorpusGuardTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     /// <summary>Production C# source, as paths relative to <c>src/</c> with forward slashes, excluding build output.</summary>
     private static IEnumerable<(string Relative, string FullPath)> ProductionSource()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        foreach (var path in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(src, path).Replace('\\', '/');
-            if (relative.Contains("/bin/", StringComparison.Ordinal) || relative.Contains("/obj/", StringComparison.Ordinal))
-                continue;
-            yield return (relative, path);
-        }
+        foreach (var path in SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp))
+            yield return (Path.GetRelativePath(src, path).Replace('\\', '/'), path);
     }
 
     private static List<ActionMention> ScanProductionSource()

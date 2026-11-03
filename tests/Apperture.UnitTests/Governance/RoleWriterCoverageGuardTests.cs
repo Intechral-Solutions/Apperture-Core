@@ -74,25 +74,13 @@ public sealed class RoleWriterCoverageGuardTests
         new(Persistence + "SqlUserRepository.cs", Writes.UserCreatedWithRoleIds, 1, Group.Mechanism, "maps a stored user to the domain; not a writer"),
     ];
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static IEnumerable<(string Relative, string Text)> ProductionSource()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        foreach (var path in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(src, path).Replace('\\', '/');
-            if (relative.Contains("/bin/", StringComparison.Ordinal) || relative.Contains("/obj/", StringComparison.Ordinal)
-                || relative.Contains("/Migrations/", StringComparison.Ordinal))
-                continue;
-            yield return (relative, File.ReadAllText(path));
-        }
+        foreach (var path in SourceTree.Files("src", [".cs"], includeMigrations: false, SourceTree.Floor.CSharpOutsideMigrations))
+            yield return (Path.GetRelativePath(src, path).Replace('\\', '/'), File.ReadAllText(path));
     }
 
     private static readonly Regex AssignmentCall = new(@"\.(AssignToUserAsync|RemoveFromUserAsync)\(", RegexOptions.CultureInvariant);

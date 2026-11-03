@@ -230,9 +230,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
     public void The_two_integration_level_routing_writers_are_called_only_by_the_authorized_routes()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        var callers = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        var callers = SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp)
             .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\.\s*(UpsertIntegrationRoutingAsync|ClearIntegrationRoutingAsync)\s*\("))
             .Select(f => Path.GetRelativePath(src, f).Replace('\\', '/'))
             .ToList();
@@ -255,10 +253,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
             @"IntegrationAttentionRoutings\s*\.\s*(Add|AddAsync|AddRange|Remove|RemoveRange|Update|ExecuteDelete|ExecuteDeleteAsync|ExecuteUpdate|ExecuteUpdateAsync)\b"
             + @"|\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+\[?IntegrationAttentionRoutings\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        var writers = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !f.Contains($"{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+        var writers = SourceTree.Files("src", [".cs"], includeMigrations: false, SourceTree.Floor.CSharpOutsideMigrations)
             .Where(f => mutation.IsMatch(File.ReadAllText(f)))
             .Select(f => Path.GetRelativePath(src, f).Replace('\\', '/'))
             .ToList();
@@ -365,13 +360,7 @@ public sealed class IntegrationAttentionRoutingAuthorizationTests : IDisposable
         return source[start..(end < 0 ? source.Length : end)];
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     // ---- doubles ----
 

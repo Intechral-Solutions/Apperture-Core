@@ -501,7 +501,7 @@ public sealed class RoleLifecycleUiRenderTests
     private static string ReadRepoFile(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         return File.ReadAllText(Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar)));

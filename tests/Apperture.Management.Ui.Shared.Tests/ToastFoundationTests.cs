@@ -105,10 +105,8 @@ public sealed class ToastFoundationTests
     public void Feature_code_still_only_needs_Show()
     {
         // Presentation-only members must not leak into callers.
-        var callers = Directory
-            .EnumerateFiles(ClientRoot(), "*.razor", SearchOption.AllDirectories)
+        var callers = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor)
             .Where(p => !p.EndsWith("ToastHost.razor", StringComparison.Ordinal))
-            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(p =>
             {
                 var text = File.ReadAllText(p);
@@ -395,17 +393,5 @@ public sealed class ToastFoundationTests
             "Apperture.ControlPlane",
             "Apperture.Management.Ui.Client");
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "Apperture.slnx"))
-                || File.Exists(Path.Combine(dir.FullName, "Apperture.sln")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repo root from test base directory.");
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find();
 }

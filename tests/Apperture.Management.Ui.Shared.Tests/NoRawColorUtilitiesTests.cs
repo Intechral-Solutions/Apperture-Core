@@ -27,12 +27,8 @@ public sealed class NoRawColorUtilitiesTests
         var clientRoot = Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
         var violations = new List<string>();
 
-        foreach (var path in Directory.EnumerateFiles(clientRoot, "*.razor", SearchOption.AllDirectories))
+        foreach (var path in SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor))
         {
-            if (path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                || path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-                continue;
-
             var relative = Path.GetRelativePath(clientRoot, path).Replace('\\', '/');
             var lines = File.ReadAllLines(path);
             for (var i = 0; i < lines.Length; i++)
@@ -82,16 +78,5 @@ public sealed class NoRawColorUtilitiesTests
         css.Should().NotContain("rgba(0, 0, 0, 0.25)");
     }
 
-    private static string FindRepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir, "AGENTS.md")))
-                return dir;
-            dir = Directory.GetParent(dir)?.FullName;
-        }
-
-        throw new InvalidOperationException("Could not find repo root.");
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find();
 }

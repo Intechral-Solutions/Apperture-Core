@@ -4,7 +4,12 @@
     <RootNamespace>Apperture.Management.Ui.Client.Tests</RootNamespace>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**</DefaultItemExcludes>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\TestSupport\*.cs" Link="TestSupport\%(Filename)%(Extension)" />
+    <Using Include="Apperture.TestSupport" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="bunit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

@@ -51,19 +51,9 @@ public sealed class SignOutFormSourceGuardTests
     private static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
 
     private static IEnumerable<string> ClientFiles() =>
-        Directory.EnumerateFiles(Path.Combine(RepoRoot(), ClientRoot), "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".razor", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
-                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+        SourceTree.Files(ClientRoot, [".razor", ".cs"], includeMigrations: true, SourceTree.Floor.UiClientSource);
 
     private static string Relative(string path) => Path.GetRelativePath(RepoRoot(), path).Replace('\\', '/');
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 }

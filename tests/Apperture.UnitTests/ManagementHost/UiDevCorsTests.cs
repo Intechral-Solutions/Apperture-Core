@@ -76,12 +76,5 @@ public sealed class UiDevCorsTests
         return builder.Build();
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 }
