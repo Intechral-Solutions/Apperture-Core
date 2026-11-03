@@ -13,14 +13,20 @@ using Xunit;
 
 namespace Apperture.IntegrationTests.ManagementHost;
 
-[Collection(BootstrapHttpCollection.Name)]
+/// <summary>
+/// Logs in as the first local user of the catalog with the password the first-administrator bootstrap gave it, so it needs a
+/// catalog in which every local user has that password: the catalog of the bootstrap tests (<see cref="BootstrapFirstAdminFixture"/>),
+/// which holds no other class's users. In the shared bootstrap catalog it only worked because the bootstrap tests had emptied that
+/// catalog a moment earlier in the collection's (unspecified) class order.
+/// </summary>
+[Collection(BootstrapFirstAdminCollection.Name)]
 public sealed class ManagementHostAccountHttpTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly BootstrapHttpFixture _fixture;
+    private readonly BootstrapFirstAdminFixture _fixture;
 
-    public ManagementHostAccountHttpTests(BootstrapHttpFixture fixture) => _fixture = fixture;
+    public ManagementHostAccountHttpTests(BootstrapFirstAdminFixture fixture) => _fixture = fixture;
 
     private void AssertSqlAvailable()
     {
