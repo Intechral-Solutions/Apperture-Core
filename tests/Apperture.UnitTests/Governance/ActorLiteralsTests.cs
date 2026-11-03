@@ -67,10 +67,7 @@ public sealed class ActorLiteralsTests
     public void Every_hard_coded_actor_id_in_production_code_is_a_known_literal()
     {
         var literal = new Regex("new ActorId\\(\"(?<value>[^\"]*)\"\\)", RegexOptions.CultureInvariant);
-        var sep = Path.DirectorySeparatorChar;
-        var found = Directory
-            .EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}"))
+        var found = SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp)
             .SelectMany(f => literal.Matches(File.ReadAllText(f)).Select(m => (File: Path.GetFileName(f), Value: m.Groups["value"].Value)))
             .ToList();
 
@@ -79,12 +76,4 @@ public sealed class ActorLiteralsTests
             .Should().BeEmpty("a new non-human actor value must be added to ActorLiterals so historical actor data never mistakes it for a person");
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("repository root not found from test output directory");
-        return dir!.FullName;
-    }
 }

@@ -42,7 +42,7 @@ public sealed class IntegrationAttentionAcknowledgeUiSourceTests
     private static string ReadRazor()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         var path = Path.Combine(dir!.FullName, "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client", "Pages", "Integrations", TargetFile);

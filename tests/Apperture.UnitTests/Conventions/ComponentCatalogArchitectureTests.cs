@@ -92,11 +92,7 @@ public sealed class ComponentCatalogArchitectureTests
     public void Contracts_assembly_contains_no_type_named_exactly_Component()
     {
         // A bare `Component` collides with Blazor's ComponentBase / "Razor component" vocabulary.
-        var offenders = Directory
-            .EnumerateFiles(RepoPath("src"), "*.*", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
-            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
+        var offenders = SourceTree.Files("src", [".cs", ".razor"], includeMigrations: true, SourceTree.Floor.CSharpAndRazor)
             .Where(f =>
                 Path.GetFileNameWithoutExtension(f) == "Component"
                 || Regex.IsMatch(
@@ -125,9 +121,7 @@ public sealed class ComponentCatalogArchitectureTests
     public void Persistence_has_no_component_entity_or_table()
     {
         var persistenceRoot = RepoPath("src/Apperture.Persistence");
-        var offenders = Directory
-            .EnumerateFiles(persistenceRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+        var offenders = SourceTree.Files("src/Apperture.Persistence", [".cs"], includeMigrations: true, SourceTree.Floor.PersistenceCSharp)
             .Where(f => Regex.IsMatch(
                 File.ReadAllText(f),
                 @"DbSet<Component\w*>|class\s+Component\w*Entity\b|CreateTable\(\s*name:\s*""Components?""",
@@ -141,9 +135,7 @@ public sealed class ComponentCatalogArchitectureTests
     [Fact]
     public void No_resource_carries_a_component_foreign_key_or_universal_component_interface()
     {
-        var offenders = Directory
-            .EnumerateFiles(RepoPath("src"), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+        var offenders = SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp)
             .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\bComponentId\b|\bIComponentResource\b"))
             .Select(f => Path.GetRelativePath(RepoPath("src"), f))
             .ToList();
@@ -160,14 +152,7 @@ public sealed class ComponentCatalogArchitectureTests
         return Regex.Replace(content, @"//.*$", " ", RegexOptions.Multiline);
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string RepoPath(string relative) =>
         Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar));

@@ -16,7 +16,7 @@ public sealed class BrowserRequestTrustGuardTests
     [Fact]
     public void The_platform_request_header_literal_lives_only_in_the_shared_constant()
     {
-        var hits = RepoFiles("src")
+        var hits = RepoFiles("src", SourceTree.Floor.CSharpAndRazor)
             .Where(file => File.ReadAllText(file).Contains("X-Apperture-Request", StringComparison.Ordinal))
             .Select(file => Relative(file))
             .OrderBy(path => path)
@@ -31,7 +31,7 @@ public sealed class BrowserRequestTrustGuardTests
         var client = File.ReadAllText(Path.Combine(RepoRoot(), "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Services/BrowserRequestHeadersHandler.cs"));
         client.Should().Contain("BrowserRequest.HeaderName").And.Contain("BackgroundActivity.HeaderName");
 
-        var writers = RepoFiles("src/Apperture.ControlPlane/Apperture.Management.Ui.Client")
+        var writers = RepoFiles("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", SourceTree.Floor.UiClientSource)
             .Where(file =>
             {
                 var text = File.ReadAllText(file);
@@ -194,23 +194,10 @@ public sealed class BrowserRequestTrustGuardTests
         && (template.Equals("api/[controller]", StringComparison.OrdinalIgnoreCase)
             || template.StartsWith("api/", StringComparison.OrdinalIgnoreCase));
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
-    private static IEnumerable<string> RepoFiles(string relative)
-    {
-        var root = Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar));
-        return Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".razor", StringComparison.OrdinalIgnoreCase))
-            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
-                && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
-    }
+    private static IEnumerable<string> RepoFiles(string relative, int minimum) =>
+        SourceTree.Files(relative, [".cs", ".razor"], includeMigrations: true, minimum);
 
     private static string Relative(string path) =>
         Path.GetRelativePath(RepoRoot(), path).Replace('\\', '/');

@@ -123,14 +123,7 @@ public sealed class Iam2UserCreationUiSurfaceTests
         create.Should().Contain("@page \"/config/governance/users/new\"");
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(Path.Combine(RepoRoot(), relativePath));

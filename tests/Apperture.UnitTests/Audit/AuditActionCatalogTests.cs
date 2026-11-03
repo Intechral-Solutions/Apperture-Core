@@ -237,13 +237,8 @@ public sealed partial class AuditActionCatalogTests
     {
         var root = RepoRoot();
         var undeclared = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
+        foreach (var file in SourceTree.Files("src", [".cs"], includeMigrations: false, SourceTree.Floor.CSharpOutsideMigrations))
         {
-            var separator = Path.DirectorySeparatorChar;
-            if (new[] { "Migrations", "obj", "bin", "artifacts", "node_modules" }
-                .Any(skip => file.Contains($"{separator}{skip}{separator}", StringComparison.Ordinal)))
-                continue;
-
             var text = File.ReadAllText(file);
             if (!text.Contains("AuditRecord(", StringComparison.Ordinal) && !text.Contains("AuditActionNames", StringComparison.Ordinal))
                 continue;
@@ -509,13 +504,7 @@ public sealed partial class AuditActionCatalogTests
         }
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     [GeneratedRegex(
         // AppendBreakGlassUseAuditIfNeededAsync takes the operation name, not an action; its action is a constant.

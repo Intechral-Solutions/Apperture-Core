@@ -206,7 +206,7 @@ public sealed class S10NotificationDiagnosticsUiTests
         var dir = AppContext.BaseDirectory;
         while (!string.IsNullOrEmpty(dir))
         {
-            if (Directory.Exists(Path.Combine(dir, ".git")))
+            if (RepositoryRoot.IsRoot(dir))
                 return File.ReadAllText(Path.Combine(dir, relativePath));
             dir = Directory.GetParent(dir)?.FullName ?? "";
         }

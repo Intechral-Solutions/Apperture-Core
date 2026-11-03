@@ -6,18 +6,7 @@ namespace Apperture.Management.Ui.Shared.Tests;
 
 public sealed class Epic77NotificationPostCreateUiTests
 {
-    private static string RepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (!string.IsNullOrEmpty(dir))
-        {
-            if (Directory.Exists(Path.Combine(dir, ".git")))
-                return dir;
-            dir = Directory.GetParent(dir)?.FullName ?? "";
-        }
-
-        throw new InvalidOperationException("Could not locate repository root.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string ReadRepoFile(string relativePath) =>
         File.ReadAllText(Path.Combine(RepoRoot(), relativePath));

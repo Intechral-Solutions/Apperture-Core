@@ -13,20 +13,10 @@ public sealed class SessionRecoverySourceGuardTests
 {
     private const string UiClientDir = "src/Apperture.ControlPlane/Apperture.Management.Ui.Client";
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("repository root not found from test output directory");
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static IEnumerable<(string Relative, string Text)> UiClientSources() =>
-        Directory
-            .EnumerateFiles(Path.Combine(RepoRoot(), UiClientDir.Replace('/', Path.DirectorySeparatorChar)), "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+        SourceTree.Files(UiClientDir, [".cs", ".razor"], includeMigrations: true, SourceTree.Floor.UiClientSource)
             .Select(f => (Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'), File.ReadAllText(f)));
 
     private static string[] Referencing(string token) =>

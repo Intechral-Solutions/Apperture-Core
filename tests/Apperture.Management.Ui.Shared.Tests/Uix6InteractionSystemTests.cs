@@ -146,16 +146,7 @@ public sealed class Uix6InteractionSystemTests
     [Fact]
     public void No_native_confirm_remains_in_production_ui()
     {
-        var uiRoot = Path.Combine(
-            FindRepoRoot(),
-            "src",
-            "Apperture.ControlPlane",
-            "Apperture.Management.Ui.Client");
-
-        var offenders = Directory
-            .EnumerateFiles(uiRoot, "*.*", SearchOption.AllDirectories)
-            .Where(p => p.EndsWith(".razor", StringComparison.OrdinalIgnoreCase)
-                        || p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+        var offenders = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor", ".cs"], includeMigrations: true, SourceTree.Floor.UiClientSource)
             .Where(p => File.ReadAllText(p).Contains("\"confirm\"", StringComparison.Ordinal))
             .ToArray();
 
@@ -173,10 +164,10 @@ public sealed class Uix6InteractionSystemTests
             .ToHashSet(StringComparer.Ordinal);
         declared.Should().Contain(["IsOpen", "OnConfirm", "OnCancel"], "the parameter list was read from the component");
 
-        var uiRoot = Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
         var offenders = new List<string>();
         var usages = 0;
-        foreach (var file in Directory.EnumerateFiles(uiRoot, "*.razor", SearchOption.AllDirectories))
+        var uiRoot = Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
+        foreach (var file in SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor))
         {
             var text = File.ReadAllText(file);
             var from = 0;
@@ -309,14 +300,7 @@ public sealed class Uix6InteractionSystemTests
     [Fact]
     public void Ui_components_do_not_introduce_arbitrary_z_index_values()
     {
-        var uiRoot = Path.Combine(
-            FindRepoRoot(),
-            "src",
-            "Apperture.ControlPlane",
-            "Apperture.Management.Ui.Client");
-
-        var offenders = Directory
-            .EnumerateFiles(uiRoot, "*.razor", SearchOption.AllDirectories)
+        var offenders = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor)
             .Where(p => File.ReadAllText(p).Contains("z-[", StringComparison.Ordinal))
             .ToArray();
 
@@ -411,14 +395,7 @@ public sealed class Uix6InteractionSystemTests
     [Fact]
     public void No_inspection_panel_or_drawer_framework_was_introduced()
     {
-        var uiRoot = Path.Combine(
-            FindRepoRoot(),
-            "src",
-            "Apperture.ControlPlane",
-            "Apperture.Management.Ui.Client");
-
-        var componentNames = Directory
-            .EnumerateFiles(uiRoot, "*.razor", SearchOption.AllDirectories)
+        var componentNames = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor)
             .Select(Path.GetFileNameWithoutExtension)
             .ToArray();
 
@@ -462,17 +439,5 @@ public sealed class Uix6InteractionSystemTests
             "css",
             "management-ui-primitives.css"));
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "Apperture.slnx"))
-                || File.Exists(Path.Combine(dir.FullName, "Apperture.sln")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repo root from test base directory.");
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find();
 }

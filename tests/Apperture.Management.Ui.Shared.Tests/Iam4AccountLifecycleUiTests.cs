@@ -215,13 +215,5 @@ public sealed class Iam4AccountLifecycleUiTests
         return File.ReadAllText(path);
     }
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        if (dir is null)
-            throw new InvalidOperationException("Could not find repo root from " + AppContext.BaseDirectory);
-        return dir.FullName;
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find();
 }

@@ -11,31 +11,23 @@ namespace Apperture.Management.Ui.Shared.Tests;
 /// </summary>
 public sealed class ReturnTargetSourceGuardTests
 {
-    private static readonly string[] Roots =
+    // Each root with the fewest .cs and .razor files it must hold (about two thirds of the 227, 97, 28 and 79 tracked when set; a
+    // catastrophic-loss floor, see SourceTree.Floor).
+    private static readonly (string Path, int Minimum)[] Roots =
     [
-        "src/Apperture.ControlPlane/Apperture.Management.Ui.Client",
-        "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared",
-        "src/Apperture.ControlPlane/Apperture.Management.Host",
-        "src/Apperture.ControlPlane/Apperture.Management.Api",
+        ("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", 150),
+        ("src/Apperture.ControlPlane/Apperture.Management.Ui.Shared", 60),
+        ("src/Apperture.ControlPlane/Apperture.Management.Host", 15),
+        ("src/Apperture.ControlPlane/Apperture.Management.Api", 50),
     ];
 
     private const string PolicyFile = "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Auth/LocalReturnUrl.cs";
     private const string HelperFile = "src/Apperture.ControlPlane/Apperture.Management.Ui.Shared/Auth/LoginRouteHelper.cs";
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("repository root not found from test output directory");
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static IEnumerable<(string Relative, string Text)> Sources() =>
-        Roots.SelectMany(root => Directory
-            .EnumerateFiles(Path.Combine(RepoRoot(), root.Replace('/', Path.DirectorySeparatorChar)), "*.*", SearchOption.AllDirectories)
-            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".razor", StringComparison.Ordinal))
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+        Roots.SelectMany(root => SourceTree.Files(root.Path, [".cs", ".razor"], includeMigrations: true, root.Minimum)
             .Select(f => (Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'), File.ReadAllText(f))));
 
     [Fact]

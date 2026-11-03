@@ -7,18 +7,7 @@ namespace Apperture.Management.Ui.Shared.Tests;
 
 public sealed class Epic77NotificationDefinitionAuthoringUiTests
 {
-    private static string RepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        while (!string.IsNullOrEmpty(dir))
-        {
-            if (Directory.Exists(Path.Combine(dir, ".git")))
-                return dir;
-            dir = Directory.GetParent(dir)?.FullName ?? "";
-        }
-
-        throw new InvalidOperationException("Could not locate repository root.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     [Fact]
     public void Create_routes_and_authoring_form_exist()

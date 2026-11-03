@@ -82,11 +82,7 @@ public sealed class UserRefSourceContractTests
     public void UserRef_is_adopted_only_on_the_governance_surfaces_the_gate_names()
     {
         var clientRoot = ClientRoot();
-        var adopters = Directory
-            .EnumerateFiles(clientRoot, "*.razor", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-                        && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-                        && !f.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}"))
+        var adopters = SourceTree.Files("src/Apperture.ControlPlane/Apperture.Management.Ui.Client", [".razor"], includeMigrations: true, SourceTree.Floor.UiClientRazor)
             .Where(f => !f.EndsWith(Path.Combine("Molecules", "UserRef.razor"), StringComparison.Ordinal))
             .Where(f => File.ReadAllText(f).Contains("<UserRef"))
             .Select(f => Path.GetRelativePath(clientRoot, f).Replace(Path.DirectorySeparatorChar, '/'))
@@ -114,17 +110,5 @@ public sealed class UserRefSourceContractTests
     private static string ClientRoot() =>
         Path.Combine(FindRepoRoot(), "src", "Apperture.ControlPlane", "Apperture.Management.Ui.Client");
 
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "Apperture.slnx"))
-                || File.Exists(Path.Combine(dir.FullName, "Apperture.sln")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not locate repo root from test base directory.");
-    }
+    private static string FindRepoRoot() => RepositoryRoot.Find();
 }

@@ -19,7 +19,7 @@ public sealed class ModuleDetailComponentsSectionSourceTests
     private static string ReadRepoFile(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         var path = Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -147,7 +147,7 @@ public sealed class ModuleDetailComponentsSectionSourceTests
         // The tab was kept while the catalog did not yet have a navigable home for Connection users; the Connection
         // workspace now links each connector to its Component page and this page links to the catalog itself.
         var repoRoot = new DirectoryInfo(AppContext.BaseDirectory);
-        while (repoRoot is not null && !Directory.Exists(Path.Combine(repoRoot.FullName, ".git")))
+        while (repoRoot is not null && !RepositoryRoot.IsRoot(repoRoot.FullName))
             repoRoot = repoRoot.Parent;
         File.Exists(Path.Combine(repoRoot!.FullName, ConnectorsTab.Replace('/', Path.DirectorySeparatorChar))).Should().BeFalse();
 
