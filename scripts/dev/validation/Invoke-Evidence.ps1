@@ -197,7 +197,7 @@ try {
             $runResults += [pscustomobject]$run
         }
         # ---- SQL markers after
-        $sqlProof = [ordered]@{ Required = $needsSql; Container = $SqlContainer; Collected = $false; UpdatesBefore = $null; UpdatesAfter = $null; Moved = $false; CatalogStartupsInWindow = $null }
+        $sqlProof = [ordered]@{ Required = $needsSql; Container = $SqlContainer; Collected = $false; UpdatesBefore = $null; UpdatesAfter = $null; Moved = $false; CatalogStartupsInWindow = $null; CatalogsWrittenInWindow = $null }
         if ($needsSql) {
             if ($markersBefore -and $SqlContainer) {
                 $mp.Label = 'after'; $markersAfter = try { & (Join-Path $PSScriptRoot 'Get-SqlEvidence.ps1') @mp } catch { $null }
@@ -210,12 +210,26 @@ try {
                     if ($ProcessEnvironmentOnly) { $wp.ProcessEnvironmentOnly = $true }; if ($EnvFile) { $wp.EnvFile = $EnvFile }
                     $win = try { & (Join-Path $PSScriptRoot 'Get-SqlEvidence.ps1') @wp } catch { $null }
                     $sqlProof.CatalogStartupsInWindow = if ($win) { $win.Startups } else { $null }
+                    # third signal, for tests that write to a persistent shared catalog (no new catalog starts): a catalog whose last user write
+                    # lies inside the run window. last_user_update is server-local time; the reported UTC offset places it. The window is the
+                    # same one the start-up query uses.
+                    $winFrom = $started.AddSeconds(-1); $winTo = (Get-Date).ToUniversalTime().AddSeconds(2)
+                    $written = @(foreach ($c in @($markersAfter.Catalogs)) {
+                        if ($c.LastWrite -and $c.LastWrite -ne 'null') {
+                            $t = [datetime]::MinValue
+                            if ([datetime]::TryParse([string]$c.LastWrite, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$t)) {
+                                $utc = $t.AddMinutes(-[int]$markersAfter.UtcOffsetMinutes)
+                                if ($utc -ge $winFrom -and $utc -le $winTo) { [string]$c.Catalog }
+                            }
+                        }
+                    })
+                    $sqlProof.CatalogsWrittenInWindow = $written.Count
                     if ($win) { Write-TextLf (Join-Path $Out 'logs/sql-window.json') ($win | ConvertTo-Json -Depth 5) }
                 }
             }
             if (-not $sqlProof.Collected) { $reasons.Add('SqlNotProven: write markers were not collected (pass -SqlContainer for the test SQL container)') }
             elseif (-not $sqlProof.Moved) { $reasons.Add('SqlNotProven: the SQL write markers did not move during the run') }
-            elseif ($null -ne $sqlProof.CatalogStartupsInWindow -and $sqlProof.CatalogStartupsInWindow -eq 0) { $reasons.Add('SqlNotProven: no test catalog started during the run window') }
+            elseif (-not (($null -ne $sqlProof.CatalogStartupsInWindow -and $sqlProof.CatalogStartupsInWindow -gt 0) -or ($null -ne $sqlProof.CatalogsWrittenInWindow -and $sqlProof.CatalogsWrittenInWindow -gt 0))) { $reasons.Add('SqlNotProven: no test catalog started, and none was written, during the run window') }
         }
         $prov.Sql = [pscustomobject]@{ Target = $preflight.Sql; Proof = [pscustomobject]$sqlProof }
         foreach ($rr in $runResults) {

@@ -87,7 +87,10 @@ if ($args[0] -eq 'inspect') { 'running running=true startedAt=2026-11-04T00:00:0
 if ($args -join ' ' -match 'xp_readerrorlog') { $s = if ($env:FAKE_STARTUPS) { $env:FAKE_STARTUPS } else { '7' }; 'server_utc=2026-11-04T10:00:00.000'; "startups=$s"; 'first=2026-11-04T09:00:00.000|last=2026-11-04T09:50:00.000'; exit 0 }
 $updates = if ($env:FAKE_MARKERS -eq 'moved') { 120 } else { 100 }
 if ($env:FAKE_STATE_FILE) { $n = if (Test-Path $env:FAKE_STATE_FILE) { [int](Get-Content $env:FAKE_STATE_FILE) } else { 0 }; $updates = 100 + $n * [int]$env:FAKE_STEP; Set-Content $env:FAKE_STATE_FILE ($n + 1) }
-'server_utc=2026-11-04T10:00:00.000'; "catalog|Apperture_A|2026-11-04T09:59:00.000|$updates"; 'catalog|Apperture_B|null|0'
+$lw = '2026-11-04T09:59:00.000'; $off = if ($env:FAKE_UTC_OFFSET) { $env:FAKE_UTC_OFFSET } else { '0' }
+# FAKE_WRITE_NOW=1: the server's last write is "just now" (a persistent shared catalog written during the run), in server-local time
+if ($env:FAKE_WRITE_NOW -eq '1') { $lw = [datetime]::UtcNow.AddMinutes([int]$off).ToString('yyyy-MM-ddTHH:mm:ss.fff') }
+'server_utc=2026-11-04T10:00:00.000'; if ($env:FAKE_NO_OFFSET -ne '1') { "utc_offset_minutes=$off" }; "catalog|Apperture_A|$lw|$updates"; 'catalog|Apperture_B|null|0'
 exit 0
 '@)
     $path
@@ -397,6 +400,8 @@ if (Want-Section 'sql') {
     $j2 = Get-Content "$d/m2.json" -Raw | ConvertFrom-Json; Check 'a second collection shows the markers moving' ($j2.TotalUserUpdates -eq 120 -and $j2.TotalUserUpdates -gt $j.TotalUserUpdates)
     $r = Invoke-Tool $ge @('-Mode', 'Window', '-FromUtc', '2026-11-04T09:00:00Z', '-ToUtc', '2026-11-04T09:55:00Z', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot, '-Json', "$d/w.json") $envOk
     Check 'the catalog start-up window is collected' (($r.Exit -eq 0) -and (Get-Content "$d/w.json" -Raw | ConvertFrom-Json).Startups -eq 7) $r.Out
+    Check 'the markers carry the server''s UTC offset' ($j.UtcOffsetMinutes -eq 0)
+    Check 'an answer without the UTC offset is "not collected" (exit 2): the write times could not be placed' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) ($envOk + @{ FAKE_NO_OFFSET = '1' })).Exit -eq 2)
     Check 'a window without bounds is refused' ((Invoke-Tool $ge @('-Mode', 'Window', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) $envOk).Exit -eq 2)
     Check 'no configuration is "not collected" (exit 2), not an empty result' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = '' }).Exit -eq 2)
     Check 'the development SQL port is refused' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace '1433', '14333') }).Exit -eq 2)
@@ -779,6 +784,16 @@ if ($liveSections.Count -gt 0) {
                     Remove-Item $state -ErrorAction SilentlyContinue
                     $r = & $ev $sqlPlan $sx ($sqlEnv + @{ FAKE_STATE_FILE = $state; FAKE_STEP = '20'; FAKE_STARTUPS = '0' })
                     Check 'SQL proof: markers that moved but no catalog start-up in the window are SqlNotProven' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'no test catalog started')) $r.Out
+                    # A test that writes to a persistent shared catalog starts no new catalog (found by a real-container smoke run); a catalog write inside the window proves it.
+                    Remove-Item $state -ErrorAction SilentlyContinue
+                    $r = & $ev $sqlPlan $sx ($sqlEnv + @{ FAKE_STATE_FILE = $state; FAKE_STEP = '20'; FAKE_STARTUPS = '0'; FAKE_WRITE_NOW = '1' })
+                    Check 'SQL proof: no catalog started, but a catalog was written inside the run window: AUTHORITATIVE' (($r.Exit -eq 0) -and $r.Prov.Authoritative -and $r.Prov.Sql.Proof.CatalogStartupsInWindow -eq 0 -and $r.Prov.Sql.Proof.CatalogsWrittenInWindow -ge 1) $r.Out
+                    Remove-Item $state -ErrorAction SilentlyContinue
+                    $r = & $ev $sqlPlan $sx ($sqlEnv + @{ FAKE_STATE_FILE = $state; FAKE_STEP = '20'; FAKE_STARTUPS = '0'; FAKE_WRITE_NOW = '1'; FAKE_UTC_OFFSET = '120' })
+                    Check 'SQL proof: the server''s UTC offset is applied (a write 2 hours ahead in server-local time is still inside the window)' (($r.Exit -eq 0) -and $r.Prov.Authoritative -and $r.Prov.Sql.Proof.CatalogsWrittenInWindow -ge 1) $r.Out
+                    Remove-Item $state -ErrorAction SilentlyContinue
+                    $r = & $ev $sqlPlan $sx ($sqlEnv + @{ FAKE_STATE_FILE = $state; FAKE_STEP = '0'; FAKE_STARTUPS = '0'; FAKE_WRITE_NOW = '1' })
+                    Check 'SQL proof: a recent write alone is not enough: the markers must also have moved' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'did not move')) $r.Out
                     $r = & $ev $sqlPlan @() $sqlEnv
                     Check 'SQL proof: a SQL run with no container to ask is SqlNotProven, never silently valid' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'markers were not collected')) $r.Out
                     $r = & $ev $sqlPlan $sx ($sqlEnv + @{ FAKE_DOCKER_FAIL = '1' })

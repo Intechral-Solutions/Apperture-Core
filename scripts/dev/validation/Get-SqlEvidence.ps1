@@ -3,7 +3,8 @@
 .SYNOPSIS
     Read-only proof that SQL Server was really used by a test run: per-catalog write markers, or catalog start-ups in a time window.
 .DESCRIPTION
-    Markers : for every online catalog named Apperture_*, the last user write and the number of user updates since the server started.
+    Markers : for every online catalog named Apperture_*, the last user write (server local time, with the server's UTC offset) and the
+              number of user updates since the server started.
               Take one before and one after a run: a SQL test run that wrote nothing did not exercise SQL Server.
     Window  : the number of 'Starting up database' entries in the SQL Server error log between -FromUtc and -ToUtc (each throw-away test
               catalog logs one), with the first and last entry.
@@ -61,6 +62,7 @@ BEGIN
 END
 CLOSE c; DEALLOCATE c;
 SELECT 'server_utc=' + CONVERT(varchar(30), SYSUTCDATETIME(), 126);
+SELECT 'utc_offset_minutes=' + CAST(DATEDIFF(MINUTE, SYSUTCDATETIME(), SYSDATETIME()) AS varchar(10));
 SELECT 'catalog|' + db + '|' + ISNULL(CONVERT(varchar(30), last_write, 126), 'null') + '|' + ISNULL(CAST(writes AS varchar(30)), '0') FROM @r ORDER BY db;
 "@
 }
@@ -93,6 +95,10 @@ $result = [ordered]@{ Mode = $Mode; Label = $Label; Container = $Container; Targ
 $result.ServerUtc = (($lines | Where-Object { $_ -like 'server_utc=*' } | Select-Object -First 1) -replace '^server_utc=', '')
 if ($Mode -eq 'Markers') {
     $cats = @($lines | Where-Object { $_ -like 'catalog|*' } | ForEach-Object { $p = $_ -split '\|'; [pscustomobject]@{ Catalog = $p[1]; LastWrite = $p[2]; UserUpdates = [int64]$p[3] } })
+    # last_user_update is the server's LOCAL time; the offset lets a caller place a write in a UTC run window.
+    $off = $lines | Where-Object { $_ -like 'utc_offset_minutes=*' } | Select-Object -First 1
+    if (-not $off -or $off -notmatch '^utc_offset_minutes=-?\d{1,4}$') { Stop-Collection 'the answer holds no server UTC offset, so the write times cannot be placed' }
+    $result.UtcOffsetMinutes = [int]($off -replace '^utc_offset_minutes=', '')
     $result.Catalogs = $cats; $result.CatalogCount = $cats.Count; $result.TotalUserUpdates = ($cats | Measure-Object UserUpdates -Sum).Sum
 }
 else {
