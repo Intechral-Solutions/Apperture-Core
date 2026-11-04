@@ -674,6 +674,11 @@ if ($liveSections.Count -gt 0) {
                 $r = & $ev @(@{ name = 'badstamp'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests' })
                 Check 'a stamp whose assembly hash no longer matches is not trusted: the file-time rule applies and the binary is STALE' (($r.Exit -eq 1) -and $r.Prov.Runs[0].Outcome -eq 'StaleBinary') $r.Out
                 [IO.File]::WriteAllText($stampFile, $stampText)
+                # a stamp from before the BuildAgainst record existed says nothing about how the binary was built
+                $oldStamp = $stampText | ConvertFrom-Json; $oldStamp.PSObject.Properties.Remove('BuildAgainst'); [IO.File]::WriteAllText($stampFile, ($oldStamp | ConvertTo-Json -Depth 4))
+                $r = & $ev @(@{ name = 'oldstamp'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests' })
+                Check 'a stamp without the BuildAgainst record (older format) is not trusted' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].Outcome -eq 'StaleBinary') $r.Out
+                [IO.File]::WriteAllText($stampFile, $stampText)
                 # ---- the stamp covers everything the test host loads from the output folder, not only the test assembly
                 $depDll = Join-Path $fx 'artifacts/evidence-build/bin/Calc.Tests/release/Calc.dll'
                 Check 'premise: the production assembly is copied into the test output folder' (Test-Path -LiteralPath $depDll)
@@ -713,6 +718,11 @@ if ($liveSections.Count -gt 0) {
                 Check 'an MSBuild import hook in the environment blocks the run in the preflight: no test runs, the variable is named in the provenance' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.PreflightOk -eq $false -and @($r.Prov.Runs).Count -eq 0 -and ($r.Prov.BuildEnvironment.HookVariables -contains 'CustomAfterMicrosoftCommonTargets') -and ($r.Prov.Reasons -match 'environment changes what a build compiles')) $r.Out
                 $r = & $ev @(@{ name = 'envhook2'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-AllowDirty', '-ArtifactsPath', (Join-Path $WorkRoot 'env-own-build')) @{ DirectoryBuildTargetsPath = $hookTargets; ImportDirectoryBuildTargets = 'true' }
                 Check 'with -AllowDirty it runs but is never authoritative under such a hook' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.BuildEnvironment.HookVariables -contains 'DirectoryBuildTargetsPath') -and ($r.Prov.Reasons -match 'environment changes what a build compiles')) $r.Out
+                # ...and the stamp that build left behind must not turn authoritative once the variable is unset (a reviewer reproduced exactly that)
+                $envStamp = Get-Content (Join-Path $WorkRoot 'env-own-build/evidence-build-stamp.json') -Raw | ConvertFrom-Json
+                Check 'the stamp of a build made under an environment hook records it (BuildAgainst)' (@($envStamp.BuildAgainst) -match 'environment build hooks') ($envStamp | ConvertTo-Json -Compress)
+                $r = & $ev @(@{ name = 'envhook3'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-ArtifactsPath', (Join-Path $WorkRoot 'env-own-build'))
+                Check 'with the variable unset and no -Build, that stamp is NOT trusted: the run is not authoritative and not "build stamp" provenance' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -notlike 'build stamp*') $r.Out
                 # ---- MSBuild imports <project>.*.targets / *.props from <ArtifactsPath>/obj/<project>/, where a reused artifacts path can hold a stale one
                 $injectFile = Join-Path $fx 'artifacts/evidence-build/obj/Calc/Calc.csproj.inject.targets'
                 Check 'premise: restore has written its own .nuget.g files there (they are allowed) and nothing else' ((Test-Path (Split-Path $injectFile -Parent)) -and @(Get-ProjectImportInjections (Join-Path $fx 'artifacts/evidence-build')).Count -eq 0)
@@ -722,8 +732,27 @@ if ($liveSections.Count -gt 0) {
                 $r = & $ev @(@{ name = 'injected2'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
                 Check '...and with -Build as well (the build would import it)' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'import files restore did not write')) $r.Out
                 Remove-Item $injectFile
+                # H-1 (round 6): the -Build above wrote a stamp. Removing the file afterwards must not make that binary trusted.
+                $injStamp = Get-Content (Join-Path $fx 'artifacts/evidence-build/evidence-build-stamp.json') -Raw | ConvertFrom-Json
+                Check 'the stamp of a build made with an injected import records it (BuildAgainst)' (@($injStamp.BuildAgainst) -match 'artifacts path held MSBuild import files') ($injStamp | ConvertTo-Json -Compress)
+                $r = & $ev @(@{ name = 'laundered'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
+                Check 'with the injected file removed and no -Build, the stamp is NOT trusted: not authoritative, not "build stamp" provenance (it was reported AUTHORITATIVE before)' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -notlike 'build stamp*') $r.Out
                 $r = & $ev @(@{ name = 'injected3'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
                 Check 'control: with the extra file gone a build is authoritative again (and re-stamps)' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
+                $r = & $ev @(@{ name = 'afterclean'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
+                Check 'counter-control: the clean stamp IS trusted without -Build (so the refusals above come from BuildAgainst)' (($r.Exit -eq 0) -and $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -like 'build stamp*') $r.Out
+                # a name that merely ends in .nuget.g.targets is not restore's file and is imported all the same
+                $dodge = Join-Path $fx 'artifacts/evidence-build/obj/Calc/Calc.csproj.evil.nuget.g.targets'; [IO.File]::WriteAllText($dodge, '<Project/>')
+                Check 'a file named like restore output but not exactly restore''s name is still an injection' (@(Get-ProjectImportInjections (Join-Path $fx 'artifacts/evidence-build')) -contains $dodge)
+                Remove-Item $dodge
+                Check 'counter-control: restore''s own names are not injections' (@(Get-ProjectImportInjections (Join-Path $fx 'artifacts/evidence-build')).Count -eq 0)
+                # build arguments that set MSBuild properties reach the child dotnet process unseen
+                $r = & $ev @(@{ name = 'propargs'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-BuildArgs:-nologo,-v:q,-p:DefineConstants=SELFTEST_EVIL')
+                Check 'a build with -p:<property> in -BuildArgs is not authoritative and says why' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'build arguments set MSBuild properties')) $r.Out
+                $r = & $ev @(@{ name = 'propargs2'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
+                Check '...and the stamp that build left is not trusted by a later run without -Build' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -notlike 'build stamp*') $r.Out
+                $r = & $ev @(@{ name = 'propargs3'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
+                Check 'counter-control: the same build without a property argument is authoritative again (and re-stamps cleanly)' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
                 # ---- a content file the tests read from the output folder is part of what was built
                 $contentFile = Join-Path $fx 'artifacts/evidence-build/bin/Calc.Tests/release/expected.txt'
                 Check 'premise: the content file is copied into the test output folder' (Test-Path -LiteralPath $contentFile)

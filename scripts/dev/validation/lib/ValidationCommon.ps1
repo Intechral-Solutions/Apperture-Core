@@ -130,7 +130,10 @@ function Get-ProjectImportInjections([string]$ArtifactsPath) {
     $obj = Join-Path $ArtifactsPath 'obj'
     if (-not (Test-Path -LiteralPath $obj -PathType Container)) { return @() }
     @(foreach ($dir in Get-ChildItem -LiteralPath $obj -Directory -ErrorAction SilentlyContinue) {
-            Get-ChildItem -LiteralPath $dir.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.props', '.targets' -and $_.Name -notmatch '\.nuget\.g\.(props|targets)$' } | ForEach-Object FullName
+            # Only the exact names restore writes are exempt: <folder>.csproj.nuget.g.props / .targets (or fsproj / vbproj). A name that merely ends
+            # in .nuget.g.targets (Calc.Tests.csproj.evil.nuget.g.targets) is still imported by MSBuild and still counts.
+            $restoreNames = foreach ($pe in 'csproj', 'fsproj', 'vbproj') { foreach ($x in 'props', 'targets') { "$($dir.Name).$pe.nuget.g.$x" } }
+            Get-ChildItem -LiteralPath $dir.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.props', '.targets' -and $_.Name -notin $restoreNames } | ForEach-Object FullName
         })
 }
 

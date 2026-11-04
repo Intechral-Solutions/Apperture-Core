@@ -67,11 +67,15 @@ SELECT 'catalog|' + db + '|' + ISNULL(CONVERT(varchar(30), last_write, 126), 'nu
 "@
 }
 else {
-    $from = $FromUtc.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss'); $to = $ToUtc.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+    # xp_readerrorlog compares LogDate in the server's LOCAL time; the bounds are UTC, so shift them by the server's own offset (ISO 'T' format: unambiguous for any language setting).
+    $from = $FromUtc.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss'); $to = $ToUtc.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss')
     @"
 SET NOCOUNT ON;
 CREATE TABLE #l (LogDate datetime, ProcessInfo nvarchar(64), Txt nvarchar(max));
-INSERT #l EXEC xp_readerrorlog 0, 1, N'Starting up database', NULL, '$from', '$to';
+DECLARE @off int = DATEDIFF(MINUTE, SYSUTCDATETIME(), SYSDATETIME());
+DECLARE @f datetime = DATEADD(MINUTE, @off, CONVERT(datetime, '$from', 126));
+DECLARE @t datetime = DATEADD(MINUTE, @off, CONVERT(datetime, '$to', 126));
+INSERT #l EXEC xp_readerrorlog 0, 1, N'Starting up database', NULL, @f, @t;
 SELECT 'server_utc=' + CONVERT(varchar(30), SYSUTCDATETIME(), 126);
 SELECT 'startups=' + CAST(COUNT(*) AS varchar(20)) FROM #l;
 SELECT 'first=' + ISNULL(CONVERT(varchar(30), MIN(LogDate), 126), 'none') + '|last=' + ISNULL(CONVERT(varchar(30), MAX(LogDate), 126), 'none') FROM #l;
