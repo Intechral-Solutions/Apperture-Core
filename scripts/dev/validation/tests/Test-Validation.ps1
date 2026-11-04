@@ -748,11 +748,34 @@ if ($liveSections.Count -gt 0) {
                 Check 'counter-control: restore''s own names are not injections' (@(Get-ProjectImportInjections (Join-Path $fx 'artifacts/evidence-build')).Count -eq 0)
                 # build arguments that set MSBuild properties reach the child dotnet process unseen
                 $r = & $ev @(@{ name = 'propargs'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-BuildArgs:-nologo,-v:q,-p:DefineConstants=SELFTEST_EVIL')
-                Check 'a build with -p:<property> in -BuildArgs is not authoritative and says why' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'build arguments set MSBuild properties')) $r.Out
+                Check 'a build with -p:<property> in -BuildArgs is not authoritative and says why' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'build arguments outside the vetted set')) $r.Out
                 $r = & $ev @(@{ name = 'propargs2'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
                 Check '...and the stamp that build left is not trusted by a later run without -Build' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -notlike 'build stamp*') $r.Out
                 $r = & $ev @(@{ name = 'propargs3'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
                 Check 'counter-control: the same build without a property argument is authoritative again (and re-stamps cleanly)' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
+                # only reporting switches are accepted: these make `dotnet build` exit 0 without rewriting the output folder, after which the
+                # tool would have stamped whatever was already there (a reviewer reproduced AUTHORITATIVE for each)
+                foreach ($bad in '--no-dependencies', '-getProperty:TargetPath', '-t:Restore') {
+                    $r = & $ev @(@{ name = 'vet'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', "-BuildArgs:-nologo,-v:q,$bad")
+                    Check "a build with $bad is not authoritative (build arguments are an allow-list: -nologo, -v, -m, -clp, -nr)" (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and ($r.Prov.Reasons -match 'build arguments outside the vetted set')) $r.Out
+                }
+                $r = & $ev @(@{ name = 'vetok'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-BuildArgs:-nologo,-v:m,-m:2,-clp:NoSummary,-nr:false')
+                Check 'counter-control: reporting switches (-nologo -v:m -m:2 -clp:NoSummary -nr:false) are accepted and the build is authoritative' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
+                # carry-over: assemblies of an earlier stamp for ANOTHER project are kept only if that build was clean. A build made with an untracked
+                # source file must not be carried into a later clean build's stamp (a reviewer reproduced: failing commit reported AUTHORITATIVE).
+                $libRun = @(@{ name = 'libbuild'; project = 'src/Calc/Calc.csproj'; filter = 'FullyQualifiedName~NoSuchClassAnywhere' })
+                $r = & $ev @(@{ name = 'carry0'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
+                [void](& $ev $libRun @('-Build'))
+                $r = & $ev @(@{ name = 'carry1'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
+                Check 'premise: after clean builds of two projects the first project''s stamp is carried over and trusted without -Build' (($r.Exit -eq 0) -and $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -like 'build stamp*') $r.Out
+                $taint = Join-Path $fx 'src/Calc/Taint.cs'; [IO.File]::WriteAllText($taint, "namespace Calc; internal static class Taint { }`n")
+                [void](& $ev @(@{ name = 'carry2'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-AllowDirty'))
+                Remove-Item $taint
+                [void](& $ev $libRun @('-Build'))
+                $r = & $ev @(@{ name = 'carry3'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 })
+                Check 'a binary built with an untracked source file is NOT carried into a later clean build''s stamp: not authoritative, not "build stamp" provenance' (($r.Exit -eq 1) -and -not $r.Prov.Authoritative -and $r.Prov.Runs[0].BinaryProvenance -notlike 'build stamp*') $r.Out
+                $r = & $ev @(@{ name = 'carry4'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build')
+                Check 'counter-control: a clean build of that project is authoritative again' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
                 # ---- a content file the tests read from the output folder is part of what was built
                 $contentFile = Join-Path $fx 'artifacts/evidence-build/bin/Calc.Tests/release/expected.txt'
                 Check 'premise: the content file is copied into the test output folder' (Test-Path -LiteralPath $contentFile)

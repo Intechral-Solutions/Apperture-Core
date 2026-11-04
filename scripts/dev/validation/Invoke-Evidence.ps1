@@ -86,17 +86,20 @@ try {
     $reasons = New-Object System.Collections.Generic.List[string]
     $buildEnv = Get-BuildEnvironmentRisks
     $injected = @(Get-ProjectImportInjections $ArtifactsPath)
-    # Build arguments that set MSBuild properties or load a response file reach the child dotnet process without any file or environment
-    # variable this tool inspects (-p:DefineConstants=..., -p:CustomAfterMicrosoftCommonTargets=..., @x.rsp). They are not vetted: a build
-    # made with one is not authoritative. (A reviewed allow-list for protocol flags belongs to the build-protocol package.)
-    $propArgs = @($BuildArgs | Where-Object { $_ -match '^(?:--?|/)(?:p|property|rp|restoreproperty)(?:[:=]|$)' -or $_ -like '@*' })
+    # Build arguments reach the child dotnet process without any file or environment variable this tool inspects: -p:DefineConstants=...,
+    # @x.rsp, but also flags that make `dotnet build` exit 0 without rewriting the output folder (--no-dependencies, -o, -t:Restore,
+    # -getProperty:...), after which the tool would stamp whatever was already there. A deny-list of such forms can never be complete, so only
+    # arguments that change reporting, not the build, are accepted; anything else makes the build non-authoritative. (A reviewed allow-list for
+    # protocol flags belongs to the build-protocol package.)
+    $vettedBuildArg = '^(?:--?|/)(?:nologo|v|verbosity|m|maxcpucount|clp|consoleloggerparameters|nr|nodereuse)(?:[:=].*)?$'
+    $propArgs = @($BuildArgs | Where-Object { $_ -notmatch $vettedBuildArg })
     # Everything about THIS build that is not in the stamp's other fields and speaks against trusting the binary later. It is written into the
     # stamp, so that removing the cause afterwards (deleting the injected file, unsetting the variable) cannot launder the binary.
     $buildAgainst = @()
     if ($injected.Count) { $buildAgainst += "artifacts path held MSBuild import files ($($injected[0]))" }
     if ($buildEnv.Risky) { $buildAgainst += "environment build hooks [$($buildEnv.HookVariables -join ', ')] / user import files [$($buildEnv.UserImportFiles -join ', ')]" }
     if (@($id.AncestorBuildFiles).Count) { $buildAgainst += "build configuration above the repository ($(@($id.AncestorBuildFiles)[0]))" }
-    if ($propArgs.Count) { $buildAgainst += "build arguments set MSBuild properties or response files [$($propArgs -join ' ')]" }
+    if ($propArgs.Count) { $buildAgainst += "build arguments outside the vetted set (-nologo, -v, -m, -clp, -nr) [$($propArgs -join ' ')]" }
     $prov = [ordered]@{
         Record = $Record; StartedUtc = $started.ToString('o'); Authoritative = $false; Reasons = $reasons
         AuthoritativeMeans = 'No known channel was found by which the tested binary could differ from this commit (checked and recorded here). It is not a proof that the build environment was hermetic; see scripts/dev/validation/README.md, Provenance contract.'
@@ -116,7 +119,7 @@ try {
         if ($buildEnv.Risky) { $reasons.Add("the environment changes what a build compiles without any file in the repository (variables [$($buildEnv.HookVariables -join ', ')]; user import files [$($buildEnv.UserImportFiles -join ', ')]): not a build of the commit") }
         if (@($id.AncestorBuildFiles).Count -gt 0) { $reasons.Add("build configuration above the repository (e.g. $(@($id.AncestorBuildFiles)[0])) is imported by every build and is invisible to Git: the build is not a build of the commit") }
         if (@($id.UntrackedBuildFiles).Count -gt 0) { $reasons.Add("$(@($id.UntrackedBuildFiles).Count) untracked file(s) among the sources or build inputs (e.g. $(@($id.UntrackedBuildFiles)[0])): the build can compile them, so the tree is not the commit") }
-        if ($Build -and $propArgs.Count) { $reasons.Add("the build arguments set MSBuild properties or load a response file ($($propArgs -join ' ')): not vetted, so the binary is not shown to be a build of the commit") }
+        if ($Build -and $propArgs.Count) { $reasons.Add("build arguments outside the vetted set (-nologo, -v, -m, -clp, -nr): $($propArgs -join ' '). They can change what is compiled or leave the output folder as it was, so the binary is not shown to be a build of the commit") }
     }
 
     $runResults = @()
@@ -160,7 +163,7 @@ try {
                 # Assemblies of an earlier build at the same commit are carried over only if that stamp recorded a clean build (a stamp without the
                 # BuildAgainst field predates the check and is not trusted); otherwise they are dropped and so no longer stamped.
                 $against = @($buildAgainst)
-                if ($stamp -and $stamp.Head -eq $id.Head -and $stamp.DiffHash -eq $id.DiffHash -and $stamp.PSObject.Properties['BuildAgainst'] -and @($stamp.BuildAgainst).Count -eq 0) { foreach ($p in $stamp.Assemblies.PSObject.Properties) { $asm[$p.Name] = $p.Value } }
+                if ($stamp -and $stamp.Head -eq $id.Head -and $stamp.DiffHash -eq $id.DiffHash -and $stamp.DirtyTrackedFiles -eq 0 -and $stamp.UntrackedBuildFiles -eq 0 -and $stamp.PSObject.Properties['BuildAgainst'] -and @($stamp.BuildAgainst).Count -eq 0) { foreach ($p in $stamp.Assemblies.PSObject.Properties) { $asm[$p.Name] = $p.Value } }
                 $asm[$dll] = Get-BinariesHash (Split-Path $dll -Parent)   # the whole output folder: a replaced dependency must invalidate the stamp
                 Write-TextLf $stampPath ([pscustomobject]@{ Head = $id.Head; Tree = $id.Tree; DirtyTrackedFiles = $id.DirtyTrackedFiles; UntrackedBuildFiles = @($id.UntrackedBuildFiles).Count; DiffHash = $id.DiffHash; BuiltUtc = (Get-Date).ToUniversalTime().ToString('o'); Dotnet = (& dotnet --version); Configuration = $Configuration; BuildArgs = @($BuildArgs); BuildAgainst = $against; Assemblies = $asm } | ConvertTo-Json -Depth 4)
                 $run.BinaryProvenance = 'built by this run'; $run.ProvenanceEstablished = $true
