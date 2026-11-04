@@ -38,7 +38,7 @@ param(
     [Parameter(ParameterSetName = 'Run', Mandatory)][string]$Workspace,
     [Parameter(ParameterSetName = 'Run')][string]$Source,
     [Parameter(ParameterSetName = 'Run')][string[]]$ProtectedRoot = @(),
-    [Parameter(ParameterSetName = 'Run')][string]$Configuration = 'Release',
+    [Parameter(ParameterSetName = 'Run')][ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,30}$')][string]$Configuration = 'Release',   # reaches `dotnet build -c`, which MSBuild splits on ';' into properties
     [Parameter(ParameterSetName = 'Run')][string[]]$BuildArgs = @('-nologo', '-v:q'),
     [Parameter(ParameterSetName = 'Replay', Mandatory)][string]$ReplaySummary,
     [Parameter(ParameterSetName = 'Replay')][string]$ExpectedPerMutation,

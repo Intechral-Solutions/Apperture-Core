@@ -761,6 +761,13 @@ if ($liveSections.Count -gt 0) {
                 }
                 $r = & $ev @(@{ name = 'vetok'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedMinTests = 3 }) @('-Build', '-BuildArgs:-nologo,-v:m,-m:2,-clp:NoSummary,-nr:false')
                 Check 'counter-control: reporting switches (-nologo -v:m -m:2 -clp:NoSummary -nr:false) are accepted and the build is authoritative' (($r.Exit -eq 0) -and $r.Prov.Authoritative) $r.Out
+                # -Configuration reaches `dotnet build -c`, which MSBuild splits on ';' into properties (a reviewer reproduced AUTHORITATIVE with
+                # 'a;DefineConstants=EVIL;Z=\..\a'); both tools now accept only a plain configuration name
+                $badCfg = 'a;DefineConstants=EVIL;Z=\..\a'
+                $rr = Invoke-Tool $ie @('-Record', 'selftest', '-Plan', (& $plan @(@{ name = 'cfg'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests' })), '-Repo', $fx, '-ProcessEnvironmentOnly', '-Build', '-Configuration', $badCfg)
+                Check 'Invoke-Evidence refuses a -Configuration that carries MSBuild properties (before anything is built)' (($rr.Exit -ne 0) -and ($rr.Out -match 'Configuration') -and ($rr.Out -match 'match|validat')) $rr.Out
+                $rr = Invoke-Tool (Join-Path $val 'Invoke-Mutation.ps1') @('-Mutations', (Join-Path $WorkRoot 'none.json'), '-Commit', 'deadbeef12', '-Workspace', (Join-Path $WorkRoot 'cfg-ws'), '-Configuration', $badCfg)
+                Check 'Invoke-Mutation refuses it too' (($rr.Exit -ne 0) -and ($rr.Out -match 'Configuration') -and ($rr.Out -match 'match|validat') -and -not (Test-Path (Join-Path $WorkRoot 'cfg-ws'))) $rr.Out
                 # carry-over: assemblies of an earlier stamp for ANOTHER project are kept only if that build was clean. A build made with an untracked
                 # source file must not be carried into a later clean build's stamp (a reviewer reproduced: failing commit reported AUTHORITATIVE).
                 $libRun = @(@{ name = 'libbuild'; project = 'src/Calc/Calc.csproj'; filter = 'FullyQualifiedName~NoSuchClassAnywhere' })

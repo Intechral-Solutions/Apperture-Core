@@ -34,7 +34,7 @@ param(
     [string]$ExpectedCommit,
     [string]$Out,
     [string]$ArtifactsPath,
-    [string]$Configuration = 'Release',
+    [ValidatePattern('^[A-Za-z][A-Za-z0-9_-]{0,30}$')][string]$Configuration = 'Release',   # reaches `dotnet build -c`, which MSBuild splits on ';' into properties
     [switch]$Build,
     [string[]]$BuildArgs = @('-nologo', '-v:q'),
     [switch]$AllowDirty,
