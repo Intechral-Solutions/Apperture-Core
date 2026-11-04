@@ -91,7 +91,7 @@ What these three do and do not show:
 
 ## 5. Negative controls
 
-`scripts/dev/validation/tests/Test-Validation.ps1` feeds every tool input it must reject or flag and asserts that it did. Last full run (at `4449785`, after the closure fixes of section 10): **325 controls passed, 0 failed, 0 skipped sections**; the run before them was 304 (lib 85, Compare-Trx 19, Select-Tests 37, mutation replay 16, SQL helper and preflight 43, live mutation 38, live evidence 60, archive 6), so section 10 added 21 controls to the selector, SQL helper, preflight and live evidence sections. The live sections build a small .NET fixture solution and run the real `dotnet` build and test host; the SQL sections use a fake `docker` and a local TCP listener, never a real SQL Server.
+`scripts/dev/validation/tests/Test-Validation.ps1` feeds every tool input it must reject or flag and asserts that it did. Last full run (at `3e7d139`, the tip after the closure fixes of section 10): **345 controls passed, 0 failed, 0 skipped sections**; the run before the closure checks was 304 (lib 85, Compare-Trx 19, Select-Tests 37, mutation replay 16, SQL helper and preflight 43, live mutation 38, live evidence 60, archive 6), so section 10 added 41 controls to the selector, SQL helper, preflight and live evidence sections. Commits after `3e7d139` change this record only. The live sections build a small .NET fixture solution and run the real `dotnet` build and test host; the SQL sections use a fake `docker` and a local TCP listener, never a real SQL Server.
 
 | Tool | Misleading input it must not accept (examples, all asserted) |
 |---|---|
@@ -177,6 +177,8 @@ Run after the round-5 verdict, from the worktree `wt-dev1-3a`, against the dispo
 | Same run, clean tree at `4449785` | **AUTHORITATIVE**, 2/2 passed; markers 25 to 50, `CatalogsWrittenInWindow` 1, `CatalogStartupsInWindow` 0 |
 | Do the markers correspond to real SQL execution? | An idle server shows no movement (50 to 50, 20 catalogs both times). During the run the only catalog that moved is `Apperture_IntegrationTests` (+25); its last write (19:51:43, offset 0) lies inside the test host's own window in the TRX (19:51:39 to 19:51:44 UTC) |
 | Secrets in the evidence | 30 files scanned (both evidence folders and the smoke folder: JSON, logs, summaries, TRX, scripts): **0 contain the password literally, 0 contain an un-redacted `Password=<value>`** (`artifacts/dev13a/smoke/verify-markers-and-secrets.txt`) |
+
+Re-run at the final tip `3e7d139` (after the stamp, carry-over, build-argument and `-Configuration` fixes of section 10.6): the same evidence is **AUTHORITATIVE** (2/2 passed, markers 75 to 100, one catalog written in the window), and the real mutation smoke of 10.2 gives the same two outcomes (`artifacts/evidence/mutation/dev13a-real-smoke-2/`). `Get-SqlEvidence -Mode Window` was also run against the real server after the offset change and answered normally (0 start-ups).
 
 Limits of this smoke: one small class, one container, Windows only. A write by another process to an `Apperture_*` catalog during the window would count as a write in the window (the test server is dedicated; the marker movement alone cannot tell who wrote). `Get-SqlEvidence` does not check that `-Container` is the server named in the connection string (already listed in section 7).
 
