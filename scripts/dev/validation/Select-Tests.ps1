@@ -123,6 +123,14 @@ function Get-TestClasses([string]$File) {
     @($fileClasses[$File] | Where-Object { $_ -eq $stem } | Select-Object -Unique)
 }
 function Test-IsTestClass([string]$Name) { foreach ($d in $classes[$Name]) { if ((Get-TestClasses $d.File) -contains $Name) { return $true } }; $false }
+function Get-QualifiedNames([string]$Class, [string]$Project) {
+    # The namespace-qualified identities a simple class name has in one project. Partial parts in one namespace are one identity; the same
+    # simple name in two namespaces is two (the selection key is the simple name, so they would otherwise be indistinguishable).
+    $decls = @($classes[$Class] | Where-Object { $_.Project -eq $Project })
+    $testDecls = @($decls | Where-Object { (Get-TestClasses $_.File) -contains $Class })
+    if ($testDecls.Count -gt 0) { $decls = $testDecls }
+    @($decls | ForEach-Object { $ns = if ($fileNamespace.ContainsKey($_.File)) { $fileNamespace[$_.File] } else { '' }; if ($ns) { "$ns.$Class" } else { $Class } } | Sort-Object -Unique)
+}
 $supportTypes = New-Object System.Collections.Generic.HashSet[string]; $supportFiles = New-Object System.Collections.Generic.List[string]
 
 # ---- evaluate
@@ -171,6 +179,13 @@ foreach ($rule in $man.rules) {
             foreach ($p in $projs) { Add-Selection $p $n "$($rule.kind.ToUpper()) $($rule.id): $($trig[0])$(if ($trig.Count -gt 1) { " (+$($trig.Count - 1))" })" }
         }
     }
+}
+
+# ---- one simple name, several namespaces of one project: the key is the simple name, so say so
+foreach ($k in @($selected.Keys | Sort-Object)) {
+    $p, $c = $k -split '\|', 2
+    $q = @(Get-QualifiedNames $c $p)
+    if ($q.Count -gt 1) { $ambiguous.Add("class '$c' in project $p is declared in $($q.Count) namespaces ($($q -join ', ')); the filter names the simple name and so selects all of them, and every one must run and be covered") }
 }
 
 # ---- advisory candidates: tests that name a type declared in a changed production source file
@@ -223,18 +238,23 @@ function Get-FilterClasses([string]$Filter) {
     }
     $out
 }
-function Test-ClassCovered([string]$Class, [string]$Project, [string[]]$Tokens) {
-    # A bare token covers the class of that name. A qualified token covers it only when it is that class's own namespace-qualified name (or a
-    # dotted suffix of it): FullyQualifiedName~Other.Ns.FooTests does not cover Apperture.X.FooTests.
-    foreach ($t in $Tokens) {
-        if (-not $t.Contains('.')) { if ($t -eq $Class) { return $true }; continue }
-        foreach ($d in @($classes[$Class] | Where-Object { $_.Project -eq $Project })) {
-            $ns = if ($fileNamespace.ContainsKey($d.File)) { $fileNamespace[$d.File] } else { '' }
-            $full = if ($ns) { "$ns.$Class" } else { $Class }
-            if ($full -eq $t -or $full.EndsWith(".$t", [StringComparison]::Ordinal)) { return $true }
+function Test-ClassCovered([string]$Class, [string]$Project, [string[]]$Tokens, [switch]$Any) {
+    # A bare token covers every class of that name. A qualified token covers a class only when it is that class's own namespace-qualified name
+    # (or a dotted suffix of it): FullyQualifiedName~Other.Ns.FooTests does not cover Apperture.X.FooTests.
+    # A simple name declared in several namespaces of one project is covered only when EVERY identity is (fail closed); -Any asks whether the
+    # tokens touch at least one identity, which is what "in the filter but not selected" needs.
+    $names = @(Get-QualifiedNames $Class $Project)
+    if ($names.Count -eq 0) { return $false }
+    $covered = foreach ($full in $names) {
+        $hit = $false
+        foreach ($t in $Tokens) {
+            if (-not $t.Contains('.')) { if ($t -eq $Class) { $hit = $true } }
+            elseif ($full -eq $t -or $full.EndsWith(".$t", [StringComparison]::Ordinal)) { $hit = $true }
         }
+        $hit
     }
-    $false
+    if ($Any) { return (@($covered | Where-Object { $_ }).Count -gt 0) }
+    -not (@($covered | Where-Object { -not $_ }).Count -gt 0)
 }
 $scoped = @($selected.Keys | Where-Object { -not $CurrentFilterProject -or ($_ -split '\|', 2)[0] -eq $CurrentFilterProject })
 $selectedClassNames = @($scoped | ForEach-Object { ($_ -split '\|', 2)[1] } | Sort-Object -Unique)
@@ -244,7 +264,7 @@ if ($CurrentFilter) {
     $text = if (Test-Path -LiteralPath $CurrentFilter -PathType Leaf) { Get-Content -LiteralPath $CurrentFilter -Raw } else { $CurrentFilter }
     $currentClasses = @(Get-FilterClasses $text | Sort-Object -Unique)
     $missed = @($scoped | ForEach-Object { $p, $c = $_ -split '\|', 2; if (-not (Test-ClassCovered $c $p $currentClasses)) { $c } } | Sort-Object -Unique)
-    $extra = @($currentClasses | Where-Object { $tok = $_; -not (@($scoped | Where-Object { $p, $c = $_ -split '\|', 2; Test-ClassCovered $c $p @($tok) }).Count) })
+    $extra = @($currentClasses | Where-Object { $tok = $_; -not (@($scoped | Where-Object { $p, $c = $_ -split '\|', 2; Test-ClassCovered $c $p @($tok) -Any }).Count) })
 }
 
 # ---- filters per project
@@ -264,7 +284,7 @@ if ($Strict) {
 }
 $res = [pscustomobject]@{
     Repo = $Repo; Base = $Base; Head = $Head; TreeRev = $rev; Manifest = $Manifest; Changed = @($changed | ForEach-Object { "$($_.Status) $($_.Path)" })
-    Selected = @($selected.Keys | Sort-Object | ForEach-Object { $p, $c = $_ -split '\|', 2; [pscustomobject]@{ Project = $p; Class = $c; Why = @($selected[$_]) } })
+    Selected = @($selected.Keys | Sort-Object | ForEach-Object { $p, $c = $_ -split '\|', 2; [pscustomobject]@{ Project = $p; Class = $c; Qualified = @(Get-QualifiedNames $c $p); Why = @($selected[$_]) } })
     SupportFilesChanged = @($supportFiles); DocumentationChanged = @($docsChanged); DeletedTests = @($deletedTests)
     DocumentationReaders = @($docReaders.Keys | Sort-Object | ForEach-Object { $p, $c = $_ -split '\|', 2; [pscustomobject]@{ Project = $p; Class = $c } }); Filters = $filters; Rules = $ruleReport; FullRunRequired = @($fullRun); Unmapped = @($unmapped); Ignored = $ignored.Count; Missing = @($missing); Ambiguous = @($ambiguous); WildcardsMatchingNothing = @($noMatch)
     Candidates = @($candidates.Keys | Sort-Object | ForEach-Object { $p, $c = $_ -split '\|', 2; [pscustomobject]@{ Project = $p; Class = $c } })

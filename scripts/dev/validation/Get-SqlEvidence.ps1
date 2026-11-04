@@ -10,7 +10,7 @@
     Both run sqlcmd inside the test SQL container through `docker exec`. The password reaches sqlcmd only as the SQLCMDPASSWORD environment
     variable (never on a command line, never printed, never written), and any error text is passed through Protect-Text.
     The connection comes from APPERTURE_TEST_SQL_CONNECTION_STRING (process environment, then the repository .env unless
-    -ProcessEnvironmentOnly). It must name a catalog starting Apperture_ and must not use port 14333 (the development server).
+    -ProcessEnvironmentOnly). Its catalog is the base the tests replace with their own disposable ones, so it must be Apperture (what CI uses) or Apperture_<name>; the tool itself reads only Apperture_* catalogs. It must not use port 14333 (the development server).
 
     Exit codes: 0 = collected; 2 = could not collect (no configuration, unsafe target, docker or sqlcmd failure). There is no 1: a
     collection either happened or it did not, and a missing proof must not be mistaken for an empty one.
@@ -41,7 +41,7 @@ $sql = Resolve-SqlTarget $Repo -ProcessEnvironmentOnly:$ProcessEnvironmentOnly -
 if (-not $sql.Configured) { Stop-Collection 'APPERTURE_TEST_SQL_CONNECTION_STRING is not configured' }
 $i = $sql.Info
 if ($i.Port -eq 14333) { Stop-Collection 'the configured port is the development SQL server' }
-if ($i.Catalog -notmatch '^Apperture_.+') { Stop-Collection "catalog '$($i.Catalog)' is not a disposable test catalog" }
+if (-not (Test-SqlBaseCatalog $i.Catalog)) { Stop-Collection "catalog '$($i.Catalog)' is neither the base name Apperture nor Apperture_<name>" }
 if (-not $i.HasPassword) { Stop-Collection 'the connection string carries no password (integrated security is not supported here)' }
 $pw = if ($sql.Raw -match '(?i)(?:password|pwd)\s*=\s*([^;]+)') { $Matches[1].Trim('"', "'") } else { Stop-Collection 'no password in the connection string' }
 $user = if ($i.User) { $i.User } else { 'sa' }

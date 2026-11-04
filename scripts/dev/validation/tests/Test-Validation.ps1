@@ -314,6 +314,24 @@ if (Want-Section 'select') {
     Check 'a namespace-qualified filter clause for a different namespace does NOT cover the class (it is MISSED)' (($r.Json.MissedByCurrentFilter -contains 'SameNameTests') -and ($r.Json.InCurrentFilterOnly -contains 'Other.Ns.SameNameTests')) $r.Out
     $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~Fx.A.SameNameTests', '-CurrentFilterProject', 'UnitTests')
     Check 'the class''s own qualified name covers it' (@($r.Json.MissedByCurrentFilter).Count -eq 0 -and @($r.Json.InCurrentFilterOnly).Count -eq 0) $r.Out
+    # The same simple name in two namespaces of one project shares the selection key. Covering only one of them must not read as covered
+    # (the real tree has SchedulesControllerTests in ControlPlane and Governance; a filter naming the Governance one reported nothing missed).
+    $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~Fx.A.SameNameTests', '-CurrentFilterProject', 'UnitTests')
+    Check 'premise: with one namespace there is no ambiguity' (@($r.Json.Ambiguous).Count -eq 0 -and @($r.Json.Selected[0].Qualified).Count -eq 1) $r.Out
+    W 'tests/Apperture.UnitTests/NsB.cs' "namespace Fx.B;`npublic class SameNameTests { [Fact] public void B() { } }`n"
+    $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~Fx.B.SameNameTests', '-CurrentFilterProject', 'UnitTests', '-Strict')
+    Check 'a simple name in two namespaces is reported AMBIGUOUS with both identities, and is a finding under -Strict' (($r.Json.Ambiguous -match 'SameNameTests.*2 namespaces') -and @($r.Json.Selected[0].Qualified).Count -eq 2 -and $r.Exit -eq 1) $r.Out
+    Check 'a filter naming only the OTHER namespace misses the class (it was reported covered before the fix)' (($r.Json.MissedByCurrentFilter -contains 'SameNameTests') -and ($r.Json.InCurrentFilterOnly -notcontains 'Fx.B.SameNameTests')) $r.Out
+    $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~Fx.A.SameNameTests', '-CurrentFilterProject', 'UnitTests')
+    Check 'a filter naming only the CHANGED namespace still misses the class: the other identity is not covered' ($r.Json.MissedByCurrentFilter -contains 'SameNameTests') $r.Out
+    $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~Fx.A.SameNameTests|FullyQualifiedName~Fx.B.SameNameTests', '-CurrentFilterProject', 'UnitTests')
+    Check 'counter-control: a filter naming both qualified identities covers the class' (@($r.Json.MissedByCurrentFilter).Count -eq 0 -and @($r.Json.InCurrentFilterOnly).Count -eq 0) $r.Out
+    $r = & $wt @('tests/Apperture.UnitTests/NsA.cs') @('-CurrentFilter', 'FullyQualifiedName~SameNameTests', '-CurrentFilterProject', 'UnitTests')
+    Check 'counter-control: the bare simple name covers every identity' (@($r.Json.MissedByCurrentFilter).Count -eq 0) $r.Out
+    W 'tests/Apperture.UnitTests/PartA.cs' "namespace Fx.P;`npublic partial class PartTests { [Fact] public void A() { } }`n"; W 'tests/Apperture.UnitTests/PartA.More.cs' "namespace Fx.P;`npublic partial class PartTests { [Fact] public void B() { } }`n"
+    $r = & $wt @('tests/Apperture.UnitTests/PartA.cs', 'tests/Apperture.UnitTests/PartA.More.cs')
+    Check 'counter-control: partial parts of one class in one namespace are ONE identity, not an ambiguity' (@($r.Json.Ambiguous).Count -eq 0 -and @($r.Json.Selected | Where-Object Class -eq 'PartTests').Count -eq 1 -and @(($r.Json.Selected | Where-Object Class -eq 'PartTests').Qualified).Count -eq 1) $r.Out
+    Remove-Item "$fx/tests/Apperture.UnitTests/NsB.cs", "$fx/tests/Apperture.UnitTests/PartA.cs", "$fx/tests/Apperture.UnitTests/PartA.More.cs"
     Remove-Item "$fx/tests/Apperture.UnitTests/CustomAttributeTests.cs", "$fx/tests/Apperture.UnitTests/NsA.cs"
     # a deleted production file still triggers its rules and can be UNMAPPED
     & $g @('rm', '-q', 'src/App/Widget.cs', 'src/App/Orphan.cs'); & $g @('commit', '-q', '-m', 'delete two production files')
@@ -382,7 +400,11 @@ if (Want-Section 'sql') {
     Check 'a window without bounds is refused' ((Invoke-Tool $ge @('-Mode', 'Window', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) $envOk).Exit -eq 2)
     Check 'no configuration is "not collected" (exit 2), not an empty result' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = '' }).Exit -eq 2)
     Check 'the development SQL port is refused' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace '1433', '14333') }).Exit -eq 2)
-    Check 'a catalog that is not a disposable test catalog is refused' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace 'Apperture_SelfTest', 'Apperture') }).Exit -eq 2)
+    Check 'a catalog that is neither Apperture nor Apperture_<name> is refused' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace 'Apperture_SelfTest', 'master') }).Exit -eq 2)
+    Check 'a name that only starts with Apperture (ApperturePROD) is refused' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace 'Apperture_SelfTest', 'ApperturePROD') }).Exit -eq 2)
+    # The repository's own test configuration names the base catalog Apperture (the tests replace it with disposable ones); a real-container smoke run found this refused.
+    Check 'counter-control: the base catalog name Apperture (the repository test configuration and CI) is accepted' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = ($conn -replace 'Apperture_SelfTest', 'Apperture') }).Exit -eq 0)
+    Check 'counter-control: the development port is still refused with that base catalog' ((Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) @{ APPERTURE_TEST_SQL_CONNECTION_STRING = (($conn -replace 'Apperture_SelfTest', 'Apperture') -replace '1433', '14333') }).Exit -eq 2)
     $r = Invoke-Tool $ge @('-Mode', 'Markers', '-DockerCommand', $cmd, '-ProcessEnvironmentOnly', '-Repo', $repoRoot) ($envOk + @{ FAKE_DOCKER_FAIL = '1' })
     Check 'a docker or sqlcmd failure is "not collected" (exit 2) and leaks no password' (($r.Exit -eq 2) -and ($r.Out -notmatch [regex]::Escape($secret)))
 }
@@ -410,9 +432,13 @@ if (Want-Section 'preflight') {
     }
     $good = & $targetStatus $conn
     Check 'control: a well-formed disposable target is not flagged by sql.target (so the failures below come from the check under test)' ($good.Target.Status -in 'PASS', 'WARN') $good.Target.Message
+    $baseOk = & $targetStatus ($conn -replace 'Apperture_SelfTest', 'Apperture')
+    Check 'counter-control: the base catalog name Apperture is NOT flagged by sql.target (the repository test configuration; found by a real-container smoke run)' ($baseOk.Target.Status -in 'PASS', 'WARN') "$($baseOk.Target.Status) $($baseOk.Target.Message)"
+    $baseDev = & $targetStatus (($conn -replace 'Apperture_SelfTest', 'Apperture') -replace '1433', '14333')
+    Check 'but the base catalog name Apperture on the development port is still a FAIL' ($baseDev.Target.Status -eq 'FAIL') "$($baseDev.Target.Status) $($baseDev.Target.Message)"
     $targetCases = @(
         @('nothing configured', ''), @('the development SQL port 14333', ($conn -replace '1433', '14333')), @('a catalog that is not Apperture_*', ($conn -replace 'Apperture_SelfTest', 'master')),
-        @('the development catalog name', ($conn -replace 'Apperture_SelfTest', 'Apperture')), @('LocalDB', ($conn -replace '127.0.0.1,1433', '(localdb)\MSSQLLocalDB')),
+        @('a name that only starts with Apperture', ($conn -replace 'Apperture_SelfTest', 'ApperturePROD')), @('an Apperture_ name with a character outside letters, digits and underscore', ($conn -replace 'Apperture_SelfTest', 'Apperture_a-b')), @('LocalDB', ($conn -replace '127.0.0.1,1433', '(localdb)\MSSQLLocalDB')),
         @('a repeated server keyword whose LAST value is the dev port', ($conn -replace 'Server=127.0.0.1,1433;', 'Server=127.0.0.1,1433;Data Source=127.0.0.1,14333;')),
         @('a space after the comma before the dev port', ($conn -replace '127.0.0.1,1433', '127.0.0.1, 14333')), @('a named pipe', ($conn -replace '127.0.0.1,1433', 'np:\\.\pipe\LOCALDB#ABC\tsql\query')),
         @('a repeated catalog keyword with different values', ($conn + ';Initial Catalog=Apperture_Other')))
@@ -604,6 +630,15 @@ if ($liveSections.Count -gt 0) {
                 Check 'fewer tests than expected is NotDiscovered' (($r.Exit -eq 1) -and $r.Prov.Runs[0].Outcome -eq 'NotDiscovered')
                 $r = & $ev @(@{ name = 'missclass'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests'; expectedClasses = @('AddTests', 'ClassThatIsNotThere') })
                 Check 'an expected class that produced no test is NotDiscovered' (($r.Exit -eq 1) -and $r.Prov.Runs[0].Outcome -eq 'NotDiscovered' -and $r.Prov.Runs[0].MissingClasses -contains 'ClassThatIsNotThere')
+                # A selection that names one simple name in two namespaces expects BOTH identities to produce a test (the simple name alone is satisfied by either)
+                $selFilter = 'FullyQualifiedName~Calc.Tests.AddTests'
+                $selOk = Join-Path $d 'sel-qual-ok.json'; $selBad = Join-Path $d 'sel-qual-bad.json'
+                [IO.File]::WriteAllText($selOk, (@{ Selected = @(@{ Project = 'Calc'; Class = 'AddTests'; Qualified = @('Calc.Tests.AddTests') }); Filters = @{ Calc = $selFilter }; Missing = @(); Ambiguous = @(); Unmapped = @() } | ConvertTo-Json -Depth 6))
+                [IO.File]::WriteAllText($selBad, (@{ Selected = @(@{ Project = 'Calc'; Class = 'AddTests'; Qualified = @('Calc.Tests.AddTests', 'Other.Ns.AddTests') }); Filters = @{ Calc = $selFilter }; Missing = @(); Ambiguous = @('class ''AddTests'' ... 2 namespaces'); Unmapped = @() } | ConvertTo-Json -Depth 6))
+                $r = & $ev @(@{ name = 'qualok'; project = $proj; selectionProject = 'Calc'; expectedMinTests = 3 }) @('-Selection', $selOk)
+                Check 'selection-driven run, one identity present: passes (counter-control for the ambiguity check)' (($r.Exit -eq 0) -and $r.Prov.Runs[0].Outcome -eq 'Passed' -and $r.Prov.Runs[0].MissingClasses.Count -eq 0) $r.Out
+                $r = & $ev @(@{ name = 'qualbad'; project = $proj; selectionProject = 'Calc'; expectedMinTests = 3 }) @('-Selection', $selBad)
+                Check 'selection-driven run: a second namespace identity that produced no test makes the run NotDiscovered (the simple name alone would have passed)' (($r.Exit -eq 1) -and $r.Prov.Runs[0].Outcome -eq 'NotDiscovered' -and $r.Prov.Runs[0].MissingClasses -contains 'Other.Ns.AddTests') $r.Out
                 $r = & $ev @(@{ name = 'allowskip'; project = $proj; filter = 'FullyQualifiedName~Calc.Tests.AddTests|FullyQualifiedName~Calc.Tests.SkippedTests'; allowNotExecuted = @('Calc.Tests.SkippedTests.Skipped'); expectedMinTests = 3 })
                 Check 'a skip the plan names exactly (full test name) is allowed and recorded' (($r.Exit -eq 0) -and $r.Prov.Runs[0].Counts.NotExecuted -eq 1) $r.Out
                 foreach ($loose in 'Skipped', 'Calc', 'Calc.Tests.SkippedTests', 'calc.tests.skippedtests.skipped') {

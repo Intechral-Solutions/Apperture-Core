@@ -95,7 +95,7 @@ try {
         $i = $sql.Info; $sqlInfo = $i
         $problems = @()
         if ($i.Port -eq 14333) { $problems += 'port 14333 is the development SQL server' }
-        if (-not $i.Catalog) { $problems += 'no catalog named' } elseif ($i.Catalog -notmatch '^Apperture_.+') { $problems += "catalog '$($i.Catalog)' does not start with Apperture_" }
+        if (-not $i.Catalog) { $problems += 'no catalog named' } elseif (-not (Test-SqlBaseCatalog $i.Catalog)) { $problems += "catalog '$($i.Catalog)' is neither the base name Apperture nor Apperture_<name>" }
         if ($i.NamedPipeOrLocalDb) { $problems += 'a named pipe or LocalDB target is not a supported test target' }
         if ($i.Ambiguous) { $problems += 'a keyword (server, database or user) appears more than once with different values; SqlClient uses the last, a reader of the text may not' }
         if ($i.Server -and -not $i.Port -and $i.Server -match ',') { $problems += 'the port could not be read from the server value' }

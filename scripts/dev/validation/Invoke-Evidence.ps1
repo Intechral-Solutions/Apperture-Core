@@ -88,6 +88,7 @@ try {
     $injected = @(Get-ProjectImportInjections $ArtifactsPath)
     $prov = [ordered]@{
         Record = $Record; StartedUtc = $started.ToString('o'); Authoritative = $false; Reasons = $reasons
+        AuthoritativeMeans = 'No known channel was found by which the tested binary could differ from this commit (checked and recorded here). It is not a proof that the build environment was hermetic; see scripts/dev/validation/README.md, Provenance contract.'
         Tree = [ordered]@{ Head = $id.Head; Branch = $id.Branch; Tree = $id.Tree; TreeSrc = $id.Tree_src; TreeTests = $id.Tree_tests; DirtyTrackedFiles = $id.DirtyTrackedFiles; DiffHash = $id.DiffHash; UntrackedFiles = $id.UntrackedFiles; UntrackedBuildFiles = @($id.UntrackedBuildFiles | Select-Object -First 20); AncestorBuildFiles = @($id.AncestorBuildFiles); Origin = $id.OriginUrl }
         Tools = [ordered]@{ Dotnet = (& dotnet --version); Pwsh = $PSVersionTable.PSVersion.ToString(); Git = ((& git --version) -replace 'git version ', ''); Os = [Runtime.InteropServices.RuntimeInformation]::OSDescription }
         BuildEnvironment = [ordered]@{ ArtifactsPathInjectedImports = @($injected); HookVariables = @($buildEnv.HookVariables); UserImportFiles = @($buildEnv.UserImportFiles); OtherMsBuildNugetVariables = @($buildEnv.OtherVariables) }
@@ -126,7 +127,7 @@ try {
                 if (-not $sel) { Stop-Tool "run '$name' uses a selection but none was given" }
                 $key = [string]$r.selectionProject
                 if (-not $sel.Filters.PSObject.Properties[$key]) { Stop-Tool "the selection has no project '$key'" }
-                $filter = [string]$sel.Filters.$key; $expected = @($sel.Selected | Where-Object Project -eq $key | ForEach-Object Class)
+                $filter = [string]$sel.Filters.$key; $expected = @($sel.Selected | Where-Object Project -eq $key | ForEach-Object { if ($_.PSObject.Properties['Qualified'] -and @($_.Qualified).Count -gt 1) { @($_.Qualified) } else { $_.Class } })   # one simple name in several namespaces: each identity must produce a test
             }
             $proj = [IO.Path]::GetFullPath((Join-Path $Repo $r.project)); $projName = [IO.Path]::GetFileNameWithoutExtension($proj)
             $run = [ordered]@{ Name = $name; Project = $r.project; Filter = $filter; ExpectedClasses = $expected; Outcome = 'Inconclusive'; Detail = ''; Discovered = $null; BinaryProvenance = $null; ProvenanceEstablished = $false; Exit = $null; Trx = $null; TrxSha256 = $null; AssemblySha256 = $null; BinariesSha256 = $null; Counts = $null; MissingClasses = @(); NotExecuted = @(); Failed = @(); FastSqlCases = 0; DurationSeconds = 0 }
@@ -184,7 +185,7 @@ try {
             $run.Failed = @($failed | Select-Object -First 30 | ForEach-Object { $_.Name }); $run.NotExecuted = @($notExecBad | Select-Object -First 30 | ForEach-Object { "[$($_.Outcome)] $($_.Name)" })
             $run.FastSqlCases = @($res | Where-Object { $_.Outcome -eq 'Passed' -and ($_.Class -match 'SqlServer' -or $_.Name -match 'SqlServer') -and (ConvertTo-Seconds $_.Duration) -lt 0.1 }).Count
             $minTests = if ($r.PSObject.Properties['expectedMinTests']) { [int]$r.expectedMinTests } else { 1 }
-            $run.MissingClasses = @($expected | Where-Object { $c = $_; -not ($res | Where-Object { $_.Name.Contains(".$c.") -or $_.Class -eq $c -or $_.Class -like "*.$c" }) })
+            $run.MissingClasses = @($expected | Where-Object { $c = $_; -not ($res | Where-Object { $_.Name.Contains(".$c.") -or $_.Name.StartsWith("$c.", [StringComparison]::Ordinal) -or $_.Class -eq $c -or $_.Class -like "*.$c" }) })
             if ($failed.Count) { $run.Outcome = 'Failed'; $run.Detail = "$($failed.Count) failed" }
             elseif (($passed + $failed.Count) -eq 0) { $run.Outcome = 'NotDiscovered'; $run.Detail = 'no test was executed' }
             elseif ($passed -lt $minTests) { $run.Outcome = 'NotDiscovered'; $run.Detail = "$passed tests executed, at least $minTests expected" }
@@ -231,6 +232,7 @@ try {
     $md.Add("# Evidence: $Record"); $md.Add('')
     $md.Add("**$(if ($prov.Authoritative) { 'AUTHORITATIVE' } else { 'NOT AUTHORITATIVE' })** - commit ``$($id.Head)`` ($($id.Branch)), tree ``$($id.Tree)``, $($id.DirtyTrackedFiles) modified tracked files, started $($prov.StartedUtc)"); $md.Add('')
     if ($reasons.Count) { $md.Add('Reasons it is not authoritative:'); foreach ($x in $reasons) { $md.Add("- $x") }; $md.Add('') }
+    $md.Add("_Scope: $($prov.AuthoritativeMeans)_"); $md.Add('')
     $md.Add('| Run | Outcome | Total | Passed | Failed | Not executed | rcsi False / True | Seconds |'); $md.Add('|---|---|---|---|---|---|---|---|')
     foreach ($rr in $runResults) { $c = $rr.Counts; $md.Add("| $($rr.Name) | $($rr.Outcome) | $(if ($c) { $c.Total } else { '-' }) | $(if ($c) { $c.Passed } else { '-' }) | $(if ($c) { $c.Failed } else { '-' }) | $(if ($c) { $c.NotExecuted } else { '-' }) | $(if ($c) { "$($c.RcsiFalse) / $($c.RcsiTrue)" } else { '-' }) | $($rr.DurationSeconds) |") }
     Write-TextLf (Join-Path $Out 'summary.md') (($md -join "`n") + "`n")

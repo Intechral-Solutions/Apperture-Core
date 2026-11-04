@@ -236,6 +236,14 @@ function Get-SafeConnectionInfo([string]$ConnectionString) {
     [pscustomobject]@{ Server = $server; Host = $hostName.Trim(); Port = $port; Catalog = $db; User = $user; IntegratedSecurity = $integrated; HasPassword = $has; NamedPipeOrLocalDb = $namedPipe; Ambiguous = $script:connAmbiguous }
 }
 
+function Test-SqlBaseCatalog([string]$Catalog) {
+    # The catalog a test connection string names is the BASE: the tests replace it with the disposable catalogs they create and drop, and the
+    # repository's own guard (SqlTestTargetGuard) judges only the catalog being operated on, allowing a base that defaults to the bare
+    # development name 'Apperture' ("CI does"). So the base is acceptable when it is that name or Apperture_<suffix>; anything else, or none,
+    # is a configuration this tool cannot place. The development SERVER is excluded separately (port 14333), not by this name.
+    [bool]($Catalog -and ($Catalog -ieq 'Apperture' -or $Catalog -match '^Apperture_[A-Za-z0-9_]+$'))
+}
+
 function Resolve-SqlTarget([string]$Repo, [switch]$ProcessEnvironmentOnly, [string]$EnvFile) {
     # Same precedence as the tests (process environment first, then the repository .env), reduced to a safe description.
     # Returns the connection string only inside the object's hidden field for in-process use; Describe() output carries no secret.
