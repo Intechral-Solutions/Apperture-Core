@@ -7,6 +7,11 @@
 
       * a failing test run is a failing exit code (including a host that exits 0 but whose TRX records a failure);
       * a run that executed nothing (a -Filter that matches no test, all tests skipped, no TRX) is never a pass;
+      * executed tests that neither passed nor failed (inconclusive and similar) are never a pass;
+      * a result file that is missing, truncated, empty, incomplete (a missing or non-numeric count), reports a run outcome
+        other than Completed, or whose result records disagree with its counters is never a pass;
+      * several result files: an all-skipped project is allowed and named, a project that selected nothing fails an
+        unfiltered run and is only reported under -Filter;
       * the -Filter text cannot carry other filter operators and the test host is not called when it is rejected;
       * a missing SDK or solution is an error, and the removed SDK helper is not referenced again;
       * the script reads no environment file and no credential and never turns an unavailable SQL server into a pass;
@@ -48,22 +53,53 @@ Set-Content -LiteralPath (Join-Path $fakeRoot 'Apperture.slnx') -Value '<Solutio
 $fakePs1 = Join-Path $fakeBin 'fake-dotnet.ps1'
 Set-Content -LiteralPath $fakePs1 -Value @'
 Add-Content -LiteralPath $env:FAKE_DOTNET_LOG -Value ($args -join "`t")
+function Get-Knob([string]$Name, [string]$Default) {
+    $v = [Environment]::GetEnvironmentVariable($Name)
+    if ($null -ne $v -and $v -ne '') { $v } else { $Default }
+}
 $i = [array]::IndexOf($args, '--results-directory')
 if ($env:FAKE_DOTNET_TRX -ne 'none' -and $i -ge 0) {
     $dir = $args[$i + 1]
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $n = if ($env:FAKE_DOTNET_TRXFILES) { [int]$env:FAKE_DOTNET_TRXFILES } else { 1 }
+    $n = [int](Get-Knob 'FAKE_DOTNET_TRXFILES' '1')
     for ($k = 1; $k -le $n; $k++) {
-        $total = $env:FAKE_DOTNET_TOTAL; $executed = $env:FAKE_DOTNET_EXECUTED; $passed = $env:FAKE_DOTNET_PASSED; $failed = $env:FAKE_DOTNET_FAILED
-        if ($k -eq 1 -and $env:FAKE_DOTNET_FIRST_FAILED) { $failed = $env:FAKE_DOTNET_FIRST_FAILED }
-        if ($k -eq $n -and $env:FAKE_DOTNET_LAST_EMPTY -eq '1') { $total = '0'; $executed = '0'; $passed = '0'; $failed = '0' }
-        $error_ = if ($env:FAKE_DOTNET_ERROR) { $env:FAKE_DOTNET_ERROR } else { '0' }
-        if ($k -eq 1 -and $env:FAKE_DOTNET_ERROR_FIRST) { $error_ = $env:FAKE_DOTNET_ERROR_FIRST }
-        $timeout_ = if ($env:FAKE_DOTNET_TIMEOUT) { $env:FAKE_DOTNET_TIMEOUT } else { '0' }
-        $aborted_ = if ($env:FAKE_DOTNET_ABORTED) { $env:FAKE_DOTNET_ABORTED } else { '0' }
-        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed"><Counters total="{0}" executed="{1}" passed="{2}" failed="{3}" error="{4}" timeout="{5}" aborted="{6}" notExecuted="0" /></ResultSummary></TestRun>' -f $total, $executed, $passed, $failed, $error_, $timeout_, $aborted_
+        $c = [ordered]@{
+            total = Get-Knob 'FAKE_DOTNET_TOTAL' '0'; executed = Get-Knob 'FAKE_DOTNET_EXECUTED' '0'
+            passed = Get-Knob 'FAKE_DOTNET_PASSED' '0'; failed = Get-Knob 'FAKE_DOTNET_FAILED' '0'
+            error = Get-Knob 'FAKE_DOTNET_ERROR' '0'; timeout = Get-Knob 'FAKE_DOTNET_TIMEOUT' '0'; aborted = Get-Knob 'FAKE_DOTNET_ABORTED' '0'
+            inconclusive = Get-Knob 'FAKE_DOTNET_INCONCLUSIVE' '0'
+        }
+        if ($k -eq 1 -and $env:FAKE_DOTNET_FIRST_FAILED) { $c.failed = $env:FAKE_DOTNET_FIRST_FAILED }
+        if ($k -eq 1 -and $env:FAKE_DOTNET_ERROR_FIRST) { $c.error = $env:FAKE_DOTNET_ERROR_FIRST }
+        if ($k -eq $n -and $env:FAKE_DOTNET_LAST_EMPTY -eq '1') { foreach ($key in @($c.Keys)) { $c[$key] = '0' } }
+        # A last assembly whose three tests were all skipped (as real TRX files record it: executed 0, notExecuted 0).
+        if ($k -eq $n -and $env:FAKE_DOTNET_LAST_SKIPPED -eq '1') { foreach ($key in @($c.Keys)) { $c[$key] = '0' }; $c.total = '3' }
+        # A last assembly that executed two tests, neither of which passed or failed.
+        if ($k -eq $n -and $env:FAKE_DOTNET_LAST_INCONCLUSIVE -eq '1') { foreach ($key in @($c.Keys)) { $c[$key] = '0' }; $c.total = '2'; $c.executed = '2'; $c.inconclusive = '2' }
+
+        # The result records, written the way the counters describe them unless a knob makes the two disagree.
+        $recPassed = [int](Get-Knob 'FAKE_DOTNET_REC_PASSED' $c.passed)
+        $recs = New-Object System.Text.StringBuilder
+        foreach ($pair in @(@('Passed', $recPassed), @('Failed', [int]$c.failed), @('Error', [int]$c.error), @('Timeout', [int]$c.timeout), @('Aborted', [int]$c.aborted),
+                @('Inconclusive', [int]$c.inconclusive), @('NotExecuted', [Math]::Max(0, [int]$c.total - [int]$c.executed)), @('Failed', [int](Get-Knob 'FAKE_DOTNET_REC_EXTRA_FAILED' '0')))) {
+            for ($j = 0; $j -lt $pair[1]; $j++) { [void]$recs.Append('<UnitTestResult testId="t" outcome="' + $pair[0] + '" />') }
+        }
+        $defs = if ([int]$c.total -gt 0) { '<UnitTest name="m" id="t"><TestMethod codeBase="C:\fake\Apperture.Fake' + $k + '.Tests.dll" className="C" name="m" /></UnitTest>' } else { '' }
+
+        $drop = $env:FAKE_DOTNET_DROP
+        $setName, $setValue = if ($env:FAKE_DOTNET_SET) { $env:FAKE_DOTNET_SET -split '=', 2 } else { '', '' }
+        $attrs = (@($c.Keys) + 'notExecuted' | Where-Object { $_ -ne $drop } | ForEach-Object {
+                $value = if ($_ -eq $setName) { $setValue } elseif ($_ -eq 'notExecuted') { '0' } else { $c[$_] }
+                $_ + '="' + $value + '"'
+            }) -join ' '
+        $outcome = Get-Knob 'FAKE_DOTNET_OUTCOME' 'Completed'
+        $outcomeAttr = if ($outcome -eq '-') { '' } else { ' outcome="' + $outcome + '"' }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary' + $outcomeAttr + '><Counters ' + $attrs + ' /></ResultSummary><Results>' + $recs + '</Results><TestDefinitions>' + $defs + '</TestDefinitions></TestRun>'
+        $path = Join-Path $dir ("fake_$k.trx")
         if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq '1') { $xml = '<TestRun><ResultSummary outcome="Completed" /></TestRun>' }
-        Set-Content -LiteralPath (Join-Path $dir ("fake_$k.trx")) -Value $xml
+        if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq 'xml') { $xml = '<TestRun><ResultSummary outcome="Completed"><Counters total="5" executed="5" passed="5"' }
+        if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq 'empty') { $xml = '' }
+        [IO.File]::WriteAllText($path, $xml)
     }
 }
 exit ([int]$env:FAKE_DOTNET_EXIT)
@@ -160,8 +196,61 @@ try {
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_CORRUPT_LAST = 1 }
     Assert-Control 'an unreadable TRX file fails the run instead of being skipped' ($r.Code -ne 0 -and $r.Output -match 'Cannot read the test counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
 
+    # Policy for several result files (one per test project). Under -Filter every project but the one holding the matching tests
+    # selects nothing, so that is expected and reported. Without -Filter a project that selected nothing is a scope that never ran.
+    $r = Invoke-Entry -Arguments @('-Filter', 'SomeClass') -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_LAST_EMPTY = 1 }
+    Assert-Control 'under -Filter an assembly that selected no test does not fail a run in which another assembly executed tests, and is reported' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 5 passed' -and $r.Output -match '1 result file\(s\) selected no test') "exit $($r.Code): $($r.Output)"
+
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_LAST_EMPTY = 1 }
-    Assert-Control 'an assembly that ran nothing does not fail a run in which another assembly executed tests' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 5 passed') "exit $($r.Code): $($r.Output)"
+    Assert-Control 'without -Filter an assembly that selected no test fails the run, although another assembly executed tests' ($r.Code -ne 0 -and $r.Output -match 'selected no test' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 3; FAKE_DOTNET_TOTAL = 2; FAKE_DOTNET_EXECUTED = 2; FAKE_DOTNET_PASSED = 2; FAKE_DOTNET_LAST_SKIPPED = 1 }
+    Assert-Control 'an assembly whose tests were all skipped is allowed beside passing assemblies, is named, and is classed as not authoritative' ($r.Code -eq 0 -and $r.Output -match 'Apperture\.Fake3\.Tests\.dll executed no test' -and $r.Output -match 'not authoritative' -and $r.Output -match 'Tests passed: 4 passed, 3 skipped or not executed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_LAST_INCONCLUSIVE = 1 }
+    Assert-Control 'executed tests with no passing verdict in a later TRX file fail the run although the earlier file passed' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    # A selected run in which tests were executed but none passed and none failed must not be reported as a pass.
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 5; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 0; FAKE_DOTNET_FAILED = 0 }
+    Assert-Control 'executed 5, passed 0, failed 0 (no verdict recorded) is a failing exit code' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 5; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 0; FAKE_DOTNET_FAILED = 0; FAKE_DOTNET_INCONCLUSIVE = 5 }
+    Assert-Control 'executed 5, passed 0, failed 0, inconclusive 5 is a failing exit code' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 5; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 4; FAKE_DOTNET_FAILED = 0; FAKE_DOTNET_INCONCLUSIVE = 1 }
+    Assert-Control 'one inconclusive test among four passing ones is a failing exit code' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    # An inconclusive test that the executed count leaves out (all five executed tests passed, one more is inconclusive).
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 5; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 5; FAKE_DOTNET_INCONCLUSIVE = 1 }
+    Assert-Control 'an inconclusive count that the executed count omits still fails the run, with the verdict message' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    # Missing, incomplete or malformed result records.
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_DROP = 'passed' }
+    Assert-Control 'a counters element without a passed count fails instead of reading it as 0' ($r.Code -ne 0 -and $r.Output -match "Cannot read the test counters: the 'passed' count is missing" -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_SET = 'passed=abc' }
+    Assert-Control 'a count that is not a number fails with the file named' ($r.Code -ne 0 -and $r.Output -match "Cannot read the test counters: 'passed' is not a whole number" -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_SET = 'failed=-1' }
+    Assert-Control 'a negative count cannot cancel a failure and fails the run' ($r.Code -ne 0 -and $r.Output -match "Cannot read the test counters: 'failed' is not a whole number" -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_CORRUPT_LAST = 'xml' }
+    Assert-Control 'a truncated (ill-formed) TRX file fails the run' ($r.Code -ne 0 -and $r.Output -match 'Cannot read the test counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_CORRUPT_LAST = 'empty' }
+    Assert-Control 'a zero-byte TRX file fails the run' ($r.Code -ne 0 -and $r.Output -match 'Cannot read the test counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_OUTCOME = 'Aborted' }
+    Assert-Control 'a TRX whose run outcome is not Completed fails the run although its counters look clean' ($r.Code -ne 0 -and $r.Output -match "run outcome 'Aborted'" -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_OUTCOME = '-' }
+    Assert-Control 'a TRX without a run outcome fails the run' ($r.Code -ne 0 -and $r.Output -match 'run outcome' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_REC_EXTRA_FAILED = 1 }
+    Assert-Control 'a result record that is neither passed nor skipped fails the run although the counters look clean' ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_REC_PASSED = 0 }
+    Assert-Control 'counters that claim passes the result records do not contain fail the run' ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
 
     foreach ($case in @(
             @{ Name = 'errored'; Fake = @{ FAKE_DOTNET_ERROR = 1 } },

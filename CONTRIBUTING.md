@@ -42,7 +42,7 @@ From the repo root, in PowerShell:
 .\scripts\ci\test.ps1 -Filter "PasswordPolicyEvaluatorTests"   # one name fragment, for iteration
 ```
 
-`dotnet build Apperture.slnx` and `dotnet test Apperture.slnx` do the same. `test.ps1` fails when no test executed, so a `-Filter` that matches nothing is an error, not a pass.
+`dotnet build Apperture.slnx` and `dotnet test Apperture.slnx` do the same. `test.ps1` fails when no test executed or when any executed test did not pass, so a `-Filter` that matches nothing is an error, not a pass; it reports skipped tests rather than counting them as passed.
 
 **Focused runs are for iteration only.** Running one class or one project tells you quickly whether your change broke what you touched; it does not replace the full run. Before you ask for review, run the whole suite where you can. The required CI runs every test on every pull request regardless of what you ran locally (see [Pull requests](#pull-requests)).
 
