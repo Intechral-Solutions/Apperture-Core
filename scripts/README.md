@@ -156,7 +156,9 @@ scripts/
 
 ## Validation toolkit (`dev/validation/`, `dev/preflight.ps1`)
 
-Tracked, self-tested tooling for producing evidence that can be believed: a preflight, evidence collection with provenance, TRX comparison, mutation controls in a disposable clone, test selection from `tests/test-manifest.json`, SQL write-marker proof and a verified archive step. PowerShell 7.2+ only. It plans and records; it changes no CI check and the required CI always runs every test. See [dev/validation/README.md](dev/validation/README.md).
+Tracked, self-tested tooling for producing evidence that can be believed: a preflight, evidence collection with provenance, TRX comparison, mutation controls in a disposable clone, test selection from `tests/test-manifest.json`, SQL write-marker proof and a verified archive step. PowerShell 7.2+ only. It plans and records; it changes no CI check and the required CI always runs every test. See [dev/validation/README.md](dev/validation/README.md). The build arguments that `Invoke-Evidence` and `Invoke-Mutation` forward to `dotnet build` are a default-deny allow-list (reporting switches, `--no-incremental`, `--disable-build-servers`, `-p:UseSharedCompilation=false`); accepting a flag there does not change the validation build protocol.
+
+The measurement tooling for the build-protocol experiment is in [dev/build-experiment/](dev/build-experiment/README.md); it adopts nothing.
 
 ## CI (`ci/`)
 
