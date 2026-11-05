@@ -58,7 +58,10 @@ if ($env:FAKE_DOTNET_TRX -ne 'none' -and $i -ge 0) {
         if ($k -eq 1 -and $env:FAKE_DOTNET_FIRST_FAILED) { $failed = $env:FAKE_DOTNET_FIRST_FAILED }
         if ($k -eq $n -and $env:FAKE_DOTNET_LAST_EMPTY -eq '1') { $total = '0'; $executed = '0'; $passed = '0'; $failed = '0' }
         $error_ = if ($env:FAKE_DOTNET_ERROR) { $env:FAKE_DOTNET_ERROR } else { '0' }
-        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed"><Counters total="{0}" executed="{1}" passed="{2}" failed="{3}" error="{4}" notExecuted="0" /></ResultSummary></TestRun>' -f $total, $executed, $passed, $failed, $error_
+        if ($k -eq 1 -and $env:FAKE_DOTNET_ERROR_FIRST) { $error_ = $env:FAKE_DOTNET_ERROR_FIRST }
+        $timeout_ = if ($env:FAKE_DOTNET_TIMEOUT) { $env:FAKE_DOTNET_TIMEOUT } else { '0' }
+        $aborted_ = if ($env:FAKE_DOTNET_ABORTED) { $env:FAKE_DOTNET_ABORTED } else { '0' }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed"><Counters total="{0}" executed="{1}" passed="{2}" failed="{3}" error="{4}" timeout="{5}" aborted="{6}" notExecuted="0" /></ResultSummary></TestRun>' -f $total, $executed, $passed, $failed, $error_, $timeout_, $aborted_
         if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq '1') { $xml = '<TestRun><ResultSummary outcome="Completed" /></TestRun>' }
         Set-Content -LiteralPath (Join-Path $dir ("fake_$k.trx")) -Value $xml
     }
@@ -148,7 +151,6 @@ try {
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 3; FAKE_DOTNET_TOTAL = 2; FAKE_DOTNET_EXECUTED = 2; FAKE_DOTNET_PASSED = 2 }
     Assert-Control 'counts are summed over every test assembly (3 files x 2 tests)' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 6 passed' -and $r.Output -match '3 test assemblies') "exit $($r.Code): $($r.Output)"
 
-    # 'A' + LF: `$` in a .NET regex also matches before a final newline, so the pattern ends in \z.
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_EXIT = -1073741819 }
     Assert-Control 'a crashed Windows test host (negative exit code) with a passing TRX is a failing exit code' ($r.Code -ne 0 -and $r.Output -match 'Tests failed' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
 
@@ -161,12 +163,21 @@ try {
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_LAST_EMPTY = 1 }
     Assert-Control 'an assembly that ran nothing does not fail a run in which another assembly executed tests' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 5 passed') "exit $($r.Code): $($r.Output)"
 
-    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_ERROR = 1 }
-    Assert-Control 'errored, timed-out or aborted tests in the TRX fail the run even when the host exited 0' ($r.Code -ne 0 -and $r.Output -match 'errored, timed-out or aborted' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+    foreach ($case in @(
+            @{ Name = 'errored'; Fake = @{ FAKE_DOTNET_ERROR = 1 } },
+            @{ Name = 'timed-out'; Fake = @{ FAKE_DOTNET_TIMEOUT = 1 } },
+            @{ Name = 'aborted'; Fake = @{ FAKE_DOTNET_ABORTED = 1 } },
+            @{ Name = 'errored in the first of two TRX files'; Fake = @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_ERROR_FIRST = 1 } })) {
+        $r = Invoke-Entry -Fake $case.Fake
+        Assert-Control "$($case.Name) tests in the TRX fail the run even when the host exited 0" ($r.Code -ne 0 -and $r.Output -match 'errored, timed-out or aborted' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+    }
 
+    # The printed path must be the solution of the root the run was redirected to, not the script's own checkout.
     $r = Invoke-Entry
-    Assert-Control 'the solution about to be tested is printed, and an APPERTURE_REPO_ROOT redirect is announced' ($r.Output -match 'Testing: .*Apperture\.slnx' -and $r.Output -match 'APPERTURE_REPO_ROOT is set') $r.Output
+    $expectedLine = 'Testing: ' + (Join-Path $fakeRoot 'Apperture.slnx')
+    Assert-Control 'the solution about to be tested is printed exactly, and an APPERTURE_REPO_ROOT redirect is announced' ($r.Output.Contains($expectedLine) -and $r.Output -match 'APPERTURE_REPO_ROOT is set') $r.Output
 
+    # 'A' + LF: `$` in a .NET regex also matches before a final newline, so the pattern ends in \z.
     foreach ($bad in @('A|B', 'A&B', 'A B', 'A=B', 'A~B', '!A', '(A)', "A`n")) {
         $r = Invoke-Entry -Arguments @('-Filter', $bad)
         Assert-Control "-Filter '$($bad -replace "`n", '<LF>')' is rejected before dotnet is called" ($r.Code -ne 0 -and $r.Calls.Count -eq 0) "exit $($r.Code), calls $($r.Calls.Count): $($r.Output)"
