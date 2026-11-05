@@ -143,9 +143,10 @@ try {
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 3; FAKE_DOTNET_TOTAL = 2; FAKE_DOTNET_EXECUTED = 2; FAKE_DOTNET_PASSED = 2 }
     Assert-Control 'counts are summed over every test assembly (3 files x 2 tests)' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 6 passed' -and $r.Output -match '3 test assemblies') "exit $($r.Code): $($r.Output)"
 
-    foreach ($bad in @('A|B', 'A&B', 'A B', 'A=B', 'A~B', '!A', '(A)')) {
+    # 'A' + LF: `$` in a .NET regex also matches before a final newline, so the pattern ends in \z.
+    foreach ($bad in @('A|B', 'A&B', 'A B', 'A=B', 'A~B', '!A', '(A)', "A`n")) {
         $r = Invoke-Entry -Arguments @('-Filter', $bad)
-        Assert-Control "-Filter '$bad' is rejected before dotnet is called" ($r.Code -ne 0 -and $r.Calls.Count -eq 0) "exit $($r.Code), calls $($r.Calls.Count): $($r.Output)"
+        Assert-Control "-Filter '$($bad -replace "`n", '<LF>')' is rejected before dotnet is called" ($r.Code -ne 0 -and $r.Calls.Count -eq 0) "exit $($r.Code), calls $($r.Calls.Count): $($r.Output)"
     }
 
     $r = Invoke-Entry -PathOverride $emptyBin

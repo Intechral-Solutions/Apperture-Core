@@ -31,7 +31,7 @@
 param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
-    [ValidatePattern('^[A-Za-z0-9_.]+$')]
+    [ValidatePattern('^[A-Za-z0-9_.]+\z')]
     [string]$Filter,
     [switch]$NoBuild
 )
