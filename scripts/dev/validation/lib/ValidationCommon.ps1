@@ -396,7 +396,7 @@ function Get-AssemblyCodeHash([string]$Path) {
 # Everything else is refused, in particular: any other -p:/-property:, -o/--output, --artifacts-path, -c/--configuration, -t/-target,
 # --no-build, --no-restore, --no-dependencies, -restore, -getProperty/-getItem/-getTargetResult, -bl, -graph, -isolate, @response files.
 # Measured basis: DEV-1.3C showed the assemblies of -m:1, -m:4 and the SDK defaults, with and without the servers, are byte-identical
-# when built into the same output path (record, section 5).
+# when built into the same output path (record, section 6).
 function Get-UnvettedBuildArgs([string[]]$BuildArgs) {
     $levels = 'q|quiet|m|minimal|n|normal|d|detailed|diag|diagnostic'
     $logger = '[A-Za-z]+(?:=[A-Za-z0-9]+)?(?:;[A-Za-z]+(?:=[A-Za-z0-9]+)?)*'

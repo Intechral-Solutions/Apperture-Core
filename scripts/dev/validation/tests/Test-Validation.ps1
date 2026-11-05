@@ -222,7 +222,11 @@ if (Want-Section 'buildargs') {
         '-m:abc', '-m:', '-m:1;2', '-m:1000', '-v', '-v:', '-v:evil', '-v:q;-p:X=1', '-clp:', '-clp:/p:X=1', '-clp:NoSummary;-p:X=1', '-nr', '-nr:maybe', '-nr:true;-p:X=1',
         ('--no-incremental' + "`n"), ('-nologo' + "`n-p:DefineConstants=EVIL"), ('-nologo' + "`r"), '', ' ',
         ('-nologo' + "`n"), ('-v:q' + "`n"), ('-m:4' + "`n"), ('-clp:NoSummary' + "`n"), ('-nr:false' + "`n"),   # a trailing newline must not match (\z, not $)
-        'nologo', 'v:q', 'm:4', 'm', 'nr:false', 'clp:NoSummary', 'maxcpucount:2', 'no-incremental', 'disable-build-servers', 'p:UseSharedCompilation=false', 'o', 'c', 'Release',   # the leading dash is required '--', '-', '-nologo-extra', '--nologo-extra',
+        'nologo', 'v:q', 'm:4', 'm', 'nr:false', 'clp:NoSummary', 'maxcpucount:2', 'no-incremental', 'disable-build-servers', 'p:UseSharedCompilation=false', 'o', 'c', 'Release',   # the leading dash is required
+        '--', '-', '-nologo-extra', '--nologo-extra',
+        # a refused argument whose TAIL is an accepted form: catches a pattern that lost its start anchor
+        '-o:D:\x\-m', '-t:Restore;-nologo', '-p:BaseOutputPath=C:\evil\-nologo', '-p:DefineConstants=EVIL/m', '--no-build/m', '-p:X=1-nologo', 'x-m:4', 'x/nologo', '-o:C:\x/-v:q', '--output=D:\x/--no-incremental',
+        '+nologo', '+m:4', '+v:q', '+clp:NoSummary', '+nr:false',   # a leading plus is not a switch prefix
         '--interactive', '--use-current-runtime', '--source', '-s', '--disable-parallel', '--force', '--no-cache', '--ignore-failed-sources', '--packages', '--runtime-id', '--os', '-a', '--arch', '--version-suffix', '--verbosity', '-warnaserror', '-warnAsError:CS0168', '-nowarn:CS0168', '-nowarn', '-p', '-property', '-tl:off', '-terminalLogger', '-l:evil.dll', '-logger:Evil,evil.dll', '-fileLogger', '-flp:logfile=C:\x.log', '-dl:Evil,evil.dll', '-distributedlogger', '-inputResultsCaches:x', '-outputResultsCache:x', '-warnnotaserror:CS0168', '-lowPriority', '-low', '-profileevaluation:x.json', '-timeout:1', '-?', '-h', '--help', '-version', '-ver'
     )
     foreach ($a in $refused) {

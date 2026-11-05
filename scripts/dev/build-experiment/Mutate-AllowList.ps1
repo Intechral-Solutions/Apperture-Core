@@ -24,6 +24,9 @@ $mutants = @(
     @{ Id = 'AL12'; File = 'Invoke-Mutation.ps1'; Find = 'if ($unvetted.Count) {'; Replace = 'if ($false) {'; Why = 'Invoke-Mutation no longer refuses unvetted arguments' }
     @{ Id = 'AL13'; File = 'Invoke-Evidence.ps1'; Find = '$propArgs = @(Get-UnvettedBuildArgs $BuildArgs)'; Replace = '$propArgs = @()'; Why = 'Invoke-Evidence no longer vets build arguments' }
     @{ Id = 'AL14'; File = 'lib/ValidationCommon.ps1'; Find = '(?:--?|/)(?:nologo'; Replace = '(?:--?|/)?(?:nologo'; Why = 'prefix optional (a bare word such as "o" or "nologo-x" style forms)' }
+    # Added after the independent review (round 1, F1): these two escaped the first 14 controls.
+    @{ Id = 'AL15'; File = 'lib/ValidationCommon.ps1'; Find = '$reporting = "^(?:--?|/)'; Replace = '$reporting = "(?:--?|/)'; Why = 'start anchor dropped (any argument that merely ENDS in an accepted switch matches, e.g. -o:D:\x\-m)' }
+    @{ Id = 'AL16'; File = 'lib/ValidationCommon.ps1'; Find = '(?:--?|/)(?:nologo'; Replace = '(?:--?|/|\+)(?:nologo'; Why = 'a leading plus accepted as a switch prefix' }
 )
 $results = @()
 foreach ($m in $mutants) {

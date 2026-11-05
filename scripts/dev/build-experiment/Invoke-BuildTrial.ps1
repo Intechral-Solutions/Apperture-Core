@@ -10,7 +10,7 @@
   4. samples available memory, paging, CPU and the build processes' memory once per second,
   5. stops only its own build processes if available memory drops below the abort threshold,
   6. counts errors and warnings, looks for crashes (log patterns and Windows event log),
-  7. shuts down only build servers that this trial started,
+  7. runs `dotnet build-server shutdown` if processes it did not find at the start remain (global; safe only because step 1 refuses to start next to a foreign build process),
   8. writes an assembly inventory (outside the timed section).
   Nothing here changes the repository, any toolchain setting, or any other process.
 .NOTES
