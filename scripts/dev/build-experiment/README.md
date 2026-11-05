@@ -12,5 +12,6 @@ Requires PowerShell 7.2+, Git and the SDK named by `global.json`. Windows only (
 | `Compare-Inventories.ps1` | Raw-identical, normalised-identical and different files between two trials. |
 | `Compare-MutationBuilds.ps1` | One mutation outcome under two build configurations in a disposable clone, without `Invoke-Mutation -BuildArgs`. |
 | `Mutate-AllowList.ps1` | Mutation check of the build-argument allow-list controls in `validation/tests/Test-Validation.ps1` (section `buildargs`). |
+| `Run-FirstRecord.ps1`, `Run-FirstRecordPass2.ps1` | The first toolkit-backed record beside the established procedure, on a bounded non-SQL scope, in a disposable standalone clone: both methods, `Compare-Trx -Strict`, and the managed-assembly comparison. Pass 2 names the one skipped test and uses an artifacts path of the same length as the established run's, because a different length changes PE section sizes. |
 
 Trial output goes to the ignored `artifacts/dev13c/` folder; nothing here writes a tracked file.
