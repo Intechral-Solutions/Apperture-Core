@@ -77,11 +77,18 @@ if ($env:FAKE_DOTNET_TRX -ne 'none' -and $i -ge 0) {
         # A last assembly that executed two tests, neither of which passed or failed.
         if ($k -eq $n -and $env:FAKE_DOTNET_LAST_INCONCLUSIVE -eq '1') { foreach ($key in @($c.Keys)) { $c[$key] = '0' }; $c.total = '2'; $c.executed = '2'; $c.inconclusive = '2' }
 
+        # Per-file counts for a multi-file run: 'total,executed,passed,failed;total,executed,passed,failed;...'
+        if ($env:FAKE_DOTNET_FILES) {
+            $row = ($env:FAKE_DOTNET_FILES -split ';')[$k - 1] -split ','
+            $c.total = $row[0]; $c.executed = $row[1]; $c.passed = $row[2]; $c.failed = $row[3]
+        }
+
         # The result records, written the way the counters describe them unless a knob makes the two disagree.
         $recPassed = [int](Get-Knob 'FAKE_DOTNET_REC_PASSED' $c.passed)
+        $skipCount = [int](Get-Knob 'FAKE_DOTNET_REC_SKIPPED' ([Math]::Max(0, [int]$c.total - [int]$c.executed)))
         $recs = New-Object System.Text.StringBuilder
         foreach ($pair in @(@('Passed', $recPassed), @('Failed', [int]$c.failed), @('Error', [int]$c.error), @('Timeout', [int]$c.timeout), @('Aborted', [int]$c.aborted),
-                @('Inconclusive', [int]$c.inconclusive), @('NotExecuted', [Math]::Max(0, [int]$c.total - [int]$c.executed)), @('Failed', [int](Get-Knob 'FAKE_DOTNET_REC_EXTRA_FAILED' '0')))) {
+                @('Inconclusive', [int]$c.inconclusive), @((Get-Knob 'FAKE_DOTNET_REC_SKIP_AS' 'NotExecuted'), $skipCount), @('Failed', [int](Get-Knob 'FAKE_DOTNET_REC_EXTRA_FAILED' '0')))) {
             for ($j = 0; $j -lt $pair[1]; $j++) { [void]$recs.Append('<UnitTestResult testId="t" outcome="' + $pair[0] + '" />') }
         }
         $defs = if ([int]$c.total -gt 0) { '<UnitTest name="m" id="t"><TestMethod codeBase="C:\fake\Apperture.Fake' + $k + '.Tests.dll" className="C" name="m" /></UnitTest>' } else { '' }
@@ -94,7 +101,14 @@ if ($env:FAKE_DOTNET_TRX -ne 'none' -and $i -ge 0) {
             }) -join ' '
         $outcome = Get-Knob 'FAKE_DOTNET_OUTCOME' 'Completed'
         $outcomeAttr = if ($outcome -eq '-') { '' } else { ' outcome="' + $outcome + '"' }
-        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary' + $outcomeAttr + '><Counters ' + $attrs + ' /></ResultSummary><Results>' + $recs + '</Results><TestDefinitions>' + $defs + '</TestDefinitions></TestRun>'
+        # One extra verdict bucket ('name=value'), and optionally a duplicated Counters or ResultSummary element.
+        $bucketName, $bucketValue = if ($env:FAKE_DOTNET_BUCKET) { $env:FAKE_DOTNET_BUCKET -split '=', 2 } else { '', '' }
+        $bucketAttr = if ($bucketName) { ' ' + $bucketName + '="' + $bucketValue + '"' } else { '' }
+        $countersXml = '<Counters ' + $attrs + $bucketAttr + ' />'
+        if ($env:FAKE_DOTNET_DUP -eq 'counters') { $countersXml += $countersXml }
+        $summaryXml = '<ResultSummary' + $outcomeAttr + '>' + $countersXml + '</ResultSummary>'
+        if ($env:FAKE_DOTNET_DUP -eq 'summary') { $summaryXml += '<ResultSummary outcome="Completed" />' }   # no counters: only the summary count differs
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">' + $summaryXml + '<Results>' + $recs + '</Results><TestDefinitions>' + $defs + '</TestDefinitions></TestRun>'
         $path = Join-Path $dir ("fake_$k.trx")
         if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq '1') { $xml = '<TestRun><ResultSummary outcome="Completed" /></TestRun>' }
         if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq 'xml') { $xml = '<TestRun><ResultSummary outcome="Completed"><Counters total="5" executed="5" passed="5"' }
@@ -252,6 +266,41 @@ try {
     $r = Invoke-Entry -Fake @{ FAKE_DOTNET_REC_PASSED = 0 }
     Assert-Control 'counters that claim passes the result records do not contain fail the run' ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
 
+    # A Failed record in place of a Passed one: the record count still adds up, only the outcome shows it.
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_REC_PASSED = 4; FAKE_DOTNET_REC_EXTRA_FAILED = 1 }
+    Assert-Control 'a Failed record in place of one of the Passed records the counters claim fails the run' ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    # The records are judged per file and by outcome: a Failed or Error record cannot stand in for a skip, a missing skip record
+    # is a mismatch, and one file cannot make up for another.
+    foreach ($as in @('Failed', 'Error', 'Inconclusive')) {
+        $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 6; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 5; FAKE_DOTNET_REC_SKIP_AS = $as }
+        Assert-Control "a '$as' record where the counters say one test was skipped fails the run" ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+    }
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 6; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 5; FAKE_DOTNET_REC_SKIPPED = 0 }
+    Assert-Control 'a skipped test with no result record fails the run' ($r.Code -ne 0 -and $r.Output -match 'do not match the counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TOTAL = 5; FAKE_DOTNET_EXECUTED = 5; FAKE_DOTNET_PASSED = 6 }
+    Assert-Control 'a file that counts more passes than tests it executed fails the run' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_FILES = '5,5,6,0;6,5,4,0'; FAKE_DOTNET_REC_SKIP_AS = 'Failed' }
+    Assert-Control 'one file claiming more passes than it executed cannot offset another file that executed a test without a pass' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_FILES = '4,4,2,0;3,0,2,0'; FAKE_DOTNET_REC_SKIP_AS = 'Failed' }
+    Assert-Control 'an all-skipped file that claims passes cannot hide failed records and fails the run' ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_DUP = 'counters' }
+    Assert-Control 'a result file with two counters elements fails the run' ($r.Code -ne 0 -and $r.Output -match 'Cannot read the test counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_DUP = 'summary' }
+    Assert-Control 'a result file with two run summaries fails the run' ($r.Code -ne 0 -and $r.Output -match 'run outcome' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    # Every verdict bucket other than passed, failed and errored counts against a pass (inconclusive has its own controls above).
+    foreach ($bucket in @('passedButRunAborted', 'notRunnable', 'disconnected', 'warning', 'pending', 'inProgress', 'completed')) {
+        $r = Invoke-Entry -Fake @{ FAKE_DOTNET_BUCKET = "$bucket=1" }
+        Assert-Control "a result file with $bucket = 1 fails the run although every counted test passed" ($r.Code -ne 0 -and $r.Output -match 'without a passing verdict' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+    }
+
     foreach ($case in @(
             @{ Name = 'errored'; Fake = @{ FAKE_DOTNET_ERROR = 1 } },
             @{ Name = 'timed-out'; Fake = @{ FAKE_DOTNET_TIMEOUT = 1 } },
@@ -291,7 +340,7 @@ try {
     $text = Get-Content -LiteralPath $ScriptPath -Raw
     Assert-Control 'does not reference the removed SDK helper' ($text -notmatch 'Get-DevDotNetSdk') 'Get-DevDotNetSdk found'
     Assert-Control 'reads no environment file and no credential' ($text -notmatch '\.env\b' -and $text -notmatch 'SA_PASSWORD|Password\s*=|ConnectionString|SQLCMDPASSWORD') 'a credential or .env reference was found'
-    Assert-Control 'sets no skip or optional-SQL switch' ($text -notmatch 'REQUIRE_SQL|NotExecuted|SkipSql|-Skip') 'a skip or optional-SQL switch was found'
+    Assert-Control 'sets no skip or optional-SQL switch' ($text -notmatch 'REQUIRE_SQL|SkipSql|-Skip') 'a skip or optional-SQL switch was found'
     $named = @([regex]::Matches($text, '(?:\.ai|\.github|tests|scripts|docs)[\\/][A-Za-z0-9_./\\-]*[A-Za-z0-9_]\.(?:ps1|md|yml)') | ForEach-Object { $_.Value })
     $missing = @($named | Where-Object { -not (Test-Path -LiteralPath (Join-Path $repoRoot $_)) })
     Assert-Control 'every repository file it names exists (and it names at least one)' ($named.Count -gt 0 -and $missing.Count -eq 0) ("missing: " + ($missing -join ', '))

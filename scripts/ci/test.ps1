@@ -85,7 +85,7 @@ try {
     # executed tests that neither passed nor failed. The result files (one per test project) are the evidence, so each is read
     # strictly: a count that is missing or not a whole number, an unreadable file, or a run outcome other than Completed fails.
     $executed = 0; $passed = 0; $failed = 0; $skipped = 0; $trxCount = 0; $errored = 0; $unsettled = 0
-    $recPassed = 0; $recNotPassed = 0
+    $verdictFiles = 0; $recordFiles = 0   # files whose executed != passed; files whose records disagree with their counters
     $emptyFiles = 0; $skippedOnly = @()
     function Get-TrxCount([System.Xml.XmlElement]$Element, [string]$Name, [string]$File, [switch]$Optional) {
         if (-not $Element.HasAttribute($Name)) {
@@ -124,11 +124,15 @@ try {
                 $unsettled += Get-TrxCount $c $name $trx.FullName -Optional
             }
             $skipped += $fTotal - $fExecuted
+            # Judged per file, so one file cannot make up for another: every test it executed passed.
+            if ($fExecuted -ne $fPassed) { $verdictFiles++ }
 
-            # The individual result records must agree with the counters.
+            # The file's individual result records must be exactly what its counters say: the passed ones, the skipped ones
+            # (outcome NotExecuted), and nothing else. A Failed, Error or Inconclusive record can therefore not pass as a skip.
             $records = @($doc.GetElementsByTagName("UnitTestResult"))
-            $recPassed += @($records | Where-Object { $_.GetAttribute("outcome") -eq "Passed" }).Count
-            $recNotPassed += @($records | Where-Object { $_.GetAttribute("outcome") -ne "Passed" }).Count
+            $recPassed = @($records | Where-Object { $_.GetAttribute("outcome") -eq "Passed" }).Count
+            $recSkipped = @($records | Where-Object { $_.GetAttribute("outcome") -eq "NotExecuted" }).Count
+            if ($recPassed -ne $fPassed -or $recSkipped -ne ($fTotal - $fExecuted) -or $records.Count -ne ($recPassed + $recSkipped)) { $recordFiles++ }
 
             if ($fTotal -eq 0) { $emptyFiles++ }
             elseif ($fExecuted -eq 0) {
@@ -144,11 +148,11 @@ try {
     if ($failed -gt 0) { throw "Tests failed: the result files record $failed failed test(s) although the test host exited 0." }
     if ($errored -gt 0) { throw "The result files record $errored errored, timed-out or aborted test(s) although the test host exited 0." }
     # A pass means every test that was executed passed. Skipped tests are not executed and are reported below.
-    if ($unsettled -gt 0 -or $executed -ne $passed) {
-        throw "The result files record $executed executed test(s) but $passed passed, without a passing verdict for the rest (inconclusive, not runnable, disconnected or similar). The run is not a pass."
+    if ($unsettled -gt 0 -or $verdictFiles -gt 0) {
+        throw "Executed test(s) without a passing verdict (inconclusive, not runnable, disconnected or similar): $executed executed and $passed passed in all, $verdictFiles result file(s) where the two differ, $unsettled test(s) in other verdict counts. The run is not a pass."
     }
-    if ($recPassed -ne $passed -or $recNotPassed -ne $skipped) {
-        throw "The result records do not match the counters ($recPassed passed and $recNotPassed not passed records; counters say $passed passed and $skipped skipped). The run is not a pass."
+    if ($recordFiles -gt 0) {
+        throw "$recordFiles result file(s) hold result records that do not match the counters (passed records, skipped records, or a record with any other outcome). The run is not a pass."
     }
     # One result file per test project. A project that selected no test is expected under -Filter and means a scope that never ran without it.
     if ($emptyFiles -gt 0 -and -not $Filter) {
