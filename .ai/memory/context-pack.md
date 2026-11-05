@@ -4,7 +4,7 @@ Quick context for agents working in Apperture Core.
 
 ## What is Apperture?
 
-Apperture Core is an open-core automation/integration platform whose core is a durable, persistent workflow model. It supports on-prem (DTFx + SQL Server) and cloud (Azure Durable Functions) runtimes.
+Apperture Core is an open-core automation/integration platform whose core is a durable, persistent workflow model. Today it runs on-prem on SQL Server: workflow starts are durably enqueued in SQL and executed inline by the worker. DTFx (on-prem) and Azure Durable Functions (cloud) adapters are a design intent and are not implemented.
 
 ## Non-negotiables
 

@@ -34,14 +34,21 @@ Aspire projects (`Apperture.AppHost`, `Apperture.ServiceDefaults`) restore via N
 
 ## Build and test
 
-From the repo root:
+From the repo root, in PowerShell:
 
 ```powershell
-.\scripts\ci\build.ps1
-.\scripts\ci\test.ps1
+.\scripts\ci\build.ps1                          # restore and build (Debug; add -Configuration Release for what CI builds)
+.\scripts\ci\test.ps1                           # every test in the solution
+.\scripts\ci\test.ps1 -Filter "PasswordPolicyEvaluatorTests"   # one name fragment, for iteration
 ```
 
-Or use `dotnet build Apperture.slnx` and `dotnet test Apperture.slnx`. Use `.\scripts\ci\test.ps1 -Filter "UnitTests"` to run a subset of tests by name.
+`dotnet build Apperture.slnx` and `dotnet test Apperture.slnx` do the same. `test.ps1` fails when no test executed or when any executed test did not pass, so a `-Filter` that matches nothing is an error, not a pass; it reports skipped tests rather than counting them as passed.
+
+**Focused runs are for iteration only.** Running one class or one project tells you quickly whether your change broke what you touched; it does not replace the full run. Before you ask for review, run the whole suite where you can. The required CI runs every test on every pull request regardless of what you ran locally (see [Pull requests](#pull-requests)).
+
+**SQL-backed tests need the test SQL server and fail without it.** Many integration tests run against a disposable SQL Server (normally the `apperture-test-sql` container). If SQL is not reachable they **fail**, by design; they are never skipped or reported as passed. Never point them at the Aspire development database (port 14333): the test configuration refuses it. How to configure the test SQL target and what the safeguards do: [tests/README.md](tests/README.md) ("Integration test SQL", "Test SQL target safety").
+
+Maintainers producing evidence for a work package (isolated builds, SQL execution proof, mutation checks, independent review) follow [.ai/playbooks/dev-loop.md](.ai/playbooks/dev-loop.md).
 
 ## Local dev with SQL Server
 
@@ -140,4 +147,4 @@ Follow [AGENTS.md](AGENTS.md) and the playbooks in [.ai/playbooks/](.ai/playbook
 
 ## Pull requests
 
-CI must pass before merge. The pipeline runs on push and pull requests to `main` (see [.github/workflows/ci.yml](.github/workflows/ci.yml)): restore, build in Release, and run all tests.
+CI must pass before merge. The pipeline runs on push and pull requests to `master` (the workflow also lists `main`; see [.github/workflows/ci.yml](.github/workflows/ci.yml)). Two checks are required: `build-and-test` (restore, Release build, the SQL execution honesty check, then all tests against a SQL Server service container) and `browser-security` (the Playwright browser suite). Both always run in full.

@@ -28,7 +28,7 @@ Tests create their own databases on the selected server (`EnsureTestDatabaseExis
 
 Test infrastructure creates, migrates, seeds and drops catalogs. Before it does, `SqlTestTargetGuard` checks the target. It is one source file, shared by the integration and browser test projects. A target that fails is **refused with an error that names the data source and the catalog and never a credential**. A refusal is a test failure; it is never reported as a skipped or passing test, and resolution never falls through from an unreachable test server to a development server.
 
-**Approved disposable targets:** the `apperture-test-sql` container at `127.0.0.1,1433`; CI's SQL service; an ad-hoc container from `scripts/dev/maintenance/start-adhoc-test-sql.ps1` (dynamic port); LocalDB, only when you point a connection string at it yourself. No test falls back to LocalDB on its own any more: an unconfigured or unreachable target is a failure (or, in optional mode, an announced skip), never a run against whatever LocalDB happens to be installed.
+**Approved disposable targets:** the `apperture-test-sql` container at `127.0.0.1,1433`; CI's SQL service; an ad-hoc container from `scripts/dev/maintenance/start-adhoc-test-sql.ps1` (dynamic port); LocalDB, only when you point a connection string at it yourself. No test falls back to LocalDB on its own any more: an unconfigured or unreachable target is a failure (there is no optional mode and no skip; see below), never a run against whatever LocalDB happens to be installed.
 
 **Never a test target:** the Aspire dev SQL container (host port **14333**, database `Apperture`).
 
