@@ -15,6 +15,9 @@
 
     A -Filter run is for iteration. It is never evidence for a work-package record and never replaces the required CI,
     which runs every test (.ai/playbooks/dev-loop.md).
+
+    APPERTURE_REPO_ROOT (shared by the scripts in scripts/) points the run at another checkout instead of the one this
+    script lives in. The script prints the solution it is about to test, so a redirect is visible.
 .PARAMETER Configuration
     Debug (default) or Release. CI builds and tests Release.
 .PARAMETER Filter
@@ -61,13 +64,17 @@ try {
     if ($Filter) {
         Write-Host "Filtered run (FullyQualifiedName~$Filter): for iteration only. It is not evidence, and the required CI runs every test." -ForegroundColor Yellow
     }
+    Write-Host "Testing: $Solution" -ForegroundColor Cyan
+    if ($env:APPERTURE_REPO_ROOT) {
+        Write-Host "APPERTURE_REPO_ROOT is set: this run tests that checkout, not the one this script lives in." -ForegroundColor Yellow
+    }
     Write-Host "Running tests..." -ForegroundColor Cyan
     & dotnet @testArgs
     $testExit = $LASTEXITCODE
     if ($testExit -ne 0) { throw "Tests failed (dotnet test exit code $testExit)." }
 
     # Exit 0 is not enough: `dotnet test` also exits 0 when a filter matches no test anywhere.
-    $executed = 0; $passed = 0; $failed = 0; $skipped = 0; $trxCount = 0
+    $executed = 0; $passed = 0; $failed = 0; $skipped = 0; $trxCount = 0; $errored = 0
     if (Test-Path -LiteralPath $ResultsDir) {
         foreach ($trx in Get-ChildItem -LiteralPath $ResultsDir -Filter *.trx -File) {
             $doc = New-Object System.Xml.XmlDocument
@@ -80,6 +87,7 @@ try {
             $executed += [int]$c.GetAttribute("executed")
             $passed += [int]$c.GetAttribute("passed")
             $failed += [int]$c.GetAttribute("failed")
+            $errored += [int]$c.GetAttribute("error") + [int]$c.GetAttribute("timeout") + [int]$c.GetAttribute("aborted")
             $total = [int]$c.GetAttribute("total")
             $skipped += $total - [int]$c.GetAttribute("executed")
         }
@@ -88,6 +96,7 @@ try {
         throw "No test was executed ($trxCount result file(s) in $ResultsDir). The run is not a pass: check -Filter and the configuration."
     }
     if ($failed -gt 0) { throw "Tests failed: the result files record $failed failed test(s) although the test host exited 0." }
+    if ($errored -gt 0) { throw "The result files record $errored errored, timed-out or aborted test(s) although the test host exited 0." }
 
     Write-Host "Tests passed: $passed passed, $skipped skipped or not executed, $failed failed ($trxCount test assemblies; results in $ResultsDir)." -ForegroundColor Green
 } finally {

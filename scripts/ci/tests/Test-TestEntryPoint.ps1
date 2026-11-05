@@ -54,7 +54,12 @@ if ($env:FAKE_DOTNET_TRX -ne 'none' -and $i -ge 0) {
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $n = if ($env:FAKE_DOTNET_TRXFILES) { [int]$env:FAKE_DOTNET_TRXFILES } else { 1 }
     for ($k = 1; $k -le $n; $k++) {
-        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed"><Counters total="{0}" executed="{1}" passed="{2}" failed="{3}" notExecuted="0" /></ResultSummary></TestRun>' -f $env:FAKE_DOTNET_TOTAL, $env:FAKE_DOTNET_EXECUTED, $env:FAKE_DOTNET_PASSED, $env:FAKE_DOTNET_FAILED
+        $total = $env:FAKE_DOTNET_TOTAL; $executed = $env:FAKE_DOTNET_EXECUTED; $passed = $env:FAKE_DOTNET_PASSED; $failed = $env:FAKE_DOTNET_FAILED
+        if ($k -eq 1 -and $env:FAKE_DOTNET_FIRST_FAILED) { $failed = $env:FAKE_DOTNET_FIRST_FAILED }
+        if ($k -eq $n -and $env:FAKE_DOTNET_LAST_EMPTY -eq '1') { $total = '0'; $executed = '0'; $passed = '0'; $failed = '0' }
+        $error_ = if ($env:FAKE_DOTNET_ERROR) { $env:FAKE_DOTNET_ERROR } else { '0' }
+        $xml = '<?xml version="1.0" encoding="UTF-8"?><TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed"><Counters total="{0}" executed="{1}" passed="{2}" failed="{3}" error="{4}" notExecuted="0" /></ResultSummary></TestRun>' -f $total, $executed, $passed, $failed, $error_
+        if ($k -eq $n -and $env:FAKE_DOTNET_CORRUPT_LAST -eq '1') { $xml = '<TestRun><ResultSummary outcome="Completed" /></TestRun>' }
         Set-Content -LiteralPath (Join-Path $dir ("fake_$k.trx")) -Value $xml
     }
 }
@@ -144,6 +149,24 @@ try {
     Assert-Control 'counts are summed over every test assembly (3 files x 2 tests)' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 6 passed' -and $r.Output -match '3 test assemblies') "exit $($r.Code): $($r.Output)"
 
     # 'A' + LF: `$` in a .NET regex also matches before a final newline, so the pattern ends in \z.
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_EXIT = -1073741819 }
+    Assert-Control 'a crashed Windows test host (negative exit code) with a passing TRX is a failing exit code' ($r.Code -ne 0 -and $r.Output -match 'Tests failed' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_FIRST_FAILED = 1 }
+    Assert-Control 'a failure recorded in an earlier TRX file is a failing exit code (last file clean)' ($r.Code -ne 0 -and $r.Output -match '1 failed' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_CORRUPT_LAST = 1 }
+    Assert-Control 'an unreadable TRX file fails the run instead of being skipped' ($r.Code -ne 0 -and $r.Output -match 'Cannot read the test counters' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_TRXFILES = 2; FAKE_DOTNET_LAST_EMPTY = 1 }
+    Assert-Control 'an assembly that ran nothing does not fail a run in which another assembly executed tests' ($r.Code -eq 0 -and $r.Output -match 'Tests passed: 5 passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry -Fake @{ FAKE_DOTNET_ERROR = 1 }
+    Assert-Control 'errored, timed-out or aborted tests in the TRX fail the run even when the host exited 0' ($r.Code -ne 0 -and $r.Output -match 'errored, timed-out or aborted' -and $r.Output -notmatch 'Tests passed') "exit $($r.Code): $($r.Output)"
+
+    $r = Invoke-Entry
+    Assert-Control 'the solution about to be tested is printed, and an APPERTURE_REPO_ROOT redirect is announced' ($r.Output -match 'Testing: .*Apperture\.slnx' -and $r.Output -match 'APPERTURE_REPO_ROOT is set') $r.Output
+
     foreach ($bad in @('A|B', 'A&B', 'A B', 'A=B', 'A~B', '!A', '(A)', "A`n")) {
         $r = Invoke-Entry -Arguments @('-Filter', $bad)
         Assert-Control "-Filter '$($bad -replace "`n", '<LF>')' is rejected before dotnet is called" ($r.Code -ne 0 -and $r.Calls.Count -eq 0) "exit $($r.Code), calls $($r.Calls.Count): $($r.Output)"

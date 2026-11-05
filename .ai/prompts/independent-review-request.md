@@ -47,13 +47,14 @@ Anything the reviewer needs that is not in this list, they ask for; absence of e
 At minimum, on the reviewer's **own clean build** of the exact commit (own artifacts path, clean shell, required SQL execution where SQL is in scope):
 
 - [ ] Build the commit; 0 errors.
+- [ ] **The focused test set and the relevant non-SQL suites for this package, re-run in full on the reviewer's own build** (both isolation modes where SQL is in scope). This is an existing obligation (audit E.1 and the DEV-1.3A record's review rounds). It is not reduced to "verify the hashes and re-run only what changed"; only the owner and the security owner can authorize that, in writing.
 - [ ] Every new or changed test class, on **both** isolation modes where SQL is in scope.
 - [ ] Classes that exercise the changed production files but that the implementer's filter may have omitted (the reviewer derives these from the diff; do not limit them to the implementer's list).
 - [ ] The mutation or negative control for each property in section 2, and at least one **novel** control the implementer did not run.
 - [ ] `scripts/dev/Test-SqlExecutionHonesty.ps1` at the commit, where SQL test code, helpers or fixtures changed.
 - [ ] Anything the evidence shows as skipped, not executed or undiscovered, judged for materiality.
 
-*The existing practice re-runs the focused set and the relevant suites on the reviewer's own build. Narrowing that to "verify the hashes and re-run only what changed" is the proposed procedure and is **not** adopted; do not apply it unless the owner and security owner have authorized it in writing.*
+The checklist above is the minimum and is **not** to be deleted or edited down when this template is filled in: the implementer fills in sections 1 to 3, the reviewer owns section 4. The lighter procedure of audit E.7 is **not** adopted; do not apply it unless the owner and security owner have authorized it in writing.
 
 ### 5. Specific questions (optional, bounded)
 
