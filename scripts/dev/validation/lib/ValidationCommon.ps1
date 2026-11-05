@@ -385,6 +385,33 @@ function Get-AssemblyCodeHash([string]$Path) {
     catch { $script:CodeHashError = "$($_.Exception.GetType().Name): $($_.Exception.Message)"; $null }
 }
 
+# Reviewed allow-list for the build arguments that Invoke-Evidence and Invoke-Mutation forward to `dotnet build` (DEV-1.3C).
+# DEFAULT DENY: an argument is accepted only if it matches one of the forms below exactly (anchored with \z, so a trailing newline or a
+# second argument smuggled into one string does not match). Returns the arguments that are NOT accepted (empty = all accepted).
+#   Reporting (cannot change what is compiled): -nologo, -v:<level>, -clp:<logger parameters>, -nr:true|false, -m / -m:<n>.
+#   Protocol flags (each can only force MORE work or change how the work is scheduled; none redirects, skips or reuses anything):
+#     --no-incremental                    rebuild everything (the opposite of reusing a stale binary)
+#     --disable-build-servers             do not use or leave a compiler / build server
+#     -p:UseSharedCompilation=false       the ONE accepted property: it only selects the in-process compiler
+# Everything else is refused, in particular: any other -p:/-property:, -o/--output, --artifacts-path, -c/--configuration, -t/-target,
+# --no-build, --no-restore, --no-dependencies, -restore, -getProperty/-getItem/-getTargetResult, -bl, -graph, -isolate, @response files.
+# Measured basis: DEV-1.3C showed the assemblies of -m:1, -m:4 and the SDK defaults, with and without the servers, are byte-identical
+# when built into the same output path (record, section 5).
+function Get-UnvettedBuildArgs([string[]]$BuildArgs) {
+    $levels = 'q|quiet|m|minimal|n|normal|d|detailed|diag|diagnostic'
+    $logger = '[A-Za-z]+(?:=[A-Za-z0-9]+)?(?:;[A-Za-z]+(?:=[A-Za-z0-9]+)?)*'
+    $reporting = "^(?:--?|/)(?:nologo|(?:v|verbosity)[:=](?:$levels)|(?:clp|consoleloggerparameters)[:=]$logger|(?:nr|nodereuse)[:=](?:true|false)|(?:m|maxcpucount)(?:[:=][0-9]{1,3})?)\z"
+    $exact = @('--no-incremental', '--disable-build-servers', '-p:UseSharedCompilation=false')
+    $rejected = @()
+    foreach ($a in @($BuildArgs)) {
+        if ($null -eq $a) { $rejected += '<null>'; continue }
+        if ($exact -ccontains $a) { continue }
+        if ($a -match $reporting) { continue }
+        $rejected += $a
+    }
+    $rejected   # callers wrap the call in @(...): nothing is emitted when everything is accepted
+}
+
 function Get-RcsiMode([string]$TestName) { if ($TestName -match 'rcsi:\s*(True|False)') { $Matches[1] } else { 'none' } }
 
 function ConvertTo-Seconds([string]$Duration) { if ($Duration) { try { [TimeSpan]::Parse($Duration).TotalSeconds } catch { 0.0 } } else { 0.0 } }

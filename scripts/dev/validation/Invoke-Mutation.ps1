@@ -29,7 +29,7 @@
 .PARAMETER Workspace      Directory for the disposable clone; must not exist (or be an empty directory) and must lie outside -Source and every -ProtectedRoot.
 .PARAMETER ProtectedRoot  Extra directories the workspace must not be, contain or lie inside (the primary checkout and the active package are always protected).
 .PARAMETER Out            Evidence folder (must be outside the workspace). Default: <Source>/artifacts/evidence/mutation/<utc>.
-.PARAMETER Configuration  Build configuration (default Release). Protocol flags beyond this are the caller's: pass them in -BuildArgs.
+.PARAMETER Configuration  Build configuration (default Release). Build flags go in -BuildArgs, which is a default-deny allow-list (see lib/ValidationCommon.ps1, Get-UnvettedBuildArgs).
 #>
 [CmdletBinding(DefaultParameterSetName = 'Run')]
 param(
@@ -133,6 +133,10 @@ if ($PSCmdlet.ParameterSetName -eq 'Replay') {
 
 # ====================================================================================================================== RUN
 try {
+    # Build arguments are default-deny (the reviewed allow-list in lib/ValidationCommon.ps1). A mutation result built with an argument that can
+    # redirect the output, inject a property, skip the build or reuse a stale binary would not be evidence, so it is refused before anything is created.
+    $unvetted = @(Get-UnvettedBuildArgs $BuildArgs)
+    if ($unvetted.Count) { Stop-Refused "build arguments outside the reviewed allow-list: $($unvetted -join ' ') (accepted: reporting switches -nologo -v:<level> -clp -nr -m, and --no-incremental, --disable-build-servers, -p:UseSharedCompilation=false)" }
     if (-not $Source) { $Source = (Invoke-Git $PSScriptRoot @('rev-parse', '--show-toplevel')).Text }
     $src = Get-GitIdentity $Source; if (-not $src.Ok) { Stop-Refused "source is not a Git work tree: $Source" }
     $srcTop = [IO.Path]::GetFullPath($src.TopLevel)

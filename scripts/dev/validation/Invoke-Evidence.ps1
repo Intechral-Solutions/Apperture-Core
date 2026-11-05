@@ -89,17 +89,17 @@ try {
     # Build arguments reach the child dotnet process without any file or environment variable this tool inspects: -p:DefineConstants=...,
     # @x.rsp, but also flags that make `dotnet build` exit 0 without rewriting the output folder (--no-dependencies, -o, -t:Restore,
     # -getProperty:...), after which the tool would stamp whatever was already there. A deny-list of such forms can never be complete, so only
-    # arguments that change reporting, not the build, are accepted; anything else makes the build non-authoritative. (A reviewed allow-list for
-    # protocol flags belongs to the build-protocol package.)
-    $vettedBuildArg = '^(?:--?|/)(?:nologo|v|verbosity|m|maxcpucount|clp|consoleloggerparameters|nr|nodereuse)(?:[:=].*)?$'
-    $propArgs = @($BuildArgs | Where-Object { $_ -notmatch $vettedBuildArg })
+    # arguments that change reporting, not the build, are accepted; anything else makes the build non-authoritative. The accepted set is the
+    # reviewed allow-list in lib/ValidationCommon.ps1 (Get-UnvettedBuildArgs): reporting switches plus three protocol flags
+    # (--no-incremental, --disable-build-servers, -p:UseSharedCompilation=false); everything else is refused (default deny).
+    $propArgs = @(Get-UnvettedBuildArgs $BuildArgs)
     # Everything about THIS build that is not in the stamp's other fields and speaks against trusting the binary later. It is written into the
     # stamp, so that removing the cause afterwards (deleting the injected file, unsetting the variable) cannot launder the binary.
     $buildAgainst = @()
     if ($injected.Count) { $buildAgainst += "artifacts path held MSBuild import files ($($injected[0]))" }
     if ($buildEnv.Risky) { $buildAgainst += "environment build hooks [$($buildEnv.HookVariables -join ', ')] / user import files [$($buildEnv.UserImportFiles -join ', ')]" }
     if (@($id.AncestorBuildFiles).Count) { $buildAgainst += "build configuration above the repository ($(@($id.AncestorBuildFiles)[0]))" }
-    if ($propArgs.Count) { $buildAgainst += "build arguments outside the vetted set (-nologo, -v, -m, -clp, -nr) [$($propArgs -join ' ')]" }
+    if ($propArgs.Count) { $buildAgainst += "build arguments outside the vetted set (the reviewed allow-list: reporting switches, --no-incremental, --disable-build-servers, -p:UseSharedCompilation=false) [$($propArgs -join ' ')]" }
     $prov = [ordered]@{
         Record = $Record; StartedUtc = $started.ToString('o'); Authoritative = $false; Reasons = $reasons
         AuthoritativeMeans = 'No known channel was found by which the tested binary could differ from this commit (checked and recorded here). It is not a proof that the build environment was hermetic; see scripts/dev/validation/README.md, Provenance contract.'
@@ -119,7 +119,7 @@ try {
         if ($buildEnv.Risky) { $reasons.Add("the environment changes what a build compiles without any file in the repository (variables [$($buildEnv.HookVariables -join ', ')]; user import files [$($buildEnv.UserImportFiles -join ', ')]): not a build of the commit") }
         if (@($id.AncestorBuildFiles).Count -gt 0) { $reasons.Add("build configuration above the repository (e.g. $(@($id.AncestorBuildFiles)[0])) is imported by every build and is invisible to Git: the build is not a build of the commit") }
         if (@($id.UntrackedBuildFiles).Count -gt 0) { $reasons.Add("$(@($id.UntrackedBuildFiles).Count) untracked file(s) among the sources or build inputs (e.g. $(@($id.UntrackedBuildFiles)[0])): the build can compile them, so the tree is not the commit") }
-        if ($Build -and $propArgs.Count) { $reasons.Add("build arguments outside the vetted set (-nologo, -v, -m, -clp, -nr): $($propArgs -join ' '). They can change what is compiled or leave the output folder as it was, so the binary is not shown to be a build of the commit") }
+        if ($Build -and $propArgs.Count) { $reasons.Add("build arguments outside the vetted set (the reviewed allow-list: reporting switches, --no-incremental, --disable-build-servers, -p:UseSharedCompilation=false): $($propArgs -join ' '). They can change what is compiled or leave the output folder as it was, so the binary is not shown to be a build of the commit") }
     }
 
     $runResults = @()
