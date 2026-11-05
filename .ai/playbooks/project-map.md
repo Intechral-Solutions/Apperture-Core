@@ -27,7 +27,7 @@ Apperture-Core/
 |------|----------|----------------|
 | Shared | Kernel, Security, Observability, Serialization | IDs, Result types, errors, time, cross-cutting concerns |
 | Core | Domain, Application, Security.Secrets | Domain model (Environment, Module, User, Role, etc.); application service contracts; secret store/resolver abstractions |
-| Runtime plane | Abstractions, Engine, Persistence.SqlServer, DTFx, DurableFunctions | Portable workflow model, backend-agnostic logic, adapters |
+| Runtime plane | Abstractions, Engine, Persistence.SqlServer, DTFx, DurableFunctions | Portable workflow model, backend-agnostic logic. DTFx and DurableFunctions are adapter stubs (a design intent; not an execution path) |
 | Runtime host (Windows) | WorkerHost, ModuleHost, InstanceAgent, SchedulerHost | On-prem execution (WorkerHost is real; ModuleHost, InstanceAgent and SchedulerHost are stubs), local mgmt, schedule triggers |
 | Runtime host (Azure) | Template, Shared | Scaffold only; outside RC1 support |
 | Module SDK | Abstractions, SDK, Testing | Module interfaces, helpers, test harness |
@@ -40,5 +40,5 @@ Apperture-Core/
 - **Core.Application** — Depends on Core.Domain, Kernel; may reference RuntimePlane.Abstractions and Core.Security.Secrets. Implementations live in infrastructure and hosts.
 - **Abstractions have no runtime dependencies** — Only interfaces and models.
 - **Engine depends only on Abstractions** — No DTFx, no Durable Functions.
-- **Hosts compose everything** — WorkerHost, Management.Host, SchedulerHost wire up adapters.
+- **Hosts compose everything** — WorkerHost and Management.Host wire up services (SchedulerHost is a stub; schedule dispatch runs in WorkerHost). The DTFx and DurableFunctions adapters are stubs today.
 - **Modules reference ModuleSdk** — Never reference RuntimePlane or ControlPlane directly.

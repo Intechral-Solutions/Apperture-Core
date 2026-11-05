@@ -26,7 +26,7 @@
 ## Do not mix control plane and instance plane
 
 - Control plane: Management API, UI, registry, execution requests, audit.
-- Instance plane: Worker, DTFx/Durable Functions execution, step execution.
+- Instance plane: Worker and step execution (today: SQL start-request queue with inline execution; DTFx/Durable Functions are a design intent, not implemented).
 - Keep boundaries clear; do not execute workflows from the Management API host.
 
 ## Do not put internal development metadata in runtime-visible content
