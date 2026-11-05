@@ -154,6 +154,10 @@ Many tests read the repository's source to pin a rule (a coverage guard: "only t
 - `artifacts/**` is excluded from the default compile items of these three projects (`DefaultItemExcludes`), so a build run with a relative `--artifacts-path` from a project folder cannot compile its own generated files into the next build.
 - Not covered: `Apperture.IntegrationTests` and `Apperture.BrowserTests` keep their own root finders and source walks. The first carries SQL-honesty guards that this change deliberately leaves alone; the second is kept self-contained for CI job isolation.
 
+## Evidence, test selection and mutation controls
+
+A record's test claims are produced by the tracked toolkit in [scripts/dev/validation/](../scripts/dev/validation/README.md), not by copied scripts: `preflight.ps1` and `Invoke-Evidence.ps1` (provenance, TRX, checksums; skipped or undiscovered tests are never a pass), `Compare-Trx.ps1`, and `Invoke-Mutation.ps1` (mutations run only in a disposable clone; one that passes its tests is a failed result). [test-manifest.json](test-manifest.json) maps production paths to test classes for `Select-Tests.ps1`; it plans development iteration and never narrows the required CI, which runs every test. A production file the manifest does not claim is reported `UNMAPPED`, which is the cue to add a rule.
+
 ## Deterministic tests: concurrency, bUnit, test order and time
 
 A test that passes because of how fast something ran, or in which order the runner happened to start it, is not evidence. The rules below come from the cases that were found and fixed.
