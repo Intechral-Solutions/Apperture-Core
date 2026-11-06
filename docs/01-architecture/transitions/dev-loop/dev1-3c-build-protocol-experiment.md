@@ -5,8 +5,8 @@
 | Package | DEV-1.3C (audit F7; plan row DEV-1.3) |
 | Branch / base | `dev/dev-1-3c-build-protocol`, base `origin/master` = `210bca6` (DEV-1.3B merged, post-merge CI green) |
 | Commits | Build trials and mutation comparison: `210bca6cc8330c9fa94453b801c07d6aaa69f128` (tree `2249c104e1826682f32a073a9dcce5b6288ec912`), clean worktree. First toolkit-backed record: `1322ac4ebda665a081712963571083c2854d67b7` (tree `378071e3fc2374f966df64c32383312cab36da9b`, the commit that adds the allow-list and the tooling), in a clean standalone clone |
-| **Adoption status** | **NOT ADOPTED. Nothing in this package changes the mandatory validation build protocol.** The established flags remain the only mandatory procedure. A faster configuration is **recommended for a separate owner decision** (section 11), which needs the security owner's agreement and a named package boundary. The lighter independent-review procedure (audit E.7) is not approved and not touched. |
-| Review | Independent Opus review of the measurements and the tooling: section 12 |
+| **Adoption status** | **NOT ADOPTED. Nothing in this package changes the mandatory validation build protocol.** The established flags remain the only mandatory procedure. A faster configuration is **recommended for a separate owner decision** (section 11), which needs the security owner's agreement and a named package boundary. The lighter independent-review procedure (audit E.7) is not approved and not touched. **Owner disposition 2026-11-05 (section 14): the experiment and its review are accepted and the criterion 6a ruling is given; the build protocol is still not adopted.** |
+| Review | Independent Opus review of the measurements and the tooling: section 12 (final verdict ACCEPT at `a458f87`) |
 
 This record states what was measured, with what controls, and what the data does and does not show. Historical numbers (4 min 45 s to 10 min 09 s, 71 warnings; audit 2026-10-29) are reference measurements, not expectations.
 
@@ -175,7 +175,7 @@ Everything else is refused: any other `-p:`/`-property:`, `-o/--output`, `--arti
 
 ## 10. Acceptance criteria (plan row DEV-1.3, audit K row 7)
 
-Criteria as set by the work package; each is judged against the data above. The criterion is not changed to fit a result.
+Criteria as set by the work package; each is judged against the data above. The criterion is not changed to fit a result. The table is the result as reported at review; the owner's later ruling on 6a is in section 14 and does not alter the row.
 
 | # | Criterion | Result |
 |---|---|---|
@@ -191,6 +191,8 @@ Criteria as set by the work package; each is judged against the data above. The 
 **Unmet or open**: 6a (owner ruling); the NU1903 replay cause for D and C0; a SQL-backed comparison and isolation-mode coverage for the first toolkit-backed record (section 8); behaviour under real memory pressure; Linux and non-Windows hosts (the harness uses Windows performance counters); a single machine with an active third-party antivirus (Bitdefender; Microsoft Defender real-time protection off), a running WSL virtual machine, and two samples per configuration.
 
 ## 11. Recommendation and what adoption would need
+
+*(Written before the owner ruling. Section 14 records the ruling; the recommendation to retain the established protocol today is unchanged.)*
 
 **Today: retain the established protocol.** This package adopts nothing, and criterion 6a is open.
 
@@ -239,12 +241,47 @@ What the data **do not** support: the ranking among B, C and D beyond "C is not 
 
 **Record-only commit `f192173` (same reviewer): ACCEPT WITH OBLIGATIONS, one obligation (O-A).** The diff and the closure text were accurate, all 492 listed files re-hashed with 0 mismatches, the redaction statement was accurate (12 process snapshots, two redacted values each; no credential-like string remains outside synthetic self-test fixtures), and the reviewer's two reports in the archive are faithful. O-A: section 13 and the archive README said 492 files and "every file", but the manifest had left out three nested `SHA256SUMS.txt` files (a name filter). Fixed in the commit that follows `f192173`: the manifest was rebuilt and re-verified (495 listed, 497 files on disk including the manifest and the root `ARCHIVE-VERIFIED.txt`, 0 mismatches), and section 13 and the README were corrected. The reviewer did not check binary files for embedded secrets, the archive's access-control list (set to the current user, read back by the implementer), or any other copy of the archive.
 
+**Final confirmation (same reviewer, at `a458f87febccef5336f6b6b9a225888bb2c22076`): ACCEPT. O-A is closed and no obligation remains.** The reviewer re-hashed all 495 listed files (0 mismatches). It did not check file contents beyond the hashes, binary files, or the archive's access-control list.
+
 ## 13. Evidence
 
 **Archive:** `G:\Backup\Apperture-Core-worktree-evidence\2026-11-05\wt-dev1-3c-dev13c` (outside the repository, restricted to the current user): **497 files on disk**, of which **495 are listed** in the root `SHA256SUMS.txt` (every file except that manifest and the root `ARCHIVE-VERIFIED.txt`; the three nested `SHA256SUMS.txt` files of the first record's toolkit evidence are listed like any other file), re-hashed from disk after writing (495 listed, 495 on disk, 0 mismatches), manifest SHA-256 `5F5E9B4B5EED3E42E083AA0E43132EC6F115B5344D498FCB1FA99A5CB9E47DE4`. (The first manifest of this archive, 492 entries, wrongly excluded those three nested lists because of a name filter; the independent review found it, and the manifest was rebuilt and re-verified. Its first hash, `0D0F9F35...3D71`, is superseded.) Contents: the nine trial folders, comparisons, both mutation-comparison runs, the three allow-list mutation runs, the first-record folders and their two failed attempts, the self-test logs, the as-run harness copies with their full SHA-256, the review request and the reviewer's two verbatim reports (`evidence/review/`), the aborted first start of B1, and the reviewer's own small logs and scripts (`reviewer-clone/`; its crafted counterexample assemblies are not archived). `README.txt` in the archive states the same.
 
 **Not archived:** `artifacts/dev13c/out` (about 32 GiB of build output; the inventories hold the per-file hashes) and the disposable clones. The build output was deleted from the worktree after the archive was verified.
 
-**Redaction (review I-3).** The pre-trial process snapshots list every process on the machine with its command line (667 lines each). In the archive copies, two credential-like values in third-party command lines (a conferencing application's join password and a file-sync client's session token) were replaced by `<redacted>`; nothing else was changed, and the ignored originals in the worktree are unchanged. The `env.txt` files (environment variables filtered by name) contain machine, user and session identifiers and no credential; an archive that leaves the owner's machine should be reviewed again for that reason. A harness that records full command lines should filter them before writing; this one was not changed.
+**Redaction (review I-3).** The pre-trial process snapshots list every process on the machine with its command line (667 lines each). In the archive copies, two credential-like values in third-party command lines (a conferencing application's join password and a file-sync client's session token) were replaced by `<redacted>`; nothing else was changed. (At archive time the ignored originals in the worktree were unchanged; they were sanitized afterwards, see section 14.) The `env.txt` files (environment variables filtered by name) contain machine, user and session identifiers and no credential; an archive that leaves the owner's machine should be reviewed again for that reason. A harness that records full command lines should filter them before writing; this one was not changed.
 
 **DEV-1.3B archives:** the original 436-file archive, the 419-file and 3-file supplements and the 170-file post-merge supplement were not modified (section 1); this archive is a separate directory with its own manifest.
+
+## 14. Owner disposition (2026-11-05)
+
+This section is an addition. Sections 1 to 13, the measurements, the original criterion wording and the review verdicts above are unchanged; where they say "an owner ruling is requested" or "criterion 6a is open", this section is the answer.
+
+**What the owner accepted.** The DEV-1.3C experiment, its tooling and the independent ACCEPT verdict at `a458f87` (section 12).
+
+**Criterion 6a ruling.** The literal requirement of identical hashes across different output paths was not met. The owner accepts **byte-identical assemblies from independently clean builds into the same output path** as the appropriate substitute for evaluating the effect of build-protocol flags. Both facts stand and must be quoted together:
+
+- **Different output paths:** 546 of 2,926 managed assemblies differ, because of path-dependent generated data (section 6).
+- **Same output path:** 2,926 of 2,926 managed assemblies match across A, B, C, D and C0 (4,608 of 4,615 files; the other 7 differ only in a `Last-Modified` time).
+
+**Limits of the same-path evidence.** One Windows machine, Debug configuration, SDK 10.0.402. Each configuration was built clean into the same path (build, move aside, rebuild into the same path), so the comparison shows what the flags do to the output; it does not show that the build is reproducible across output paths, machines, SDK versions or operating systems, and **the project must not be described as reproducible across arbitrary output paths.** The assembly normaliser zeroes whole debug-directory ranges without checking them (review F6), so the normalised comparison is not a tamper-evidence tool; the same-path control uses raw hashes.
+
+**Configuration C is the preferred future candidate, not the adopted protocol.** C is `--no-incremental -m:4`, with the compiler and build servers enabled (a fresh `--artifacts-path`, then `dotnet build-server shutdown`, section 11). The existing validation protocol is not replaced or modified by this approval: the established flags `--no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers` stay mandatory, and `.ai/playbooks/dev-loop.md` is unchanged.
+
+**What was measured, and how far it goes.**
+
+| Item | Fact |
+|---|---|
+| Time | C: mean 131.4 s against 307.4 s for the established protocol, a **57.3 %** mean saving (worst C pair 54.9 %); B 48.5 %, D 55.2 % (section 4) |
+| Sample | Two samples per configuration on one machine, with other load and a third-party antivirus active (section 3). The B2 timing is **contaminated** by load outside the build (section 4); the ranking among B, C and D is not established, only that each is far faster than A |
+| Memory | The lowest available memory in any trial was **2,033 MiB** (B2, caused outside the build). Every trial started with 4.1 to 8.7 GiB available. **Low-memory stress was not tested**, so this shows no behaviour near the 500 MiB floor |
+| Warnings | **72** code warnings, an identical set in all nine trials. D and C0 print the NU1903 advisory (which every restore already reports) once more in the build output; the cause was not determined and C is not affected (section 5) |
+| Mutation | **Unchanged:** M1 caught by the same two tests and M2 escaped, under both the established protocol and C (section 7); M0, the no-op control, came out "code unchanged" |
+
+**Incomplete comparisons.** The first toolkit-backed record compared a bounded non-SQL scope only; a **SQL-backed comparison in both isolation modes was not done**. **Linux was not run** (the harness uses Windows performance counters). These stay open (section 10, "Unmet or open").
+
+**The measured Windows experiment and operational adoption are separate things.** This pull request carries the measurement record, the experiment tooling and the hardened, default-deny build-argument check (section 9; accepting a flag is not adopting a protocol). It changes no validation protocol, no review protocol, no required CI check or workflow, no production code and no SQL schema. Adoption of C needs **all** of: a separate owner decision; the security owner's agreement; a **SQL-backed comparison in both isolation modes** (section 11, item 3); and a named package boundary (section 11, item 1), with `.ai/playbooks/dev-loop.md` updated in the same package. The lighter independent-review procedure (audit E.7) remains unapproved and unrelated.
+
+**Final verification on 2026-11-05** (before the pull request): branch `dev/dev-1-3c-build-protocol`, base `210bca6`, the eight commits above it (`619603a` to `a458f87`), tree clean apart from this amendment; the build-argument check and its 180 controls are unchanged since `1104696` (no file under `scripts/` changed after that commit); the full self-test run again on this tree gives 524 passed, 0 failed, 0 skipped sections in a shell without `sha256sum`, and the one control that runs only where `sha256sum` exists (the independent `sha256sum -c` agreement) passes in a second run of the `lib` section (86 of 86), matching the accepted 525. The four-build experiment was not repeated.
+
+**Evidence security.** The archive (section 13) was re-verified: 497 files on disk, the 495 listed in the root manifest re-hashed with 0 mismatches and none missing, the two unlisted files being the root `SHA256SUMS.txt` and `ARCHIVE-VERIFIED.txt`; the manifest hash is unchanged. The twelve archived process snapshots carry `<redacted>` for both values, and an archive copy was shown to equal its original with exactly those two lines replaced. The tracked diff against `210bca6` contains no credential-like string and no process command line. After that check, the ten ignored original process snapshots in the worktree (nine trials and the aborted first start of B1) were **sanitized in place**: each was overwritten with the verified redacted archive copy, so their remaining content and provenance are unchanged. This is a best-effort overwrite on an ordinary file system, not forensic erasure. No other evidence was altered. Copies outside the worktree (a reviewer's working clone and local tool session logs) were not modified and are the owner's to handle. Whether to revoke or rotate the two credentials is the owner's decision; it is advisable as a precaution because their values were printed in local tool output.
