@@ -16,7 +16,7 @@ public sealed class UiServerDottedIdRoutingSourceTests
     private static string ReadProgram()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         return File.ReadAllText(Path.Combine(dir!.FullName, Program.Replace('/', Path.DirectorySeparatorChar)));

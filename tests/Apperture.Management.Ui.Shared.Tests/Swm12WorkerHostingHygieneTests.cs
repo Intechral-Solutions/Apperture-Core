@@ -77,7 +77,7 @@ public sealed class Swm12WorkerHostingHygieneTests
     private static string RepoPath(string relative)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         return Path.Combine(dir!.FullName, relative.Replace('/', Path.DirectorySeparatorChar));

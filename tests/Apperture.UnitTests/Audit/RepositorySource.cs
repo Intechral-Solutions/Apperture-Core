@@ -38,15 +38,15 @@ internal sealed class SourceFile
 /// </summary>
 internal static class RepositorySource
 {
-    private static readonly string[] SkippedDirectories = ["bin", "obj", "Migrations", "node_modules", ".git", "TestResults"];
+    // Folders that hold tool output rather than source. bin, obj and artifacts are pruned by the shared walk (SourceTree).
+    private static readonly string[] ToolFolders = ["node_modules", ".git", "TestResults"];
 
-    private static readonly Lazy<string> RootDirectory = new(FindRoot);
-    private static readonly Lazy<IReadOnlyList<SourceFile>> CSharpFiles = new(() => Read("*.cs"));
-    private static readonly Lazy<IReadOnlyList<SourceFile>> UiFiles = new(() => ReadMany("*.razor", "*.cshtml"));
+    private static readonly Lazy<IReadOnlyList<SourceFile>> CSharpFiles = new(() => Read([".cs"], SourceTree.Floor.CSharpOutsideMigrations));
+    private static readonly Lazy<IReadOnlyList<SourceFile>> UiFiles = new(() => Read([".razor", ".cshtml"], SourceTree.Floor.SourceRazor));
     private static readonly Lazy<IReadOnlyDictionary<string, string>> ConstantTable = new(BuildConstantTable);
 
-    /// <summary>The repository root: the nearest folder above the test binaries that holds <c>AGENTS.md</c> or a <c>.git</c> entry.</summary>
-    public static string Root => RootDirectory.Value;
+    /// <summary>The repository root: the nearest folder above the test binaries that holds a <c>.git</c> directory or file, or <c>AGENTS.md</c>.</summary>
+    public static string Root => RepositoryRoot.Find();
 
     /// <summary>Every production C# file below <c>src/</c> (migrations excluded), in path order.</summary>
     public static IReadOnlyList<SourceFile> Production => CSharpFiles.Value;
@@ -77,48 +77,16 @@ internal static class RepositorySource
         return map;
     }
 
-    private static string FindRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "AGENTS.md")) || Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Repository root not found: no folder above the test binaries holds AGENTS.md or .git.");
-    }
-
-    private static IReadOnlyList<SourceFile> Read(string pattern) => ReadMany(pattern);
-
-    private static IReadOnlyList<SourceFile> ReadMany(params string[] patterns)
+    private static IReadOnlyList<SourceFile> Read(IReadOnlyCollection<string> extensions, int minimum)
     {
         var src = Path.Combine(Root, "src");
-        var files = new List<SourceFile>();
-        Walk(src, src, patterns, files);
+        var files = SourceTree.Files("src", extensions, includeMigrations: false, minimum)
+            .Select(path => (Path: path, Relative: Path.GetRelativePath(src, path).Replace('\\', '/')))
+            .Where(file => !file.Relative.Split('/')[..^1].Intersect(ToolFolders, StringComparer.OrdinalIgnoreCase).Any())
+            .Select(file => new SourceFile(file.Relative, File.ReadAllText(file.Path)))
+            .ToList();
         files.Sort((a, b) => string.CompareOrdinal(a.RelativePath, b.RelativePath));
         return files;
-    }
-
-    private static void Walk(string src, string directory, string[] patterns, List<SourceFile> into)
-    {
-        foreach (var pattern in patterns)
-        {
-            foreach (var path in Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly))
-            {
-                var relative = Path.GetRelativePath(src, path).Replace('\\', '/');
-                into.Add(new SourceFile(relative, File.ReadAllText(path)));
-            }
-        }
-
-        foreach (var child in Directory.EnumerateDirectories(directory))
-        {
-            var name = Path.GetFileName(child);
-            if (SkippedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase))
-                continue;
-            Walk(src, child, patterns, into);
-        }
     }
 
     // ---- constants ----

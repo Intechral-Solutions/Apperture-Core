@@ -31,7 +31,7 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
 
     public async Task DisposeAsync()
     {
-        if (_integrations.Count == 0 || !_fixture.SqlAvailable)
+        if (_integrations.Count == 0)
             return;
         await using var connection = await OpenAsync();
         foreach (var id in _integrations)
@@ -46,7 +46,7 @@ public sealed class ManagementHostAttentionIncidentAcknowledgementHttpTests : IA
     private void AssertSqlAvailable() =>
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
             $"Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
 
     private static string Route(string integrationId, string incidentId) =>

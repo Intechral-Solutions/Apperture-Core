@@ -22,7 +22,7 @@ public sealed class ManagementHostIntegrationConfigurationHttpTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()}");
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()}");
     }
 
     [Fact]

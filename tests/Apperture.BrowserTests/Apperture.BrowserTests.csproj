@@ -16,6 +16,10 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The one disposable-SQL-target rule set, shared as a single source file rather than copied, so the harness database obeys the same rules as the integration tests. -->
+    <Compile Include="..\Apperture.IntegrationTests\SqlTestTargetGuard.cs" Link="Infrastructure\SqlTestTargetGuard.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.Playwright" />

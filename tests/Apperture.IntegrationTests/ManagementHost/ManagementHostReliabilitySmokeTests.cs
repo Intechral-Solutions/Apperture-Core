@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using Xunit;
 
@@ -21,7 +20,7 @@ public sealed class ManagementHostReliabilitySmokeTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
     }
 
     private static void AssertNoServerError(HttpResponseMessage response, string label)
@@ -137,20 +136,19 @@ public sealed class ManagementHostReliabilitySmokeTests
     }
 
     [Fact]
-    public async Task Integration_reader_notification_diagnostics_by_integration_returns_200_or_403_not_500()
+    public async Task Integration_reader_notification_diagnostics_by_integration_is_403_not_500()
     {
         AssertSqlAvailable();
+        // The route needs notification-definition read on top of integration read
+        // (NotificationDefinitionAuthorization.RequireIntegrationReadAsync). The integration reader role holds
+        // integration.read only, so the refusal is the contract here, not one of two acceptable outcomes.
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalIntegrationReader);
         var response = await client.GetAsync(
             $"/api/notification-diagnostics/by-integration/{ManagementGovernanceTestConstants.SeededIntegrationId}?take=10");
         AssertNoServerError(response, "notification diagnostics by integration");
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Forbidden);
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            doc.RootElement.TryGetProperty("recentOutboxRows", out _).Should().BeTrue();
-        }
+        response.StatusCode.Should().Be(
+            HttpStatusCode.Forbidden,
+            "integration.read alone does not include notification-definition read");
     }
 
     [Fact]
@@ -170,22 +168,26 @@ public sealed class ManagementHostReliabilitySmokeTests
     }
 
     [Fact]
-    public async Task Auth_no_permissions_linked_routes_return_403_not_500()
+    public async Task Auth_no_permissions_user_is_refused_on_permissioned_routes_and_gets_a_filtered_menu_not_500()
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalAuthNoPerms);
-        var routes = new[]
+
+        // /api/menus is [Authorize]-only by design: it answers every signed-in user with the menu that user's
+        // capabilities allow, so a user without permissions gets a 200 with the ungated entries. The other two
+        // routes check a permission in the service layer and must refuse.
+        var expected = new (string Path, HttpStatusCode Status)[]
         {
-            "/api/control/center",
-            "/api/menus",
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/detail",
+            ("/api/control/center", HttpStatusCode.Forbidden),
+            ("/api/menus", HttpStatusCode.OK),
+            ($"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/detail", HttpStatusCode.Forbidden),
         };
 
-        foreach (var path in routes)
+        foreach (var (path, status) in expected)
         {
             var response = await client.GetAsync(path);
             AssertNoServerError(response, $"no-perms {path}");
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.OK);
+            response.StatusCode.Should().Be(status, $"a user without permissions on {path}");
         }
     }
 }

@@ -10,12 +10,18 @@ using Xunit;
 
 namespace Apperture.IntegrationTests.ManagementHost;
 
-[Collection(BootstrapHttpCollection.Name)]
+/// <summary>
+/// The first-administrator bootstrap over HTTP. xunit does not promise an order, and the A01 to A05 prefixes are only for reading:
+/// every test first puts the catalog into the state it needs (<see cref="EnsureNoUsersAsync"/> for "not set up yet",
+/// <see cref="EnsureInitializedAsync"/> for "set up"), so each passes alone and in any order. The catalog is this class's own
+/// (<see cref="BootstrapFirstAdminFixture"/>), because "no users" is reached by deleting every user in it.
+/// </summary>
+[Collection(BootstrapFirstAdminCollection.Name)]
 public sealed class ManagementHostBootstrapHttpTests
 {
-    private readonly BootstrapHttpFixture _fixture;
+    private readonly BootstrapFirstAdminFixture _fixture;
 
-    public ManagementHostBootstrapHttpTests(BootstrapHttpFixture fixture) => _fixture = fixture;
+    public ManagementHostBootstrapHttpTests(BootstrapFirstAdminFixture fixture) => _fixture = fixture;
 
     [Fact]
     public async Task A01_GetStatus_before_setup_reports_uninitialized()
@@ -55,6 +61,8 @@ public sealed class ManagementHostBootstrapHttpTests
     {
         AssertSqlAvailable();
         var client = _fixture.Factory!.CreateClient();
+        await EnsureInitializedAsync(client);
+
         var response = await client.GetAsync("/api/bootstrap/status");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -89,13 +97,18 @@ public sealed class ManagementHostBootstrapHttpTests
         AssertSqlAvailable();
         var client = _fixture.Factory!.CreateClient();
         await EnsureInitializedAsync(client);
+
+        // The catalog keeps its audit rows between tests and runs (A04 leaves the same kind of row), so only a row written by this
+        // attempt counts: the query starts at the moment of the attempt.
+        var attemptedAtUtc = DateTimeOffset.UtcNow;
         _ = await client.PostAsJsonAsync(
             "/api/bootstrap/first-admin",
             new FirstAdminRequest("Audit Retry", "Local", "audit-retry-admin", "unique-local-passphrase"));
 
         await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditService>();
-        var page = await audit.QueryAsync(new AuditQuery(FilterByActionPrefix: "bootstrap.first_admin"), CancellationToken.None);
+        var page = await audit.QueryAsync(
+            new AuditQuery(FilterByActionPrefix: "bootstrap.first_admin", FromUtc: attemptedAtUtc), CancellationToken.None);
         page.Items.Select(r => r.Action).Should().Contain("bootstrap.first_admin.rejected_already_initialized");
     }
 
@@ -127,7 +140,7 @@ public sealed class ManagementHostBootstrapHttpTests
         db.UserRoles.RemoveRange(db.UserRoles);
         db.IdentityLinks.RemoveRange(db.IdentityLinks);
         db.LocalCredentials.RemoveRange(db.LocalCredentials);
-        // Recovery Access tests in this collection enroll an authenticator.
+        // The users' authenticator rows go too, or the user rows below could not be removed.
         db.UserMfaRecoveryCodes.RemoveRange(db.UserMfaRecoveryCodes);
         db.UserTotpCredentials.RemoveRange(db.UserTotpCredentials);
         // Test-only reset: the product never deletes users, so the ledger restricts it.

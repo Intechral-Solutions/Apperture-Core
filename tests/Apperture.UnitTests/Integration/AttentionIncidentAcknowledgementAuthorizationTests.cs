@@ -234,7 +234,7 @@ public sealed class AttentionIncidentAcknowledgementAuthorizationTests : IDispos
     public void Only_the_authorized_route_calls_the_acknowledgement_service_and_only_the_service_writes_the_acknowledgement_columns()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        var production = ProductionFiles(src).ToList();
+        var production = ProductionFiles().ToList();
 
         var users = production
             .Where(f => Regex.IsMatch(File.ReadAllText(f), @"\bIAttentionIncidentAcknowledgementService\b|\bnew\s+AttentionIncidentAcknowledgementService\b"))
@@ -395,22 +395,10 @@ public sealed class AttentionIncidentAcknowledgementAuthorizationTests : IDispos
         return source[start..(end < 0 ? source.Length : end)];
     }
 
-    private static IEnumerable<string> ProductionFiles(string src)
-    {
-        var sep = Path.DirectorySeparatorChar;
-        return Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{sep}obj{sep}", StringComparison.Ordinal)
-                && !f.Contains($"{sep}bin{sep}", StringComparison.Ordinal)
-                && !f.Contains($"{sep}Migrations{sep}", StringComparison.Ordinal));
-    }
+    private static IEnumerable<string> ProductionFiles() =>
+        SourceTree.Files("src", [".cs"], includeMigrations: false, SourceTree.Floor.CSharpOutsideMigrations);
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     // ---- doubles ----
 

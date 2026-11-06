@@ -27,12 +27,7 @@ public sealed class RunsBlockedFacetSqlServerTests
     [Fact]
     public async Task ListRunsAsync_StatusBlocked_MatchesOnlyTheBlockedRun_AgainstRealSqlServer()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-        {
-            throw new InvalidOperationException(
-                SqlServerTestConfiguration.DescribeActiveConfiguration());
-        }
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var services = new ServiceCollection();
         services.AddApperturePersistence(connectionString);

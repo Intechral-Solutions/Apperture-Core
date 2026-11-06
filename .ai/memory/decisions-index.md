@@ -4,9 +4,9 @@ Architecture decision records (ADRs) live in [docs/02-decisions/](../../docs/02-
 
 | ADR | Title |
 |-----|-------|
-| [ADR-0001](../../docs/02-decisions/ADR-0001-runtime-boundaries.md) | Runtime boundaries (control vs instance plane, one-module-per-process) |
+| [ADR-0001](../../docs/02-decisions/ADR-0001-runtime-boundaries.md) | Runtime boundaries (control vs instance plane; its one-module-per-process statement is amended by the [RC1 program gate](../../docs/01-architecture/rc1-program-gate.md) D-23: module/process isolation is a supported deployment option, not a current invariant) |
 | [ADR-0002](../../docs/02-decisions/ADR-0002-single-tenant-instance.md) | Single-tenant instance deployment boundary |
-| [ADR-0003](../../docs/02-decisions/ADR-0003-runtime-portability.md) | Runtime portability (portable workflow model, DTFx + Durable Functions adapters) |
+| [ADR-0003](../../docs/02-decisions/ADR-0003-runtime-portability.md) | Runtime portability (portable workflow model; DTFx + Durable Functions adapters are a design intent and are not implemented) |
 | [ADR-0020](../../docs/02-decisions/ADR-0020-operator-output-display-policy.md) | Operator output display policy (intent vs capture status; OperatorRunOutput) |
 | [ADR-0021](../../docs/02-decisions/ADR-0021-failure-diagnostics-visibility.md) | Failure diagnostics visibility and capture semantics |
 | [ADR-0022](../../docs/02-decisions/ADR-0022-declared-execution-result-contracts.md) | Declared execution result contracts (unified success/failure authoring intent) |

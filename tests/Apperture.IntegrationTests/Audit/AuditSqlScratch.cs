@@ -1,5 +1,6 @@
 using Apperture.Persistence.SqlServer;
 using Apperture.Persistence.SqlServer.Audit;
+using Apperture.SqlTestTargets;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -10,9 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Apperture.IntegrationTests.Audit;
 
 /// <summary>
-/// A throwaway, fully migrated catalog for the AUD-1.1 SQL Server suites. Unlike the older soft-skipping helpers, this
-/// one <b>fails</b> when no SQL Server is reachable (audit hardening design gate §22: new SQL suites fail rather than
-/// soft-skip), so an absent server can never be reported as proof.
+/// A throwaway, fully migrated catalog for the AUD-1.1 SQL Server suites. Like every SQL helper now, it <b>fails</b> when no
+/// SQL Server is reachable (audit hardening design gate §22: SQL suites fail rather than soft-skip), so an absent server can
+/// never be reported as proof.
 /// </summary>
 public sealed class AuditSqlScratch : IAsyncDisposable
 {
@@ -28,7 +29,11 @@ public sealed class AuditSqlScratch : IAsyncDisposable
     public string Catalog { get; }
     public string ConnectionString { get; }
 
-    /// <summary>The marker every test writes to its output once it has run against SQL Server.</summary>
+    /// <summary>
+    /// A line for the test output that names the scratch catalog. It is built from the catalog name alone, so it is a diagnostic,
+    /// not evidence that any SQL ran, and no test may assert on it. SQL execution is shown by each test's assertions on database
+    /// state and, for a whole run, by <c>scripts/dev/Test-SqlExecutionHonesty.ps1</c>.
+    /// </summary>
     public string ExecutionMarker => $"EXECUTED against SQL Server catalog {Catalog}";
 
     public static async Task<AuditSqlScratch> CreateAsync(string prefix)
@@ -137,6 +142,9 @@ public sealed class AuditSqlScratch : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // The catalog was validated when it was created; a drop is validated again, outside the best-effort catch below.
+        SqlTestTargetGuard.EnsureDisposableCatalogOnServer(_baseConnectionString, Catalog, "drop a test catalog");
+
         SqlConnection.ClearAllPools();
         try
         {

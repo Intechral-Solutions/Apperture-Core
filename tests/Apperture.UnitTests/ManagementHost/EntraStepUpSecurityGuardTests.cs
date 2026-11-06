@@ -18,14 +18,7 @@ namespace Apperture.UnitTests.ManagementHost;
 /// </summary>
 public sealed class EntraStepUpSecurityGuardTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("repository root not found from test output directory");
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string Source(string relative) =>
         File.ReadAllText(Path.Combine(RepoRoot(), relative.Replace('/', Path.DirectorySeparatorChar)));
@@ -50,9 +43,7 @@ public sealed class EntraStepUpSecurityGuardTests
     [Fact]
     public void No_application_source_sets_an_application_cookie_SameSite_None()
     {
-        var offenders = Directory
-            .EnumerateFiles(Path.Combine(RepoRoot(), "src", "Apperture.ControlPlane"), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+        var offenders = SourceTree.Files("src/Apperture.ControlPlane", [".cs"], includeMigrations: true, SourceTree.Floor.ControlPlaneCSharp)
             .Where(f => File.ReadAllText(f).Contains("SameSiteMode.None", StringComparison.Ordinal))
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
             .ToArray();

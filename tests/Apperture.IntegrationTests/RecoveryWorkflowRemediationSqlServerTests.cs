@@ -36,12 +36,7 @@ public sealed class RecoveryWorkflowRemediationSqlServerTests
     [Trait("Category", "SqlServer")]
     public async Task BlockedWorkflow_BecomesRetryableAfterModuleEnabled_DispatchesThroughTrustedPath()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-        {
-            throw new InvalidOperationException(
-                SqlServerTestConfiguration.DescribeActiveConfiguration());
-        }
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         // A person asks for the retry, so the recorder needs their user.
         var principal = new MutablePrincipal();

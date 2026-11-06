@@ -1,23 +1,20 @@
 using Apperture.Core.Security.Secrets.Providers;
 using FluentAssertions;
-using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Xunit;
 
 namespace Apperture.UnitTests.Secrets;
 
 /// <summary>
-/// DPAPI protector round-trip and behavior tests. Run on Windows only.
+/// DPAPI protector round-trip and behavior tests. They need Windows DPAPI, so on any other platform they are reported
+/// Skipped with that reason (<see cref="WindowsOnlyFactAttribute"/>) rather than returning early and reporting Passed.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class DpapiSecretProtectorTests
 {
-    [Fact]
+    [WindowsOnlyFact]
     public async Task Protect_Unprotect_RoundTrip_ReturnsOriginalBytes()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            return;
-        }
-
         var protector = new DpapiSecretProtector();
         var plaintext = new byte[] { 1, 2, 3, 4, 5 };
         const string keyId = "test-key";
@@ -28,14 +25,9 @@ public sealed class DpapiSecretProtectorTests
         unprotectedBytes.Should().Equal(plaintext);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task Protect_ProducesDifferentOutputThanInput()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            return;
-        }
-
         var protector = new DpapiSecretProtector();
         var plaintext = new byte[] { 10, 20, 30 };
         const string keyId = "dpapi";
@@ -46,14 +38,9 @@ public sealed class DpapiSecretProtectorTests
         protectedBytes.Should().NotBeEmpty();
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task Unprotect_WithWrongKeyId_Throws()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            return;
-        }
-
         var protector = new DpapiSecretProtector();
         var plaintext = new byte[] { 1, 2, 3 };
         var protectedBytes = await protector.ProtectAsync(plaintext, "key-a");

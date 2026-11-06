@@ -318,7 +318,7 @@ public sealed class DocumentTitlesTests
     private static IEnumerable<(string File, string Route)> RoutablePages()
     {
         var pageRegex = new Regex("^@page\\s+\"(?<route>[^\"]+)\"", RegexOptions.Multiline);
-        foreach (var file in Directory.EnumerateFiles(RepoPath(Pages), "*.razor", SearchOption.AllDirectories))
+        foreach (var file in SourceTree.Files(Pages, [".razor"], includeMigrations: true, SourceTree.Floor.UiClientPagesRazor))
         {
             var source = File.ReadAllText(file);
             foreach (Match m in pageRegex.Matches(source))
@@ -336,12 +336,6 @@ public sealed class DocumentTitlesTests
     /// <summary>Turns a route template into a concrete path (<c>/connections/{ConnectionId}</c> to <c>/connections/x</c>).</summary>
     private static string Concrete(string route) => Regex.Replace(route, "\\{[^}]*\\}", "x");
 
-    private static string RepoPath(string relative)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return Path.Combine(dir!.FullName, relative.Replace('/', Path.DirectorySeparatorChar));
-    }
+    private static string RepoPath(string relative) =>
+        Path.Combine(RepositoryRoot.Find(), relative.Replace('/', Path.DirectorySeparatorChar));
 }

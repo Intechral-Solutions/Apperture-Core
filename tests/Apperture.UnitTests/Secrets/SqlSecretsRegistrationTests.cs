@@ -103,14 +103,7 @@ public sealed class SqlSecretsRegistrationTests
             await service.StartAsync(CancellationToken.None);
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull();
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private sealed class RecordingProtector : ISecretProtector
     {

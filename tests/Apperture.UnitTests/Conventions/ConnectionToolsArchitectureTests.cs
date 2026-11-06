@@ -157,13 +157,7 @@ public sealed class ConnectionToolsArchitectureTests
 
     // ---- Reviewer-required hardening of the guards ------------------------------------------------------
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     // GetReferencedAssemblies only lists assemblies whose types are actually used, so a fresh ProjectReference to a connector
     // project would slip through until code used it. The project files are pinned directly as well.

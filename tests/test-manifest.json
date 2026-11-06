@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "purpose": "Advisory map from changed files to test classes, read by scripts/dev/validation/Select-Tests.ps1. It plans development iteration and evidence; it never runs, enforces or narrows anything, and the required hosted CI always runs every test.",
+  "documentation_note": "Documents are not ignored: some tests read them. A changed document is counted, and the test classes that mention docs/ are listed (and, under -Strict, reported as a finding) instead of being dropped.",
+  "maintenance": "A production file that no rule claims is reported UNMAPPED by the selector: that is the signal to add or widen a rule, not to ignore the file. Rules name test classes (or '*' patterns that must match at least one class). Add a rule in the package that adds the production area, and list in the rule's reason why the classes cover it. The identity and account rules below were seeded from the WP4B-A review of the focused filter and from the classes that name the changed types; they are a starting point, not a complete map of the repository.",
+  "projects": {
+    "AppHost.Diagnostics.Tests": "tests/Apperture.AppHost.Diagnostics.Tests",
+    "ArchTests": "tests/Apperture.ArchTests",
+    "BrowserTests": "tests/Apperture.BrowserTests",
+    "IntegrationTests": "tests/Apperture.IntegrationTests",
+    "Management.Ui.Client.Tests": "tests/Apperture.Management.Ui.Client.Tests",
+    "Management.Ui.Shared.Tests": "tests/Apperture.Management.Ui.Shared.Tests",
+    "UnitTests": "tests/Apperture.UnitTests"
+  },
+  "documentation": [
+    "docs/**",
+    ".ai/**",
+    ".cursor/**",
+    "**/*.md"
+  ],
+  "ignore": [
+    "artifacts/**",
+    "scripts/dev/validation/**",
+    "tests/test-manifest.json"
+  ],
+  "everything": {
+    "reason": "a shared fixture, the SQL test configuration, the package set, the SDK pin or the CI workflow changed: every class can be affected",
+    "when": [
+      "tests/Apperture.IntegrationTests/SqlServerTestConfiguration.cs",
+      "tests/Apperture.IntegrationTests/SqlTestExecution.cs",
+      "tests/Apperture.IntegrationTests/SqlTestTargetGuard.cs",
+      "tests/Apperture.IntegrationTests/**/*Fixture*.cs",
+      "Directory.Packages.props",
+      "Directory.Build.props",
+      "Directory.Build.targets",
+      "global.json",
+      ".github/workflows/**"
+    ]
+  },
+  "rules": [
+    {
+      "id": "id-auth-http", "kind": "mapped",
+      "paths": ["**/Controllers/AuthController.cs", "**/Controllers/AccountController.cs"],
+      "tests": ["AuthenticationAuditSqlServerTests", "ManagementHostAccountHttpTests", "ManagementHostAccountProfileHttpTests", "ManagementHostBreakGlassHttpTests"],
+      "reason": "the HTTP surface of sign-in, break-glass sign-in, the current user and password change: the host classes call it, the audit class records its outcomes"
+    },
+    {
+      "id": "id-first-admin", "kind": "mapped",
+      "paths": ["**/FirstAdminBootstrapService.cs"],
+      "tests": ["FirstAdminBootstrapServiceTests", "ManagementHostBootstrapHttpTests"],
+      "reason": "the first-administrator write, unit and through the real host"
+    },
+    {
+      "id": "id-emergency-access", "kind": "mapped",
+      "paths": ["**/EmergencyAccessService.cs", "**/EmergencyAccessException.cs"],
+      "tests": ["EmergencyAccessServiceTests", "ManagementHostBreakGlassHttpTests"],
+      "reason": "break-glass access, unit and through the real host"
+    },
+    {
+      "id": "id-native-mfa", "kind": "mapped",
+      "paths": ["**/NativeMfaService.cs", "**/INativeMfaRepositories.cs", "**/SqlNativeMfaRepositories.cs"],
+      "tests": ["NativeMfaServiceTests", "AuthenticationAuditSqlServerTests"],
+      "reason": "native authenticator enrolment and use, with the audit trail of the sign-in that uses it"
+    },
+    {
+      "id": "id-users-and-usernames", "kind": "mapped",
+      "paths": ["**/UsernameService.cs", "**/SqlUserRepository.cs", "**/IUserRepository.cs", "**/UserDesignationChangedException.cs"],
+      "tests": ["UsernameServiceTests", "UsernameFoundationSqlServerTests", "SqlUserRepositoryLastAuthenticatedAtSqlServerTests", "UserSearchSqlServerTests"],
+      "reason": "the user repository and the username rules over a real database"
+    },
+    {
+      "id": "id-account-profile", "kind": "mapped",
+      "paths": ["**/AccountProfileService.cs", "**/AccountContactService.cs", "**/AccountInvitationService.cs", "**/AccountSecurityContracts.cs"],
+      "tests": ["AccountProfileServiceTests", "ManagementHostAccountProfileHttpTests", "ManagementHostAccountHttpTests"],
+      "reason": "profile, contact and invitation handling, unit and through the real host"
+    },
+    {
+      "id": "id-entra-association", "kind": "mapped",
+      "paths": ["**/EntraIdentityAssociationService.cs"],
+      "tests": ["EntraIdentityAssociationServiceTests"],
+      "reason": "linking an Entra identity to a user"
+    },
+    {
+      "id": "id-entra-options", "kind": "mapped",
+      "paths": ["**/EntraAuthOptionsDatabasePostConfigure.cs"],
+      "tests": ["EntraAuthOptionsDatabasePostConfigureTests"],
+      "reason": "Entra options read from the database at runtime"
+    },
+    {
+      "id": "sql-honesty-script", "kind": "mapped",
+      "paths": ["scripts/dev/Test-SqlExecutionHonesty.ps1", "tests/Apperture.IntegrationTests/SqlExecutionHonesty/**"],
+      "tests": ["SqlExecutionHonestyScriptTests", "AllowListFingerprintTests", "SqlHonestyCiGuardTests", "SqlSoftSkipGuardTests"],
+      "reason": "the SQL execution-honesty script, its allow-lists and the guards that pin them"
+    },
+    {
+      "id": "xc-migrations", "kind": "cross-cutting",
+      "paths": ["src/**/Migrations/**", "src/**/*DbContext*.cs"],
+      "tests": ["*Migration*Tests"],
+      "reason": "a schema or model change: every migration test class runs (a model-snapshot or up/down test lives in them)"
+    },
+    {
+      "id": "xc-composition", "kind": "cross-cutting",
+      "paths": ["**/Program.cs", "src/**/ServiceCollectionExtensions*.cs"],
+      "tests": ["*CompositionTests", "UiServerHostRegistrationGuardTests"],
+      "reason": "service registration or host composition changed: the composition tests and the host registration guard run"
+    },
+    {
+      "id": "xc-source-guards", "kind": "cross-cutting",
+      "paths": ["src/**/*.cs", "src/**/*.razor"],
+      "tests": ["*SourceGuardTests", "*SurfaceGuardTests", "*CorpusGuardTests", "*ClosureGuardTests"],
+      "reason": "these classes read the source tree, so any production change can affect them"
+    }
+  ]
+}

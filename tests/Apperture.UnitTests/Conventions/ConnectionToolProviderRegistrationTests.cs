@@ -41,7 +41,7 @@ public sealed class ConnectionToolProviderRegistrationTests
     public void The_management_host_composes_the_browser_and_the_worker_host_does_not()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !Directory.Exists(Path.Combine(root.FullName, ".git")))
+        while (root is not null && !RepositoryRoot.IsRoot(root.FullName))
             root = root.Parent;
         var management = File.ReadAllText(Path.Combine(root!.FullName, "src", "Apperture.ControlPlane", "Apperture.Management.Host", "Program.cs"));
         var worker = File.ReadAllText(Path.Combine(root.FullName, "src", "Apperture.RuntimeHost", "Apperture.RuntimeHost.Windows", "Apperture.RuntimeHost.Windows.WorkerHost", "Program.cs"));

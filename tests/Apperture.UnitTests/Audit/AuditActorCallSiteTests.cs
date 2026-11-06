@@ -63,12 +63,9 @@ public sealed partial class AuditActorCallSiteTests
     private static Dictionary<string, int> Sites(Regex call)
     {
         var src = Path.Combine(RepoRoot(), "src");
-        var separator = Path.DirectorySeparatorChar;
         var sites = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
+        foreach (var file in SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp))
         {
-            if (new[] { "obj", "bin" }.Any(skip => file.Contains($"{separator}{skip}{separator}", StringComparison.Ordinal)))
-                continue;
             var count = call.Matches(File.ReadAllText(file)).Count;
             if (count > 0)
                 sites[Path.GetRelativePath(src, file).Replace('\\', '/')] = count;
@@ -77,13 +74,7 @@ public sealed partial class AuditActorCallSiteTests
         return sites;
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     [GeneratedRegex(@"AuditActor\.AuthenticatedUser\(", RegexOptions.CultureInvariant)]
     private static partial Regex AuthenticatedUserCall();

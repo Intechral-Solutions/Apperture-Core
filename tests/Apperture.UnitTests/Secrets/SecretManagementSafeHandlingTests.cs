@@ -58,18 +58,26 @@ public sealed class SecretManagementSafeHandlingTests
     }
 
     [Fact]
-    public void CompositeSecretResolver_throws_without_leaking_ref_when_no_resolver()
+    public async Task CompositeSecretResolver_throws_without_leaking_ref_when_no_resolver()
     {
+        const string refValue = "kv:my-secret-name";
+        const string refVersion = "v-sentinel-7";
         var registry = new Mock<ISecretResolverRegistry>();
         registry.Setup(x => x.GetResolverFor(It.IsAny<SecretRef>())).Returns((ISecretResolver?)null);
         var resolver = new CompositeSecretResolver(registry.Object);
-        var secretRef = new SecretRef("kv:my-secret-name");
+        var secretRef = new SecretRef(refValue, refVersion);
 
-        var act = () => resolver.ResolveAsync(secretRef).AsTask();
+        Func<Task> act = () => resolver.ResolveAsync(secretRef).AsTask();
 
-        act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*No resolver available*")
-            .Where(ex => !ex.Message.Contains("kv:my-secret-name"));
+        var thrown = await act.Should().ThrowExactlyAsync<InvalidOperationException>(
+            "an unresolvable reference is refused with the generic no-resolver failure");
+
+        thrown.Which.Message.Should().Contain("No resolver available");
+        thrown.Which.Message.Should().NotContain(refValue, "the exception message must not carry the secret reference");
+        thrown.Which.Message.Should().NotContain(refVersion);
+        // ToString() adds the type, any inner exception and the stack trace: nothing there may carry the reference either.
+        thrown.Which.ToString().Should().NotContain(refValue).And.NotContain(refVersion);
+        registry.Verify(x => x.GetResolverFor(secretRef), Times.Once, "the refusal must come from the registry lookup, not from elsewhere");
     }
 
     [Fact]

@@ -21,14 +21,7 @@ public sealed class Uix7CssPipelineTests
     /// <summary>Pinned in scripts/lib/Apperture.UiAssets.ps1; bump both together.</summary>
     private const string PinnedTailwindVersion = "4.1.8";
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("tests must run from inside the repository");
-        return dir!.FullName;
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     private static string ReadRepoFile(string relativePath)
     {

@@ -154,16 +154,24 @@ scripts/
 
 **`/api/runs` 500 — invalid `OperationRuns` columns:** Rebuild/restart the API so migrations apply, run `dotnet ef database update`, or **`scripts/dev/maintenance/reset-db.ps1`** for a clean DB.
 
+## Validation toolkit (`dev/validation/`, `dev/preflight.ps1`)
+
+Tracked, self-tested tooling for producing evidence that can be believed: a preflight, evidence collection with provenance, TRX comparison, mutation controls in a disposable clone, test selection from `tests/test-manifest.json`, SQL write-marker proof and a verified archive step. PowerShell 7.2+ only. It plans and records; it changes no CI check and the required CI always runs every test. See [dev/validation/README.md](dev/validation/README.md). The build arguments that `Invoke-Evidence` and `Invoke-Mutation` forward to `dotnet build` are a default-deny allow-list (reporting switches, `--no-incremental`, `--disable-build-servers`, `-p:UseSharedCompilation=false`); accepting a flag there does not change the validation build protocol.
+
+The measurement tooling for the build-protocol experiment is in [dev/build-experiment/](dev/build-experiment/README.md); it adopts nothing.
+
 ## CI (`ci/`)
 
 | Script | Description |
 |--------|-------------|
 | **build.ps1** | Restore and build the solution. |
-| **test.ps1** | Run tests (`-Filter`, `-NoBuild`). |
+| **test.ps1** | Run every test in the solution locally (`-Configuration`, `-Filter` for one name fragment, `-NoBuild`). Uses the `dotnet` on `PATH`. Fails when a test fails, when **no test executed** (a `-Filter` that matches nothing), when an executed test has no passing verdict (inconclusive and similar), and when a result file is unreadable, incomplete or inconsistent. Skipped tests are reported, not counted as passed; a test project that selected nothing fails an unfiltered run. SQL-backed tests fail without a reachable test SQL server, by design. A filtered run is for iteration, never evidence; CI does not use this script and always runs everything. Checked by `ci/tests/Test-TestEntryPoint.ps1`. |
 | **pack.ps1** | Pack NuGet packages. |
+
+`ci/tests/Test-TestEntryPoint.ps1` is a local, dependency-free check of `test.ps1` against a stand-in `dotnet` (exit-code propagation, a filter that matches nothing, executed tests with no passing verdict, malformed or inconsistent result files, several result files, a missing SDK, bad filter text). It is not run by the hosted CI.
 
 ## Requirements
 
 - **.NET SDK 10** (see `global.json`)
 - **Docker** (SQL Server in dev — native or Aspire)
-- **PowerShell** 5.1 or PowerShell Core
+- **PowerShell** 5.1 or PowerShell Core for `Manage.ps1`, `Interactive.ps1` and `ci/*.ps1`. **PowerShell 7.2+ (`pwsh`)** for `dev/preflight.ps1`, `dev/validation/*` and `dev/Test-SqlExecutionHonesty.ps1`.

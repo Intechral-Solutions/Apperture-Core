@@ -35,7 +35,7 @@ public sealed class SensitivePlatformSettingUiHelpersTests
     public void PlatformSettings_page_uses_secret_replace_and_clear()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
+        while (dir is not null && !RepositoryRoot.IsRoot(dir.FullName))
             dir = dir.Parent;
         dir.Should().NotBeNull();
         var path = Path.Combine(

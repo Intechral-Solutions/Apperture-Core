@@ -20,9 +20,8 @@ namespace Apperture.IntegrationTests;
 /// backfill barrier, concurrency, and transactional rename and reclaim.
 /// </summary>
 /// <remarks>
-/// Each test uses its own throwaway catalog. Without a reachable SQL endpoint the tests return early
-/// (and write "NOT EXECUTED" to the test output). Set <c>APPERTURE_REQUIRE_SQL_TESTS=1</c> to turn that
-/// into a failure, so an absent server can never be mistaken for proof.
+/// Each test uses its own throwaway catalog. Without a reachable SQL endpoint the tests fail
+/// (see <see cref="SqlTestExecution"/>), so an absent server can never be mistaken for proof.
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class UsernameFoundationSqlServerTests
@@ -43,8 +42,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Username_columns_declare_the_explicit_case_insensitive_collation()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Collation_");
-        if (scratch is null)
-            return;
 
         var collations = await QueryAsync(scratch.ConnectionString, """
             SELECT OBJECT_NAME(c.object_id) + N'.' + c.name, c.collation_name
@@ -69,8 +66,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Users_username_is_unique_case_insensitively_at_the_database()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9UsersCi_");
-        if (scratch is null)
-            return;
 
         await ExecuteAsync(scratch.ConnectionString, InsertUserSql("u1", "alice"));
 
@@ -85,8 +80,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Ledger_username_is_the_case_insensitive_primary_key_even_through_raw_sql()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9LedgerCi_");
-        if (scratch is null)
-            return;
 
         await ExecuteAsync(scratch.ConnectionString, InsertUserSql("u1", "alice") + InsertUserSql("u2", "bob"));
         await ExecuteAsync(scratch.ConnectionString, InsertLedgerSql("alice", "u1", retired: false));
@@ -109,8 +102,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Ledger_allows_one_current_name_per_user_and_a_bounded_retired_reason()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9LedgerCurrent_");
-        if (scratch is null)
-            return;
 
         await ExecuteAsync(scratch.ConnectionString, InsertUserSql("u1", "alice"));
         await ExecuteAsync(scratch.ConnectionString, InsertLedgerSql("alice", "u1", retired: false));
@@ -130,8 +121,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task One_local_link_per_user_is_enforced_and_entra_uniqueness_is_unchanged()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Links_");
-        if (scratch is null)
-            return;
 
         var indexes = await QueryAsync(scratch.ConnectionString, """
             SELECT i.name, CONCAT(CAST(i.is_unique AS nvarchar(1)), N'|', ISNULL(i.filter_definition, N''))
@@ -167,8 +156,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Populated_database_migrates_through_the_backfill_barrier_and_reruns_safely()
     {
         await using var scratch = await CreateEmptyAsync("Apperture_Iam9Backfill_");
-        if (scratch is null)
-            return;
 
         await using (var db = scratch.NewDb())
             await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreUsernameMigration);
@@ -291,8 +278,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Duplicate_local_links_fail_the_migration_closed_without_choosing_one()
     {
         await using var scratch = await CreateEmptyAsync("Apperture_Iam9DupLocal_");
-        if (scratch is null)
-            return;
 
         await using (var db = scratch.NewDb())
             await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync(PreUsernameMigration);
@@ -321,8 +306,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Concurrent_generation_of_the_same_base_yields_distinct_correctly_owned_names()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Concurrent_");
-        if (scratch is null)
-            return;
 
         const int people = 6;
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -358,8 +341,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Rename_moves_username_ledger_and_local_link_together_or_not_at_all()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Rename_");
-        if (scratch is null)
-            return;
 
         await AddLocalUserAsync(scratch, "u1", "alice");
 
@@ -401,8 +382,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Reclaim_is_atomic_and_never_takes_another_users_historical_name()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Reclaim_");
-        if (scratch is null)
-            return;
 
         await AddLocalUserAsync(scratch, "u1", "alice");
         await AddLocalUserAsync(scratch, "u2", "bob");
@@ -460,8 +439,6 @@ public sealed class UsernameFoundationSqlServerTests
     public async Task Recovery_access_canonicalization_uses_the_same_rename_and_refuses_a_name_owned_by_someone_else()
     {
         await using var scratch = await CreateMigratedAsync("Apperture_Iam9Recovery_");
-        if (scratch is null)
-            return;
 
         await AddLocalUserAsync(scratch, "u_admin", "pat.admin");
         await ExecuteAsync(scratch.ConnectionString, "UPDATE Users SET IsBreakGlassEligible = 1 WHERE Id = N'u_admin';");
@@ -590,42 +567,23 @@ public sealed class UsernameFoundationSqlServerTests
             throw new InvalidOperationException("Fault injected between the ledger and the Users/Local-link writes.");
     }
 
-    private async Task<Scratch?> CreateMigratedAsync(string prefix)
+    private static async Task<Scratch> CreateMigratedAsync(string prefix)
     {
         var scratch = await CreateEmptyAsync(prefix);
-        if (scratch is null)
-            return null;
         await using (var db = scratch.NewDb())
             await AppertureDatabaseMigrator.MigrateAsync(db);
         return scratch;
     }
 
-    private async Task<Scratch?> CreateEmptyAsync(string prefix)
+    private static Task<Scratch> CreateEmptyAsync(string prefix)
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (baseConnectionString is null)
-            return NotExecuted("no SQL Server endpoint is configured");
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = prefix + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return NotExecuted("the SQL Server endpoint is unreachable: " + ex.Message);
-        }
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
-        return new Scratch(baseConnectionString, catalog, connectionString);
-    }
-
-    private Scratch? NotExecuted(string reason)
-    {
-        if (Environment.GetEnvironmentVariable("APPERTURE_REQUIRE_SQL_TESTS") == "1")
-            throw new InvalidOperationException("SQL Server proof is required but " + reason + ".");
-        _output.WriteLine("NOT EXECUTED (soft skip): " + reason);
-        return null;
+        return Task.FromResult(new Scratch(baseConnectionString, catalog, connectionString));
     }
 
     private static async Task ExecuteAsync(string connectionString, string sql)

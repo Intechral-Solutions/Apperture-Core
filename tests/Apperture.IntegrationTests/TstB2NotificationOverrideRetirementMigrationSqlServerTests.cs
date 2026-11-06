@@ -24,7 +24,7 @@ namespace Apperture.IntegrationTests;
 /// untouched, and the deletion must be idempotent.
 /// </summary>
 /// <remarks>
-/// Each run builds its own throwaway catalog. Soft-skips when no reachable SQL endpoint is configured.
+/// Each run builds its own throwaway catalog. Without a reachable SQL endpoint it fails (see <see cref="SqlTestExecution"/>).
 /// </remarks>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
@@ -43,21 +43,12 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
     [Fact]
     public async Task TstB2_deletes_matching_self_service_overrides_leaves_admin_and_team_scoped_untouched_and_is_idempotent()
     {
-        var baseConnectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (baseConnectionString is null)
-            return; // soft-skip: no reachable SQL endpoint configured
+        var baseConnectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         var catalog = "Apperture_TstB2RetireMigration_" + Guid.NewGuid().ToString("N")[..12];
         var connectionString = new SqlConnectionStringBuilder(baseConnectionString) { InitialCatalog = catalog }.ConnectionString;
 
-        try
-        {
-            SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
-        }
-        catch (InvalidOperationException)
-        {
-            return; // soft-skip: endpoint unreachable
-        }
+        SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
         const string selfServiceUserId = "tstb2-user-self-service";
         const string teamOverrideUserId = "tstb2-user-team-override";
@@ -87,7 +78,7 @@ public sealed class TstB2NotificationOverrideRetirementMigrationSqlServerTests
             await using (var preDb = NewDb(connectionString))
             {
                 if (!await preDb.Database.CanConnectAsync())
-                    return; // soft-skip
+                    throw SqlTestExecution.Unavailable("the test catalog was created but cannot be connected to");
 
                 // NotificationSubscriptionUserOverrides is a legacy table that predates Toast-B; on this
                 // brand-new throwaway catalog it does not exist until migrations run up through the point

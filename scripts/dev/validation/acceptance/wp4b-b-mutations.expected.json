@@ -1,0 +1,21 @@
+{
+  "source": "IAM-10.2b WP4B-B record, section 12 'Negative controls' (branch feat/iam-10.2b-administrator-viability, commit 6e3ab57): 16 mutations of production source, each restored byte for byte, each caught. The unit and sql values are the numbers of failing tests the record states per mutation.",
+  "mutations": [
+    { "id": "B1-freshness-edge-exclusive", "unit": 4, "sql": 0, "outcome": "Caught" },
+    { "id": "B2-stopped-row-ignored", "unit": 6, "sql": 0, "outcome": "Caught" },
+    { "id": "B3-binding-check-removed", "unit": 4, "sql": 2, "outcome": "Caught" },
+    { "id": "B4-two-live-hosts-allowed", "unit": 7, "sql": 0, "outcome": "Caught" },
+    { "id": "B5-future-dated-believed", "unit": 3, "sql": 0, "outcome": "Caught" },
+    { "id": "B6-window-lengthened", "unit": 3, "sql": 0, "outcome": "Caught" },
+    { "id": "B7-reader-fabricates-a-trusted-reading", "unit": 13, "sql": 2, "outcome": "Caught" },
+    { "id": "B8-refresh-not-owned-by-process", "unit": 0, "sql": 4, "outcome": "Caught" },
+    { "id": "B9-stop-not-owned-by-process", "unit": 0, "sql": 2, "outcome": "Caught" },
+    { "id": "B10-host-clock-stamps-the-claim", "unit": 0, "sql": 12, "outcome": "Caught" },
+    { "id": "B11-writer-builds-before-traffic", "unit": 11, "sql": 4, "outcome": "Caught" },
+    { "id": "B12-command-line-reads-its-own-configuration", "unit": 2, "sql": 0, "outcome": "Caught" },
+    { "id": "B13-provider-reads-synchronously", "unit": 5, "sql": 6, "outcome": "Caught" },
+    { "id": "B14-handler-build-not-noted", "unit": 0, "sql": 2, "outcome": "Caught" },
+    { "id": "B15-attestation-registered-first", "unit": 1, "sql": 0, "outcome": "Caught" },
+    { "id": "B16-superseded-process-keeps-publishing", "unit": 1, "sql": 0, "outcome": "Caught" }
+  ]
+}

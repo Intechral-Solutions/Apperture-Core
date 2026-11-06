@@ -7,8 +7,11 @@ using System.Text.Json;
 using Apperture.ControlPlane.Security;
 using Apperture.ControlPlane.Security.Models;
 using Apperture.Core.Application.Services;
+using Apperture.Core.Domain.Connector;
 using Apperture.Core.Domain.Identity;
+using Apperture.Core.Domain.Integration;
 using Apperture.Core.Domain.Operations;
+using Apperture.Core.Domain.ResourceContexts;
 using Apperture.ModuleSdk.Abstractions;
 using Apperture.Persistence.SqlServer;
 using Apperture.RuntimePlane.Abstractions;
@@ -34,8 +37,107 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         Assert.True(
             _fixture.SqlAvailable,
-            $"These tests require SQL Server or LocalDB. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
+            $"These tests require a reachable test SQL Server. {SqlServerTestConfiguration.DescribeActiveConfiguration()} " +
             $"Connection attempted: {SqlServerTestConfiguration.DescribeConnectionSummary(_fixture.ConnectionString)}");
+    }
+
+    private const string GreetProcedureId = "Sample.HelloWorld.procedures.greet";
+    private const string OpPingProcedureId = "Sample.HelloWorld.procedures.opPing";
+
+    // An Active HelloWorld integration that is hard-blocked by data, not by a test double: its binding references a connection in a
+    // ResourceContext the integration cannot reach (the platform's cross-context invariant), which blocks every module. It exists only
+    // for the duration of the test that arranges it; the ids are fixed so a run that died mid-test is cleaned up by the next one.
+    private const string HardBlockedIntegrationId = "intgovhardblocked0000001";
+    private const string HardBlockedContextId = "ctxgovhardblocked0000001";
+    private const string HardBlockedConnectionId = "cnngovhardblocked0000001";
+    private const string HardBlockedBindingId = "bndgovhardblocked0000001";
+
+    private sealed record ProcedureLaunchState(bool Launchable, string[] BlockedReasonCodes);
+
+    /// <summary>
+    /// The procedure detail applies the same procedure-level readiness and the same start authority as the launch route, for the calling
+    /// principal. A launch test uses it to verify its precondition. The integration-level /readiness cannot do that: it carries neither a
+    /// procedure nor a principal, so it does not say whether this principal can launch this procedure.
+    /// </summary>
+    private static async Task<ProcedureLaunchState> GetProcedureLaunchStateAsync(HttpClient client, string integrationId, string procedureId)
+    {
+        var response = await client.GetAsync($"/api/integrations/{integrationId}/procedures/{procedureId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "the procedure detail is the launch precondition for this principal");
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return new ProcedureLaunchState(
+            doc.RootElement.GetProperty("launchable").GetBoolean(),
+            doc.RootElement.GetProperty("blockedReasonCodes").EnumerateArray().Select(x => x.GetString()!).ToArray());
+    }
+
+    private static async Task AssertProcedureLaunchableAsync(HttpClient client, string integrationId, string procedureId)
+    {
+        var state = await GetProcedureLaunchStateAsync(client, integrationId, procedureId);
+        state.BlockedReasonCodes.Should().BeEmpty($"precondition: {procedureId} must be launchable for this principal before it is launched");
+        state.Launchable.Should().BeTrue($"precondition: {procedureId} must be launchable for this principal before it is launched");
+    }
+
+    private async Task RemoveHardBlockedIntegrationAsync()
+    {
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        await db.Bindings.Where(b => b.Id == HardBlockedBindingId).ExecuteDeleteAsync();
+        await db.Integrations.Where(i => i.Id == HardBlockedIntegrationId).ExecuteDeleteAsync();
+        await db.Connections.Where(c => c.Id == HardBlockedConnectionId).ExecuteDeleteAsync();
+        await db.ResourceContexts.Where(c => c.Id == HardBlockedContextId).ExecuteDeleteAsync();
+    }
+
+    private async Task ArrangeHardBlockedIntegrationAsync()
+    {
+        await RemoveHardBlockedIntegrationAsync();
+
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppertureDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        db.ResourceContexts.Add(new ResourceContextEntity
+        {
+            Id = HardBlockedContextId,
+            Name = "Governance hard-blocked context",
+            Slug = "governance-hard-blocked",
+            Kind = "Application",
+            State = "Active",
+            IsReserved = false,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        await db.SaveChangesAsync();
+
+        db.Connections.Add(new ConnectionEntity
+        {
+            Id = HardBlockedConnectionId,
+            ConnectorDefinitionId = "governance-hard-blocked",
+            Name = "Governance hard-blocked connection",
+            ResourceContextId = HardBlockedContextId,
+            State = (int)ConnectionState.Active
+        });
+        db.Integrations.Add(new IntegrationEntity
+        {
+            Id = HardBlockedIntegrationId,
+            DisplayName = "Governance hard-blocked integration",
+            ModuleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+            // Shared cannot reach a connection owned by an Application context, which is what makes the binding below a blocking issue.
+            ResourceContextId = ResourceContextIds.SharedValue,
+            State = (int)IntegrationState.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+
+        db.Bindings.Add(new BindingEntity
+        {
+            Id = HardBlockedBindingId,
+            IntegrationId = HardBlockedIntegrationId,
+            ModuleId = ManagementGovernanceTestConstants.HelloWorldModuleId,
+            SlotName = "cross-context-probe",
+            ContractType = "governance.probe",
+            ConnectionId = HardBlockedConnectionId,
+            State = (int)BindingState.Active
+        });
+        await db.SaveChangesAsync();
     }
 
     private static (string Host, string Port, string Username, string Password) GetSftpTestSettings() =>
@@ -876,16 +978,18 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalWorkflowOnlyProcedureLauncher);
-        var readinessResponse = await client.GetAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
-        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
-        using var readinessDoc = JsonDocument.Parse(readinessJson);
-        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
-            return;
+
+        // Precondition, verified for this principal: the integration is not blocked and the operation target is executable, so the one
+        // thing between this principal and the operation is the missing operation.execute grant. The workflow it does hold launches.
+        var operationState = await GetProcedureLaunchStateAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, OpPingProcedureId);
+        operationState.Launchable.Should().BeFalse();
+        operationState.BlockedReasonCodes.Should().Equal(
+            ["insufficient_operation_permission"],
+            "only the missing operation.execute grant may stand between this principal and the operation");
+        await AssertProcedureLaunchableAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, GreetProcedureId);
 
         var response = await client.PostAsJsonAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
+            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/{OpPingProcedureId}/launch",
             new { parameters = new Dictionary<string, object?> { ["message"] = "from-test" } });
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var json = await response.Content.ReadAsStringAsync();
@@ -898,21 +1002,47 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
-        var readinessResponse = await client.GetAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
-        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
-        using var readinessDoc = JsonDocument.Parse(readinessJson);
-        if (readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
-            return;
+        await ArrangeHardBlockedIntegrationAsync();
+        try
+        {
+            // Precondition, verified: the integration is Active (so this is not the inactive refusal) and carries a blocking issue.
+            var detailResponse = await client.GetAsync($"/api/integrations/{HardBlockedIntegrationId}/detail");
+            detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using (var detail = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync()))
+            {
+                var readiness = detail.RootElement.GetProperty("readiness");
+                readiness.GetProperty("isRunnable").GetBoolean().Should().BeFalse("the arranged integration must be hard-blocked");
+                var issues = readiness.GetProperty("issues").EnumerateArray()
+                    .Select(i => (Code: i.GetProperty("code").GetString(), Severity: i.GetProperty("severity").GetString()))
+                    .ToList();
+                issues.Should().Contain(("binding_cross_context", "Blocking"));
+                issues.Where(i => i.Severity == "Blocking").Select(i => i.Code).Should().Equal(
+                    ["binding_cross_context"],
+                    "the cross-context binding must be the only blocker, so the refusal below is caused by it");
+                issues.Select(i => i.Code).Should().NotContain("integration_not_active", "the integration is Active, not inactive");
+            }
 
-        var response = await client.PostAsJsonAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.opPing/launch",
-            new { parameters = new Dictionary<string, object?> { ["message"] = "x" } });
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        doc.RootElement.GetProperty("code").GetString().Should().Be("integration_hard_blocked");
+            // The launcher holds every grant, so the integration block is the only thing standing between it and the operation.
+            var state = await GetProcedureLaunchStateAsync(client, HardBlockedIntegrationId, OpPingProcedureId);
+            state.Launchable.Should().BeFalse();
+            state.BlockedReasonCodes.Should().Equal(["integration_hard_blocked"]);
+
+            var response = await client.PostAsJsonAsync(
+                $"/api/integrations/{HardBlockedIntegrationId}/procedures/{OpPingProcedureId}/launch",
+                new { parameters = new Dictionary<string, object?> { ["message"] = "x" } });
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            doc.RootElement.GetProperty("code").GetString().Should().Be("integration_hard_blocked");
+        }
+        finally
+        {
+            await RemoveHardBlockedIntegrationAsync();
+        }
+
+        // The governance catalog is shared and persistent: the arranged rows must not outlive the test.
+        (await client.GetAsync($"/api/integrations/{HardBlockedIntegrationId}/detail")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound, "the arranged integration is removed again");
     }
 
     [Fact]
@@ -992,13 +1122,9 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
-        var readinessResponse = await client.GetAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
-        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
-        using var readinessDoc = JsonDocument.Parse(readinessJson);
-        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
-            return;
+        // Precondition, verified for this principal: both procedures are launchable (integration runnable, targets executable, grants held).
+        await AssertProcedureLaunchableAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, GreetProcedureId);
+        await AssertProcedureLaunchableAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, OpPingProcedureId);
 
         var wf = await client.PostAsJsonAsync(
             $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/procedures/Sample.HelloWorld.procedures.greet/launch",
@@ -1028,13 +1154,9 @@ public sealed class ManagementHostGovernanceHttpTests
     {
         AssertSqlAvailable();
         using var client = _fixture.CreateAuthenticatedClient(ManagementGovernanceTestConstants.ExternalProcedureLauncher);
-        var readinessResponse = await client.GetAsync(
-            $"/api/integrations/{ManagementGovernanceTestConstants.SeededIntegrationId}/readiness");
-        readinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var readinessJson = await readinessResponse.Content.ReadAsStringAsync();
-        using var readinessDoc = JsonDocument.Parse(readinessJson);
-        if (!readinessDoc.RootElement.GetProperty("isRunnable").GetBoolean())
-            return;
+        // Precondition, verified for this principal: both procedures are launchable (integration runnable, targets executable, grants held).
+        await AssertProcedureLaunchableAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, GreetProcedureId);
+        await AssertProcedureLaunchableAsync(client, ManagementGovernanceTestConstants.SeededIntegrationId, OpPingProcedureId);
 
         const string wfParamValue = "Epic56C-wf-provenance";
         var wf = await client.PostAsJsonAsync(

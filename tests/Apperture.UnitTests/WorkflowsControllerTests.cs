@@ -31,7 +31,7 @@ public sealed class WorkflowsControllerTests
         TestExecutionStarts.Create(workflows: new MockWorkflowStartDispatchService(handler));
 
     [Fact]
-    public void Start_WhenBodyContainsSecretBearingParameter_ThrowsArgumentException()
+    public async Task Start_WhenBodyContainsSecretBearingParameter_ThrowsArgumentException()
     {
         var controller = new WorkflowsController(
             CreateAllowAllAuthService(),
@@ -47,7 +47,7 @@ public sealed class WorkflowsControllerTests
 
         Func<Task> act = () => controller.Start("workflow-1", body, CancellationToken.None);
 
-        act.Should().ThrowAsync<ArgumentException>()
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*secret-bearing*");
     }
 

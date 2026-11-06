@@ -6,6 +6,8 @@ This folder exercises the **real** [Apperture.Management.Host](../../src/Appertu
 
 Resolution is centralized in [`SqlServerTestConfiguration.cs`](../SqlServerTestConfiguration.cs).
 
+Every candidate is checked by `SqlTestTargetGuard` before anything connects to it: the Aspire dev SQL (host port 14333) and the bare `Apperture` catalog are refused, and a governance catalog must end in `Tests`. A refusal fails the test with a message naming the target; it is not skipped. See [Test SQL target safety](../../README.md#test-sql-target-safety).
+
 **General SqlServer integration tests** (`AuditTimelineSqlServerTests`, `Epic73SqlSeamsIntegrationTests`, etc.):
 
 | Priority | Variable | Purpose |
@@ -105,9 +107,9 @@ $env:APPERTURE_TEST_SFTP_PASSWORD = "AppertureSftp59a!"
 dotnet test tests/Apperture.IntegrationTests/Apperture.IntegrationTests.csproj --filter "FullyQualifiedName~Sftp"
 ```
 
-**Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` and ensure the instance is running.
+**Prerequisites:** SQL Server reachable with SA (or equivalent) credentials; `TrustServerCertificate=True` is typical for dev containers. LocalDB works only if you point `APPERTURE_TEST_SQL` at `(localdb)\mssqllocaldb` yourself and ensure the instance is running; there is no implicit LocalDB fallback.
 
-If SQL is unreachable, `ManagementHostGovernanceFixture` sets `SqlAvailable = false` and each governance test fails fast with a message explaining the requirement (no silent pass).
+If no configured SQL target is reachable, `ManagementHostGovernanceFixture` and `BootstrapHttpFixture` throw `SqlTestUnavailableException` from `InitializeAsync`, so every test of the collection fails with a message explaining the requirement (no silent pass, and no availability flag for a test to skip on). There is no optional mode and no switch: see "A SQL test that cannot run against SQL Server fails" in `tests/README.md`.
 
 If SFTP is unreachable, Epic 59A tests fail fast with a message describing required `APPERTURE_TEST_SFTP_*` settings.
 

@@ -7,9 +7,6 @@ internal static class ManagementGovernanceTestConstants
 {
     internal const string ConnectionStringEnvironmentVariable = "APPERTURE_TEST_SQL";
 
-    internal const string DefaultLocalDbConnectionString =
-        "Server=(localdb)\\mssqllocaldb;Database=Apperture_ManagementGovernanceTests;Trusted_Connection=True;TrustServerCertificate=True;";
-
     internal const string SftpHostEnvironmentVariable = "APPERTURE_TEST_SFTP_HOST";
     internal const string SftpPortEnvironmentVariable = "APPERTURE_TEST_SFTP_PORT";
     internal const string SftpUsernameEnvironmentVariable = "APPERTURE_TEST_SFTP_USERNAME";

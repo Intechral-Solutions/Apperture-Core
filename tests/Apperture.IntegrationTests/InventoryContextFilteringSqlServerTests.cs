@@ -24,9 +24,7 @@ public sealed class InventoryContextFilteringSqlServerTests
     [Fact]
     public async Task AuditContextClassificationFilter_System_TranslatesToSql_AndMatchesOnlyNullContextSystemPrefixed()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -83,9 +81,7 @@ public sealed class InventoryContextFilteringSqlServerTests
     [Fact]
     public async Task AuditContextClassificationFilter_NotRecorded_TranslatesToSql_AndExcludesSystemPrefixed()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 
@@ -133,9 +129,7 @@ public sealed class InventoryContextFilteringSqlServerTests
     [Fact]
     public async Task NotificationDefinitionStore_OwnerResourceContextIdFilter_TranslatesToSql()
     {
-        var connectionString = SqlServerTestConfiguration.GetConnectionString();
-        if (connectionString is null)
-            throw new InvalidOperationException(SqlServerTestConfiguration.DescribeActiveConfiguration());
+        var connectionString = SqlServerTestConfiguration.RequireConnectionString();
 
         SqlServerTestConfiguration.EnsureTestDatabaseExists(connectionString);
 

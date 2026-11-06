@@ -15,11 +15,7 @@ public sealed class ConnectionWorkspaceUiSourceTests
 
     private static string ReadRepoFile(string relativePath)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        dir.Should().NotBeNull("repository root not found from test output directory");
-        var path = Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var path = Path.Combine(RepositoryRoot.Find(), relativePath.Replace('/', Path.DirectorySeparatorChar));
         File.Exists(path).Should().BeTrue($"expected source at {path}");
         return File.ReadAllText(path);
     }
@@ -77,9 +73,9 @@ public sealed class ConnectionWorkspaceUiSourceTests
     [Fact]
     public void There_is_exactly_one_connection_detail_route_and_no_services_route()
     {
-        var pages = Directory.EnumerateFiles(
-                Path.GetDirectoryName(Path.GetDirectoryName(ReadRepoPath(Detail)))!,
-                "*.razor", SearchOption.AllDirectories)
+        var pages = SourceTree.Files(
+                "src/Apperture.ControlPlane/Apperture.Management.Ui.Client/Pages",
+                [".razor"], includeMigrations: true, SourceTree.Floor.UiClientPagesRazor)
             .SelectMany(f => Regex.Matches(File.ReadAllText(f), @"^@page\s+""([^""]+)""", RegexOptions.Multiline).Select(m => m.Groups[1].Value))
             .ToList();
 
@@ -196,14 +192,6 @@ public sealed class ConnectionWorkspaceUiSourceTests
             visible.Should().NotMatchRegex(@"\bCMP-?\d");
             visible.Should().NotMatchRegex(@"\bEpic\s*\d+");
         }
-    }
-
-    private static string ReadRepoPath(string relativePath)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, ".git")))
-            dir = dir.Parent;
-        return Path.Combine(dir!.FullName, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     [Fact]

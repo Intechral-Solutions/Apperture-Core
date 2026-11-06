@@ -15,8 +15,10 @@ namespace Apperture.IntegrationTests.Audit;
 /// <summary>
 /// The OR-14 benchmark (audit hardening design gate §15.6, A1.1-12): one million unclassified rows classified by the real
 /// startup step inside the real <c>PersistenceMigrationHostedService</c>, with the <c>migrations</c> readiness check polled
-/// throughout. Opt-in: set <c>APPERTURE_AUDIT_BENCHMARK=1</c> (optionally <c>APPERTURE_AUDIT_BENCHMARK_ROWS</c>). Without it
-/// the test returns immediately and proves nothing; it is a measurement harness, not a regression test.
+/// throughout. Opt-in: set <c>APPERTURE_AUDIT_BENCHMARK=1</c> (optionally <c>APPERTURE_AUDIT_BENCHMARK_ROWS</c>); see
+/// tests/README.md. Without it the test is not discovered, so it does not appear in a report as Passed or Skipped; it is a
+/// measurement harness, not a regression test. Once requested it runs the full workload against the protected test SQL target
+/// and fails normally if that SQL is unavailable.
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class AuditClassificationBenchmark
@@ -25,15 +27,9 @@ public sealed class AuditClassificationBenchmark
 
     public AuditClassificationBenchmark(ITestOutputHelper output) => _output = output;
 
-    [Fact]
+    [OptInBenchmarkFact(OptInBenchmarkGate.AuditClassificationEnvironmentVariable)]
     public async Task One_million_unclassified_rows_are_classified_at_startup_with_readiness_withheld_until_done()
     {
-        if (Environment.GetEnvironmentVariable("APPERTURE_AUDIT_BENCHMARK") != "1")
-        {
-            _output.WriteLine("Benchmark not requested (APPERTURE_AUDIT_BENCHMARK != 1).");
-            return;
-        }
-
         var rows = int.TryParse(Environment.GetEnvironmentVariable("APPERTURE_AUDIT_BENCHMARK_ROWS"), out var n) ? n : 1_000_000;
         await using var db = await AuditSqlScratch.CreateAsync("Apperture_Aud11Bench_");
         var seed = Stopwatch.StartNew();

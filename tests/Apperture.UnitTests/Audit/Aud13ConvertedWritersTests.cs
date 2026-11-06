@@ -72,12 +72,9 @@ public sealed partial class Aud13ConvertedWritersTests
     public void Every_start_request_is_built_at_a_reviewed_site()
     {
         var src = Path.Combine(RepoRoot(), "src");
-        var separator = Path.DirectorySeparatorChar;
         var sites = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories))
+        foreach (var file in SourceTree.Files("src", [".cs"], includeMigrations: true, SourceTree.Floor.CSharp))
         {
-            if (new[] { "obj", "bin" }.Any(skip => file.Contains($"{separator}{skip}{separator}", StringComparison.Ordinal)))
-                continue;
             var count = StartRequestConstruction().Matches(File.ReadAllText(file)).Count;
             if (count > 0)
                 sites[Path.GetRelativePath(src, file).Replace('\\', '/')] = count;
@@ -104,13 +101,7 @@ public sealed partial class Aud13ConvertedWritersTests
         }
     }
 
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "AGENTS.md")))
-            dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Repository root not found.");
-    }
+    private static string RepoRoot() => RepositoryRoot.Find();
 
     /// <summary>A literal actor of the platform or an unresolved person where a principal belongs.</summary>
     [GeneratedRegex(@"new\s+ActorId\(\s*""(system|system:unknown|unknown)""\s*\)|\?\?\s*""unknown""", RegexOptions.CultureInvariant)]
