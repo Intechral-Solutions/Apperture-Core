@@ -202,6 +202,53 @@ if (Want-Section 'lib') {
     Check 'a connection string is reduced to host, port, catalog and user' ($ci.Host -eq '127.0.0.1' -and $ci.Port -eq 1433 -and $ci.Catalog -eq 'Apperture_X' -and $ci.User -eq 'sa' -and $ci.HasPassword -and ($ci | ConvertTo-Json) -notmatch 'Sup3rSecret')
 }
 
+# ====================================================================================================================== buildargs
+if (Want-Section 'buildargs') {
+    Write-Host 'buildargs: the reviewed build-argument allow-list (Get-UnvettedBuildArgs)'
+    $accepted = @('-nologo', '-v:q', '-v:minimal', '-verbosity:diag', '-m', '-m:1', '-m:4', '-maxcpucount:8', '-clp:NoSummary', '-clp:Summary;ForceNoAlign', '-nr:false',
+        '--no-incremental', '--disable-build-servers', '-p:UseSharedCompilation=false')
+    foreach ($a in $accepted) { Check "accepted: $a" (@(Get-UnvettedBuildArgs @($a)).Count -eq 0) }
+    Check 'the whole established protocol is accepted together' (@(Get-UnvettedBuildArgs @('--no-incremental', '-m:1', '-p:UseSharedCompilation=false', '--disable-build-servers', '-v:q', '-nologo')).Count -eq 0)
+    Check 'the candidate protocol (--no-incremental -m:4) is accepted' (@(Get-UnvettedBuildArgs @('--no-incremental', '-m:4', '-v:q', '-nologo')).Count -eq 0)
+    Check 'no arguments at all is accepted' (@(Get-UnvettedBuildArgs @()).Count -eq 0)
+    # default deny: each of these redirects the output, injects a property, skips a build step or reuses stale output
+    $refused = @(
+        '-p:DefineConstants=EVIL', '-p:UseSharedCompilation=true', '-p:UseSharedCompilation=false;DefineConstants=EVIL', '-p:Configuration=Release', '/p:Foo=1', '-property:Foo=1', '--property:Foo=1',
+        '-o', '--output', '-o:D:\elsewhere', '--output=D:\elsewhere', '--artifacts-path', '--artifacts-path=D:\x', '-c', '--configuration', '-c:Release', '-f', '--framework', '-r', '--runtime', '--sc', '--self-contained',
+        '-t:Restore', '-target:Clean', '--target', '--no-build', '--no-restore', '--no-dependencies', '-restore', '-restore:false', '-r:false', '-noRestore',
+        '-getProperty:TargetPath', '-getItem:Compile', '-getTargetResult:Build', '-bl', '-bl:out.binlog', '-binaryLogger', '-graph', '-graphBuild', '-isolate', '-isolateProjects:True', '-ignoreProjectExtensions:.sln',
+        '@evil.rsp', '-preprocess', '-pp', '-ds', '-detailedSummary', '-m:4 -p:DefineConstants=EVIL', '-v:q -p:DefineConstants=EVIL', '-nologo -t:Restore',
+        '--no-incremental=false', '--no-incremental ', ' --no-incremental', '--NO-INCREMENTAL', '--disable-build-servers=false', '-p:usesharedcompilation=false', '-p:UseSharedCompilation=false ',
+        '-m:abc', '-m:', '-m:1;2', '-m:1000', '-v', '-v:', '-v:evil', '-v:q;-p:X=1', '-clp:', '-clp:/p:X=1', '-clp:NoSummary;-p:X=1', '-nr', '-nr:maybe', '-nr:true;-p:X=1',
+        ('--no-incremental' + "`n"), ('-nologo' + "`n-p:DefineConstants=EVIL"), ('-nologo' + "`r"), '', ' ',
+        ('-nologo' + "`n"), ('-v:q' + "`n"), ('-m:4' + "`n"), ('-clp:NoSummary' + "`n"), ('-nr:false' + "`n"),   # a trailing newline must not match (\z, not $)
+        'nologo', 'v:q', 'm:4', 'm', 'nr:false', 'clp:NoSummary', 'maxcpucount:2', 'no-incremental', 'disable-build-servers', 'p:UseSharedCompilation=false', 'o', 'c', 'Release',   # the leading dash is required
+        '--', '-', '-nologo-extra', '--nologo-extra',
+        # a refused argument whose TAIL is an accepted form: catches a pattern that lost its start anchor
+        '-o:D:\x\-m', '-t:Restore;-nologo', '-p:BaseOutputPath=C:\evil\-nologo', '-p:DefineConstants=EVIL/m', '--no-build/m', '-p:X=1-nologo', 'x-m:4', 'x/nologo', '-o:C:\x/-v:q', '--output=D:\x/--no-incremental',
+        '+nologo', '+m:4', '+v:q', '+clp:NoSummary', '+nr:false',   # a leading plus is not a switch prefix
+        '--interactive', '--use-current-runtime', '--source', '-s', '--disable-parallel', '--force', '--no-cache', '--ignore-failed-sources', '--packages', '--runtime-id', '--os', '-a', '--arch', '--version-suffix', '--verbosity', '-warnaserror', '-warnAsError:CS0168', '-nowarn:CS0168', '-nowarn', '-p', '-property', '-tl:off', '-terminalLogger', '-l:evil.dll', '-logger:Evil,evil.dll', '-fileLogger', '-flp:logfile=C:\x.log', '-dl:Evil,evil.dll', '-distributedlogger', '-inputResultsCaches:x', '-outputResultsCache:x', '-warnnotaserror:CS0168', '-lowPriority', '-low', '-profileevaluation:x.json', '-timeout:1', '-?', '-h', '--help', '-version', '-ver'
+    )
+    foreach ($a in $refused) {
+        $r = @(Get-UnvettedBuildArgs @($a))
+        Check ("refused: '" + ($a -replace "`r", '\r' -replace "`n", '\n') + "'") ($r.Count -eq 1)
+    }
+    Check 'one refused argument among accepted ones is reported and only that one' ((@(Get-UnvettedBuildArgs @('-nologo', '-o', '--no-incremental')) -join '|') -eq '-o')
+    Check 'a null argument is refused' (@(Get-UnvettedBuildArgs @($null, '-nologo')).Count -eq 1)
+    # the tools use it
+    $src = Get-Content -LiteralPath (Join-Path $val 'Invoke-Evidence.ps1') -Raw
+    Check 'Invoke-Evidence takes its build-argument verdict from Get-UnvettedBuildArgs, not from a private pattern' (($src -match 'Get-UnvettedBuildArgs \$BuildArgs') -and ($src -notmatch '\$vettedBuildArg\b'))
+    $mut = Join-Path $WorkRoot 'mutargs.json'; [IO.File]::WriteAllText($mut, '{"mutations":[]}')
+    foreach ($bad in '-o:D:\elsewhere', '-p:DefineConstants=EVIL', '--no-build', '-t:Restore') {
+        $ws = Join-Path $WorkRoot ("mutargs-ws-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        $rr = Invoke-Tool (Join-Path $val 'Invoke-Mutation.ps1') @('-Mutations', $mut, '-Commit', 'deadbeef12', '-Workspace', $ws, "-BuildArgs:-nologo,$bad")
+        Check "Invoke-Mutation refuses -BuildArgs $bad before creating anything (exit 2)" (($rr.Exit -eq 2) -and ($rr.Out -match 'REFUSED: build arguments outside the reviewed allow-list') -and -not (Test-Path -LiteralPath $ws)) $rr.Out
+    }
+    $ws = Join-Path $WorkRoot ("mutargs-ws-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+    $rr = Invoke-Tool (Join-Path $val 'Invoke-Mutation.ps1') @('-Mutations', $mut, '-Commit', 'deadbeef12', '-Workspace', $ws, '-BuildArgs:-nologo,--no-incremental,-m:4,--disable-build-servers,-p:UseSharedCompilation=false')
+    Check 'counter-control: Invoke-Mutation does not refuse the protocol flags (it goes on and stops later for another reason)' (($rr.Exit -eq 2) -and ($rr.Out -notmatch 'build arguments outside the reviewed allow-list')) $rr.Out
+}
+
 # ====================================================================================================================== trx
 if (Want-Section 'trx') {
     Write-Host 'trx: Compare-Trx'
