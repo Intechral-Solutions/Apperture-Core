@@ -4,7 +4,7 @@
 |---|---|
 | Package | IAM-10.2b, work package 4B-B ([decision record](iam10-2b-wp4b-decision-record.md) §3, §4, §9, §10), on the accepted [WP4B-A](iam10-2b-wp4b-a-record.md) and [WP4B-D](iam10-2b-wp4b-d-record.md). |
 | Branch | `feat/iam-10.2b-administrator-viability`, from `478ae7a` (WP4B-D, independently accepted). Not pushed, not merged. |
-| Status | Implemented and validated (§12). Awaiting focused independent security review (provenance, freshness, boundary), as the decision record's §9 requires. |
+| Status | Implemented and validated (§12). Focused independent security review (Opus 5.5, 2026-10-29): **accepted, ready for the next work package**, with entry obligations for WP4B-C (L-B1, L-B2, I-3) and documentation corrections (L-B3, R-B8). The written review report is not preserved in the repository; the [integration record](iam10-2b-dev1-integration-record.md) §5 states what is substantiated, what was checked against the source, and which wording is a summary and not a quotation. |
 | Delivers | The attestation table, the host writer, the reader, the asynchronous reading seam, the evidence classification and the `configurationEvidence` audit detail. **No reducer is integrated.** |
 | Not in scope | WP4B-C (designate, strict revoke, bare reset, the replacement candidate and switch, provision/enrol/regenerate as gated raisers, command-line mapping of outcomes and exit codes, L-P2, L-P3), WP5, IAM-10.4, OPS-1.4 (L-D1), OPS-1 servicing. No package, CI or dependency change. One additive migration. |
 

@@ -4,7 +4,7 @@
 |---|---|
 | Package | IAM-10.2b, work package 4B-D ([decision record](iam10-2b-wp4b-decision-record.md) §7.2, §8, §9, §13), on the verified [WP4B-A](iam10-2b-wp4b-a-record.md) foundation (the gate-only entry). |
 | Branch | `feat/iam-10.2b-administrator-viability`, from `c5062baf` (the synchronisation with `origin/master`, which carries the .NET 10.0.13 dependency remediation). Not pushed, not merged. |
-| Status | Implemented and validated (§8). Awaiting independent security review. |
+| Status | Implemented and validated (§8). Independent security review (Opus 5.5, 2026-10-29): **accepted, no blocker**, with one Low follow-up (L-D1, owner OPS-1.4, recorded in the program plan and in §7 item 6). The written review report is not preserved in the repository; see the [integration record](iam10-2b-dev1-integration-record.md) §5 for what is substantiated. |
 | Closes | **M-P1**: two concurrent first-administrator requests with different names both created an administrator. |
 | Not in scope | WP4B-B (attestation), WP4B-C (designate/revoke/reset, MFA lifecycle, Recovery Access provisioning, L-P2, L-P3), WP5, IAM-10.4. No schema, migration, package or CI change. |
 
