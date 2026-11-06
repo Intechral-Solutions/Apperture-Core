@@ -5,7 +5,8 @@
 | Package | Integration of the DEV-1 development-loop work (SQL execution honesty, source-corpus and determinism fixes, artifact retention, the validation toolkit, development guidance, the build-protocol experiment) into the IAM-10.2b line, before WP4B-C. Not WP4B-C and not WP5. |
 | Branch | `integration/iam10-2b-dev1`, from the IAM baseline `6e3ab57b897f0c8c09cdb58664d9694a7f80d057` (WP4B-B). The protected `feat/iam-10.2b-administrator-viability` is **not advanced** by this package. Not pushed, no PR. |
 | Master side | `origin/master` `be0737d5219b659ad87065f72ab40982e32867ea` (PR #48 merged; both required checks green on that commit). |
-| Status | Written in two parts. This part (the commit that introduces this file) holds the identity of the merge, the compatibility findings and the review-record reconciliation. The validation results are added by a later record-only commit. |
+| Status | Implemented and validated (sections 7 to 10); independent review requested at the exact commit named in the review section. Written in parts: sections 1 to 6 arrived with `8511519`; sections 7 to 11 arrive in a record-only commit that changes nothing else, and the review outcome is added the same way. |
+| Validated tree | Every validation result below is for commit `85115199b271a81ab9b8485b3c0954635fa8c7dc` (tree `54f99f4e7db860121626db9daf55c59bafebd915`, `src` tree `e98f43fa04cc9a58e62e8f2c64888e856a800a2b`, clean). The commits after it change only this record. |
 
 ## 1. The merge
 
@@ -91,3 +92,87 @@ Related text the ruling depends on: §5 ambiguity 2 of the same record ("No row 
 3. Record the ruling in the WP5 plan before any WP5 implementation starts.
 
 D-A (activation and switch against the policy), D-B (same-user policy twice) and D-E (multiple Entra links; IAM-10.4) are unchanged and remain WP5 and IAM-10.4 items. OPS-1.4 remains a separate issue.
+
+## 7. Established validation (the authoritative procedure)
+
+Commit `85115199b271a81ab9b8485b3c0954635fa8c7dc`, linked worktree `wt-iam10-2b-integration` (so `.git` is a file), clean tree, SDK 10.0.402, PowerShell 7.6.9, a shell with no `MSBUILD*`, `DOTNET_*`, `NUGET_*` or other customisation. Numbers come from the TRX files and logs, not from the console.
+
+| Step | Command or scope | Result |
+|---|---|---|
+| Build | `dotnet build Apperture.slnx -c Debug --no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers --artifacts-path artifacts\e-final` | 0 errors, 73 warnings (the merge-commit build before the remediation also gave 73), 5 min 15 s |
+| Non-SQL suites | `dotnet test --no-build` per project | ArchTests 38 of 38; Ui.Shared 1,497 of 1,497; Ui.Client 532 of 532; AppHost.Diagnostics 7 of 7; UnitTests 5,985 total, 5,984 passed, 0 failed, **1 skipped** (the opt-in password-timing diagnostic, skipped by design) |
+| IntegrationTests, whole assembly, real SQL | Disposable `apperture-test-sql` (`127.0.0.1,1433`), required-SQL mode (the only mode), `dotnet test --no-build`, 2 h 30 min | 3,479 executed, **3,478 passed, 1 failed, 0 skipped**, 0 not executed. Isolation modes: 1,047 `rcsi: False` and 1,047 `rcsi: True` parameterised cases, **none failed in either mode** |
+| The one failure | `IntegrationTestSecretProtectorTests.Factory_replaces_the_production_protector_and_does_not_share_the_browser_harness` | "Repository root (.git) not found": the test looks for a `.git` directory and in a linked worktree `.git` is a file. This is the allow-list's documented `requires-git-directory` condition, not a product failure. In an ordinary clone of the same code the class passes (4 of 4; the control clone in section 9 ran it) |
+| SQL execution proof | `Get-SqlEvidence.ps1 -Mode Markers` before and after, 20 `Apperture_*` catalogs online | total user updates 100 before, 9,540 after: the run wrote to the test server |
+| SQL honesty (CI-equivalent) | `Test-SqlExecutionHonesty.ps1 -Configuration Release -NoBuild` after a protocol Release build of the integration project | **PASS**: 3,479 discovered and executed, 226 passed (the allow-listed non-SQL tests; the 227th, `requires-git-directory`, fails only in a worktree, which the list allows), 3,253 failed with SQL unreachable, none skipped, no violation. No allow-list entry, pin or floor changed |
+
+No other suite was run: the BrowserTests project belongs to the hosted `browser-security` check, which runs on the pull request, not here.
+
+## 8. First parallel toolkit comparison
+
+The toolkit ran beside the established procedure, on the same commit, with the same build flags. It is not authoritative for IAM because its own self-tests pass; this section compares what it produced with what the established procedure produced.
+
+`Invoke-Evidence.ps1 -Record iam-int-dev1 -Build -Configuration Debug -SqlContainer apperture-test-sql -ProcessEnvironmentOnly`, build arguments `--no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers -nologo -v:q` (all on the toolkit's allow-list), plan: the 43-clause focused integration filter used for WP4B-B plus the `AdministratorViability` unit namespace. Evidence: `artifacts/evidence/iam-int-dev1/20261106T205751Z-85115199` (14 files, checksums verified by the tool).
+
+| Property | Established | Toolkit | Same? |
+|---|---|---|---|
+| Commit and tree | `8511519`, tree `54f99f4e` | same, `src` `e98f43fa`, 0 modified tracked files | yes |
+| Focused integration tests (identity and outcome, by display name) | 1,397 selected from the whole-assembly TRX by the same filter, 1,397 passed | 1,397 executed, 1,397 passed | **identical**: 0 only-in-one-side, 0 outcome differences |
+| Isolation modes | 574 `rcsi: False`, 574 `rcsi: True`, 249 without a mode | 574, 574 (and 249) | yes |
+| Unit tests, `AdministratorViability` | 470 of the UnitTests TRX, 470 passed | 470 executed, 470 passed | identical |
+| Executed, skipped, not executed | 0 skipped, 0 not executed in the selection | 0 and 0 | yes |
+| SQL execution | markers 100 to 9,540 over the whole run | markers 9,540 to 13,986, 389 catalog start-ups in the window, 3 catalogs written | both prove writes |
+| Fails without SQL | every one of the 1,397 failed in the unreachable-SQL honesty run | n/a | none can be a silent no-op |
+| `Compare-Trx.ps1` (whole-assembly baseline, focused candidate) | | 1,397 matched by id, 0 added, 0 outcome-changed, 0 new failures, 0 findings (the 2,082 "removed" are the rest of the assembly) | consistent |
+| Toolkit authoritative? | | **yes**, 2 runs, 3,326.7 s and 392.6 s | |
+
+Further toolkit results on the same tree:
+- `Invoke-AcceptanceControls.ps1` (a **replay** of preserved WP4B-B evidence, not a re-execution): 16 mutations, 16 caught, 0 escaped; the WP4B-D to WP4B-B TRX comparison reproduces (1,361 to 1,397 tests, 574/574 per mode); the WP4A selection names the six classes the original filter missed (and two more).
+- **Live** mutations through `Invoke-Mutation.ps1` in a disposable clone at `8511519`, baseline green first, restore proven: B1 (freshness edge made exclusive) caught by 4 failing tests and B8 (refresh not owned by the process) caught by 4 failing tests. The WP4B-B record states 4 and 4 for these two mutations. Two of the 16 were run live; the other 14 are covered only by the replay.
+- `Compare-Trx.ps1` lists 20 "soft-skip suspects" (SQL tests that passed in under 100 ms). All 20 failed in the unreachable-SQL honesty run, so none can be a silent skip; they are fast tests.
+
+**Differences and tool limitations found (none changes a result):**
+1. **Path resolution.** The toolkit resolved a relative `-ArtifactsPath` (and `Compare-Trx -Json`) against the process working directory, which was the primary checkout, not the worktree it was invoked from. The toolkit's build output (2.0 GB, `artifacts/t-final`) was therefore written into the **primary checkout's ignored `artifacts/` folder**. Git state there is unchanged (`HEAD` `6e3ab57`, no modification) and the evidence folder itself is in the worktree, but the build did not stay where the invoker intended. The folder is left for the owner to delete by exact name. The tool should resolve paths against the invoking location or refuse a path outside the repository it is validating; that is a toolkit change and is not made here.
+2. `pwsh -File ... -BuildArgs "--no-incremental,..."` fails ("Missing an argument") because `-File` mode reads a leading `--` as a parameter name; calling the script in-process with an array works (the README's `-File` note does not mention this case).
+3. The toolkit counts a theory case as an isolation-mode case when `rcsi: False` appears anywhere in its name (574); counting only names that end with it gives 566. Same tests either way.
+4. Raw assembly hashes differ between the two builds (different output paths; same sizes). That is the already-known path-dependence (owner ruling on criterion 6a), so assembly identity is **not** claimed here; both builds are tied to the same commit and tree.
+5. `tests/test-manifest.json` maps none of the IAM production areas: `Select-Tests.ps1` over the IAM change set reports 66 of 186 changed files UNMAPPED, mostly `AdministratorViability/*`. A rule set for them is a small task for the start of WP4B-C.
+6. Linux was not run.
+
+## 9. Negative controls
+
+All in a disposable clone of the branch (never in the validated tree), each mutation committed in the clone so the tree was clean, all against the same disposable SQL server.
+
+| Control | Setup | Result |
+|---|---|---|
+| Missing execution | the whole assembly with SQL unreachable (the honesty run) | all 36 tests of the two corrected classes **fail** with `SqlTestUnavailableException`, "This SQL Server test cannot run against SQL Server, so it fails" |
+| A. A SQL test that returns before touching SQL (first attempt) | an early `return` in a test of a class with an `IClassFixture` | **mis-targeted**: the fixture fails without SQL before the body runs, so the test failed (honesty PASS, as expected for a failing test). Recorded because the control did not exercise the run-level check; a second defence caught it earlier |
+| A2. The same, in a fixture-free test | an early `return` (guarded by a condition the lexical scan cannot read) in `HostConfigurationAttestationSqlServerTests` | honesty **FAIL**, exit 1: "2 tests PASSED with SQL Server unreachable and are not on the approved non-SQL allow-list" |
+| B / B2. Concealing it in the allow-list | the A/A2 tests added to `approved-non-sql-passes.tsv` without the pinned fingerprint | honesty **FAIL**, exit 1: the allow-listed pin tests (`The_lists_match_their_reviewed_fingerprints` and others) did not pass |
+| C. Simulated execution, old assertions | a store that reads the clock and binding from SQL but keeps claims in memory and never writes the table; the original marker-only assertions | both tests **pass** (2 + 2 cases): the old assertion accepted simulated execution |
+| C. Simulated execution, corrected assertions | the same store, the corrected tests | both tests **fail** (2 + 2 cases): "Expected `SELECT COUNT(*) FROM dbo.HostConfigurationAttestations` to be 1, but found 0" |
+| Sanity | the corrected tests against the real store | 36 of 36 pass on both isolation modes (and in the whole-assembly run) |
+
+A first run of control C in a shared test process was contaminated (the simulated store's in-memory rows are static, so the host test also saw the other test's row); the table above is the rerun with one test per process.
+
+## 10. Configuration C adoption boundary (report only)
+
+Nothing about the validation protocol changed. Configuration C was not used for any of this evidence; `.ai/playbooks/dev-loop.md` is unchanged; the lighter review procedure (audit E.7) remains unapproved. Status of the five prerequisites after this package:
+
+| # | Prerequisite | Status |
+|---|---|---|
+| 1 | Toolkit-versus-established SQL comparison in both isolation modes | **Met for the established flags**: identical selection, outcomes and modes (section 8). Not yet made with Configuration C |
+| 2 | Equivalent regression and mutation outcomes | **Partly**: replay 16 of 16 reproduced; 2 of 16 re-run live with failing counts equal to the record. No Configuration C build has been run on this tree, so equivalence of Configuration C itself is unshown |
+| 3 | No compromised SQL honesty or provenance | **Honesty: met.** Provenance: met with one open tool defect (the path resolution above), which should be fixed before the toolkit is relied on |
+| 4 | Security-owner agreement | **Not obtained** (outside this package) |
+| 5 | A named adoption boundary before WP4B-C implementation | **Not set.** Candidate: after this integration is closed and before the first WP4B-C commit |
+
+Recommendation: **retain the established protocol for WP4B-C** unless the owner and the security owner decide otherwise at that boundary. If they want adoption, the missing evidence is one Configuration C build of this tree and the same focused SQL set in both modes, compared with sections 7 and 8 (about 35 minutes), a fix for the toolkit path-resolution defect, and `dev-loop.md` updated in the same package.
+
+## 11. What remains
+
+**WP4B-C** (unchanged by this package; decision record sections 3.4, 5, 6.2, 8, 9 and 13, WP4B-B record section 11): designate, strict revoke and bare reset as evidence-dependent reducers; the non-destructive MFA replacement (stage, verify possession, switch under the gate) with its candidate store; provision, first enrolment and regeneration of the recovery codes as gated raisers; command-line mapping of busy, unavailable, conflict and unknown outcomes with exit codes and a test seam; the choice of `configurationEvidence` per outcome and the posture-only proofs behind `not_required`; L-P2 and L-P3; the writer guard flips `WP4B` to integrated; retire `ConfiguredDeploymentAuthenticationConfiguration` (R-B9). **Entry obligations from the WP4B-B review, before any reducer consumes the evidence:** L-B1 and L-B2 (section 5.2), and a test pinning one attestation reading per attempt (I-3). Documentation corrections L-B3 and the R-B8 wording. Full WP4B review. Also useful at the start: a manifest rule set for the 66 unmapped IAM production files.
+
+**WP5** (unchanged): the full pair matrix on both isolation modes, including the WP4A items D-A and D-B; the D-C and D-D rulings (section 6); the optional reason enhancement for refusal audit rows; the writer-guard hardening; mutation checks; the closure record; independent review of the integrated implementation. D-E is recorded as a known limitation until IAM-10.4.
+
+**Before the protected IAM branch can advance:** closure of the independent review of this branch, the owner's explicit instruction, then a fast-forward of `feat/iam-10.2b-administrator-viability` to the reviewed commit and a new verified bundle. None of that is done here.
