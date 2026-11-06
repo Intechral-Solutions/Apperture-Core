@@ -76,7 +76,13 @@ public sealed class HostConfigurationAttestationSqlServerTests
         snapshot.DatabaseNowUtc.Should().BeOnOrAfter(row.RefreshedUtc);
         row.Source.Should().Be("management_host");
         row.Payload.Should().Be(Write("p1").Payload);
-        scratch.ExecutionMarker.Should().NotBeNullOrEmpty();
+
+        // Execution proof: state read back with SQL this test sends itself, on its own connection, from the catalog it created.
+        // The store under test is not involved, so a store that returned canned rows, or a run that never reached SQL Server, fails here.
+        (await scratch.ScalarAsync<string>("SELECT DB_NAME();")).Should().Be(scratch.Catalog);
+        (await scratch.ScalarAsync<int>("SELECT COUNT(*) FROM dbo.HostConfigurationAttestations;")).Should().Be(1);
+        (await scratch.ScalarAsync<string>("SELECT HostId FROM dbo.HostConfigurationAttestations;")).Should().Be(row.HostId);
+        (await scratch.ScalarAsync<string>("SELECT Payload FROM dbo.HostConfigurationAttestations;")).Should().Be(row.Payload);
     }
 
     [Theory]

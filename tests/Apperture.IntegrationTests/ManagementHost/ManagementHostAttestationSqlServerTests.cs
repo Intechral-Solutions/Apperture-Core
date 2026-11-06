@@ -83,7 +83,14 @@ public sealed class ManagementHostAttestationSqlServerTests
         var assessment = HostConfigurationAttestationClassifier.Assess(snapshot, HostConfigurationAttestationTiming.FreshnessWindow);
         assessment.IsAttested.Should().BeTrue();
         assessment.Reading!.Running!.Handler.State.Should().Be(RunningHandlerState.Unavailable);
-        scratch.ExecutionMarker.Should().NotBeNullOrEmpty();
+
+        // Execution proof: the host's row, read back with SQL this test sends itself, on its own connection, from the catalog it
+        // created. The attestation store is not involved, so a host that never wrote to this catalog, or a run that never reached
+        // SQL Server, fails here.
+        (await scratch.ScalarAsync<string>("SELECT DB_NAME();")).Should().Be(scratch.Catalog);
+        (await scratch.ScalarAsync<int>("SELECT COUNT(*) FROM dbo.HostConfigurationAttestations;")).Should().Be(1);
+        (await scratch.ScalarAsync<string>("SELECT HostId FROM dbo.HostConfigurationAttestations;")).Should().Be(row.HostId);
+        (await scratch.ScalarAsync<string>("SELECT Payload FROM dbo.HostConfigurationAttestations;")).Should().Be(row.Payload);
     }
 
     [Theory]
