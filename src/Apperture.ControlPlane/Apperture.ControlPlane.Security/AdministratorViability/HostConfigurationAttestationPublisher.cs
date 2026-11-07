@@ -17,7 +17,11 @@ namespace Apperture.ControlPlane.Security.AdministratorViability;
 /// <para><b>It never builds the Entra or OpenID Connect options</b> (see <see cref="HostAttestationPayloadSource"/>), and it starts
 /// after the migrations, the secret-store validation and the governance startup steps, with no ordering of its own to rely on.</para>
 /// <para><b>Ownership.</b> A newer process of the same host replaces the row at its start. An older process that is still running
-/// then finds itself superseded: it stops publishing, and its stop never marks the newer process's row stopped.</para>
+/// then finds itself superseded: it writes nothing to the row, and its stop never marks the newer process's row stopped. A
+/// superseded process is not retired for good: on each tick it asks the store to give the row back, and the store (the database,
+/// not this process) agrees only when the holder has stopped or has gone silent for longer than the freshness window, or the row is
+/// gone. While the holder is live the answer is no and nothing changes. The same rule governs every later attempt to take the row,
+/// including the retry of a start whose first write failed; only that first write at start is unconditional.</para>
 /// </remarks>
 public sealed class HostConfigurationAttestationPublisher : IHostedService, IDisposable
 {
@@ -30,6 +34,7 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
     private readonly SemaphoreSlim _publishing = new(1, 1);
     private CancellationTokenSource? _stop;
     private Task _loop = Task.CompletedTask;
+    private bool _claimAttempted;
     private bool _claimed;
     private volatile bool _superseded;
     private volatile bool _stopped;
@@ -50,7 +55,10 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
         _interval = refreshInterval ?? HostConfigurationAttestationTiming.RefreshInterval;
     }
 
-    /// <summary>True once a newer process of this host has replaced this process's row: this process publishes no more.</summary>
+    /// <summary>
+    /// True while another process of this host holds the row: this process writes nothing to it, and asks for it back on each tick
+    /// until the store gives it back. False again once it owns the row.
+    /// </summary>
     public bool Superseded => _superseded;
 
     /// <inheritdoc />
@@ -104,19 +112,21 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
     }
 
     /// <summary>
-    /// Writes the host's row now: claims it the first time (or again, if the row is gone), refreshes it otherwise. A failure is
-    /// logged and never thrown, so the host starts and runs whatever the state of the evidence.
+    /// Writes the host's row now. The first time it claims the row, replacing the process it succeeds. After that it refreshes the row
+    /// it owns; when it does not own the row (it was replaced, the first write failed, or the row is gone) it asks the store to give
+    /// the row back, which the store does only when no live holder stands in the way. A failure is logged and never thrown, so the
+    /// host starts and runs whatever the state of the evidence.
     /// </summary>
     /// <returns>True when the row was written.</returns>
     public async Task<bool> PublishOnceAsync(CancellationToken cancellationToken = default)
     {
-        if (_superseded || _stopped)
+        if (_stopped)
             return false;
 
         await _publishing.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_superseded || _stopped)
+            if (_stopped)
                 return false;
 
             var payload = _source.Build();
@@ -130,6 +140,9 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
             using var scope = _scopes.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IHostConfigurationAttestationStore>();
 
+            if (_superseded)
+                return await ReclaimAsync(store, write, cancellationToken).ConfigureAwait(false);
+
             if (_claimed)
             {
                 switch (await store.RefreshAsync(write, cancellationToken).ConfigureAwait(false))
@@ -138,11 +151,19 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
                         return true;
                     case HostAttestationRefreshOutcome.Superseded:
                         _superseded = true;
-                        _logger.LogWarning("Another Management Host process has taken over this host's sign-in record; this process stops recording it.");
-                        return false;
+                        _logger.LogWarning("Another Management Host process has taken over this host's sign-in record; this process stops recording it until that process stops or goes quiet.");
+                        // The holder may already have stopped: ask now rather than a tick later. The store decides.
+                        return await ReclaimAsync(store, write, cancellationToken).ConfigureAwait(false);
                 }
             }
 
+            if (_claimAttempted)
+                return await ReclaimAsync(store, write, cancellationToken).ConfigureAwait(false);
+
+            // Only the first write of a process is unconditional: a process that starts replaces the one it succeeds. It is marked
+            // attempted before the write, so a start whose write failed (or committed and was not acknowledged) never claims
+            // unconditionally again and cannot take the row back from a newer process that has since claimed it.
+            _claimAttempted = true;
             await store.ClaimAsync(write, cancellationToken).ConfigureAwait(false);
             _claimed = true;
             return true;
@@ -158,17 +179,36 @@ public sealed class HostConfigurationAttestationPublisher : IHostedService, IDis
         }
     }
 
+    private async Task<bool> ReclaimAsync(IHostConfigurationAttestationStore store, HostConfigurationAttestationWrite write, CancellationToken cancellationToken)
+    {
+        if (await store.ReclaimAsync(write, cancellationToken).ConfigureAwait(false) == HostAttestationReclaimOutcome.Reclaimed)
+        {
+            var wasSuperseded = _superseded;
+            _claimed = true;
+            _superseded = false;
+            if (wasSuperseded)
+                _logger.LogInformation("The Management Host's sign-in record is this process's again: the process that held it has stopped or gone quiet.");
+            return true;
+        }
+
+        if (!_superseded)
+        {
+            _superseded = true;
+            _logger.LogWarning("Another Management Host process holds this host's sign-in record; this process does not record it until that process stops or goes quiet.");
+        }
+
+        return false;
+    }
+
     private async Task RunAsync(PeriodicTimer periodic, CancellationToken cancellationToken)
     {
         using var timer = periodic;
         try
         {
+            // The loop outlives being superseded: while another process holds the row each tick is one conditional statement that
+            // changes nothing until the holder stops or goes quiet. There is no other polling.
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
-            {
                 await PublishOnceAsync(cancellationToken).ConfigureAwait(false);
-                if (_superseded)
-                    return;
-            }
         }
         catch (OperationCanceledException)
         {

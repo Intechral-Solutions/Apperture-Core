@@ -100,6 +100,12 @@ public sealed class HostConfigurationAttestationSqlServerTests
         var refreshed = (await store.ReadAsync()).Rows.Single();
         refreshed.ClaimedUtc.Should().Be(claimed.ClaimedUtc);
         refreshed.RefreshedUtc.Should().BeAfter(claimed.RefreshedUtc);
+        refreshed.HostId.Should().Be(claimed.HostId);
+        refreshed.ProcessInstanceId.Should().Be(claimed.ProcessInstanceId, "a refresh keeps the owner");
+        refreshed.ProcessStartedUtc.Should().Be(claimed.ProcessStartedUtc);
+        refreshed.StoppedUtc.Should().BeNull();
+        refreshed.DatabaseFingerprint.Should().Be(claimed.DatabaseFingerprint, "the binding of a row that never moved is unchanged");
+        HostConfigurationAttestationClassifier.Assess(await store.ReadAsync(), HostConfigurationAttestationTiming.FreshnessWindow).IsAttested.Should().BeTrue();
         AttestedAuthenticationPayload.TryParse(refreshed.Payload, out var payload).Should().BeTrue();
         payload!.LocalNow.Should().BeFalse("a reading changed on the host is what the next refresh attests");
     }
@@ -370,7 +376,7 @@ public sealed class HostConfigurationAttestationSqlServerTests
 
     // ---------------------------------------------------------------- the publisher against real SQL
 
-    private static HostConfigurationAttestationPublisher Publisher(AuditSqlScratch scratch, EntraOptionsBuildHealth health, out ServiceProvider provider)
+    private static HostConfigurationAttestationPublisher Publisher(AuditSqlScratch scratch, EntraOptionsBuildHealth health, out ServiceProvider provider, string process = "p1")
     {
         var services = new ServiceCollection();
         services.AddScoped(_ => scratch.NewDb());
@@ -383,7 +389,7 @@ public sealed class HostConfigurationAttestationSqlServerTests
         return new HostConfigurationAttestationPublisher(
             scopes,
             new HostAttestationPayloadSource(config, scopes, health),
-            new HostAttestationIdentity("host-a", "p1", DateTimeOffset.UtcNow),
+            new HostAttestationIdentity("host-a", process, DateTimeOffset.UtcNow),
             TimeProvider.System,
             NullLogger<HostConfigurationAttestationPublisher>.Instance);
     }
@@ -434,5 +440,379 @@ public sealed class HostConfigurationAttestationSqlServerTests
         // The host's refresh runs while the unit holds the gate and its transaction is open: it completes and does not wait for the unit.
         (await publisher.PublishOnceAsync().WaitAsync(TimeSpan.FromSeconds(30))).Should().BeTrue();
         await transaction.CommitAsync();
+    }
+
+    // ---------------------------------------------------------------- taking a row back (a superseded or silent process)
+
+    private static readonly TimeSpan Window = HostConfigurationAttestationTiming.FreshnessWindow;
+
+    private static AttestationAssessment Assess(HostConfigurationAttestationSnapshot snapshot) =>
+        HostConfigurationAttestationClassifier.Assess(snapshot, Window);
+
+    /// <summary>The state of the single row, read with SQL the test sends itself, so the store under test is not its own witness.</summary>
+    private static async Task<(string Process, bool Stopped, string Fingerprint)> RawAsync(AuditSqlScratch scratch) =>
+        (await scratch.ScalarAsync<string>("SELECT ProcessInstanceId FROM dbo.HostConfigurationAttestations;"),
+         await scratch.ScalarAsync<int>("SELECT CASE WHEN StoppedUtc IS NULL THEN 0 ELSE 1 END FROM dbo.HostConfigurationAttestations;") == 1,
+         await scratch.ScalarAsync<string>("SELECT DatabaseFingerprint FROM dbo.HostConfigurationAttestations;"));
+
+    /// <summary>Every candidate, on its own context and connection, reclaims after a common start signal, so the statements overlap on the server.</summary>
+    private static async Task<List<(string Candidate, HostAttestationReclaimOutcome Outcome)>> RaceReclaimsAsync(AuditSqlScratch scratch, IReadOnlyList<string> candidates)
+    {
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ready = 0;
+        var tasks = candidates.Select(async candidate =>
+        {
+            await using var db = scratch.NewDb();
+            await db.Database.OpenConnectionAsync();   // connect first, so only the statements race
+            Interlocked.Increment(ref ready);
+            await start.Task;
+            return (candidate, await new SqlHostConfigurationAttestationStore(db).ReclaimAsync(Write(candidate)));
+        }).ToList();
+
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (Volatile.Read(ref ready) < candidates.Count && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+        start.SetResult();
+        return (await Task.WhenAll(tasks)).ToList();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_live_holder_is_not_displaced_by_a_reclaim_and_nothing_about_its_row_changes(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("old"));
+        await store.ClaimAsync(Write("new", Established(localNow: false)));
+        var before = (await store.ReadAsync()).Rows.Single();
+
+        (await store.ReclaimAsync(Write("old"))).Should().Be(HostAttestationReclaimOutcome.Held, "the process that superseded it is live");
+
+        var after = (await store.ReadAsync()).Rows.Single();
+        after.Should().Be(before, "a refused reclaim writes nothing, not even the refresh time");
+        (await RawAsync(scratch)).Process.Should().Be("new");
+        (await store.RefreshAsync(Write("new"))).Should().Be(HostAttestationRefreshOutcome.Refreshed);
+        (await store.RefreshAsync(Write("old"))).Should().Be(HostAttestationRefreshOutcome.Superseded);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_holder_that_stopped_is_superseded_by_a_reclaim_and_the_old_process_owns_the_row_again(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("old"));
+        await store.ClaimAsync(Write("new"));
+        (await store.MarkStoppedAsync("host-a", "new")).Should().BeTrue();
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stopped);
+
+        (await store.ReclaimAsync(Write("old", Established(localNow: false)))).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+
+        var snapshot = await store.ReadAsync();
+        var row = snapshot.Rows.Should().ContainSingle().Subject;
+        row.ProcessInstanceId.Should().Be("old");
+        row.StoppedUtc.Should().BeNull("the mark of the process that stopped is cleared by the new owner");
+        row.DatabaseFingerprint.Should().Be(snapshot.DatabaseFingerprint);
+        Assess(snapshot).IsAttested.Should().BeTrue();
+        AttestedAuthenticationPayload.TryParse(row.Payload, out var payload).Should().BeTrue();
+        payload!.LocalNow.Should().BeFalse("the row carries the reading of the process that took it, not the stopped one's");
+        (await store.RefreshAsync(Write("old"))).Should().Be(HostAttestationRefreshOutcome.Refreshed);
+        (await store.RefreshAsync(Write("new"))).Should().Be(HostAttestationRefreshOutcome.Superseded);
+        (await RawAsync(scratch)).Should().Be(("old", false, snapshot.DatabaseFingerprint));
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_holder_that_went_quiet_longer_than_the_window_is_superseded_and_one_inside_it_or_dated_ahead_is_not(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("old"));
+        await store.ClaimAsync(Write("new"));
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -170, SYSUTCDATETIME());");
+        (await store.ReclaimAsync(Write("old"))).Should().Be(HostAttestationReclaimOutcome.Held, "170 seconds is inside the 180-second window: the holder is live");
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, 600, SYSUTCDATETIME());");
+        (await store.ReclaimAsync(Write("old"))).Should().Be(HostAttestationReclaimOutcome.Held, "a record dated after the database's clock cannot be judged, so it is held");
+        (await RawAsync(scratch)).Process.Should().Be("new");
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -181, SYSUTCDATETIME());");
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stale);
+        (await store.ReclaimAsync(Write("old"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed, "the reader already calls 181 seconds stale; the store agrees");
+
+        var snapshot = await store.ReadAsync();
+        snapshot.Rows.Single().ProcessInstanceId.Should().Be("old");
+        Assess(snapshot).IsAttested.Should().BeTrue("a reclaim stamps a new database time: the row is live from this moment");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_reclaim_by_the_owner_is_idempotent_and_a_stopped_process_cannot_take_its_row_back(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("p1"));
+        var claimed = (await store.ReadAsync()).Rows.Single();
+
+        // A reclaim whose acknowledgement was lost and is sent again.
+        (await store.ReclaimAsync(Write("p1"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+        var again = (await store.ReadAsync()).Rows.Single();
+        again.ClaimedUtc.Should().Be(claimed.ClaimedUtc, "the owner's claim time is not rewritten");
+        again.ProcessStartedUtc.Should().Be(claimed.ProcessStartedUtc);
+        again.ProcessInstanceId.Should().Be("p1");
+        again.RefreshedUtc.Should().BeOnOrAfter(claimed.RefreshedUtc);
+
+        (await store.MarkStoppedAsync("host-a", "p1")).Should().BeTrue();
+        (await store.ReclaimAsync(Write("p1"))).Should().Be(HostAttestationReclaimOutcome.Held, "a process that stopped publishes nothing more, as a refresh already says");
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stopped);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_reclaim_with_no_row_creates_it_and_leaves_another_hosts_row_alone(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("other", host: "host-b"));
+
+        (await store.ReclaimAsync(Write("p1"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+
+        var snapshot = await store.ReadAsync();
+        snapshot.Rows.Should().HaveCount(2);
+        snapshot.Rows.Single(r => r.HostId == "host-a").ProcessInstanceId.Should().Be("p1");
+        snapshot.Rows.Single(r => r.HostId == "host-a").DatabaseFingerprint.Should().Be(snapshot.DatabaseFingerprint);
+        snapshot.Rows.Single(r => r.HostId == "host-b").ProcessInstanceId.Should().Be("other");
+        (await scratch.ScalarAsync<int>("SELECT COUNT(*) FROM dbo.HostConfigurationAttestations;")).Should().Be(2);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task Of_many_candidates_for_a_silent_holders_row_exactly_one_obtains_it(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        await using var seedDb = scratch.NewDb();
+        var seed = new SqlHostConfigurationAttestationStore(seedDb);
+
+        for (var round = 0; round < 6; round++)
+        {
+            // Alternate the two ways a holder can stop being live, so both branches of the statement are raced.
+            await seed.ClaimAsync(Write("holder" + round));
+            await scratch.ExecuteAsync(round % 2 == 0
+                ? "UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -200, SYSUTCDATETIME());"
+                : "UPDATE HostConfigurationAttestations SET StoppedUtc = SYSUTCDATETIME();");
+            var candidates = Enumerable.Range(0, 8).Select(i => $"r{round}c{i}").ToList();
+
+            var outcomes = await RaceReclaimsAsync(scratch, candidates);
+
+            var winners = outcomes.Where(o => o.Outcome == HostAttestationReclaimOutcome.Reclaimed).Select(o => o.Candidate).ToList();
+            winners.Should().ContainSingle($"round {round}: two candidates must never both obtain the row");
+            var raw = await RawAsync(scratch);
+            raw.Process.Should().Be(winners[0]);
+            raw.Stopped.Should().BeFalse();
+            (await scratch.ScalarAsync<int>("SELECT COUNT(*) FROM dbo.HostConfigurationAttestations;")).Should().Be(1);
+
+            await using var reader = scratch.NewDb();
+            var store = new SqlHostConfigurationAttestationStore(reader);
+            Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
+            (await store.RefreshAsync(Write(winners[0]))).Should().Be(HostAttestationRefreshOutcome.Refreshed);
+            foreach (var loser in candidates.Where(c => c != winners[0]))
+                (await store.RefreshAsync(Write(loser))).Should().Be(HostAttestationRefreshOutcome.Superseded);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task Of_many_candidates_for_an_absent_row_exactly_one_obtains_it(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var candidates = Enumerable.Range(0, 8).Select(i => "c" + i).ToList();
+
+        var outcomes = await RaceReclaimsAsync(scratch, candidates);
+
+        var winners = outcomes.Where(o => o.Outcome == HostAttestationReclaimOutcome.Reclaimed).Select(o => o.Candidate).ToList();
+        winners.Should().ContainSingle();
+        (await scratch.ScalarAsync<int>("SELECT COUNT(*) FROM dbo.HostConfigurationAttestations;")).Should().Be(1);
+        (await RawAsync(scratch)).Process.Should().Be(winners[0]);
+    }
+
+    // ---------------------------------------------------------------- the database binding
+
+    private const string WrongBinding = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_refresh_by_the_owner_replaces_an_outdated_binding_so_the_record_is_believed_again(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("p1"));
+        // The database was renamed, or the host's connection now reaches another server: the stored binding is no longer this database's.
+        await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET DatabaseFingerprint = N'{WrongBinding}';");
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.DatabaseMismatch);
+
+        (await store.RefreshAsync(Write("p1"))).Should().Be(HostAttestationRefreshOutcome.Refreshed);
+
+        var snapshot = await store.ReadAsync();
+        snapshot.Rows.Single().DatabaseFingerprint.Should().Be(snapshot.DatabaseFingerprint).And.NotBe(WrongBinding);
+        Assess(snapshot).IsAttested.Should().BeTrue();
+        (await RawAsync(scratch)).Fingerprint.Should().Be(snapshot.DatabaseFingerprint, "read back with SQL of the test's own");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_refresh_by_a_process_that_does_not_own_the_row_cannot_rebind_it_or_take_it(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("p1"));
+        await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET DatabaseFingerprint = N'{WrongBinding}';");
+
+        (await store.RefreshAsync(Write("p2"))).Should().Be(HostAttestationRefreshOutcome.Superseded);
+        (await RawAsync(scratch)).Should().Be(("p1", false, WrongBinding), "a process that is not the owner does not touch the row, so it cannot vouch for it");
+
+        (await store.MarkStoppedAsync("host-a", "p1")).Should().BeTrue();
+        (await store.RefreshAsync(Write("p1"))).Should().Be(HostAttestationRefreshOutcome.Superseded);
+        (await RawAsync(scratch)).Fingerprint.Should().Be(WrongBinding, "a stopped owner cannot rebind its row either");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_live_record_for_another_database_is_refused_and_a_silent_one_is_replaced_with_this_databases_binding(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("p1"));
+        await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET DatabaseFingerprint = N'{WrongBinding}';");
+
+        // A live row written for another database is not displaced by a candidate, and is not believed by the reader either.
+        (await store.ReclaimAsync(Write("p2"))).Should().Be(HostAttestationReclaimOutcome.Held);
+        (await RawAsync(scratch)).Should().Be(("p1", false, WrongBinding));
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.DatabaseMismatch);
+
+        // Once it has gone silent it is nobody's evidence, and the candidate's reclaim binds the row to this database.
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -181, SYSUTCDATETIME());");
+        (await store.ReclaimAsync(Write("p2"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+        var snapshot = await store.ReadAsync();
+        snapshot.Rows.Single().DatabaseFingerprint.Should().Be(snapshot.DatabaseFingerprint);
+        Assess(snapshot).IsAttested.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task Conflicting_hosts_stay_a_conflict_and_a_reclaim_never_resolves_it_for_another_host(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("p1"));
+        await store.ClaimAsync(Write("q1", host: "host-b"));
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Conflict);
+
+        (await store.ReclaimAsync(Write("p2"))).Should().Be(HostAttestationReclaimOutcome.Held);
+        (await store.ReclaimAsync(Write("p1"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed, "its own live row, idempotently");
+
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Conflict, "the other host's live row is untouched");
+        (await store.ReadAsync()).Rows.Single(r => r.HostId == "host-b").ProcessInstanceId.Should().Be("q1");
+    }
+
+    // ---------------------------------------------------------------- the publisher against real SQL: interruption and recovery
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_superseded_publisher_takes_the_row_back_when_the_holder_stops_or_goes_quiet_and_never_while_it_is_live(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var older = Publisher(scratch, new EntraOptionsBuildHealth(), out var olderProvider, "older");
+        var newer = Publisher(scratch, new EntraOptionsBuildHealth(), out var newerProvider, "newer");
+        await using var _ = olderProvider;
+        await using var __ = newerProvider;
+        await using var db = scratch.NewDb();
+        var store = new SqlHostConfigurationAttestationStore(db);
+
+        (await older.PublishOnceAsync()).Should().BeTrue();
+        (await newer.PublishOnceAsync()).Should().BeTrue("a process that starts replaces the one it succeeds");
+
+        // The newer process is live: the older one asks on every tick and never gets the row.
+        for (var tick = 0; tick < 3; tick++)
+        {
+            (await older.PublishOnceAsync()).Should().BeFalse();
+            (await newer.PublishOnceAsync()).Should().BeTrue();
+        }
+
+        older.Superseded.Should().BeTrue();
+        (await RawAsync(scratch)).Process.Should().Be("newer");
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
+
+        // The newer process stops gracefully: the older one has the row at its next tick, and the record is evidence again.
+        await newer.StopAsync(CancellationToken.None);
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stopped);
+        (await older.PublishOnceAsync()).Should().BeTrue();
+        older.Superseded.Should().BeFalse();
+        (await RawAsync(scratch)).Should().Be(("older", false, (await store.ReadAsync()).DatabaseFingerprint));
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
+        (await newer.PublishOnceAsync()).Should().BeFalse("a stopped process publishes nothing more");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_publisher_whose_holder_crashed_takes_the_row_back_only_after_the_window_and_the_gap_is_never_evidence(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var survivor = Publisher(scratch, new EntraOptionsBuildHealth(), out var survivorProvider, "survivor");
+        var crashing = Publisher(scratch, new EntraOptionsBuildHealth(), out var crashingProvider, "crashing");
+        await using var _ = survivorProvider;
+        await using var __ = crashingProvider;
+        await using var db = scratch.NewDb();
+        var store = new SqlHostConfigurationAttestationStore(db);
+        await survivor.PublishOnceAsync();
+        await crashing.PublishOnceAsync();   // the second process claims, then dies: no refresh, no stop
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -100, SYSUTCDATETIME());");
+        (await survivor.PublishOnceAsync()).Should().BeFalse("100 seconds of silence is inside the window: the crashed process might still be alive");
+        (await RawAsync(scratch)).Process.Should().Be("crashing");
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -200, SYSUTCDATETIME());");
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stale, "nobody has refreshed: the gap is not evidence");
+
+        (await survivor.PublishOnceAsync()).Should().BeTrue();
+        survivor.Superseded.Should().BeFalse();
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
+        (await RawAsync(scratch)).Process.Should().Be("survivor");
+        (await crashing.PublishOnceAsync()).Should().BeFalse("the process that came back from the dead finds the row held by a live process");
+        crashing.Superseded.Should().BeTrue();
+        (await RawAsync(scratch)).Process.Should().Be("survivor");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_publisher_that_missed_its_refreshes_is_not_evidence_until_it_writes_again_and_a_stopped_one_never_is(bool rcsi)
+    {
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var publisher = Publisher(scratch, new EntraOptionsBuildHealth(), out var provider);
+        await using var _ = provider;
+        await using var db = scratch.NewDb();
+        var store = new SqlHostConfigurationAttestationStore(db);
+        await publisher.PublishOnceAsync();
+
+        // The process was suspended, or the database unreachable, for longer than the window.
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -400, SYSUTCDATETIME());");
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stale);
+
+        (await publisher.PublishOnceAsync()).Should().BeTrue();
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue("a fresh write by the owner, of a reading made now, is evidence again");
+
+        await publisher.StopAsync(CancellationToken.None);
+        (await publisher.PublishOnceAsync()).Should().BeFalse();
+        Assess(await store.ReadAsync()).Kind.Should().Be(AttestationAssessmentKind.Stopped, "stopping closes the record and nothing reopens it");
     }
 }

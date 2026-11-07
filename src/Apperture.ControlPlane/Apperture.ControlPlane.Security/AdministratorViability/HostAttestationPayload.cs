@@ -15,7 +15,7 @@ public static class HostConfigurationAttestationTiming
     /// whose age equals the window is fresh; one tick older is not. The window bounds how stale a reading can be; it does not make
     /// the reading true at the moment it is used (a host can stop or reload after its last refresh).
     /// </summary>
-    public static readonly TimeSpan FreshnessWindow = TimeSpan.FromSeconds(180);
+    public static readonly TimeSpan FreshnessWindow = HostConfigurationAttestationLiveness.FreshnessWindow;
 }
 
 /// <summary>

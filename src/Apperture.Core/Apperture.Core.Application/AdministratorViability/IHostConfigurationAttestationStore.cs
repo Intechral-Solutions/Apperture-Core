@@ -68,6 +68,33 @@ public enum HostAttestationRefreshOutcome
     Missing,
 }
 
+/// <summary>What an attempt to take back a host's row found.</summary>
+public enum HostAttestationReclaimOutcome
+{
+    /// <summary>The process owns the row now: it was free (absent, stopped or stale), or the process already owned it.</summary>
+    Reclaimed,
+
+    /// <summary>
+    /// The row is held and the store will not displace its holder: another process of the host whose record is still live (not
+    /// stopped, and not older than the freshness window), or one whose age cannot be judged because it is dated after the database's
+    /// clock. The caller does not own the row and tries again later.
+    /// </summary>
+    Held,
+}
+
+/// <summary>
+/// The one definition of how long an attestation counts as live, shared by the reader that judges a row and the store that decides
+/// whether a stopped or silent process may be replaced, so the two cannot drift.
+/// </summary>
+public static class HostConfigurationAttestationLiveness
+{
+    /// <summary>
+    /// How long after its last refresh, by the database's clock, a record is live: three refresh intervals of sixty seconds. A record
+    /// whose age equals the window is live; one tick older is not. It is a whole number of seconds, because the store compares it in SQL.
+    /// </summary>
+    public static readonly TimeSpan FreshnessWindow = TimeSpan.FromSeconds(180);
+}
+
 /// <summary>
 /// The database side of the Management Host's configuration attestation. The host writes its row at start, refreshes it, and marks
 /// it stopped on a graceful stop; the emergency command line reads it. Nothing in the table is configuration: it is a dated
@@ -77,15 +104,28 @@ public interface IHostConfigurationAttestationStore
 {
     /// <summary>
     /// Takes the host's row for <paramref name="write"/>'s process, replacing whatever an earlier process of the same host wrote, and
-    /// stamps it with the database's time and database binding. The row is live from this moment.
+    /// stamps it with the database's time and database binding. The row is live from this moment. It is unconditional on purpose: a
+    /// process that starts replaces the process it succeeds. A process that has already tried once uses
+    /// <see cref="ReclaimAsync"/>, which never displaces a live holder.
     /// </summary>
     ValueTask ClaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Refreshes the row if, and only if, <paramref name="write"/>'s process still owns it and has not stopped. A superseded process
-    /// never overwrites the process that replaced it.
+    /// never overwrites the process that replaced it. The refresh stamps the time, the reading and the database binding all on the
+    /// server, so a row the owning process keeps alive always names the database the write arrived in, even after the database was
+    /// renamed or the connection moved to another server.
     /// </summary>
     ValueTask<HostAttestationRefreshOutcome> RefreshAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes the host's row for <paramref name="write"/>'s process only when the database shows no live holder: the row is absent, the
+    /// process already owns it, or another process's record is stopped or older than
+    /// <see cref="HostConfigurationAttestationLiveness.FreshnessWindow"/> by the database's clock. A record that is still live, or
+    /// dated after the database's clock, is held and nothing changes. The decision and the write are one statement, so of any
+    /// number of candidates at most one obtains the row; the others find it held.
+    /// </summary>
+    ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks the row stopped if, and only if, the process still owns it. A stopped row is never evidence. Returns whether the mark
