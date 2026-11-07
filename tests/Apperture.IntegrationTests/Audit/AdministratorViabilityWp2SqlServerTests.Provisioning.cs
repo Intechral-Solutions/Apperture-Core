@@ -180,8 +180,8 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
 
         var userId = await ProvisionAdministratorAsync(world, entry, db, actor, coordinator);
 
-        deployment.Reads.Should().Be(2);
-        (await world.AssignmentExistsAsync(userId.Value, Admin)).Should().BeTrue("Local sign-in going off between the reads is not the provisioning's doing");
+        deployment.Reads.Should().Be(1, "one attempt reads the configuration once, however many states it reads");
+        (await world.AssignmentExistsAsync(userId.Value, Admin)).Should().BeTrue("Local sign-in going off after the attempt's reading is not the provisioning's doing");
         (await world.AuditRowsAsync(AuditActionNames.RoleAssigned, userId.Value)).Should().Be(1);
     }
 }
