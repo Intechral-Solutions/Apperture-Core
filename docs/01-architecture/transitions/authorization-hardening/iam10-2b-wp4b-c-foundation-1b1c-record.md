@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | `validated`; not reviewed; not combined with Foundation 1A; not pushed |
+| Status | `validated`; not reviewed; not pushed. **Since combined with Foundation 1A** on `integration/iam10-2b-wp4bc-foundation` ([integration record](iam10-2b-wp4b-c-foundation-integration-record.md)); the combination is locally verified and pending independent acceptance. The owner ruled on review point 1 (§7, §8) on 2026-11-07: `attested` is kept and the decision record §4 now says so. |
 | Owner / implementer | Tennyson-Hull / Claude Opus 5.5 |
 | Scope source | Owner brief "IAM-10.2b WP4B-C Foundation 1B + 1C"; [decision record](iam10-2b-wp4b-decision-record.md) §3.4, §3.5, §4, §5.2, §5.4, §8, §10 item 6; [DEV-1 integration record](iam10-2b-dev1-integration-record.md) §5.2, §11 |
 

@@ -5,7 +5,7 @@
 | Package | IAM-10.2b, work package 4B-C, Foundation 1A. Resolves the two entry obligations the [integration record](iam10-2b-dev1-integration-record.md) §5 carried for WP4B-C: **L-B1** and **L-B2**. |
 | Branch | `feat/iam10-2b-wp4bc-attestation` (worktree `wt-iam10-2b-attestation`), from `c3e9813`. Local only: not pushed, no PR, not merged into the IAM branch. |
 | Code commit | `0f550b5d5df1df78c2f693cdff4e0747fe29e9a6` (tree `ddfcdc87f0c16db34faa12255c36d4a965b2ddf7`). This record is a documentation-only commit on top; `src` and `tests` are identical to the code commit. |
-| Status | Implemented and validated by the implementer (§4, §5). **Not independently reviewed.** |
+| Status | Implemented and validated by the implementer (§4, §5). **Not independently reviewed.** Since combined with Foundation 1B + 1C on `integration/iam10-2b-wp4bc-foundation` ([integration record](iam10-2b-wp4b-c-foundation-integration-record.md)); L-B3, listed below as not done, was corrected there. |
 | Not in scope | The coordinator, the guard, attempt-scoped readings, posture-only predicates, `EmergencyAccessService`, `NativeMfaService`, the emergency CLI (Foundation 1B + 1C is `b5c7caf`, untouched and not merged), the WP4B-C reducers, WP5, L-B3 (documentation corrections), moving the claim to application start, development-environment hardening. |
 
 ## 1. Scope and acceptance criteria
