@@ -166,7 +166,12 @@ public sealed class EntraPrimaryAuthenticationPolicy : IEntraPrimaryAuthenticati
         {
             ViabilityVerdictKind.LastViableAdministrator => EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator,
             ViabilityVerdictKind.EntraIndependentFallbackRequired => EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator,
-            _ => EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable,
+            ViabilityVerdictKind.ConfigurationUnavailable => EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable,
+            // The only other refusal is the authenticator replacement's (RecoveryPostureReduced), which this policy never asks for: it
+            // judges a disabled credential through the net evaluation, which cannot return it. A kind that arrives here anyway is not
+            // "unavailable configuration"; the unit rolls the disable back and the failure is loud rather than misreported.
+            _ => throw new InvalidOperationException(
+                $"The administrator-viability verdict '{verdict.Kind}' is not a reason to defer disabling a Local credential."),
         };
 
         return RecordsLastAdministratorAttempt(outcome) && !WasEntraIndependent(verdict, captured, userId)

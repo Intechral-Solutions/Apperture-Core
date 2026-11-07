@@ -56,7 +56,7 @@ There is no field that can carry a secret value. A reader rebuilds the options w
 | Part | Role |
 |---|---|
 | `HostConfigurationAttestationPublisher` (hosted service, registered last in the Management Host's `Program`) | **Producer.** Claims at start, refreshes each 60 s, marks stopped on a graceful stop. A failure to write is logged and retried; the host starts and runs whatever the state of the evidence. |
-| `HostAttestationPayloadSource` | Makes the payload without building options. |
+| `HostAttestationPayloadSource` | Makes the payload without building options before real traffic has built the handler's (afterwards the host's own reading may be the first reader of the endpoints' options: R-B1). |
 | `SqlHostConfigurationAttestationStore` | The only writer and reader of the table. Every time and the binding are stamped on the server. |
 | `HostConfigurationAttestationClassifier` | **Pure judge**: rows, the database's time and the window in; a verdict out. Reads no clock. |
 | `AttestedDeploymentAuthenticationConfiguration` | **Consumer.** The emergency command line's `IDeploymentAuthenticationConfiguration`; registered in `AddAppertureEmergencyOperatorServices` in place of the reader of the command line's own configuration (which remains in the code for tests and is no longer composed in production). |
@@ -123,7 +123,7 @@ Real SQL Server, both isolation modes (`HostConfigurationAttestationSqlServerTes
 | R-B5 | The command line cannot read the host's secret store, so an Entra registration that needs a stored secret leaves Entra unknown, and Entra-dependent reducers are unavailable until the host (not the command line) can establish it. | Intended and conservative (§10 item 5 of the record: where it cannot be established, Entra stays unknown). |
 | R-B6 | Two processes started from the same folder share a host id; the second replaces the first's row, and the first stops publishing. | One Management Host is the supported topology. Two hosts in different folders or on different machines are detected as a conflict. |
 | R-B7 | The publisher awaits one database write at start (bounded by the command timeout) before the host starts listening. | The migrations have just succeeded, so the database is reachable; a failure is logged and retried, never fatal. |
-| R-B8 | A database clock stepped forward makes every row stale (fail closed); stepped back makes a row future-dated (`ClockInconsistent`, fail closed). | Fails closed; the next refresh repairs it. |
+| R-B8 | A database clock stepped forward makes every row stale (fail closed). Stepped back, it makes a row **younger than the step** future-dated (`ClockInconsistent`, fail closed). A step back can also bring a row that had already expired (its age greater than the window) back inside the window, and the classifier, which accepts `age <= window`, then calls it live again: a crashed host's expired record can look fresh for up to the size of the step. | Bounded by the step and by the next refresh or reclaim; not closed. The attempt-scoped bound (`EvidenceRemaining`) is computed from the same clock and inherits the same limit. |
 | R-B9 | `ConfiguredDeploymentAuthenticationConfiguration` remains in the code, unused in production composition. | Kept for the tests that exercise the evaluation with it; removing it is a clean-up for WP4B-C once the command line is mapped. |
 
 ## 11. Remaining IAM-10.2b work (not begun)

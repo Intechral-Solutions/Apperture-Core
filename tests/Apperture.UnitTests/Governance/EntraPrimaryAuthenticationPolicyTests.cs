@@ -486,6 +486,18 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         EntraPrimaryAuthenticationPolicy.Deferred(verdict, captured, new UserId("usr-1")).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(ViabilityVerdictKind.RecoveryPostureReduced)]
+    [InlineData(ViabilityVerdictKind.Allowed)]
+    public void A_verdict_that_is_not_a_reason_to_defer_is_never_reported_as_an_unavailable_configuration(ViabilityVerdictKind kind)
+    {
+        var verdict = new ViabilityVerdict(kind, null, "detail");
+
+        var act = () => EntraPrimaryAuthenticationPolicy.Deferred(verdict, null, new UserId("usr-1"));
+
+        act.Should().Throw<InvalidOperationException>("the replacement's refusal is not one this policy can reach, and misreporting it would be silent");
+    }
+
     // ----- the gate -----
 
     [Fact]

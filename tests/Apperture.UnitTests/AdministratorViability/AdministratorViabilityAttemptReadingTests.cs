@@ -60,6 +60,10 @@ public sealed class AdministratorViabilityAttemptReadingTests
 
         public ValueTask<HostAttestationRefreshOutcome> RefreshAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        // The store's writing side belongs to the Management Host's publisher, never to a reader or to the coordinator. The double
+        // throws on every writer so that a coordinator path that ever wrote the attestation fails loudly here instead of passing.
+        public ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<bool> MarkStoppedAsync(string hostId, string processInstanceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
@@ -478,6 +482,22 @@ public sealed class AdministratorViabilityAttemptReadingTests
             "AdministratorViabilityCoordinator.cs",
             "AdministratorViabilityService.cs",
             "EffectiveSignInConfigurationProvider.cs");
+    }
+
+    [Fact]
+    public void The_replacements_refusal_is_produced_only_by_the_replacement_decision_and_never_by_the_net_evaluation_the_entra_primary_policy_asks_for()
+    {
+        var viability = Path.Combine(RepositoryRoot.Find(), "src", "Apperture.ControlPlane", "Apperture.ControlPlane.Security", "AdministratorViability");
+        var guard = File.ReadAllText(Path.Combine(viability, "AdministratorViabilityGuard.cs"));
+
+        var produced = System.Text.RegularExpressions.Regex.Matches(guard, @"new\s+ViabilityVerdict\(\s*ViabilityVerdictKind\.RecoveryPostureReduced");
+        produced.Should().ContainSingle("only one place builds the verdict");
+        produced[0].Index.Should().BeGreaterThan(guard.IndexOf("public static ViabilityDecision DecideReplacement(", StringComparison.Ordinal), "and it is the replacement's decision");
+        guard.IndexOf("public static ViabilityVerdict Evaluate(", StringComparison.Ordinal).Should().BeGreaterThan(-1);
+
+        var policy = File.ReadAllText(Path.Combine(viability, "..", "EntraPrimaryAuthenticationPolicy.cs"));
+        policy.Should().NotContain("DecideReplacement", "the policy judges a disabled credential through the net evaluation, which cannot return the replacement's refusal");
+        policy.Should().NotContain("VerifyReplacementAsync");
     }
 
     [Fact]

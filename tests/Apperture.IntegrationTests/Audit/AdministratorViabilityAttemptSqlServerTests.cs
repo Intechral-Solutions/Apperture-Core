@@ -129,6 +129,8 @@ public sealed class AdministratorViabilityAttemptSqlServerTests : IClassFixture<
 
         public ValueTask<HostAttestationRefreshOutcome> RefreshAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => _inner.RefreshAsync(write, cancellationToken);
 
+        public ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => _inner.ReclaimAsync(write, cancellationToken);
+
         public ValueTask<bool> MarkStoppedAsync(string hostId, string processInstanceId, CancellationToken cancellationToken = default) => _inner.MarkStoppedAsync(hostId, processInstanceId, cancellationToken);
     }
 
@@ -841,5 +843,169 @@ public sealed class AdministratorViabilityAttemptSqlServerTests : IClassFixture<
         (after.RecoveryHealthy || after.Now.EntraIndependentAdministrators.Count >= 1).Should().BeTrue("I-FALLBACK holds at the end, whichever came first");
         (await AuthenticatorRowsAsync(scratch, recovery)).Should().Be(resetFirst ? 0 : 2);
         (await world.CredentialDisabledAsync(local)).Should().Be(!resetFirst);
+    }
+
+    // ------------------------------------------------------------------------------------- the publisher's store and the attempt's reading (integration of Foundation 1A and 1B + 1C)
+
+    private static async Task<T> AsHostAsync<T>(AuditSqlScratch scratch, Func<SqlHostConfigurationAttestationStore, ValueTask<T>> operation)
+    {
+        await using var db = scratch.NewDb();
+        return await operation(new SqlHostConfigurationAttestationStore(db)).AsTask().WaitAsync(Patience);
+    }
+
+    private static async Task ClaimAsAsync(AuditSqlScratch scratch, string process, AttestedAuthenticationPayload payload)
+    {
+        await using var db = scratch.NewDb();
+        await new SqlHostConfigurationAttestationStore(db).ClaimAsync(Write(payload, process)).AsTask().WaitAsync(Patience);
+    }
+
+    private static Task<HostAttestationReclaimOutcome> ReclaimAsAsync(AuditSqlScratch scratch, string process, AttestedAuthenticationPayload payload) =>
+        AsHostAsync(scratch, store => store.ReclaimAsync(Write(payload, process)));
+
+    private static Task<HostAttestationRefreshOutcome> RefreshAsAsync(AuditSqlScratch scratch, string process, AttestedAuthenticationPayload payload) =>
+        AsHostAsync(scratch, store => store.RefreshAsync(Write(payload, process)));
+
+    private static Task<bool> StopAsAsync(AuditSqlScratch scratch, string process) =>
+        AsHostAsync(scratch, store => store.MarkStoppedAsync("host-a", process));
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_publisher_that_takes_its_row_back_during_an_attempt_cannot_upgrade_an_attempt_that_began_without_evidence(bool rcsi)
+    {
+        var world = await FreshAsync(rcsi);
+        await world.NewUserAsync("local", Admin);
+        var recovery = await HealthyRecoveryAsync(world);
+        await ClaimAsAsync(world.Scratch, "old", AtStart());
+        await ClaimAsAsync(world.Scratch, "new", AtStart());
+        (await StopAsAsync(world.Scratch, "new")).Should().BeTrue();
+
+        await using (var attempt = await Attempt.BeginAsync(world.Scratch))
+        {
+            var scope = await attempt.CaptureAsync();
+            scope.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "the only record is the stopped publisher's");
+            await attempt.ApplyAsync(ResetSql(recovery));
+
+            // The superseded publisher takes the row back while the unit holds the gate and its transaction. It does not wait for the unit.
+            (await ReclaimAsAsync(world.Scratch, "old", AtStart())).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+            var decision = await scope.VerifyBareResetAsync(recovery);
+
+            decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable, "a reclaim is not evidence for an attempt that has already read");
+            decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+            attempt.Store.Reads.Should().Be(1);
+            await attempt.Transaction.RollbackAsync();
+        }
+
+        await using var next = await Attempt.BeginAsync(world.Scratch);
+        (await next.CaptureAsync()).Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested, "the next attempt sees the reclaimed row");
+        await next.Transaction.RollbackAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_reclaim_that_writes_a_fresh_row_during_an_attempt_does_not_extend_what_the_attempt_may_rely_on(bool rcsi)
+    {
+        var world = await FreshAsync(rcsi);
+        await world.NewUserAsync("local", Admin);
+        var recovery = await HealthyRecoveryAsync(world);
+        await ClaimAsAsync(world.Scratch, "old", AtStart());
+        await ClaimAsAsync(world.Scratch, "new", AtStart());
+        await AgeAttestationAsync(world.Scratch, 175);
+
+        await using var attempt = await Attempt.BeginAsync(world.Scratch);
+        var scope = await attempt.CaptureAsync();
+        scope.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested, "175 seconds old is inside the 180-second window");
+        await attempt.ApplyAsync(ResetSql(recovery));
+
+        // The holder stops and the other publisher writes a brand-new row: a fresh window for anyone who reads now, not for this attempt.
+        (await StopAsAsync(world.Scratch, "new")).Should().BeTrue();
+        (await ReclaimAsAsync(world.Scratch, "old", AtStart())).Should().Be(HostAttestationReclaimOutcome.Reclaimed);
+        await Task.Delay(TimeSpan.FromSeconds(5.5));
+        var decision = await scope.VerifyBareResetAsync(recovery);
+
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable, "the attempt outlasted the five seconds its reading had left");
+        decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+        attempt.Store.Reads.Should().Be(1);
+        await attempt.Transaction.RollbackAsync();
+        (await AuthenticatorRowsAsync(world.Scratch, recovery)).Should().Be(2);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_refresh_that_corrects_the_binding_during_an_attempt_does_not_change_that_attempt_and_the_next_one_trusts_the_row(bool rcsi)
+    {
+        var world = await FreshAsync(rcsi);
+        await world.NewUserAsync("local", Admin);
+        var recovery = await HealthyRecoveryAsync(world);
+        await ClaimAsAsync(world.Scratch, "p1", AtStart());
+        // The database was renamed, or the connection now reaches another server: the record names the old database.
+        await world.Scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET DatabaseFingerprint = N'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';");
+
+        await using (var attempt = await Attempt.BeginAsync(world.Scratch))
+        {
+            var scope = await attempt.CaptureAsync();
+            scope.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "a record written for another database is not evidence");
+            await attempt.ApplyAsync(ResetSql(recovery));
+
+            (await RefreshAsAsync(world.Scratch, "p1", AtStart())).Should().Be(HostAttestationRefreshOutcome.Refreshed);
+            var decision = await scope.VerifyBareResetAsync(recovery);
+
+            decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "one reading per attempt, whatever the host writes meanwhile");
+            attempt.Store.Reads.Should().Be(1);
+            await attempt.Transaction.RollbackAsync();
+        }
+
+        await using var next = await Attempt.BeginAsync(world.Scratch);
+        (await next.CaptureAsync()).Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested, "the refresh re-stamped the binding, so a new attempt believes the row");
+        await next.Transaction.RollbackAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_publisher_cannot_displace_a_live_competitor_during_an_attempt_and_the_attempt_reads_the_competitors_row(bool rcsi)
+    {
+        var world = await FreshAsync(rcsi);
+        await world.NewUserAsync("local", Admin);
+        var recovery = await HealthyRecoveryAsync(world);
+        await ClaimAsAsync(world.Scratch, "old", AtStart());
+        await ClaimAsAsync(world.Scratch, "new", AtStart());
+
+        await using var attempt = await Attempt.BeginAsync(world.Scratch);
+        var scope = await attempt.CaptureAsync();
+        scope.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested);
+        await attempt.ApplyAsync(ResetSql(recovery));
+
+        (await ReclaimAsAsync(world.Scratch, "old", AtStart())).Should().Be(HostAttestationReclaimOutcome.Held, "the other publisher is live");
+        (await RefreshAsAsync(world.Scratch, "old", AtStart())).Should().Be(HostAttestationRefreshOutcome.Superseded);
+        var decision = await scope.VerifyBareResetAsync(recovery);
+
+        decision.Evidence.Should().Be(ConfigurationEvidence.Attested);
+        attempt.Store.Reads.Should().Be(1);
+        (await world.Scratch.ScalarAsync<string>("SELECT ProcessInstanceId FROM dbo.HostConfigurationAttestations;")).Should().Be("new");
+        await attempt.Transaction.RollbackAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task Many_publishers_racing_for_a_stopped_row_while_an_attempt_holds_the_gate_yield_one_owner_and_do_not_wait_for_the_attempt(bool rcsi)
+    {
+        var world = await FreshAsync(rcsi);
+        await world.NewUserAsync("local", Admin);
+        var recovery = await HealthyRecoveryAsync(world);
+        await ClaimAsAsync(world.Scratch, "old", AtStart());
+        (await StopAsAsync(world.Scratch, "old")).Should().BeTrue();
+
+        await using var attempt = await Attempt.BeginAsync(world.Scratch);
+        var scope = await attempt.CaptureAsync();
+        scope.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+        await attempt.ApplyAsync(ResetSql(recovery));
+
+        var candidates = Enumerable.Range(0, 6).Select(i => "c" + i).ToList();
+        var outcomes = await Task.WhenAll(candidates.Select(c => ReclaimAsAsync(world.Scratch, c, AtStart())));
+
+        outcomes.Count(o => o == HostAttestationReclaimOutcome.Reclaimed).Should().Be(1, "two publishers must never both obtain the row");
+        var decision = await scope.VerifyBareResetAsync(recovery);
+        decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "the attempt's reading is not changed by who owns the row afterwards");
+        attempt.Store.Reads.Should().Be(1);
+        await attempt.Transaction.RollbackAsync();
     }
 }

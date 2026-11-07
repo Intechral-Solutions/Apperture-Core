@@ -13,8 +13,8 @@ using Xunit;
 namespace Apperture.UnitTests.AdministratorViability;
 
 /// <summary>
-/// The Management Host's side of the attestation: what it writes at start and on each tick, that it never builds the Entra or
-/// OpenID Connect options to do so, who owns the row when two processes of one host overlap, what a graceful stop does, and that a
+/// The Management Host's side of the attestation: what it writes at start and on each tick, that it builds neither the Entra nor the
+/// OpenID Connect options before real traffic has, who owns the row when two processes of one host overlap, what a graceful stop does, and that a
 /// failure to write defers the evidence and never the host. Time is a manual clock: no test sleeps.
 /// </summary>
 public sealed class HostConfigurationAttestationPublisherTests

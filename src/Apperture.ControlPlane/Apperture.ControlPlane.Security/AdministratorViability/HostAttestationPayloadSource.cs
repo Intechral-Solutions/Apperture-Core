@@ -24,7 +24,8 @@ public sealed record HostAttestationIdentity(string HostId, string ProcessInstan
 }
 
 /// <summary>
-/// Makes the reading a Management Host attests about itself, without ever building its Entra or OpenID Connect options.
+/// Makes the reading a Management Host attests about itself, without building its Entra or OpenID Connect options before real
+/// traffic has built them (afterwards the host's own reading may build the endpoints' options; see the second remark).
 /// </summary>
 /// <remarks>
 /// <para>Local sign-in is a deployment fact: it is read from the host's configuration and its Local options, which build nothing

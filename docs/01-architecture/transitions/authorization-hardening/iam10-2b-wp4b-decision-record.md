@@ -130,9 +130,11 @@ An additive detail on the success and refusal events of the operations that can 
 
 | Value | Meaning |
 |---|---|
-| `attested` | The decision used a fresh, consistent attestation |
-| `not_required` | The decision did not depend on host configuration: inputs unchanged, a posture change that cannot reduce, or a post-state proof that needs no missing input |
-| `unavailable` | The decision needed host configuration and none could be trusted; the refusal is the existing `administrator_viability_unavailable` |
+| `attested` | The decision used a fresh, consistent attestation: an accepted attestation **actually contributed** to it. That includes a Local-only proof that needed the attested Local reading (for example, a designation or revocation shown safe on Local sign-in alone), whether the decision allowed or refused |
+| `not_required` | The decision was established **without needing** deployment-specific configuration evidence: inputs unchanged, or a posture change decided on the Recovery Access posture alone (a bare reset that cannot reduce, a replacement judged on its net effect on the posture). An attestation may exist and is not consulted |
+| `unavailable` | **Required** evidence could not be established reliably (missing, stale, stopped, for another database, unknown, unreadable, conflicting, or expired during the attempt); the refusal is the existing `administrator_viability_unavailable` |
+
+**Owner ruling (2026-11-07), clarifying the earlier wording.** The deciding question is whether the decision *used* the attestation, not whether the operation could in principle have needed it. A post-state proof that needs no *missing* input but does need an accepted Local reading is `attested`, not `not_required`; `not_required` is reserved for decisions that never depended on configuration evidence. This agrees with the rule below (the value names the evidence actually used) and with the implemented behaviour, which is kept.
 
 Rules: the value names the evidence **actually used**, including on a refusal for missing evidence; it is the only configuration detail in the event; no host id, fingerprint, tenant, option value or secret enters the event; the operator's diagnostic value never appears. Events of restorative operations do not carry the detail. Operator-visible messages and event values use product wording and carry no package, ruling or finding labels.
 

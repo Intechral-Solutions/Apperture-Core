@@ -14,7 +14,9 @@ namespace Apperture.ControlPlane.Security.AdministratorViability;
 /// <para><b>It evidences and decides nothing.</b> It writes no configuration anywhere but its own row, takes no gate and no
 /// administrator lock, and changes nothing the host does. A failure to write is logged and retried on the next tick; while the
 /// row is not fresh the evidence is simply unavailable, which fails closed in the reader.</para>
-/// <para><b>It never builds the Entra or OpenID Connect options</b> (see <see cref="HostAttestationPayloadSource"/>), and it starts
+/// <para><b>It does not build the Entra or OpenID Connect options before real traffic has</b> (see
+/// <see cref="HostAttestationPayloadSource"/>). Once real traffic has built the handler's options, the host's own reading of itself
+/// may be the first reader of the endpoints' options, which are then built from the same sources by the same code. It starts
 /// after the migrations, the secret-store validation and the governance startup steps, with no ordering of its own to rely on.</para>
 /// <para><b>Ownership.</b> A newer process of the same host replaces the row at its start. An older process that is still running
 /// then finds itself superseded: it writes nothing to the row, and its stop never marks the newer process's row stopped. A
