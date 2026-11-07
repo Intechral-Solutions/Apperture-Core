@@ -14,7 +14,9 @@ namespace Apperture.Persistence.SqlServer;
 /// Nothing a host sends decides a time or the binding.</para>
 /// <para>A process owns its row by <c>ProcessInstanceId</c>. Claiming replaces whatever an earlier process of the same host wrote
 /// (the new process wins); refreshing and stopping are conditional on still owning the row, so an older process that is still
-/// running can neither overwrite nor stop the process that replaced it.</para>
+/// running can neither overwrite nor stop the process that replaced it. Taking a row back (<c>ReclaimAsync</c>) is decided by the
+/// same statement that writes it, against the database's clock and the shared freshness window: a live holder is never displaced.
+/// Refreshing re-stamps the binding together with the time, so the stored binding is always the one the write arrived in.</para>
 /// <para>The statements run on the context's connection and join an open transaction when there is one, so a reader inside an
 /// audited unit reads under the unit's own isolation.</para>
 /// </remarks>
@@ -73,10 +75,15 @@ public sealed class SqlHostConfigurationAttestationStore : IHostConfigurationAtt
         CancellationToken cancellationToken = default)
     {
         Validate(write);
+        // The binding is re-stamped with the time: the row an owning process keeps alive names the database this write arrived in,
+        // computed by the server, never one the host names. Ownership (the process id, not stopped) is the only way in, so a process
+        // cannot use a refresh to take a row from another process or to bind a row it does not own.
         var code = await RunAsync(
             $"""
+            DECLARE @fingerprint nvarchar(64) = {FingerprintSql};
             UPDATE {Table}
-               SET [RefreshedUtc] = SYSUTCDATETIME(), [SchemaVersion] = @schemaVersion, [Payload] = @payload
+               SET [RefreshedUtc] = SYSUTCDATETIME(), [SchemaVersion] = @schemaVersion, [DatabaseFingerprint] = @fingerprint,
+                   [Payload] = @payload
              WHERE [HostId] = @host AND [ProcessInstanceId] = @process AND [StoppedUtc] IS NULL;
             IF @@ROWCOUNT > 0 SELECT 0;
             ELSE IF EXISTS (SELECT 1 FROM {Table} WHERE [HostId] = @host) SELECT 1;
@@ -92,6 +99,61 @@ public sealed class SqlHostConfigurationAttestationStore : IHostConfigurationAtt
             1 => HostAttestationRefreshOutcome.Superseded,
             _ => HostAttestationRefreshOutcome.Missing,
         };
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(
+        HostConfigurationAttestationWrite write,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(write);
+        var window = HostConfigurationAttestationLiveness.FreshnessWindow;
+        if (window.Ticks % TimeSpan.TicksPerSecond != 0)
+            throw new InvalidOperationException("The freshness window must be a whole number of seconds.");
+
+        // One statement decides and writes, so competing candidates are serialised by the row's own lock: the second to reach the row
+        // finds the first's fresh, unstopped record and is refused. The row is taken when it is the caller's own (an idempotent retry:
+        // the claim time and start time are kept), or when it is another process's and that record is stopped or strictly older than
+        // the window, the same line the reader draws. A record dated after the database's clock is neither: it is held.
+        var code = await RunAsync(
+            $"""
+            DECLARE @now datetime2 = SYSUTCDATETIME();
+            DECLARE @fingerprint nvarchar(64) = {FingerprintSql};
+            DECLARE @staleBefore datetime2 = DATEADD(SECOND, -@windowSeconds, @now);
+            UPDATE {Table}
+               SET [Source] = @source, [SchemaVersion] = @schemaVersion, [ProcessInstanceId] = @process,
+                   [ProcessStartedUtc] = CASE WHEN [ProcessInstanceId] = @process THEN [ProcessStartedUtc] ELSE @started END,
+                   [ClaimedUtc] = CASE WHEN [ProcessInstanceId] = @process THEN [ClaimedUtc] ELSE @now END,
+                   [RefreshedUtc] = @now, [StoppedUtc] = NULL, [DatabaseFingerprint] = @fingerprint, [Payload] = @payload
+             WHERE [HostId] = @host
+               AND (([ProcessInstanceId] = @process AND [StoppedUtc] IS NULL)
+                    OR ([ProcessInstanceId] <> @process AND ([StoppedUtc] IS NOT NULL OR [RefreshedUtc] < @staleBefore)));
+            IF @@ROWCOUNT > 0
+            BEGIN
+                SELECT 0;
+                RETURN;
+            END;
+            IF EXISTS (SELECT 1 FROM {Table} WHERE [HostId] = @host)
+            BEGIN
+                SELECT 1;
+                RETURN;
+            END;
+            INSERT INTO {Table}
+                ([HostId], [Source], [SchemaVersion], [ProcessInstanceId], [ProcessStartedUtc], [ClaimedUtc], [RefreshedUtc],
+                 [StoppedUtc], [DatabaseFingerprint], [Payload])
+            SELECT @host, @source, @schemaVersion, @process, @started, @now, @now, NULL, @fingerprint, @payload
+             WHERE NOT EXISTS (SELECT 1 FROM {Table} WITH (UPDLOCK, HOLDLOCK) WHERE [HostId] = @host);
+            IF @@ROWCOUNT > 0 SELECT 0; ELSE SELECT 1;
+            """,
+            command =>
+            {
+                AddWriteParameters(command, write);
+                command.Parameters.Add(new SqlParameter("@windowSeconds", SqlDbType.Int) { Value = (int)window.TotalSeconds });
+            },
+            async command => Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)),
+            cancellationToken).ConfigureAwait(false);
+
+        return code == 0 ? HostAttestationReclaimOutcome.Reclaimed : HostAttestationReclaimOutcome.Held;
     }
 
     /// <inheritdoc />

@@ -404,6 +404,8 @@ public sealed class HostConfigurationAttestationTests
 
         public ValueTask<HostAttestationRefreshOutcome> RefreshAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        public ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
         public ValueTask<bool> MarkStoppedAsync(string hostId, string processInstanceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<HostConfigurationAttestationSnapshot> ReadAsync(CancellationToken cancellationToken = default)

@@ -123,11 +123,30 @@ public sealed class HostConfigurationAttestationPublisherTests
 
         public List<(string Host, string Process)> Stops { get; } = [];
 
+        public List<HostConfigurationAttestationWrite> Reclaims { get; } = [];
+
         public Queue<HostAttestationRefreshOutcome> RefreshOutcomes { get; } = new();
+
+        /// <summary>What the store answers to a reclaim; once empty it answers <see cref="HostAttestationReclaimOutcome.Held"/>, the safe answer.</summary>
+        public Queue<HostAttestationReclaimOutcome> ReclaimOutcomes { get; } = new();
 
         public int FailClaims { get; set; }
 
         public int FailRefreshes { get; set; }
+
+        public int FailReclaims { get; set; }
+
+        public ValueTask<HostAttestationReclaimOutcome> ReclaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default)
+        {
+            if (FailReclaims > 0)
+            {
+                FailReclaims--;
+                throw new InvalidOperationException("database unavailable");
+            }
+
+            Reclaims.Add(write);
+            return ValueTask.FromResult(ReclaimOutcomes.Count > 0 ? ReclaimOutcomes.Dequeue() : HostAttestationReclaimOutcome.Held);
+        }
 
         public ValueTask ClaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default)
         {
@@ -236,10 +255,11 @@ public sealed class HostConfigurationAttestationPublisherTests
     }
 
     [Fact]
-    public async Task Start_succeeds_when_the_database_cannot_be_written_and_the_next_tick_claims_the_row()
+    public async Task Start_succeeds_when_the_database_cannot_be_written_and_the_next_tick_asks_for_the_row_without_displacing_a_live_holder()
     {
         var rig = new Rig();
         rig.Store.FailClaims = 1;
+        rig.Store.ReclaimOutcomes.Enqueue(HostAttestationReclaimOutcome.Reclaimed);
 
         var start = () => rig.Publisher.StartAsync(CancellationToken.None);
         await start.Should().NotThrowAsync("the host must start whatever the state of the evidence");
@@ -247,8 +267,30 @@ public sealed class HostConfigurationAttestationPublisherTests
 
         rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
 
-        await WaitForAsync(() => rig.Store.Claims.Count == 1);
+        await WaitForAsync(() => rig.Store.Reclaims.Count == 1);
+        rig.Store.Claims.Should().BeEmpty("only the first write of a process is unconditional: a retry must not take the row from a newer process");
+        rig.Publisher.Superseded.Should().BeFalse();
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => rig.Store.Refreshes.Count == 1);
         await rig.Publisher.StopAsync(CancellationToken.None);
+        rig.Store.Stops.Should().ContainSingle("the retry made this process the owner");
+    }
+
+    [Fact]
+    public async Task A_start_whose_write_failed_and_whose_retry_finds_a_live_holder_is_superseded_and_does_not_publish()
+    {
+        var rig = new Rig();
+        rig.Store.FailClaims = 1;   // the reclaim answers Held (the safe default): a newer process claimed meanwhile
+        await rig.Publisher.StartAsync(CancellationToken.None);
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+
+        await WaitForAsync(() => rig.Publisher.Superseded);
+        rig.Store.Claims.Should().BeEmpty();
+        rig.Store.Refreshes.Should().BeEmpty();
+        await rig.Publisher.StopAsync(CancellationToken.None);
+        rig.Store.Stops.Should().BeEmpty("a process that never owned the row does not stop the holder's");
     }
 
     // ---------------------------------------------------------------- the tick
@@ -279,6 +321,14 @@ public sealed class HostConfigurationAttestationPublisherTests
     }
 
     [Fact]
+    public void The_reader_and_the_store_share_one_freshness_window_of_whole_seconds()
+    {
+        HostConfigurationAttestationTiming.FreshnessWindow.Should().Be(HostConfigurationAttestationLiveness.FreshnessWindow);
+        HostConfigurationAttestationLiveness.FreshnessWindow.Should().Be(TimeSpan.FromSeconds(180));
+        (HostConfigurationAttestationLiveness.FreshnessWindow.Ticks % TimeSpan.TicksPerSecond).Should().Be(0, "the store compares it in whole seconds");
+    }
+
+    [Fact]
     public async Task A_failed_refresh_is_retried_on_the_next_tick_and_never_stops_the_host()
     {
         var rig = new Rig();
@@ -293,20 +343,22 @@ public sealed class HostConfigurationAttestationPublisherTests
     }
 
     [Fact]
-    public async Task A_row_that_has_gone_is_claimed_again()
+    public async Task A_row_that_has_gone_is_taken_again_through_the_conditional_path()
     {
         var rig = new Rig();
         await rig.Publisher.StartAsync(CancellationToken.None);
         rig.Store.RefreshOutcomes.Enqueue(HostAttestationRefreshOutcome.Missing);
+        rig.Store.ReclaimOutcomes.Enqueue(HostAttestationReclaimOutcome.Reclaimed);
 
         rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
 
-        await WaitForAsync(() => rig.Store.Claims.Count == 2);
+        await WaitForAsync(() => rig.Store.Reclaims.Count == 1);
+        rig.Store.Claims.Should().HaveCount(1, "the gone row is not an unconditional claim: someone may have claimed it since");
         await rig.Publisher.StopAsync(CancellationToken.None);
     }
 
     [Fact]
-    public async Task A_superseded_process_stops_publishing_and_never_marks_the_newer_row_stopped()
+    public async Task A_superseded_process_writes_nothing_to_the_row_while_the_holder_is_live_and_never_marks_the_holders_row_stopped()
     {
         var rig = new Rig();
         await rig.Publisher.StartAsync(CancellationToken.None);
@@ -315,14 +367,79 @@ public sealed class HostConfigurationAttestationPublisherTests
         rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
         await WaitForAsync(() => rig.Publisher.Superseded);
 
-        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval * 5);
-        await Task.Yield();
-        rig.Store.Refreshes.Should().HaveCount(1, "a superseded process writes nothing more");
+        // One interval at a time: a periodic timer coalesces ticks that arrive while the loop is busy.
+        for (var tick = 2; tick <= 6; tick++)
+        {
+            rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+            await WaitForAsync(() => rig.Store.Reclaims.Count == tick);
+        }
+
+        rig.Store.Refreshes.Should().HaveCount(1, "a superseded process refreshes nothing: it only asks, and the store says no");
+        rig.Publisher.Superseded.Should().BeTrue();
         (await rig.Publisher.PublishOnceAsync()).Should().BeFalse();
 
         await rig.Publisher.StopAsync(CancellationToken.None);
         rig.Store.Stops.Should().BeEmpty();
         rig.Store.Claims.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task A_superseded_process_asks_again_in_the_same_tick_and_owns_the_row_again_when_the_store_gives_it_back()
+    {
+        var rig = new Rig();
+        await rig.Publisher.StartAsync(CancellationToken.None);
+        rig.Store.RefreshOutcomes.Enqueue(HostAttestationRefreshOutcome.Superseded);
+        rig.Store.ReclaimOutcomes.Enqueue(HostAttestationReclaimOutcome.Reclaimed);
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+
+        await WaitForAsync(() => rig.Store.Reclaims.Count == 1);
+        await WaitForAsync(() => !rig.Publisher.Superseded);
+        rig.Store.Reclaims[0].ProcessInstanceId.Should().Be("process-1");
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => rig.Store.Refreshes.Count == 2);
+        await rig.Publisher.StopAsync(CancellationToken.None);
+        rig.Store.Stops.Should().ContainSingle().Which.Should().Be(("host-a", "process-1"), "the stop closes the row this process owns again");
+    }
+
+    [Fact]
+    public async Task A_superseded_process_that_was_refused_recovers_on_a_later_tick_and_not_before_the_store_agrees()
+    {
+        var rig = new Rig();
+        await rig.Publisher.StartAsync(CancellationToken.None);
+        rig.Store.RefreshOutcomes.Enqueue(HostAttestationRefreshOutcome.Superseded);
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => rig.Store.Reclaims.Count == 1);
+        rig.Publisher.Superseded.Should().BeTrue();
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => rig.Store.Reclaims.Count == 2);
+        rig.Publisher.Superseded.Should().BeTrue("a refusal changes nothing");
+
+        rig.Store.ReclaimOutcomes.Enqueue(HostAttestationReclaimOutcome.Reclaimed);
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => !rig.Publisher.Superseded);
+        rig.Store.Claims.Should().HaveCount(1, "taking the row back is never an unconditional claim");
+        await rig.Publisher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_failed_reclaim_is_retried_on_the_next_tick_and_does_not_change_who_the_process_thinks_owns_the_row()
+    {
+        var rig = new Rig();
+        await rig.Publisher.StartAsync(CancellationToken.None);
+        rig.Store.RefreshOutcomes.Enqueue(HostAttestationRefreshOutcome.Superseded);
+        rig.Store.FailReclaims = 1;
+
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => rig.Publisher.Superseded && rig.Store.FailReclaims == 0);
+
+        rig.Store.ReclaimOutcomes.Enqueue(HostAttestationReclaimOutcome.Reclaimed);
+        rig.Time.Advance(HostConfigurationAttestationTiming.RefreshInterval);
+        await WaitForAsync(() => !rig.Publisher.Superseded);
+        await rig.Publisher.StopAsync(CancellationToken.None);
     }
 
     // ---------------------------------------------------------------- stop
@@ -543,6 +660,11 @@ public sealed class HostConfigurationAttestationPublisherTests
         store.Should().Contain("HASHBYTES('SHA2_256'");
         // A refresh and a stop are conditional on owning the row.
         store.Should().Contain("[ProcessInstanceId] = @process AND [StoppedUtc] IS NULL");
+        // A refresh re-stamps the binding with the time; taking a row back is one statement that decides against the database's clock
+        // and the shared window, and never names a time or a window the host chose.
+        store.Should().Contain("[RefreshedUtc] = SYSUTCDATETIME(), [SchemaVersion] = @schemaVersion, [DatabaseFingerprint] = @fingerprint");
+        store.Should().Contain("[ProcessInstanceId] <> @process AND ([StoppedUtc] IS NOT NULL OR [RefreshedUtc] < @staleBefore)");
+        store.Should().Contain("HostConfigurationAttestationLiveness.FreshnessWindow");
     }
 
     private static string StripComments(string text) =>
