@@ -272,13 +272,47 @@ public sealed class AdministratorViabilityPostureDecisionTests
         AdministratorViabilityGuard.DecideReplacement(bare, bare, "a").Basis.Should().NotBe(ViabilityDecisionBasis.PostureOnly);
     }
 
-    [Fact]
-    public void A_health_flag_that_disagrees_with_the_facts_is_not_believed()
+    public static IEnumerable<object[]> EveryPredicate() => new[]
     {
-        var pre = Over([EntraAdmin, RecoveryAdmin], Healthy, NoEvidence()) with { RecoveryHealthy = false };
-        var post = Over([EntraAdmin, RecoveryAdmin], Reset, NoEvidence());
+        new object[] { ViabilityMutation.AuthenticatorReset },
+        new object[] { ViabilityMutation.AuthenticatorReplacement },
+    };
 
-        AdministratorViabilityGuard.DecideBareReset(pre, post, "recovery").Basis.Should().NotBe(ViabilityDecisionBasis.PostureOnly);
+    private static ViabilityDecision DecideOn(ViabilityMutation mutation, AdministratorViabilityState pre, AdministratorViabilityState post) =>
+        mutation == ViabilityMutation.AuthenticatorReset
+            ? AdministratorViabilityGuard.DecideBareReset(pre, post, "recovery")
+            : AdministratorViabilityGuard.DecideReplacement(pre, post, "recovery");
+
+    [Theory]
+    [MemberData(nameof(EveryPredicate))]
+    public void A_health_flag_before_the_change_that_disagrees_with_the_facts_is_not_believed(ViabilityMutation mutation)
+    {
+        // The facts say the posture was not healthy and lost nothing it needed, so on the facts alone either predicate would allow this.
+        // The state says of itself that it was healthy: the two cannot both be right, so neither is used.
+        var administrators = new[] { EntraAdmin, RecoveryAdmin };
+        var pre = Over(administrators, UnhealthyWithAuthenticator, NoEvidence()) with { RecoveryHealthy = true };
+        var post = Over(administrators, UnhealthyWithAuthenticator with { UnusedRecoveryCodes = 2 }, NoEvidence());
+
+        var decision = DecideOn(mutation, pre, post);
+
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable);
+        decision.Basis.Should().Be(ViabilityDecisionBasis.ConfigurationUnavailable);
+    }
+
+    [Theory]
+    [MemberData(nameof(EveryPredicate))]
+    public void A_health_flag_after_the_change_that_disagrees_with_the_facts_is_not_believed(ViabilityMutation mutation)
+    {
+        // The facts say the posture is still healthy, so on the facts alone either predicate would allow this. The state says of itself
+        // that it is not.
+        var administrators = new[] { EntraAdmin, RecoveryAdmin };
+        var pre = Over(administrators, Healthy, NoEvidence());
+        var post = Over(administrators, Healthy with { UnusedRecoveryCodes = 2 }, NoEvidence()) with { RecoveryHealthy = false };
+
+        var decision = DecideOn(mutation, pre, post);
+
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable);
+        decision.Basis.Should().Be(ViabilityDecisionBasis.ConfigurationUnavailable);
     }
 
     [Fact]
@@ -502,6 +536,88 @@ public sealed class AdministratorViabilityPostureDecisionTests
     }
 
     // ---------------------------------------------------------------------------- classification and refusal
+
+    [Fact]
+    public void A_reset_says_it_is_a_reset_on_every_path()
+    {
+        var administrators = new[] { EntraAdmin, RecoveryAdmin };
+        var fallback = BareReset(administrators, StartupAttestation());
+
+        foreach (var decision in new[]
+                 {
+                     // Cannot reduce.
+                     BareReset([LocalAdmin, RecoveryAdmin], NoEvidence(), after: Healthy, user: "a"),
+
+                     // Takes the posture away: allowed on a Local administrator, refused without one, unavailable without the reading.
+                     BareReset([LocalAdmin, RecoveryAdmin], StartupAttestation()),
+                     fallback,
+                     BareReset(administrators, NoEvidence()),
+
+                     // Not just an authenticator: the full evaluation.
+                     AdministratorViabilityGuard.DecideBareReset(
+                         Over(administrators, Healthy, StartupAttestation()),
+                         Over(administrators, Healthy with { LocalCredentialEnabled = false }, StartupAttestation()),
+                         "recovery"),
+                 })
+        {
+            decision.Mutation.Should().Be(ViabilityMutation.AuthenticatorReset);
+        }
+
+        fallback.Refusal().Message.Should().Contain("Cannot reset this authenticator", "the operator is told what to do instead of a reset");
+    }
+
+    [Fact]
+    public void A_replacement_says_it_is_a_replacement_on_every_path()
+    {
+        var administrators = new[] { LocalAdmin, RecoveryAdmin };
+        var refused = AdministratorViabilityGuard.DecideReplacement(
+            Over(administrators, Healthy, NoEvidence()),
+            Over(administrators, Reset, NoEvidence()),
+            "recovery");
+
+        foreach (var decision in new[]
+                 {
+                     // Allowed on the posture.
+                     AdministratorViabilityGuard.DecideReplacement(
+                         Over(administrators, Healthy, NoEvidence()),
+                         Over(administrators, Healthy with { UnusedRecoveryCodes = 10 }, NoEvidence()),
+                         "recovery"),
+
+                     // Refused on the posture.
+                     refused,
+
+                     // Not just an authenticator: the full evaluation.
+                     AdministratorViabilityGuard.DecideReplacement(
+                         Over(administrators, Healthy, StartupAttestation()),
+                         Over(administrators, Healthy with { LocalCredentialEnabled = false }, StartupAttestation()),
+                         "recovery"),
+                 })
+        {
+            decision.Mutation.Should().Be(ViabilityMutation.AuthenticatorReplacement);
+        }
+
+        refused.Refusal().Message.Should().Contain("The authenticator was not replaced");
+    }
+
+    [Fact]
+    public void A_designation_and_a_revocation_say_what_they_are_on_every_path()
+    {
+        var unchanged = Over([LocalAdmin, RecoveryAdmin], Healthy, NoEvidence());
+        var designated = AdministratorViabilityGuard.DecideDesignation(
+            Over([LocalAdmin], Recovery(), FullAttestation()),
+            Over([LocalAdmin with { IsRecoveryAccess = true }], Healthy with { DesignatedUserId = "a" }, FullAttestation()));
+
+        designated.Mutation.Should().Be(ViabilityMutation.RecoveryAccessDesignation);
+        designated.Refusal().Message.Should().Contain("Cannot designate this account");
+        AdministratorViabilityGuard.DecideDesignation(unchanged, unchanged).Mutation.Should().Be(ViabilityMutation.RecoveryAccessDesignation);
+
+        var revoked = AdministratorViabilityGuard.DecideRevocation(Over([EntraAdmin, Admin("recovery", local: true)], Recovery(), FullAttestation()), "recovery");
+
+        revoked.Mutation.Should().Be(ViabilityMutation.RecoveryAccessRevocation);
+        revoked.Refusal().Message.Should().Contain("Cannot revoke Recovery Access");
+        AdministratorViabilityGuard.DecideRevocation(Over([LocalAdmin, RecoveryAdmin], Recovery(), NoEvidence()), "recovery")
+            .Mutation.Should().Be(ViabilityMutation.RecoveryAccessRevocation, "an unavailable revocation is still a revocation");
+    }
 
     public static IEnumerable<object[]> RefusalsOfTheNewMutations() =>
         from mutation in new[]
