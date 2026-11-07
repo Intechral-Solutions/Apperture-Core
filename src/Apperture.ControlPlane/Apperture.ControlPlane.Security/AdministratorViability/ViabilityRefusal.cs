@@ -14,6 +14,31 @@ public enum ViabilityMutation
 
     /// <summary>The Microsoft registration is edited, disabled, deleted, or another registration is made the active one.</summary>
     RegistrationChange,
+
+    /// <summary>
+    /// An administrator is designated as the Recovery Access account: they stop counting as an ordinary administrator, and a previous
+    /// designation may end. Evidence-dependent: it needs the Local and the Microsoft readings, per view, unless a proof that needs no
+    /// missing input settles it.
+    /// </summary>
+    RecoveryAccessDesignation,
+
+    /// <summary>
+    /// The Recovery Access designation is revoked, under the strict rule that does not depend on the state before. Evidence-dependent:
+    /// it needs the Local reading, per view, and never the Microsoft one.
+    /// </summary>
+    RecoveryAccessRevocation,
+
+    /// <summary>
+    /// An account's authenticator and recovery codes are removed with nothing in their place. Evidence-dependent only when it takes a
+    /// healthy Recovery Access posture away, and then only on the Local reading, per view.
+    /// </summary>
+    AuthenticatorReset,
+
+    /// <summary>
+    /// An account's verified replacement authenticator takes the place of the active one, in one unit. Judged on its net effect on the
+    /// Recovery Access posture alone: no reading of the configuration is needed.
+    /// </summary>
+    AuthenticatorReplacement,
 }
 
 /// <summary>
@@ -37,16 +62,34 @@ public static class ViabilityRefusal
                 ViabilityMutation.RegistrationChange => new(
                     GovernanceConflictCodes.LastViableSignInMethod,
                     "Cannot make this change to the Microsoft registration: it would leave no ordinary Platform Administrator able to sign in, because the administrators who can sign in today depend on Microsoft sign-in as this registration provides it. Give an administrator a working local sign-in first, or keep the registration as it is."),
+                ViabilityMutation.RecoveryAccessDesignation => new(
+                    GovernanceConflictCodes.LastViableAdministrator,
+                    "Cannot designate this account for Recovery Access: the Recovery Access account does not count as an ordinary administrator, and no other ordinary Platform Administrator would be able to sign in. Give another administrator a working sign-in method first."),
+                ViabilityMutation.RecoveryAccessRevocation or ViabilityMutation.AuthenticatorReset or ViabilityMutation.AuthenticatorReplacement => new(
+                    GovernanceConflictCodes.LastViableAdministrator,
+                    "This change could not be made: no ordinary Platform Administrator would be able to sign in after it. Give an administrator a working sign-in method first."),
                 _ => new(
                     GovernanceConflictCodes.LastViableSignInMethod,
                     "Cannot remove this sign-in method: it is the only one the last ordinary Platform Administrator who can sign in has. A Microsoft identity counts only after it has been used to sign in, and only while Microsoft sign-in is working for this installation."),
             },
-            ViabilityVerdictKind.EntraIndependentFallbackRequired => new(
-                GovernanceConflictCodes.EntraIndependentFallbackRequired,
-                "Recovery Access is not healthy, and this change would leave no ordinary Platform Administrator who can sign in without Microsoft. Give an administrator an enabled local credential, or restore Recovery Access, then try again."),
+            ViabilityVerdictKind.EntraIndependentFallbackRequired => mutation switch
+            {
+                ViabilityMutation.RecoveryAccessRevocation => new(
+                    GovernanceConflictCodes.EntraIndependentFallbackRequired,
+                    "Cannot revoke Recovery Access: revoking it needs another ordinary Platform Administrator who can sign in without Microsoft, and confirming the change does not replace that. Give another administrator an enabled local credential, then revoke."),
+                ViabilityMutation.AuthenticatorReset => new(
+                    GovernanceConflictCodes.EntraIndependentFallbackRequired,
+                    "Cannot reset this authenticator: Recovery Access would stop being healthy, and no ordinary Platform Administrator could then sign in without Microsoft. Replace the authenticator instead of resetting it, or give an administrator an enabled local credential, then try again."),
+                _ => new(
+                    GovernanceConflictCodes.EntraIndependentFallbackRequired,
+                    "Recovery Access is not healthy, and this change would leave no ordinary Platform Administrator who can sign in without Microsoft. Give an administrator an enabled local credential, or restore Recovery Access, then try again."),
+            },
             ViabilityVerdictKind.ConfigurationUnavailable => new(
                 GovernanceConflictCodes.AdministratorViabilityUnavailable,
                 "The change could not be checked because the sign-in configuration could not be established, so it was not made. " + verdict.Detail),
+            ViabilityVerdictKind.RecoveryPostureReduced => new(
+                GovernanceConflictCodes.RecoveryAccessPostureReduced,
+                "The authenticator was not replaced: the replacement would have left Recovery Access worse off than it was, so the active authenticator and its recovery codes stay in place. Start the replacement again."),
             _ => throw new ArgumentException("An allowed verdict has no refusal.", nameof(verdict)),
         };
 }

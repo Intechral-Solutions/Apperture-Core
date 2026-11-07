@@ -79,6 +79,12 @@ public static class GovernanceConflictCodes
     /// viability is refused rather than guessed at.
     /// </summary>
     public const string AdministratorViabilityUnavailable = "administrator_viability_unavailable";
+
+    /// <summary>
+    /// Replacing an authenticator would have left the Recovery Access posture worse than it was. A working replacement never does this,
+    /// so nothing was changed and the active authenticator stays in place.
+    /// </summary>
+    public const string RecoveryAccessPostureReduced = "recovery_access_posture_reduced";
 }
 
 /// <summary>

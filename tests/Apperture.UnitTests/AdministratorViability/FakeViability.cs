@@ -40,6 +40,9 @@ internal sealed class ScriptedViabilityReads : IAdministratorViabilityService
             _last = _states.Dequeue();
         return ValueTask.FromResult(_last);
     }
+
+    public ValueTask<AdministratorViabilityState> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default) =>
+        ReadAsync(cancellationToken);
 }
 
 /// <summary>A fixed sign-in configuration: Local sign-in on, Entra off (so only Local credentials make anyone viable).</summary>
@@ -50,6 +53,9 @@ internal sealed class FixedSignInConfiguration : IEffectiveSignInConfigurationPr
             ViabilityTestData.Availability(ViabilityView.Now, local: true, entra: false, tenant: null),
             ViabilityTestData.Availability(ViabilityView.Restart, local: true, entra: false, tenant: null),
             ConfigurationTrust.Full));
+
+    public ValueTask<EffectiveSignInConfiguration> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default) =>
+        ReadAsync(cancellationToken);
 }
 
 internal static class FakeViability

@@ -1,0 +1,509 @@
+using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
+using Apperture.Core.Application.AdministratorViability;
+using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.Services;
+using Apperture.TestSupport;
+using FluentAssertions;
+using Moq;
+using Xunit;
+using static Apperture.UnitTests.AdministratorViability.ViabilityTestData;
+
+namespace Apperture.UnitTests.AdministratorViability;
+
+/// <summary>
+/// IAM-10.2b WP4B-C: one protected attempt reads the attestation once. Everything below the scope is real (the coordinator, the viability
+/// service, the provider, the attested reader and the classifier) over a store and a clock the test controls, so the count is of real
+/// reads and the expiry is of the real comparison. The same properties are proven against SQL Server by
+/// <c>AdministratorViabilityAttemptSqlServerTests</c>.
+/// </summary>
+public sealed class AdministratorViabilityAttemptReadingTests
+{
+    private static readonly DateTime DatabaseNow = new(2026, 11, 7, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly TimeSpan Window = HostConfigurationAttestationTiming.FreshnessWindow;
+
+    /// <summary>A monotonic clock the test moves by hand.</summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        private long _ticks = 1_000;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _ticks;
+
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+    }
+
+    /// <summary>Hands out snapshots in order (the last repeats) and counts how often it is asked.</summary>
+    private sealed class ScriptedStore(params HostConfigurationAttestationSnapshot[] snapshots) : IHostConfigurationAttestationStore
+    {
+        private int _next;
+
+        public int Reads { get; private set; }
+
+        public Exception? Fail { get; set; }
+
+        public List<string>? Log { get; init; }
+
+        public ValueTask<HostConfigurationAttestationSnapshot> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            Reads++;
+            Log?.Add("attestation read");
+            if (Fail is not null)
+                throw Fail;
+            var snapshot = snapshots[Math.Min(_next, snapshots.Length - 1)];
+            _next++;
+            return ValueTask.FromResult(snapshot);
+        }
+
+        public ValueTask ClaimAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<HostAttestationRefreshOutcome> RefreshAsync(HostConfigurationAttestationWrite write, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask<bool> MarkStoppedAsync(string hostId, string processInstanceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>Stored facts a test can change between the two reads of an attempt, as the writer's own mutation does.</summary>
+    private sealed class ChangingFacts : IAdministratorFactsReader
+    {
+        public IReadOnlyList<AdministratorFacts> Administrators { get; set; } = [];
+
+        public RecoveryAccessFacts Recovery { get; set; } = ViabilityTestData.Recovery();
+
+        public ValueTask<IReadOnlyList<AdministratorFacts>> ReadAdministratorsAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Administrators);
+
+        public ValueTask<RecoveryAccessFacts> ReadRecoveryAccessAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Recovery);
+    }
+
+    private sealed class LoggingGate(List<string> log) : IPlatformAdministratorSetGate
+    {
+        public Exception? Fail { get; set; }
+
+        public ValueTask AcquireAsync(CancellationToken cancellationToken = default)
+        {
+            log.Add("gate");
+            if (Fail is not null)
+                throw Fail;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private static HostConfigurationAttestationSnapshot Snapshot(
+        TimeSpan age,
+        bool localNow = true,
+        bool localRestart = true,
+        DateTime? stopped = null)
+    {
+        var payload = AttestedAuthenticationPayload.NotEstablished(localNow, localRestart, new EntraAuthOptions()).Serialize();
+        return new HostConfigurationAttestationSnapshot(
+            [new HostConfigurationAttestationRow(
+                "host", HostConfigurationAttestationSource.ManagementHost, AttestedAuthenticationPayload.SchemaVersion, "process",
+                DateTimeOffset.UnixEpoch, DatabaseNow - age, DatabaseNow - age, stopped, "fingerprint", payload)],
+            DatabaseNow,
+            "fingerprint");
+    }
+
+    private static HostConfigurationAttestationSnapshot Missing() => new([], DatabaseNow, "fingerprint");
+
+    private static Mock<IEntraInstanceRegistrationRepository> NoRegistration()
+    {
+        var registrations = new Mock<IEntraInstanceRegistrationRepository>();
+        registrations.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>())).ReturnsAsync((EntraInstanceRegistration?)null);
+        return registrations;
+    }
+
+    private static AdministratorViabilityCoordinator Coordinator(
+        IHostConfigurationAttestationStore store,
+        ChangingFacts facts,
+        TimeProvider? clock = null,
+        IPlatformAdministratorSetGate? gate = null) =>
+        new(
+            gate ?? new RecordingGate(),
+            new AdministratorViabilityService(
+                facts,
+                new EffectiveSignInConfigurationProvider(new AttestedDeploymentAuthenticationConfiguration(store), NoRegistration().Object)),
+            time: clock);
+
+    private static readonly RecoveryAccessFacts Healthy = new("recovery", true, true, true, true, 3);
+
+    private static readonly RecoveryAccessFacts AfterReset = Healthy with { NativeMfaEnrolled = false, UnusedRecoveryCodes = 0 };
+
+    private static ChangingFacts LocalAdminAndHealthyRecovery() => new()
+    {
+        Administrators = [Admin("a", local: true), Admin("recovery", local: true, recoveryAccess: true)],
+        Recovery = Healthy,
+    };
+
+    public enum Verification
+    {
+        After,
+        Designation,
+        Revocation,
+        BareReset,
+        Replacement,
+        RaiseOnly,
+    }
+
+    private static async ValueTask VerifyAsync(AdministratorViabilityScope scope, Verification verification)
+    {
+        switch (verification)
+        {
+            case Verification.After:
+                await scope.VerifyAfterAsync();
+                break;
+            case Verification.Designation:
+                await scope.VerifyDesignationAsync();
+                break;
+            case Verification.Revocation:
+                await scope.VerifyRevocationAsync("recovery");
+                break;
+            case Verification.BareReset:
+                await scope.VerifyBareResetAsync("recovery");
+                break;
+            case Verification.Replacement:
+                await scope.VerifyReplacementAsync("recovery");
+                break;
+            default:
+                await scope.AssertRaiseOnlyAsync();
+                break;
+        }
+    }
+
+    // ------------------------------------------------------------------------------- once per attempt, again per attempt
+
+    [Theory]
+    [InlineData(Verification.After)]
+    [InlineData(Verification.Designation)]
+    [InlineData(Verification.Revocation)]
+    [InlineData(Verification.BareReset)]
+    [InlineData(Verification.Replacement)]
+    [InlineData(Verification.RaiseOnly)]
+    public async Task One_attempt_reads_the_attestation_exactly_once_whichever_way_it_verifies(Verification verification)
+    {
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10)));
+        var scope = await Coordinator(store, LocalAdminAndHealthyRecovery()).EnterAsync();
+
+        if (verification == Verification.RaiseOnly)
+            await scope.CaptureBeforeForRaiseAsync("a");
+        else
+            await scope.CaptureBeforeAsync();
+        store.Reads.Should().Be(1);
+
+        await VerifyAsync(scope, verification);
+
+        store.Reads.Should().Be(1, "the state after the change is judged under the reading the state before was");
+    }
+
+    [Fact]
+    public async Task Each_new_attempt_reads_again_and_nothing_is_carried_from_the_last_one()
+    {
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10)), Missing(), Snapshot(TimeSpan.FromSeconds(1)));
+        var coordinator = Coordinator(store, LocalAdminAndHealthyRecovery());
+
+        var first = await coordinator.EnterAsync();
+        await first.CaptureBeforeAsync();
+        first.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested);
+
+        var second = await coordinator.EnterAsync();
+        await second.CaptureBeforeAsync();
+        second.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "the evidence is gone by the second attempt, and that attempt must see it");
+
+        var third = await coordinator.EnterAsync();
+        await third.CaptureBeforeAsync();
+        third.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested, "and the third reads again rather than remembering the refusal");
+
+        store.Reads.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Entering_reads_nothing_and_the_evidence_is_read_only_after_the_gate_is_held()
+    {
+        var log = new List<string>();
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10))) { Log = log };
+        var coordinator = Coordinator(store, LocalAdminAndHealthyRecovery(), gate: new LoggingGate(log));
+
+        var scope = await coordinator.EnterAsync();
+        store.Reads.Should().Be(0, "an attempt that ends as a no-op before it captures reads no evidence");
+
+        await scope.CaptureBeforeAsync();
+        log.Should().Equal("gate", "attestation read");
+    }
+
+    [Fact]
+    public async Task A_gate_that_is_busy_reads_no_evidence_at_all()
+    {
+        var log = new List<string>();
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10))) { Log = log };
+        var gate = new LoggingGate(log) { Fail = new PlatformAdministratorSetBusyException(PlatformAdministratorSetLockOutcome.TimedOut) };
+
+        var enter = async () => await Coordinator(store, LocalAdminAndHealthyRecovery(), gate: gate).EnterAsync();
+
+        await enter.Should().ThrowAsync<PlatformAdministratorSetBusyException>();
+        store.Reads.Should().Be(0);
+    }
+
+    // ------------------------------------------------------------------------------- one consistent interpretation
+
+    [Fact]
+    public async Task Evidence_that_goes_away_after_the_reading_cannot_split_one_attempt_into_two_answers()
+    {
+        // If the second state were read through the attestation, the first would be trusted and the second would not.
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10)), Missing());
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.IsAllowed.Should().BeTrue();
+        decision.Evidence.Should().Be(ConfigurationEvidence.Attested);
+        scope.After!.Trust.Evidence.Should().Be(scope.Captured!.Trust.Evidence);
+    }
+
+    [Fact]
+    public async Task Evidence_that_appears_after_the_reading_cannot_upgrade_an_attempt_that_began_without_it()
+    {
+        var store = new ScriptedStore(Missing(), Snapshot(TimeSpan.FromSeconds(1)));
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable, "the attempt began with no evidence and stays that way");
+        decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+        store.Reads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_different_reading_after_the_first_cannot_change_what_either_state_says()
+    {
+        // The host reloads between the reads and says Local is off: the attempt keeps judging under the reading it has.
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10), localNow: true), Snapshot(TimeSpan.FromSeconds(1), localNow: false));
+        var scope = await Coordinator(store, LocalAdminAndHealthyRecovery()).EnterAsync();
+
+        await scope.CaptureBeforeAsync();
+        await scope.VerifyAfterAsync();
+
+        scope.Captured!.Configuration.Now.LocalSignInEnabled.Should().BeTrue();
+        scope.After!.Configuration.Now.LocalSignInEnabled.Should().BeTrue();
+    }
+
+    // ------------------------------------------------------------------------------- the freshness edge
+
+    [Fact]
+    public async Task At_exactly_the_time_it_had_left_the_reading_still_counts_and_one_tick_later_it_does_not()
+    {
+        var age = TimeSpan.FromSeconds(170);
+        var remaining = Window - age;
+
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(age));
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        clock.Advance(remaining);
+        (await scope.VerifyBareResetAsync("recovery")).Evidence.Should().Be(ConfigurationEvidence.Attested, "exactly the window is still fresh, as the classifier says");
+
+        var clockLate = new ManualClock();
+        var storeLate = new ScriptedStore(Snapshot(age));
+        var factsLate = LocalAdminAndHealthyRecovery();
+        var scopeLate = await Coordinator(storeLate, factsLate, clockLate).EnterAsync();
+        await scopeLate.CaptureBeforeAsync();
+        factsLate.Recovery = AfterReset;
+
+        clockLate.Advance(remaining + TimeSpan.FromTicks(1));
+        var late = await scopeLate.VerifyBareResetAsync("recovery");
+
+        late.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable, "holding the reading must not outlast the window it had");
+        late.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+        late.Verdict.Detail.Should().Contain("went out of date");
+        storeLate.Reads.Should().Be(1, "running out is judged on the reading it has, not by reading again");
+    }
+
+    [Fact]
+    public async Task When_the_reading_runs_out_both_states_lose_its_trust_together_so_they_cannot_disagree()
+    {
+        var clock = new ManualClock();
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(new ScriptedStore(Snapshot(TimeSpan.FromSeconds(170))), facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        scope.Captured!.Trust.LocalKnown.Should().BeTrue();
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+        await scope.VerifyAfterAsync();
+
+        foreach (var state in new[] { scope.Captured!, scope.After! })
+        {
+            state.Trust.Local.Should().Be(ConfigurationTrustLevel.Unknown);
+            state.Trust.Entra.Should().Be(ConfigurationTrustLevel.Unknown);
+            state.Trust.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+            state.Configuration.Trust.Should().BeSameAs(state.Trust);
+        }
+    }
+
+    [Fact]
+    public async Task A_decision_that_needs_no_reading_is_not_stopped_by_the_reading_running_out()
+    {
+        var clock = new ManualClock();
+        var facts = new ChangingFacts
+        {
+            Administrators = [Admin("recovery", local: true, recoveryAccess: true)],
+            Recovery = Healthy with { UnusedRecoveryCodes = 0 },
+        };
+        var scope = await Coordinator(new ScriptedStore(Snapshot(TimeSpan.FromSeconds(170))), facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.IsAllowed.Should().BeTrue("the posture was not healthy, so a reset cannot have reduced anything");
+        decision.Evidence.Should().Be(ConfigurationEvidence.NotRequired);
+    }
+
+    [Fact]
+    public async Task A_raise_only_writer_is_not_refused_when_the_reading_runs_out()
+    {
+        var clock = new ManualClock();
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(new ScriptedStore(Snapshot(TimeSpan.FromSeconds(170))), facts, clock).EnterAsync();
+        await scope.CaptureBeforeForRaiseAsync("a");
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var assert = async () => await scope.AssertRaiseOnlyAsync();
+
+        await assert.Should().NotThrowAsync("a raise-only assertion needs no trusted configuration");
+    }
+
+    [Fact]
+    public void The_classifier_says_how_much_of_the_window_is_left_by_the_databases_clock()
+    {
+        HostConfigurationAttestationClassifier.Assess(Snapshot(TimeSpan.FromSeconds(170)), Window).Reading!.EvidenceRemaining
+            .Should().Be(TimeSpan.FromSeconds(10));
+        HostConfigurationAttestationClassifier.Assess(Snapshot(Window), Window).Reading!.EvidenceRemaining
+            .Should().Be(TimeSpan.Zero, "an age equal to the window is fresh with nothing left");
+        HostConfigurationAttestationClassifier.Assess(Snapshot(Window + TimeSpan.FromTicks(1)), Window).Reading
+            .Should().BeNull("a stale record gives no reading");
+    }
+
+    // ------------------------------------------------------------------------------- the attempt's reading on its own
+
+    private sealed class FixedDeployment(DeploymentAuthenticationReading reading) : IDeploymentAuthenticationConfiguration
+    {
+        public int Reads { get; private set; }
+
+        public DeploymentAuthenticationReading Read()
+        {
+            Reads++;
+            return reading;
+        }
+    }
+
+    private static DeploymentAuthenticationReading HostReading() =>
+        new(ConfigurationTrustLevel.Trusted, ConfigurationTrustLevel.Trusted, [], true, new EntraAuthOptions(), AuthoritativeAboutSecrets: true, Running: null);
+
+    [Fact]
+    public async Task A_reading_of_a_host_about_itself_has_no_window_and_never_runs_out_but_is_still_read_once()
+    {
+        var clock = new ManualClock();
+        var deployment = new FixedDeployment(HostReading());
+        var attempt = new AttemptConfigurationReading(clock);
+
+        var first = await attempt.GetAsync(deployment);
+        clock.Advance(TimeSpan.FromDays(1));
+        var second = await attempt.GetAsync(deployment);
+
+        second.Should().BeSameAs(first);
+        deployment.Reads.Should().Be(1);
+        attempt.HasExpired.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_attested_reading_that_does_not_say_how_long_it_has_left_counts_as_having_run_out()
+    {
+        var attempt = new AttemptConfigurationReading(new ManualClock());
+
+        await attempt.GetAsync(new FixedDeployment(HostReading() with { Evidence = ConfigurationEvidence.Attested, EvidenceRemaining = null }));
+
+        attempt.HasExpired.Should().BeTrue("evidence with no stated limit is not given an unlimited one");
+    }
+
+    [Fact]
+    public void Nothing_read_yet_has_not_run_out() =>
+        new AttemptConfigurationReading(new ManualClock()).HasExpired.Should().BeFalse();
+
+    [Fact]
+    public async Task A_read_that_failed_is_not_retried_inside_the_attempt_and_the_next_attempt_reads_again()
+    {
+        var failure = new TimeoutException();
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10))) { Fail = failure };
+        var coordinator = Coordinator(store, LocalAdminAndHealthyRecovery());
+        var scope = await coordinator.EnterAsync();
+
+        var capture = async () => await scope.CaptureBeforeAsync();
+        (await capture.Should().ThrowAsync<TimeoutException>()).Which.Should().BeSameAs(failure, "a failure to read is not turned into a reading");
+
+        store.Fail = null;
+        await capture.Should().ThrowAsync<InvalidOperationException>("the attempt has had its one read");
+        store.Reads.Should().Be(1);
+        scope.Captured.Should().BeNull();
+
+        var next = await coordinator.EnterAsync();
+        await next.CaptureBeforeAsync();
+        next.Captured!.Trust.Evidence.Should().Be(ConfigurationEvidence.Attested);
+        store.Reads.Should().Be(2);
+    }
+
+    // ------------------------------------------------------------------------------- nothing else can make a second reading
+
+    private static IReadOnlyList<string> ProductionFilesContaining(string text) =>
+        SourceTree.Files("src", [".cs"], includeMigrations: false, SourceTree.Floor.CSharpOutsideMigrations)
+            .Where(file => File.ReadAllText(file).Contains(text, StringComparison.Ordinal))
+            .Select(file => Path.GetFileName(file))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+    [Fact]
+    public void A_reading_is_made_only_by_a_scope_and_read_through_only_by_the_layers_under_it()
+    {
+        ProductionFilesContaining("new AttemptConfigurationReading(").Should().Equal("AdministratorViabilityCoordinator.cs");
+        ProductionFilesContaining("ReadForAttemptAsync(").Should().Equal(
+            "AdministratorViabilityCoordinator.cs",
+            "AdministratorViabilityService.cs",
+            "EffectiveSignInConfigurationProvider.cs");
+    }
+
+    [Fact]
+    public void The_scope_has_no_way_to_read_the_state_except_through_its_attempt()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot.Find(), "src", "Apperture.ControlPlane", "Apperture.ControlPlane.Security", "AdministratorViability", "AdministratorViabilityCoordinator.cs"));
+
+        source.Should().Contain("_reads.ReadForAttemptAsync(_attempt,");
+        source.Should().NotContain("_reads.ReadAsync(", "that read would go to the attestation a second time");
+        source.Should().NotContain("_deployment.ReadAsync(", "the coordinator builds through the deployment and never reads through it");
+    }
+
+    [Fact]
+    public async Task The_reading_is_a_read_of_the_configuration_only_and_the_stored_facts_are_read_again_after_the_change()
+    {
+        // The whole point of the second read: pinning the configuration must not pin what the mutation changed.
+        var store = new ScriptedStore(Snapshot(TimeSpan.FromSeconds(10)));
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts).EnterAsync();
+        await scope.CaptureBeforeAsync();
+
+        facts.Recovery = AfterReset;
+        await scope.VerifyAfterAsync();
+
+        scope.Captured!.RecoveryHealthy.Should().BeTrue();
+        scope.After!.RecoveryHealthy.Should().BeFalse();
+    }
+}

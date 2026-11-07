@@ -141,9 +141,19 @@ public sealed record AdministratorViabilityState(
     /// </summary>
     public static bool FactsUnchanged(AdministratorViabilityState pre, AdministratorViabilityState post)
     {
-        if (pre.Administrators is null || post.Administrators is null || pre.Recovery is null || post.Recovery is null)
+        if (pre.Recovery is null || post.Recovery is null || pre.Recovery != post.Recovery)
             return false;
-        if (pre.Recovery != post.Recovery || pre.Administrators.Count != post.Administrators.Count)
+
+        return AdministratorsUnchanged(pre, post);
+    }
+
+    /// <summary>
+    /// True only when both states carry their stored facts and those of every holder of the role are identical. The Recovery Access
+    /// posture inputs are not compared: a decision that may let them differ states how (<see cref="FactsUnchanged"/> does not).
+    /// </summary>
+    public static bool AdministratorsUnchanged(AdministratorViabilityState pre, AdministratorViabilityState post)
+    {
+        if (pre.Administrators is null || post.Administrators is null || pre.Administrators.Count != post.Administrators.Count)
             return false;
 
         var before = pre.Administrators.OrderBy(a => a.UserId, StringComparer.Ordinal).ToList();

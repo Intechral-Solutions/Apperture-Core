@@ -110,7 +110,9 @@ public static class HostConfigurationAttestationClassifier
         if (!AttestedAuthenticationPayload.TryParse(only.Payload, out var payload) || payload is null)
             return Unavailable(AttestationAssessmentKind.Unreadable, "The Management Host's record of its sign-in configuration cannot be read.");
 
-        return new AttestationAssessment(AttestationAssessmentKind.Fresh, payload.ToReading(), Reason: null);
+        // What is left of the window by the same clock and the same comparison that just called the row live, so it cannot be negative.
+        var reading = payload.ToReading() with { EvidenceRemaining = window - (snapshot.DatabaseNowUtc - only.RefreshedUtc) };
+        return new AttestationAssessment(AttestationAssessmentKind.Fresh, reading, Reason: null);
     }
 
     private static AttestationAssessment Unavailable(AttestationAssessmentKind kind, string reason) => new(kind, Reading: null, reason);

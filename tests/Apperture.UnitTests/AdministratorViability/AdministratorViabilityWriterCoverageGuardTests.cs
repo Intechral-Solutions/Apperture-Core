@@ -1024,6 +1024,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         foreach (var read in new[]
                  {
                      "CaptureBeforeAsync(", "CaptureBeforeForRaiseAsync(", "VerifyAfterAsync(", "AssertRaiseOnlyAsync(", "PrepareAsync(",
+                     "VerifyDesignationAsync(", "VerifyRevocationAsync(", "VerifyBareResetAsync(", "VerifyReplacementAsync(",
                      ".EnterAsync(", "IAdministratorViabilityService", "IDeploymentAuthenticationConfiguration", "ViabilityRefusal",
                  })
         {

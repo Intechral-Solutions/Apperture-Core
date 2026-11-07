@@ -63,15 +63,27 @@ public sealed class AdministratorGateOnlyScope
 /// One writer's hold on the gate and the state it reads under it. A scope belongs to one attempt of one unit: it is created by
 /// <see cref="IAdministratorViabilityCoordinator.EnterAsync"/> after the gate is held, and every read it issues is therefore issued
 /// under the gate. The order of use is fixed: <see cref="CaptureBeforeAsync"/>, the mutation, then <see cref="VerifyAfterAsync"/>
-/// (a reducer) or <see cref="AssertRaiseOnlyAsync"/> (a raiser).
+/// (a reducer) or <see cref="AssertRaiseOnlyAsync"/> (a raiser). An evidence-dependent or net-judged writer verifies with the method
+/// that names its change (<see cref="VerifyDesignationAsync"/>, <see cref="VerifyRevocationAsync"/>,
+/// <see cref="VerifyBareResetAsync"/>, <see cref="VerifyReplacementAsync"/>) and gets the evidence class with the verdict.
 /// </summary>
+/// <remarks>
+/// <b>One reading of the configuration.</b> However many states a scope reads, it reads the deployment's configuration once, at the first
+/// of them (<see cref="AttemptConfigurationReading"/>), so both states of a decision are judged under one reading. When a reading from the
+/// attestation runs out before the decision, both states lose its trust together, and the decision that needed it refuses as unavailable.
+/// </remarks>
 public sealed class AdministratorViabilityScope
 {
     private readonly IAdministratorViabilityService _reads;
+    private readonly AttemptConfigurationReading _attempt;
     private AdministratorViabilityState? _before;
     private string? _affectedUserId;
 
-    internal AdministratorViabilityScope(IAdministratorViabilityService reads) => _reads = reads;
+    internal AdministratorViabilityScope(IAdministratorViabilityService reads, TimeProvider? time = null)
+    {
+        _reads = reads;
+        _attempt = new AttemptConfigurationReading(time);
+    }
 
     /// <summary>The state read before the change, by <see cref="CaptureBeforeAsync"/> or <see cref="CaptureBeforeForRaiseAsync"/>.</summary>
     public AdministratorViabilityState? Captured => _before;
@@ -87,12 +99,12 @@ public sealed class AdministratorViabilityScope
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(affectedUserId);
         _affectedUserId = affectedUserId;
-        _before = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+        _before = await _reads.ReadForAttemptAsync(_attempt, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Reads the state before a reducer's mutation. Call it after the gate is held and before the mutation is applied.</summary>
     public async ValueTask CaptureBeforeAsync(CancellationToken cancellationToken = default) =>
-        _before = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+        _before = await _reads.ReadForAttemptAsync(_attempt, cancellationToken).ConfigureAwait(false);
 
     /// <summary>
     /// Reads the state the applied mutation left, in the same transaction, and decides under both invariants and both views. A
@@ -102,10 +114,82 @@ public sealed class AdministratorViabilityScope
     /// </summary>
     public async ValueTask<ViabilityVerdict> VerifyAfterAsync(CancellationToken cancellationToken = default)
     {
-        var before = Before();
-        var after = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
-        After = after;
+        var (before, after) = await ReadForDecisionAsync(cancellationToken).ConfigureAwait(false);
         return AdministratorViabilityGuard.Evaluate(before, after);
+    }
+
+    /// <summary>
+    /// Decides a Recovery Access designation the mutation applied, under both invariants and both views, on the Local and the Microsoft
+    /// readings unless nothing changed or the result is proven safe without Microsoft.
+    /// </summary>
+    public async ValueTask<ViabilityDecision> VerifyDesignationAsync(CancellationToken cancellationToken = default)
+    {
+        var (before, after) = await ReadForDecisionAsync(cancellationToken).ConfigureAwait(false);
+        return AdministratorViabilityGuard.DecideDesignation(before, after);
+    }
+
+    /// <summary>
+    /// Decides a revocation of <paramref name="revokedUserId"/>'s designation the mutation applied, under the strict rule: refused unless
+    /// another Entra-independent ordinary administrator exists in each view. It needs the Local reading and never the Microsoft one.
+    /// </summary>
+    public async ValueTask<ViabilityDecision> VerifyRevocationAsync(string revokedUserId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(revokedUserId);
+        var (_, after) = await ReadForDecisionAsync(cancellationToken).ConfigureAwait(false);
+        return AdministratorViabilityGuard.DecideRevocation(after, revokedUserId);
+    }
+
+    /// <summary>
+    /// Decides a bare reset of <paramref name="userId"/>'s authenticator the mutation applied: by the posture alone when it cannot have
+    /// reduced anything, and otherwise on the Local reading alone (<see cref="AdministratorViabilityGuard.DecideBareReset"/>).
+    /// </summary>
+    public async ValueTask<ViabilityDecision> VerifyBareResetAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        var (before, after) = await ReadForDecisionAsync(cancellationToken).ConfigureAwait(false);
+        return AdministratorViabilityGuard.DecideBareReset(before, after, userId);
+    }
+
+    /// <summary>
+    /// Decides the replacement of <paramref name="userId"/>'s authenticator the mutation applied, on its net effect on the posture alone
+    /// (<see cref="AdministratorViabilityGuard.DecideReplacement"/>).
+    /// </summary>
+    public async ValueTask<ViabilityDecision> VerifyReplacementAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        var (before, after) = await ReadForDecisionAsync(cancellationToken).ConfigureAwait(false);
+        return AdministratorViabilityGuard.DecideReplacement(before, after, userId);
+    }
+
+    /// <summary>
+    /// The two states a decision is made on: the one captured and the one the mutation left, under the attempt's one reading. The time
+    /// limit of that reading is judged here, after everything is read and immediately before the decision. When it has run out, both
+    /// states lose its trust together, so the two cannot disagree, a decision that needs the reading refuses as unavailable, and one
+    /// that needs no reading is not affected.
+    /// </summary>
+    private async ValueTask<(AdministratorViabilityState Before, AdministratorViabilityState After)> ReadForDecisionAsync(CancellationToken cancellationToken)
+    {
+        var before = Before();
+        var after = await _reads.ReadForAttemptAsync(_attempt, cancellationToken).ConfigureAwait(false);
+        if (_attempt.HasExpired)
+        {
+            before = WithoutExpiredEvidence(before);
+            after = WithoutExpiredEvidence(after);
+            _before = before;
+        }
+
+        After = after;
+        return (before, after);
+    }
+
+    private static AdministratorViabilityState WithoutExpiredEvidence(AdministratorViabilityState state)
+    {
+        var trust = new ConfigurationTrust(
+            ConfigurationTrustLevel.Unknown,
+            ConfigurationTrustLevel.Unknown,
+            [AttemptConfigurationReading.ExpiredReason],
+            ConfigurationEvidence.Unavailable);
+        return state with { Trust = trust, Configuration = state.Configuration with { Trust = trust } };
     }
 
     /// <summary>
@@ -122,7 +206,7 @@ public sealed class AdministratorViabilityScope
         var before = Before();
         var affected = _affectedUserId
             ?? throw new InvalidOperationException("A raise-only writer must capture the state with CaptureBeforeForRaiseAsync.");
-        var after = await _reads.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var after = await _reads.ReadForAttemptAsync(_attempt, cancellationToken).ConfigureAwait(false);
         After = after;
         if (RaiseOnlyAttribution.FindReduction(before, after, affected) is { } reduction)
             throw new AuditInvariantException($"A change that may only add to administrator viability reduced it: {reduction}.");
@@ -138,15 +222,22 @@ public sealed class AdministratorViabilityCoordinator : IAdministratorViabilityC
     private readonly IPlatformAdministratorSetGate _gate;
     private readonly IAdministratorViabilityService _reads;
     private readonly IDeploymentAuthenticationConfiguration? _deployment;
+    private readonly TimeProvider? _time;
 
+    /// <param name="gate">The global administrator-set gate.</param>
+    /// <param name="reads">The viability reads a scope issues.</param>
+    /// <param name="deployment">What <see cref="PrepareAsync"/> builds. A scope never reads through it directly.</param>
+    /// <param name="time">The monotonic clock that limits how long one attempt may rely on its reading from the attestation.</param>
     public AdministratorViabilityCoordinator(
         IPlatformAdministratorSetGate gate,
         IAdministratorViabilityService reads,
-        IDeploymentAuthenticationConfiguration? deployment = null)
+        IDeploymentAuthenticationConfiguration? deployment = null,
+        TimeProvider? time = null)
     {
         _gate = gate;
         _reads = reads;
         _deployment = deployment;
+        _time = time;
     }
 
     /// <inheritdoc />
@@ -161,7 +252,9 @@ public sealed class AdministratorViabilityCoordinator : IAdministratorViabilityC
     public async ValueTask<AdministratorViabilityScope> EnterAsync(CancellationToken cancellationToken = default)
     {
         await _gate.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        return new AdministratorViabilityScope(_reads);
+
+        // A new scope, so a new reading: this is what makes a rerun of the unit read the evidence again.
+        return new AdministratorViabilityScope(_reads, _time);
     }
 
     /// <inheritdoc />

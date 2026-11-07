@@ -808,6 +808,9 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
                 ViabilityTestData.Availability(ViabilityView.Now, local: true, entra: EntraUsable, tenant: EntraUsable ? Tenant : null),
                 ViabilityTestData.Availability(ViabilityView.Restart, local: true, entra: EntraUsable, tenant: EntraUsable ? Tenant : null),
                 Trust));
+
+        public ValueTask<EffectiveSignInConfiguration> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default) =>
+            ReadAsync(cancellationToken);
     }
 
     private sealed class HarnessGate(List<string> log) : IPlatformAdministratorSetGate
@@ -831,6 +834,12 @@ public sealed class EntraPrimaryAuthenticationPolicyTests
         {
             log.Add("state read");
             return inner.ReadAsync(cancellationToken);
+        }
+
+        public ValueTask<AdministratorViabilityState> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default)
+        {
+            log.Add("state read");
+            return inner.ReadForAttemptAsync(attempt, cancellationToken);
         }
     }
 

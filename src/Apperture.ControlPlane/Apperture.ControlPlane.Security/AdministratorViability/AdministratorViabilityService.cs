@@ -11,6 +11,12 @@ public interface IAdministratorViabilityService
 {
     /// <summary>Reads the state now: the effective sign-in configuration, VOA and EI in both views, and Recovery Access health.</summary>
     ValueTask<AdministratorViabilityState> ReadAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the state for one protected attempt: the stored facts and the persisted registration now, under the attempt's one reading
+    /// of the deployment's configuration. What a scope reads through; nothing else calls it.
+    /// </summary>
+    ValueTask<AdministratorViabilityState> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default);
 }
 
 /// <inheritdoc cref="IAdministratorViabilityService" />
@@ -29,6 +35,18 @@ public sealed class AdministratorViabilityService : IAdministratorViabilityServi
     public async ValueTask<AdministratorViabilityState> ReadAsync(CancellationToken cancellationToken = default)
     {
         var configuration = await _configuration.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return await ComposeAsync(configuration, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<AdministratorViabilityState> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default)
+    {
+        var configuration = await _configuration.ReadForAttemptAsync(attempt, cancellationToken).ConfigureAwait(false);
+        return await ComposeAsync(configuration, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<AdministratorViabilityState> ComposeAsync(EffectiveSignInConfiguration configuration, CancellationToken cancellationToken)
+    {
         var administrators = await _facts.ReadAdministratorsAsync(cancellationToken).ConfigureAwait(false);
         var recovery = await _facts.ReadRecoveryAccessAsync(cancellationToken).ConfigureAwait(false);
 

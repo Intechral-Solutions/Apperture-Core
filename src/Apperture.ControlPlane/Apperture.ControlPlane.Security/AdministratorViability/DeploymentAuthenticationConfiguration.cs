@@ -35,6 +35,11 @@ public sealed record RunningAuthenticationReading(
 /// Where the reading came from when it is not the host's own: <see cref="ConfigurationEvidence.Attested"/> for a fresh, consistent
 /// attestation, <see cref="ConfigurationEvidence.Unavailable"/> when none could be trusted. Null for a reader that is the host.
 /// </param>
+/// <param name="EvidenceRemaining">
+/// For an attested reading, how much of the freshness window was left when the database's clock judged it (zero when its age equalled
+/// the window). It is what stops one attempt from relying on the reading for longer than the attestation was fresh
+/// (<see cref="AttemptConfigurationReading"/>). Null for every other reading, which has no window.
+/// </param>
 public sealed record DeploymentAuthenticationReading(
     ConfigurationTrustLevel LocalTrust,
     ConfigurationTrustLevel EntraTrust,
@@ -43,7 +48,8 @@ public sealed record DeploymentAuthenticationReading(
     EntraAuthOptions EntraBase,
     bool AuthoritativeAboutSecrets,
     RunningAuthenticationReading? Running,
-    ConfigurationEvidence? Evidence = null);
+    ConfigurationEvidence? Evidence = null,
+    TimeSpan? EvidenceRemaining = null);
 
 /// <summary>
 /// Where the administrator-viability evaluation reads the deployment's authentication configuration (ruling D-6). The Management

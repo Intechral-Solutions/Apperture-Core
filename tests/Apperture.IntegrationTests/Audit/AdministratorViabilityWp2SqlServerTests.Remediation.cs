@@ -256,7 +256,10 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
 
     // ------------------------------------------------------------------------------------------------- M-2
 
-    /// <summary>The first read of the deployment's configuration returns one reading, every later read returns the other.</summary>
+    /// <summary>
+    /// The first read of the deployment's configuration returns one reading, every later read returns the other. One attempt only ever
+    /// makes the first read, which is what these cases now show.
+    /// </summary>
     private sealed class FlippingDeployment(DeploymentAuthenticationReading first, DeploymentAuthenticationReading then) : IDeploymentAuthenticationConfiguration
     {
         private int _reads;
@@ -376,7 +379,10 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         var coordinator = FlippingCoordinator(db, AdministratorViabilitySqlServerTests.Reading(null), LocalSignInOff(), out var deployment);
         await Service(world, db, actor, coordinator: coordinator).SetLocalCredentialDisabledAsync(new UserId(stranded), disabled: false);
 
-        deployment.Reads.Should().Be(2, "the configuration was read before the change and after it, and was different the second time");
+        // One attempt has one reading of the configuration, so a reload after it cannot reach this writer's decision at all. That a
+        // change of the configuration between two states is not attributed to a raiser is shown on the attribution itself
+        // (AdministratorViabilityRemediationTests).
+        deployment.Reads.Should().Be(1, "one attempt reads the configuration once, however many states it reads");
         (await world.CredentialDisabledAsync(stranded)).Should().BeFalse();
         (await world.AuditRowsAsync(AuditActionNames.LocalCredentialReenabled, stranded)).Should().Be(1);
         (await world.AuditRowsAsync(AuditActionNames.BlockedLastAdminCredentialDisabled, stranded)).Should().Be(0);
@@ -407,12 +413,12 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         offState.Now.ViableOrdinaryAdministrators.Should().BeEmpty("and is not viable under the second, in the Now view");
         offState.Restart.ViableOrdinaryAdministrators.Should().BeEmpty("or in the Restart view: a comparison of the whole system would read this as a reduction the writer caused");
 
-        // The environment changes between the writer's two reads, which the writer did not do and cannot undo.
+        // The environment changes after the writer's one reading of it, which the writer did not do and cannot undo.
         await using var db = world.Scratch.NewDb();
         var coordinator = FlippingCoordinator(db, EntraReading, EntraTurnedOffEverywhere(), out var deployment);
         await Service(world, db, actor, coordinator: coordinator).AddIdentityLinkAsync(new UserId(target), IdentitySource.Local, null);
 
-        deployment.Reads.Should().Be(2, "the configuration was read before the change and after it, and was different the second time");
+        deployment.Reads.Should().Be(1, "one attempt reads the configuration once, however many states it reads");
         (await world.LinkCountAsync(target, 1)).Should().Be(1);
         (await world.AuditRowsAsync(AuditActionNames.IdentityLinkAdded, await world.Scratch.ScalarAsync<string>($"SELECT Id FROM IdentityLinks WHERE UserId = N'{target}' AND Source = 1;"))).Should().Be(1);
     }

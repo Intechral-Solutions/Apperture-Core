@@ -15,6 +15,13 @@ public interface IEffectiveSignInConfigurationProvider
     /// the commit in the Now view. A caller that must decide takes the administrator-set gate first.
     /// </summary>
     ValueTask<EffectiveSignInConfiguration> ReadAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same reading for one protected attempt: the deployment's configuration is the attempt's one reading, read at most once
+    /// however often this is called, and the persisted registration is read at this moment as <see cref="ReadAsync"/> reads it, so the
+    /// proposed persisted state of an applied mutation is still seen.
+    /// </summary>
+    ValueTask<EffectiveSignInConfiguration> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default);
 }
 
 /// <inheritdoc cref="IEffectiveSignInConfigurationProvider" />
@@ -50,6 +57,19 @@ public sealed class EffectiveSignInConfigurationProvider : IEffectiveSignInConfi
     public async ValueTask<EffectiveSignInConfiguration> ReadAsync(CancellationToken cancellationToken = default)
     {
         var reading = await _deployment.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return await ComposeAsync(reading, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<EffectiveSignInConfiguration> ReadForAttemptAsync(AttemptConfigurationReading attempt, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        var reading = await attempt.GetAsync(_deployment, cancellationToken).ConfigureAwait(false);
+        return await ComposeAsync(reading, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<EffectiveSignInConfiguration> ComposeAsync(DeploymentAuthenticationReading reading, CancellationToken cancellationToken)
+    {
         var active = await _registrations.GetActiveAsync(cancellationToken).ConfigureAwait(false);
         var reasons = new List<string>(reading.Reasons);
         var entraTrust = reading.EntraTrust;
