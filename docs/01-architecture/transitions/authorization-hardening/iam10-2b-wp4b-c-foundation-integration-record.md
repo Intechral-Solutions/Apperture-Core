@@ -4,7 +4,7 @@
 |---|---|
 | Package | IAM-10.2b, work package 4B-C, the combined foundation: [Foundation 1A](iam10-2b-wp4b-c-foundation-1a-record.md) (publisher and store: L-B1, L-B2) with [Foundation 1B + 1C](iam10-2b-wp4b-c-foundation-1b1c-record.md) (attempt-scoped evidence, I-3, the posture decisions, classifications and refusals). |
 | Branch | `integration/iam10-2b-wp4bc-foundation` (worktree `wt-iam10-2b-foundation`), local only: not pushed, no PR, the protected IAM branch not advanced. |
-| Status | **Integrated and locally verified by the implementer. Pending independent integration acceptance.** Not independently reviewed. The service-level administrator-viability contract is **not** complete (§8). |
+| Status | **Integrated and locally verified by the implementer. Independent security review of `7a15f72` returned ACCEPT WITH BOUNDED REMEDIATION (test-only R-1 and R-2); the remediation is implemented and locally verified (§10) and is pending the reviewer's closure verification.** The foundation has **not** yet received fully independent acceptance. The service-level administrator-viability contract is **not** complete (§8, §10). |
 | Not in scope | The WP4B-C service reducers (designate, strict revoke, bare reset, replacement candidate and switch, provision, enrol, regenerate as gated raisers), command-line mapping of outcomes, Foundation 1D, WP5, claiming the attestation at application start, development-environment work. |
 
 ## 1. Identity
@@ -113,3 +113,61 @@ The publisher's and the payload source's remarks, the WP4B-B component table row
 ## 9. Evidence
 
 Working evidence is under `artifacts\fnd-logs` in the worktree (ignored): build log, `evidence.ps1` and its TRX files, the honesty report, `mutate-int.ps1` and per-mutant logs with `mut\summary.md`. A copy with `SHA256SUMS.txt`, and bundles of the integration branch and of the 1B + 1C branch, is archived on the second drive; the location is in the hand-back. Do not `git worktree remove` this worktree before that copy is confirmed (removal deletes ignored files).
+
+## 10. Independent security review of `7a15f72` and the bounded remediation (R-1, R-2)
+
+**Review.** Verdict **ACCEPT WITH BOUNDED REMEDIATION** at `7a15f723f36aa1bea44b29b8f83acd1d3075d030`; no blocking finding and no production change required. The reviewer's record and negative-control evidence are on the second drive (`...\2026-11-07\review-wp4bc-foundation-7a15f72`; its 55-entry `SHA256SUMS.txt` was re-verified before use: 0 mismatches). The reviewer also reports that the reviewing session authored Foundation 1B + 1C, so the reviewer notes that an owner who wants full independence for 1B + 1C may commission a second reviewer. That is an owner decision, not made here. The reviewer's own mutants N1 and N4 were caught at `7a15f72`; N2, N3 and N5 **escaped**, which is what R-1 and R-2 are.
+
+**Remediation commits** (test-only; `git diff --name-only 7a15f72..HEAD -- src` is empty and the `src` tree is still `e961044d235e4145685f61cebce154ee1beed82f`):
+
+| Commit | Content |
+|---|---|
+| `07c03bc3` | R-1 unit cases and R-2 SQL case |
+| `ec659b60` | Hardening of the R-2 case against a slow test database; three gaps found by a read-only adversarial review of the new tests (below) |
+
+**R-1 (N3, N5): where the attempt's time is spent.** `AdministratorViabilityAttemptReadingTests` gained two hooks, `ScriptedStore.OnRead` and `ChangingFacts.OnRead`, that spend time on the existing `ManualClock` from inside the operation. Nothing sleeps and nothing reads the system clock. A row 170 s old in the 180 s window leaves exactly 10 s.
+
+| New case | Proves |
+|---|---|
+| Time spent waiting for the attestation store counts (theory over After, Designation, Revocation, BareReset, Replacement): 10 s + 1 tick inside the store's answer | Both the captured state and the state after the change lose the evidence together; exactly one store read. Kills N3 |
+| The same, up to exactly what was left (10 s) | Still `attested`; no over-sensitivity |
+| Time spent reading the state after the change counts (same theory), spent only inside that read, armed after the capture | Both states lose the evidence; one store read. Kills N5 |
+| The same, up to exactly what was left | Still `attested` |
+| The store's time (6 s) and the later state read's time (5 s) add up | Neither read alone uses more than the 10 s left; together they do. The decision is refused as `ConfigurationUnavailable` with evidence `unavailable` and the "went out of date" detail; one store read |
+| 6 s + 4 s | Exactly the budget: still `attested` |
+| A reading that was missing or already stale keeps its own reason after a five-minute attempt (found by the adversarial review: a mutant that treated every non-attested reading as expired would otherwise have escaped) | The reason is never replaced by the "went out of date" reason |
+
+The five requested properties map as follows: time awaiting the store counts (rows 1 and 5), time of the post-change read counts (row 3 and 5), evidence is unavailable when the budget is exhausted (rows 1, 3, 5), before and after states are classified together (every row asserts both `Captured` and `After`, and the trust levels), and no extra attestation read (every row asserts `Reads == 1`).
+
+**R-2 (N2): the early edge of the reclaim window.** `HostConfigurationAttestationSqlServerTests.A_holder_that_went_quiet_for_most_of_the_window_but_not_all_of_it_is_still_held_and_never_displaced`, both isolation modes. The holder is set 176, 178 and 179 s back by the database's own clock (`DATEADD(SECOND, -n, SYSUTCDATETIME())`), its age is read back from the database (at least n seconds, and the reader's `Assess` still calls it attested), and the reclaim must return `Held`, leave the process unchanged and leave the **whole** row equal to what was read (the sibling case compares the whole row the same way). The existing 170 s, dated-ahead and 181 s cases are untouched. The row keeps ageing while a test runs, so a stall of the test database could make a correct store see a holder past the window; a stopwatch bounds the real time from the update to the end of the reclaim, and an attempt whose age plus that time could have reached 180 s proves nothing and is repeated (three tries, then it fails with that explanation). Any other result is a hard assertion, and a wrong store is not excused: its mistake shows at 176 s with 4 s of margin. A second case, `A_holder_that_went_quiet_just_longer_than_the_window_is_reclaimed_so_the_store_is_not_laxer_than_the_reader`, sets a holder 180.5 s back and requires `Stale` from the reader and `Reclaimed` from the store; the row only ever ages, so a slow database cannot fail it, and it catches a store that is a second laxer than the reader.
+
+**The window, the SQL reclaim logic and the production code were not changed.**
+
+**Adversarial review of the new tests.** Three read-only skeptic agents reviewed the committed tests at `07c03bc` without building or running anything (one traced N3 and N5; one invented new mutants of the time logic; one reviewed the SQL case). They confirmed by trace that N2, N3 and N5 are each killed by a named test, and found: the 179 s case could fail under a stall of the test database (fixed: the stopwatch guard), a 181 s reclaim bound would survive (fixed: the 180.5 s case), a refused reclaim was checked only by its refresh time (fixed: whole row), and a mutant making every non-attested reading expire would survive (fixed: the keeps-its-own-reason case). These are the implementer's own aids, not independent acceptance.
+
+**Mutation acceptance.** The reviewer's `review-mutations.ps1` (sha256 `a468fe1b1bd8f4e6be398a12a0f958378efafda84c76b68f75d7a61b5f36f50f`, verified against the review's manifest) was copied and changed only in its harness: a `-Only` selector, a recorded diff of each mutation, the first error line of every failed test, and the clone path. **The N1 to N5 mutant definitions were not changed.** It was run for N2, N3 and N5 against `ec659b60` in a disposable clone, one mutant at a time: the find string must occur exactly once, both test projects are rebuilt (a failed build is `Invalid`, never `Caught`), the unit filter (`AdministratorViability` unit namespace and `EntraPrimaryAuthenticationPolicyTests`) and the SQL filter (`HostConfigurationAttestationSqlServerTests`, `AdministratorViabilityAttemptSqlServerTests`, `ManagementHostAttestationSqlServerTests`) run, the source is restored by `git checkout` and compared by blob hash, and the run ends with a rebuild and a repeat of the baseline.
+
+| Id | Mutant | Result | Failing tests (unit / SQL) and why |
+|---|---|---|---|
+| baseline | none | green: unit 679, SQL 118 (`7a15f72`: 663 and 114) | |
+| N2 | reclaim stale bound 175 s instead of 180 s | **Caught**, 0 / 2 | the 176, 178, 179 s case, both modes: `Expected outcome to be Held`, the store took a live holder |
+| N3 | `_startedAt` taken after the store answers | **Caught**, 6 / 0 | the five store-time rows (`Expected EvidenceOfBothStates(scope) to be equal to {Unavailable, Unavailable}`) and the add-up case (`Expected decision.IsAllowed to be False`) |
+| N5 | expiry judged before the post-change state read | **Caught**, 6 / 0 | the five state-read rows and the add-up case, the same assertions |
+| final | none | green: unit 679, SQL 118 | restored sources byte-identical (hashes compared by the script, which would have thrown) |
+
+Each failure is an assertion about the intended behaviour (outcome `Held`, evidence classes of both states, `IsAllowed`), not a build error or a fixture failure. N1 and N4 were caught by the reviewer at `7a15f72` and were **not rerun**; the earlier integration mutants I01 to I05, 1A's 13 and 1B + 1C's 44 are still cited, not rerun.
+
+**Validation of the final tree `ec659b60`** (`dotnet build Apperture.slnx -c Release --no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers --artifacts-path artifacts\rem-build`: 0 errors, 5 min 21 s; the tests were built from the tree committed afterwards, with no edit after the build started; the SQL target was the disposable container on `127.0.0.1,1433`, credentials in the process environment only, DEV-1 toolkit not used):
+
+| Run | Result |
+|---|---|
+| UnitTests, whole project | 6,140 passed (6,124 plus the 16 new cases), 0 failed, 1 not executed (the opt-in password-timing diagnostic, unchanged); the source and writer guards are in this run |
+| ArchTests / Ui.Shared / Ui.Client / AppHost.Diagnostics | 38 / 1,497 / 532 / 7 passed |
+| Real SQL, the same classes as §5 | **553 of 553 passed** (549 plus the 4 new runs), 0 skipped, 16 min 41 s. Per class, `rcsi: False` / `rcsi: True`: `AdministratorViabilityWp2SqlServerTests` 152 / 152, `EntraPrimaryPolicyViabilitySqlServerTests` 44 / 44, `HostConfigurationAttestationSqlServerTests` 30 / 30 (was 28 / 28), `AdministratorViabilityAttemptSqlServerTests` 25 / 25, `AdministratorViabilitySqlServerTests` 10 / 10 and 1 without a mode, `AdministratorViabilityHostHttpTests` 6 / 6, `ManagementHostStartupOrderSqlServerTests` 5 / 5, `ManagementHostAttestationSqlServerTests` 4 / 4 |
+| `scripts/dev/Test-SqlExecutionHonesty.ps1 -Configuration Release -NoBuild -ArtifactsPath artifacts\rem-build` | **PASS**, exit 0, authoritative: 3,561 discovered and executed (3,557 plus the 4 new runs), 226 passed (all allow-listed; 227 entries, one tolerated linked-worktree test), 3,335 failed with SQL unreachable, 0 violations. Provenance `reused-existing-build` at `ec659b60`, tree `a0116dcd`, clean. The script and the allow-list and must-fail list hashes are identical to the previous report (script `A75F53F6...E513`, allow-list `8798D5A9...442E`, must-fail `17D8A73D...73E3`) |
+
+The new cases need no change to the allow-list or the must-fail list: the honesty script does not police extra failures, and the four new SQL runs are among the failures with SQL unreachable. CI, the allow-lists, test floors, the build protocol and the development infrastructure were not touched (`git diff --name-only 7a15f72..HEAD` lists the two test files and, with this commit, the two documents).
+
+**Not run:** the full IntegrationTests assembly, BrowserTests, EndToEndTests, the hosted CI, and the earlier mutation suites on the changed tree. The DEV-1 toolkit's source-root defect remains unresolved and its `AUTHORITATIVE` label was not relied on.
+
+**Reviewer obligations still open.** (1) Closure verification of R-1 and R-2 at the new exact commit, which the implementer does not self-declare. (2) D-1 to D-4 are **requirements of the WP4B-C service implementation**, recorded in the [decision record §15](iam10-2b-wp4b-decision-record.md); none is discharged by this foundation. (3) The review's informational points (numbered in the review record; its I-3 is not the attempt-scoped evidence item I-3 of §8) I-1 (make the `AttemptConfigurationReading` constructor internal), I-2 (a disbelieved snapshot reaching `FullEvaluation`), I-4 (the unknown-kind throw text in `ViabilityRefusal`), I-5 (a reclaim that commits and is then cancelled at stop leaves the row live for up to the window) and I-6 (test-quality remarks on the posture-decision tests) were **not addressed** here; they are outside the authorised scope (test-only, R-1 and R-2) and are carried forward. I-3 (the `ViabilityDecision` Evidence comment) is a documentation point, also not changed here. (4) The foundation assurance above still does not extend to the service level (§8).
