@@ -76,6 +76,24 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
 
     [Theory]
     [MemberData(nameof(BothModes))]
+    public async Task Verification_checks_the_owner_itself_not_only_the_credential_the_candidate_was_staged_against(bool rcsi)
+    {
+        // Credential identities are unique, so the staged-against check alone already refuses another user's candidate. Two users are given the
+        // same identity here so that only the ownership condition of the statement stands between the second user and the first user's candidate.
+        var world = await WorldAsync(rcsi);
+        var other = await world.OtherEnrolledUserAsync();
+        var candidate = await world.StageAsync();
+        var shared = await world.ActiveCredentialIdAsync();
+        await world.Scratch.ExecuteAsync($"UPDATE UserTotpCredentials SET CredentialId = N'{shared}' WHERE UserId = N'{other.Value}';");
+
+        var result = await world.VerifyAsync(candidate.CandidateId, candidate.Version, user: other);
+
+        result.Outcome.Should().Be(NativeMfaCandidateOutcome.NotFound);
+        (await world.GetAsync(candidate.CandidateId))!.Status.Should().Be(NativeMfaCandidateStatus.Staged, "another user cannot verify the candidate");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
     public async Task Staging_needs_an_enrolled_authenticator_and_writes_nothing_without_one(bool rcsi)
     {
         var none = await WorldAsync(rcsi, enrolled: false);
@@ -258,7 +276,12 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
     {
         var world = await WorldAsync(rcsi);
         var (plain, protectedSecret) = await world.NewSecretAsync();
-        var (candidate, version) = await world.StageAndVerifyAsync(protectedSecret);
+        // The enrolment stored the current step as last used; the candidate is proven at a later step so the switch must change the stored one.
+        var matchedStep = MfaCandidateWorld.CurrentStep() + 5;
+        var candidate = await world.StageAsync(protectedSecret: protectedSecret);
+        var verified = await world.VerifyAsync(candidate.CandidateId, candidate.Version, matchedStep);
+        verified.Outcome.Should().Be(NativeMfaCandidateOutcome.Applied);
+        var version = verified.Version!.Value;
         var oldCredential = await world.ActiveCredentialIdAsync();
         var oldSecretHash = await world.ActiveSecretHashAsync();
         var oldCodes = await world.CodeIdsAsync();
@@ -272,7 +295,7 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
         (await world.ActiveSecretHashAsync()).Should().Be(MfaCandidateWorld.HashOf(protectedSecret)).And.NotBe(oldSecretHash);
         (await world.Scratch.ScalarAsync<bool>($"SELECT IsEnrolled FROM UserTotpCredentials WHERE UserId = N'{world.UserId.Value}';")).Should().BeTrue();
         (await world.Scratch.ScalarAsync<long>($"SELECT LastUsedStep FROM UserTotpCredentials WHERE UserId = N'{world.UserId.Value}';"))
-            .Should().Be(MfaCandidateWorld.CurrentStep(), "the matched step is now the last used step, so the verifying code cannot be replayed");
+            .Should().Be(matchedStep, "the matched step is now the last used step, so the verifying code cannot be replayed");
         var newCodes = string.Join(",", request.RecoveryCodes.Select(c => c.Id).OrderBy(i => i, StringComparer.Ordinal));
         (await world.CodeIdsAsync()).Should().Be(newCodes).And.NotBe(oldCodes, "the recovery codes were replaced with the new set");
         var rows = await world.CandidateRowsAsync();
