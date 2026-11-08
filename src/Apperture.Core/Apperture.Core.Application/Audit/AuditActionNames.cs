@@ -33,6 +33,7 @@ public static class AuditActionNames
     public const string BlockedLastAdminCredentialDisabled = "auth_admin.blocked.last_admin_credential_disabled";
     public const string StrongAuthenticationInsufficient = "auth.strong_authentication.insufficient";
     public const string UnsafeOperationBlocked = "emergency.auth.blocked.unsafe_operation";
+    public const string AdministratorViabilityBlocked = "emergency.auth.blocked.administrator_viability";
 
     // AUD-1.2: Recovery Access administration
     public const string RecoveryAccessDesignated = "emergency.access.designated";
@@ -44,6 +45,7 @@ public static class AuditActionNames
     public const string RecoveryCodesGenerated = "auth.mfa.recovery_codes.generated";
     public const string RecoveryCodeConsumed = "auth.mfa.recovery_code.consumed";
     public const string MfaReset = "auth.mfa.reset";
+    public const string MfaReplaced = "auth.mfa.replaced";
 
     // AUD-1.2: account services (invitations, contact email, password setup and reset, profile, own notification preferences)
     public const string InvitationSent = "account.invitation.sent";

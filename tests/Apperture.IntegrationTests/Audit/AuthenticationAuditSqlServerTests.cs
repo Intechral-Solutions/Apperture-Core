@@ -175,7 +175,7 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(id, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(id, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(id, (await totp.GetByUserIdAsync(id))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         await using (var db = _db.NewDb())

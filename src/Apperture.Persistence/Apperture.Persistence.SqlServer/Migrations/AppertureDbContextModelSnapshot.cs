@@ -3395,6 +3395,11 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<string>("CredentialId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTimeOffset?>("EnrolledAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -3424,6 +3429,59 @@ namespace Apperture.Persistence.SqlServer.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("UserTotpCredentials", (string)null);
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpReplacementCandidateEntity", b =>
+                {
+                    b.Property<string>("CandidateId")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("MatchedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("ProtectedSecret")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ProtectorKeyId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("StagedAgainstCredentialId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("VerifiedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("CandidateId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_UserTotpReplacementCandidates_Live")
+                        .HasFilter("[Status] < 2");
+
+                    b.ToTable("UserTotpReplacementCandidates", (string)null);
                 });
 
             modelBuilder.Entity("Apperture.Persistence.SqlServer.UsernameLedgerEntity", b =>
@@ -3957,6 +4015,15 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Apperture.Persistence.SqlServer.UserTotpReplacementCandidateEntity", b =>
+                {
+                    b.HasOne("Apperture.Persistence.SqlServer.UserEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -277,7 +277,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(userId, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(userId, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(userId, (await totp.GetByUserIdAsync(userId))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         var lost = new LostCommitAcknowledgement();
@@ -437,7 +437,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(userId, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(userId, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(userId, (await totp.GetByUserIdAsync(userId))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         var before = await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId = N'{user}';");

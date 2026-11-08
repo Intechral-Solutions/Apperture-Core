@@ -655,6 +655,7 @@ public sealed class HostConfigurationAttestationTests
             (AuditActionNames.RecoveryAccessDesignated, e => AuditEvents.RecoveryAccessDesignated(user, null, e)),
             (AuditActionNames.RecoveryAccessRevoked, e => AuditEvents.RecoveryAccessRevoked(user, e)),
             (AuditActionNames.MfaReset, e => AuditEvents.MfaReset(user, e)),
+            (AuditActionNames.MfaReplaced, e => AuditEvents.MfaReplaced(user, e)),
         })
         {
             var schema = AuditActionCatalog.Default.Get(action).Details!;

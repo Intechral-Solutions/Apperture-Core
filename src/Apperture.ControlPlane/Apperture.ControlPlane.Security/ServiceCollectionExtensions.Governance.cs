@@ -75,6 +75,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEntraStepUpService, EntraStepUpService>();
         services.AddScoped<INativeTotpCredentialRepository, SqlNativeTotpCredentialRepository>();
         services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();
+        services.AddScoped<INativeMfaReplacementCandidateRepository, SqlNativeMfaReplacementCandidateRepository>();
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IPendingMfaLoginTicketService, PendingMfaLoginTicketService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
@@ -230,6 +231,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILocalPasswordHasher, LocalPasswordHasher>();
         services.AddScoped<INativeTotpCredentialRepository, SqlNativeTotpCredentialRepository>();
         services.AddScoped<INativeMfaRecoveryCodeRepository, SqlNativeMfaRecoveryCodeRepository>();
+        services.AddScoped<INativeMfaReplacementCandidateRepository, SqlNativeMfaReplacementCandidateRepository>();
         services.AddScoped<INativeMfaService, NativeMfaService>();
         services.AddScoped<IEmergencyAccessService, EmergencyAccessService>();
         services.AddScoped<IEntraInstanceRegistrationRepository, SqlEntraInstanceRegistrationRepository>();

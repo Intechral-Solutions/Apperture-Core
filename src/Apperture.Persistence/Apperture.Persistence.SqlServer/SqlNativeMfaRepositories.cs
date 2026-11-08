@@ -39,7 +39,9 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
                         .SetProperty(e => e.LastUsedStep, (long?)null)
                         .SetProperty(e => e.EnrolledAtUtc, (DateTimeOffset?)null)
                         .SetProperty(e => e.LastVerifiedAtUtc, (DateTimeOffset?)null)
-                        .SetProperty(e => e.CreatedAtUtc, startedAtUtc),
+                        .SetProperty(e => e.CreatedAtUtc, startedAtUtc)
+                        // A new secret is a new identity: a verification of the previous pending secret cannot enroll this one.
+                        .SetProperty(e => e.CredentialId, NewCredentialId()),
                     cancellationToken);
             if (replaced == 1)
                 return true;
@@ -54,7 +56,8 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
                 ProtectedSecret = protectedSecret,
                 ProtectorKeyId = protectorKeyId,
                 IsEnrolled = false,
-                CreatedAtUtc = startedAtUtc
+                CreatedAtUtc = startedAtUtc,
+                CredentialId = NewCredentialId()
             };
             _db.UserTotpCredentials.Add(created);
             try
@@ -73,15 +76,28 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
         throw new InvalidOperationException("The pending authenticator enrollment could not be written.");
     }
 
-    public async ValueTask MarkEnrolledAsync(UserId userId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async ValueTask<bool> MarkEnrolledAsync(
+        UserId userId,
+        string expectedCredentialId,
+        long lastUsedStep,
+        DateTimeOffset enrolledAtUtc,
+        CancellationToken cancellationToken = default)
     {
-        var entity = await _db.UserTotpCredentials.FirstOrDefaultAsync(e => e.UserId == userId.Value, cancellationToken)
-            ?? throw new InvalidOperationException("No pending authenticator enrollment exists.");
-        entity.IsEnrolled = true;
-        entity.LastUsedStep = lastUsedStep;
-        entity.EnrolledAtUtc = enrolledAtUtc;
-        entity.LastVerifiedAtUtc = enrolledAtUtc;
-        await _db.SaveChangesAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedCredentialId);
+
+        // One statement, whose condition the database evaluates as it writes: the row must still be pending and still hold the secret
+        // that was verified. The identity does not change (the secret is the same one), so the enrolled row keeps naming it.
+        var enrolled = await _db.UserTotpCredentials
+            .Where(e => e.UserId == userId.Value && !e.IsEnrolled && e.CredentialId == expectedCredentialId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(e => e.IsEnrolled, true)
+                    .SetProperty(e => e.LastUsedStep, (long?)lastUsedStep)
+                    .SetProperty(e => e.EnrolledAtUtc, (DateTimeOffset?)enrolledAtUtc)
+                    .SetProperty(e => e.LastVerifiedAtUtc, (DateTimeOffset?)enrolledAtUtc),
+                cancellationToken);
+        return enrolled == 1;
     }
 
     public async ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default)
@@ -98,10 +114,26 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
     {
         var entity = await _db.UserTotpCredentials.FirstOrDefaultAsync(e => e.UserId == userId.Value, cancellationToken);
         if (entity is null)
+        {
+            await RemoveCandidatesAsync(_db, userId, cancellationToken);
             return;
+        }
+
         _db.UserTotpCredentials.Remove(entity);
         await _db.SaveChangesAsync(cancellationToken);
+
+        // After the credential row (lock order: credential, candidates, codes). A candidate staged against the removed credential
+        // can never be switched; its protected secret is removed rather than left to expire.
+        await RemoveCandidatesAsync(_db, userId, cancellationToken);
     }
+
+    /// <summary>The new identity of a stored secret.</summary>
+    internal static string NewCredentialId() => Guid.NewGuid().ToString("N");
+
+    internal static Task<int> RemoveCandidatesAsync(AppertureDbContext db, UserId userId, CancellationToken cancellationToken) =>
+        db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM [UserTotpReplacementCandidates] WHERE [UserId] = {userId.Value};",
+            cancellationToken);
 
     private static NativeTotpStoredCredential ToDomain(UserTotpCredentialEntity e) => new(
         new UserId(e.UserId),
@@ -111,7 +143,8 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
         e.LastUsedStep,
         e.CreatedAtUtc,
         e.EnrolledAtUtc,
-        e.LastVerifiedAtUtc);
+        e.LastVerifiedAtUtc,
+        e.CredentialId);
 }
 
 public sealed class SqlNativeMfaRecoveryCodeRepository : INativeMfaRecoveryCodeRepository
@@ -136,6 +169,10 @@ public sealed class SqlNativeMfaRecoveryCodeRepository : INativeMfaRecoveryCodeR
 
     public async ValueTask ReplaceAllAsync(UserId userId, IReadOnlyList<NativeMfaRecoveryCodeRecord> codes, CancellationToken cancellationToken = default)
     {
+        // Before the codes (lock order: credential, candidates, codes): a candidate staged earlier would replace codes the operator
+        // has not seen.
+        await SqlNativeTotpCredentialRepository.RemoveCandidatesAsync(_db, userId, cancellationToken);
+
         var existing = await _db.UserMfaRecoveryCodes.Where(e => e.UserId == userId.Value).ToListAsync(cancellationToken);
         _db.UserMfaRecoveryCodes.RemoveRange(existing);
         foreach (var code in codes)
@@ -166,6 +203,8 @@ public sealed class SqlNativeMfaRecoveryCodeRepository : INativeMfaRecoveryCodeR
 
     public async ValueTask DeleteAllAsync(UserId userId, CancellationToken cancellationToken = default)
     {
+        await SqlNativeTotpCredentialRepository.RemoveCandidatesAsync(_db, userId, cancellationToken);
+
         var existing = await _db.UserMfaRecoveryCodes.Where(e => e.UserId == userId.Value).ToListAsync(cancellationToken);
         _db.UserMfaRecoveryCodes.RemoveRange(existing);
         await _db.SaveChangesAsync(cancellationToken);

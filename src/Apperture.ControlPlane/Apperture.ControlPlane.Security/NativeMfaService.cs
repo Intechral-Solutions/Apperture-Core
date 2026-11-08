@@ -116,7 +116,10 @@ public sealed class NativeMfaService : INativeMfaService
                 if (!Rfc6238Totp.Verify(secret, totpCode, unix, stored.LastUsedStep, out var matchedStep))
                     throw new InvalidOperationException("The authenticator code is not valid.");
 
-                await _totp.MarkEnrolledAsync(userId, matchedStep, _time.GetUtcNow(), ct);
+                // The write is conditional on the secret that was just checked still being the pending one: a begin that replaced it since
+                // makes this fail, and the unit rolls back, so the account is never enrolled on a secret nobody verified.
+                if (!await _totp.MarkEnrolledAsync(userId, stored.CredentialId, matchedStep, _time.GetUtcNow(), ct))
+                    throw new InvalidOperationException("The pending authenticator enrollment changed while the code was being checked. Start the enrollment again.");
                 await _recoveryCodes.ReplaceAllAsync(userId, codes.Records, ct);
                 await transaction.StageAsync(AuditEvents.MfaEnrolled(userId), ct);
                 await transaction.StageAsync(AuditEvents.RecoveryCodesGenerated(userId, codes.Plaintext.Count, regenerated: false), ct);

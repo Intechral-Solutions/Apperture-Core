@@ -58,6 +58,7 @@ public class AppertureDbContext : DbContext
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
     public DbSet<UserTotpCredentialEntity> UserTotpCredentials => Set<UserTotpCredentialEntity>();
     public DbSet<UserMfaRecoveryCodeEntity> UserMfaRecoveryCodes => Set<UserMfaRecoveryCodeEntity>();
+    public DbSet<UserTotpReplacementCandidateEntity> UserTotpReplacementCandidates => Set<UserTotpReplacementCandidateEntity>();
     public DbSet<AccountActionTokenEntity> AccountActionTokens => Set<AccountActionTokenEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
     public DbSet<UserProfileImageEntity> UserProfileImages => Set<UserProfileImageEntity>();
@@ -871,8 +872,26 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.UserId).HasMaxLength(64);
             e.Property(x => x.ProtectedSecret).IsRequired();
             e.Property(x => x.ProtectorKeyId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.CredentialId).IsRequired().HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserTotpReplacementCandidateEntity>(e =>
+        {
+            e.ToTable("UserTotpReplacementCandidates");
+            e.HasKey(x => x.CandidateId);
+            e.Property(x => x.CandidateId).HasMaxLength(64);
+            e.Property(x => x.UserId).IsRequired().HasMaxLength(64);
+            e.Property(x => x.ProtectedSecret).IsRequired();
+            e.Property(x => x.ProtectorKeyId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.StagedAgainstCredentialId).IsRequired().HasMaxLength(64);
+            e.Property(x => x.CreatedUtc).HasColumnType("datetime2");
+            e.Property(x => x.ExpiresAtUtc).HasColumnType("datetime2");
+            e.Property(x => x.VerifiedUtc).HasColumnType("datetime2");
+            // At most one live (staged or verified) candidate per user; superseded and consumed rows are history awaiting the next stage's purge.
+            e.HasIndex(x => x.UserId).IsUnique().HasFilter("[Status] < 2").HasDatabaseName("UX_UserTotpReplacementCandidates_Live");
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<UserMfaRecoveryCodeEntity>(e =>

@@ -1,3 +1,4 @@
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 
@@ -305,6 +306,29 @@ public static partial class AuditEvents
             AuditOutcomeCodes.Rejected,
             ("userId", protectedUser.Value),
             ("operation", operation));
+
+    /// <summary>
+    /// A change that could reduce administrator viability was refused, or could not be judged because the configuration evidence
+    /// was missing. The actor is the person who attempted it; the target is the affected account. It names the evidence class the
+    /// refusal was made under, always, and never a value of the configuration.
+    /// </summary>
+    /// <param name="user">The affected account, as the loaded row names it.</param>
+    /// <param name="operation">One of the guarded operations of the command line (see the catalog's closed list).</param>
+    /// <param name="code">The stable refusal code the operator was given.</param>
+    /// <param name="configurationEvidence">The class of configuration evidence the decision used.</param>
+    public static AuditEvent AdministratorViabilityBlocked(
+        UserId user,
+        string operation,
+        string code,
+        ConfigurationEvidence configurationEvidence) =>
+        Event(
+            AuditActionNames.AdministratorViabilityBlocked,
+            Target(AuditTargetTypes.User, user.Value),
+            AuditOutcomeCodes.Rejected,
+            ("userId", user.Value),
+            ("operation", operation),
+            ("code", code),
+            (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence.ToAuditValue()));
 
     private static string SourceName(IdentitySource source) => source.ToString().ToLowerInvariant();
 }

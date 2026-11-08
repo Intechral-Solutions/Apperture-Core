@@ -43,4 +43,17 @@ public static partial class AuditEvents
             AuditOutcomeCodes.Succeeded,
             ("userId", user.Value),
             (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence?.ToAuditValue()));
+
+    /// <summary>
+    /// The user's authenticator was replaced by a candidate the operator proved possession of, and the recovery codes were replaced
+    /// with it. Only the user and the class of evidence are recorded: never a secret, a code, a hash or a candidate.
+    /// </summary>
+    /// <param name="configurationEvidence">The class of configuration evidence the decision used, when the operation records it.</param>
+    public static AuditEvent MfaReplaced(UserId user, ConfigurationEvidence? configurationEvidence = null) =>
+        Event(
+            AuditActionNames.MfaReplaced,
+            Target(AuditTargetTypes.User, user.Value),
+            AuditOutcomeCodes.Succeeded,
+            ("userId", user.Value),
+            (ConfigurationEvidenceNames.AuditDetailName, configurationEvidence?.ToAuditValue()));
 }
