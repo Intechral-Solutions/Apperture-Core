@@ -64,8 +64,8 @@ public sealed class AdministratorViabilitySqlServerTests
 
     private static Task SeedMfaAsync(AuditSqlScratch s, string userId, bool enrolled, int unusedCodes, int consumedCodes = 0) =>
         s.ExecuteAsync($"""
-            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, CreatedAtUtc)
-            VALUES (N'{userId}', 0x01, N'k', {(enrolled ? 1 : 0)}, SYSDATETIMEOFFSET());
+            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, CreatedAtUtc, CredentialId)
+            VALUES (N'{userId}', 0x01, N'k', {(enrolled ? 1 : 0)}, SYSDATETIMEOFFSET(), N'cred-{userId}');
             {string.Join("\n", Enumerable.Range(0, unusedCodes + consumedCodes).Select(i => $"""
                 INSERT INTO UserMfaRecoveryCodes (Id, UserId, CodeHash, Salt, Algorithm, CreatedAtUtc, ConsumedAtUtc)
                 VALUES (N'c-{userId}-{i}', N'{userId}', N'h', N's', N'test', SYSDATETIMEOFFSET(), {(i < unusedCodes ? "NULL" : "SYSDATETIMEOFFSET()")});
