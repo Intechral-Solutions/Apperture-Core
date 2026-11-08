@@ -502,6 +502,35 @@ public sealed class AdministratorViabilityAttemptReadingTests
         store.Reads.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_reading_that_was_never_evidence_keeps_its_own_reason_however_long_the_attempt_takes(bool stale)
+    {
+        // Running out is only for evidence that was accepted. A record that was missing or already stale says so, and a long attempt
+        // must not replace that reason with "went out of date while the change was being checked".
+        var clock = new ManualClock();
+        var store = new ScriptedStore(stale ? Snapshot(Window + TimeSpan.FromSeconds(1)) : Missing());
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable);
+        decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
+        decision.Verdict.Detail.Should().NotContain("went out of date");
+        foreach (var state in new[] { scope.Captured!, scope.After! })
+        {
+            state.Trust.Reasons.Should().NotBeEmpty();
+            state.Trust.Reasons.Should().NotContain(AttemptConfigurationReading.ExpiredReason, "the reading was not evidence that could run out");
+        }
+
+        store.Reads.Should().Be(1);
+    }
+
     [Fact]
     public async Task When_the_reading_runs_out_both_states_lose_its_trust_together_so_they_cannot_disagree()
     {

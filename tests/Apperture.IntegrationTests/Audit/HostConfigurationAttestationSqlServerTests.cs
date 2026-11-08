@@ -557,6 +557,12 @@ public sealed class HostConfigurationAttestationSqlServerTests
         // The window is 180 seconds. The age is set by the database's own clock and read back from it, so each case is proven to sit
         // where the name says before the reclaim is asked. 176 is just past a 175-second bound; 178 and 179 sit inside the last
         // seconds, where a store that called its holder silent a few seconds before the reader does would take a live row.
+        //
+        // The row keeps ageing while the test runs, so a stall of the test database (a pause of a second or two under memory pressure)
+        // could make a correct store see a holder that really is past the window. A stopwatch bounds the real time from the update to
+        // the end of the reclaim: when age + that time could have reached the window the attempt proves nothing either way and is
+        // repeated, and otherwise the holder is certainly live and must be Held. A store that is wrong is never excused: its mistake
+        // shows at 176 seconds with 4 seconds of margin.
         await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
         var store = Store(scratch, out var db);
         await using var _ = db;
@@ -565,23 +571,57 @@ public sealed class HostConfigurationAttestationSqlServerTests
 
         foreach (var seconds in new[] { 176, 178, 179 })
         {
-            await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -{seconds}, SYSUTCDATETIME());");
+            var conclusive = false;
+            for (var attempt = 1; attempt <= 3 && !conclusive; attempt++)
+            {
+                var elapsed = System.Diagnostics.Stopwatch.StartNew();
+                await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -{seconds}, SYSUTCDATETIME());");
 
-            var before = await store.ReadAsync();
-            var age = before.DatabaseNowUtc - before.Rows.Single().RefreshedUtc;
-            age.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(seconds), $"the row was set {seconds} seconds back by the database's clock");
-            age.Should().BeLessThan(TimeSpan.FromSeconds(seconds + 1.5), "and the database's clock has barely moved since");
-            age.Should().BeLessThan(HostConfigurationAttestationTiming.FreshnessWindow, "the row is inside the window the reader uses");
-            Assess(before).IsAttested.Should().BeTrue($"the reader still believes a holder {seconds} seconds old");
+                var before = await store.ReadAsync();
+                var age = before.DatabaseNowUtc - before.Rows.Single().RefreshedUtc;
+                age.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(seconds), $"the row was set {seconds} seconds back by the database's clock");
+                if (age >= HostConfigurationAttestationTiming.FreshnessWindow)
+                    continue;
 
-            (await store.ReclaimAsync(Write("old"))).Should().Be(
-                HostAttestationReclaimOutcome.Held,
-                $"a holder {seconds} seconds old is live by the reader's rule, so the store must not displace it");
+                Assess(before).IsAttested.Should().BeTrue($"the reader still believes a holder {seconds} seconds old");
 
-            (await RawAsync(scratch)).Process.Should().Be("new", "the live holder keeps its row");
-            var after = await store.ReadAsync();
-            after.Rows.Single().RefreshedUtc.Should().Be(before.Rows.Single().RefreshedUtc, "a refused reclaim writes nothing");
+                var outcome = await store.ReclaimAsync(Write("old"));
+                elapsed.Stop();
+                if (TimeSpan.FromSeconds(seconds) + elapsed.Elapsed >= HostConfigurationAttestationTiming.FreshnessWindow)
+                    continue;
+
+                conclusive = true;
+                outcome.Should().Be(
+                    HostAttestationReclaimOutcome.Held,
+                    $"a holder {seconds} seconds old is live by the reader's rule, so the store must not displace it");
+                (await RawAsync(scratch)).Process.Should().Be("new", "the live holder keeps its row");
+                (await store.ReadAsync()).Rows.Single().Should().Be(before.Rows.Single(), "a refused reclaim writes nothing, not even the refresh time");
+            }
+
+            conclusive.Should().BeTrue($"the {seconds}-second case was repeated three times and each time the test database was too slow to prove anything");
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_holder_that_went_quiet_just_longer_than_the_window_is_reclaimed_so_the_store_is_not_laxer_than_the_reader(bool rcsi)
+    {
+        // The other side of the edge: 180.5 seconds is stale by the reader's rule, and a store that waited a second longer (a 181-second
+        // bound) would hold it. The row only ever gets older while the test runs, so a slow database cannot make this fail.
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("old"));
+        await store.ClaimAsync(Write("new"));
+
+        await scratch.ExecuteAsync("UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(MILLISECOND, -180500, SYSUTCDATETIME());");
+        var before = await store.ReadAsync();
+        (before.DatabaseNowUtc - before.Rows.Single().RefreshedUtc).Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(180_500));
+        Assess(before).Kind.Should().Be(AttestationAssessmentKind.Stale, "the reader already calls a holder this quiet stale");
+
+        (await store.ReclaimAsync(Write("old"))).Should().Be(HostAttestationReclaimOutcome.Reclaimed, "the store agrees with the reader as soon as the window has passed");
+        (await RawAsync(scratch)).Process.Should().Be("old");
+        Assess(await store.ReadAsync()).IsAttested.Should().BeTrue();
     }
 
     [Theory]
