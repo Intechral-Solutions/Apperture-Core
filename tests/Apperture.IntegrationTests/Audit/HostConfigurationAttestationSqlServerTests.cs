@@ -552,6 +552,40 @@ public sealed class HostConfigurationAttestationSqlServerTests
 
     [Theory]
     [MemberData(nameof(BothModes))]
+    public async Task A_holder_that_went_quiet_for_most_of_the_window_but_not_all_of_it_is_still_held_and_never_displaced(bool rcsi)
+    {
+        // The window is 180 seconds. The age is set by the database's own clock and read back from it, so each case is proven to sit
+        // where the name says before the reclaim is asked. 176 is just past a 175-second bound; 178 and 179 sit inside the last
+        // seconds, where a store that called its holder silent a few seconds before the reader does would take a live row.
+        await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);
+        var store = Store(scratch, out var db);
+        await using var _ = db;
+        await store.ClaimAsync(Write("old"));
+        await store.ClaimAsync(Write("new"));
+
+        foreach (var seconds in new[] { 176, 178, 179 })
+        {
+            await scratch.ExecuteAsync($"UPDATE HostConfigurationAttestations SET RefreshedUtc = DATEADD(SECOND, -{seconds}, SYSUTCDATETIME());");
+
+            var before = await store.ReadAsync();
+            var age = before.DatabaseNowUtc - before.Rows.Single().RefreshedUtc;
+            age.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(seconds), $"the row was set {seconds} seconds back by the database's clock");
+            age.Should().BeLessThan(TimeSpan.FromSeconds(seconds + 1.5), "and the database's clock has barely moved since");
+            age.Should().BeLessThan(HostConfigurationAttestationTiming.FreshnessWindow, "the row is inside the window the reader uses");
+            Assess(before).IsAttested.Should().BeTrue($"the reader still believes a holder {seconds} seconds old");
+
+            (await store.ReclaimAsync(Write("old"))).Should().Be(
+                HostAttestationReclaimOutcome.Held,
+                $"a holder {seconds} seconds old is live by the reader's rule, so the store must not displace it");
+
+            (await RawAsync(scratch)).Process.Should().Be("new", "the live holder keeps its row");
+            var after = await store.ReadAsync();
+            after.Rows.Single().RefreshedUtc.Should().Be(before.Rows.Single().RefreshedUtc, "a refused reclaim writes nothing");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
     public async Task A_reclaim_by_the_owner_is_idempotent_and_a_stopped_process_cannot_take_its_row_back(bool rcsi)
     {
         await using var scratch = await AuditIsolation.CreateAsync("Apperture_Attest_", rcsi);

@@ -45,10 +45,14 @@ public sealed class AdministratorViabilityAttemptReadingTests
 
         public List<string>? Log { get; init; }
 
+        /// <summary>Runs inside every read, so a test can spend time (on its manual clock) while the store is answering.</summary>
+        public Action? OnRead { get; init; }
+
         public ValueTask<HostConfigurationAttestationSnapshot> ReadAsync(CancellationToken cancellationToken = default)
         {
             Reads++;
             Log?.Add("attestation read");
+            OnRead?.Invoke();
             if (Fail is not null)
                 throw Fail;
             var snapshot = snapshots[Math.Min(_next, snapshots.Length - 1)];
@@ -74,8 +78,14 @@ public sealed class AdministratorViabilityAttemptReadingTests
 
         public RecoveryAccessFacts Recovery { get; set; } = ViabilityTestData.Recovery();
 
-        public ValueTask<IReadOnlyList<AdministratorFacts>> ReadAdministratorsAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Administrators);
+        /// <summary>Runs inside every read of the stored facts, so a test can spend time (on its manual clock) while the state is being read.</summary>
+        public Action? OnRead { get; set; }
+
+        public ValueTask<IReadOnlyList<AdministratorFacts>> ReadAdministratorsAsync(CancellationToken cancellationToken = default)
+        {
+            OnRead?.Invoke();
+            return ValueTask.FromResult(Administrators);
+        }
 
         public ValueTask<RecoveryAccessFacts> ReadRecoveryAccessAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Recovery);
@@ -329,6 +339,167 @@ public sealed class AdministratorViabilityAttemptReadingTests
         late.Evidence.Should().Be(ConfigurationEvidence.Unavailable);
         late.Verdict.Detail.Should().Contain("went out of date");
         storeLate.Reads.Should().Be(1, "running out is judged on the reading it has, not by reading again");
+    }
+
+    // ------------------------------------------------------------------------------- where the attempt's time is spent
+    //
+    // The tests above move the clock between the calls. These spend time INSIDE the two reads an attempt waits for: the attestation
+    // store's answer, and the read of the state after the change. Each double advances the manual clock from within the operation, so
+    // an ordering mistake (the clock started after the store answers, expiry judged before the later read) shows as a different answer.
+    // Nothing here sleeps or reads the system clock.
+
+    /// <summary>What the attestation has left when the attempt reads it: a row 170 seconds old in a 180-second window.</summary>
+    private static readonly TimeSpan Left = TimeSpan.FromSeconds(10);
+
+    private static ConfigurationEvidence?[] EvidenceOfBothStates(AdministratorViabilityScope scope) =>
+        [scope.Captured!.Trust.Evidence, scope.After!.Trust.Evidence];
+
+    private static void BothStatesLostTheEvidence(AdministratorViabilityScope scope)
+    {
+        EvidenceOfBothStates(scope).Should().Equal(
+            [ConfigurationEvidence.Unavailable, ConfigurationEvidence.Unavailable],
+            "the captured state and the state after the change are classified together");
+        foreach (var state in new[] { scope.Captured!, scope.After! })
+        {
+            state.Trust.Local.Should().Be(ConfigurationTrustLevel.Unknown);
+            state.Trust.Entra.Should().Be(ConfigurationTrustLevel.Unknown);
+        }
+    }
+
+    private static void BothStatesKeptTheEvidence(AdministratorViabilityScope scope) =>
+        EvidenceOfBothStates(scope).Should().Equal(
+            [ConfigurationEvidence.Attested, ConfigurationEvidence.Attested],
+            "the captured state and the state after the change are classified together");
+
+    /// <summary>Arms the facts reader to spend <paramref name="by"/> on the clock during the next read of the state, once.</summary>
+    private static void SpendDuringNextStateRead(ChangingFacts facts, ManualClock clock, TimeSpan by) =>
+        facts.OnRead = () =>
+        {
+            facts.OnRead = null;
+            clock.Advance(by);
+        };
+
+    [Theory]
+    [InlineData(Verification.After)]
+    [InlineData(Verification.Designation)]
+    [InlineData(Verification.Revocation)]
+    [InlineData(Verification.BareReset)]
+    [InlineData(Verification.Replacement)]
+    public async Task Time_spent_waiting_for_the_attestation_store_counts_against_the_evidence_it_returns(Verification verification)
+    {
+        // The whole of the time is spent inside the store's answer, and not one tick after it. An attempt that starts its clock when
+        // the answer arrives would measure none of it and would rely on a row that was already out of date.
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left)) { OnRead = () => clock.Advance(Left + TimeSpan.FromTicks(1)) };
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        await VerifyAsync(scope, verification);
+
+        BothStatesLostTheEvidence(scope);
+        store.Reads.Should().Be(1, "running out is judged on the reading the attempt has; it is never a reason to read again");
+    }
+
+    [Fact]
+    public async Task Time_spent_inside_the_attestation_store_up_to_exactly_what_was_left_does_not_expire_the_evidence()
+    {
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left)) { OnRead = () => clock.Advance(Left) };
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.Evidence.Should().Be(ConfigurationEvidence.Attested, "exactly what was left is still fresh");
+        BothStatesKeptTheEvidence(scope);
+        store.Reads.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(Verification.After)]
+    [InlineData(Verification.Designation)]
+    [InlineData(Verification.Revocation)]
+    [InlineData(Verification.BareReset)]
+    [InlineData(Verification.Replacement)]
+    public async Task Time_spent_reading_the_state_after_the_change_counts_against_the_evidence_the_attempt_holds(Verification verification)
+    {
+        // The reading is taken at once and fresh. The time passes while the state AFTER the change is being read, and nowhere else.
+        // Expiry has to be judged once that read is done: judged before it, the attempt would decide on evidence that had run out
+        // while it was reading.
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left));
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+        SpendDuringNextStateRead(facts, clock, Left + TimeSpan.FromTicks(1));
+
+        await VerifyAsync(scope, verification);
+
+        BothStatesLostTheEvidence(scope);
+        store.Reads.Should().Be(1, "the state after the change is judged under the reading the attempt already has");
+    }
+
+    [Fact]
+    public async Task Time_spent_reading_the_state_after_the_change_up_to_exactly_what_was_left_does_not_expire_the_evidence()
+    {
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left));
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+        SpendDuringNextStateRead(facts, clock, Left);
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.Evidence.Should().Be(ConfigurationEvidence.Attested, "exactly what was left is still fresh");
+        BothStatesKeptTheEvidence(scope);
+        store.Reads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task The_time_of_the_store_and_of_the_later_state_read_add_up_and_the_decision_refuses_as_unavailable()
+    {
+        // Neither read alone uses more than the 10 seconds that were left (6 and 5); together they use 11.
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left)) { OnRead = () => clock.Advance(TimeSpan.FromSeconds(6)) };
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+        SpendDuringNextStateRead(facts, clock, TimeSpan.FromSeconds(5));
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.Verdict.Kind.Should().Be(ViabilityVerdictKind.ConfigurationUnavailable);
+        decision.Evidence.Should().Be(ConfigurationEvidence.Unavailable, "required evidence that ran out is unavailable, whichever read spent the time");
+        decision.Verdict.Detail.Should().Contain("went out of date");
+        BothStatesLostTheEvidence(scope);
+        store.Reads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task The_time_of_the_store_and_of_the_later_state_read_together_up_to_exactly_what_was_left_still_count()
+    {
+        var clock = new ManualClock();
+        var store = new ScriptedStore(Snapshot(Window - Left)) { OnRead = () => clock.Advance(TimeSpan.FromSeconds(6)) };
+        var facts = LocalAdminAndHealthyRecovery();
+        var scope = await Coordinator(store, facts, clock).EnterAsync();
+        await scope.CaptureBeforeAsync();
+        facts.Recovery = AfterReset;
+        SpendDuringNextStateRead(facts, clock, TimeSpan.FromSeconds(4));
+
+        var decision = await scope.VerifyBareResetAsync("recovery");
+
+        decision.Evidence.Should().Be(ConfigurationEvidence.Attested);
+        BothStatesKeptTheEvidence(scope);
+        store.Reads.Should().Be(1);
     }
 
     [Fact]
