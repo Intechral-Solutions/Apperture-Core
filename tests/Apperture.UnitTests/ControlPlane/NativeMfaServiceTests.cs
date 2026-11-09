@@ -76,6 +76,24 @@ public sealed class NativeMfaServiceTests
     }
 
     [Fact]
+    public async Task An_enrollment_whose_pending_secret_was_replaced_after_its_code_was_checked_fails_and_enrolls_nothing()
+    {
+        // The code is valid for the secret the enrollment read. A begin then replaces the pending secret, so the conditional write finds
+        // another credential and reports it; the enrollment must not enroll a secret nobody verified.
+        var harness = Harness.Create();
+        var userId = new UserId("usr-stale");
+        var challenge = await harness.Mfa.BeginEnrollmentAsync(userId, "emergency");
+        var code = Rfc6238Totp.Compute(Base32.Decode(challenge.ManualEntryKey), Now.ToUnixTimeSeconds());
+        harness.Totp.BeforeNextEnrol = () => harness.Mfa.BeginEnrollmentAsync(userId, "emergency").AsTask().GetAwaiter().GetResult();
+
+        var act = () => harness.Mfa.CompleteEnrollmentAsync(userId, code, AuditActor.EmergencyCli).AsTask();
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("changed while the code was being checked");
+        (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
+        harness.Recorder.Staged.Should().BeEmpty("nothing was committed");
+    }
+
+    [Fact]
     public async Task Beginning_an_enrollment_again_while_it_is_pending_replaces_the_pending_secret()
     {
         var harness = Harness.Create();
@@ -252,14 +270,24 @@ public sealed class NativeMfaServiceTests
             if (_stored is { IsEnrolled: true })
                 return ValueTask.FromResult(false);
             LastProtectedSecret = protectedSecret;
-            _stored = new NativeTotpStoredCredential(userId, protectedSecret, protectorKeyId, false, null, startedAtUtc, null, null);
+            _stored = new NativeTotpStoredCredential(userId, protectedSecret, protectorKeyId, false, null, startedAtUtc, null, null, Guid.NewGuid().ToString("N"));
             return ValueTask.FromResult(true);
         }
 
-        public ValueTask MarkEnrolledAsync(UserId userId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default)
+        /// <summary>Plays a begin that replaces the pending secret after the enrollment checked its code and before it enrolls.</summary>
+        public Action? BeforeNextEnrol { get; set; }
+
+        public ValueTask<bool> MarkEnrolledAsync(UserId userId, string expectedCredentialId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default)
         {
-            _stored = _stored! with { IsEnrolled = true, LastUsedStep = lastUsedStep, EnrolledAtUtc = enrolledAtUtc, LastVerifiedAtUtc = enrolledAtUtc };
-            return ValueTask.CompletedTask;
+            var interleaved = BeforeNextEnrol;
+            BeforeNextEnrol = null;
+            interleaved?.Invoke();
+
+            // As the repository: only the still-pending credential that was verified is enrolled.
+            if (_stored is not { IsEnrolled: false } pending || pending.CredentialId != expectedCredentialId)
+                return ValueTask.FromResult(false);
+            _stored = pending with { IsEnrolled = true, LastUsedStep = lastUsedStep, EnrolledAtUtc = enrolledAtUtc, LastVerifiedAtUtc = enrolledAtUtc };
+            return ValueTask.FromResult(true);
         }
 
         public ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default)

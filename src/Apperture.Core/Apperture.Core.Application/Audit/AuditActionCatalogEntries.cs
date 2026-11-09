@@ -428,6 +428,21 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
+            // Declared with its producer and schema; no service writes it yet. The refusal is recorded after the rollback by the
+            // operation that was refused, with the actor who attempted it and the affected account as the target.
+            Action = "emergency.auth.blocked.administrator_viability",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.AdministratorViabilityBlocked,
+            IntroducedIn = "IAM-10.2b",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "EmergencyAccessService.cs",
+        },
+        new()
+        {
             Action = "emergency.local.protected",
             Category = AuditCategories.Identity,
             Severity = AuditSeverities.Elevated,
@@ -518,6 +533,20 @@ internal static class AuditActionCatalogEntries
             IntroducedIn = "f3418f25",
             IntroducedAfterEpic37Migration = true,
             Writer = "NativeMfaService.cs:176",
+        },
+        new()
+        {
+            // Declared with its producer and schema; no service writes it yet. The switch commits it with the new authenticator.
+            Action = "auth.mfa.replaced",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.UserWithConfigurationEvidence,
+            IntroducedIn = "IAM-10.2b",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "NativeMfaService.cs",
         },
         new()
         {
