@@ -158,6 +158,13 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
     /// <inheritdoc />
     public async ValueTask<NativeMfaSwitchResult> SwitchAsync(NativeMfaSwitchRequest request, CancellationToken cancellationToken = default)
     {
+        // S-1: the switch never commits on its own. It runs only on the caller's open transaction of this context (the audited unit's,
+        // under the administrator-set gate), so it commits or rolls back with that unit's audit row and decision. Refused before any
+        // statement; no transaction of its own is opened.
+        if (_db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException(
+                "The authenticator switch runs only inside the caller's open transaction (the audited unit, under the administrator-set gate); it never commits on its own.");
+
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.CandidateId);
         ArgumentNullException.ThrowIfNull(request.RecoveryCodes);
@@ -177,75 +184,71 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
         if (request.RecoveryCodes.Any(c => !FitsStoredForm(c)))
             throw new ArgumentException("A recovery code does not fit its stored form.", nameof(request));
 
-        return await InTransactionAsync(
-            async () =>
-            {
-                var active = await LockActiveCredentialWithOwnerAsync(user, cancellationToken);
-                if (active is null)
-                    return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.NoActiveEnrollment, null);
+        // Every statement below runs on the caller's transaction (checked above); the caller commits or rolls it back.
+        var active = await LockActiveCredentialWithOwnerAsync(user, cancellationToken);
+        if (active is null)
+            return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.NoActiveEnrollment, null);
 
-                // The database finds the row whatever the case of the id; the decision that judges the switch compares ids ordinally. A
-                // caller that names the user other than as stored is a defect, and nothing is written.
-                if (!string.Equals(active.UserId, user, StringComparison.Ordinal))
-                    throw new ArgumentException("The switch must name the user by the id it is stored under.", nameof(request));
+        // The database finds the row whatever the case of the id; the decision that judges the switch compares ids ordinally. A
+        // caller that names the user other than as stored is a defect, and nothing is written.
+        if (!string.Equals(active.UserId, user, StringComparison.Ordinal))
+            throw new ArgumentException("The switch must name the user by the id it is stored under.", nameof(request));
 
-                // One statement decides: it reads the candidate (locked) and the active row, and writes only when every condition holds.
-                // The candidate's own id becomes the identity of the new active secret, so whoever switched it can tell afterwards
-                // whether this candidate's switch is the active authenticator (a lost acknowledgement, a second request).
-                var switched = await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $"""
-                    UPDATE t
-                       SET t.[ProtectedSecret] = c.[ProtectedSecret], t.[ProtectorKeyId] = c.[ProtectorKeyId],
-                           t.[LastUsedStep] = c.[MatchedStep], t.[EnrolledAtUtc] = {request.SwitchedAtUtc},
-                           t.[LastVerifiedAtUtc] = {request.SwitchedAtUtc}, t.[CredentialId] = c.[CandidateId]
-                      FROM [UserTotpCredentials] AS t
-                     INNER JOIN [UserTotpReplacementCandidates] AS c WITH (UPDLOCK, HOLDLOCK) ON c.[UserId] = t.[UserId]
-                     WHERE t.[UserId] = {user} AND t.[IsEnrolled] = 1 AND t.[CredentialId] = {active.CredentialId}
-                       AND c.[CandidateId] = {request.CandidateId}
-                       AND c.[Status] = 1 AND c.[Version] = {request.ExpectedVersion}
-                       AND c.[ExpiresAtUtc] > SYSUTCDATETIME()
-                       AND c.[StagedAgainstCredentialId] = t.[CredentialId];
-                    """,
-                    cancellationToken);
-                if (switched != 1)
-                {
-                    return new NativeMfaSwitchResult(
-                        await DiagnoseAsync(user, request.CandidateId, request.ExpectedVersion, active.CredentialId, switching: true, cancellationToken),
-                        null);
-                }
-
-                // The same transaction consumes the candidate (it keeps no secret) and replaces the recovery codes. The locks taken
-                // above are still held, so a row count other than the expected one is not a race: it fails the whole unit.
-                var consumed = await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $"""
-                    UPDATE [UserTotpReplacementCandidates]
-                       SET [Status] = 3, [Version] = [Version] + 1, [ProtectedSecret] = 0x
-                     WHERE [CandidateId] = {request.CandidateId} AND [UserId] = {user} AND [Status] = 1;
-                    """,
-                    cancellationToken);
-                if (consumed != 1)
-                    throw new InvalidOperationException("The switched candidate could not be consumed.");
-
-                await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $"DELETE FROM [UserMfaRecoveryCodes] WHERE [UserId] = {user};",
-                    cancellationToken);
-                foreach (var code in request.RecoveryCodes)
-                {
-                    await _db.Database.ExecuteSqlInterpolatedAsync(
-                        $"""
-                        INSERT INTO [UserMfaRecoveryCodes] ([Id], [UserId], [CodeHash], [Salt], [Algorithm], [CreatedAtUtc], [ConsumedAtUtc])
-                        VALUES ({code.Id}, {user}, {code.CodeHash}, {code.Salt}, {code.Algorithm}, {request.SwitchedAtUtc}, {code.ConsumedAtUtc});
-                        """,
-                        cancellationToken);
-                }
-
-                // The identity the switch gave the active secret, as stored (the locks taken above are still held).
-                var newCredentialId = (await _db.Database
-                    .SqlQuery<string>($"SELECT [CredentialId] AS [Value] FROM [UserTotpCredentials] WHERE [UserId] = {user}")
-                    .ToListAsync(cancellationToken)).Single();
-                return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.Applied, newCredentialId);
-            },
+        // One statement decides: it reads the candidate (locked) and the active row, and writes only when every condition holds.
+        // The candidate's own id becomes the identity of the new active secret, so whoever switched it can tell afterwards
+        // whether this candidate's switch is the active authenticator (a lost acknowledgement, a second request).
+        var switched = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE t
+               SET t.[ProtectedSecret] = c.[ProtectedSecret], t.[ProtectorKeyId] = c.[ProtectorKeyId],
+                   t.[LastUsedStep] = c.[MatchedStep], t.[EnrolledAtUtc] = {request.SwitchedAtUtc},
+                   t.[LastVerifiedAtUtc] = {request.SwitchedAtUtc}, t.[CredentialId] = c.[CandidateId]
+              FROM [UserTotpCredentials] AS t
+             INNER JOIN [UserTotpReplacementCandidates] AS c WITH (UPDLOCK, HOLDLOCK) ON c.[UserId] = t.[UserId]
+             WHERE t.[UserId] = {user} AND t.[IsEnrolled] = 1 AND t.[CredentialId] = {active.CredentialId}
+               AND c.[CandidateId] = {request.CandidateId}
+               AND c.[Status] = 1 AND c.[Version] = {request.ExpectedVersion}
+               AND c.[ExpiresAtUtc] > SYSUTCDATETIME()
+               AND c.[StagedAgainstCredentialId] = t.[CredentialId];
+            """,
             cancellationToken);
+        if (switched != 1)
+        {
+            return new NativeMfaSwitchResult(
+                await DiagnoseAsync(user, request.CandidateId, request.ExpectedVersion, active.CredentialId, switching: true, cancellationToken),
+                null);
+        }
+
+        // The same transaction consumes the candidate (it keeps no secret) and replaces the recovery codes. The locks taken
+        // above are still held, so a row count other than the expected one is not a race: it fails the whole unit.
+        var consumed = await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE [UserTotpReplacementCandidates]
+               SET [Status] = 3, [Version] = [Version] + 1, [ProtectedSecret] = 0x
+             WHERE [CandidateId] = {request.CandidateId} AND [UserId] = {user} AND [Status] = 1;
+            """,
+            cancellationToken);
+        if (consumed != 1)
+            throw new InvalidOperationException("The switched candidate could not be consumed.");
+
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM [UserMfaRecoveryCodes] WHERE [UserId] = {user};",
+            cancellationToken);
+        foreach (var code in request.RecoveryCodes)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO [UserMfaRecoveryCodes] ([Id], [UserId], [CodeHash], [Salt], [Algorithm], [CreatedAtUtc], [ConsumedAtUtc])
+                VALUES ({code.Id}, {user}, {code.CodeHash}, {code.Salt}, {code.Algorithm}, {request.SwitchedAtUtc}, {code.ConsumedAtUtc});
+                """,
+                cancellationToken);
+        }
+
+        // The identity the switch gave the active secret, as stored (the locks taken above are still held).
+        var newCredentialId = (await _db.Database
+            .SqlQuery<string>($"SELECT [CredentialId] AS [Value] FROM [UserTotpCredentials] WHERE [UserId] = {user}")
+            .ToListAsync(cancellationToken)).Single();
+        return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.Applied, newCredentialId);
     }
 
     /// <summary>The stored form of a recovery code: the column lengths of the recovery-code table.</summary>

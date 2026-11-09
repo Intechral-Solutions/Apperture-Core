@@ -4,6 +4,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using static Apperture.IntegrationTests.Audit.AuditRecorderTestSupport;
 
@@ -117,8 +118,25 @@ internal sealed class MfaCandidateWorld
     public async Task<NativeMfaSwitchResult> SwitchAsync(NativeMfaSwitchRequest request)
     {
         await using var db = Scratch.NewDb();
-        return await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request);
+        return await SwitchInTransactionAsync(db, request);
     }
+
+    /// <summary>
+    /// The persistence switch on a plain transaction of the caller's own, committed after it (rolled back when the switch throws): the
+    /// switch requires the caller's open transaction and never commits on its own (S-1). The transaction runs under the context's
+    /// execution strategy, as the repository's own transaction did before S-1 was enforced, so a context that retries still retries.
+    /// </summary>
+    public static async Task<NativeMfaSwitchResult> SwitchInTransactionAsync(
+        AppertureDbContext db,
+        NativeMfaSwitchRequest request,
+        CancellationToken cancellationToken = default) =>
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var result = await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return result;
+        });
 
     public async Task<NativeMfaReplacementCandidate?> GetAsync(string candidateId, UserId? user = null)
     {

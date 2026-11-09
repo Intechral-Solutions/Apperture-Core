@@ -86,7 +86,7 @@ public sealed class MfaReplacementCandidateConcurrencySqlServerTests : IClassFix
         Task.Run(async () =>
         {
             await using var db = pause is null ? world.Scratch.NewDb() : world.Scratch.NewDb(pause);
-            return await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request);
+            return await MfaCandidateWorld.SwitchInTransactionAsync(db, request);
         });
 
     // ---- Staging against staging ----
@@ -272,7 +272,7 @@ public sealed class MfaReplacementCandidateConcurrencySqlServerTests : IClassFix
         var switching = Task.Run(async () =>
         {
             await using var db = world.World.NewDeadlockAwareDb(deadlocks, pause);
-            return await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request);
+            return await MfaCandidateWorld.SwitchInTransactionAsync(db, request);
         });
         await ReachedAsync(pause, switching);
 

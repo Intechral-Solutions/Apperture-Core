@@ -274,7 +274,7 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         var switching = RunSide("switch", switchLog, async () =>
         {
             await using var db = Db(world.Scratch, ParkedApplication, retry, switchLog, pause);
-            var result = await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request);
+            var result = await MfaCandidateWorld.SwitchInTransactionAsync(db, request);
             newCredentialId = result.NewCredentialId;
             return (result.IsApplied, result.Outcome.ToString());
         });

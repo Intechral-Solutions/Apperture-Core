@@ -14,9 +14,10 @@ namespace Apperture.Core.Application.Services;
 /// <para><b>Failure never changes the active authenticator.</b> Every outcome other than <c>Applied</c> leaves the active secret,
 /// its last used step, its identity and the recovery codes exactly as they were. Staging and verifying change nothing of the
 /// active credential at all.</para>
-/// <para><b>Transactions.</b> The methods join the caller's transaction when there is one (the switch is meant to run inside the
-/// audited unit, under the global administrator gate); without one, each method is one transaction of its own. Staging and
-/// verifying hold no gate and no lock across operator input.</para>
+/// <para><b>Transactions.</b> Staging, verifying and discarding join the caller's transaction when there is one; without one, each is
+/// one transaction of its own. The switch <b>requires</b> the caller's open transaction (the audited unit's, under the global
+/// administrator gate) and never commits on its own: without one it throws <see cref="InvalidOperationException"/> before any
+/// statement. Staging and verifying hold no gate and no lock across operator input.</para>
 /// <para><b>Lock order</b> (every method that takes more than one lock follows it): the user's credential row, then the user's
 /// candidate rows, then the user's recovery code rows.</para>
 /// </remarks>
@@ -63,6 +64,8 @@ public interface INativeMfaReplacementCandidateRepository
     /// <see cref="NativeMfaCandidateOutcome.Consumed"/> result alone does not say so). The user must be named by the id it is stored under,
     /// and the codes must be new, unused, distinct and of the stored form; anything else is refused before any statement.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The caller has no open transaction on the repository's context. The switch runs
+    /// only inside the audited unit, under the administrator-set gate, and commits or rolls back with it; nothing is written.</exception>
     ValueTask<NativeMfaSwitchResult> SwitchAsync(NativeMfaSwitchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Removes every candidate of the user (an abandoned replacement). It never touches the active credential. Returns how many rows were removed.</summary>

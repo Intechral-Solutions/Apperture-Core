@@ -621,9 +621,10 @@ public sealed class NativeMfaServiceViabilitySqlServerTests : IClassFixture<Audi
         NativeMfaRecoveryCodeRecord Code(string id, UserId owner, DateTimeOffset? consumed = null) => new(id, owner, "hash-" + id, "salt", "test", consumed);
         async Task<Exception?> SwitchAsync(UserId user, IReadOnlyList<NativeMfaRecoveryCodeRecord> codes)
         {
+            // On a transaction of the test's own (the switch requires one), so the refusal tested is the defence named, not S-1's.
             await using var db = e.W.Scratch.NewDb();
-            return await Record.ExceptionAsync(() => new SqlNativeMfaReplacementCandidateRepository(db)
-                .SwitchAsync(new NativeMfaSwitchRequest(user, challenge.CandidateId, version, codes, DateTimeOffset.UtcNow)).AsTask());
+            return await Record.ExceptionAsync(() => MfaCandidateWorld.SwitchInTransactionAsync(
+                db, new NativeMfaSwitchRequest(user, challenge.CandidateId, version, codes, DateTimeOffset.UtcNow)));
         }
 
         var upper = new UserId(e.Id.ToUpperInvariant());
