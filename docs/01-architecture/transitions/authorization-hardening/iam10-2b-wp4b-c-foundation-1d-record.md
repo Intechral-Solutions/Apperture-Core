@@ -15,6 +15,7 @@
   2. Verification and activation each apply only when every condition holds in one conditional statement; every refusal is reported and writes nothing (every-refusal theory, 9 reasons x 2 modes).
   3. A failed, expired, superseded, consumed, version-mismatched or foreign candidate never changes the active authenticator or recovery codes (same theory).
   4. Concurrent stage, verify, switch, reset and code regeneration serialise on the credential row with no deadlock and a defined end state (8 parked cases, `MfaReplacementCandidateConcurrencySqlServerTests`).
+     > **Correction (2026-11-09, independent review of `072b7e94`, finding R-2).** This criterion was **not met** as stated, and the cases cited could not have shown it. They ran on retrying contexts, which retry a deadlock victim silently. The code regeneration, code removal and discard deleted candidate rows without first taking the credential row. The reviewer's non-retrying probes demonstrated SQL error 1205 in both isolation modes: staging against those writers for the same user, and staging against another user's removal (the only index on the owner was filtered, so the deletes scanned). Every victim rolled back cleanly, and no partial transition occurred. The defect is corrected and pinned by non-retrying cases in the [remediation record](iam10-2b-wp4b-c-persistence-remediation-record.md) (finding R-1). The text above is kept as it was written.
   5. Enrollment completes only for the pending secret that was verified (`ConditionalMfaEnrollmentSqlServerTests`, with a legacy-unconditional control).
   6. The migration upgrades an existing installation, backfills identities, rolls back and re-applies (`MfaReplacementCandidateMigrationSqlServerTests`); the snapshot matches the model.
   7. The two new actions are catalogued with typed producers and schemas (`MfaReplacementAuditContractTests`, catalog tests).
@@ -50,6 +51,7 @@
 - *Verify:* one conditional UPDATE: status Staged, version equal, not expired by the database clock, owner equal, staged-against credential equal to the credential now active. Rows affected decides; only after a failure is a diagnosis read taken under locks. A failure never writes.
 - *Switch:* one UPDATE joining credential and candidate (candidate row locked) with every condition (verified, version, expiry, staged-against equals current credential, same user). On one row: matched step becomes the last used step, secret replaced, new `CredentialId`, candidate consumed and wiped, recovery codes replaced in the same transaction (joins the caller's transaction, otherwise uses the retrying execution strategy). Otherwise the diagnosis precedence is NotFound, Superseded, Consumed, Expired, VersionMismatch, NotVerified/AlreadyVerified, ActiveEnrollmentChanged.
 - *Lock order everywhere:* credential row, candidate rows, recovery-code rows. Reset and code regeneration remove staged candidates.
+  - **Correction (2026-11-09).** This order was not true of the candidate removals in code regeneration, code removal and discard. They took no credential row, which caused finding R-1. Since the remediation it holds for every candidate writer.
 - *Enrollment:* `MarkEnrolledAsync` is `ExecuteUpdate ... WHERE NOT IsEnrolled AND CredentialId = expected`; `NativeMfaService` throws if it returns false (the pending secret was replaced while the code was checked).
 
 **Minimal caller edit.** `NativeMfaService.cs` passes the verified credential's id and checks the result; `NativeMfaServiceTests` fake and one test updated. Raw SQL seed helpers in `RoleAuthorityWorld` and `AdministratorViabilitySqlServerTests` supply the new NOT NULL column.
@@ -111,7 +113,15 @@ Local only, in `F:\Code\Apperture\wt-iam10-2b-mfa-persistence\artifacts\mfa-logs
 
 ## 7. Independent review
 
-Not yet reviewed.
+Not yet reviewed (as written).
+
+> **Update (2026-11-09).** Foundation 1D was reviewed independently as part of the persistence integration at `072b7e94` (2026-11-08) and was **NOT ACCEPTED**.
+> - **B-1 (blocking).** `UpdateLastUsedAsync` wrote the TOTP step unconditionally. A real-SQL interleaving showed a sign-in with the retired secret succeeding after a switch, lowering the new credential's step, and the candidate's verification code being accepted again. Two concurrent sign-ins with one code both succeeded.
+> - **R-1.** Same-user and cross-user deadlocks (criterion 4 above).
+> - **R-2.** The evidence and records needed correcting.
+> - **R-3.** The rollback statement needed correcting.
+>
+> All four are addressed in the [remediation record](iam10-2b-wp4b-c-persistence-remediation-record.md). Closure verification is the reviewer's.
 
 ## 8. Remaining risks and integration notes
 
