@@ -69,8 +69,8 @@ public sealed class AdministratorViabilityAttemptSqlServerTests : IClassFixture<
 
     private static Task GiveAuthenticatorAsync(RoleAuthorityWorld world, string userId) =>
         world.Scratch.ExecuteAsync($"""
-            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, CreatedAtUtc)
-            VALUES (N'{userId}', 0x01, N'k', 1, SYSDATETIMEOFFSET());
+            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, CreatedAtUtc, CredentialId)
+            VALUES (N'{userId}', 0x01, N'k', 1, SYSDATETIMEOFFSET(), N'cred-{userId}');
             INSERT INTO UserMfaRecoveryCodes (Id, UserId, CodeHash, Salt, Algorithm, CreatedAtUtc, ConsumedAtUtc)
             VALUES (N'c-{userId}-0', N'{userId}', N'h', N's', N'test', SYSDATETIMEOFFSET(), NULL);
             """);
