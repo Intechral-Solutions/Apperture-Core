@@ -1,10 +1,12 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,7 +14,7 @@ using Xunit;
 
 namespace Apperture.UnitTests.Governance;
 
-public sealed class EmergencyAccessServiceTests
+public sealed partial class EmergencyAccessServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 31, 18, 0, 0, TimeSpan.Zero);
     private static readonly RoleId AdminRole = new(BootstrapConstants.PlatformAdminRoleId);
@@ -428,10 +430,31 @@ public sealed class EmergencyAccessServiceTests
         public RecordingRoles Roles { get; } = new();
         public FakeMfa Mfa { get; } = new();
         public RecordingAuditedUnitOfWork Recorder { get; } = new();
-        public EmergencyAccessService Emergency { get; }
+        public RecordingAuditEventWriter Events { get; } = new();
+        public RecordingGate Gate { get; } = new();
+        public ScriptedViabilityReads Reads { get; private set; } = null!;
+        public EmergencyAccessService Emergency { get; private set; } = null!;
 
         private Harness()
         {
+            // By default an ordinary administrator who can sign in without Microsoft remains whatever the operation does, so the
+            // viability decision allows it and these cases are about the operation itself. A case about the decision scripts its own.
+            UseViability(ViabilityTestData.Same(["fallback-admin"], ["fallback-admin"]));
+        }
+
+        /// <summary>Rebuilds the service over the real coordinator and guard with the given states, read in order (the last repeats).</summary>
+        public Harness UseViability(params AdministratorViabilityState[] states)
+        {
+            Reads = new ScriptedViabilityReads(states);
+            return UseReads(Reads);
+        }
+
+        /// <summary>Rebuilds the service over the real coordinator and guard, reading through <paramref name="reads"/>.</summary>
+        public Harness UseReads(IAdministratorViabilityService reads, Func<IAdministratorViabilityCoordinator, IAdministratorViabilityCoordinator>? wrap = null)
+        {
+            IAdministratorViabilityCoordinator coordinator = new AdministratorViabilityCoordinator(Gate, reads);
+            if (wrap is not null)
+                coordinator = wrap(coordinator);
             Emergency = new EmergencyAccessService(
                 Users,
                 Roles,
@@ -440,7 +463,10 @@ public sealed class EmergencyAccessServiceTests
                 Mfa,
                 TimeProvider.System,
                 NullLogger<EmergencyAccessService>.Instance,
-                Recorder);
+                Recorder,
+                coordinator,
+                Events);
+            return this;
         }
 
         public static Harness Empty() => new();
@@ -497,13 +523,32 @@ public sealed class EmergencyAccessServiceTests
         public User? Get(string id) => _users.GetValueOrDefault(id);
         public IReadOnlyCollection<User> All => _users.Values;
 
+        /// <summary>
+        /// What the recording unit calls before an attempt, and what puts the users and the ledger back when the attempt rolls back, as
+        /// the SQL unit does (a refusal declares a no-op after the change was applied).
+        /// </summary>
+        public Action CaptureState()
+        {
+            var users = new Dictionary<string, User>(_users, StringComparer.Ordinal);
+            var ledger = new Dictionary<string, UsernameLedgerEntry>(_ledger, StringComparer.Ordinal);
+            return () =>
+            {
+                _users.Clear();
+                foreach (var (key, value) in users)
+                    _users[key] = value;
+                _ledger.Clear();
+                foreach (var (key, value) in ledger)
+                    _ledger[key] = value;
+            };
+        }
+
         private void RetireCurrent(UserId userId, string except)
         {
             foreach (var entry in _ledger.Values.Where(e => e.UserId == userId && e.IsCurrent && e.Username != except).ToList())
                 _ledger[entry.Username] = entry with { RetiredAtUtc = Now, RetiredReason = UsernameRetiredReasons.Rename };
         }
         public ValueTask<int> GetUserCountAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.Count);
-        public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default) => ValueTask.FromResult(_users.GetValueOrDefault(id.Value));
+        public ValueTask<User?> GetByIdAsync(UserId id, CancellationToken cancellationToken = default) => ValueTask.FromResult(Find(id.Value));
         public ValueTask<User?> FindDesignatedEmergencyUserAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_users.Values.FirstOrDefault(u => u.IsBreakGlassEligible));
         public ValueTask<User?> GetByIdentityLinkAsync(IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
@@ -534,15 +579,24 @@ public sealed class EmergencyAccessServiceTests
         public ValueTask<bool> TrySetDesignationAsync(UserId userId, bool expected, bool designated, CancellationToken cancellationToken = default)
         {
             DesignationCalls.Add((userId.Value, expected, designated));
+            Log?.Add($"designation {userId.Value} {expected}->{designated}");
             if (RefuseNextDesignationChange)
             {
                 RefuseNextDesignationChange = false;
                 return ValueTask.FromResult(false);
             }
 
-            if (!_users.TryGetValue(userId.Value, out var user) || user.IsBreakGlassEligible != expected)
+            if (PretendNextDesignationChange)
+            {
+                PretendNextDesignationChange = false;
+                return ValueTask.FromResult(true);
+            }
+
+            var user = Find(userId.Value);
+            if (user is null || user.IsBreakGlassEligible != expected)
                 return ValueTask.FromResult(false);
-            _users[userId.Value] = user with { IsBreakGlassEligible = designated };
+            _users[user.Id.Value] = user with { IsBreakGlassEligible = designated };
+            AfterDesignationChange?.Invoke();
             return ValueTask.FromResult(true);
         }
 
@@ -556,6 +610,7 @@ public sealed class EmergencyAccessServiceTests
             CancellationToken cancellationToken = default)
         {
             var user = _users[userId.Value];
+            Log?.Add($"rename {userId.Value}");
             if (!string.Equals(user.Username, expectedCurrentUsername, StringComparison.Ordinal))
                 throw new UsernameException(UsernameErrorCodes.ConcurrentChange, "The username changed concurrently.");
             // As the ledger primary key: a name owned, current or retired, by another user is taken.
@@ -581,6 +636,26 @@ public sealed class EmergencyAccessServiceTests
                 expectedCurrentUsername,
                 newUsername));
         }
+        /// <summary>
+        /// Finds a user by id without regard to case, as the database's collation does, and returns the row as stored. Off by default,
+        /// so the cases that do not care keep the ordinal lookup.
+        /// </summary>
+        public bool IgnoreCaseLikeTheDatabase { get; set; }
+
+        /// <summary>Whether the next designation change reports success without changing anything (a setter that lies).</summary>
+        public bool PretendNextDesignationChange { get; set; }
+
+        /// <summary>Called inside every conditional designation write, after it applied: a test's hook for another account's change.</summary>
+        public Action? AfterDesignationChange { get; set; }
+
+        /// <summary>The order of the writes this repository saw, for a test that checks what came before a decision.</summary>
+        public List<string>? Log { get; set; }
+
+        private User? Find(string id) =>
+            IgnoreCaseLikeTheDatabase
+                ? _users.Values.FirstOrDefault(u => string.Equals(u.Id.Value, id, StringComparison.OrdinalIgnoreCase))
+                : _users.GetValueOrDefault(id);
+
         public ValueTask<UsernameLedgerEntry?> FindUsernameLedgerEntryAsync(string username, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_ledger.GetValueOrDefault(username));
         public ValueTask UpdateLastAuthenticatedAtAsync(IdentitySource source, string externalId, DateTimeOffset at, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;

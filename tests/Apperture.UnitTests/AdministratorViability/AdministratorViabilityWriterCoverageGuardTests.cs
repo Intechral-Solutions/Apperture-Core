@@ -66,7 +66,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     /// <summary>The packages whose writers are integrated. Moving a package here is what makes the method-level checks apply to it.</summary>
-    private static readonly string[] IntegratedPackages = ["WP2", "WP3", "WP4A", "WP4B-D"];
+    private static readonly string[] IntegratedPackages = ["WP2", "WP3", "WP4A", "WP4B-D", "WP4B-C"];
 
     private sealed record Classified(string File, Writes Kind, int Count, Class Class, string Package, string Why)
     {
@@ -93,7 +93,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.UserCreatedWithRoleIds, 2, Class.GatedRaiser, "WP4B-D", "startup configuration creates the first administrator"),
         new(Security + "RealBootstrapRecoveryService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B-D", "bootstrap recovery restores the administrator role"),
         new(Security + "FirstAdminBootstrapService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B-D", "first administrator setup"),
-        new(Security + "EmergencyAccessService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B", "Recovery Access provisioning"),
+        new(Security + "EmergencyAccessService.cs", Writes.UserCreatedWithRoleIds, 1, Class.GatedRaiser, "WP4B-C", "Recovery Access provisioning: a new account that holds nothing before it, under the gate, asserted raise-only"),
         new(Security + "DevTestUserBootstrapHostedService.cs", Writes.RoleAssign, 1, Class.ExceptionE1, "-", "development-only bootstrap"),
         new(Security + "DevTestUserBootstrapHostedService.cs", Writes.UserCreatedWithRoleIds, 1, Class.ExceptionE1, "-", "development-only bootstrap"),
 
@@ -116,7 +116,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Api + "ConfigAuthUiPolicyController.cs", Writes.PolicySave, 1, Class.GatedRaiser, "WP3", "chooser flags only: they cannot reduce either view, and a test pins that no viability input reads them"),
 
         // The designation flag and the posture inputs.
-        new(Security + "EmergencyAccessService.cs", Writes.DesignationFlagUpdate, 1, Class.Reducer, "WP4B", "designate (both invariants) and revoke (strict) write the flag, through the one conditional setter"),
+        new(Security + "EmergencyAccessService.cs", Writes.DesignationFlagUpdate, 1, Class.Reducer, "WP4B-C", "designate (both invariants) and revoke (strict) write the flag, through the one conditional setter, under the gate, decided last"),
         new(Security + "NativeMfaService.cs", Writes.MfaReset, 2, Class.Reducer, "WP4B", "reset removes the TOTP credential and the recovery codes"),
         new(Security + "NativeMfaService.cs", Writes.MfaEnrol, 4, Class.GatedRaiser, "WP4B", "enrolment and recovery-code regeneration only add"),
         new(Security + "NativeMfaService.cs", Writes.MfaConsume, 1, Class.RecoveryCodeConsumption, "-", "C-14: non-refusable, no gate"),
@@ -519,6 +519,26 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         // The recovery restore: the gate before the target is read, then the assignment and its row.
         new(Security + "RealBootstrapRecoveryService.cs", "ExecuteRecoveryAsync", Writes.RoleAssign,
             ["ExecuteAsync<UserId?>(", TakeGateOnly, "ResolveTargetUserAsync(", "DeclareNoOp()", ".AssignToUserAsync(", "StageAsync("]),
+
+        // WP4B-C, Recovery Access. A designation: the gate first; the account loaded (its id is used from then on); the no-op before
+        // the invariants; the state before; the demotion and the designation through the one setter; the rename; the transition read
+        // back; the decision last, after every write; a refusal through the one mapping; only then the rows.
+        new(Security + "EmergencyAccessService.cs", "DesignateAsync", Writes.DesignationFlagUpdate,
+            ["Unit.ExecuteRefusableAsync(", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "SetDesignationAsync(", "RenameToCanonicalAsync(", "RequireDesignationTransitionAsync(", "VerifyDesignationAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+
+        // A strict revocation: the gate first; the designated account loaded; the state before; the one write; the transition read back;
+        // the decision last; the decision checked to be about this revocation; a refusal through the one mapping; only then the row.
+        new(Security + "EmergencyAccessService.cs", "RevokeAsync", Writes.DesignationFlagUpdate,
+            ["Unit.ExecuteRefusableAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "CaptureBeforeAsync(", "SetDesignationAsync(", "RequireRevocationTransitionAsync(", "VerifyRevocationAsync(", "RequireDecidedOnTheRevocation(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+
+        // The one conditional setter both reducers write through: a stored value it did not expect is an invariant failure.
+        new(Security + "EmergencyAccessService.cs", "SetDesignationAsync", Writes.DesignationFlagUpdate,
+            ["TrySetDesignationAsync(", "AuditInvariantException"]),
+
+        // Provisioning, a gated raiser: the gate first; the designation decided again under it; the new account; the state before; the
+        // account and its credential; the assertion that nothing was reduced; the row.
+        new(Security + "EmergencyAccessService.cs", "ProvisionAsync", Writes.UserCreatedWithRoleIds,
+            ["Unit.ExecuteAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "new User(", "CaptureBeforeForRaiseAsync(", "AddAsync(", ".SetPasswordAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
     ];
 
     private const string TakeGateOnly = ".EnterGateOnlyAsync(";
@@ -576,6 +596,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Writes.RegistrationActivate => RegistrationActivateCall.Matches(code).Count,
         Writes.PolicySave => CallsOn(code, NamesHolding(fileCode, "IInstanceAuthUiPolicyRepository"), "SaveAsync"),
         Writes.UserCreatedWithRoleIds => NewUser.Matches(code).Count(m => !IsEmpty(RoleIdsArgument(code, m.Index + m.Length))),
+        Writes.DesignationFlagUpdate => DesignationSetterCall.Matches(code).Count,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 
@@ -783,7 +804,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Security + "AccountProfileService.cs",
         Security + "ForgottenPasswordService.cs",
         Security + "EntraIdentityAssociationService.cs",
-        Security + "UserManagementService.cs", // under the global gate; closed once the designation takes the gate too (reducing-mutation integration)
+        Security + "UserManagementService.cs", // under the global gate, which the designation and the revocation take too; set-password also rechecks under the row lock
         Api + "AuthController.cs",
         "Apperture.Core/Apperture.Core.Application/Services/UsernameService.cs",
     ];
@@ -822,6 +843,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Precedes(Security + "EntraIdentityAssociationService.cs", "CompleteLinkAsync", "GetDesignationForUpdateAsync(", ".CompleteEntraLinkProofAsync(");
         Precedes(Api + "AuthController.cs", "ChangeLocalPassword", "CheckPasswordChangeAsync(", ".SetPasswordAsync(");
         MethodBody(StripComments(Source(Api + "AuthController.cs")), "CheckPasswordChangeAsync").Should().Contain("GetDesignationForUpdateAsync(");
+        Precedes(Security + "UserManagementService.cs", "SetLocalPasswordAsync", "GetDesignationForUpdateAsync(", ".SetPasswordAsync(");
 
         var username = StripComments(Source("Apperture.Core/Apperture.Core.Application/Services/UsernameService.cs"));
         MethodBody(username, "RenameWithResultAsync").Should().Contain("expectedDesignation: false").And.Contain("catch (UserDesignationChangedException");
@@ -842,6 +864,36 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
                 new[] { "IPlatformAdministratorSetGate", "IAdministratorViabilityCoordinator", "EnterAsync(", "EnterGateOnlyAsync(" },
                 $"{file}: the recheck is a row lock of its own; an ordinary profile or password change does not queue on the administrator-set gate");
         }
+    }
+
+    [Fact]
+    public void The_administrators_password_change_takes_the_gate_before_it_reads_the_user_and_rechecks_the_designation_before_the_write()
+    {
+        // L-P3: the ordinary administration path to a Local password decides the system-managed restriction on the user it loads. The gate
+        // (which the designation and the revocation now take) comes before that read, and the stored designation is read again under the
+        // user's row lock immediately before the credential write, which is named by the loaded row's id.
+        var body = MethodBody(StripComments(Source(Security + "UserManagementService.cs")), "SetLocalPasswordAsync");
+        var at = -1;
+        foreach (var step in new[] { "Unit.ExecuteAsync(", TakeGate, "GetByIdAsync(", "IsSystemManaged(", "GetDesignationForUpdateAsync(user.Id", ".SetPasswordAsync(user.Id", "StageAsync(" })
+        {
+            var next = body.IndexOf(step, at + 1, StringComparison.Ordinal);
+            next.Should().BeGreaterThan(at, $"SetLocalPasswordAsync must reach '{step}' after the step before it");
+            at = next;
+        }
+    }
+
+    [Fact]
+    public void The_recovery_access_writers_name_the_account_by_the_row_they_loaded()
+    {
+        // D-1: after the load, an operation uses the id of the row it loaded, never the id it was called with: the database finds a user
+        // whatever the case of the id, and the decision and the facts compare ids ordinally.
+        var code = StripComments(Source(Security + "EmergencyAccessService.cs"));
+        var designate = MethodBody(code, "DesignateAsync");
+        designate.Should().Contain("var target = user.Id;");
+        designate[designate.IndexOf("var target = user.Id;", StringComparison.Ordinal)..].Should().NotContain("userId", "after the load the caller's spelling of the id is not used");
+        MethodBody(code, "RevokeAsync").Should().Contain("var revoked = designated.Id;").And.Contain("VerifyRevocationAsync(revoked.Value");
+        var setPassword = MethodBody(code, "SetLocalPasswordAsync");
+        setPassword.Should().Contain(".SetPasswordAsync(user.Id").And.Contain("AuditEvents.PasswordSet(user.Id)");
     }
 
     // ---- Out of category ----

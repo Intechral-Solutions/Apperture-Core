@@ -414,6 +414,9 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task Revoking_Recovery_Access_after_a_lost_acknowledgement_is_reported_done_with_one_row()
     {
+        // Strict revocation (C-13-R) stands only while another ordinary administrator can sign in without Microsoft.
+        var (fallback, _) = await AddAdministratorAsync();
+        await _db.ExecuteAsync($"INSERT INTO LocalCredentials (UserId, PasswordHash, Salt, Algorithm, IsDisabled) VALUES (N'{fallback}', N'hash', N'salt', N'test', 0);");
         UserId recovery;
         await using (var db = _db.NewDb())
             recovery = await Emergency(db).ProvisionAsync("quiet-maple-lantern-harbor", actorId: null);
@@ -546,7 +549,11 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     private SqlAuditEventWriter Events(IPrincipalContext principal) =>
         new(_db.Options(), principal, HarnessCatalog, null, null, null);
 
-    private static EmergencyAccessService Emergency(AppertureDbContext db) =>
+    /// <summary>
+    /// The Recovery Access service with the gate and the viability reads it decides under (IAM-10.2b WP4B-C): Local sign-in trusted,
+    /// as the host reads it, and the refusal writer it records a refused designation or revocation with.
+    /// </summary>
+    private EmergencyAccessService Emergency(AppertureDbContext db) =>
         new(
             new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
             new SqlRoleRepository(db),
@@ -555,7 +562,9 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             new NoMfa(),
             TimeProvider.System,
             NullLogger<EmergencyAccessService>.Instance,
-            NewUnit(db, null));
+            NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db),
+            new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null));
 
     private static NativeMfaService Mfa(AppertureDbContext db) =>
         new(

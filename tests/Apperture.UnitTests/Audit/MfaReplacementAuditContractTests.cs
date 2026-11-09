@@ -131,14 +131,26 @@ public sealed class MfaReplacementAuditContractTests
     }
 
     [Fact]
-    public void Staging_the_declared_audit_actions_has_no_production_caller_yet()
+    public void The_viability_refusal_is_built_only_by_the_one_mapping_from_a_decision()
     {
+        // Every refused Recovery Access or authenticator operation records its row through one function, so the operation, the code and
+        // the evidence class come from the decision and cannot drift apart between the services that write it.
         var callers = RepositorySource.Production
-            .Where(f => f.Code.Contains("AuditEvents.MfaReplaced(", StringComparison.Ordinal)
-                        || f.Code.Contains("AuditEvents.AdministratorViabilityBlocked(", StringComparison.Ordinal))
+            .Where(f => f.Code.Contains("AuditEvents.AdministratorViabilityBlocked(", StringComparison.Ordinal))
             .Select(f => f.RelativePath)
             .ToList();
 
-        callers.Should().BeEmpty("the service that writes them does not exist yet; this pin moves with it");
+        callers.Should().BeEquivalentTo(["Apperture.ControlPlane/Apperture.ControlPlane.Security/AdministratorViability/ViabilityRefusalAudit.cs"]);
+    }
+
+    [Fact]
+    public void Staging_the_replacement_has_no_production_caller_yet()
+    {
+        var callers = RepositorySource.Production
+            .Where(f => f.Code.Contains("AuditEvents.MfaReplaced(", StringComparison.Ordinal))
+            .Select(f => f.RelativePath)
+            .ToList();
+
+        callers.Should().BeEmpty("the replacement service does not exist yet; this pin moves with it");
     }
 }

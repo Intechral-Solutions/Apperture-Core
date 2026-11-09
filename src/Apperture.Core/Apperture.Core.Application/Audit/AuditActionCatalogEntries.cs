@@ -428,8 +428,9 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
-            // Declared with its producer and schema; no service writes it yet. The refusal is recorded after the rollback by the
-            // operation that was refused, with the actor who attempted it and the affected account as the target.
+            // The refusal is recorded after the rollback by the Recovery Access or authenticator operation that was refused, with the
+            // actor who attempted it and the affected account as the target. Every writer builds the row through one mapping
+            // (ViabilityRefusalAudit), so the operation, the code and the evidence class come from the decision.
             Action = "emergency.auth.blocked.administrator_viability",
             Category = AuditCategories.Identity,
             Severity = AuditSeverities.Elevated,

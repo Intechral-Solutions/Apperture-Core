@@ -1029,29 +1029,47 @@ public sealed class UserManagementService : IUserManagementService
             Operation(AuditActionNames.PasswordSet),
             async (transaction, ct) =>
             {
+                // The administrator-set gate first (L-P3): a Recovery Access designation and a revocation take it too, so the account
+                // cannot become the system-managed Recovery Access account between the restriction decided below and the write.
+                await Viability.EnterAsync(ct);
+
                 var user = await _userRepository.GetByIdAsync(userId, ct)
                     ?? throw new InvalidOperationException($"User {userId.Value} not found.");
                 if (EmergencyAccessIdentity.IsSystemManaged(user))
-                {
-                    throw new EmergencyAccessException(
-                        EmergencyAccessErrorCodes.UnsafeOperation,
-                        "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
-                }
+                    throw SystemManagedPasswordRefusal();
                 if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
                     throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
                 LocalPasswordPolicy.Require(newPassword, user);
 
                 credential ??= _passwordHasher.HashPassword(newPassword!);
-                await _localCredentialRepository.SetPasswordAsync(userId, credential.Value.Hash, credential.Value.Salt, _passwordHasher.AlgorithmName, ct);
+
+                // The stored designation, read under the user's row lock immediately before the credential write and held to the end
+                // of the transaction: what the restriction above was decided on is what the write reaches, even against a writer of the
+                // designation that did not take the gate. The account is named by the id of the row loaded above.
+                switch (await _userRepository.GetDesignationForUpdateAsync(user.Id, ct))
+                {
+                    case null:
+                        throw new InvalidOperationException($"User {userId.Value} not found.");
+                    case true:
+                        throw SystemManagedPasswordRefusal();
+                }
+
+                await _localCredentialRepository.SetPasswordAsync(user.Id, credential.Value.Hash, credential.Value.Salt, _passwordHasher.AlgorithmName, ct);
                 if (_actionTokens is not null)
-                    await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, ct);
-                await transaction.StageAsync(AuditEvents.PasswordSet(userId), ct);
+                    await _actionTokens.RevokePasswordLifecycleTokensAsync(user.Id, ct);
+                await transaction.StageAsync(AuditEvents.PasswordSet(user.Id), ct);
                 return true;
             },
             Done,
             cancellationToken);
     }
+
+    /// <summary>The established refusal of an ordinary password change to the system-managed Recovery Access account.</summary>
+    private static EmergencyAccessException SystemManagedPasswordRefusal() =>
+        new(
+            EmergencyAccessErrorCodes.UnsafeOperation,
+            "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
 
     /// <inheritdoc />
     public async ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)

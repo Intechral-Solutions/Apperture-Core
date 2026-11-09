@@ -150,7 +150,11 @@ public sealed class RecoveryAccessDesignationSqlServerTests : IClassFixture<Audi
             NewUnit(db, null),
             Events(scratch, null));
 
-    private static EmergencyAccessService Emergency(AppertureDbContext db) =>
+    /// <summary>
+    /// The Recovery Access service with the gate and the viability reads (IAM-10.2b WP4B-C): a designation and a revocation take the gate
+    /// first and are decided last, with Local sign-in trusted as the host reads it.
+    /// </summary>
+    private static EmergencyAccessService Emergency(AuditSqlScratch scratch, AppertureDbContext db) =>
         new(
             Users(db),
             new SqlRoleRepository(db),
@@ -166,7 +170,9 @@ public sealed class RecoveryAccessDesignationSqlServerTests : IClassFixture<Audi
                 NewUnit(db, null)),
             TimeProvider.System,
             NullLogger<EmergencyAccessService>.Instance,
-            NewUnit(db, null));
+            NewUnit(db, null),
+            Viability(db),
+            Events(scratch, null));
 
     // ================================================================================================ the setter
 
@@ -550,55 +556,40 @@ public sealed class RecoveryAccessDesignationSqlServerTests : IClassFixture<Audi
         var designatedBefore = await world.AuditRowsAsync(AuditActionNames.RecoveryAccessDesignated, next);
         var revokedBefore = await world.AuditRowsAsync(AuditActionNames.RecoveryAccessRevoked, current);
 
-        // The designation of 'next' runs everything but its commit: it has demoted 'current' and designated 'next'.
+        // The designation of 'next' runs everything but its commit: it has demoted 'current' and designated 'next', and holds the gate.
         var pause = PauseAt.BeforeStatement("INSERT INTO [AuditLogs]");
         var designate = Task.Run(async () =>
         {
             await using var db = world.Scratch.NewDb(pause);
-            await Emergency(db).DesignateAsync(new UserId(next), new ActorId(EmergencyAccessService.CliActorId));
+            await Emergency(world.Scratch, db).DesignateAsync(new UserId(next), new ActorId(EmergencyAccessService.CliActorId));
         });
         await ReachedAsync(pause, designate);
 
+        // IAM-10.2b WP4B-C: the revocation takes the administrator-set gate first, so it waits for the designation there, before it
+        // reads which account is designated (WP4B-A showed it waiting on the user's row, after deciding on a copy read earlier).
         var revoke = Task.Run(async () =>
         {
             await using var db = world.Scratch.NewDb();
-            await Emergency(db).RevokeAsync(confirmFallback: true, new ActorId(EmergencyAccessService.CliActorId));
+            await Emergency(world.Scratch, db).RevokeAsync(confirmFallback: true, new ActorId(EmergencyAccessService.CliActorId));
         });
-        await world.WaitUntilBlockedOnAsync("Users", revoke);
+        (await AdministratorGateTestSupport.WaitsOnTheGateAsync(world.Scratch, revoke)).Should().BeTrue("the revocation queues on the gate the designation holds");
 
         pause.Release();
         await designate.WaitAsync(Patience);
-        Exception? revokeFailure = null;
-        try
-        {
-            await revoke.WaitAsync(Patience);
-        }
-        catch (Exception ex)
-        {
-            revokeFailure = ex;
-        }
+        await revoke.WaitAsync(Patience);
 
         var designated = await world.Scratch.ScalarAsync<int>("SELECT COUNT(*) FROM Users WHERE IsBreakGlassEligible = 1;");
-        designated.Should().BeLessThanOrEqualTo(1, "the filtered unique index and the conditional setter keep one designated account");
         (await world.AuditRowsAsync(AuditActionNames.RecoveryAccessDesignated, next)).Should().Be(designatedBefore + 1, "the designation committed");
         var revokedRows = await world.AuditRowsAsync(AuditActionNames.RecoveryAccessRevoked, current)
             + await world.AuditRowsAsync(AuditActionNames.RecoveryAccessRevoked, next);
 
-        if (revokeFailure is null)
-        {
-            // The revocation waited, then saw the designation that committed first and revoked it: serial order, one row each.
-            designated.Should().Be(0);
-            revokedRows.Should().Be(revokedBefore + 1);
-        }
-        else
-        {
-            // The revocation was decided on the account that has since been demoted: its conditional write found a different stored
-            // value and the unit failed as an invariant failure. It changed nothing and has no row.
-            revokeFailure.Should().BeOfType<AuditInvariantException>();
-            designated.Should().Be(1);
-            (await StoredDesignationAsync(world.Scratch, next)).Should().BeTrue();
-            revokedRows.Should().Be(revokedBefore, "no row for a revocation that did not commit");
-        }
+        // Serial order: the revocation read the designation that committed first and revoked it ('current', demoted and ordinary again,
+        // is the other administrator who can sign in without Microsoft). The invariant-failure outcome of WP4B-A cannot occur under the
+        // gate: nothing is decided on a copy read before the designation.
+        designated.Should().Be(0);
+        (await StoredDesignationAsync(world.Scratch, next)).Should().BeFalse();
+        (await world.AuditRowsAsync(AuditActionNames.RecoveryAccessRevoked, next)).Should().Be(1);
+        revokedRows.Should().Be(revokedBefore + 1);
     }
 
     // ================================================================================================ helpers
