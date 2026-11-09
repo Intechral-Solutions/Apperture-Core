@@ -237,18 +237,21 @@ public sealed class NativeMfaServiceViabilitySqlServerTests : IClassFixture<Audi
     [MemberData(nameof(BothModes))]
     public async Task A_bare_reset_named_with_a_differently_cased_id_is_decided_for_the_stored_recovery_account(bool rcsi)
     {
-        // D-1: had the decision been given the caller's spelling, it would not have recognised the Recovery Access account and would have
-        // allowed the reset on the posture alone.
-        var e = await RecoveryAsync(rcsi, fallback: "entra", attest: ServiceViabilityWorld.Established(), registration: true);
+        // D-1: the decision recognises the Recovery Access account only by the id as stored. Given the caller's spelling it would not: it
+        // would leave the posture rule for the full evaluation, which needs Microsoft sign-in established, and with the host's options not
+        // built yet it would refuse for missing evidence instead of deciding on the Local reading.
+        var e = await RecoveryAsync(rcsi, fallback: "entra", attest: ServiceViabilityWorld.AtStart());
         var active = await ActiveAsync(e);
 
         Exception? refusal;
         await using (var db = e.W.Scratch.NewDb())
             refusal = await Record.ExceptionAsync(() => e.W.Mfa(db).ResetAsync(new UserId(e.Id.ToUpperInvariant()), AuditActor.EmergencyCli).AsTask());
 
-        refusal.Should().BeOfType<GovernanceConflictException>().Which.Code.Should().Be(GovernanceConflictCodes.EntraIndependentFallbackRequired);
+        refusal.Should().BeOfType<GovernanceConflictException>().Which.Code.Should().Be(GovernanceConflictCodes.EntraIndependentFallbackRequired,
+            "decided by the reset's own rule on the attested Local reading: the stored account is the Recovery Access account");
         (await ActiveAsync(e)).Should().Be(active);
-        (await e.W.RowsAsync(AuditActionNames.AdministratorViabilityBlocked, e.Id)).Should().ContainSingle("the row names the stored account");
+        var row = (await e.W.RowsAsync(AuditActionNames.AdministratorViabilityBlocked, e.Id)).Should().ContainSingle("the row names the stored account").Which;
+        row.Fields[ConfigurationEvidenceNames.AuditDetailName].Should().Be(ConfigurationEvidenceNames.Attested);
     }
 
     [Theory]
