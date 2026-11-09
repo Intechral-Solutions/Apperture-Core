@@ -62,7 +62,7 @@ public sealed class ConditionalMfaEnrollmentSqlServerTests : IClassFixture<Audit
         stored.EnrolledAtUtc.Should().NotBeNull();
         stored.LastVerifiedAtUtc.Should().Be(stored.EnrolledAtUtc);
         stored.CredentialId.Should().Be(pending.CredentialId, "enrolling does not change which secret this is");
-        stored.ProtectedSecret.Should().Equal(pending.ProtectedSecret);
+        MfaCandidateWorld.HashOf(stored.ProtectedSecret).Should().Be(MfaCandidateWorld.HashOf(pending.ProtectedSecret), "compared by digest so a failure never prints secret bytes");
     }
 
     [Theory]

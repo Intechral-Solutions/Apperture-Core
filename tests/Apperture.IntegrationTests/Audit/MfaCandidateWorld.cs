@@ -41,6 +41,9 @@ internal sealed class MfaCandidateWorld
         return created;
     }
 
+    /// <summary>The same operations and observations over a user that already exists in <paramref name="world"/>, for example one made healthy for Recovery Access.</summary>
+    public static MfaCandidateWorld Over(RoleAuthorityWorld world, UserId user) => new(world, user);
+
     /// <summary>Another user of the same catalog, enrolled.</summary>
     public async Task<UserId> OtherEnrolledUserAsync()
     {

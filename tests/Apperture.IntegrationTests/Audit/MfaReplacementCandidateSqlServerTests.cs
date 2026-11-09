@@ -45,8 +45,9 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
         candidate.Version.Should().Be(1);
         candidate.StagedAgainstCredentialId.Should().Be(credentialBefore);
         candidate.CandidateId.Should().NotBeNullOrWhiteSpace();
-        candidate.ProtectedSecret.Should().Equal(protectedSecret, "the candidate holds exactly the protected secret it was given");
-        candidate.ProtectedSecret.Should().NotEqual(plain, "the secret is stored protected");
+        // Compared by digest: a failed array assertion prints the arrays, and one of these is a plaintext secret.
+        MfaCandidateWorld.HashOf(candidate.ProtectedSecret).Should().Be(MfaCandidateWorld.HashOf(protectedSecret), "the candidate holds exactly the protected secret it was given");
+        MfaCandidateWorld.HashOf(candidate.ProtectedSecret).Should().NotBe(MfaCandidateWorld.HashOf(plain), "the secret is stored protected");
         candidate.MatchedStep.Should().BeNull();
         candidate.VerifiedAtUtc.Should().BeNull();
         candidate.IsExpired.Should().BeFalse();
@@ -229,7 +230,7 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
         stored.Version.Should().Be(candidate.Version + 1);
         stored.MatchedStep.Should().Be(step);
         stored.VerifiedAtUtc.Should().NotBeNull();
-        stored.ProtectedSecret.Should().Equal(candidate.ProtectedSecret);
+        MfaCandidateWorld.HashOf(stored.ProtectedSecret).Should().Be(MfaCandidateWorld.HashOf(candidate.ProtectedSecret));
         (await world.ActiveAsync()).Should().Be(active, "verifying a candidate changes nothing of the active authenticator");
     }
 
