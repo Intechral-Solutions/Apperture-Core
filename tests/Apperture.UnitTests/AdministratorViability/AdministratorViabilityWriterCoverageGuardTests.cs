@@ -203,6 +203,35 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         return [.. names];
     }
 
+    private const string CandidateContract = "INativeMfaReplacementCandidateRepository";
+    private const string CandidateImplementation = "SqlNativeMfaReplacementCandidateRepository";
+
+    /// <summary>Either candidate-repository type named in code (comments stripped first by the callers).</summary>
+    private static readonly Regex NamesCandidateRepository = R(@"\b(?:I|Sql)NativeMfaReplacementCandidateRepository\b");
+
+    /// <summary>A <c>var</c> local resolved from a service provider: <c>var store = sp.GetRequiredService&lt;INativeMfaReplacementCandidateRepository&gt;()</c>.</summary>
+    private static readonly Regex ServiceResolvedCandidateStore =
+        R(@"\bvar\s+(\w+)\s*=\s*[^;]*?\bGet(?:Required)?Service<\s*(?:I|Sql)NativeMfaReplacementCandidateRepository\s*>");
+
+    /// <summary>
+    /// Every name a file gives to a holder of the candidate repository (SR-1): declared with the contract or with the implementation
+    /// type, or a <c>var</c> local resolved from a service provider, which <see cref="NamesHolding"/> alone does not see (reviewer probe A).
+    /// </summary>
+    private static string[] CandidateStoreNames(string code)
+    {
+        var names = new HashSet<string>(NamesHolding(code, CandidateContract), StringComparer.Ordinal);
+        names.UnionWith(NamesHolding(code, CandidateImplementation));
+        foreach (Match match in ServiceResolvedCandidateStore.Matches(code))
+        {
+            var name = match.Groups[1].Value;
+            names.Add(name);
+            names.Add("_" + name.TrimStart('_'));
+            names.Add(name.TrimStart('_'));
+        }
+
+        return [.. names];
+    }
+
     private static int CallsOn(string code, string[] receivers, string method) =>
         receivers.Length == 0
             ? 0
@@ -265,8 +294,9 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             Add(file, Writes.MfaConsume, MfaConsumeCall.Matches(code).Count);
 
             // The replacement candidates, found by the type their receiver was declared with (U6): staging, verifying and removing a
-            // candidate change no posture input; the switch does.
-            var candidateStores = NamesHolding(code, "INativeMfaReplacementCandidateRepository");
+            // candidate change no posture input; the switch does. The concrete type and a var local resolved from a service provider
+            // are receivers too (SR-1).
+            var candidateStores = CandidateStoreNames(code);
             Add(file, Writes.MfaCandidateStage, CallsOn(code, candidateStores, "StageAsync"));
             Add(file, Writes.MfaCandidateVerify, CallsOn(code, candidateStores, "MarkVerifiedAsync"));
             Add(file, Writes.MfaCandidateSwitch, CallsOn(code, candidateStores, "SwitchAsync"));
@@ -457,6 +487,70 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             "an unclassified file that takes the coordinator would be a writer the inventory does not know");
     }
 
+    // ---- The candidate repository's callers (SR-1) ----
+
+    /// <summary>
+    /// The only production files that may name either candidate-repository type, each for the reason given. A new file that names
+    /// one (however it obtains the repository: a field, a parameter, an explicitly typed local, a <c>var</c> resolved from a service
+    /// provider, the concrete type) fails <see cref="Only_the_enumerated_files_name_the_candidate_repository"/> until it is added here
+    /// with its reason and its writes classified. This complements the switch's run-time precondition (it refuses without the caller's
+    /// transaction); it does not replace it.
+    /// </summary>
+    private static readonly (string File, string Why)[] FilesNamingTheCandidateRepository =
+    [
+        ("Apperture.Core/Apperture.Core.Application/Services/INativeMfaReplacementCandidateRepository.cs", "the contract"),
+        ("Apperture.Persistence/Apperture.Persistence.SqlServer/SqlNativeMfaReplacementCandidateRepository.cs",
+            "the implementation; its switch refuses without the caller's open transaction"),
+        (Security + "NativeMfaService.cs",
+            "the one replacement service: stage, verify and discard outside any unit; the switch only inside the audited unit after the gate (its order is checked by IntegratedSequences)"),
+        (Security + "ServiceCollectionExtensions.Governance.cs", "the two scoped registrations of the implementation; it resolves and calls nothing"),
+    ];
+
+    [Fact]
+    public void Only_the_enumerated_files_name_the_candidate_repository()
+    {
+        var naming = ProductionSource()
+            .Where(s => NamesCandidateRepository.IsMatch(StripComments(s.Text)))
+            .Select(s => s.Relative)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .ToList();
+
+        naming.Should().BeEquivalentTo(
+            FilesNamingTheCandidateRepository.Select(f => f.File),
+            "a production file that obtains the candidate repository could call its switch outside the audited unit; it must be enumerated with its reason");
+        FilesNamingTheCandidateRepository.Should().OnlyContain(f => f.Why.Length > 0 && !f.File.Contains('*'), "each entry is one file with its reason");
+    }
+
+    [Fact]
+    public void The_candidate_repository_rules_find_a_var_resolved_a_typed_and_a_concrete_caller_and_ignore_a_comment()
+    {
+        // Reviewer probe A (SR-1): the command line's service-resolution idiom, which NamesHolding alone did not see.
+        const string probeA = """
+            internal static class NewCaller
+            {
+                public static async Task RunAsync(IServiceProvider services, NativeMfaSwitchRequest request)
+                {
+                    var store = services.GetRequiredService<INativeMfaReplacementCandidateRepository>();
+                    await store.SwitchAsync(request);
+                }
+            }
+            """;
+        const string concrete = "var repository = sp.GetService<SqlNativeMfaReplacementCandidateRepository>(); await repository.SwitchAsync(r);";
+        const string typed = "INativeMfaReplacementCandidateRepository held = Resolve(); await held.SwitchAsync(r);";
+        const string commentOnly = "    // INativeMfaReplacementCandidateRepository is only mentioned here\n    var x = 1;";
+
+        foreach (var (text, name) in new[] { (probeA, "store"), (concrete, "repository"), (typed, "held") })
+        {
+            NamesCandidateRepository.IsMatch(StripComments(text)).Should().BeTrue();
+            CandidateStoreNames(StripComments(text)).Should().Contain(name);
+            Differences(Scan([("Some/New/Caller.cs", text)]), Inventory)
+                .Should().Contain(d => d.StartsWith("UNCLASSIFIED WRITER") && d.Contains("Caller.cs") && d.Contains(nameof(Writes.MfaCandidateSwitch)));
+        }
+
+        NamesCandidateRepository.IsMatch(StripComments(commentOnly)).Should().BeFalse("a comment is not a caller");
+        NamesCandidateRepository.IsMatch("INativeMfaReplacementCandidateRepositoryFactory").Should().BeFalse("another identifier is not the type");
+    }
+
     // ---- The integrated writers, method by method ----
 
     /// <summary>What an integrated writer must do, in this order, inside its method.</summary>
@@ -641,7 +735,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Writes.DesignationFlagUpdate => DesignationSetterCall.Matches(code).Count,
         Writes.MfaReset => MfaResetCall.Matches(code).Count,
         Writes.MfaEnrol => MfaEnrolCall.Matches(code).Count,
-        Writes.MfaCandidateSwitch => CallsOn(code, NamesHolding(fileCode, "INativeMfaReplacementCandidateRepository"), "SwitchAsync"),
+        Writes.MfaCandidateSwitch => CallsOn(code, CandidateStoreNames(fileCode), "SwitchAsync"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 

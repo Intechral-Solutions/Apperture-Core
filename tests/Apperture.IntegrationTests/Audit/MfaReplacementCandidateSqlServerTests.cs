@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Audit;
@@ -5,6 +6,7 @@ using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 using static Apperture.IntegrationTests.Audit.AuditRecorderTestSupport;
 
@@ -463,6 +465,85 @@ public sealed class MfaReplacementCandidateSqlServerTests : IClassFixture<AuditI
 
         (await world.ActiveAsync()).Should().Be(active);
         (await world.GetAsync(candidate.CandidateId))!.Status.Should().Be(NativeMfaCandidateStatus.Verified);
+    }
+
+    // ---- The switch never commits on its own (S-1, SR-1) ----
+
+    /// <summary>Counts every command a context sends (readers, non-queries and scalars), so "before any statement" is asserted.</summary>
+    private sealed class CommandCounter : DbCommandInterceptor
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _count);
+            return ValueTask.FromResult(result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _count);
+            return ValueTask.FromResult(result);
+        }
+
+        public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _count);
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private static string Describe(List<Dictionary<string, object?>> rows) =>
+        string.Join(";", rows.Select(r => string.Join(",", r.Select(kv => $"{kv.Key}={kv.Value}"))));
+
+    /// <summary>
+    /// Reviewer probe RP1, inverted. Before SR-1, the repository called directly on a context with no transaction opened and committed
+    /// its own: the switch returned <c>Applied</c>, the active credential took the candidate's id and every recovery code was replaced,
+    /// with no <c>auth.mfa.replaced</c> row, no gate and no viability decision. Now it is refused before any statement, on a context
+    /// configured as production configures one (retrying) and on a plain one, and nothing of the credential, the codes, the candidate
+    /// or the audit trail changes. State is read back by SQL on another connection.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_switch_without_the_callers_transaction_is_refused_before_any_statement_and_commits_nothing(bool rcsi)
+    {
+        var world = await WorldAsync(rcsi);
+        var (candidate, version) = await world.StageAndVerifyAsync();
+        var active = await world.ActiveAsync();
+        var credential = await world.ActiveCredentialIdAsync();
+        var codes = await world.CodeIdsAsync();
+        var candidates = Describe(await world.CandidateRowsAsync());
+        var replaced = await world.AuditRowsAsync(AuditActionNames.MfaReplaced);
+        var generated = await world.AuditRowsAsync(AuditActionNames.RecoveryCodesGenerated);
+        var request = world.Request(candidate.CandidateId, version, "probe");
+
+        foreach (var retrying in new[] { true, false })
+        {
+            var commands = new CommandCounter();
+            await using var db = retrying ? world.Scratch.NewDb(commands) : world.World.NewPlainDb(commands);
+            var standalone = (Func<Task>)(async () => await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request));
+
+            (await standalone.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("never commits on its own");
+            commands.Count.Should().Be(0, "the switch is refused before any statement (retrying context: {0})", retrying);
+            db.Database.CurrentTransaction.Should().BeNull("the switch opens no transaction of its own");
+        }
+
+        (await world.ActiveAsync()).Should().Be(active, "the secret, its identity, its step and the recovery codes are exactly what they were");
+        (await world.ActiveCredentialIdAsync()).Should().Be(credential).And.NotBe(candidate.CandidateId, "no replacement committed");
+        (await world.CodeIdsAsync()).Should().Be(codes, "the recovery codes were not replaced");
+        Describe(await world.CandidateRowsAsync()).Should().Be(candidates, "the candidate is unconsumed: verified, at its version, with its secret");
+        (await world.GetAsync(candidate.CandidateId))!.Status.Should().Be(NativeMfaCandidateStatus.Verified);
+        (await world.AuditRowsAsync(AuditActionNames.MfaReplaced)).Should().Be(replaced);
+        (await world.AuditRowsAsync(AuditActionNames.RecoveryCodesGenerated)).Should().Be(generated);
+
+        // The same verified candidate still switches on a caller's transaction: nothing of the refused calls stuck.
+        (await world.SwitchAsync(request)).Outcome.Should().Be(NativeMfaCandidateOutcome.Applied);
+        (await world.ActiveCredentialIdAsync()).Should().Be(candidate.CandidateId);
     }
 
     // ---- Joining the caller's unit ----
