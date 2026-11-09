@@ -4,7 +4,7 @@
 |---|---|
 | Package | IAM-10.2b, work package 4B-C, the service package on the independently accepted Foundation 1A to 1D ([persistence closure](iam10-2b-wp4b-c-persistence-remediation-record.md), accepted at `1c1030ad`). |
 | Branch | `feat/iam10-2b-wp4bc-services` (worktree `wt-iam10-2b-wp4bc-services`), from `1c1030ad9b023aeba48518f4e2cc09881c1527ae`. Local only: not pushed, no PR. The protected IAM branch `feat/iam-10.2b-administrator-viability` was already at `1c1030ad` and was not changed. |
-| Status | **Implemented and locally validated by the implementer. Not independently reviewed.** Nothing here declares acceptance. |
+| Status | **Independently reviewed at `ec66ed4e`: ACCEPT WITH BOUNDED REMEDIATION, the one required item being SR-1.** SR-1 is remediated at `05ffe194` (section 15) and is **not yet closure-verified**. Nothing here declares acceptance. |
 | Not in scope | The emergency command line (commands, exit codes, the mapping of busy, unavailable, conflict and unknown outcomes), the WP5 pair matrix, OPS-1, development-environment and tooling work, credential rotation, artifact cleanup, Configuration C. |
 
 ## 1. Identity
@@ -19,6 +19,9 @@
 | Preparation (U1) | `18d86e5e`: every writer of this package that reads viability prepares the reads before its unit (section 2) |
 | Test tightening | `c1741d47`: the mis-cased replacement case raises the unused code count, after mutant M04b escaped it (section 11) |
 | **Validated code commit** | **`c1741d47`** (`c1741d4786dde318cb8d7a1487fdcb086dc07bce`; see section 10 for the tree hashes). Later commits are documentation only and keep its `src` and `tests` trees |
+| Independent review | `ec66ed4e` (records over `c1741d47`): ACCEPT WITH BOUNDED REMEDIATION (SR-1) |
+| SR-1 correction | `27bc2968`: the switch refuses without the caller's open transaction; standalone test callers re-based (section 15) |
+| SR-1 controls | `05ffe194`: the RP1 regression and the candidate-repository caller rules. **SR-1 code commit** (`05ffe1948ecc378535d8adef40e5cc6224d334e7`; trees in section 15). Later commits are documentation only |
 
 `git diff --shortstat 1c1030ad c1741d47`: 11 production files (+796 / -107), 19 test files (+2993 / -115), nothing outside `src` and `tests`. Production files: `EmergencyAccessService.cs`, `NativeMfaService.cs`, `UserManagementService.cs`, `GovernanceRefusals.cs`, `AdministratorViability/ViabilityRefusalAudit.cs` (new), `INativeMfaService.cs`, `INativeMfaRepositories.cs`, `INativeMfaReplacementCandidateRepository.cs`, `SqlNativeMfaRepositories.cs`, `SqlNativeMfaReplacementCandidateRepository.cs`, `AuditActionCatalogEntries.cs` (two comments).
 
@@ -63,7 +66,7 @@ Every writer above that reads viability first calls `PrepareAsync` outside any t
 - **Identity (S-1).** The new active secret takes the candidate's own id as its `CredentialId` (`t.[CredentialId] = c.[CandidateId]`), read back for the result. A `Consumed` outcome alone proves nothing; the service reports `AlreadyApplied` (with no codes) only when the candidate is consumed **and** the active credential's identity is that candidate's id, otherwise `no longer valid`.
 - **Codes (S-2, S-3).** Refused before any statement: codes recorded as consumed, repeated ids (compared as the column does, without regard to case), and codes that do not fit the column lengths.
 - **Owner (S-3).** The locked read of the active credential also returns the stored owner; a request naming the user other than as stored is an `ArgumentException` and nothing is written.
-- **Not adopted.** Requiring an ambient transaction in `SwitchAsync` (S-1, "consider"): the accepted persistence suite calls it standalone. The single production caller is pinned instead (writer guard): inside the audited unit, after the gate.
+- **Not adopted.** Requiring an ambient transaction in `SwitchAsync` (S-1, "consider"): the accepted persistence suite calls it standalone. The single production caller is pinned instead (writer guard): inside the audited unit, after the gate. **Superseded by SR-1 (section 15):** the switch now requires the caller's open transaction.
 
 ## 6. Audit (U7, S-4, S-5)
 
@@ -223,7 +226,7 @@ No assertion of an accepted case was weakened; every interleaving still forces t
 | R-2 | The I-R3-1 refusal (`administrator_access_changed`) records the evidence class of the decision it discarded, which can be `unavailable` after a fall-through | D-3: a kept refusal records the decision's evidence; the code, not the evidence, says the configuration was not the cause | record `not_required` for this refusal |
 | R-3 | A replacement stages two rows: `auth.mfa.replaced` and `auth.mfa.recovery_codes.generated` (`regenerated: true`) | the switch replaces the codes, as an enrolment stages `auth.mfa.enrolled` with the codes row | one row only |
 | R-4 | The new active secret's `CredentialId` is the candidate's id | it makes "applied earlier" verifiable (S-1) without a new column | a separate identity plus a stored link |
-| R-5 | `SwitchAsync` does not require an ambient transaction; its single production caller is pinned inside the unit | the accepted persistence suite calls it standalone (S-1 said "consider") | require one and re-base the persistence cases |
+| R-5 | ~~`SwitchAsync` does not require an ambient transaction; its single production caller is pinned inside the unit~~ **Superseded by SR-1** (review SO-2): the switch requires the caller's open transaction and the persistence cases are re-based (section 15) | the accepted persistence suite calls it standalone (S-1 said "consider") | require one and re-base the persistence cases (done) |
 | R-6 | `EnsureCanonicalIdentityAsync` stays ungated: it renames the designated account to its canonical name at host start and from the command line | it changes the account's username and display name only, which no viability decision reads (the rename inside a designation is in the designation's unit) | gate it (gate-only entry) |
 
 **Known limits, not defects:**
@@ -272,3 +275,126 @@ Contents:
 * `artifacts/svc-final`: a partial build, stopped at `0865e07a` when the code changed (not evidence).
 
 The mutation clone is `artifacts/svc-mut/clone`, clean at `c1741d47`; its honesty build is in `artifacts/honesty-build`. Nothing was cleaned up.
+
+## 15. SR-1 remediation (2026-11-09)
+
+**Review.** The independent review of `ec66ed4e` (code `c1741d47`) returned **ACCEPT WITH BOUNDED REMEDIATION**. Its record is archived at `G:\Backup\Apperture-Core-worktree-evidence\2026-11-09\review-wp4bc-services-ec66ed4` (77 files, `SHA256SUMS.txt` manifest `E476086D55B8BE28D3BE7E59AD037A3CBC8EB3AA98C48B2EA2F9936DC8FF789B`, re-verified on 2026-11-09 with 0 mismatches and left unchanged). Recovery Access, the MFA workflows, viability enforcement, refusal handling and recovery-code concurrency were accepted. The one required item was **SR-1**: S-1 was enforced only by the call graph and a lexical guard. The persistence switch, called outside a transaction, opened and committed its own (reviewer probe RP1), and the guard did not see a `var` local resolved from a service provider (reviewer guard probe A). Nothing else was reopened.
+
+### 15.1 Identity
+
+| | |
+|---|---|
+| Reviewed | `ec66ed4ec53f409c754cc2c7d123a6b102aa47fc` (code `c1741d47`, `src` `c9348c10`, `tests` `4b5b681b`) |
+| `27bc2968` | fix: the switch refuses without the caller's open transaction; standalone test callers re-based |
+| `05ffe194` | test: the RP1 regression and the candidate-repository caller rules. **SR-1 code commit** `05ffe1948ecc378535d8adef40e5cc6224d334e7`, tree `87cc5989e0c44566f65396297e30e54d93d4fe29`, `src` `6dfcdbe83945edd67e0c02d1c0f0c686eec9f310`, `tests` `35ccbbc7d0c092c94ec1f28d8069e474d4c1e456` |
+| Later | documentation only (this section, the closure brief, the decision record) |
+
+`git diff --stat ec66ed4e 05ffe194`: 8 files, all in `src` and `tests`. Production: `SqlNativeMfaReplacementCandidateRepository.cs`, `INativeMfaReplacementCandidateRepository.cs` (documentation). Tests: `MfaCandidateWorld.cs`, `MfaReplacementCandidateConcurrencySqlServerTests.cs`, `MfaReplacementCandidateLockOrderSqlServerTests.cs`, `NativeMfaServiceViabilitySqlServerTests.cs` (re-based callers), `MfaReplacementCandidateSqlServerTests.cs` (the regression), `AdministratorViabilityWriterCoverageGuardTests.cs` (the caller rules). Nothing outside `src` and `tests` changed in those two commits.
+
+### 15.2 The transaction precondition
+
+The first statement of `SqlNativeMfaReplacementCandidateRepository.SwitchAsync`, before the argument checks and any SQL:
+
+```csharp
+if (_db.Database.CurrentTransaction is null)
+    throw new InvalidOperationException(
+        "The authenticator switch runs only inside the caller's open transaction (the audited unit, under the administrator-set gate); it never commits on its own.");
+```
+
+* **Why this check is genuine enlistment.** The audited unit (`SqlAuditedUnitOfWork.RunAttemptAsync`) begins its transaction with `_db.Database.BeginTransactionAsync` on the scoped `AppertureDbContext`. The repository is registered scoped over the same context, and every statement of the switch goes through `_db.Database`, which runs on that context's current transaction. No ambient `System.Transactions` marker is consulted. Mutant SR1-M3, which checks that marker instead, breaks 38 of 58 cases of the persistence class on the real audited-unit and caller-transaction paths.
+* **Convention.** An `InvalidOperationException`, as `SqlPlatformAdministratorSetGate.AcquireAsync`, the managed-contact email lock and the role authority snapshot throw when their transaction is absent. It is not a typed business outcome, not a `NativeMfaSwitchResult`, and not a standalone write.
+* **No transaction of its own.** The body runs directly on the caller's transaction; it no longer goes through `InTransactionAsync`, which stays for staging, verifying and discarding, whose standalone use is legitimate.
+* **Unchanged.** Every condition of the switch statement (candidate identity, owner, verified status, version, database-clock expiry, the credential it was staged against, the replay step it carries), the ordinal owner check, the input defences of S-2 and S-3, the lock order, the outcomes and the result identity. Inside the audited unit the code path is the same as before: `InTransactionAsync` already ran the body directly when a transaction was present.
+* The contract (`INativeMfaReplacementCandidateRepository`) states the requirement and the exception.
+
+The optional hardening the review mentioned, also requiring the administrator-set application lock to be held by that transaction (`APPLOCK_MODE`), was **not adopted**: it would add a statement before the refusal and a dependency of the persistence layer on the gate's resource name, and the brief asked for the smallest safe correction. The guard's sequence pin still requires the one production switch to come after `Viability.EnterAsync(`.
+
+### 15.3 Standalone tests re-based
+
+Every test call of the real switch that had no transaction now runs it on a transaction of its own through `MfaCandidateWorld.SwitchInTransactionAsync`. That helper begins the transaction under the context's execution strategy, switches, and commits; a throw rolls it back. That is exactly what the repository's own transaction did before, so a retrying context still retries (the lock-order cases still count every deadlock victim they retry) and a pause interceptor still sees the same statements.
+
+* Re-based: `MfaCandidateWorld.SwitchAsync` (used by the persistence, contract, concurrency and replay suites), the two parked switches of `MfaReplacementCandidateConcurrencySqlServerTests`, the parked switch of `MfaReplacementCandidateLockOrderSqlServerTests`, and the switch-defence case of `NativeMfaServiceViabilitySqlServerTests` (whose three refusals must be the defences named, not S-1's).
+* Untouched: the switches already inside an audited unit (`A_switch_inside_the_audited_unit_…`) or an explicit transaction (`MfaReplacementViabilityIntegrationSqlServerTests`).
+* No assertion was changed or removed.
+
+### 15.4 The caller guard
+
+`AdministratorViabilityWriterCoverageGuardTests` gains two rules and a self-test:
+
+* **`Only_the_enumerated_files_name_the_candidate_repository`.** Any production file whose code (comments removed) names `INativeMfaReplacementCandidateRepository` or `SqlNativeMfaReplacementCandidateRepository` as a whole word must be one of four enumerated files, each with its reason: the contract; the implementation; `NativeMfaService.cs`, the one replacement service, whose switch order is pinned by the sequence check; and `ServiceCollectionExtensions.Governance.cs`, the two registrations, which resolve and call nothing. There are no wildcards. The actual production inventory is exactly those four files (`git grep`).
+* **Receivers.** The candidate-store writes are now counted on receivers declared with either type, or held in a `var` local resolved through `GetService<…>` or `GetRequiredService<…>`. A write in an enumerated file can therefore not hide behind the service-locator idiom either.
+* **Self-test.** The rules find the reviewer's probe A text, a typed local and a concrete-type `var` local; an unclassified `MfaCandidateSwitch` writer is reported for each; and a comment or a longer identifier is not a caller.
+
+This is a complement to the run-time precondition, not a replacement for it.
+
+**Clarification about the reviewed commit.** At `c1741d47`, `MfaReplacementAuditContractTests.The_candidate_repository_is_named_by_its_contract_its_implementation_and_the_registrations_only` (in the `Audit` namespace of the unit tests) already pinned the same four files with a whole-word match, and it fails on probe A: re-run against the old guard file at the SR-1 head, it fails on probe A and on the concrete-type probe. The review ran probe A against the writer-coverage guard class only (42/42), so its observation is accurate for that class, and the unit suite as a whole would have failed. The SR-1 rules put the requirement into the writer-coverage guard itself, with reasons and the receiver scan.
+
+### 15.5 Negative controls
+
+All four were run in a disposable clone at `05ffe194` (`artifacts/sr1-mut/clone`), with the connection string in the runner's process environment only. No output contains the test SQL password.
+
+**The RP1 regression.** `MfaReplacementCandidateSqlServerTests.A_switch_without_the_callers_transaction_is_refused_before_any_statement_and_commits_nothing` runs on both isolation modes. On a retrying context and on a plain one, neither with a transaction:
+
+* the call throws `InvalidOperationException` and the context sends **zero commands** (every reader, non-query and scalar counted);
+* the context has no transaction afterwards;
+* read back by SQL on another connection, nothing changed: the active credential and its identity, the secret digest, the step, the timestamps, the recovery codes, the candidate row (verified, same version, secret kept) and the `auth.mfa.replaced` and `auth.mfa.recovery_codes.generated` counts;
+* the same candidate then switches on a caller's transaction.
+
+**RP1 reproduced** (`tools/rp1.ps1`, an uncommitted probe class that makes the reviewer's exact call: the repository on `Scratch.NewDb()` with no transaction). Only `SqlNativeMfaReplacementCandidateRepository.cs` is taken from `c1741d47` for the first run.
+
+| Switch | `rcsi: False` | `rcsi: True` |
+|---|---|---|
+| Reviewed (`c1741d47`) | `Applied`; the credential took the candidate's id; codes replaced; candidate `Consumed`; `auth.mfa.replaced` 0 → 0; codes-generated 1 → 1 | same |
+| SR-1 (`05ffe194`) | refused; credential, codes and candidate (`Verified`) unchanged; 0 → 0; 1 → 1 | same |
+
+The clone was clean afterwards and the repository file's blob matched `HEAD`.
+
+**Mutants** (`tools/mutate.ps1`, `tools/mutants.json`: exact single-match edits, restore proven by blob hash). The baseline was green (unit 44/44, SQL 58/58), and so was the final run after every restore.
+
+| ID | Mutation | Verdict | Detected by |
+|---|---|---|---|
+| SR1-M1 | the precondition removed (the statements run without a transaction and each commits by itself) | **Caught** 2/2 | the regression, both modes: no exception |
+| SR1-M2 | the reviewed behaviour: without a caller transaction, open and commit one (RP1) | **Caught** 2/2 | the regression, both modes: no exception |
+| SR1-M3 | the precondition checks `System.Transactions.Transaction.Current` instead of the context's transaction | **Caught** 38/58 | the audited-unit and caller-transaction cases of the persistence class |
+| SR1-M4 | the refusal comes after the first statement (the credential lock) | **Caught** 2/2 | the regression: one command sent before the refusal |
+| SR1-G1 | the guard no longer sees a `var` local resolved from a service provider | **Caught** 1/44 | the self-test |
+
+**Guard probe A** (`tools/guard-probe.ps1`). The probe file is placed in the clone's `src` and the guard classes (the writer-coverage guard and `MfaReplacementAuditContractTests`, 55 tests) run from the DLL already built. Nothing is rebuilt between variants, so a detection can only come from the probe file.
+
+| Variant | Guard at `05ffe194` | Guard file as at `c1741d47` |
+|---|---|---|
+| none | 55/55 | 53/53 |
+| A, the reviewer's `var store = services.GetRequiredService<INativeMfaReplacementCandidateRepository>()` (byte-identical) | 3 failures: `Only_the_enumerated_files_name_the_candidate_repository`, `Every_production_writer_of_a_viability_input_is_classified` (unclassified `MfaCandidateSwitch` writer), the audit-contract pin. Each message names the probe file | 1 failure: the audit-contract pin only (the writer-coverage guard passes, as the review found) |
+| B, the reviewer's typed local | the same 3 failures | not run (the review showed it detected) |
+| C, `var store = services.GetService<SqlNativeMfaReplacementCandidateRepository>()!` | the same 3 failures | 1 failure: the audit-contract pin only |
+| none, after | 55/55 | |
+
+Afterwards the guard file's blob matched `HEAD`, there were no tracked changes, and no untracked file was in `src`.
+
+### 15.6 Validation at `05ffe194`
+
+| Check | Result |
+|---|---|
+| Clean Release build (`--no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers`, fresh `artifacts/sr1-release`) | exit 0, 0 errors, 73 warnings (as at `c1741d47`), 389 s; started on a tree with no tracked change |
+| Unit | 6247 passed, 0 failed, 1 skipped (the opt-in desktop timing diagnostic, as before): the reviewed 6245 plus the two new guard facts |
+| Arch | 38/38 |
+| Ui.Shared, Ui.Client, AppHost.Diagnostics | 1497/1497, 532/532, 7/7 |
+| Focused SQL (the 36-term filter of section 10, byte-identical), both modes | **1411/1411**: 635 with `rcsi: False`, 635 with `rcsi: True`, 141 without a mode; 2582 s. Every case of the reviewed run (1409) is present and passed; the only additions are the two regression cases. No output contains the test SQL password |
+| Affected classes during development (Release, both modes) | 244/244: the persistence, concurrency, lock-order, contract, viability-integration, service-viability and replay-protection classes |
+| SQL honesty (`scripts/dev/Test-SqlExecutionHonesty.ps1 -Configuration Release`, built by the script in the clean clone at `05ffe194`) | **PASS, authoritative**, mode `enforce`: discovered and executed 3870, passed 227, failed 3643; no unexpected pass, must-fail violation or other violation. The two more than the reviewed 3868 are the regression cases. The allow-list (227 entries), the must-fail list (188), the script and its tests are blob-identical to `1c1030ad`; `git diff --name-only 1c1030ad 05ffe194 -- scripts .github tests/test-manifest.json` is empty |
+| Normal path | the audited-unit replacement still commits with `auth.mfa.replaced` and its final viability decision: `A_switch_inside_the_audited_unit_commits_with_its_audit_row_and_rolls_back_with_the_unit`, `The_real_switch_inside_a_protected_attempt_is_decided_on_the_posture_alone_and_commits_with_it`, and the `NativeMfaServiceViabilitySqlServerTests` replacement cases, all in the focused set |
+
+**Not run:** the full `IntegrationTests` assembly against real SQL (only the focused set; the honesty run executes the whole assembly against an unreachable endpoint), the browser and end-to-end suites, the command line end to end, a running host, Linux and hosted CI.
+
+### 15.7 Owner rules and deferred items
+
+* **SO-1, standing rule (no change of behaviour).** A refusal row whose decision carries no evidence class still records `not_required` (R-1). The owner has not authorised a general change. The standing rule: `not_required` may describe a decision that genuinely required no configuration evidence; it must not conceal unavailable evidence that was required. In the only composition that runs the four guarded operations (the emergency command line), the reading is always `Attested` or `Unavailable`, so the fallback is not reached there. Before any host-composition caller of designate, revoke, bare reset or switch is added, the owner rules on a fourth value or on keeping those operations out of the host composition.
+* **SO-2** (R-5): superseded by SR-1.
+* **SC-1 to SC-5**, the command-line requirements of the review, are carried forward unchanged to the command-line package: the typed-outcome map and exit codes (SC-1), `reset-mfa` as the replacement workflow (SC-2), codes and secrets shown only from a committed result (SC-3), a composition test of the command line's container (SC-4), and reaching the switch only through `INativeMfaService.CompleteReplacementAsync` (SC-5). The switch now also enforces SC-5's purpose at run time and in the guard.
+* **SI-1**, mapping a busy gate on the set-password action to a 409, **remains deferred**. No other informational item was acted on.
+
+### 15.8 Evidence
+
+* **Archive:** `G:\Backup\Apperture-Core-worktree-evidence\2026-11-09\wt-iam10-2b-wp4bc-services-sr1-evidence`, copied from `artifacts/sr1-logs` after a secret scan, with a `SHA256SUMS.txt` (CRLF, backslash paths: verify with PowerShell `Get-FileHash`) verified against the copy. Its file count and manifest SHA-256 are in the hand-over message. The review's own archive and the service package's archive (section 14) are unchanged.
+* **Bundle:** `G:\Backup\Apperture-Core-git-bundles-integration\feat-iam10-2b-wp4bc-services-<head>-sr1.bundle`, the branch at its final commit, with its SHA-256 in `SHA256SUMS-2026-11-09-services-sr1.txt` in that folder and in the hand-over message. It carries no `HEAD`, so clone it with `git clone -b feat/iam10-2b-wp4bc-services`.
+* **Working copy:** `artifacts/sr1-logs` (tools, mutation, rp1, guard-probe, final, honesty, trx, commit messages), builds in `artifacts/sr1-dev` and `artifacts/sr1-release`, the clone in `artifacts/sr1-mut/clone`. Nothing was cleaned up.
