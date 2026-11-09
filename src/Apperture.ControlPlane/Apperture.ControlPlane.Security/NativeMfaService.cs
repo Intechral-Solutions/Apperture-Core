@@ -228,7 +228,15 @@ public sealed class NativeMfaService : INativeMfaService
                     return false;
                 }
 
-                await _recoveryCodes.MarkConsumedAsync(match.Id, _time.GetUtcNow(), ct);
+                // The list above was read without a lock, so the match is advice: the code is accepted only if this sign-in is the one
+                // that consumes it. Another sign-in with the same code that consumed it first makes the write change nothing, and then the
+                // code proves nothing.
+                if (!await _recoveryCodes.MarkConsumedAsync(match.UserId, match.Id, _time.GetUtcNow(), ct))
+                {
+                    transaction.DeclareNoOp();
+                    return false;
+                }
+
                 await transaction.StageAsync(AuditEvents.RecoveryCodeConsumed(userId, unused.Count - 1), ct);
                 return true;
             },

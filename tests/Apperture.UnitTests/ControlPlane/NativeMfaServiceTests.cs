@@ -464,12 +464,23 @@ public sealed partial class NativeMfaServiceTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask MarkConsumedAsync(string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default)
+        /// <summary>Plays another sign-in that consumed the same code after this one read it as unused.</summary>
+        public bool ConsumedByAnotherSignIn { get; set; }
+
+        public ValueTask<bool> MarkConsumedAsync(UserId userId, string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default)
         {
-            var idx = _codes.FindIndex(c => c.Id == codeId);
-            if (idx >= 0)
-                _codes[idx] = _codes[idx] with { ConsumedAtUtc = consumedAtUtc };
-            return ValueTask.CompletedTask;
+            // As the repository: the code must be this user's and still unused, judged as it writes.
+            var idx = _codes.FindIndex(c => c.Id == codeId && c.UserId == userId);
+            if (ConsumedByAnotherSignIn && idx >= 0)
+            {
+                ConsumedByAnotherSignIn = false;
+                _codes[idx] = _codes[idx] with { ConsumedAtUtc = consumedAtUtc.AddSeconds(-1) };
+            }
+
+            if (idx < 0 || _codes[idx].ConsumedAtUtc is not null)
+                return ValueTask.FromResult(false);
+            _codes[idx] = _codes[idx] with { ConsumedAtUtc = consumedAtUtc };
+            return ValueTask.FromResult(true);
         }
 
         public IReadOnlyList<NativeMfaRecoveryCodeRecord> Codes => _codes;

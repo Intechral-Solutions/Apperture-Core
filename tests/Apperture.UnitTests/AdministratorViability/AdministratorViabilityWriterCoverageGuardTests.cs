@@ -125,7 +125,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "NativeMfaService.cs", Writes.MfaReset, 2, Class.Reducer, "WP4B-C", "the bare reset removes the TOTP credential and the recovery codes: under the gate, decided last on the posture or the Local reading"),
         new(Security + "NativeMfaService.cs", Writes.MfaEnrol, 3, Class.GatedRaiser, "WP4B-C", "the first enrolment's conditional completion and the regeneration of the codes only add: under the gate, asserted raise-only"),
         new(Security + "NativeMfaService.cs", Writes.MfaPendingWrite, 1, Class.OutOfCategory, "-", "a pending credential is not a posture input (the facts read only an enrolled one), and the conditional write never replaces an enrolled one (WP4B-A)"),
-        new(Security + "NativeMfaService.cs", Writes.MfaConsume, 1, Class.RecoveryCodeConsumption, "-", "C-14: non-refusable, no gate"),
+        new(Security + "NativeMfaService.cs", Writes.MfaConsume, 1, Class.RecoveryCodeConsumption, "-", "C-14: non-refusable, no gate; the conditional consumption admits one sign-in per code"),
         new(Security + "NativeMfaService.cs", Writes.MfaStep, 1, Class.OutOfCategory, "-", "records the last verified TOTP step; no posture input reads it"),
         new(Security + "NativeMfaService.cs", Writes.MfaCandidateStage, 1, Class.OutOfCategory, "-", "a staged candidate is not an authenticator: the facts read only the enrolled credential and its unused codes, which staging never touches"),
         new(Security + "NativeMfaService.cs", Writes.MfaCandidateVerify, 1, Class.OutOfCategory, "-", "marking a candidate verified changes nothing the facts read"),

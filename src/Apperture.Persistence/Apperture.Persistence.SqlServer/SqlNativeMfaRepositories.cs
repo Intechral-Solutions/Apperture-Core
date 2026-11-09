@@ -242,13 +242,18 @@ public sealed class SqlNativeMfaRecoveryCodeRepository : INativeMfaRecoveryCodeR
         await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async ValueTask MarkConsumedAsync(string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async ValueTask<bool> MarkConsumedAsync(UserId userId, string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default)
     {
-        var entity = await _db.UserMfaRecoveryCodes.FirstOrDefaultAsync(e => e.Id == codeId, cancellationToken);
-        if (entity is null)
-            return;
-        entity.ConsumedAtUtc = consumedAtUtc;
-        await _db.SaveChangesAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(codeId);
+
+        // One statement, whose condition the database evaluates as it writes (an UPDATE reads the committed row under its update lock in
+        // both isolation modes, so a concurrent consumption is waited for and then re-checked, never overwritten): the code must be this
+        // user's and still unused. Two sign-ins that both read the code as unused cannot both consume it.
+        var consumed = await _db.UserMfaRecoveryCodes
+            .Where(e => e.Id == codeId && e.UserId == userId.Value && e.ConsumedAtUtc == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(e => e.ConsumedAtUtc, (DateTimeOffset?)consumedAtUtc), cancellationToken);
+        return consumed == 1;
     }
 
     public async ValueTask DeleteAllAsync(UserId userId, CancellationToken cancellationToken = default)

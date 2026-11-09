@@ -77,7 +77,13 @@ public interface INativeMfaRecoveryCodeRepository
     /// <summary>Replaces the user's codes. A replacement candidate staged for the user is removed first: the codes it would have replaced are no longer the ones the operator saw.</summary>
     ValueTask ReplaceAllAsync(UserId userId, IReadOnlyList<NativeMfaRecoveryCodeRecord> codes, CancellationToken cancellationToken = default);
 
-    ValueTask MarkConsumedAsync(string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Consumes one recovery code of <paramref name="userId"/>, and is what makes the code single-use: one statement whose condition the
+    /// database evaluates as it writes (the code is this user's and is still unused). True when this call consumed it; false when nothing
+    /// was changed. On false the caller must reject the sign-in: another sign-in consumed the code after this one read it as unused, or it
+    /// was replaced or removed.
+    /// </summary>
+    ValueTask<bool> MarkConsumedAsync(UserId userId, string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default);
 
     /// <summary>Removes the user's codes and, as <see cref="ReplaceAllAsync"/> does, any replacement candidate staged for the user.</summary>
     ValueTask DeleteAllAsync(UserId userId, CancellationToken cancellationToken = default);

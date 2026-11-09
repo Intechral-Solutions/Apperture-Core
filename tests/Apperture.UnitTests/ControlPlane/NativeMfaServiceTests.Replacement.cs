@@ -416,6 +416,18 @@ public sealed partial class NativeMfaServiceTests
         harness.Reads.Reads.Should().Be(readsAfterEnrolment + 2);
     }
 
+    [Fact]
+    public async Task A_recovery_code_consumed_by_another_sign_in_after_this_one_read_it_signs_in_no_one_and_records_nothing()
+    {
+        var harness = await Harness.EnrolledAsync();
+        harness.Recovery.ConsumedByAnotherSignIn = true;
+
+        (await harness.Mfa.ConsumeRecoveryCodeAsync(harness.UserId, harness.RecoveryCodes[0])).Should().BeFalse();
+
+        harness.Recorder.Operations.Should().ContainSingle().Which.NoOp.Should().BeTrue();
+        harness.Gate.Acquired.Should().Be(1, "consumption takes no gate (only the enrolment did)");
+    }
+
     // ------------------------------------------------------------------------------------------------ the candidate store
 
     /// <summary>One user's candidate over the harness's authenticator and codes, with the store's conditions; a case can script a switch.</summary>
